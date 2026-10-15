@@ -11,6 +11,14 @@ RUN npm ci
 COPY ui/ .
 RUN npm run build
 
+# Bundle the MCP App with its pinned host bridge SDKs.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS mcp-ui-builder
+WORKDIR /mcp-ui
+COPY internal/api/mcp/ui/package*.json ./
+RUN npm ci
+COPY internal/api/mcp/ui/ .
+RUN npm run build
+
 # Build the manager binary
 FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 ARG TARGETOS
@@ -34,6 +42,7 @@ COPY . .
 
 # Copy the UI static export into the embed directory
 COPY --from=ui-builder /ui/out/ internal/api/uistatic/
+COPY --from=mcp-ui-builder /mcp-ui/dist/console.html internal/api/mcp/ui/dist/console.html
 
 # Build
 # Docker buildx supplies TARGETARCH in CI. The amd64 fallback keeps local builds

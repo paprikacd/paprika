@@ -22,6 +22,7 @@ resources:
 - bases/pipelines.paprika.io_conftestpolicies.yaml
 - bases/providers.paprika.io_capacityproviders.yaml
 - bases/providers.paprika.io_dataproviderbindings.yaml
+- bases/observability.paprika.io_observabilityproviders.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

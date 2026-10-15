@@ -1,6 +1,6 @@
 {
   "name": "paprika",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Operate Kubernetes application delivery with Paprika: fleet status, app health, drift, releases, rollouts, gates, and pipeline control.",
   "author": {
     "name": "Paprika"
@@ -18,13 +18,14 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Paprika",
-    "shortDescription": "Operate your Paprika delivery fleet.",
-    "longDescription": "Connect Paprika with OAuth, inspect fleet and per-application health, pinpoint out-of-sync resources, follow releases and rollouts, approve gates, and trigger syncs with scoped permissions.",
+    "shortDescription": "App health and deployments",
+    "longDescription": "Inspect your delivery fleet in a side panel, view reported application health and drift evidence, investigate resource failures, and request scoped deployment actions in chat.",
     "developerName": "Paprika",
     "category": "Developer Tools",
     "capabilities": [
       "Read",
-      "Write"
+      "Write",
+      "Interactive"
     ],
     "websiteURL": "https://paprika.benebsworth.com",
     "brandColor": "#E23B26",

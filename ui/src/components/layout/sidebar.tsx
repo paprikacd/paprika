@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
+  Activity,
   Boxes,
   GitBranch,
   GitCompareArrows,
@@ -58,6 +59,7 @@ const navigationSections: NavigationSection[] = [
       { label: "Repositories", href: "/dashboard/repositories/", icon: GitBranch },
       { label: "Templates", href: "/dashboard/templates/", icon: Layers },
       { label: "Clusters", href: "/dashboard/clusters/", icon: Server },
+      { label: "Observability", href: "/dashboard/observability/", icon: Activity },
     ],
   },
 ]

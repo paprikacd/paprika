@@ -37,7 +37,7 @@ const DEFAULT_PENDING = {
 }
 
 function stubLocation() {
-  const location = { href: "" }
+  const location = { href: "", host: "paprika.benebsworth.com" }
   Object.defineProperty(window, "location", {
     value: location,
     writable: true,
@@ -236,14 +236,59 @@ describe("MCP consent page", () => {
     expect(writeCheckbox).toBeChecked()
     expect(screen.getByText(/approve or reject.*deployment gates/i)).toBeInTheDocument()
 
+    await userEvent.click(writeCheckbox)
+    expect(writeCheckbox).not.toBeChecked()
+    expect(screen.queryByText(/approve or reject.*deployment gates/i)).not.toBeInTheDocument()
+
+    await userEvent.click(writeCheckbox)
     await userEvent.click(screen.getByRole("button", { name: /allow access/i }))
     await waitFor(() => consentCall(fetchMock))
     const bodyWithWrite = JSON.parse(consentCall(fetchMock)[1].body as string)
     expect(bodyWithWrite.scopes).toEqual(["paprika:read", "paprika:write"])
 
-    await userEvent.click(writeCheckbox)
-    expect(writeCheckbox).not.toBeChecked()
-    expect(screen.queryByText(/approve or reject.*deployment gates/i)).not.toBeInTheDocument()
+    expect(await screen.findByText("Read and write")).toBeInTheDocument()
+  })
+
+  it("shows the branded approval handoff, then continues to the exact validated callback without exposing or storing it", async () => {
+    const callback = "http://127.0.0.1:60077/callback/opaque?code=private-code&state=private-state"
+    const fetchMock = installFetch({
+      consent: () => ({ ok: true, json: async () => ({ redirectTo: callback }) }),
+    })
+    const location = stubLocation()
+    const store = vi.spyOn(Storage.prototype, "setItem")
+
+    render(<ConsentPage />)
+    await userEvent.click(await screen.findByRole("button", { name: /allow access/i }))
+
+    expect(await screen.findByRole("heading", { name: "add some spice" })).toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent("Access approved")
+    expect(screen.getByText("paprika.benebsworth.com")).toBeInTheDocument()
+    expect(screen.getByText("ben@shorted.com.au")).toBeInTheDocument()
+    expect(screen.getByText("Read only")).toBeInTheDocument()
+    expect(screen.queryByText(/connection is complete/i)).toBeInTheDocument()
+    expect(document.body.innerHTML).not.toContain("private-code")
+    expect(document.body.innerHTML).not.toContain("private-state")
+    expect(location.href).toBe("")
+    expect(store).not.toHaveBeenCalled()
+    const [, init] = consentCall(fetchMock)
+    expect(init.cache).toBe("no-store")
+    expect(init.referrerPolicy).toBe("no-referrer")
+
+    await userEvent.click(screen.getByRole("button", { name: /continue to application/i }))
+    expect(location.href).toBe(callback)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not show approved access when the handoff response is incomplete", async () => {
+    const location = stubLocation()
+    installFetch({
+      consent: () => ({ ok: true, json: async () => ({ redirectTo: { url: REDIRECT_URI } }) }),
+    })
+    render(<ConsentPage />)
+    await userEvent.click(await screen.findByRole("button", { name: /allow access/i }))
+    expect(await screen.findByText(/server did not return a redirect target/i)).toBeInTheDocument()
+    expect(screen.queryByText("Access approved")).not.toBeInTheDocument()
+    expect(location.href).toBe("")
   })
 
   // Fix round 1, Finding 1(a): Deny is now a POST to the server, exactly

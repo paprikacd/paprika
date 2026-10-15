@@ -1,0 +1,63 @@
+{{- if and .Values.observabilityGateway.enabled .Values.observabilityGateway.ingress.enabled }}
+{{- if ne .Values.deploymentMode "split" }}
+{{- fail "observabilityGateway.ingress.enabled requires deploymentMode: split" }}
+{{- end }}
+{{- if not .Values.apiServer.ingress.gateway }}
+{{- fail "observabilityGateway.ingress.enabled requires apiServer.ingress.gateway: the gateway shares the api-server's Gateway and hostname, routing only the /observe path prefix to this component" }}
+{{- end }}
+{{- $gw := .Values.apiServer.ingress.gateway }}
+{{- if not $gw.gatewayRef }}
+{{- fail "apiServer.ingress.gateway.gatewayRef is required when the gateway HTTPRoute is enabled" }}
+{{- end }}
+{{- if not $gw.hostname }}
+{{- fail "apiServer.ingress.gateway.hostname is required when the gateway HTTPRoute is enabled" }}
+{{- end }}
+# Routes https://<hostname>/observe* to the observability gateway. The
+# api-server's own HTTPRoute matches path prefix "/" on the same hostname;
+# gateway-api longest-prefix matching sends /observe/* here and everything
+# else there, so the two MCP surfaces (paprika-mcp at /mcp, paprika-observability
+# at /observe/mcp) share one TLS identity and DNS name.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: observability-gateway
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+  {{- with .Values.observabilityGateway.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ $gw.gatewayRef.name }}
+    namespace: {{ $gw.gatewayRef.namespace }}
+  hostnames:
+  - {{ $gw.hostname | quote }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /observe
+    # RFC 8414 and RFC 9728 place a path-qualified issuer/resource AFTER
+    # /.well-known. These routes must reach the observe server rather than
+    # the fleet API server's root metadata on the shared hostname.
+    - path:
+        type: Exact
+        value: /.well-known/oauth-authorization-server/observe
+    - path:
+        type: Exact
+        value: /.well-known/oauth-protected-resource/observe/mcp
+    backendRefs:
+    - name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" $) }}
+      port: {{ $.Values.observabilityGateway.service.port }}
+{{- end }}

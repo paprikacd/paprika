@@ -68,6 +68,7 @@ import (
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	featureflagsv1alpha1 "github.com/benebsworth/paprika/api/featureflags/v1alpha1"
+	observabilityv1alpha1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	providersv1alpha1 "github.com/benebsworth/paprika/api/providers/v1alpha1"
@@ -134,6 +135,7 @@ func newScheme() *runtime.Scheme {
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(providersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(rolloutsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(observabilityv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 	return scheme
 }
@@ -143,35 +145,37 @@ func newScheme() *runtime.Scheme {
 // the viper key, which is the flag name for flag-backed settings and a
 // kebab-case key for env-only settings.
 type cliConfig struct {
-	MetricsAddr        string `mapstructure:"metrics-bind-address"`
-	MetricsCertPath    string `mapstructure:"metrics-cert-path"`
-	MetricsCertName    string `mapstructure:"metrics-cert-name"`
-	MetricsCertKey     string `mapstructure:"metrics-cert-key"`
-	WebhookCertPath    string `mapstructure:"webhook-cert-path"`
-	WebhookCertName    string `mapstructure:"webhook-cert-name"`
-	WebhookCertKey     string `mapstructure:"webhook-cert-key"`
-	ProbeAddr          string `mapstructure:"health-probe-bind-address"`
-	UIAddr             string `mapstructure:"ui-bind-address"`
-	WebhookAddr        string `mapstructure:"webhook-bind-address"`
-	PprofAddr          string `mapstructure:"pprof-bind-address"`
-	OperatorNamespace  string `mapstructure:"operator-namespace"`
-	Mode               string `mapstructure:"mode"`
-	K8sAPIServer       string `mapstructure:"k8s-api-server"`
-	K8sTokenFile       string `mapstructure:"k8s-token-file"`
-	RepoServerAddr     string `mapstructure:"repo-server-addr"`
-	RepoWorkDir        string `mapstructure:"repo-workdir"`
-	AgentClusterID     string `mapstructure:"agent-cluster-id"`
-	WebhookSecret      string `mapstructure:"webhook-secret"`
-	AuthRBACRules      string `mapstructure:"auth-rbac-rules"`
-	CacheBackend       string `mapstructure:"cache-backend"`
-	CacheRedisAddr     string `mapstructure:"cache-redis-addr"`
-	CacheRedisPassword string `mapstructure:"cache-redis-password"`
-	CacheRedisDB       int    `mapstructure:"cache-redis-db"`
-	ShardID            int    `mapstructure:"shard-id"`
-	ShardTotal         int    `mapstructure:"shard-total"`
-	ShardIDSource      string `mapstructure:"shard-id-source"`
-	APIMaxConns        int    `mapstructure:"api-max-conns"`
-	AuditLogEnabled    bool   `mapstructure:"audit-enabled"`
+	ObservabilityDiscoveryEnabled bool   `mapstructure:"observability-discovery-enabled"`
+	MetricsAddr                   string `mapstructure:"metrics-bind-address"`
+	MetricsCertPath               string `mapstructure:"metrics-cert-path"`
+	MetricsCertName               string `mapstructure:"metrics-cert-name"`
+	MetricsCertKey                string `mapstructure:"metrics-cert-key"`
+	WebhookCertPath               string `mapstructure:"webhook-cert-path"`
+	WebhookCertName               string `mapstructure:"webhook-cert-name"`
+	WebhookCertKey                string `mapstructure:"webhook-cert-key"`
+	ProbeAddr                     string `mapstructure:"health-probe-bind-address"`
+	UIAddr                        string `mapstructure:"ui-bind-address"`
+	WebhookAddr                   string `mapstructure:"webhook-bind-address"`
+	PprofAddr                     string `mapstructure:"pprof-bind-address"`
+	OperatorNamespace             string `mapstructure:"operator-namespace"`
+	Mode                          string `mapstructure:"mode"`
+	K8sAPIServer                  string `mapstructure:"k8s-api-server"`
+	K8sTokenFile                  string `mapstructure:"k8s-token-file"`
+	RepoServerAddr                string `mapstructure:"repo-server-addr"`
+	RepoWorkDir                   string `mapstructure:"repo-workdir"`
+	ObservabilityGatewayAddr      string `mapstructure:"observability-gateway-addr"`
+	AgentClusterID                string `mapstructure:"agent-cluster-id"`
+	WebhookSecret                 string `mapstructure:"webhook-secret"`
+	AuthRBACRules                 string `mapstructure:"auth-rbac-rules"`
+	CacheBackend                  string `mapstructure:"cache-backend"`
+	CacheRedisAddr                string `mapstructure:"cache-redis-addr"`
+	CacheRedisPassword            string `mapstructure:"cache-redis-password"`
+	CacheRedisDB                  int    `mapstructure:"cache-redis-db"`
+	ShardID                       int    `mapstructure:"shard-id"`
+	ShardTotal                    int    `mapstructure:"shard-total"`
+	ShardIDSource                 string `mapstructure:"shard-id-source"`
+	APIMaxConns                   int    `mapstructure:"api-max-conns"`
+	AuditLogEnabled               bool   `mapstructure:"audit-enabled"`
 
 	EnableLeaderElection bool `mapstructure:"leader-elect"`
 	SecureMetrics        bool `mapstructure:"metrics-secure"`
@@ -265,7 +269,7 @@ func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Co
 
 	root := &cobra.Command{
 		Use:           "manager",
-		Short:         "Paprika manager — operator, API, webhook, repo-server and agent modes",
+		Short:         "Paprika manager — operator, API, webhook, repo-server, agent and observability-gateway modes",
 		Version:       buildinfo.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -283,7 +287,7 @@ func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Co
 		panic(fmt.Errorf("bind flags: %w", err))
 	}
 
-	for _, mode := range []string{"operator", "api", "webhook", "repo-server", "agent"} {
+	for _, mode := range []string{"operator", "api", "webhook", "repo-server", "agent", "observability-gateway"} {
 		mode := mode
 		root.AddCommand(&cobra.Command{
 			Use:   mode,
@@ -384,6 +388,8 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 	}
 
 	switch cfg.Mode {
+	case "observability-gateway":
+		return runObservabilityGatewayMode(ctx, cfg, scheme, setupLog)
 	case "agent":
 		return runAgentMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.AgentClusterID, cfg.MetricsAddr, cfg.PprofAddr, setupLog)
 	case "repo-server":
@@ -419,8 +425,8 @@ func (cfg *cliConfig) shardFilter() *sharding.Filter {
 }
 
 func validateMode(mode string) error {
-	if mode != "operator" && mode != "api" && mode != "webhook" && mode != "repo-server" && mode != "agent" {
-		return fmt.Errorf("invalid mode: %s (must be 'operator', 'api', 'webhook', 'repo-server', or 'agent')", mode)
+	if mode != "operator" && mode != "api" && mode != "webhook" && mode != "repo-server" && mode != "agent" && mode != "observability-gateway" {
+		return fmt.Errorf("invalid mode: %s (must be 'operator', 'api', 'webhook', 'repo-server', 'agent', or 'observability-gateway')", mode)
 	}
 	return nil
 }
@@ -652,7 +658,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 			"connections wait in the kernel accept queue. 0 disables the limit.")
 	registerControllerTuningFlags(fs)
 	fs.String("mode", "operator",
-		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent). "+
+		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), 'agent' (in-cluster agent), or 'observability-gateway' (observability MCP). "+
 			"The mode subcommands are equivalent: 'manager api' == 'manager --mode=api'.")
 	fs.String("k8s-api-server", "",
 		"Kubernetes API server URL. Only used in 'api' mode.")
@@ -706,6 +712,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 // TLS/ingress); validateMCPConfig rejects --mcp-enabled=true when it is
 // unset.
 func registerMCPFlags(fs *pflag.FlagSet) {
+	fs.Bool("observability-discovery-enabled", true, "Discover annotated Services and create provider CRs; disable for a query-only least-privilege gateway")
 	fs.Bool("mcp-enabled", false,
 		"Enable the MCP (Model Context Protocol) server, exposing fleet tools to MCP clients. "+
 			"Off by default: this is the first surface that lets a language model mutate fleet state, "+
@@ -731,6 +738,10 @@ func registerRepoServerFlags(fs *pflag.FlagSet) {
 		"Address of the repo server. When set, controllers delegate source resolution/rendering to it.")
 	fs.String("repo-workdir", "",
 		"Working directory for the repo server. Only used in 'repo-server' mode.")
+	fs.String("observability-gateway-addr", "",
+		"Address of the observability gateway (e.g. http://paprika-observability-gateway.paprika-e2e.svc.cluster.local:8090). "+
+			"When set, the console's observability usage surface proxies the gateway's per-tool counters; "+
+			"when empty, GetObservabilityUsage answers NOT_CONFIGURED.")
 }
 
 func buildAPIServerOptions(
@@ -1070,6 +1081,7 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 	opts = append(opts,
 		apiserver.WithCapacityProviders(capacityRegistry),
 		apiserver.WithControlPlaneNamespace(cfg.OperatorNamespace),
+		apiserver.WithObservabilityGateway(cfg.ObservabilityGatewayAddr, authCfg.TokenSecret, cfg.MCPPublicURL),
 	)
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
@@ -1245,7 +1257,7 @@ func buildMCPHandlers(
 		return nil, err
 	}
 
-	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.MCPTokenAudience, "")
+	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.MCPTokenAudience, cfg.MCPPublicURL)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: build authenticator: %w", err)
 	}

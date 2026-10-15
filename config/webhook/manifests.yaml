@@ -636,6 +636,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-observability-paprika-io-v1alpha1-observabilityprovider
+  failurePolicy: Fail
+  name: vobservabilityprovider-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - observability.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - observabilityproviders
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-pipelines-paprika-io-v1alpha1-pipeline
   failurePolicy: Fail
   name: vpipeline-v1alpha1.kb.io

@@ -27,6 +27,12 @@ const (
 	ResourceTemplates    Resource = "templates"
 	ResourceArtifacts    Resource = "artifacts"
 	ResourceRollouts     Resource = "rollouts"
+	// ResourceObservabilityProviders is the control-plane config namespace
+	// hosting ObservabilityProvider CRs and their credential Secrets.
+	// Providers are not project-scoped workload objects, so handlers
+	// authorize them by namespace alone (an empty project matches every
+	// rule's project clause).
+	ResourceObservabilityProviders Resource = "observabilityproviders"
 )
 
 // ProjectRef is the full identity of an AppProject. Project names are only

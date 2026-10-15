@@ -211,6 +211,24 @@ const (
 	// PaprikaServiceSyncResourcesProcedure is the fully-qualified name of the PaprikaService's
 	// SyncResources RPC.
 	PaprikaServiceSyncResourcesProcedure = "/paprika.v1.PaprikaService/SyncResources"
+	// PaprikaServiceListObservabilityProvidersProcedure is the fully-qualified name of the
+	// PaprikaService's ListObservabilityProviders RPC.
+	PaprikaServiceListObservabilityProvidersProcedure = "/paprika.v1.PaprikaService/ListObservabilityProviders"
+	// PaprikaServiceGetObservabilityUsageProcedure is the fully-qualified name of the PaprikaService's
+	// GetObservabilityUsage RPC.
+	PaprikaServiceGetObservabilityUsageProcedure = "/paprika.v1.PaprikaService/GetObservabilityUsage"
+	// PaprikaServiceListObservabilityProviderTypesProcedure is the fully-qualified name of the
+	// PaprikaService's ListObservabilityProviderTypes RPC.
+	PaprikaServiceListObservabilityProviderTypesProcedure = "/paprika.v1.PaprikaService/ListObservabilityProviderTypes"
+	// PaprikaServiceGetObservabilityProviderTypeProcedure is the fully-qualified name of the
+	// PaprikaService's GetObservabilityProviderType RPC.
+	PaprikaServiceGetObservabilityProviderTypeProcedure = "/paprika.v1.PaprikaService/GetObservabilityProviderType"
+	// PaprikaServiceValidateObservabilityProviderProcedure is the fully-qualified name of the
+	// PaprikaService's ValidateObservabilityProvider RPC.
+	PaprikaServiceValidateObservabilityProviderProcedure = "/paprika.v1.PaprikaService/ValidateObservabilityProvider"
+	// PaprikaServiceCreateObservabilityProviderProcedure is the fully-qualified name of the
+	// PaprikaService's CreateObservabilityProvider RPC.
+	PaprikaServiceCreateObservabilityProviderProcedure = "/paprika.v1.PaprikaService/CreateObservabilityProvider"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -275,6 +293,12 @@ type PaprikaServiceClient interface {
 	IgnoreDriftedField(context.Context, *connect.Request[v1.IgnoreDriftedFieldRequest]) (*connect.Response[v1.IgnoreDriftedFieldResponse], error)
 	ApplyResourcePatch(context.Context, *connect.Request[v1.ApplyResourcePatchRequest]) (*connect.Response[v1.ApplyResourcePatchResponse], error)
 	SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error)
+	ListObservabilityProviders(context.Context, *connect.Request[v1.ListObservabilityProvidersRequest]) (*connect.Response[v1.ListObservabilityProvidersResponse], error)
+	GetObservabilityUsage(context.Context, *connect.Request[v1.GetObservabilityUsageRequest]) (*connect.Response[v1.GetObservabilityUsageResponse], error)
+	ListObservabilityProviderTypes(context.Context, *connect.Request[v1.ListObservabilityProviderTypesRequest]) (*connect.Response[v1.ListObservabilityProviderTypesResponse], error)
+	GetObservabilityProviderType(context.Context, *connect.Request[v1.GetObservabilityProviderTypeRequest]) (*connect.Response[v1.GetObservabilityProviderTypeResponse], error)
+	ValidateObservabilityProvider(context.Context, *connect.Request[v1.ValidateObservabilityProviderRequest]) (*connect.Response[v1.ValidateObservabilityProviderResponse], error)
+	CreateObservabilityProvider(context.Context, *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -648,71 +672,113 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("SyncResources")),
 			connect.WithClientOptions(opts...),
 		),
+		listObservabilityProviders: connect.NewClient[v1.ListObservabilityProvidersRequest, v1.ListObservabilityProvidersResponse](
+			httpClient,
+			baseURL+PaprikaServiceListObservabilityProvidersProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListObservabilityProviders")),
+			connect.WithClientOptions(opts...),
+		),
+		getObservabilityUsage: connect.NewClient[v1.GetObservabilityUsageRequest, v1.GetObservabilityUsageResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetObservabilityUsageProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetObservabilityUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		listObservabilityProviderTypes: connect.NewClient[v1.ListObservabilityProviderTypesRequest, v1.ListObservabilityProviderTypesResponse](
+			httpClient,
+			baseURL+PaprikaServiceListObservabilityProviderTypesProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListObservabilityProviderTypes")),
+			connect.WithClientOptions(opts...),
+		),
+		getObservabilityProviderType: connect.NewClient[v1.GetObservabilityProviderTypeRequest, v1.GetObservabilityProviderTypeResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetObservabilityProviderTypeProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetObservabilityProviderType")),
+			connect.WithClientOptions(opts...),
+		),
+		validateObservabilityProvider: connect.NewClient[v1.ValidateObservabilityProviderRequest, v1.ValidateObservabilityProviderResponse](
+			httpClient,
+			baseURL+PaprikaServiceValidateObservabilityProviderProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ValidateObservabilityProvider")),
+			connect.WithClientOptions(opts...),
+		),
+		createObservabilityProvider: connect.NewClient[v1.CreateObservabilityProviderRequest, v1.CreateObservabilityProviderResponse](
+			httpClient,
+			baseURL+PaprikaServiceCreateObservabilityProviderProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("CreateObservabilityProvider")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // paprikaServiceClient implements PaprikaServiceClient.
 type paprikaServiceClient struct {
-	listPipelines           *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
-	listReleases            *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
-	listStages              *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
-	listApplications        *connect.Client[v1.ListApplicationsRequest, v1.ListApplicationsResponse]
-	listPolicies            *connect.Client[v1.ListPoliciesRequest, v1.ListPoliciesResponse]
-	listApplicationSets     *connect.Client[v1.ListApplicationSetsRequest, v1.ListApplicationSetsResponse]
-	getApplicationSet       *connect.Client[v1.GetApplicationSetRequest, v1.GetApplicationSetResponse]
-	listNotificationConfigs *connect.Client[v1.ListNotificationConfigsRequest, v1.ListNotificationConfigsResponse]
-	getApplication          *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
-	syncApplication         *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
-	approveGate             *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
-	listGateStatus          *connect.Client[v1.ListGateStatusRequest, v1.ListGateStatusResponse]
-	rejectGate              *connect.Client[v1.RejectGateRequest, v1.RejectGateResponse]
-	resolveSource           *connect.Client[v1.ResolveSourceRequest, v1.ResolveSourceResponse]
-	render                  *connect.Client[v1.RenderRequest, v1.RenderResponse]
-	applyBundle             *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
-	rollbackRelease         *connect.Client[v1.RollbackReleaseRequest, v1.RollbackReleaseResponse]
-	listRollouts            *connect.Client[v1.ListRolloutsRequest, v1.ListRolloutsResponse]
-	getRollout              *connect.Client[v1.GetRolloutRequest, v1.GetRolloutResponse]
-	promoteRollout          *connect.Client[v1.PromoteRolloutRequest, v1.PromoteRolloutResponse]
-	abortRollout            *connect.Client[v1.AbortRolloutRequest, v1.AbortRolloutResponse]
-	listAnalysisRuns        *connect.Client[v1.ListAnalysisRunsRequest, v1.ListAnalysisRunsResponse]
-	getAnalysisRun          *connect.Client[v1.GetAnalysisRunRequest, v1.GetAnalysisRunResponse]
-	getPipeline             *connect.Client[v1.GetPipelineRequest, v1.GetPipelineResponse]
-	getArtifact             *connect.Client[v1.GetArtifactRequest, v1.GetArtifactResponse]
-	listArtifacts           *connect.Client[v1.ListArtifactsRequest, v1.ListArtifactsResponse]
-	retryStep               *connect.Client[v1.RetryStepRequest, v1.RetryStepResponse]
-	skipStep                *connect.Client[v1.SkipStepRequest, v1.SkipStepResponse]
-	cancelPipeline          *connect.Client[v1.CancelPipelineRequest, v1.CancelPipelineResponse]
-	getStepLogs             *connect.Client[v1.GetStepLogsRequest, v1.GetStepLogsResponse]
-	getResource             *connect.Client[v1.GetResourceRequest, v1.GetResourceResponse]
-	getResourceTree         *connect.Client[v1.GetResourceTreeRequest, v1.GetResourceTreeResponse]
-	getResourceLogs         *connect.Client[v1.GetResourceLogsRequest, v1.GetResourceLogsResponse]
-	getResourceTreeDetailed *connect.Client[v1.GetResourceTreeDetailedRequest, v1.GetResourceTreeDetailedResponse]
-	streamResourceLogs      *connect.Client[v1.StreamResourceLogsRequest, v1.LogChunk]
-	investigate             *connect.Client[v1.InvestigateRequest, v1.InvestigateResponse]
-	listInvestigatorPlugins *connect.Client[v1.ListInvestigatorPluginsRequest, v1.ListInvestigatorPluginsResponse]
-	queryApplications       *connect.Client[v1.QueryApplicationsRequest, v1.QueryApplicationsResponse]
-	queryFleetMap           *connect.Client[v1.QueryFleetMapRequest, v1.QueryFleetMapResponse]
-	queryFleetMatrix        *connect.Client[v1.QueryFleetMatrixRequest, v1.QueryFleetMatrixResponse]
-	getSystemStatus         *connect.Client[v1.GetSystemStatusRequest, v1.GetSystemStatusResponse]
-	getDataSources          *connect.Client[v1.GetDataSourcesRequest, v1.GetDataSourcesResponse]
-	listClusters            *connect.Client[v1.ListClustersRequest, v1.ListClustersResponse]
-	getCluster              *connect.Client[v1.GetClusterRequest, v1.GetClusterResponse]
-	queryApplicationSignals *connect.Client[v1.QueryApplicationSignalsRequest, v1.QueryApplicationSignalsResponse]
-	queryCost               *connect.Client[v1.QueryCostRequest, v1.QueryCostResponse]
-	listSourceEvents        *connect.Client[v1.ListSourceEventsRequest, v1.ListSourceEventsResponse]
-	listRolloutHistory      *connect.Client[v1.ListRolloutHistoryRequest, v1.ListRolloutHistoryResponse]
-	listPipelineRuns        *connect.Client[v1.ListPipelineRunsRequest, v1.ListPipelineRunsResponse]
-	getPipelineRun          *connect.Client[v1.GetPipelineRunRequest, v1.GetPipelineRunResponse]
-	getRevisionInfo         *connect.Client[v1.GetRevisionInfoRequest, v1.GetRevisionInfoResponse]
-	getApplicationOwnership *connect.Client[v1.GetApplicationOwnershipRequest, v1.GetApplicationOwnershipResponse]
-	listDriftDetails        *connect.Client[v1.ListDriftDetailsRequest, v1.ListDriftDetailsResponse]
-	getApplicationLifecycle *connect.Client[v1.GetApplicationLifecycleRequest, v1.GetApplicationLifecycleResponse]
-	getRolloutHold          *connect.Client[v1.GetRolloutHoldRequest, v1.GetRolloutHoldResponse]
-	holdRollout             *connect.Client[v1.HoldRolloutRequest, v1.HoldRolloutResponse]
-	resumeRollout           *connect.Client[v1.ResumeRolloutRequest, v1.ResumeRolloutResponse]
-	ignoreDriftedField      *connect.Client[v1.IgnoreDriftedFieldRequest, v1.IgnoreDriftedFieldResponse]
-	applyResourcePatch      *connect.Client[v1.ApplyResourcePatchRequest, v1.ApplyResourcePatchResponse]
-	syncResources           *connect.Client[v1.SyncResourcesRequest, v1.SyncResourcesResponse]
+	listPipelines                  *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
+	listReleases                   *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
+	listStages                     *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
+	listApplications               *connect.Client[v1.ListApplicationsRequest, v1.ListApplicationsResponse]
+	listPolicies                   *connect.Client[v1.ListPoliciesRequest, v1.ListPoliciesResponse]
+	listApplicationSets            *connect.Client[v1.ListApplicationSetsRequest, v1.ListApplicationSetsResponse]
+	getApplicationSet              *connect.Client[v1.GetApplicationSetRequest, v1.GetApplicationSetResponse]
+	listNotificationConfigs        *connect.Client[v1.ListNotificationConfigsRequest, v1.ListNotificationConfigsResponse]
+	getApplication                 *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
+	syncApplication                *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
+	approveGate                    *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
+	listGateStatus                 *connect.Client[v1.ListGateStatusRequest, v1.ListGateStatusResponse]
+	rejectGate                     *connect.Client[v1.RejectGateRequest, v1.RejectGateResponse]
+	resolveSource                  *connect.Client[v1.ResolveSourceRequest, v1.ResolveSourceResponse]
+	render                         *connect.Client[v1.RenderRequest, v1.RenderResponse]
+	applyBundle                    *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
+	rollbackRelease                *connect.Client[v1.RollbackReleaseRequest, v1.RollbackReleaseResponse]
+	listRollouts                   *connect.Client[v1.ListRolloutsRequest, v1.ListRolloutsResponse]
+	getRollout                     *connect.Client[v1.GetRolloutRequest, v1.GetRolloutResponse]
+	promoteRollout                 *connect.Client[v1.PromoteRolloutRequest, v1.PromoteRolloutResponse]
+	abortRollout                   *connect.Client[v1.AbortRolloutRequest, v1.AbortRolloutResponse]
+	listAnalysisRuns               *connect.Client[v1.ListAnalysisRunsRequest, v1.ListAnalysisRunsResponse]
+	getAnalysisRun                 *connect.Client[v1.GetAnalysisRunRequest, v1.GetAnalysisRunResponse]
+	getPipeline                    *connect.Client[v1.GetPipelineRequest, v1.GetPipelineResponse]
+	getArtifact                    *connect.Client[v1.GetArtifactRequest, v1.GetArtifactResponse]
+	listArtifacts                  *connect.Client[v1.ListArtifactsRequest, v1.ListArtifactsResponse]
+	retryStep                      *connect.Client[v1.RetryStepRequest, v1.RetryStepResponse]
+	skipStep                       *connect.Client[v1.SkipStepRequest, v1.SkipStepResponse]
+	cancelPipeline                 *connect.Client[v1.CancelPipelineRequest, v1.CancelPipelineResponse]
+	getStepLogs                    *connect.Client[v1.GetStepLogsRequest, v1.GetStepLogsResponse]
+	getResource                    *connect.Client[v1.GetResourceRequest, v1.GetResourceResponse]
+	getResourceTree                *connect.Client[v1.GetResourceTreeRequest, v1.GetResourceTreeResponse]
+	getResourceLogs                *connect.Client[v1.GetResourceLogsRequest, v1.GetResourceLogsResponse]
+	getResourceTreeDetailed        *connect.Client[v1.GetResourceTreeDetailedRequest, v1.GetResourceTreeDetailedResponse]
+	streamResourceLogs             *connect.Client[v1.StreamResourceLogsRequest, v1.LogChunk]
+	investigate                    *connect.Client[v1.InvestigateRequest, v1.InvestigateResponse]
+	listInvestigatorPlugins        *connect.Client[v1.ListInvestigatorPluginsRequest, v1.ListInvestigatorPluginsResponse]
+	queryApplications              *connect.Client[v1.QueryApplicationsRequest, v1.QueryApplicationsResponse]
+	queryFleetMap                  *connect.Client[v1.QueryFleetMapRequest, v1.QueryFleetMapResponse]
+	queryFleetMatrix               *connect.Client[v1.QueryFleetMatrixRequest, v1.QueryFleetMatrixResponse]
+	getSystemStatus                *connect.Client[v1.GetSystemStatusRequest, v1.GetSystemStatusResponse]
+	getDataSources                 *connect.Client[v1.GetDataSourcesRequest, v1.GetDataSourcesResponse]
+	listClusters                   *connect.Client[v1.ListClustersRequest, v1.ListClustersResponse]
+	getCluster                     *connect.Client[v1.GetClusterRequest, v1.GetClusterResponse]
+	queryApplicationSignals        *connect.Client[v1.QueryApplicationSignalsRequest, v1.QueryApplicationSignalsResponse]
+	queryCost                      *connect.Client[v1.QueryCostRequest, v1.QueryCostResponse]
+	listSourceEvents               *connect.Client[v1.ListSourceEventsRequest, v1.ListSourceEventsResponse]
+	listRolloutHistory             *connect.Client[v1.ListRolloutHistoryRequest, v1.ListRolloutHistoryResponse]
+	listPipelineRuns               *connect.Client[v1.ListPipelineRunsRequest, v1.ListPipelineRunsResponse]
+	getPipelineRun                 *connect.Client[v1.GetPipelineRunRequest, v1.GetPipelineRunResponse]
+	getRevisionInfo                *connect.Client[v1.GetRevisionInfoRequest, v1.GetRevisionInfoResponse]
+	getApplicationOwnership        *connect.Client[v1.GetApplicationOwnershipRequest, v1.GetApplicationOwnershipResponse]
+	listDriftDetails               *connect.Client[v1.ListDriftDetailsRequest, v1.ListDriftDetailsResponse]
+	getApplicationLifecycle        *connect.Client[v1.GetApplicationLifecycleRequest, v1.GetApplicationLifecycleResponse]
+	getRolloutHold                 *connect.Client[v1.GetRolloutHoldRequest, v1.GetRolloutHoldResponse]
+	holdRollout                    *connect.Client[v1.HoldRolloutRequest, v1.HoldRolloutResponse]
+	resumeRollout                  *connect.Client[v1.ResumeRolloutRequest, v1.ResumeRolloutResponse]
+	ignoreDriftedField             *connect.Client[v1.IgnoreDriftedFieldRequest, v1.IgnoreDriftedFieldResponse]
+	applyResourcePatch             *connect.Client[v1.ApplyResourcePatchRequest, v1.ApplyResourcePatchResponse]
+	syncResources                  *connect.Client[v1.SyncResourcesRequest, v1.SyncResourcesResponse]
+	listObservabilityProviders     *connect.Client[v1.ListObservabilityProvidersRequest, v1.ListObservabilityProvidersResponse]
+	getObservabilityUsage          *connect.Client[v1.GetObservabilityUsageRequest, v1.GetObservabilityUsageResponse]
+	listObservabilityProviderTypes *connect.Client[v1.ListObservabilityProviderTypesRequest, v1.ListObservabilityProviderTypesResponse]
+	getObservabilityProviderType   *connect.Client[v1.GetObservabilityProviderTypeRequest, v1.GetObservabilityProviderTypeResponse]
+	validateObservabilityProvider  *connect.Client[v1.ValidateObservabilityProviderRequest, v1.ValidateObservabilityProviderResponse]
+	createObservabilityProvider    *connect.Client[v1.CreateObservabilityProviderRequest, v1.CreateObservabilityProviderResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -1015,6 +1081,36 @@ func (c *paprikaServiceClient) SyncResources(ctx context.Context, req *connect.R
 	return c.syncResources.CallUnary(ctx, req)
 }
 
+// ListObservabilityProviders calls paprika.v1.PaprikaService.ListObservabilityProviders.
+func (c *paprikaServiceClient) ListObservabilityProviders(ctx context.Context, req *connect.Request[v1.ListObservabilityProvidersRequest]) (*connect.Response[v1.ListObservabilityProvidersResponse], error) {
+	return c.listObservabilityProviders.CallUnary(ctx, req)
+}
+
+// GetObservabilityUsage calls paprika.v1.PaprikaService.GetObservabilityUsage.
+func (c *paprikaServiceClient) GetObservabilityUsage(ctx context.Context, req *connect.Request[v1.GetObservabilityUsageRequest]) (*connect.Response[v1.GetObservabilityUsageResponse], error) {
+	return c.getObservabilityUsage.CallUnary(ctx, req)
+}
+
+// ListObservabilityProviderTypes calls paprika.v1.PaprikaService.ListObservabilityProviderTypes.
+func (c *paprikaServiceClient) ListObservabilityProviderTypes(ctx context.Context, req *connect.Request[v1.ListObservabilityProviderTypesRequest]) (*connect.Response[v1.ListObservabilityProviderTypesResponse], error) {
+	return c.listObservabilityProviderTypes.CallUnary(ctx, req)
+}
+
+// GetObservabilityProviderType calls paprika.v1.PaprikaService.GetObservabilityProviderType.
+func (c *paprikaServiceClient) GetObservabilityProviderType(ctx context.Context, req *connect.Request[v1.GetObservabilityProviderTypeRequest]) (*connect.Response[v1.GetObservabilityProviderTypeResponse], error) {
+	return c.getObservabilityProviderType.CallUnary(ctx, req)
+}
+
+// ValidateObservabilityProvider calls paprika.v1.PaprikaService.ValidateObservabilityProvider.
+func (c *paprikaServiceClient) ValidateObservabilityProvider(ctx context.Context, req *connect.Request[v1.ValidateObservabilityProviderRequest]) (*connect.Response[v1.ValidateObservabilityProviderResponse], error) {
+	return c.validateObservabilityProvider.CallUnary(ctx, req)
+}
+
+// CreateObservabilityProvider calls paprika.v1.PaprikaService.CreateObservabilityProvider.
+func (c *paprikaServiceClient) CreateObservabilityProvider(ctx context.Context, req *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error) {
+	return c.createObservabilityProvider.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -1077,6 +1173,12 @@ type PaprikaServiceHandler interface {
 	IgnoreDriftedField(context.Context, *connect.Request[v1.IgnoreDriftedFieldRequest]) (*connect.Response[v1.IgnoreDriftedFieldResponse], error)
 	ApplyResourcePatch(context.Context, *connect.Request[v1.ApplyResourcePatchRequest]) (*connect.Response[v1.ApplyResourcePatchResponse], error)
 	SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error)
+	ListObservabilityProviders(context.Context, *connect.Request[v1.ListObservabilityProvidersRequest]) (*connect.Response[v1.ListObservabilityProvidersResponse], error)
+	GetObservabilityUsage(context.Context, *connect.Request[v1.GetObservabilityUsageRequest]) (*connect.Response[v1.GetObservabilityUsageResponse], error)
+	ListObservabilityProviderTypes(context.Context, *connect.Request[v1.ListObservabilityProviderTypesRequest]) (*connect.Response[v1.ListObservabilityProviderTypesResponse], error)
+	GetObservabilityProviderType(context.Context, *connect.Request[v1.GetObservabilityProviderTypeRequest]) (*connect.Response[v1.GetObservabilityProviderTypeResponse], error)
+	ValidateObservabilityProvider(context.Context, *connect.Request[v1.ValidateObservabilityProviderRequest]) (*connect.Response[v1.ValidateObservabilityProviderResponse], error)
+	CreateObservabilityProvider(context.Context, *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1446,6 +1548,42 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("SyncResources")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceListObservabilityProvidersHandler := connect.NewUnaryHandler(
+		PaprikaServiceListObservabilityProvidersProcedure,
+		svc.ListObservabilityProviders,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListObservabilityProviders")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetObservabilityUsageHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetObservabilityUsageProcedure,
+		svc.GetObservabilityUsage,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetObservabilityUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListObservabilityProviderTypesHandler := connect.NewUnaryHandler(
+		PaprikaServiceListObservabilityProviderTypesProcedure,
+		svc.ListObservabilityProviderTypes,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListObservabilityProviderTypes")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetObservabilityProviderTypeHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetObservabilityProviderTypeProcedure,
+		svc.GetObservabilityProviderType,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetObservabilityProviderType")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceValidateObservabilityProviderHandler := connect.NewUnaryHandler(
+		PaprikaServiceValidateObservabilityProviderProcedure,
+		svc.ValidateObservabilityProvider,
+		connect.WithSchema(paprikaServiceMethods.ByName("ValidateObservabilityProvider")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceCreateObservabilityProviderHandler := connect.NewUnaryHandler(
+		PaprikaServiceCreateObservabilityProviderProcedure,
+		svc.CreateObservabilityProvider,
+		connect.WithSchema(paprikaServiceMethods.ByName("CreateObservabilityProvider")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -1568,6 +1706,18 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceApplyResourcePatchHandler.ServeHTTP(w, r)
 		case PaprikaServiceSyncResourcesProcedure:
 			paprikaServiceSyncResourcesHandler.ServeHTTP(w, r)
+		case PaprikaServiceListObservabilityProvidersProcedure:
+			paprikaServiceListObservabilityProvidersHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetObservabilityUsageProcedure:
+			paprikaServiceGetObservabilityUsageHandler.ServeHTTP(w, r)
+		case PaprikaServiceListObservabilityProviderTypesProcedure:
+			paprikaServiceListObservabilityProviderTypesHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetObservabilityProviderTypeProcedure:
+			paprikaServiceGetObservabilityProviderTypeHandler.ServeHTTP(w, r)
+		case PaprikaServiceValidateObservabilityProviderProcedure:
+			paprikaServiceValidateObservabilityProviderHandler.ServeHTTP(w, r)
+		case PaprikaServiceCreateObservabilityProviderProcedure:
+			paprikaServiceCreateObservabilityProviderHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1815,4 +1965,28 @@ func (UnimplementedPaprikaServiceHandler) ApplyResourcePatch(context.Context, *c
 
 func (UnimplementedPaprikaServiceHandler) SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.SyncResources is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListObservabilityProviders(context.Context, *connect.Request[v1.ListObservabilityProvidersRequest]) (*connect.Response[v1.ListObservabilityProvidersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListObservabilityProviders is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetObservabilityUsage(context.Context, *connect.Request[v1.GetObservabilityUsageRequest]) (*connect.Response[v1.GetObservabilityUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetObservabilityUsage is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListObservabilityProviderTypes(context.Context, *connect.Request[v1.ListObservabilityProviderTypesRequest]) (*connect.Response[v1.ListObservabilityProviderTypesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListObservabilityProviderTypes is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetObservabilityProviderType(context.Context, *connect.Request[v1.GetObservabilityProviderTypeRequest]) (*connect.Response[v1.GetObservabilityProviderTypeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetObservabilityProviderType is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ValidateObservabilityProvider(context.Context, *connect.Request[v1.ValidateObservabilityProviderRequest]) (*connect.Response[v1.ValidateObservabilityProviderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ValidateObservabilityProvider is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) CreateObservabilityProvider(context.Context, *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.CreateObservabilityProvider is not implemented"))
 }

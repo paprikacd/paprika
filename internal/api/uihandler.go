@@ -61,6 +61,11 @@ func UIHandler() (http.Handler, error) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		if cleanUIPath(r.URL.Path) == "mcp/consent" || strings.HasPrefix(r.URL.Path, "/mcp/consent/") {
+			// The consent request and approval screen hand off to an OAuth
+			// client on another origin. Keep this authorization page private.
+			w.Header().Set("Referrer-Policy", "no-referrer")
+		}
 
 		if strings.HasPrefix(r.URL.Path, "/paprika.v1.PaprikaService/") ||
 			r.URL.Path == "/healthz" ||

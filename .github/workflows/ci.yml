@@ -97,6 +97,42 @@ jobs:
         run: npm run build
         working-directory: ui
 
+  mcp-console:
+    name: MCP console and plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/api/mcp/ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: internal/api/mcp/ui
+
+      - name: Check types
+        run: npm run check
+        working-directory: internal/api/mcp/ui
+
+      - name: Test console and plugin contracts
+        run: npm test
+        working-directory: internal/api/mcp/ui
+
+      - name: Build embedded console
+        run: npm run build
+        working-directory: internal/api/mcp/ui
+
+      - name: Check committed console bundle
+        run: git diff --exit-code -- internal/api/mcp/ui/dist/console.html
+
   generated:
     name: Generated code drift
     runs-on: ubuntu-latest
@@ -173,6 +209,11 @@ jobs:
 
       - name: Verify release chart comparison
         run: bash hack/compare-helm-chart.sh --self-test
+
+      - name: Verify observability gateway boundaries
+        run: |
+          bash hack/test-observability-chart-rendering.sh
+          bash hack/test-observability-addon-rendering.sh
 
       - name: Lint chart
         run: helm lint charts/chart/

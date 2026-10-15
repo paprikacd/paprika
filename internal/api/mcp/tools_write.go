@@ -58,8 +58,8 @@ func RegisterWriteTools(r *Registry) error {
 		writeResumeRolloutTool(),
 		writeRestartWorkloadTool(),
 	}
-	for _, t := range tools {
-		if err := r.Register(t); err != nil {
+	for i := range tools {
+		if err := r.Register(tools[i]); err != nil {
 			return err
 		}
 	}

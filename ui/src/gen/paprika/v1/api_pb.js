@@ -2774,6 +2774,257 @@ export const QueryCostResponse = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.ListObservabilityProvidersRequest
+ */
+export const ListObservabilityProvidersRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListObservabilityProvidersRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ObservabilityProviderItem
+ */
+export const ObservabilityProviderItem = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ObservabilityProviderItem",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "state", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "discovered", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 7, name: "endpoint", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "signals", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 9, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListObservabilityProvidersResponse
+ */
+export const ListObservabilityProvidersResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListObservabilityProvidersResponse",
+  () => [
+    { no: 1, name: "items", kind: "message", T: ObservabilityProviderItem, repeated: true },
+    { no: 2, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetObservabilityUsageRequest
+ */
+export const GetObservabilityUsageRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetObservabilityUsageRequest",
+  [],
+);
+
+/**
+ * @generated from message paprika.v1.ObservabilityToolUsage
+ */
+export const ObservabilityToolUsage = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ObservabilityToolUsage",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "calls", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "errors", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetObservabilityUsageResponse
+ */
+export const GetObservabilityUsageResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetObservabilityUsageResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "tools", kind: "message", T: ObservabilityToolUsage, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListObservabilityProviderTypesRequest
+ */
+export const ListObservabilityProviderTypesRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListObservabilityProviderTypesRequest",
+  [],
+);
+
+/**
+ * @generated from message paprika.v1.ProviderTypeSummary
+ */
+export const ProviderTypeSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ProviderTypeSummary",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "display_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "vendor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "category", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "signals", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 6, name: "summary", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListObservabilityProviderTypesResponse
+ */
+export const ListObservabilityProviderTypesResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListObservabilityProviderTypesResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "types", kind: "message", T: ProviderTypeSummary, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetObservabilityProviderTypeRequest
+ */
+export const GetObservabilityProviderTypeRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetObservabilityProviderTypeRequest",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ProviderTypeField
+ */
+export const ProviderTypeField = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ProviderTypeField",
+  () => [
+    { no: 1, name: "key", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "input", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "required", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "placeholder", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "help", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "secret", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ProviderTypeCredential
+ */
+export const ProviderTypeCredential = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ProviderTypeCredential",
+  () => [
+    { no: 1, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "help", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ProviderTypeStep
+ */
+export const ProviderTypeStep = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ProviderTypeStep",
+  () => [
+    { no: 1, name: "title", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "body", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "code", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ProviderTypeProbe
+ */
+export const ProviderTypeProbe = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ProviderTypeProbe",
+  () => [
+    { no: 1, name: "signal", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "note", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ProviderTypeDetail
+ */
+export const ProviderTypeDetail = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ProviderTypeDetail",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "display_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "vendor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "category", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "signals", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 6, name: "summary", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "config_fields", kind: "message", T: ProviderTypeField, repeated: true },
+    { no: 9, name: "credential", kind: "message", T: ProviderTypeCredential },
+    { no: 10, name: "steps", kind: "message", T: ProviderTypeStep, repeated: true },
+    { no: 11, name: "probe", kind: "message", T: ProviderTypeProbe },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetObservabilityProviderTypeResponse
+ */
+export const GetObservabilityProviderTypeResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetObservabilityProviderTypeResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "type_detail", kind: "message", T: ProviderTypeDetail },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ValidateObservabilityProviderRequest
+ */
+export const ValidateObservabilityProviderRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ValidateObservabilityProviderRequest",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "config_json", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+    { no: 3, name: "credentials", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ValidateObservabilityProviderResponse
+ */
+export const ValidateObservabilityProviderResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ValidateObservabilityProviderResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "connector_state", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.CreateObservabilityProviderRequest
+ */
+export const CreateObservabilityProviderRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.CreateObservabilityProviderRequest",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "config_json", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+    { no: 5, name: "credential_secret_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "credential_document", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.CreateObservabilityProviderResponse
+ */
+export const CreateObservabilityProviderResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.CreateObservabilityProviderResponse",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.CommitInfo
  */
 export const CommitInfo = /*@__PURE__*/ proto3.makeMessageType(

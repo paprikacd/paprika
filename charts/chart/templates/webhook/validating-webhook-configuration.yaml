@@ -100,6 +100,27 @@ webhooks:
     service:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
+      path: /validate-observability-paprika-io-v1alpha1-observabilityprovider
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
+  name: vobservabilityprovider-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - observability.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - observabilityproviders
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
       path: /validate-pipelines-paprika-io-v1alpha1-pipeline
   failurePolicy: {{ $failurePolicy }}
   timeoutSeconds: {{ $timeoutSeconds }}

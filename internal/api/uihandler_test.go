@@ -136,6 +136,26 @@ func TestUIHandlerGzipNegotiation(t *testing.T) {
 	}
 }
 
+func TestOAuthConsentPageDoesNotSendReferrers(t *testing.T) {
+	handler, err := UIHandler()
+	if err != nil {
+		t.Fatalf("UIHandler() error = %v", err)
+	}
+	for _, requestPath := range []string{"/mcp/consent", "/mcp/consent/", "/mcp/consent/index.html"} {
+		t.Run(requestPath, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, requestPath+"?rid=private", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+				t.Fatalf("Referrer-Policy = %q, want no-referrer", got)
+			}
+			if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+				t.Fatalf("Cache-Control = %q, want no-store", got)
+			}
+		})
+	}
+}
+
 func TestEmbeddedDashboardBundleContainsCommandCenter(t *testing.T) {
 	sub, err := fs.Sub(uiFiles, "uistatic")
 	if err != nil {

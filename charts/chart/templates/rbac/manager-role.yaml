@@ -169,6 +169,18 @@ rules:
   - get
   - list
   - watch
+# The api-server's CreateObservabilityProvider RPC stores the wizard-supplied
+# credential document as a new Secret (stringData, the credentials key) and
+# deletes it best-effort when the admission webhook then rejects the CR — it
+# never updates an existing Secret, so an overwrite stays impossible. Both
+# write paths land in the release namespace only.
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
 - apiGroups:
   - ""
   resources:
@@ -349,6 +361,22 @@ rules:
   - networking.k8s.io
   resources:
   - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# The observability gateway resolves ObservabilityProviders and hands them to
+# the matching connector; the provider-discovery controller also writes them
+# (materializing annotated Services — core Services are already granted
+# above). Status writes still have no path yet.
+- apiGroups:
+  - observability.paprika.io
+  resources:
+  - observabilityproviders
   verbs:
   - create
   - delete

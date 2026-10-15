@@ -1,0 +1,207 @@
+{{- if .Values.observabilityGateway.enabled }}
+{{- if or (ne (int .Values.observabilityGateway.replicas) 1) .Values.observabilityGateway.hpa.enabled }}
+{{- fail "observabilityGateway requires one replica and hpa.enabled=false while OAuth dynamic client registrations are process-local" }}
+{{- end }}
+{{- if ne (default "Recreate" .Values.observabilityGateway.strategy.type) "Recreate" }}
+{{- fail "observabilityGateway.strategy.type must be Recreate while OAuth dynamic client registrations are process-local" }}
+{{- end }}
+{{- if ne .Values.deploymentMode "split" }}
+{{- fail "observabilityGateway.enabled=true requires deploymentMode: split. The gateway is its own microservice Deployment with its own MCP/OAuth surface; the monolith manager does not render it, which would otherwise be a silent no-op." }}
+{{- end }}
+{{- if not .Values.mcp.enabled }}
+{{- fail "observabilityGateway.enabled=true requires mcp.enabled: the gateway mints and verifies OAuth tokens with the deployment's MCP configuration (public URL, static client, TTLs) and refuses to start without it" }}
+{{- end }}
+{{- if not .Values.auth.enabled }}
+{{- fail "observabilityGateway.enabled=true requires auth.enabled: the gateway's authorize/consent surface authenticates console users; unauthenticated it would mint observability tokens for anyone" }}
+{{- end }}
+{{- $gwHasTokenSecret := false }}
+{{- range .Values.observabilityGateway.extraEnv }}
+{{- if eq .name "PAPRIKA_AUTH_TOKEN_SECRET" }}
+{{- $gwHasTokenSecret = true }}
+{{- end }}
+{{- end }}
+{{- if and (not $gwHasTokenSecret) (eq (len .Values.observabilityGateway.extraEnvFrom) 0) }}
+{{- fail "observabilityGateway.enabled=true requires a non-empty auth token secret: set PAPRIKA_AUTH_TOKEN_SECRET via observabilityGateway.extraEnv or observabilityGateway.extraEnvFrom (the gateway signs and verifies paprika-observability tokens with the same HMAC secret the api-server's self-signed authenticator uses)" }}
+{{- end }}
+{{- if not .Values.mcp.oauth.clientId }}
+{{- fail "observabilityGateway.enabled=true requires mcp.oauth.clientId (shared with the api-server's MCP surface)" }}
+{{- end }}
+{{- if eq (len .Values.mcp.oauth.redirectUris) 0 }}
+{{- fail "observabilityGateway.enabled=true requires mcp.oauth.redirectUris (shared with the api-server's MCP surface)" }}
+{{- end }}
+{{- if not .Values.mcp.publicURL }}
+{{- fail "observabilityGateway.enabled=true requires mcp.publicURL: the gateway's discovery metadata, token issuer, and consent redirects are all derived from it" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: observability-gateway
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  {{- with .Values.observabilityGateway.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
+  replicas: {{ .Values.observabilityGateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      app.kubernetes.io/component: observability-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "paprika.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/component: observability-gateway
+        {{- range $k, $v := .Values.commonLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: {{ .Values.observabilityGateway.automountServiceAccountToken | default true }}
+      {{- with .Values.observabilityGateway.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.observabilityGateway.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.observabilityGateway.tolerations }}
+      tolerations: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.observabilityGateway.affinity }}
+      affinity: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.observabilityGateway.topologySpreadConstraints }}
+      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.observabilityGateway.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- if .Values.observabilityGateway.podSecurityContext }}
+        {{- toYaml .Values.observabilityGateway.podSecurityContext | nindent 8 }}
+        {{- else }}
+        {}
+        {{- end }}
+      {{- with .Values.observabilityGateway.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - args:
+        - --mode=observability-gateway
+        - --observability-discovery-enabled={{ .Values.observabilityGateway.discovery.enabled }}
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+        {{- include "paprika.authArgs" . | nindent 8 }}
+        # The gateway serves its own MCP surface at <mcp.publicURL>/observe/mcp
+        # using the deployment's shared MCP OAuth configuration; its tokens
+        # carry the paprika-observability audience, not paprika-mcp.
+        - --mcp-access-token-ttl={{ .Values.mcp.accessTokenTTL }}
+        - --mcp-refresh-token-ttl={{ .Values.mcp.refreshTokenTTL }}
+        - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
+        - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}
+        {{- range .Values.observabilityGateway.args }}
+        - {{ . }}
+        {{- end }}
+        command:
+        - /manager
+        image: "{{ .Values.observabilityGateway.image.repository }}{{- if not (contains "@" .Values.observabilityGateway.image.repository) }}:{{ .Values.observabilityGateway.image.tag | default .Chart.AppVersion }}{{- end }}"
+        {{- with .Values.observabilityGateway.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- with .Values.observabilityGateway.startupProbe }}
+        startupProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: observability-gateway
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        - containerPort: 8090
+          name: gateway
+          protocol: TCP
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- if .Values.observabilityGateway.resources }}
+          {{- toYaml .Values.observabilityGateway.resources | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+        securityContext:
+          {{- if .Values.observabilityGateway.securityContext }}
+          {{- toYaml .Values.observabilityGateway.securityContext | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+        volumeMounts:
+          {{- toYaml .Values.observabilityGateway.extraVolumeMounts | nindent 10 }}
+          {{- if .Values.mtls.enabled }}
+          - name: mtls-cert
+            mountPath: /etc/paprika/tls
+            readOnly: true
+          {{- end }}
+        env:
+        {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
+        - name: PAPRIKA_MCP_PUBLIC_URL
+          value: {{ .Values.mcp.publicURL | quote }}
+        {{- if .Values.mtls.enabled }}
+        - name: PAPRIKA_MTLS_ENABLED
+          value: "true"
+        - name: PAPRIKA_TLS_CERT
+          value: /etc/paprika/tls/tls.crt
+        - name: PAPRIKA_TLS_KEY
+          value: /etc/paprika/tls/tls.key
+        {{- end }}
+        {{- include "paprika.otelEnv" . | nindent 8 }}
+        {{- include "paprika.downwardEnv" . | nindent 8 }}
+        {{- with .Values.observabilityGateway.extraEnv }}
+        {{- include "paprika.extraEnv" . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.observabilityGateway.extraEnvFrom }}
+        envFrom:
+        {{- include "paprika.extraEnvFrom" . | nindent 8 }}
+        {{- end }}
+      serviceAccountName: {{ .Values.observabilityGateway.serviceAccountName | default (include "paprika.serviceAccountName" .) }}
+      {{- $pc := .Values.observabilityGateway.priorityClassName | default .Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
+      {{- end }}
+      volumes:
+        {{- toYaml .Values.observabilityGateway.extraVolumes | nindent 8 }}
+        {{- if .Values.mtls.enabled }}
+        - name: mtls-cert
+          secret:
+            secretName: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway-mtls" "context" $) }}
+        {{- end }}
+{{- end }}

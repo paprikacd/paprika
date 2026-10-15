@@ -29,6 +29,7 @@ var auditVerbs = map[string]string{
 	"Resume":   "resume",
 	"Retry":    "retry",
 	"Skip":     "skip",
+	"Create":   "create",
 }
 
 // NewAuditInterceptor returns a connect unary interceptor that records an audit

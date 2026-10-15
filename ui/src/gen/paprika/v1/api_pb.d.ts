@@ -8374,6 +8374,925 @@ export declare class QueryCostResponse extends Message<QueryCostResponse> {
 }
 
 /**
+ * @generated from message paprika.v1.ListObservabilityProvidersRequest
+ */
+export declare class ListObservabilityProvidersRequest extends Message<ListObservabilityProvidersRequest> {
+  /**
+   * Optional namespace scope filter. Unset lists every provider the caller
+   * is authorized to read, mirroring the other inventory list RPCs.
+   *
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  constructor(data?: PartialMessage<ListObservabilityProvidersRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListObservabilityProvidersRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListObservabilityProvidersRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListObservabilityProvidersRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListObservabilityProvidersRequest;
+
+  static equals(a: ListObservabilityProvidersRequest | PlainMessage<ListObservabilityProvidersRequest> | undefined, b: ListObservabilityProvidersRequest | PlainMessage<ListObservabilityProvidersRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ObservabilityProviderItem
+ */
+export declare class ObservabilityProviderItem extends Message<ObservabilityProviderItem> {
+  /**
+   * Name of the ObservabilityProvider CR.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * Namespace hosting the CR.
+   *
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  /**
+   * Connector type: prometheus, loki, tempo or otlp.
+   *
+   * @generated from field: string type = 3;
+   */
+  type: string;
+
+  /**
+   * Reachability verdict from the CR status, in its own vocabulary
+   * (OK, NotConfigured, NotAvailable, Error, Forbidden). Empty when the
+   * gateway has not yet assessed the provider.
+   *
+   * @generated from field: string state = 4;
+   */
+  state: string;
+
+  /**
+   * Fixed-sentence explanation of state, chosen by the connector. Reasons
+   * never carry credential or endpoint detail.
+   *
+   * @generated from field: string reason = 5;
+   */
+  reason: string;
+
+  /**
+   * True when the provider was materialized by provider discovery (the
+   * observability.paprika.io/discovered label reads "service") rather than
+   * authored by hand.
+   *
+   * @generated from field: bool discovered = 6;
+   */
+  discovered: boolean;
+
+  /**
+   * Backend address extracted from the connector config's endpoint key
+   * only. The rest of the opaque config — which can hold credential
+   * material — never leaves the gateway.
+   *
+   * @generated from field: string endpoint = 7;
+   */
+  endpoint: string;
+
+  /**
+   * Signal planes this provider's connector can serve (logs, metrics,
+   * traces), from the connector descriptor. Empty when the type has no
+   * connector.
+   *
+   * @generated from field: repeated string signals = 8;
+   */
+  signals: string[];
+
+  /**
+   * When the gateway last assessed this provider, in Unix milliseconds.
+   * Zero when no assessment has been recorded.
+   *
+   * @generated from field: int64 observed_at_unix_ms = 9;
+   */
+  observedAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<ObservabilityProviderItem>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ObservabilityProviderItem";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ObservabilityProviderItem;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ObservabilityProviderItem;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ObservabilityProviderItem;
+
+  static equals(a: ObservabilityProviderItem | PlainMessage<ObservabilityProviderItem> | undefined, b: ObservabilityProviderItem | PlainMessage<ObservabilityProviderItem> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListObservabilityProvidersResponse
+ */
+export declare class ListObservabilityProvidersResponse extends Message<ListObservabilityProvidersResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.ObservabilityProviderItem items = 1;
+   */
+  items: ObservabilityProviderItem[];
+
+  /**
+   * Total counts the whole authorized inventory, not the page.
+   *
+   * @generated from field: uint64 total = 2;
+   */
+  total: bigint;
+
+  /**
+   * Generation of the fleet snapshot this list was authorized against.
+   *
+   * @generated from field: uint64 index_generation = 3;
+   */
+  indexGeneration: bigint;
+
+  constructor(data?: PartialMessage<ListObservabilityProvidersResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListObservabilityProvidersResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListObservabilityProvidersResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListObservabilityProvidersResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListObservabilityProvidersResponse;
+
+  static equals(a: ListObservabilityProvidersResponse | PlainMessage<ListObservabilityProvidersResponse> | undefined, b: ListObservabilityProvidersResponse | PlainMessage<ListObservabilityProvidersResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetObservabilityUsageRequest
+ */
+export declare class GetObservabilityUsageRequest extends Message<GetObservabilityUsageRequest> {
+  constructor(data?: PartialMessage<GetObservabilityUsageRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetObservabilityUsageRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetObservabilityUsageRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetObservabilityUsageRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetObservabilityUsageRequest;
+
+  static equals(a: GetObservabilityUsageRequest | PlainMessage<GetObservabilityUsageRequest> | undefined, b: GetObservabilityUsageRequest | PlainMessage<GetObservabilityUsageRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ObservabilityToolUsage
+ */
+export declare class ObservabilityToolUsage extends Message<ObservabilityToolUsage> {
+  /**
+   * MCP tool name, e.g. query_metrics.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * Total invocations since the gateway process started.
+   *
+   * @generated from field: uint64 calls = 2;
+   */
+  calls: bigint;
+
+  /**
+   * Invocations that returned an error.
+   *
+   * @generated from field: uint64 errors = 3;
+   */
+  errors: bigint;
+
+  constructor(data?: PartialMessage<ObservabilityToolUsage>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ObservabilityToolUsage";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ObservabilityToolUsage;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ObservabilityToolUsage;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ObservabilityToolUsage;
+
+  static equals(a: ObservabilityToolUsage | PlainMessage<ObservabilityToolUsage> | undefined, b: ObservabilityToolUsage | PlainMessage<ObservabilityToolUsage> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetObservabilityUsageResponse
+ */
+export declare class GetObservabilityUsageResponse extends Message<GetObservabilityUsageResponse> {
+  /**
+   * NOT_CONFIGURED when no observability gateway address is wired into the
+   * api-server; ERROR when the gateway was called and failed. One check
+   * hides every usage surface.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * Canonical sentence for a non-OK state, safe to render verbatim.
+   *
+   * @generated from field: string unavailable_reason = 2;
+   */
+  unavailableReason: string;
+
+  /**
+   * When the gateway produced the snapshot, in Unix milliseconds. Zero in
+   * degraded states.
+   *
+   * @generated from field: int64 observed_at_unix_ms = 3;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * Per-tool call and error counts, empty in degraded states.
+   *
+   * @generated from field: repeated paprika.v1.ObservabilityToolUsage tools = 4;
+   */
+  tools: ObservabilityToolUsage[];
+
+  constructor(data?: PartialMessage<GetObservabilityUsageResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetObservabilityUsageResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetObservabilityUsageResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetObservabilityUsageResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetObservabilityUsageResponse;
+
+  static equals(a: GetObservabilityUsageResponse | PlainMessage<GetObservabilityUsageResponse> | undefined, b: GetObservabilityUsageResponse | PlainMessage<GetObservabilityUsageResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListObservabilityProviderTypesRequest
+ */
+export declare class ListObservabilityProviderTypesRequest extends Message<ListObservabilityProviderTypesRequest> {
+  constructor(data?: PartialMessage<ListObservabilityProviderTypesRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListObservabilityProviderTypesRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListObservabilityProviderTypesRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListObservabilityProviderTypesRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListObservabilityProviderTypesRequest;
+
+  static equals(a: ListObservabilityProviderTypesRequest | PlainMessage<ListObservabilityProviderTypesRequest> | undefined, b: ListObservabilityProviderTypesRequest | PlainMessage<ListObservabilityProviderTypesRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ProviderTypeSummary
+ */
+export declare class ProviderTypeSummary extends Message<ProviderTypeSummary> {
+  /**
+   * Connector type: prometheus, loki, tempo, otlp, and the vendor connectors.
+   *
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * Human-readable backend name, e.g. "Grafana Loki".
+   *
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * Vendor vocabulary of the library view (AWS, Google Cloud, Open source).
+   *
+   * @generated from field: string vendor = 3;
+   */
+  vendor: string;
+
+  /**
+   * Signal category the backend primarily serves (logs, metrics, traces,
+   * audit).
+   *
+   * @generated from field: string category = 4;
+   */
+  category: string;
+
+  /**
+   * Signal planes this provider's connector can serve.
+   *
+   * @generated from field: repeated string signals = 5;
+   */
+  signals: string[];
+
+  /**
+   * One-sentence pitch for the library list view.
+   *
+   * @generated from field: string summary = 6;
+   */
+  summary: string;
+
+  constructor(data?: PartialMessage<ProviderTypeSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ProviderTypeSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ProviderTypeSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ProviderTypeSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ProviderTypeSummary;
+
+  static equals(a: ProviderTypeSummary | PlainMessage<ProviderTypeSummary> | undefined, b: ProviderTypeSummary | PlainMessage<ProviderTypeSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListObservabilityProviderTypesResponse
+ */
+export declare class ListObservabilityProviderTypesResponse extends Message<ListObservabilityProviderTypesResponse> {
+  /**
+   * NOT_CONFIGURED when no observability gateway address is wired into the
+   * api-server; ERROR when the gateway was called and failed.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * Canonical sentence for a non-OK state, safe to render verbatim.
+   *
+   * @generated from field: string unavailable_reason = 2;
+   */
+  unavailableReason: string;
+
+  /**
+   * Provider-type library entries in the gateway's deterministic
+   * Vendor-then-DisplayName order, empty in degraded states.
+   *
+   * @generated from field: repeated paprika.v1.ProviderTypeSummary types = 3;
+   */
+  types: ProviderTypeSummary[];
+
+  constructor(data?: PartialMessage<ListObservabilityProviderTypesResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListObservabilityProviderTypesResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListObservabilityProviderTypesResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListObservabilityProviderTypesResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListObservabilityProviderTypesResponse;
+
+  static equals(a: ListObservabilityProviderTypesResponse | PlainMessage<ListObservabilityProviderTypesResponse> | undefined, b: ListObservabilityProviderTypesResponse | PlainMessage<ListObservabilityProviderTypesResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetObservabilityProviderTypeRequest
+ */
+export declare class GetObservabilityProviderTypeRequest extends Message<GetObservabilityProviderTypeRequest> {
+  /**
+   * Connector type to describe, e.g. "loki".
+   *
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  constructor(data?: PartialMessage<GetObservabilityProviderTypeRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetObservabilityProviderTypeRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetObservabilityProviderTypeRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetObservabilityProviderTypeRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetObservabilityProviderTypeRequest;
+
+  static equals(a: GetObservabilityProviderTypeRequest | PlainMessage<GetObservabilityProviderTypeRequest> | undefined, b: GetObservabilityProviderTypeRequest | PlainMessage<GetObservabilityProviderTypeRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ProviderTypeField
+ */
+export declare class ProviderTypeField extends Message<ProviderTypeField> {
+  /**
+   * Connector config key this input writes, e.g. "endpoint".
+   *
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * Human-readable label for the form field.
+   *
+   * @generated from field: string label = 2;
+   */
+  label: string;
+
+  /**
+   * Input widget type (string, text, boolean), as the wizard renders it.
+   *
+   * @generated from field: string input = 3;
+   */
+  input: string;
+
+  /**
+   * True when the connector requires this key.
+   *
+   * @generated from field: bool required = 4;
+   */
+  required: boolean;
+
+  /**
+   * Example value placeholder; empty when the field has no useful example.
+   *
+   * @generated from field: string placeholder = 5;
+   */
+  placeholder: string;
+
+  /**
+   * Fixed explanation of the field, safe to render verbatim.
+   *
+   * @generated from field: string help = 6;
+   */
+  help: string;
+
+  /**
+   * True when the input carries credential material and must be rendered as
+   * a password field, never echoed back.
+   *
+   * @generated from field: bool secret = 7;
+   */
+  secret: boolean;
+
+  constructor(data?: PartialMessage<ProviderTypeField>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ProviderTypeField";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ProviderTypeField;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ProviderTypeField;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ProviderTypeField;
+
+  static equals(a: ProviderTypeField | PlainMessage<ProviderTypeField> | undefined, b: ProviderTypeField | PlainMessage<ProviderTypeField> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ProviderTypeCredential
+ */
+export declare class ProviderTypeCredential extends Message<ProviderTypeCredential> {
+  /**
+   * Credential document kind the connector accepts (none, aws-keys,
+   * gcp-service-account).
+   *
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * Fixed explanation of what the document is and where it lives, safe to
+   * render verbatim.
+   *
+   * @generated from field: string help = 2;
+   */
+  help: string;
+
+  constructor(data?: PartialMessage<ProviderTypeCredential>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ProviderTypeCredential";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ProviderTypeCredential;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ProviderTypeCredential;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ProviderTypeCredential;
+
+  static equals(a: ProviderTypeCredential | PlainMessage<ProviderTypeCredential> | undefined, b: ProviderTypeCredential | PlainMessage<ProviderTypeCredential> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ProviderTypeStep
+ */
+export declare class ProviderTypeStep extends Message<ProviderTypeStep> {
+  /**
+   * Short title of the onboarding walkthrough entry.
+   *
+   * @generated from field: string title = 1;
+   */
+  title: string;
+
+  /**
+   * Instruction paragraph, safe to render verbatim.
+   *
+   * @generated from field: string body = 2;
+   */
+  body: string;
+
+  /**
+   * Copyable command or document snippet; empty when the step is prose only.
+   *
+   * @generated from field: string code = 3;
+   */
+  code: string;
+
+  constructor(data?: PartialMessage<ProviderTypeStep>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ProviderTypeStep";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ProviderTypeStep;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ProviderTypeStep;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ProviderTypeStep;
+
+  static equals(a: ProviderTypeStep | PlainMessage<ProviderTypeStep> | undefined, b: ProviderTypeStep | PlainMessage<ProviderTypeStep> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ProviderTypeProbe
+ */
+export declare class ProviderTypeProbe extends Message<ProviderTypeProbe> {
+  /**
+   * Signal plane the health probe queries (logs, metrics, traces).
+   *
+   * @generated from field: string signal = 1;
+   */
+  signal: string;
+
+  /**
+   * Fixed explanation of the cheapest read the probe runs, safe to render
+   * verbatim.
+   *
+   * @generated from field: string note = 2;
+   */
+  note: string;
+
+  constructor(data?: PartialMessage<ProviderTypeProbe>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ProviderTypeProbe";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ProviderTypeProbe;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ProviderTypeProbe;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ProviderTypeProbe;
+
+  static equals(a: ProviderTypeProbe | PlainMessage<ProviderTypeProbe> | undefined, b: ProviderTypeProbe | PlainMessage<ProviderTypeProbe> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ProviderTypeDetail
+ */
+export declare class ProviderTypeDetail extends Message<ProviderTypeDetail> {
+  /**
+   * Identity and summary fields, same shape as ProviderTypeSummary.
+   *
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: string vendor = 3;
+   */
+  vendor: string;
+
+  /**
+   * @generated from field: string category = 4;
+   */
+  category: string;
+
+  /**
+   * @generated from field: repeated string signals = 5;
+   */
+  signals: string[];
+
+  /**
+   * @generated from field: string summary = 6;
+   */
+  summary: string;
+
+  /**
+   * Long-form description of the connector and its query language.
+   *
+   * @generated from field: string description = 7;
+   */
+  description: string;
+
+  /**
+   * Config-document schema the onboarding wizard renders as form inputs.
+   *
+   * @generated from field: repeated paprika.v1.ProviderTypeField config_fields = 8;
+   */
+  configFields: ProviderTypeField[];
+
+  /**
+   * Credential document shape the connector accepts.
+   *
+   * @generated from field: paprika.v1.ProviderTypeCredential credential = 9;
+   */
+  credential?: ProviderTypeCredential;
+
+  /**
+   * Onboarding walkthrough entries, in order.
+   *
+   * @generated from field: repeated paprika.v1.ProviderTypeStep steps = 10;
+   */
+  steps: ProviderTypeStep[];
+
+  /**
+   * Health-probe shape the preflight check runs.
+   *
+   * @generated from field: paprika.v1.ProviderTypeProbe probe = 11;
+   */
+  probe?: ProviderTypeProbe;
+
+  constructor(data?: PartialMessage<ProviderTypeDetail>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ProviderTypeDetail";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ProviderTypeDetail;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ProviderTypeDetail;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ProviderTypeDetail;
+
+  static equals(a: ProviderTypeDetail | PlainMessage<ProviderTypeDetail> | undefined, b: ProviderTypeDetail | PlainMessage<ProviderTypeDetail> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetObservabilityProviderTypeResponse
+ */
+export declare class GetObservabilityProviderTypeResponse extends Message<GetObservabilityProviderTypeResponse> {
+  /**
+   * NOT_CONFIGURED when no observability gateway address is wired into the
+   * api-server; ERROR when the gateway was called and failed, including an
+   * unknown type.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * Canonical sentence for a non-OK state, safe to render verbatim.
+   *
+   * @generated from field: string unavailable_reason = 2;
+   */
+  unavailableReason: string;
+
+  /**
+   * Full library entry for the requested type; unset in degraded states.
+   *
+   * @generated from field: paprika.v1.ProviderTypeDetail type_detail = 3;
+   */
+  typeDetail?: ProviderTypeDetail;
+
+  constructor(data?: PartialMessage<GetObservabilityProviderTypeResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetObservabilityProviderTypeResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetObservabilityProviderTypeResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetObservabilityProviderTypeResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetObservabilityProviderTypeResponse;
+
+  static equals(a: GetObservabilityProviderTypeResponse | PlainMessage<GetObservabilityProviderTypeResponse> | undefined, b: GetObservabilityProviderTypeResponse | PlainMessage<GetObservabilityProviderTypeResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ValidateObservabilityProviderRequest
+ */
+export declare class ValidateObservabilityProviderRequest extends Message<ValidateObservabilityProviderRequest> {
+  /**
+   * Connector type to probe, e.g. "loki".
+   *
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * Connector config document. Must be a JSON object; empty means "not
+   * configured", which the probe reports as a NotConfigured verdict rather
+   * than an error.
+   *
+   * @generated from field: bytes config_json = 2;
+   */
+  configJson: Uint8Array;
+
+  /**
+   * Optional raw credential document to probe with, exactly as it would be
+   * stored in the credential Secret.
+   *
+   * @generated from field: string credentials = 3;
+   */
+  credentials: string;
+
+  constructor(data?: PartialMessage<ValidateObservabilityProviderRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ValidateObservabilityProviderRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ValidateObservabilityProviderRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ValidateObservabilityProviderRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ValidateObservabilityProviderRequest;
+
+  static equals(a: ValidateObservabilityProviderRequest | PlainMessage<ValidateObservabilityProviderRequest> | undefined, b: ValidateObservabilityProviderRequest | PlainMessage<ValidateObservabilityProviderRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ValidateObservabilityProviderResponse
+ */
+export declare class ValidateObservabilityProviderResponse extends Message<ValidateObservabilityProviderResponse> {
+  /**
+   * NOT_CONFIGURED when no observability gateway address is wired into the
+   * api-server; ERROR when the gateway was called and failed. A reachable
+   * backend that refuses the credential is still DATA_STATE_OK — the refusal
+   * travels in connector_state and reason.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * Canonical sentence for a non-OK state, safe to render verbatim.
+   *
+   * @generated from field: string unavailable_reason = 2;
+   */
+  unavailableReason: string;
+
+  /**
+   * Health-probe verdict in the connector's own vocabulary (OK,
+   * NotConfigured, NotAvailable, Error, Forbidden). Empty when state is not
+   * OK.
+   *
+   * @generated from field: string connector_state = 3;
+   */
+  connectorState: string;
+
+  /**
+   * Fixed-sentence explanation of connector_state, chosen by the connector.
+   * Reasons never carry credential or endpoint detail.
+   *
+   * @generated from field: string reason = 4;
+   */
+  reason: string;
+
+  constructor(data?: PartialMessage<ValidateObservabilityProviderResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ValidateObservabilityProviderResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ValidateObservabilityProviderResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ValidateObservabilityProviderResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ValidateObservabilityProviderResponse;
+
+  static equals(a: ValidateObservabilityProviderResponse | PlainMessage<ValidateObservabilityProviderResponse> | undefined, b: ValidateObservabilityProviderResponse | PlainMessage<ValidateObservabilityProviderResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.CreateObservabilityProviderRequest
+ */
+export declare class CreateObservabilityProviderRequest extends Message<CreateObservabilityProviderRequest> {
+  /**
+   * Name of the ObservabilityProvider CR. Must be a valid DNS-1123
+   * subdomain.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * Namespace hosting the CR and the credential Secret. Must be a valid
+   * DNS-1123 label.
+   *
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  /**
+   * Connector type. The admission webhook checks it against the connector
+   * enum at apply time.
+   *
+   * @generated from field: string type = 3;
+   */
+  type: string;
+
+  /**
+   * Connector config document. Must be a JSON object; empty means the
+   * connector defaults, which the webhook's per-connector validation judges.
+   *
+   * @generated from field: bytes config_json = 4;
+   */
+  configJson: Uint8Array;
+
+  /**
+   * Name of the credential Secret to create. Defaults to "<name>-credentials"
+   * when empty and credential_document is set.
+   *
+   * @generated from field: string credential_secret_name = 5;
+   */
+  credentialSecretName: string;
+
+  /**
+   * Raw credential document stored as the Secret's credentials key
+   * (stringData). Empty means no Secret is created and no
+   * credentialsSecretRef is set — connectors that reach anonymous or
+   * ambient-identity backends need none.
+   *
+   * @generated from field: string credential_document = 6;
+   */
+  credentialDocument: string;
+
+  constructor(data?: PartialMessage<CreateObservabilityProviderRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.CreateObservabilityProviderRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CreateObservabilityProviderRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): CreateObservabilityProviderRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CreateObservabilityProviderRequest;
+
+  static equals(a: CreateObservabilityProviderRequest | PlainMessage<CreateObservabilityProviderRequest> | undefined, b: CreateObservabilityProviderRequest | PlainMessage<CreateObservabilityProviderRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.CreateObservabilityProviderResponse
+ */
+export declare class CreateObservabilityProviderResponse extends Message<CreateObservabilityProviderResponse> {
+  /**
+   * Name of the created ObservabilityProvider CR.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * Namespace hosting the CR.
+   *
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  constructor(data?: PartialMessage<CreateObservabilityProviderResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.CreateObservabilityProviderResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CreateObservabilityProviderResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): CreateObservabilityProviderResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CreateObservabilityProviderResponse;
+
+  static equals(a: CreateObservabilityProviderResponse | PlainMessage<CreateObservabilityProviderResponse> | undefined, b: CreateObservabilityProviderResponse | PlainMessage<CreateObservabilityProviderResponse> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.CommitInfo
  */
 export declare class CommitInfo extends Message<CommitInfo> {
