@@ -83,11 +83,7 @@ func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.
 		if err != nil {
 			return exploreError(err)
 		}
-		for _, metric := range decoded.Metrics {
-			if name := shortMetricName(metric.Name); name != "" && strings.Contains(name, prefix) {
-				names[name] = struct{}{}
-			}
-		}
+		collectMetricNames(names, &decoded, prefix)
 		token = decoded.NextToken
 		if limit > 0 && len(names) >= limit {
 			limited = token != "" || len(names) > limit
@@ -105,6 +101,14 @@ func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.
 		return namesResult(sortedKeys(names, limit), "result limit reached; narrow the prefix to discover more names")
 	}
 	return namesResult(sortedKeys(names, limit))
+}
+
+func collectMetricNames(names map[string]struct{}, page *logMetricsListPage, prefix string) {
+	for _, metric := range page.Metrics {
+		if name := shortMetricName(metric.Name); name != "" && strings.Contains(name, prefix) {
+			names[name] = struct{}{}
+		}
+	}
 }
 
 // fetchLogMetricsPage reads one projects.logMetrics.list page; token empty

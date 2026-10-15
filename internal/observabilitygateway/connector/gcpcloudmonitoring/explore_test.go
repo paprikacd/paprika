@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -16,7 +17,7 @@ import (
 func TestExplorePaginationBoundFailsInsteadOfClaimingComplete(t *testing.T) {
 	t.Parallel()
 	for _, repeated := range []bool{false, true} {
-		t.Run(fmt.Sprint(repeated), func(t *testing.T) {
+		t.Run(strconv.FormatBool(repeated), func(t *testing.T) {
 			t.Parallel()
 			var calls atomic.Int32
 			fake := newFakeGCP(t, false, func(w http.ResponseWriter, r *http.Request) {

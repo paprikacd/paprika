@@ -67,17 +67,8 @@ func (CloudMonitoring) ValidateConfig(config json.RawMessage) error {
 //
 //nolint:gocritic // QueryRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (CloudMonitoring) Query(ctx context.Context, req connector.QueryRequest) (*connector.QueryResult, error) {
-	if len(req.PageToken) > connector.MaxPageTokenBytes {
-		return unsupported("page token exceeds the maximum size")
-	}
-	if req.Signal != connector.SignalMetrics {
-		return unsupported("gcp-cloudmonitoring connector supplies metrics only")
-	}
-	if req.TraceID != "" {
-		return unsupported("a trace ID cannot be fetched from cloud monitoring")
-	}
-	if hasProjectSelector(req.Query) {
-		return unsupported("the provider fixes the Monitoring project; omit a project selector")
+	if reason := queryShapeError(&req); reason != "" {
+		return unsupported(reason)
 	}
 	cfg, err := gcpcommon.ParseConfig(req.Config)
 	if err != nil {
@@ -112,6 +103,22 @@ func (CloudMonitoring) Query(ctx context.Context, req connector.QueryRequest) (*
 		return queryError(err), nil
 	}
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
+}
+
+func queryShapeError(req *connector.QueryRequest) string {
+	if len(req.PageToken) > connector.MaxPageTokenBytes {
+		return "page token exceeds the maximum size"
+	}
+	if req.Signal != connector.SignalMetrics {
+		return "gcp-cloudmonitoring connector supplies metrics only"
+	}
+	if req.TraceID != "" {
+		return "a trace ID cannot be fetched from cloud monitoring"
+	}
+	if hasProjectSelector(req.Query) {
+		return "the provider fixes the Monitoring project; omit a project selector"
+	}
+	return ""
 }
 
 // requestShape picks the API path and query values for one request: a
@@ -162,23 +169,10 @@ func projectFilter(project, filter string) string {
 // selectors with AND or letting callers replace the provider's boundary.
 // Values inside strings and resource/metric label paths are not selectors.
 func hasProjectSelector(filter string) bool {
-	quoted, escaped := false, false
 	for i := 0; i < len(filter); {
 		ch := filter[i]
-		if quoted {
-			i++
-			if escaped {
-				escaped = false
-			} else if ch == '\\' {
-				escaped = true
-			} else if ch == '"' {
-				quoted = false
-			}
-			continue
-		}
 		if ch == '"' {
-			quoted = true
-			i++
+			i = skipQuotedValue(filter, i+1)
 			continue
 		}
 		if isIdentifierByte(ch) {
@@ -194,6 +188,18 @@ func hasProjectSelector(filter string) bool {
 		i++
 	}
 	return false
+}
+
+func skipQuotedValue(filter string, start int) int {
+	for i := start; i < len(filter); i++ {
+		switch filter[i] {
+		case '\\':
+			i++ // Escaped quotes and backslashes stay inside the value.
+		case '"':
+			return i + 1
+		}
+	}
+	return len(filter)
 }
 
 func isIdentifierByte(ch byte) bool {

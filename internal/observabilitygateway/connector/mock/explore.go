@@ -99,7 +99,7 @@ func exploreMetadata(metric string) (*connector.ExploreResult, error) {
 		entry["unit"] = "bytes"
 	}
 	data, err := json.Marshal(struct {
-		Status string                       `json:"status"`
+		Status string                         `json:"status"`
 		Data   map[string][]map[string]string `json:"data"`
 	}{Status: "success", Data: map[string][]map[string]string{metric: {entry}}})
 	if err != nil {

@@ -61,14 +61,8 @@ func (CloudTrace) ValidateConfig(config json.RawMessage) error {
 //
 //nolint:gocritic // QueryRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (CloudTrace) Query(ctx context.Context, req connector.QueryRequest) (*connector.QueryResult, error) {
-	if len(req.PageToken) > connector.MaxPageTokenBytes {
-		return unsupported("page token exceeds the maximum size")
-	}
-	if req.TraceID != "" && req.PageToken != "" {
-		return unsupported("a page token cannot be used when fetching one trace")
-	}
-	if req.Signal != connector.SignalTraces {
-		return unsupported("gcp-cloudtrace connector supplies traces only")
+	if reason := queryShapeError(&req); reason != "" {
+		return unsupported(reason)
 	}
 	cfg, err := gcpcommon.ParseConfig(req.Config)
 	if err != nil {
@@ -103,6 +97,19 @@ func (CloudTrace) Query(ctx context.Context, req connector.QueryRequest) (*conne
 		return queryError(err), nil
 	}
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
+}
+
+func queryShapeError(req *connector.QueryRequest) string {
+	if len(req.PageToken) > connector.MaxPageTokenBytes {
+		return "page token exceeds the maximum size"
+	}
+	if req.TraceID != "" && req.PageToken != "" {
+		return "a page token cannot be used when fetching one trace"
+	}
+	if req.Signal != connector.SignalTraces {
+		return "gcp-cloudtrace connector supplies traces only"
+	}
+	return ""
 }
 
 // requestShape picks the API path and query values for one request. TraceID

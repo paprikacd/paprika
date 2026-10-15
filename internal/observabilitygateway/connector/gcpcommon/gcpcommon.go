@@ -304,7 +304,6 @@ func URL(cfg Config, serviceDefault, path string, params url.Values) string {
 // There is no client-side timeout beyond req's context: the caller sets the
 // deadline.
 func Do(req *http.Request, client *http.Client) (json.RawMessage, error) {
-	//nolint:gosec // G704: the request URL is the operator-configured endpoint (validated as an absolute http(s) URL by ParseConfig) joined with a fixed connector path — not user-controlled input.
 	resp, err := httphelp.DoReadRequest(req, client)
 	if err != nil {
 		return nil, fmt.Errorf("querying observability backend: %w", withoutSensitiveDetail(err))

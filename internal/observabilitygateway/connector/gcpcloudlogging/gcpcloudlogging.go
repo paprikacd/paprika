@@ -63,14 +63,8 @@ func (CloudLogging) ValidateConfig(config json.RawMessage) error {
 //
 //nolint:gocritic // QueryRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (CloudLogging) Query(ctx context.Context, req connector.QueryRequest) (*connector.QueryResult, error) {
-	if len(req.PageToken) > connector.MaxPageTokenBytes {
-		return unsupported("page token exceeds the maximum size")
-	}
-	if req.Signal != connector.SignalLogs {
-		return unsupported("gcp-cloudlogging connector supplies logs only")
-	}
-	if req.TraceID != "" {
-		return unsupported("a trace ID cannot be fetched from cloud logging")
+	if reason := queryShapeError(&req); reason != "" {
+		return unsupported(reason)
 	}
 	cfg, err := gcpcommon.ParseConfig(req.Config)
 	if err != nil {
@@ -116,6 +110,19 @@ func (CloudLogging) Query(ctx context.Context, req connector.QueryRequest) (*con
 		return queryError(err), nil
 	}
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
+}
+
+func queryShapeError(req *connector.QueryRequest) string {
+	if len(req.PageToken) > connector.MaxPageTokenBytes {
+		return "page token exceeds the maximum size"
+	}
+	if req.Signal != connector.SignalLogs {
+		return "gcp-cloudlogging connector supplies logs only"
+	}
+	if req.TraceID != "" {
+		return "a trace ID cannot be fetched from cloud logging"
+	}
+	return ""
 }
 
 func boundedFilter(query string, window connector.TimeRange) string {

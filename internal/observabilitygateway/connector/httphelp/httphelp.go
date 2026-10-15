@@ -314,40 +314,78 @@ func DoReadRequest(req *http.Request, client *http.Client) (*http.Response, erro
 	boundedClient.CheckRedirect = RejectRedirect
 	for attempt := 0; ; attempt++ {
 		if err := req.Context().Err(); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("backend read canceled: %w", err)
 		}
-		attemptReq := req
-		if attempt > 0 {
-			attemptReq = req.Clone(req.Context())
-			if req.Body != nil && req.Body != http.NoBody {
-				if req.GetBody == nil {
-					return nil, errors.New("backend request body cannot be replayed")
-				}
-				body, err := req.GetBody()
-				if err != nil {
-					return nil, errors.New("recreating backend request body failed")
-				}
-				attemptReq.Body = body
-			}
-		}
-		resp, err := boundedClient.Do(attemptReq)
+		attemptReq, err := readAttemptRequest(req, attempt)
 		if err != nil {
 			return nil, err
 		}
+		//nolint:gosec // G704: connector callers construct this URL from a validated operator endpoint and fixed API path; redirects are refused above.
+		resp, err := boundedClient.Do(attemptReq)
+		if err != nil {
+			return nil, fmt.Errorf("performing backend read: %w", err)
+		}
 		delay, retry := retryDelay(resp, attempt)
-		if !retry || (req.Body != nil && req.Body != http.NoBody && req.GetBody == nil) {
+		if !retry || !canReplayRequest(req) {
 			return resp, nil
 		}
-		// Do not read an unbounded error body just to reuse the connection.
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 8<<10))
-		_ = resp.Body.Close()
-		timer := time.NewTimer(delay)
-		select {
-		case <-req.Context().Done():
-			timer.Stop()
-			return nil, req.Context().Err()
-		case <-timer.C:
+		if err := closeRetryResponse(req.Context(), resp); err != nil {
+			return nil, err
 		}
+		if err := waitRetry(req.Context(), delay); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func canReplayRequest(req *http.Request) bool {
+	return req.Body == nil || req.Body == http.NoBody || req.GetBody != nil
+}
+
+func readAttemptRequest(req *http.Request, attempt int) (*http.Request, error) {
+	if attempt == 0 {
+		return req, nil
+	}
+	if !canReplayRequest(req) {
+		return nil, errors.New("backend request body cannot be replayed")
+	}
+	copyReq := req.Clone(req.Context())
+	if req.Body == nil || req.Body == http.NoBody {
+		return copyReq, nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, errors.New("recreating backend request body failed")
+	}
+	copyReq.Body = body
+	return copyReq, nil
+}
+
+func closeRetryResponse(ctx context.Context, resp *http.Response) error {
+	// A bounded drain permits keepalive reuse without consuming an arbitrary
+	// error body. Always close, and preserve context cancellation first.
+	_, drainErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 8<<10))
+	closeErr := resp.Body.Close()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("backend retry canceled: %w", err)
+	}
+	if drainErr != nil {
+		return fmt.Errorf("discarding backend retry response: %w", drainErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("closing backend retry response: %w", closeErr)
+	}
+	return nil
+}
+
+func waitRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("waiting to retry backend read: %w", ctx.Err())
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -361,21 +399,27 @@ func retryDelay(resp *http.Response, attempt int) (time.Duration, bool) {
 		return 0, false
 	}
 	delay := 100 * time.Millisecond * time.Duration(1<<attempt)
-	if value := resp.Header.Get("Retry-After"); value != "" {
-		if seconds, err := strconv.Atoi(value); err == nil {
-			if seconds < 0 || seconds > 1 {
-				return 0, false
-			}
-			delay = time.Duration(seconds) * time.Second
-		} else if when, err := http.ParseTime(value); err == nil {
-			delay = time.Until(when)
-			if delay > time.Second {
-				return 0, false
-			}
-			if delay < 0 {
-				delay = 0
-			}
+	value := resp.Header.Get("Retry-After")
+	if value == "" {
+		return delay, true
+	}
+	return retryAfterDelay(value, delay)
+}
+
+func retryAfterDelay(value string, fallback time.Duration) (time.Duration, bool) {
+	if seconds, err := strconv.Atoi(value); err == nil {
+		if seconds < 0 || seconds > 1 {
+			return 0, false
 		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return fallback, true
+	}
+	delay := max(time.Until(when), 0)
+	if delay > time.Second {
+		return 0, false
 	}
 	return delay, true
 }

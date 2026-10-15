@@ -137,7 +137,7 @@ func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.
 				set[head.Type] = struct{}{}
 			}
 		}
-		limited = limit > 0 && len(set) >= limit && (len(set) > limit || page.NextToken != "")
+		limited = collectedNamesLimited(len(set), limit, page.NextToken)
 		return limit <= 0 || len(set) < limit
 	})
 	if err != nil {
@@ -165,22 +165,8 @@ func exploreLabelNames(ctx context.Context, client *http.Client, cfg gcpcommon.C
 		pageSize = 1
 	}
 	err := walkDescriptorPages(ctx, client, cfg, project, filter, pageSize, func(page descriptorPage) bool {
-		for _, raw := range page.Descriptors {
-			var labels struct {
-				Labels []struct {
-					Key string `json:"key"`
-				} `json:"labels"`
-			}
-			if err := json.Unmarshal(raw, &labels); err != nil {
-				continue
-			}
-			for _, label := range labels.Labels {
-				if label.Key != "" {
-					set[label.Key] = struct{}{}
-				}
-			}
-		}
-		limited = limit > 0 && len(set) >= limit && (len(set) > limit || page.NextToken != "")
+		collectDescriptorLabelNames(set, &page)
+		limited = collectedNamesLimited(len(set), limit, page.NextToken)
 		return limit <= 0 || len(set) < limit
 	})
 	if err != nil {
@@ -190,6 +176,28 @@ func exploreLabelNames(ctx context.Context, client *http.Client, cfg gcpcommon.C
 		return namesResult(sortedKeys(set, limit), "result limit reached; select a metric to discover more label names")
 	}
 	return namesResult(sortedKeys(set, limit))
+}
+
+func collectedNamesLimited(count, limit int, nextToken string) bool {
+	return limit > 0 && count >= limit && (count > limit || nextToken != "")
+}
+
+func collectDescriptorLabelNames(set map[string]struct{}, page *descriptorPage) {
+	for _, raw := range page.Descriptors {
+		var labels struct {
+			Labels []struct {
+				Key string `json:"key"`
+			} `json:"labels"`
+		}
+		if err := json.Unmarshal(raw, &labels); err != nil {
+			continue
+		}
+		for _, label := range labels.Labels {
+			if label.Key != "" {
+				set[label.Key] = struct{}{}
+			}
+		}
+	}
 }
 
 // exploreMetricMetadata returns the native descriptor JSON for one exact
