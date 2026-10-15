@@ -199,7 +199,7 @@ func TestObservabilityRequestSlotsCoverResponseWriting(t *testing.T) {
 	completed := make(chan struct{}, 4)
 	for range 4 {
 		go func() {
-			limited.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/observe/mcp", nil))
+			limited.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/observe/mcp", nil))
 			completed <- struct{}{}
 		}()
 	}
