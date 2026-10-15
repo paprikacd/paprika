@@ -26,46 +26,38 @@ const (
 //
 //nolint:gocritic // ExploreRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (Tempo) Explore(ctx context.Context, req connector.ExploreRequest) (*connector.ExploreResult, error) {
-	supported := req.Kind == connector.ExploreTraceServices ||
-		req.Kind == connector.ExploreLabelNames ||
-		req.Kind == connector.ExploreLabelValues
-	if !supported {
-		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the tempo connector", req.Kind))
+	path, reason := exploreRequestPath(&req)
+	if reason != "" {
+		return exploreUnsupported(reason)
 	}
-	if req.Kind == connector.ExploreLabelValues && req.Label == "" {
-		return exploreUnsupported("a tag name is required")
-	}
-
 	cfg, err := httphelp.ParseConfig(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("tempo: %w", err)
 	}
+	data, err := httphelp.Get(ctx, cfg, path, nil, req.Credentials)
+	if err != nil {
+		return exploreError(err), nil
+	}
+	return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
+}
 
+// exploreRequestPath validates the exploration shape before configuration or
+// network access, including explicit rejection of unsupported signal kinds.
+func exploreRequestPath(req *connector.ExploreRequest) (path, reason string) {
 	switch req.Kind {
 	case connector.ExploreTraceServices:
-		data, err := httphelp.Get(ctx, cfg, fmt.Sprintf(pathSearchTagValue, serviceNameTag), nil, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
-		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
-
+		return fmt.Sprintf(pathSearchTagValue, serviceNameTag), ""
 	case connector.ExploreLabelNames:
-		data, err := httphelp.Get(ctx, cfg, pathSearchTags, nil, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
-		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
-
+		return pathSearchTags, ""
 	case connector.ExploreLabelValues:
-		data, err := httphelp.Get(ctx, cfg, fmt.Sprintf(pathSearchTagValue, url.PathEscape(req.Label)), nil, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
+		if req.Label == "" {
+			return "", "a tag name is required"
 		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
-
-	default:
-		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the tempo connector", req.Kind))
+		return fmt.Sprintf(pathSearchTagValue, url.PathEscape(req.Label)), ""
+	case connector.ExploreMetricNames, connector.ExploreMetricMetadata:
+		// These known exploration kinds are unsupported.
 	}
+	return "", fmt.Sprintf("exploration kind %q is not served by the tempo connector", req.Kind)
 }
 
 // exploreUnsupported builds the result — and error — for an exploration kind

@@ -30,69 +30,72 @@ const (
 //
 //nolint:gocritic // ExploreRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (Prometheus) Explore(ctx context.Context, req connector.ExploreRequest) (*connector.ExploreResult, error) {
-	// Shape requirements are checked before configuration, mirroring Query:
-	// a missing label or metric names a caller bug whatever the config says.
-	switch req.Kind {
-	case connector.ExploreMetricNames, connector.ExploreLabelNames:
-	case connector.ExploreLabelValues:
-		if req.Label == "" {
-			return exploreUnsupported("a label name is required")
-		}
-	case connector.ExploreMetricMetadata:
-		if req.Metric == "" {
-			return exploreUnsupported("a metric name is required")
-		}
-	default:
-		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the prometheus connector", req.Kind))
+	plan, reason := exploreRequestShape(&req)
+	if reason != "" {
+		return exploreUnsupported(reason)
 	}
-
 	cfg, err := parseConfig(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("prometheus: %w", err)
 	}
-	limit := httphelp.ClampLimit(req.Limit, 1000, exploreMaxNames)
-	params := url.Values{"limit": []string{strconv.Itoa(limit)}}
-	if req.Metric != "" {
-		params.Set("match[]", req.Metric)
+	data, err := httphelp.Get(ctx, cfg.Config, plan.path, plan.params, req.Credentials)
+	if err != nil {
+		return exploreError(err), nil
 	}
+	if plan.filterNames {
+		data = filterNames(data, plan.prefix, plan.limit)
+	}
+	return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
+}
 
+// explorePlan preserves each endpoint's native response shape and bounds while
+// separating request validation/routing from the cancellable HTTP operation.
+type explorePlan struct {
+	path        string
+	params      url.Values
+	prefix      string
+	limit       int
+	filterNames bool
+}
+
+func exploreRequestShape(req *connector.ExploreRequest) (plan explorePlan, reason string) {
+	limit := httphelp.ClampLimit(req.Limit, 1000, exploreMaxNames)
+	plan = explorePlan{params: url.Values{"limit": []string{strconv.Itoa(limit)}}, limit: limit, filterNames: true}
+	if req.Metric != "" {
+		plan.params.Set("match[]", req.Metric)
+	}
 	switch req.Kind {
 	case connector.ExploreMetricNames:
-		if req.Prefix != "" {
-			params.Set("match[]", fmt.Sprintf(`{__name__=~%q}`, ".*"+regexp.QuoteMeta(req.Prefix)+".*"))
-		}
-		data, err := httphelp.Get(ctx, cfg.Config, fmt.Sprintf(pathLabelValues, "__name__"), params, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
-		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: filterNames(data, req.Prefix, limit)}, nil
-
+		plan.path = fmt.Sprintf(pathLabelValues, "__name__")
+		plan.prefix = req.Prefix
+		setMetricNamePrefix(plan.params, req.Prefix)
+		return plan, ""
 	case connector.ExploreLabelNames:
-		data, err := httphelp.Get(ctx, cfg.Config, pathLabels, params, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
-		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: filterNames(data, "", limit)}, nil
-
+		plan.path = pathLabels
+		return plan, ""
 	case connector.ExploreLabelValues:
-		data, err := httphelp.Get(ctx, cfg.Config, fmt.Sprintf(pathLabelValues, url.PathEscape(req.Label)), params, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
+		if req.Label == "" {
+			return explorePlan{}, "a label name is required"
 		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: filterNames(data, "", limit)}, nil
-
+		plan.path = fmt.Sprintf(pathLabelValues, url.PathEscape(req.Label))
+		return plan, ""
 	case connector.ExploreMetricMetadata:
 		if req.Metric == "" {
-			return exploreUnsupported("a metric name is required")
+			return explorePlan{}, "a metric name is required"
 		}
-		data, err := httphelp.Get(ctx, cfg.Config, pathMetadata, url.Values{"metric": []string{req.Metric}, "limit": []string{"1"}, "limit_per_metric": []string{strconv.Itoa(limit)}}, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
-		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
+		plan.path = pathMetadata
+		plan.params = url.Values{"metric": []string{req.Metric}, "limit": []string{"1"}, "limit_per_metric": []string{strconv.Itoa(limit)}}
+		plan.filterNames = false
+		return plan, ""
+	case connector.ExploreTraceServices:
+		// Trace discovery is intentionally unsupported.
+	}
+	return explorePlan{}, fmt.Sprintf("exploration kind %q is not served by the prometheus connector", req.Kind)
+}
 
-	default:
-		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the prometheus connector", req.Kind))
+func setMetricNamePrefix(params url.Values, prefix string) {
+	if prefix != "" {
+		params.Set("match[]", fmt.Sprintf(`{__name__=~%q}`, ".*"+regexp.QuoteMeta(prefix)+".*"))
 	}
 }
 

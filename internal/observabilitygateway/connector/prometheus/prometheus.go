@@ -88,23 +88,9 @@ func (Prometheus) Query(ctx context.Context, req connector.QueryRequest) (*conne
 		return nil, fmt.Errorf("prometheus: %w", err)
 	}
 
-	params := url.Values{"query": []string{req.Query}}
-	params.Set("limit", strconv.Itoa(httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit)))
-	path := pathInstantQuery
-	if !req.Range.Start.IsZero() && !req.Range.End.IsZero() {
-		path = pathRangeQuery
-		params.Set("start", strconv.FormatInt(req.Range.Start.Unix(), 10))
-		params.Set("end", strconv.FormatInt(req.Range.End.Unix(), 10))
-		params.Set("step", rangeStep(req.Range))
-		if cfg.step > 0 {
-			params.Set("step", cfg.step.String())
-		}
-		step, _ := time.ParseDuration(params.Get("step"))
-		if req.Range.End.Before(req.Range.Start) || (step > 0 && req.Range.End.Sub(req.Range.Start)/step >= maxRangePoints) {
-			return unsupported("query range and step exceed the maximum of 11000 points per series")
-		}
-	} else if !req.Range.End.IsZero() {
-		params.Set("time", strconv.FormatInt(req.Range.End.Unix(), 10))
+	path, params, reason := queryRequestShape(&req, cfg.step)
+	if reason != "" {
+		return unsupported(reason)
 	}
 
 	data, err := httphelp.Get(ctx, cfg.Config, path, params, req.Credentials)
@@ -112,6 +98,30 @@ func (Prometheus) Query(ctx context.Context, req connector.QueryRequest) (*conne
 		return queryError(err), nil
 	}
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
+}
+
+func queryRequestShape(req *connector.QueryRequest, override time.Duration) (path string, params url.Values, reason string) {
+	params = url.Values{
+		"query": []string{req.Query},
+		"limit": []string{strconv.Itoa(httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit))},
+	}
+	path = pathInstantQuery
+	if !req.Range.Start.IsZero() && !req.Range.End.IsZero() {
+		step := rangeStep(req.Range)
+		if override > 0 {
+			step = override
+		}
+		if req.Range.End.Before(req.Range.Start) || req.Range.End.Sub(req.Range.Start)/step >= maxRangePoints {
+			return "", nil, "query range and step exceed the maximum of 11000 points per series"
+		}
+		path = pathRangeQuery
+		params.Set("start", strconv.FormatInt(req.Range.Start.Unix(), 10))
+		params.Set("end", strconv.FormatInt(req.Range.End.Unix(), 10))
+		params.Set("step", step.String())
+	} else if !req.Range.End.IsZero() {
+		params.Set("time", strconv.FormatInt(req.Range.End.Unix(), 10))
+	}
+	return path, params, ""
 }
 
 // parseConfig decodes the prometheus connector configuration: the shared
@@ -155,7 +165,7 @@ func decodeStep(config json.RawMessage) (time.Duration, error) {
 
 // rangeStep derives the Prometheus step from the requested range: one two
 // hundred fiftieth of the span, clamped to [10s, 1h].
-func rangeStep(r connector.TimeRange) string {
+func rangeStep(r connector.TimeRange) time.Duration {
 	step := r.End.Sub(r.Start) / rangeStepDivisor
 	if step < minRangeStep {
 		step = minRangeStep
@@ -163,7 +173,7 @@ func rangeStep(r connector.TimeRange) string {
 	if step > maxRangeStep {
 		step = maxRangeStep
 	}
-	return step.String()
+	return step
 }
 
 // unsupported builds the result — and error — for a query shape the
