@@ -34,6 +34,13 @@ The gateway uses shared MCP configuration fields independently of `mcp.enabled`,
 which enables the fleet surface. Leave fleet MCP disabled when only the gateway
 is required; the existing fleet startup requirements remain unchanged.
 
+When OAuth `resource` is supplied repeatedly, every value must identify the same
+approved MCP URL. Identical repeats are accepted; mixing the observe target with
+the fleet URL or another target is rejected during authorization, code exchange
+and refresh before consuming the grant. Omission remains a first-party
+compatibility path. OAuth-minted access tokens must satisfy the configured,
+nonempty public-origin JWT issuer and the `paprika-observability` audience.
+
 Backend calls have a 30 second overall deadline and a four-operation process limit.
 Excess work is rejected immediately. Query windows default to the trailing 30 minutes,
 must be ordered, and cannot exceed 24 hours. The default result limit is 100 and the
@@ -41,6 +48,10 @@ maximum is 1000. These are safety budgets, not measured production capacity. The
 listener also honors `--api-max-conns`, bounds protocol requests through response
 serialization/writing, and drains requests during shutdown. Slow request bodies
 and response writes are bounded to 15 and 45 seconds respectively.
+
+The Observe cancellation bridge must propagate HTTP disconnects into tool contexts
+for `2025-03-26`, `2025-11-25` and `2026-07-28`. Exercise each protocol version
+with a blocking local fixture and bounded cancellation deadline.
 
 GCP continuation uses `page_token`; resend the same provider, query, explicit start,
 end and limit. Tokens are bounded to 4096 bytes and are never logged. GCP responses
@@ -82,6 +93,16 @@ bash hack/test-observability-addon-rendering.sh
 helm lint charts/chart/
 helm template paprika charts/chart/ >/dev/null
 ```
+
+The local OAuth contracts in
+`internal/api/mcp/observe_oauth_native_contract_test.go` and
+`cmd/main_observability_gateway_native_contract_test.go` use a nonempty public
+origin and actual gateway authentication. Cover registration, browser consent,
+PKCE exchange and refresh, then use the minted token for native-style
+`initialize`, `notifications/initialized`, `tools/list` and a static catalog call.
+Check wrong issuer/audience rejection. Fixed fixture credentials, fake Kubernetes
+objects and static catalog results do not establish native-client sign-in or live
+provider access; record final test outcomes separately.
 
 The chart tests exercise the identity reference, immutable digest, offline render,
 authentication requirements, DCR-only and partial-client contracts, explicit
@@ -130,6 +151,11 @@ Report empty, unavailable, forbidden, partial, failed and not-run separately. Re
 counts, timing, page continuation and warnings without exporting private telemetry
 payloads. Avoid load testing the live cluster unless its window and query budget
 are explicitly agreed.
+
+The server catalog contains 13 tools; the bounded validation client's approved
+allowlist enables eight. Record these as separate inventories. Do not infer an
+eight-tool server catalog or assume how a native client's status API projects
+enabled tools.
 
 Current OAuth dynamic client registrations are process-local: use one replica and
 `Recreate`, re-register after restart, and reauthenticate grants created before

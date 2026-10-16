@@ -56,7 +56,7 @@ const observabilityGatewayRoutePrefix = "/observe"
 // runObservabilityGatewayMode runs the observability gateway: the MCP
 // surface for querying observability backends (logs, metrics, traces)
 // through ObservabilityProvider CRs. It is its own microservice — nothing
-// here joins the console's Connect chain; the eight registered tools close
+// here joins the console's Connect chain; the thirteen registered tools close
 // over the connector backend and the MCP server verifies the
 // paprika-observability audience so console or fleet-MCP tokens can never be
 // replayed against this surface.
@@ -275,6 +275,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		Audience:                     mcp.ObservabilityTokenAudience,
 		SupportedScopes:              []mcp.Scope{mcp.ScopeObserve},
 		DisableConsoleResources:      true,
+		LinkRequestCancellation:      true,
 		// Query tool results are large, highly repetitive JSON; level 3 keeps
 		// most of the ratio while cutting the flate CPU several-fold at the
 		// gateway's fan-out rates.

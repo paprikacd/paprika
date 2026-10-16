@@ -1097,21 +1097,29 @@ func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
 }
 
 // A missing resource is accepted for existing first-party clients. When a
-// standards client supplies one, reject cross-surface or multiple targets
-// before issuing or consuming a grant. Tokens always target this surface.
+// standards client supplies one or more, every indicator must identify this
+// surface. Native clients can repeat the same resource while combining their
+// protected-resource discovery and configured OAuth resource. Repetition must
+// not reject that one target or permit a second target before a grant is used.
 func (s *Server) validResource(resources []string) bool {
 	if len(resources) == 0 {
 		return true
-	}
-	if len(resources) != 1 {
-		return false
 	}
 	want, err := url.Parse(s.publicURL + s.protocolPath)
 	if err != nil {
 		return false
 	}
-	got, err := url.Parse(resources[0])
-	return err == nil && got.User == nil && got.Fragment == "" && got.RawQuery == "" &&
+	for _, resource := range resources {
+		if !resourceMatchesTarget(resource, want) {
+			return false
+		}
+	}
+	return true
+}
+
+func resourceMatchesTarget(resource string, want *url.URL) bool {
+	got, err := url.Parse(resource)
+	return err == nil && got.User == nil && !strings.Contains(resource, "#") && got.RawQuery == "" && !got.ForceQuery &&
 		strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host) && got.EscapedPath() == want.EscapedPath()
 }
 

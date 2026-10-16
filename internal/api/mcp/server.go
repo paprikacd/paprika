@@ -108,6 +108,12 @@ type ServerConfig struct {
 	// that only serve non-console tools (the observability gateway) set this.
 	DisableConsoleResources bool
 
+	// LinkRequestCancellation restores the HTTP carrier's cancellation and
+	// deadline for tool handlers on legacy protocols too. The SDK propagates
+	// those signals only for newer protocols. Enable this for the read-only
+	// observability surface; other surfaces retain their existing behavior.
+	LinkRequestCancellation bool
+
 	// GzipLevel sets the compression level the protocol handler applies to
 	// responses for clients that send Accept-Encoding: gzip. Zero selects
 	// the gziphandler default (6). Surfaces that ship large, highly
@@ -185,6 +191,7 @@ type Server struct {
 	audience                string
 	supportedScopes         []Scope
 	disableConsoleResources bool
+	linkRequestCancellation bool
 
 	// authorizeAuthenticator authenticates GET /mcp/authorize and POST
 	// /mcp/authorize/consent — see ServerConfig.ConsoleAuthenticator. The
@@ -239,6 +246,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		audience:                shape.audience,
 		supportedScopes:         shape.supportedScopes,
 		disableConsoleResources: cfg.DisableConsoleResources,
+		linkRequestCancellation: cfg.LinkRequestCancellation,
 		gzipLevel:               cfg.GzipLevel,
 	}
 	// The Invoker is built unconditionally: surfaces without a Connect client
@@ -582,7 +590,50 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// memory-DoS vector on an authenticated-but-untrusted surface.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	r = ensureStreamableAccept(r)
+	if s.linkRequestCancellation {
+		// Legacy SDK contexts detach Done and Deadline, but retain values. Keep
+		// the authenticated carrier available without replacing the SDK context
+		// (which also carries protocol cancellation and request identity).
+		carrier := r.Context()
+		ctx = context.WithValue(ctx, protocolRequestContextKey{}, carrier)
+		r = r.WithContext(ctx)
+	}
 	s.streamable.ServeHTTP(w, r)
+}
+
+type protocolRequestContextKey struct{}
+
+// linkProtocolRequestContext keeps SDK values and cancellation while restoring
+// the carrier's earlier deadline and disconnect signal. Each tool invocation
+// removes its callback and timer on completion, including error paths.
+func linkProtocolRequestContext(ctx context.Context) (toolContext context.Context, cleanup func()) {
+	carrier, ok := ctx.Value(protocolRequestContextKey{}).(context.Context)
+	if !ok {
+		return ctx, func() {}
+	}
+	linked, cancel := context.WithCancel(ctx)
+	deadline, hasDeadline := carrier.Deadline()
+	cancelDeadline := func() {}
+	if hasDeadline {
+		linked, cancelDeadline = context.WithDeadline(linked, deadline)
+	}
+	forwardCancellation := func() {
+		if hasDeadline && carrier.Err() == context.DeadlineExceeded {
+			// The copied deadline cancels the tool context with DeadlineExceeded.
+			// Calling cancel here could race that timer and report Canceled instead.
+			return
+		}
+		cancel()
+	}
+	stop := context.AfterFunc(carrier, forwardCancellation)
+	if carrier.Err() != nil {
+		forwardCancellation()
+	}
+	return linked, func() {
+		stop()
+		cancelDeadline()
+		cancel()
+	}
 }
 
 func (s *Server) validOrigin(origins []string) bool {
@@ -684,9 +735,20 @@ func (s *Server) writeUnauthenticated(w http.ResponseWriter) {
 // tool, so the mapping from name to behaviour has exactly one source of
 // truth: the registry itself.
 func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+	if s.linkRequestCancellation {
+		var cleanup func()
+		ctx, cleanup = linkProtocolRequestContext(ctx)
+		defer cleanup()
+	}
 	name := req.Params.Name
 	start := time.Now()
-	result, err := s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
+	var result any
+	var err error
+	if s.linkRequestCancellation && ctx.Err() != nil {
+		err = ctx.Err()
+	} else {
+		result, err = s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
+	}
 	attrs := metric.WithAttributes(
 		attribute.String("tool", name),
 		attribute.String("outcome", toolCallOutcome(result, err)),

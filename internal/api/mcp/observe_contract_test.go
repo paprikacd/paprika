@@ -3,16 +3,21 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
 
@@ -171,4 +176,133 @@ func TestObserveRejectsInvalidOrigin(t *testing.T) {
 	}
 	assert.True(t, srv.validOrigin(nil), "native clients need no Origin")
 	assert.True(t, srv.validOrigin([]string{"https://paprika.example"}))
+}
+
+func TestProtocolRequestContextKeepsSDKValuesAndCancellation(t *testing.T) {
+	carrier, cancelCarrier := context.WithCancel(t.Context())
+	defer cancelCarrier()
+	type sdkValueKey struct{}
+	sdk, cancelSDK := context.WithCancel(context.WithValue(context.Background(), sdkValueKey{}, "request-identity"))
+	defer cancelSDK()
+	sdk = context.WithValue(sdk, protocolRequestContextKey{}, carrier)
+	linked, cleanup := linkProtocolRequestContext(sdk)
+	defer cleanup()
+	require.Equal(t, "request-identity", linked.Value(sdkValueKey{}))
+	cancelSDK()
+	select {
+	case <-linked.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("SDK cancellation was lost")
+	}
+	require.ErrorIs(t, linked.Err(), context.Canceled)
+}
+
+func TestProtocolRequestContextRestoresAlreadyCancelledCarrier(t *testing.T) {
+	carrier, cancel := context.WithCancel(t.Context())
+	cancel()
+	sdk := context.WithValue(context.WithoutCancel(carrier), protocolRequestContextKey{}, carrier)
+	linked, cleanup := linkProtocolRequestContext(sdk)
+	defer cleanup()
+	// An invocation must not wait for an asynchronous callback before observing
+	// a disconnect that happened before the SDK dispatched it.
+	require.ErrorIs(t, linked.Err(), context.Canceled)
+	invoked := false
+	registry := NewRegistry()
+	tool := stubTool("query_metrics", ScopeObserve, false)
+	tool.Invoke = func(context.Context, v1connect.PaprikaServiceClient, json.RawMessage) (any, error) {
+		invoked = true
+		return nil, nil
+	}
+	require.NoError(t, registry.Register(tool))
+	srv := newObservabilityTestServer(t, registry, nil)
+	srv.linkRequestCancellation = true
+	sdk = auth.WithPrincipal(sdk, &auth.Principal{Subject: "observe-user", Scopes: []string{string(ScopeObserve)}})
+	_, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
+	require.Error(t, err)
+	require.False(t, invoked, "already cancelled calls must not dispatch provider work")
+}
+
+func TestProtocolRequestContextRestoresEarlierDeadline(t *testing.T) {
+	carrier, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	sdk := context.WithValue(context.WithoutCancel(carrier), protocolRequestContextKey{}, carrier)
+	linked, cleanup := linkProtocolRequestContext(sdk)
+	defer cleanup()
+	want, _ := carrier.Deadline()
+	got, ok := linked.Deadline()
+	require.True(t, ok)
+	require.Equal(t, want, got)
+	select {
+	case <-linked.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("carrier deadline did not reach tool context")
+	}
+	require.ErrorIs(t, linked.Err(), context.DeadlineExceeded)
+	require.ErrorIs(t, context.Cause(linked), context.DeadlineExceeded)
+}
+
+// Instrument the context.AfterFunc registration without depending on the Go
+// context implementation's private callback storage. Hide the parent's private
+// cancel-context key so context.AfterFunc uses this context's public hook.
+type trackedCarrierContext struct {
+	context.Context
+	active atomic.Int32
+}
+
+func (*trackedCarrierContext) Value(any) any { return nil }
+
+func (c *trackedCarrierContext) AfterFunc(callback func()) func() bool {
+	c.active.Add(1)
+	var once sync.Once
+	release := func() { once.Do(func() { c.active.Add(-1) }) }
+	stop := context.AfterFunc(c.Context, func() { release(); callback() })
+	return func() bool {
+		stopped := stop()
+		if stopped {
+			release()
+		}
+		return stopped
+	}
+}
+
+func TestProtocolRequestContextCompletionRemovesCarrierCallback(t *testing.T) {
+	for _, outcome := range []string{"success", "backend error", "scope denied"} {
+		t.Run(outcome, func(t *testing.T) {
+			carrier, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			tracked := &trackedCarrierContext{Context: carrier}
+			sdk := context.WithValue(context.Background(), protocolRequestContextKey{}, tracked)
+			scope := ScopeObserve
+			if outcome == "scope denied" {
+				scope = ScopeRead
+			}
+			sdk = auth.WithPrincipal(sdk, &auth.Principal{Subject: "observe-user", Scopes: []string{string(scope)}})
+			var invoked context.Context
+			var activeDuringInvoke int32
+			registry := NewRegistry()
+			tool := stubTool("query_metrics", ScopeObserve, false)
+			tool.Invoke = func(ctx context.Context, _ v1connect.PaprikaServiceClient, _ json.RawMessage) (any, error) {
+				invoked, activeDuringInvoke = ctx, tracked.active.Load()
+				if outcome == "backend error" {
+					return nil, errors.New("synthetic provider error")
+				}
+				return map[string]bool{"ok": true}, nil
+			}
+			require.NoError(t, registry.Register(tool))
+			srv := newObservabilityTestServer(t, registry, nil)
+			srv.linkRequestCancellation = true
+			_, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
+			if outcome == "success" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			if outcome != "scope denied" {
+				require.EqualValues(t, 1, activeDuringInvoke)
+				require.ErrorIs(t, invoked.Err(), context.Canceled)
+			}
+			require.Zero(t, tracked.active.Load(), "completed requests must not retain a carrier callback")
+			require.NoError(t, carrier.Err(), "tool completion must not cancel its HTTP parent")
+		})
+	}
 }
