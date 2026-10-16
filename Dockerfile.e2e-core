@@ -1,6 +1,6 @@
 # Lean manager image for the core e2e suite.
 # Skips the UI build because the core suite runs the manager in controllers-only mode.
-FROM golang:1.26 AS builder
+FROM golang:1.27 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
