@@ -16,6 +16,11 @@ vars:
   PERF_TOKEN_FILE: '{{.PERF_TOKEN_FILE | default "/tmp/paprika-perf-token"}}'
   PERF_OUT_DIR: '{{.PERF_OUT_DIR | default "/tmp/paprika-perf"}}'
   PERF_MS_VERSION: '{{.METRICS_SERVER_VERSION | default "v0.8.0"}}'
+  # Observability-gateway perf knobs (perf:obs-*): the gateway's forwarded
+  # /observe port, the seeded mock provider namespace, and its pprof port.
+  PERF_OBS_PORT: '{{.PERF_OBS_PORT | default "18090"}}'
+  PERF_OBS_PPROF_PORT: '{{.PERF_OBS_PPROF_PORT | default "16090"}}'
+  PERF_OBS_NS: '{{.PERF_OBS_NS | default "observability"}}'
 
   # Literal template-brace emitters for tasks that write Helm template
   # syntax (Task interpolates {{ }} in cmds, so braces must be built).
@@ -203,11 +208,18 @@ tasks:
           --set repoServer.image.repository="$repo" \
           --set repoServer.image.tag="$tag" \
           --set repoServer.image.pullPolicy=Never \
+          --set observabilityGateway.enabled=true \
+          --set observabilityGateway.image.repository="$repo" \
+          --set observabilityGateway.image.tag="$tag" \
+          --set observabilityGateway.image.pullPolicy=Never \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=perf-token-secret' \
           --set metrics.enable=true \
           --set metrics.secure=false \
           --set metrics.bindAddress=:8080 \
           --set 'manager.args[0]=--pprof-bind-address=:6060' \
           --set 'apiServer.args[0]=--pprof-bind-address=:6060' \
+          --set 'observabilityGateway.args[0]=--pprof-bind-address=:6060' \
           --set 'apiServer.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
           --set 'apiServer.extraEnv[0].value=perf-token-secret' \
           --set auth.enabled=true \
@@ -422,6 +434,215 @@ tasks:
             -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":{}}}" \
             | python3 -m json.tool 2>/dev/null || echo "(call failed)"
         done
+
+  # --- Observability gateway perf (mock backends + multi-client loadgen) ---
+  #
+  #   task perf:obs-seed COUNT=50        # seed mock providers (idempotent)
+  #   task perf:obs-load SECS=60 CLIENTS=32 RPS=5
+  #   task perf:obs-profile SECS=30      # load + pprof capture, combined
+  #   task perf:obs-metrics              # gateway /metrics + kubectl top
+  #
+  # The loadgen (hack/obsloadgen) mints one paprika-observability token per
+  # client — each with its own subject — so the MCP per-subject rate limiter
+  # bounds each client independently and aggregate throughput scales with
+  # CLIENTS. It needs the perf stack's literal token secret and the gateway's
+  # public URL as issuer; both are fixed by 'task perf:up'.
+
+  perf:obs-seed:
+    desc: Seed COUNT mock observability providers (varied payload shapes) into the perf stack.
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+    cmds:
+      - |
+        set -eu
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' create namespace '{{.PERF_OBS_NS}}' \
+          --dry-run=client -o yaml | kubectl --context 'kind-{{.PERF_CLUSTER}}' apply -f - >/dev/null
+        count='{{.COUNT | default "25"}}'
+        manifest="$(mktemp)"
+        trap 'rm -f "$manifest"' EXIT
+        for i in $(seq 0 $((count - 1))); do
+          series=$((8 + (i * 24) % 256))
+          points=$((16 + (i * 8) % 64))
+          entries=$((50 + (i * 90) % 500))
+          latency=0; fail=0
+          [ $((i % 5)) -eq 0 ] && latency=25
+          [ $((i % 7)) -eq 0 ] && fail=3
+          # printf (not a heredoc): a flush-left heredoc body would terminate
+          # the YAML block scalar this script lives in.
+          {
+            printf 'apiVersion: observability.paprika.io/v1alpha1\n'
+            printf 'kind: ObservabilityProvider\n'
+            printf 'metadata:\n'
+            printf '  name: mock-%s\n' "$i"
+            printf '  namespace: {{.PERF_OBS_NS}}\n'
+            printf 'spec:\n'
+            printf '  type: mock\n'
+            printf '  config:\n'
+            printf '    series: %s\n' "$series"
+            printf '    pointsPerSeries: %s\n' "$points"
+            printf '    labelsPerSeries: 3\n'
+            printf '    logEntries: %s\n' "$entries"
+            printf '    traces: 8\n'
+            printf '    latencyMs: %s\n' "$latency"
+            printf '    failEvery: %s\n' "$fail"
+            printf '    seed: %s\n' "$i"
+            printf '%s\n' '---'
+          } >> "$manifest"
+        done
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' apply -f "$manifest" >/dev/null
+        echo "==> seeded $count mock providers into {{.PERF_OBS_NS}} (mock-0 .. mock-$((count - 1)))"
+
+  perf:obs-load:
+    desc: Run the multi-client observability MCP loadgen (knobs SECS/CLIENTS/RPS/MIX).
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+    cmds:
+      - |
+        set -eu
+        # The gateway forward answers /observe/mcp; verify it is THIS stack's
+        # gateway by probing the catalog with a freshly minted token.
+        issuer_ok() {
+          curl -sf 'http://localhost:{{.PERF_OBS_PORT}}/healthz' 2>/dev/null | grep -qx ok
+        }
+        if ! issuer_ok; then
+          echo "==> port-forwarding observability-gateway -> localhost:{{.PERF_OBS_PORT}}"
+          lsof -ti :'{{.PERF_OBS_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+          sleep 1
+          nohup kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
+            deployment/{{.PERF_RELEASE}}-observability-gateway '{{.PERF_OBS_PORT}}:8090' \
+            >/dev/null 2>&1 </dev/null &
+          i=0; while [ "$i" -lt 30 ]; do issuer_ok && break; i=$((i+1)); sleep 1; done
+        fi
+        issuer_ok || { echo 'error: no gateway healthz on :{{.PERF_OBS_PORT}}' >&2; exit 1; }
+      - |
+        set -eu
+        providers="$(kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_OBS_NS}}' \
+          get observabilityproviders -o name 2>/dev/null \
+          | sed 's|.*/|{{.PERF_OBS_NS}}/|' | paste -sd, -)"
+        [ -n "$providers" ] || { echo 'error: no mock providers — run: task perf:obs-seed' >&2; exit 1; }
+        out='{{.PERF_OUT_DIR}}/obs-load-'"$(date +%s)".json
+        mkdir -p '{{.PERF_OUT_DIR}}'
+        env -u GOROOT go run ./hack/obsloadgen \
+          -gateway 'http://localhost:{{.PERF_OBS_PORT}}' \
+          -secret 'perf-token-secret' \
+          -issuer 'http://localhost:{{.PERF_PORT}}' \
+          -clients '{{.CLIENTS | default "16"}}' \
+          -secs '{{.SECS | default "60"}}' \
+          -rps '{{.RPS | default "5"}}' \
+          -providers "$providers" \
+          -mix '{{.MIX | default "query_metrics:5,query_logs:3,query_traces:2,list_observability_providers:1"}}' \
+          -out "$out"
+        echo "==> report: $out"
+
+  perf:obs-profile:
+    desc: Combined load + pprof capture on the observability gateway (knob SECS, plus CLIENTS/RPS).
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+    cmds:
+      - |
+        set -eu
+        # pprof ships disabled by default; turn it on if this stack predates
+        # the perf:up arg. Idempotent — the patch is a no-op once present.
+        if ! kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' get deploy \
+            {{.PERF_RELEASE}}-observability-gateway -o jsonpath='{.spec.template.spec.containers[0].args}' \
+            | grep -q 'pprof-bind-address'; then
+          echo "==> enabling gateway pprof (:6060)"
+          kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' patch deploy \
+            {{.PERF_RELEASE}}-observability-gateway --type=json -p \
+            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--pprof-bind-address=:6060"}]'
+        fi
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' rollout status \
+          deploy/{{.PERF_RELEASE}}-observability-gateway --timeout=180s
+      - |
+        set -eu
+        secs='{{.SECS | default "30"}}'
+        load_secs=$((secs + 10))
+        providers="$(kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_OBS_NS}}' \
+          get observabilityproviders -o name 2>/dev/null \
+          | sed 's|.*/|{{.PERF_OBS_NS}}/|' | paste -sd, -)"
+        [ -n "$providers" ] || { echo 'error: no mock providers — run: task perf:obs-seed' >&2; exit 1; }
+        # Bring the gateway forward up ourselves: this task is often the
+        # first obs command of a session.
+        if ! curl -sf 'http://localhost:{{.PERF_OBS_PORT}}/healthz' 2>/dev/null | grep -qx ok; then
+          echo "==> port-forwarding observability-gateway -> localhost:{{.PERF_OBS_PORT}}"
+          lsof -ti :'{{.PERF_OBS_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+          sleep 1
+          nohup kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
+            deployment/{{.PERF_RELEASE}}-observability-gateway '{{.PERF_OBS_PORT}}:8090' \
+            >/dev/null 2>&1 </dev/null &
+          i=0; while [ "$i" -lt 30 ]; do
+            curl -sf 'http://localhost:{{.PERF_OBS_PORT}}/healthz' 2>/dev/null | grep -qx ok && break
+            i=$((i+1)); sleep 1
+          done
+        fi
+        out='{{.PERF_OUT_DIR}}/obs-profile-'"$(date +%s)"
+        mkdir -p "$out"
+        echo "==> starting load ($load_secs s) alongside a ${secs}s CPU profile"
+        env -u GOROOT go run ./hack/obsloadgen \
+          -gateway 'http://localhost:{{.PERF_OBS_PORT}}' \
+          -secret 'perf-token-secret' \
+          -issuer 'http://localhost:{{.PERF_PORT}}' \
+          -clients '{{.CLIENTS | default "32"}}' \
+          -secs "$load_secs" \
+          -rps '{{.RPS | default "5"}}' \
+          -providers "$providers" \
+          -out "$out/loadgen.json" &
+        load_pid=$!
+        # The load task above also brings the forward up; if it is still
+        # starting, the pprof scrape below retries.
+        lsof -ti :'{{.PERF_OBS_PPROF_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
+          deployment/{{.PERF_RELEASE}}-observability-gateway \
+          '{{.PERF_OBS_PPROF_PORT}}:6060' >/dev/null 2>&1 &
+        pf=$!
+        trap 'kill $pf $load_pid 2>/dev/null || true' EXIT
+        i=0; while [ "$i" -lt 30 ]; do nc -z localhost '{{.PERF_OBS_PPROF_PORT}}' 2>/dev/null && break; i=$((i+1)); sleep 1; done
+        # Warm the server for a few seconds, then profile the steady state.
+        sleep 5
+        curl -sf 'http://localhost:{{.PERF_OBS_PPROF_PORT}}/debug/pprof/heap' -o "$out/heap.pprof"
+        curl -sf 'http://localhost:{{.PERF_OBS_PPROF_PORT}}/debug/pprof/goroutine?debug=1' -o "$out/goroutine.txt"
+        curl -sf "http://localhost:{{.PERF_OBS_PPROF_PORT}}/debug/pprof/profile?seconds=$secs" -o "$out/cpu.pprof"
+        curl -sf 'http://localhost:{{.PERF_OBS_PPROF_PORT}}/debug/pprof/allocs' -o "$out/allocs.pprof"
+        wait $load_pid
+        echo "==> capture: $out"
+        echo "=== loadgen summary ==="
+        cat "$out/loadgen.json"
+        echo ""
+        echo "=== top CPU ==="
+        env -u GOROOT go tool pprof -top -nodecount=20 "$out/cpu.pprof" 2>&1 | tail -25
+        echo "=== top heap (inuse) ==="
+        env -u GOROOT go tool pprof -top -inuse_space -nodecount=15 "$out/heap.pprof" 2>&1 | tail -20
+        echo "=== top allocs (cumulative) ==="
+        env -u GOROOT go tool pprof -top -alloc_space -nodecount=15 "$out/allocs.pprof" 2>&1 | tail -20
+
+  perf:obs-metrics:
+    desc: Snapshot the observability gateway /metrics and pod resource usage.
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+    cmds:
+      - |
+        set -eu
+        snap='{{.PERF_OUT_DIR}}/obs-metrics-'"$(date +%s)"
+        mkdir -p "$snap"
+        lsof -ti :'{{.PERF_OBS_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
+          deployment/{{.PERF_RELEASE}}-observability-gateway '{{.PERF_OBS_PORT}}:8080' \
+          >/dev/null 2>&1 &
+        pf=$!
+        trap 'kill $pf 2>/dev/null || true' EXIT
+        i=0; while [ "$i" -lt 30 ]; do nc -z localhost '{{.PERF_OBS_PORT}}' 2>/dev/null && break; i=$((i+1)); sleep 1; done
+        curl -sf 'http://localhost:{{.PERF_OBS_PORT}}/metrics' -o "$snap/gateway.txt" || echo "gateway scrape failed"
+        kill $pf 2>/dev/null || true
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' top pod \
+          -l app.kubernetes.io/component=observability-gateway 2>/dev/null | tee "$snap/top.txt" || true
+        echo "==> snapshot: $snap"
+        grep -c '^paprika_' "$snap/gateway.txt" 2>/dev/null || true
 
   chart:crds:
     desc: Copy regenerated config/crd/bases into chart templates with crd.enable/keep wrappers.

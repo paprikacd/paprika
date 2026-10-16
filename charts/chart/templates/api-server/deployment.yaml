@@ -179,6 +179,10 @@ spec:
           value: {{ .Values.repoServer.clientTimeout | quote }}
         {{- end }}
         {{- end }}
+        {{- if .Values.observabilityGateway.enabled }}
+        - name: PAPRIKA_OBSERVABILITY_GATEWAY_ADDR
+          value: http://{{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.observabilityGateway.service.port }}
+        {{- end }}
         {{- if and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
         - name: PAPRIKA_AUTH_RBAC_RULES
           valueFrom:

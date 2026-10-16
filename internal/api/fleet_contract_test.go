@@ -788,12 +788,12 @@ func TestConsoleDescriptor(t *testing.T) {
 		require.Equalf(t, wantValues, enumValueNumbers(enum), "enum %s changed", enumName)
 	}
 
-	require.Len(t, consoleMessageDescriptorContracts, 72, "snapshot must cover every console message")
+	require.Len(t, consoleMessageDescriptorContracts, 92, "snapshot must cover every console message")
 	assertMessageDescriptorContracts(t, file.Messages(), consoleMessageDescriptorContracts)
 
 	service := file.Services().ByName("PaprikaService")
 	require.NotNil(t, service)
-	require.Len(t, consoleServiceMethods, 19, "snapshot must cover every console RPC")
+	require.Len(t, consoleServiceMethods, 25, "snapshot must cover every console RPC")
 
 	// The console RPCs are appended after GetSystemStatus, which is itself
 	// appended after the fleet query RPCs. Asserting by index, and asserting the
@@ -839,6 +839,12 @@ var consoleServiceMethods = []fleetMethodDescriptorContract{
 	{name: "IgnoreDriftedField", input: "paprika.v1.IgnoreDriftedFieldRequest", output: "paprika.v1.IgnoreDriftedFieldResponse"},
 	{name: "ApplyResourcePatch", input: "paprika.v1.ApplyResourcePatchRequest", output: "paprika.v1.ApplyResourcePatchResponse"},
 	{name: "SyncResources", input: "paprika.v1.SyncResourcesRequest", output: "paprika.v1.SyncResourcesResponse"},
+	{name: "ListObservabilityProviders", input: "paprika.v1.ListObservabilityProvidersRequest", output: "paprika.v1.ListObservabilityProvidersResponse"},
+	{name: "GetObservabilityUsage", input: "paprika.v1.GetObservabilityUsageRequest", output: "paprika.v1.GetObservabilityUsageResponse"},
+	{name: "ListObservabilityProviderTypes", input: "paprika.v1.ListObservabilityProviderTypesRequest", output: "paprika.v1.ListObservabilityProviderTypesResponse"},
+	{name: "GetObservabilityProviderType", input: "paprika.v1.GetObservabilityProviderTypeRequest", output: "paprika.v1.GetObservabilityProviderTypeResponse"},
+	{name: "ValidateObservabilityProvider", input: "paprika.v1.ValidateObservabilityProviderRequest", output: "paprika.v1.ValidateObservabilityProviderResponse"},
+	{name: "CreateObservabilityProvider", input: "paprika.v1.CreateObservabilityProviderRequest", output: "paprika.v1.CreateObservabilityProviderResponse"},
 }
 
 var consoleEnumValues = map[string]map[string]int32{
@@ -1942,5 +1948,155 @@ var consoleMessageDescriptorContracts = map[string]map[string]fleetFieldDescript
 		"committed_at_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
 		"message":              {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 		"short_revision":       {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ListObservabilityProvidersRequest": {
+		"namespace": {
+			number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+		},
+	},
+	"ObservabilityProviderItem": {
+		"name":                {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace":           {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"type":                {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state":               {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason":              {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"discovered":          {number: 6, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"endpoint":            {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"signals":             {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"observed_at_unix_ms": {number: 9, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+	},
+	"ListObservabilityProvidersResponse": {
+		"items": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ObservabilityProviderItem",
+		},
+		"total":            {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"index_generation": {number: 3, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"GetObservabilityUsageRequest": {},
+	"ObservabilityToolUsage": {
+		"name":   {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"calls":  {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"errors": {number: 3, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"GetObservabilityUsageResponse": {
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason":  {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"observed_at_unix_ms": {number: 3, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"tools": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ObservabilityToolUsage",
+		},
+	},
+	"ListObservabilityProviderTypesRequest": {},
+	"ProviderTypeSummary": {
+		"type":         {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"display_name": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"vendor":       {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"category":     {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"signals":      {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"summary":      {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ListObservabilityProviderTypesResponse": {
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"types": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ProviderTypeSummary",
+		},
+	},
+	"GetObservabilityProviderTypeRequest": {
+		"type": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ProviderTypeField": {
+		"key":         {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"label":       {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"input":       {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"required":    {number: 4, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"placeholder": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"help":        {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"secret":      {number: 7, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+	},
+	"ProviderTypeCredential": {
+		"kind": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"help": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ProviderTypeStep": {
+		"title": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"body":  {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"code":  {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ProviderTypeProbe": {
+		"signal": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"note":   {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ProviderTypeDetail": {
+		"type":         {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"display_name": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"vendor":       {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"category":     {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"signals":      {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"summary":      {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"description":  {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"config_fields": {
+			number: 8, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ProviderTypeField",
+		},
+		"credential": {
+			number: 9, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ProviderTypeCredential",
+		},
+		"steps": {
+			number: 10, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ProviderTypeStep",
+		},
+		"probe": {
+			number: 11, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ProviderTypeProbe",
+		},
+	},
+	"GetObservabilityProviderTypeResponse": {
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"type_detail": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ProviderTypeDetail",
+		},
+	},
+	"ValidateObservabilityProviderRequest": {
+		"type":        {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"config_json": {number: 2, kind: protoreflect.BytesKind, cardinality: protoreflect.Optional},
+		"credentials": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ValidateObservabilityProviderResponse": {
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"connector_state":    {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason":             {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"CreateObservabilityProviderRequest": {
+		"name":                   {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace":              {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"type":                   {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"config_json":            {number: 4, kind: protoreflect.BytesKind, cardinality: protoreflect.Optional},
+		"credential_secret_name": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"credential_document":    {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"CreateObservabilityProviderResponse": {
+		"name":      {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 	},
 }

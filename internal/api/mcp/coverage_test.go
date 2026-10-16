@@ -78,9 +78,18 @@ var optedOutRPCs = map[string]string{
 	// --- too narrow: single peripheral fields ---
 	"GetRevisionInfo":         "commit/build metadata for a single revision; too narrow to justify a schema budget.",
 	"GetApplicationOwnership": "single-field ownership lookup (team/contact) for an application; too narrow to justify a separate tool.",
-	"ListDriftDetails":        "per-resource drift-field listing; too narrow to justify a schema budget.",
 	"GetApplicationLifecycle": "application lifecycle metadata (created/promoted timestamps); too narrow to justify a separate tool.",
 	"GetRolloutHold":          "hold detail (held_by/expiry/reason) beyond get_rollout's paused state; too narrow a marginal use case to justify a separate tool.",
+
+	// --- observability management: console-surface RPCs ---
+	"ListObservabilityProviders": "provider inventory for the console's observability management page; the observability gateway's own MCP surface already exposes list_observability_providers as an observe-scoped tool backed by the same CRs.",
+	"GetObservabilityUsage":      "gateway tool-call counters for the console's usage board; operational introspection, not investigative fleet data, too narrow to justify a schema budget.",
+
+	// --- observability provider library: console onboarding surface ---
+	"ListObservabilityProviderTypes": "connector catalog metadata for the console's provider library browser; the observability gateway's own MCP surface already exposes the same catalog through its describe tool, so the fleet surface need not duplicate connector vocabulary.",
+	"GetObservabilityProviderType":   "single catalog entry (config schema, onboarding steps, probe shape) for the console's provider wizard; the gateway's describe tool already serves connector vocabulary to MCP clients, too narrow to justify a second surface.",
+	"ValidateObservabilityProvider":  "preflight probe that posts a config and an optional raw credential document to the gateway; the fleet MCP surface is read-only fleet data and must never carry credential material, so this stays a console-only RPC.",
+	"CreateObservabilityProvider":    "mutating control-plane write (ObservabilityProvider CR plus credential Secret); MCP write tools act on pipeline resources, not observability control-plane config, which the console's authorized onboarding flow owns.",
 }
 
 // toolRPCs merges readToolRPCs and writeToolRPCs. They are declared

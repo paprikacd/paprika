@@ -54,9 +54,10 @@ test("serves the compiled shell with exact links that all resolve", async ({ pag
     ["Repositories", "/dashboard/repositories/"],
     ["Templates", "/dashboard/templates/"],
     ["Clusters", "/dashboard/clusters/"],
+    ["Observability", "/dashboard/observability/"],
   ] as const
 
-  // The rail carries these nine destinations, in this order, and nothing else:
+  // The rail carries these ten destinations, in this order, and nothing else:
   // an extra, missing or reordered entry fails here.
   await expect
     .poll(() =>

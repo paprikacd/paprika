@@ -10,6 +10,12 @@ type Scope string
 const (
 	ScopeRead  Scope = "paprika:read"
 	ScopeWrite Scope = "paprika:write"
+	// ScopeObserve grants read-only access to the observability gateway's
+	// MCP tools (logs, metrics, traces queries). It is deliberately separate
+	// from ScopeRead: fleet/console data and observability backends are
+	// different trust domains, and the observability gateway validates its
+	// own token audience, so a console token can never be replayed there.
+	ScopeObserve Scope = "paprika:observe"
 )
 
 // ParseScopes splits a space-delimited scope claim (RFC 6749 section 3.3) and
@@ -23,6 +29,8 @@ func ParseScopes(raw string) []Scope {
 			out = append(out, ScopeRead)
 		case ScopeWrite:
 			out = append(out, ScopeWrite)
+		case ScopeObserve:
+			out = append(out, ScopeObserve)
 		}
 	}
 	return out

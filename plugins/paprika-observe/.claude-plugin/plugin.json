@@ -1,0 +1,11 @@
+{
+  "name": "paprika-observe",
+  "version": "0.1.0",
+  "description": "Discover and query authorized Paprika observability providers for bounded logs, metrics, and traces with independent OAuth access.",
+  "author": {
+    "name": "Paprika"
+  },
+  "homepage": "https://paprika.benebsworth.com",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

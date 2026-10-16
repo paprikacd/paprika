@@ -17,6 +17,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 
 	"github.com/benebsworth/paprika/internal/cache"
 )
@@ -446,6 +447,87 @@ func TestRefreshTokenRotatesAndRevokesPredecessor(t *testing.T) {
 		"a rotated refresh token must not work twice")
 }
 
+func TestRefreshPreservesConsentedAccountAndScopes(t *testing.T) {
+	const redirect = "http://127.0.0.1:8791/callback"
+	for _, scopes := range [][]string{{"paprika:read"}, {"paprika:read", "paprika:write"}} {
+		t.Run(strings.Join(scopes, "+"), func(t *testing.T) {
+			srv := newTestServerWithRedirects(t, []string{redirect})
+			mux := http.NewServeMux()
+			srv.RegisterOAuthRoutes(mux)
+
+			consent := postJSON(t, mux, "/mcp/authorize/consent", consoleBearerFor(t, "profile-user"), consentRequest{
+				ClientID: "test", RedirectURI: redirect, State: "profile-state",
+				CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+				Scopes: scopes, Decision: decisionApprove,
+			})
+			require.Equal(t, http.StatusOK, consent.Code, consent.Body.String())
+			var handoff consentResponse
+			require.NoError(t, json.Unmarshal(consent.Body.Bytes(), &handoff))
+			dest, err := url.Parse(handoff.RedirectTo)
+			require.NoError(t, err)
+			require.NotEmpty(t, dest.Query().Get("code"))
+
+			resp := postForm(t, mux, "/mcp/token", url.Values{
+				"grant_type": {"authorization_code"}, "client_id": {"test"},
+				"code": {dest.Query().Get("code")}, "redirect_uri": {redirect},
+				"code_verifier": {pkceVerifierForFix1},
+			})
+			mcpAuth := mustAudienceAuthenticator(t, testSecret, MCPTokenAudience, testIssuer)
+			for generation := range 3 {
+				require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+				var pair tokenResponse
+				require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &pair))
+				require.NotEmpty(t, pair.RefreshToken)
+				principal, authErr := mcpAuth.Authenticate(ctxWithBearer(pair.AccessToken))
+				require.NoError(t, authErr)
+				assert.Equal(t, "profile-user", principal.Subject)
+				assert.Equal(t, "profile-user@example.com", principal.Email, "generation %d", generation)
+				assert.Equal(t, "Test User", principal.Name, "generation %d", generation)
+				assert.Equal(t, scopes, principal.Scopes)
+				assert.Equal(t, strings.Join(scopes, " "), pair.Scope)
+				if generation < 2 {
+					resp = postForm(t, mux, "/mcp/token", url.Values{
+						"grant_type": {"refresh_token"}, "client_id": {"test"},
+						"refresh_token": {pair.RefreshToken},
+						// Refresh inputs cannot replace verified display identity
+						// or turn a read-only grant into a write grant.
+						"email": {"different@example.com"}, "name": {"Different user"},
+						"scope": {"paprika:read paprika:write"},
+					})
+				}
+			}
+		})
+	}
+}
+
+func TestBoundRefreshRecordsKeepEmptyDisplayIdentity(t *testing.T) {
+	srv, store := newTestServerWithCache(t)
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+	// Bound records may omit optional display fields without inventing them.
+	refresh := seedRefreshToken(t, store, "legacy-user", "paprika:read")
+	mcpAuth := mustAudienceAuthenticator(t, testSecret, MCPTokenAudience, testIssuer)
+	for range 2 {
+		resp := postForm(t, mux, "/mcp/token", url.Values{
+			"grant_type": {"refresh_token"}, "client_id": {"test"}, "refresh_token": {refresh},
+			"email": {"invented@example.com"}, "name": {"Invented account"},
+			"scope": {"paprika:read paprika:write"},
+		})
+		require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+		var pair tokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &pair))
+		principal, err := mcpAuth.Authenticate(ctxWithBearer(pair.AccessToken))
+		require.NoError(t, err)
+		assert.Equal(t, "legacy-user", principal.Subject)
+		assert.Empty(t, principal.Email)
+		assert.Empty(t, principal.Name)
+		assert.Equal(t, []string{"paprika:read"}, principal.Scopes)
+		require.NotEmpty(t, pair.RefreshToken)
+		assert.NotEqual(t, refresh, pair.RefreshToken)
+		refresh = pair.RefreshToken
+	}
+}
+
 func TestIssuedAccessTokenCarriesMCPAudience(t *testing.T) {
 	srv, store := newTestServerWithCache(t)
 	mux := http.NewServeMux()
@@ -573,6 +655,9 @@ func TestTokenEndpointRejectsShortCodeVerifier(t *testing.T) {
 // regardless.
 func seedAuthCode(t *testing.T, store *cache.Cache, rec authCodeRecord) string {
 	t.Helper()
+	if rec.Audience == "" {
+		rec.Audience = MCPTokenAudience
+	}
 	code := "code-" + rec.Subject
 	payload, err := json.Marshal(rec)
 	require.NoError(t, err)
@@ -1178,6 +1263,35 @@ func TestConsentRequiresAuthentication(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
+func TestConsentHandoffResponsesAreNotCached(t *testing.T) {
+	const redirect = "http://127.0.0.1:8791/callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	for _, decision := range []string{"approve", "deny"} {
+		t.Run(decision, func(t *testing.T) {
+			rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+				ClientID: "test", RedirectURI: redirect, State: "keep-this-state",
+				CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+				Scopes: []string{"paprika:read"}, Decision: decision,
+			})
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+			assert.Equal(t, "no-cache", rec.Header().Get("Pragma"))
+		})
+	}
+
+	// Error responses follow the same policy; cache behaviour must not
+	// disclose which authorization requests can be resolved.
+	for _, credential := range []string{"", bearer} {
+		rec := getPendingAuthz(t, mux, "missing-rid", credential)
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+		assert.Equal(t, "no-cache", rec.Header().Get("Pragma"))
+	}
+}
+
 // TestConsentRejectsMCPAudienceToken is the regression test for the second,
 // silent self-escalation route Fix round 1's review found: pre-fix,
 // s.authorizeAuthenticator (built from auth.NewSelfSignedAuthenticator, no
@@ -1550,6 +1664,66 @@ func TestRegisterRejectsUnsafeRedirects(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rec.Code, "uris %v should be rejected", uris)
 	}
 	require.False(t, srv.clientIDAllowed("paprika-never"))
+}
+
+func TestRegisterCapacityPreservesEveryExistingClient(t *testing.T) {
+	srv := newTestServer(t)
+	const redirect = "http://127.0.0.1:8791/callback"
+	for n := range dynClientCap - 1 {
+		srv.dynClients[fmt.Sprintf("existing-%d", n)] = []string{redirect}
+	}
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+	request := registrationRequest{RedirectURIs: []string{redirect}, ClientName: "capacity-test"}
+	last := postJSON(t, mux, "/mcp/register", "", request)
+	require.Equal(t, http.StatusCreated, last.Code)
+	//nolint:tagliatelle // RFC 7591 registration response uses client_id on the wire.
+	var registered struct {
+		ClientID string `json:"client_id"`
+	}
+	require.NoError(t, json.Unmarshal(last.Body.Bytes(), &registered))
+	require.Len(t, srv.dynClients, dynClientCap)
+
+	overflow := postJSON(t, mux, "/mcp/register", "", request)
+	assert.Equal(t, http.StatusServiceUnavailable, overflow.Code)
+	assert.Equal(t, "60", overflow.Header().Get("Retry-After"))
+	var failure oauthError
+	require.NoError(t, json.Unmarshal(overflow.Body.Bytes(), &failure))
+	assert.Equal(t, "temporarily_unavailable", failure.Error)
+	assert.NotContains(t, overflow.Body.String(), "client_id")
+	require.Len(t, srv.dynClients, dynClientCap)
+	for n := range dynClientCap - 1 {
+		clientID := fmt.Sprintf("existing-%d", n)
+		require.True(t, srv.clientIDAllowed(clientID), "existing client %s must survive capacity exhaustion", clientID)
+		require.True(t, srv.isRegisteredRedirect(clientID, redirect))
+	}
+	assert.True(t, srv.clientIDAllowed(registered.ClientID))
+	assert.True(t, srv.isRegisteredRedirect(registered.ClientID, redirect))
+}
+
+func TestRegisterThrottlePreservesClientsAndCannotBeBypassedByForwardedIP(t *testing.T) {
+	srv := newTestServer(t)
+	srv.dynClients["existing-client"] = []string{"http://127.0.0.1/callback"}
+	// A zero refill rate keeps the exhausted bucket deterministic, without
+	// sleeps or timing assumptions on a busy CI runner.
+	srv.registrationLimit = rate.NewLimiter(0, 1)
+	require.True(t, srv.registrationLimit.Allow())
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+	for _, forwarded := range []string{"192.0.2.1", "192.0.2.2"} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mcp/register",
+			strings.NewReader(`{"redirect_uris":["http://127.0.0.1/callback"]}`))
+		req.Header.Set("X-Forwarded-For", forwarded)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusTooManyRequests, rec.Code)
+		assert.Equal(t, "1", rec.Header().Get("Retry-After"))
+		var failure oauthError
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &failure))
+		assert.Equal(t, "temporarily_unavailable", failure.Error)
+	}
+	assert.Len(t, srv.dynClients, 1)
+	assert.True(t, srv.clientIDAllowed("existing-client"))
 }
 
 func TestToolErrorResultMapsDomainErrors(t *testing.T) {

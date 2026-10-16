@@ -1528,6 +1528,246 @@ message QueryCostResponse {
   uint64 index_generation = 6;
 }
 
+message ListObservabilityProvidersRequest {
+  // Optional namespace scope filter. Unset lists every provider the caller
+  // is authorized to read, mirroring the other inventory list RPCs.
+  optional string namespace = 1;
+}
+
+message ObservabilityProviderItem {
+  // Name of the ObservabilityProvider CR.
+  string name = 1;
+  // Namespace hosting the CR.
+  string namespace = 2;
+  // Connector type: prometheus, loki, tempo or otlp.
+  string type = 3;
+  // Reachability verdict from the CR status, in its own vocabulary
+  // (OK, NotConfigured, NotAvailable, Error, Forbidden). Empty when the
+  // gateway has not yet assessed the provider.
+  string state = 4;
+  // Fixed-sentence explanation of state, chosen by the connector. Reasons
+  // never carry credential or endpoint detail.
+  string reason = 5;
+  // True when the provider was materialized by provider discovery (the
+  // observability.paprika.io/discovered label reads "service") rather than
+  // authored by hand.
+  bool discovered = 6;
+  // Backend address extracted from the connector config's endpoint key
+  // only. The rest of the opaque config — which can hold credential
+  // material — never leaves the gateway.
+  string endpoint = 7;
+  // Signal planes this provider's connector can serve (logs, metrics,
+  // traces), from the connector descriptor. Empty when the type has no
+  // connector.
+  repeated string signals = 8;
+  // When the gateway last assessed this provider, in Unix milliseconds.
+  // Zero when no assessment has been recorded.
+  int64 observed_at_unix_ms = 9;
+}
+
+message ListObservabilityProvidersResponse {
+  repeated ObservabilityProviderItem items = 1;
+  // Total counts the whole authorized inventory, not the page.
+  uint64 total = 2;
+  // Generation of the fleet snapshot this list was authorized against.
+  uint64 index_generation = 3;
+}
+
+message GetObservabilityUsageRequest {
+}
+
+message ObservabilityToolUsage {
+  // MCP tool name, e.g. query_metrics.
+  string name = 1;
+  // Total invocations since the gateway process started.
+  uint64 calls = 2;
+  // Invocations that returned an error.
+  uint64 errors = 3;
+}
+
+message GetObservabilityUsageResponse {
+  // NOT_CONFIGURED when no observability gateway address is wired into the
+  // api-server; ERROR when the gateway was called and failed. One check
+  // hides every usage surface.
+  DataState state = 1;
+  // Canonical sentence for a non-OK state, safe to render verbatim.
+  string unavailable_reason = 2;
+  // When the gateway produced the snapshot, in Unix milliseconds. Zero in
+  // degraded states.
+  int64 observed_at_unix_ms = 3;
+  // Per-tool call and error counts, empty in degraded states.
+  repeated ObservabilityToolUsage tools = 4;
+}
+
+message ListObservabilityProviderTypesRequest {
+}
+
+message ProviderTypeSummary {
+  // Connector type: prometheus, loki, tempo, otlp, and the vendor connectors.
+  string type = 1;
+  // Human-readable backend name, e.g. "Grafana Loki".
+  string display_name = 2;
+  // Vendor vocabulary of the library view (AWS, Google Cloud, Open source).
+  string vendor = 3;
+  // Signal category the backend primarily serves (logs, metrics, traces,
+  // audit).
+  string category = 4;
+  // Signal planes this provider's connector can serve.
+  repeated string signals = 5;
+  // One-sentence pitch for the library list view.
+  string summary = 6;
+}
+
+message ListObservabilityProviderTypesResponse {
+  // NOT_CONFIGURED when no observability gateway address is wired into the
+  // api-server; ERROR when the gateway was called and failed.
+  DataState state = 1;
+  // Canonical sentence for a non-OK state, safe to render verbatim.
+  string unavailable_reason = 2;
+  // Provider-type library entries in the gateway's deterministic
+  // Vendor-then-DisplayName order, empty in degraded states.
+  repeated ProviderTypeSummary types = 3;
+}
+
+message GetObservabilityProviderTypeRequest {
+  // Connector type to describe, e.g. "loki".
+  string type = 1;
+}
+
+message ProviderTypeField {
+  // Connector config key this input writes, e.g. "endpoint".
+  string key = 1;
+  // Human-readable label for the form field.
+  string label = 2;
+  // Input widget type (string, text, boolean), as the wizard renders it.
+  string input = 3;
+  // True when the connector requires this key.
+  bool required = 4;
+  // Example value placeholder; empty when the field has no useful example.
+  string placeholder = 5;
+  // Fixed explanation of the field, safe to render verbatim.
+  string help = 6;
+  // True when the input carries credential material and must be rendered as
+  // a password field, never echoed back.
+  bool secret = 7;
+}
+
+message ProviderTypeCredential {
+  // Credential document kind the connector accepts (none, aws-keys,
+  // gcp-service-account).
+  string kind = 1;
+  // Fixed explanation of what the document is and where it lives, safe to
+  // render verbatim.
+  string help = 2;
+}
+
+message ProviderTypeStep {
+  // Short title of the onboarding walkthrough entry.
+  string title = 1;
+  // Instruction paragraph, safe to render verbatim.
+  string body = 2;
+  // Copyable command or document snippet; empty when the step is prose only.
+  string code = 3;
+}
+
+message ProviderTypeProbe {
+  // Signal plane the health probe queries (logs, metrics, traces).
+  string signal = 1;
+  // Fixed explanation of the cheapest read the probe runs, safe to render
+  // verbatim.
+  string note = 2;
+}
+
+message ProviderTypeDetail {
+  // Identity and summary fields, same shape as ProviderTypeSummary.
+  string type = 1;
+  string display_name = 2;
+  string vendor = 3;
+  string category = 4;
+  repeated string signals = 5;
+  string summary = 6;
+  // Long-form description of the connector and its query language.
+  string description = 7;
+  // Config-document schema the onboarding wizard renders as form inputs.
+  repeated ProviderTypeField config_fields = 8;
+  // Credential document shape the connector accepts.
+  ProviderTypeCredential credential = 9;
+  // Onboarding walkthrough entries, in order.
+  repeated ProviderTypeStep steps = 10;
+  // Health-probe shape the preflight check runs.
+  ProviderTypeProbe probe = 11;
+}
+
+message GetObservabilityProviderTypeResponse {
+  // NOT_CONFIGURED when no observability gateway address is wired into the
+  // api-server; ERROR when the gateway was called and failed, including an
+  // unknown type.
+  DataState state = 1;
+  // Canonical sentence for a non-OK state, safe to render verbatim.
+  string unavailable_reason = 2;
+  // Full library entry for the requested type; unset in degraded states.
+  ProviderTypeDetail type_detail = 3;
+}
+
+message ValidateObservabilityProviderRequest {
+  // Connector type to probe, e.g. "loki".
+  string type = 1;
+  // Connector config document. Must be a JSON object; empty means "not
+  // configured", which the probe reports as a NotConfigured verdict rather
+  // than an error.
+  bytes config_json = 2;
+  // Optional raw credential document to probe with, exactly as it would be
+  // stored in the credential Secret.
+  string credentials = 3;
+}
+
+message ValidateObservabilityProviderResponse {
+  // NOT_CONFIGURED when no observability gateway address is wired into the
+  // api-server; ERROR when the gateway was called and failed. A reachable
+  // backend that refuses the credential is still DATA_STATE_OK — the refusal
+  // travels in connector_state and reason.
+  DataState state = 1;
+  // Canonical sentence for a non-OK state, safe to render verbatim.
+  string unavailable_reason = 2;
+  // Health-probe verdict in the connector's own vocabulary (OK,
+  // NotConfigured, NotAvailable, Error, Forbidden). Empty when state is not
+  // OK.
+  string connector_state = 3;
+  // Fixed-sentence explanation of connector_state, chosen by the connector.
+  // Reasons never carry credential or endpoint detail.
+  string reason = 4;
+}
+
+message CreateObservabilityProviderRequest {
+  // Name of the ObservabilityProvider CR. Must be a valid DNS-1123
+  // subdomain.
+  string name = 1;
+  // Namespace hosting the CR and the credential Secret. Must be a valid
+  // DNS-1123 label.
+  string namespace = 2;
+  // Connector type. The admission webhook checks it against the connector
+  // enum at apply time.
+  string type = 3;
+  // Connector config document. Must be a JSON object; empty means the
+  // connector defaults, which the webhook's per-connector validation judges.
+  bytes config_json = 4;
+  // Name of the credential Secret to create. Defaults to "<name>-credentials"
+  // when empty and credential_document is set.
+  string credential_secret_name = 5;
+  // Raw credential document stored as the Secret's credentials key
+  // (stringData). Empty means no Secret is created and no
+  // credentialsSecretRef is set — connectors that reach anonymous or
+  // ambient-identity backends need none.
+  string credential_document = 6;
+}
+
+message CreateObservabilityProviderResponse {
+  // Name of the created ObservabilityProvider CR.
+  string name = 1;
+  // Namespace hosting the CR.
+  string namespace = 2;
+}
+
 message CommitInfo {
   DataState state = 1;
   // Full SHA, OCI digest, or S3 ETag depending on source type.
@@ -2148,6 +2388,12 @@ service PaprikaService {
   rpc IgnoreDriftedField(IgnoreDriftedFieldRequest) returns (IgnoreDriftedFieldResponse);
   rpc ApplyResourcePatch(ApplyResourcePatchRequest) returns (ApplyResourcePatchResponse);
   rpc SyncResources(SyncResourcesRequest) returns (SyncResourcesResponse);
+  rpc ListObservabilityProviders(ListObservabilityProvidersRequest) returns (ListObservabilityProvidersResponse);
+  rpc GetObservabilityUsage(GetObservabilityUsageRequest) returns (GetObservabilityUsageResponse);
+  rpc ListObservabilityProviderTypes(ListObservabilityProviderTypesRequest) returns (ListObservabilityProviderTypesResponse);
+  rpc GetObservabilityProviderType(GetObservabilityProviderTypeRequest) returns (GetObservabilityProviderTypeResponse);
+  rpc ValidateObservabilityProvider(ValidateObservabilityProviderRequest) returns (ValidateObservabilityProviderResponse);
+  rpc CreateObservabilityProvider(CreateObservabilityProviderRequest) returns (CreateObservabilityProviderResponse);
 }
 
 // Configuration only. Per-check execution results are not retained by the controller.

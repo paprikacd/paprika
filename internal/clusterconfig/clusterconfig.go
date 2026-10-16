@@ -56,8 +56,14 @@ const (
 // WithClientRateLimits applies the controller's client-side rate limits to a
 // config minted for a target cluster.
 func WithClientRateLimits(cfg *rest.Config) *rest.Config {
-	cfg.QPS = clusterClientQPS
-	cfg.Burst = clusterClientBurst
+	return WithRateLimits(cfg, clusterClientQPS, clusterClientBurst)
+}
+
+// WithRateLimits applies an explicit client-side budget for a component's
+// Kubernetes reads while retaining the shared controller defaults above.
+func WithRateLimits(cfg *rest.Config, qps float32, burst int) *rest.Config {
+	cfg.QPS = qps
+	cfg.Burst = burst
 	return cfg
 }
 

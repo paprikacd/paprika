@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "paprika_observe": {
+      "type": "streamable-http",
+      "url": "https://paprika.benebsworth.com/observe/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "dcr"
+            },
+            "baseScopes": [
+              "paprika:observe"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

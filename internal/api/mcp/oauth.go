@@ -30,9 +30,16 @@ const (
 
 	// pendingAuthzTTL bounds how long a stashed pre-consent authorize
 	// request (see pendingAuthzRecord) survives before the consent page must
-	// have fetched it — the same single-browser-round-trip lifetime as
-	// authCodeTTL, for the same reason.
-	pendingAuthzTTL = 5 * time.Minute
+	// have fetched it. Unlike authCodeTTL it cannot be a single-round-trip
+	// lifetime: the round trip it covers includes the console login when the
+	// user has no session yet — on deployments where the only interactive
+	// login is OIDC (basic auth off), a first-time user picks an account,
+	// maybe does 2FA, and only then reaches the consent page. Five minutes
+	// turned that routine path into "invalid or expired". Ten matches a
+	// realistic OIDC round trip. The record is pre-consent input
+	// (client_id, redirect_uri, challenge, state) — nothing minted yet, so
+	// the longer window exposes a stashed parameter set, not a grant.
+	pendingAuthzTTL = 10 * time.Minute
 
 	// minCodeVerifierLength and maxCodeVerifierLength are RFC 7636 section
 	// 4.1's fixed bounds on a PKCE code_verifier's length.
@@ -82,10 +89,21 @@ func defaultDuration(d, fallback time.Duration) time.Duration {
 // duplicating the literal string across packages.
 const MCPTokenAudience = "paprika-mcp"
 
-// oauthScopesSupported is the fixed set of scopes this authorization server
-// grants. It is deliberately the same two values Scope declares — nothing
-// else exists to request.
-var oauthScopesSupported = []string{string(ScopeRead), string(ScopeWrite)}
+// ObservabilityTokenAudience is the audience the observability gateway's
+// MCP surface mints and verifies. It is a third audience alongside
+// paprika-api (console) and paprika-mcp (fleet MCP): the gateway's backends
+// and tools are a separate trust domain from the delivery fleet, so a token
+// minted for either existing surface must not be replayable against the
+// gateway even though all three share the deployment's HMAC secret.
+//
+//nolint:gosec // G101 false positive: an OAuth audience identifier, not a credential.
+const ObservabilityTokenAudience = "paprika-observability"
+
+// defaultRoutePrefix is where the console MCP surface mounts: the protocol
+// handler at /mcp, the OAuth endpoints at /mcp/…, and (for backward
+// compatibility with clients that resolve discovery from the host root) the
+// well-known metadata at /.well-known/….
+const defaultRoutePrefix = "/mcp"
 
 // RegisterOAuthRoutes wires the MCP OAuth 2.1 authorization surface —
 // protected-resource metadata (RFC 9728), authorization-server metadata
@@ -100,13 +118,33 @@ var oauthScopesSupported = []string{string(ScopeRead), string(ScopeWrite)}
 // package reaching into the OIDC package directly or duplicating its
 // client-secret handling.
 func (s *Server) RegisterOAuthRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleProtectedResourceMetadata)
-	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleAuthorizationServerMetadata)
-	mux.HandleFunc("/mcp/authorize", s.handleAuthorize)
-	mux.HandleFunc("/mcp/authorize/pending", s.handleAuthorizePending)
-	mux.HandleFunc("/mcp/authorize/consent", s.handleAuthorizeConsent)
-	mux.HandleFunc("/mcp/token", s.handleToken)
-	mux.HandleFunc("/mcp/register", s.handleRegister)
+	mux.HandleFunc(s.routePrefix+"/authorize", s.handleAuthorize)
+	mux.HandleFunc(s.routePrefix+"/authorize/pending", s.handleAuthorizePending)
+	mux.HandleFunc(s.routePrefix+"/authorize/consent", s.handleAuthorizeConsent)
+	mux.HandleFunc(s.routePrefix+"/token", s.handleToken)
+	mux.HandleFunc(s.routePrefix+"/register", s.handleRegister)
+	// Well-known metadata lives under this server's route prefix
+	// (<prefix>/.well-known/…): RFC 9728 metadata is whatever absolute URL the
+	// 401 challenge's resource_metadata parameter names, and writeUnauthenticated
+	// points at this prefix-derived location. That lets several MCP surfaces
+	// share one hostname (the console at /mcp, the observability gateway at
+	// /observe) without their discovery documents colliding.
+	mux.HandleFunc(s.routePrefix+"/.well-known/oauth-protected-resource", s.handleProtectedResourceMetadata)
+	mux.HandleFunc(s.routePrefix+"/.well-known/oauth-authorization-server", s.handleAuthorizationServerMetadata)
+	// RFC 9728 inserts the well-known segment before the resource path;
+	// RFC 8414 does the same for a path-qualified authorization issuer.
+	// Keep the prefixed aliases above for existing clients and ingress rules.
+	mux.HandleFunc("/.well-known/oauth-protected-resource"+s.protocolPath, s.handleProtectedResourceMetadata)
+	if s.routePrefix != defaultRoutePrefix {
+		mux.HandleFunc("/.well-known/oauth-authorization-server"+s.routePrefix, s.handleAuthorizationServerMetadata)
+	}
+	// The default surface additionally serves the host-root well-knowns its
+	// challenges always have: clients that predate the prefix-derived
+	// resource_metadata URL resolve metadata from the resource origin's root.
+	if s.routePrefix == defaultRoutePrefix {
+		mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleProtectedResourceMetadata)
+		mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleAuthorizationServerMetadata)
+	}
 }
 
 // handleRegister implements RFC 7591 dynamic client registration for public
@@ -119,6 +157,11 @@ func (s *Server) RegisterOAuthRoutes(mux *http.ServeMux) {
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "POST only")
+		return
+	}
+	if !s.registrationLimit.Allow() {
+		w.Header().Set("Retry-After", "1")
+		writeOAuthError(w, http.StatusTooManyRequests, "temporarily_unavailable", "client registration is temporarily rate limited")
 		return
 	}
 	var req registrationRequest
@@ -140,11 +183,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	s.dynMu.Lock()
 	if len(s.dynClients) >= dynClientCap {
-		// Evict an arbitrary entry — registrations are free to retry.
-		for k := range s.dynClients {
-			delete(s.dynClients, k)
-			break
-		}
+		// Registration is public: replacing an existing entry would let an
+		// unauthenticated caller invalidate another client's active grants.
+		s.dynMu.Unlock()
+		w.Header().Set("Retry-After", "60")
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "client registration capacity is temporarily unavailable")
+		return
 	}
 	s.dynClients[clientID] = append([]string(nil), req.RedirectURIs...)
 	s.dynMu.Unlock()
@@ -192,6 +236,13 @@ func (r registrationRequest) validate() string {
 // unauthenticated, so the map cannot grow without limit.
 const dynClientCap = 4096
 
+// Public DCR requests share a bounded bucket; interactive clients register
+// infrequently, and no untrusted peer/header-derived map keys are retained.
+const (
+	registrationRatePerSecond = 5
+	registrationRateBurst     = 10
+)
+
 // redirectURIAllowedForRegistration restricts dynamically-registered
 // redirect URIs to loopback http(s) (any port — local clients bind
 // ephemeral listeners) or https:// on any host. Plain-HTTP off-box
@@ -211,11 +262,11 @@ func redirectURIAllowedForRegistration(raw string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
-// consentPath is where a browser lacking a console credential is redirected
-// from GET /mcp/authorize, and where the design's SPA (not this package's
-// responsibility) collects explicit user consent before POSTing to
-// /mcp/authorize/consent.
-const consentPath = "/mcp/consent"
+// consentPath is documented on Server.consentPath: where a browser lacking a
+// console credential is redirected from GET <prefix>/authorize, and where
+// the consent page (the console SPA for the default surface, an embedded
+// page for the observability gateway) collects explicit user consent before
+// POSTing to <prefix>/authorize/consent.
 
 // protectedResourceMetadata is the RFC 9728 document a client fetches after
 // receiving this server's 401 WWW-Authenticate challenge (writeUnauthenticated).
@@ -229,10 +280,36 @@ type protectedResourceMetadata struct {
 
 func (s *Server) handleProtectedResourceMetadata(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, protectedResourceMetadata{
-		Resource:             s.publicURL + "/mcp",
-		AuthorizationServers: []string{s.publicURL},
-		ScopesSupported:      oauthScopesSupported,
+		Resource:             s.publicURL + s.protocolPath,
+		AuthorizationServers: []string{s.authorizationIssuer()},
+		ScopesSupported:      s.scopesSupported(),
 	})
+}
+
+// authorizationIssuer keeps independent OAuth surfaces independently
+// discoverable. Advertising the host origin for /observe would send clients
+// to the fleet's root metadata, registration endpoint and token audience.
+// The existing fleet issuer remains unchanged for compatibility. The JWT
+// issuer remains the deployment origin; audience validation separates tokens.
+func (s *Server) authorizationIssuer() string {
+	if s.routePrefix == defaultRoutePrefix {
+		return s.publicURL
+	}
+	return s.publicURL + s.routePrefix
+}
+
+// scopesSupported is this authorization server's advertised scope set as
+// strings — ServerConfig.SupportedScopes (read+write by default,
+// [paprika:observe] on the observability gateway). Every place discovery
+// metadata names the granted scopes reads through this one method so the
+// advertised set can never drift from the set consent and token minting
+// actually enforce.
+func (s *Server) scopesSupported() []string {
+	out := make([]string, len(s.supportedScopes))
+	for i, sc := range s.supportedScopes {
+		out[i] = string(sc)
+	}
+	return out
 }
 
 // authorizationServerMetadata is the RFC 8414 document naming Paprika as its
@@ -254,15 +331,15 @@ type authorizationServerMetadata struct {
 
 func (s *Server) handleAuthorizationServerMetadata(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, authorizationServerMetadata{
-		Issuer:                        s.publicURL,
-		AuthorizationEndpoint:         s.publicURL + "/mcp/authorize",
-		TokenEndpoint:                 s.publicURL + "/mcp/token",
-		RegistrationEndpoint:          s.publicURL + "/mcp/register",
+		Issuer:                        s.authorizationIssuer(),
+		AuthorizationEndpoint:         s.publicURL + s.routePrefix + "/authorize",
+		TokenEndpoint:                 s.publicURL + s.routePrefix + "/token",
+		RegistrationEndpoint:          s.publicURL + s.routePrefix + "/register",
 		ResponseTypesSupported:        []string{"code"},
 		GrantTypesSupported:           []string{"authorization_code", "refresh_token"},
 		CodeChallengeMethodsSupported: []string{"S256"},
 		TokenEndpointAuthMethods:      []string{"none"},
-		ScopesSupported:               oauthScopesSupported,
+		ScopesSupported:               s.scopesSupported(),
 	})
 }
 
@@ -276,6 +353,7 @@ func (s *Server) handleAuthorizationServerMetadata(w http.ResponseWriter, _ *htt
 //
 //nolint:tagliatelle // internal cache-only serialization; snake_case matches the OAuth field names it mirrors.
 type authCodeRecord struct {
+	Audience      string `json:"aud"`
 	Subject       string `json:"sub"`
 	Email         string `json:"email"`
 	Name          string `json:"name"`
@@ -549,6 +627,7 @@ func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
 	// zero value below), so nothing oversized ever reaches the cache.
 	if s.clientIDAllowed(q.Get("client_id")) &&
 		s.isRegisteredRedirect(q.Get("client_id"), q.Get("redirect_uri")) &&
+		s.validResource(q["resource"]) &&
 		len(q.Get("state")) <= maxAuthorizeStateLen &&
 		len(q.Get("scope")) <= maxAuthorizeScopeLen &&
 		len(q.Get("code_challenge")) <= maxAuthorizeChallengeLen &&
@@ -570,10 +649,10 @@ func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// dest always starts with the fixed constant consentPath, followed only by a
+	// dest always starts with this server's consentPath, followed only by a
 	// server-generated random rid — never anything caller-controlled — so this can never redirect
 	// off-site regardless of what the caller supplies.
-	dest := consentPath + "?rid=" + url.QueryEscape(rid)
+	dest := s.consentPath + "?rid=" + url.QueryEscape(rid)
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
@@ -641,6 +720,8 @@ type pendingAuthzResponse struct {
 // beyond viewing already-caller-supplied request parameters before their
 // owner decides to approve or deny.
 func (s *Server) handleAuthorizePending(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -710,6 +791,10 @@ func (s *Server) lookupPendingAuthz(ctx context.Context, rid string) (pendingAut
 // back into the response body or a header, and a Location header is never
 // set on this path at all.
 func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (redirectURI, codeChallenge string, ok bool) {
+	if !s.validResource(q["resource"]) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource does not identify this MCP surface")
+		return "", "", false
+	}
 	if q.Get("response_type") != "code" {
 		writeOAuthError(w, http.StatusBadRequest, "unsupported_response_type", "only response_type=code is supported")
 		return "", "", false
@@ -834,6 +919,11 @@ type consentResponse struct {
 // carrying the victim's credential nor read the response. No separate CSRF
 // token is added for this reason.
 func (s *Server) handleAuthorizeConsent(w http.ResponseWriter, r *http.Request) {
+	// The JSON response can carry a one-time authorization code. Approval
+	// stays visible until the user continues, so neither an intermediary nor
+	// the browser should keep a cached copy of this handoff.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -888,7 +978,7 @@ func (s *Server) finishConsentApprove(ctx context.Context, w http.ResponseWriter
 		return
 	}
 
-	scope, ok := consentedScope(req.Scopes)
+	scope, ok := s.consentedScope(req.Scopes)
 	if !ok {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_scope", "no valid scope was consented to")
 		return
@@ -924,14 +1014,16 @@ func (s *Server) finishConsentApprove(ctx context.Context, w http.ResponseWriter
 // paprika:* scope claim at all, so explicit consent is the only source of
 // truth for what is granted here.
 //
-// requested must be non-empty and every entry must be exactly ScopeRead or
-// ScopeWrite — an empty list or any unrecognised token is rejected outright
-// (ok=false), the same fail-closed rule negotiateScope applies to an
+// requested must be non-empty and every entry must be one of THIS server's
+// supported scopes — an empty list or any unrecognised token is rejected
+// outright (ok=false), the same fail-closed rule negotiateScope applies to an
 // unrecognised or unheld scope: silently dropping an unrecognised value
 // here could otherwise hand back a token granting less than the user
-// thought they consented to, with no error to explain why. Duplicate
-// entries are deduplicated.
-func consentedScope(requested []string) (string, bool) {
+// thought they consented to, with no error to explain why. A scope the
+// server supports but does not itself grant (e.g. paprika:write ticked on
+// the observability gateway, which grants only paprika:observe) is rejected
+// the same way. Duplicate entries are deduplicated.
+func (s *Server) consentedScope(requested []string) (string, bool) {
 	if len(requested) == 0 {
 		return "", false
 	}
@@ -939,7 +1031,7 @@ func consentedScope(requested []string) (string, bool) {
 	granted := make([]Scope, 0, len(requested))
 	for _, r := range requested {
 		sc := Scope(r)
-		if sc != ScopeRead && sc != ScopeWrite {
+		if !s.supportsScope(sc) {
 			return "", false
 		}
 		if _, dup := seen[sc]; dup {
@@ -951,10 +1043,21 @@ func consentedScope(requested []string) (string, bool) {
 	return scopesToString(granted), true
 }
 
+// supportsScope reports whether sc is one of this authorization server's
+// supported scopes — the set advertised in discovery metadata and enforced
+// again here at consent time.
+func (s *Server) supportsScope(sc Scope) bool {
+	for _, supported := range s.supportedScopes {
+		if sc == supported {
+			return true
+		}
+	}
+	return false
+}
+
 // clientIDAllowed reports whether clientID may use this authorization
-// server. NewServer requires ServerConfig.ClientID to be non-empty, so
-// s.clientID is always configured here — an empty or mismatched clientID
-// is always rejected; there is no "unconfigured, skip the check" case.
+// server. A DCR-only server has no static client: only IDs created through
+// registration pass. An empty ID is always rejected, regardless of mode.
 func (s *Server) clientIDAllowed(clientID string) bool {
 	if clientID == "" {
 		return false
@@ -975,10 +1078,13 @@ func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
 	if candidate == "" {
 		return false
 	}
-	for _, registered := range s.redirectURIs {
-		if candidate == registered {
-			return true
+	if clientID == s.clientID {
+		for _, registered := range s.redirectURIs {
+			if candidate == registered {
+				return true
+			}
 		}
+		return false
 	}
 	s.dynMu.Lock()
 	defer s.dynMu.Unlock()
@@ -988,6 +1094,33 @@ func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
 		}
 	}
 	return false
+}
+
+// A missing resource is accepted for existing first-party clients. When a
+// standards client supplies one or more, every indicator must identify this
+// surface. Native clients can repeat the same resource while combining their
+// protected-resource discovery and configured OAuth resource. Repetition must
+// not reject that one target or permit a second target before a grant is used.
+func (s *Server) validResource(resources []string) bool {
+	if len(resources) == 0 {
+		return true
+	}
+	want, err := url.Parse(s.publicURL + s.protocolPath)
+	if err != nil {
+		return false
+	}
+	for _, resource := range resources {
+		if !resourceMatchesTarget(resource, want) {
+			return false
+		}
+	}
+	return true
+}
+
+func resourceMatchesTarget(resource string, want *url.URL) bool {
+	got, err := url.Parse(resource)
+	return err == nil && got.User == nil && !strings.Contains(resource, "#") && got.RawQuery == "" && !got.ForceQuery &&
+		strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host) && got.EscapedPath() == want.EscapedPath()
 }
 
 // negotiateScope computes the scope an authorization code — and the access
@@ -1061,6 +1194,7 @@ func scopesToString(scopes []Scope) string {
 // for authCodeTTL, single-use (handleAuthorizationCodeGrant deletes it on
 // first exchange).
 func (s *Server) issueAuthCode(ctx context.Context, rec *authCodeRecord) (string, error) {
+	rec.Audience = s.audience
 	code, err := randomToken()
 	if err != nil {
 		return "", err
@@ -1080,11 +1214,18 @@ func authCodeKey(code string) string {
 }
 
 // refreshRecord is what a refresh token resolves to in the cache, under
-// refreshKey. Deliberately minimal — just enough to re-mint an access token
-// — matching what the brief's seedRefreshToken test helper writes directly.
+// refreshKey. Display identity comes only from the original authenticated
+// grant and survives rotation. Display fields are optional; the client and
+// audience bindings are mandatory, so pre-upgrade unbound records fail closed.
+//
+//nolint:tagliatelle // Retain the established OAuth grant cache format and RFC 6749 client_id binding.
 type refreshRecord struct {
-	Subject string `json:"sub"`
-	Scope   string `json:"scope"`
+	Audience string `json:"aud"`
+	ClientID string `json:"client_id"`
+	Subject  string `json:"sub"`
+	Email    string `json:"email,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Scope    string `json:"scope"`
 }
 
 func refreshKey(token string) string {
@@ -1122,6 +1263,10 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	// relates to credentials.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
+	if !s.validResource(r.PostForm["resource"]) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource does not identify this MCP surface")
+		return
+	}
 
 	if !s.clientIDAllowed(r.PostFormValue("client_id")) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "unknown client_id")
@@ -1165,6 +1310,10 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "unknown or expired code")
 		return
 	}
+	if rec.Audience != s.audience {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "code was not issued for this MCP surface")
+		return
+	}
 
 	// RFC 6749 section 4.1.3 requires the token endpoint to verify the code
 	// was issued to the client presenting it here — PKCE and exact
@@ -1183,7 +1332,7 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.issueTokenPair(r.Context(), w, rec.Subject, rec.Email, rec.Name, rec.Scope)
+	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope)
 }
 
 // consumeAuthCode atomically looks up and deletes code in a single cache
@@ -1231,8 +1380,12 @@ func (s *Server) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "unknown or expired refresh_token")
 		return
 	}
+	if rec.Audience != s.audience || rec.ClientID == "" || rec.ClientID != r.PostFormValue("client_id") {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh token was not issued to this client")
+		return
+	}
 
-	s.issueTokenPair(r.Context(), w, rec.Subject, "", "", rec.Scope)
+	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope)
 }
 
 // consumeRefreshToken atomically looks up and deletes token in a single
@@ -1266,17 +1419,19 @@ func (s *Server) consumeRefreshToken(ctx context.Context, token string) (refresh
 	return rec, nil
 }
 
-// issueTokenPair mints an access token bound to MCPTokenAudience plus a
+// issueTokenPair mints an access token bound to this server's audience (its
+// ServerConfig.Audience — MCPTokenAudience for the console surface,
+// ObservabilityTokenAudience for the observability gateway) plus a
 // fresh rotating refresh token, stores the refresh record, and writes the
 // RFC 6749 section 5.1 JSON response. It is the single place both grant
-// types converge, so every successful /mcp/token response is built the same
+// types converge, so every successful <prefix>/token response is built the same
 // way.
-func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, subject, email, name, scope string) {
+func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, clientID, subject, email, name, scope string) {
 	access, err := auth.IssueTokenWithOptions(auth.TokenOptions{
 		Subject:  subject,
 		Email:    email,
 		Name:     name,
-		Audience: MCPTokenAudience,
+		Audience: s.audience,
 		Issuer:   s.publicURL,
 		Scope:    scope,
 		TTL:      s.accessTTL,
@@ -1292,7 +1447,7 @@ func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, subj
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	payload, err := json.Marshal(refreshRecord{Subject: subject, Scope: scope})
+	payload, err := json.Marshal(refreshRecord{Audience: s.audience, ClientID: clientID, Subject: subject, Email: email, Name: name, Scope: scope})
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

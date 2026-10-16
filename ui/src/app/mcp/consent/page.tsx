@@ -10,33 +10,12 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/lib/auth-context"
 
+import { AuthorizationApproved, CapsicumMark } from "./authorization-approved"
 import {
   fetchPendingAuthz,
   SCOPE_WRITE,
   type ConsentRequestResult,
 } from "./consent-request"
-
-// A quiet mark, not a mascot — sized to sit above the fold text, not below a
-// hero. The stem is the point; keep it even if the body gets simplified.
-const CAPSICUM_ART = String.raw`      \|/
-   .-"""""-.
-  /  _____  \
- |  /     \  |
- |  \     /  |
-  \  '. .'  /
-   '.  '  .'
-     '---'`
-
-function CapsicumMark() {
-  return (
-    <pre
-      aria-hidden="true"
-      className="mx-auto w-fit font-mono text-[8px] leading-[1.15] text-primary/40 select-none"
-    >
-      {CAPSICUM_ART}
-    </pre>
-  )
-}
 
 function ConsentShell({ children }: { children: React.ReactNode }) {
   return (
@@ -87,6 +66,10 @@ function ConsentHandler() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [pending, setPending] = useState<ConsentRequestResult | null>(null)
+  const [approved, setApproved] = useState<{
+    redirectTo: string
+    writeGranted: boolean
+  } | null>(null)
 
   // Fix round 2, Finding 1: /mcp/authorize's redirect to this page now
   // carries only an opaque `rid` — never the client_id/redirect_uri/etc
@@ -171,9 +154,9 @@ function ConsentHandler() {
   const writeOffered =
     requestedScopes === null || requestedScopes.includes(SCOPE_WRITE)
 
-  // submitConsent is shared by Allow and Deny: both are server round trips
-  // that end with the browser navigating to whatever `redirectTo` the
-  // server returns. This is deliberate (Fix round 1, Finding 1a) — the UI
+  // Allow and Deny both round-trip to the server. Approval presents a
+  // handoff screen; Deny returns directly. Both navigate only to the exact
+  // `redirectTo` the server returns. This is deliberate — the UI
   // must never build a navigation target itself from the raw, unvalidated
   // redirect_uri a client supplied. The server re-validates client_id and
   // redirect_uri for a deny exactly as it does for an approve (see
@@ -189,6 +172,8 @@ function ConsentHandler() {
     try {
       const res = await fetch("/mcp/authorize/consent", {
         method: "POST",
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken ?? ""}`,
@@ -215,12 +200,16 @@ function ConsentHandler() {
         throw new Error(message)
       }
 
-      const redirectTo = (data as { redirectTo?: string }).redirectTo
-      if (!redirectTo) {
+      const redirectTo = (data as { redirectTo?: unknown }).redirectTo
+      if (typeof redirectTo !== "string" || !redirectTo) {
         throw new Error("The server did not return a redirect target")
       }
 
-      window.location.href = redirectTo
+      if (decision === "approve") {
+        setApproved({ redirectTo, writeGranted: scopes.includes(SCOPE_WRITE) })
+      } else {
+        window.location.href = redirectTo
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Authorisation failed")
       submittingRef.current = false
@@ -236,6 +225,23 @@ function ConsentHandler() {
     await submitConsent(
       "approve",
       grantWrite ? ["paprika:read", SCOPE_WRITE] : ["paprika:read"]
+    )
+  }
+
+  if (approved) {
+    return (
+      <ConsentShell>
+        <AuthorizationApproved
+          account={user.email || user.name}
+          instance={window.location.host ?? ""}
+          writeGranted={approved.writeGranted}
+          onContinue={() => {
+            // Preserve the exact validated callback, including the OAuth
+            // state and PKCE-bound code. Never put it in storage or markup.
+            window.location.href = approved.redirectTo
+          }}
+        />
+      </ConsentShell>
     )
   }
 

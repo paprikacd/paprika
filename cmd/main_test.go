@@ -793,6 +793,7 @@ func TestBuildMCPHandlersWiresRealClient(t *testing.T) {
 	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
 		Subject:  "task15-test",
 		Audience: mcp.MCPTokenAudience,
+		Issuer:   "https://paprika.example",
 		Scope:    string(mcp.ScopeRead),
 		TTL:      time.Hour,
 		Secret:   secret,

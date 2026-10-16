@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApplyResourcePatchRequest, ApplyResourcePatchResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetAnalysisRunRequest, GetAnalysisRunResponse, GetApplicationLifecycleRequest, GetApplicationLifecycleResponse, GetApplicationOwnershipRequest, GetApplicationOwnershipResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetClusterRequest, GetClusterResponse, GetDataSourcesRequest, GetDataSourcesResponse, GetPipelineRequest, GetPipelineResponse, GetPipelineRunRequest, GetPipelineRunResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRevisionInfoRequest, GetRevisionInfoResponse, GetRolloutHoldRequest, GetRolloutHoldResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, GetSystemStatusRequest, GetSystemStatusResponse, HoldRolloutRequest, HoldRolloutResponse, IgnoreDriftedFieldRequest, IgnoreDriftedFieldResponse, InvestigateRequest, InvestigateResponse, ListAnalysisRunsRequest, ListAnalysisRunsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListClustersRequest, ListClustersResponse, ListDriftDetailsRequest, ListDriftDetailsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelineRunsRequest, ListPipelineRunsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutHistoryRequest, ListRolloutHistoryResponse, ListRolloutsRequest, ListRolloutsResponse, ListSourceEventsRequest, ListSourceEventsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, QueryApplicationSignalsRequest, QueryApplicationSignalsResponse, QueryApplicationsRequest, QueryApplicationsResponse, QueryCostRequest, QueryCostResponse, QueryFleetMapRequest, QueryFleetMapResponse, QueryFleetMatrixRequest, QueryFleetMatrixResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, ResumeRolloutRequest, ResumeRolloutResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse, SyncResourcesRequest, SyncResourcesResponse } from "./api_pb.js";
+import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApplyResourcePatchRequest, ApplyResourcePatchResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, CreateObservabilityProviderRequest, CreateObservabilityProviderResponse, GetAnalysisRunRequest, GetAnalysisRunResponse, GetApplicationLifecycleRequest, GetApplicationLifecycleResponse, GetApplicationOwnershipRequest, GetApplicationOwnershipResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetClusterRequest, GetClusterResponse, GetDataSourcesRequest, GetDataSourcesResponse, GetObservabilityProviderTypeRequest, GetObservabilityProviderTypeResponse, GetObservabilityUsageRequest, GetObservabilityUsageResponse, GetPipelineRequest, GetPipelineResponse, GetPipelineRunRequest, GetPipelineRunResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRevisionInfoRequest, GetRevisionInfoResponse, GetRolloutHoldRequest, GetRolloutHoldResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, GetSystemStatusRequest, GetSystemStatusResponse, HoldRolloutRequest, HoldRolloutResponse, IgnoreDriftedFieldRequest, IgnoreDriftedFieldResponse, InvestigateRequest, InvestigateResponse, ListAnalysisRunsRequest, ListAnalysisRunsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListClustersRequest, ListClustersResponse, ListDriftDetailsRequest, ListDriftDetailsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListObservabilityProvidersRequest, ListObservabilityProvidersResponse, ListObservabilityProviderTypesRequest, ListObservabilityProviderTypesResponse, ListPipelineRunsRequest, ListPipelineRunsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutHistoryRequest, ListRolloutHistoryResponse, ListRolloutsRequest, ListRolloutsResponse, ListSourceEventsRequest, ListSourceEventsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, QueryApplicationSignalsRequest, QueryApplicationSignalsResponse, QueryApplicationsRequest, QueryApplicationsResponse, QueryCostRequest, QueryCostResponse, QueryFleetMapRequest, QueryFleetMapResponse, QueryFleetMatrixRequest, QueryFleetMatrixResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, ResumeRolloutRequest, ResumeRolloutResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse, SyncResourcesRequest, SyncResourcesResponse, ValidateObservabilityProviderRequest, ValidateObservabilityProviderResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -550,6 +550,60 @@ export const PaprikaService = {
       name: "SyncResources",
       I: SyncResourcesRequest,
       O: SyncResourcesResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListObservabilityProviders
+     */
+    listObservabilityProviders: {
+      name: "ListObservabilityProviders",
+      I: ListObservabilityProvidersRequest,
+      O: ListObservabilityProvidersResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetObservabilityUsage
+     */
+    getObservabilityUsage: {
+      name: "GetObservabilityUsage",
+      I: GetObservabilityUsageRequest,
+      O: GetObservabilityUsageResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListObservabilityProviderTypes
+     */
+    listObservabilityProviderTypes: {
+      name: "ListObservabilityProviderTypes",
+      I: ListObservabilityProviderTypesRequest,
+      O: ListObservabilityProviderTypesResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetObservabilityProviderType
+     */
+    getObservabilityProviderType: {
+      name: "GetObservabilityProviderType",
+      I: GetObservabilityProviderTypeRequest,
+      O: GetObservabilityProviderTypeResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ValidateObservabilityProvider
+     */
+    validateObservabilityProvider: {
+      name: "ValidateObservabilityProvider",
+      I: ValidateObservabilityProviderRequest,
+      O: ValidateObservabilityProviderResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.CreateObservabilityProvider
+     */
+    createObservabilityProvider: {
+      name: "CreateObservabilityProvider",
+      I: CreateObservabilityProviderRequest,
+      O: CreateObservabilityProviderResponse,
       kind: MethodKind.Unary,
     },
   }

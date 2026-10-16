@@ -3,6 +3,16 @@
 This page documents direct Connect JSON access and selected Paprika RPCs. The
 full service definition is in `proto/paprika/v1/api.proto`.
 
+For access from Codex or Claude, see the [Paprika plugin guide](guides/mcp-plugin.md).
+The `/mcp` endpoint exposes authenticated tools for app health, debugging, and
+delivery operations, with OAuth sign-in and the same application permissions as
+the API. The guide covers installation, example prompts, and MCP Apps support.
+
+A second, independent MCP surface lives at `/observe/mcp` (the observability
+gateway): read-only tools for querying logs, metrics, and traces through
+`ObservabilityProvider` connectors, granted by the `paprika:observe` scope.
+See the [observability gateway guide](guides/observability-gateway.md).
+
 ## Direct Connect JSON requests
 
 Unary RPCs are available at
