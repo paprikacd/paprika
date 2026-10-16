@@ -114,7 +114,30 @@ helm upgrade paprika-e2e charts/chart/ \
   the exact-commit fetch recovery in `internal/source/git.go`
   (`fetchPinnedCommit` + `refs/paprika-pinned/`). Never force-push over
   commits a release has pinned; upstream-unreachable SHAs permanently fail
-  that release's renders.
+  that release's renders. Only the first clone is shallow: fetches into an
+  existing mirror run at depth 0 (`incrementalDepth`), and what that leaves
+  out below the boundary is re-fetched at depth 1 by `repairDanglingRefs` (a
+  ref on a missing commit) and `refetchTip` (a tip missing a tree or blob).
+- Git resolve is pure go-git — no `git` binary and no second worktree repo:
+  the mirror fetches the minimal refspec for the revision (`+HEAD:` for
+  default, `+refs/heads/<rev>` for branches, `+<sha>:refs/paprika-pinned/`
+  for pinned commits with an all-heads fallback when the server lacks
+  allowAnySHA1InWant), and `checkoutTree` materializes files straight from
+  mirror objects into `git-clones/` (subtree-scoped when `path` is set —
+  sparse for monorepos — plus a sibling `.rev` marker that skips
+  re-materialization on re-resolve). Knobs on `source.git`:
+  `shallow` (default true), `depth`, `fetchAllRefs`, `fetchTtl` (e.g. "30s" —
+  warm mirrors skip the remote inside the TTL; a `.lastfetch` sibling file
+  is the clock, go-git writes no FETCH_HEAD). Pinned SHA resolves skip the
+  remote entirely once the object is mirrored — commits are immutable.
+  Mirror corruption discovered during object reads triggers the protected
+  rebuild (see `isRecoverableGitCacheError` — errors naming the remote URL
+  never reset).
+- All Kubernetes clients share `negotiateProtobuf` (cmd/protobuf.go), which
+  composes `kube.WithProtobufResponses` + `kube.WithRetryTransport`: GET/
+  HEAD/OPTIONS retry up to 3 attempts on connection resets / mid-response
+  EOF (VKE HTTP/2 stream kills on large LISTs). Mutations are never
+  retried — a post-commit reset would double-apply.
 - Prune is opt-in via `SyncOptions.Prune` (default false). When enabled,
   `pruneStaleResources` deletes live resources that are paprika-labelled,
   ownerless, and not in the desired manifest set. Resources annotated
@@ -180,6 +203,16 @@ helm upgrade paprika-e2e charts/chart/ \
 - `/mcp` and embedded UI responses are gzip-compressed when the client
   sends Accept-Encoding: gzip — a 20KB fleet_map result is ~2KB on the
   wire (the structuredContent/text duplication compresses away).
+- `/mcp` is ENABLED on VKE at https://paprika.benebsworth.com/mcp (RFC
+  8414/9728 discovery + OAuth 2.1/PKCE). Real connectors (Claude, Codex)
+  self-register via POST /mcp/register (RFC 7591 DCR, `paprika-<rand>` ids
+  bound to their own redirect URIs — loopback http(s) or https only).
+  Static `mcp.oauth.clientId`/`redirectUris` remain for first-party
+  clients (perf:token uses http://localhost:8791/callback).
+- `plugins/paprika/` is the claude/codex connector plugin (manifests +
+  .mcp.json + skill + README). Brand assets live in `assets/brand/`
+  (capsicum mark + wordmark + lockups), served in the UI from
+  `/brand/paprika-mark.png`, `src/app/icon.png`, `src/app/favicon.ico`.
 - `/mcp` requests are rate-limited per authenticated subject (50 rps,
   burst 100) and bodies are capped at 1 MiB — perf:load drives one token,
   so keep the loadgen under ~50 calls/s per token or spread load across
@@ -189,10 +222,16 @@ helm upgrade paprika-e2e charts/chart/ \
   tool+outcome attributes.
 - MCP read tools over port-forward: ~180ms/call sequential, ~14.8 calls/s
   aggregate under 3 concurrent workers (post authz-informer optimization).
-- Profiling baseline (MCP read load): ~50% of cumulative allocs is upstream
-  MCP SDK JSON decode; paprika-controlled hotspots after the AppProject
-  informer fix are `fleet.Snapshot` queries, `mcp.toolResult` (payload is
-  emitted twice: structured + text), and `auth.verifySelfSigned`.
+- Profiling baseline (MCP read load, api-server, kind): segmentio
+  `json.(*Decoder).readValue` = ~85% cumulative allocs inside the MCP SDK's
+  servePOST/DecodeMessage (~180KB per call — upstream transport, can't fix
+  in-tree); paprika-controlled hotspots are `fleet.Snapshot` queries,
+  `mcp.toolResult` duplication, `auth.verifySelfSigned`. At ~50 calls/s on
+  one token the per-subject limiter returns ~20% 429s — that's intended.
+- `source.fetchTtl` (e.g. "45s") on git Applications bounds warm-mirror
+  remote fetches — apps sharing one repo+secret collapse to ~1 fetch per
+  TTL window (measured: greenveil 5-pack ~0.7 fetches/min vs ~5/min).
+
 
 ## Key Metrics
 

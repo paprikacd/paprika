@@ -87,3 +87,14 @@ func TestProjectValidator_Validate_RejectsBadKind(t *testing.T) {
 	require.Len(t, violations, 1)
 	assert.True(t, violations[0].Blocking())
 }
+
+func TestProjectValidatorInlineArtifactRepositoryAuthorization(t *testing.T) {
+	project := makeAppProject()
+	source := pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeInline, Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: "snapshot", Artifact: &pipelinesv1alpha1.InlineArtifact{Repository: "https://github.com/acme/payments.git"}}}
+	require.Empty(t, validateSource(project, source))
+	source.Inline.Artifact.Repository = "https://github.com/other/payments.git"
+	require.Len(t, validateSource(project, source).Blocking(), 1)
+	source.Inline.Artifact.Repository = "https://github.com/acme/payments.git"
+	project.Spec.SourceReposDeny = []string{"https://github.com/acme/payments.git"}
+	require.Len(t, validateSource(project, source).Blocking(), 1)
+}

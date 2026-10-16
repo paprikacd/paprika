@@ -1,0 +1,40 @@
+{
+  "name": "paprika",
+  "version": "0.1.0",
+  "description": "Operate Kubernetes application delivery with Paprika: fleet status, app health, drift, releases, rollouts, gates, and pipeline control.",
+  "author": {
+    "name": "Paprika"
+  },
+  "homepage": "https://paprika.benebsworth.com",
+  "keywords": [
+    "paprika",
+    "kubernetes",
+    "gitops",
+    "deployments",
+    "rollouts",
+    "canary",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Paprika",
+    "shortDescription": "Operate your Paprika delivery fleet.",
+    "longDescription": "Connect Paprika with OAuth, inspect fleet and per-application health, pinpoint out-of-sync resources, follow releases and rollouts, approve gates, and trigger syncs with scoped permissions.",
+    "developerName": "Paprika",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://paprika.benebsworth.com",
+    "brandColor": "#E23B26",
+    "logo": "./assets/paprika-logo.png",
+    "composerIcon": "./assets/paprika-logo.png",
+    "defaultPrompt": [
+      "Show fleet status and any unhealthy applications.",
+      "Investigate the most recent failed release.",
+      "What drifted out of sync on my apps?"
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

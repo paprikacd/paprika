@@ -1214,6 +1214,23 @@ export const ApplicationSet = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "applications", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
     { no: 4, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "rolling_sync", kind: "message", T: RollingSyncProgress },
+  ],
+);
+
+/**
+ * RollingSyncProgress mirrors the ApplicationSet status field: the active
+ * 1-based step (len(steps)+1 = implicit trailing step), apps not yet at
+ * desired state, and the app gating progress when a step is health-blocked.
+ *
+ * @generated from message paprika.v1.RollingSyncProgress
+ */
+export const RollingSyncProgress = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RollingSyncProgress",
+  () => [
+    { no: 1, name: "step", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 2, name: "pending", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 3, name: "waiting_for", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

@@ -13,6 +13,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -137,12 +138,15 @@ func AssessObject(obj *unstructured.Unstructured) paprikav1.ResourceHealth {
 	case "Deployment":
 		return assessReplicaHealth(obj,
 			[]string{"spec", "replicas"}, []string{"status", "availableReplicas"}, []string{"status", "updatedReplicas"})
-	case "StatefulSet", "ReplicaSet":
+	case "StatefulSet":
 		return assessReplicaHealth(obj,
 			[]string{"spec", "replicas"}, []string{"status", "readyReplicas"}, []string{"status", "updatedReplicas"})
+	case "ReplicaSet":
+		return assessReplicaHealth(obj,
+			[]string{"spec", "replicas"}, []string{"status", "readyReplicas"}, nil)
 	case "DaemonSet":
 		return assessReplicaHealth(obj,
-			[]string{"status", "desiredNumberScheduled"}, []string{"status", "numberReady"}, nil)
+			[]string{"status", "desiredNumberScheduled"}, []string{"status", "numberAvailable"}, []string{"status", "updatedNumberScheduled"})
 	case "CronJob":
 		if nestedBool(obj.Object, "spec", "suspend") {
 			base.Health, base.Message = "Healthy", "cronjob suspended"
@@ -320,6 +324,16 @@ func phaseHealth(obj *unstructured.Unstructured) (paprikav1.ResourceHealth, bool
 // updated counters, matching the wording the typed Deployment check used.
 func assessReplicaHealth(obj *unstructured.Unstructured, desiredPath, readyPath, updatedPath []string) paprikav1.ResourceHealth {
 	base := resourceHealthBase(obj)
+	// Replica counters can still describe the previous pod template immediately
+	// after apply. A sync wave must wait for the workload controller to observe
+	// the new spec before treating those counters as evidence of readiness.
+	generation := obj.GetGeneration()
+	observed, _ := nestedInt64(obj.Object, "status", "observedGeneration")
+	if generation > 0 && observed < generation {
+		base.Health = "Progressing"
+		base.Message = fmt.Sprintf("waiting for workload controller to observe generation %d", generation)
+		return base
+	}
 	desired, found := nestedInt64(obj.Object, desiredPath...)
 	if !found {
 		// Kubernetes defaults spec.replicas to 1; an explicit 0 means the
@@ -336,6 +350,17 @@ func assessReplicaHealth(obj *unstructured.Unstructured, desiredPath, readyPath,
 		if updated, _ := nestedInt64(obj.Object, updatedPath...); updated < desired {
 			base.Health = "Progressing"
 			base.Message = fmt.Sprintf("%d/%d replicas updated", updated, desired)
+			return base
+		}
+	}
+	// A Deployment may have enough updated and available replicas while old
+	// replicas are still serving traffic. Do not run post-deploy checks until
+	// that rollout has converged, including scale-down to zero.
+	if obj.GetKind() == "Deployment" && obj.GetGeneration() > 0 {
+		total, _ := nestedInt64(obj.Object, "status", "replicas")
+		if total != desired {
+			base.Health = "Progressing"
+			base.Message = fmt.Sprintf("%d/%d total replicas; waiting for rollout convergence", total, desired)
 			return base
 		}
 	}
@@ -408,20 +433,13 @@ func (r *ResourceHealthChecker) checkDeployment(ctx context.Context, name, names
 		return paprikav1.ResourceHealth{Kind: "Deployment", Name: name, Namespace: namespace, Health: "Missing", Message: err.Error()}
 	}
 
-	replicas := dep.Spec.Replicas
-	if replicas == nil {
-		replicas = int32Ptr(1)
+	fields, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&dep)
+	if err != nil {
+		return paprikav1.ResourceHealth{Kind: "Deployment", Name: name, Namespace: namespace, Health: "Unknown", Message: "cannot assess deployment status"}
 	}
-	available := dep.Status.AvailableReplicas
-	updated := dep.Status.UpdatedReplicas
-
-	if available < *replicas {
-		return paprikav1.ResourceHealth{Kind: "Deployment", Name: name, Namespace: namespace, Health: "Progressing", Message: fmt.Sprintf("%d/%d replicas available", available, *replicas)}
-	}
-	if updated < *replicas {
-		return paprikav1.ResourceHealth{Kind: "Deployment", Name: name, Namespace: namespace, Health: "Progressing", Message: fmt.Sprintf("%d/%d replicas updated", updated, *replicas)}
-	}
-	return paprikav1.ResourceHealth{Kind: "Deployment", Name: name, Namespace: namespace, Health: "Healthy", Message: fmt.Sprintf("%d/%d replicas ready", available, *replicas)}
+	obj := &unstructured.Unstructured{Object: fields}
+	obj.SetKind("Deployment")
+	return AssessObject(obj)
 }
 
 // checkService evaluates the health of a Service.
@@ -454,9 +472,4 @@ func (r *ResourceHealthChecker) checkCronJob(ctx context.Context, name, namespac
 		return paprikav1.ResourceHealth{Kind: "CronJob", Name: name, Namespace: namespace, Health: "Progressing", Message: fmt.Sprintf("%d active jobs", len(cj.Status.Active))}
 	}
 	return paprikav1.ResourceHealth{Kind: "CronJob", Name: name, Namespace: namespace, Health: "Healthy", Message: "cronjob scheduled"}
-}
-
-// int32Ptr returns a pointer to an int32.
-func int32Ptr(v int32) *int32 {
-	return &v
 }

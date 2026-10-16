@@ -104,7 +104,25 @@ func TestApplicationCustomValidator_validateApplication(t *testing.T) {
 		}
 		err := v.validateApplication(context.Background(), app)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "Repo URL is required")
+		assert.Contains(t, err.Error(), "repoUrl or repoRef is required")
+	})
+
+	t.Run("git repoRef satisfies URL requirement", func(t *testing.T) {
+		app := &pipelinesv1alpha1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+			Spec: pipelinesv1alpha1.ApplicationSpec{
+				Project: "default",
+				Source: pipelinesv1alpha1.ApplicationSource{
+					Type:    pipelinesv1alpha1.SourceTypeGit,
+					RepoRef: "my-repo",
+				},
+				Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+			},
+		}
+		// repoRef-only git sources must validate — the URL comes from the
+		// Repository CR at resolution time.
+		err := v.validateApplication(context.Background(), app)
+		require.NoError(t, err)
 	})
 
 	t.Run("missing stages", func(t *testing.T) {

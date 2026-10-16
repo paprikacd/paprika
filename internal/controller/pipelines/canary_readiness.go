@@ -147,7 +147,7 @@ func (r *ReleaseReconciler) canaryWorkloadsReady(ctx context.Context, release *p
 		return true, "no Deployments rendered", nil
 	}
 
-	dynClient, err := r.resolveDynamicClient(ctx, resolvedCluster.KubeconfigSecret, release.Namespace)
+	dynClient, err := r.resolveDynamicClient(ctx, resolvedCluster.KubeconfigSecret, clusterCredentialNamespace(&resolvedCluster, release.Namespace))
 	if err != nil {
 		return false, "", fmt.Errorf("resolve dynamic client for readiness gate: %w", err)
 	}

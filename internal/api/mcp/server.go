@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/NYTimes/gziphandler"
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -96,10 +98,18 @@ type Server struct {
 	publicURL     string
 	clientID      string
 	redirectURIs  []string
-	secret        []byte
-	accessTTL     time.Duration
-	refreshTTL    time.Duration
-	streamable    http.Handler
+
+	// dynClients holds OAuth clients created by POST /mcp/register (RFC 7591
+	// dynamic registration). Real connectors (Claude, Codex) each register
+	// their own client_id + redirect URIs at connect time; the static
+	// clientID/redirectURIs pair remains for first-party clients.
+	dynMu      sync.Mutex
+	dynClients map[string][]string
+
+	secret     []byte
+	accessTTL  time.Duration
+	refreshTTL time.Duration
+	streamable http.Handler
 
 	// authorizeAuthenticator authenticates GET /mcp/authorize and POST
 	// /mcp/authorize/consent — see ServerConfig.ConsoleAuthenticator. The
@@ -158,6 +168,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		publicURL:              cfg.PublicURL,
 		clientID:               cfg.ClientID,
 		redirectURIs:           cfg.RedirectURIs,
+		dynClients:             map[string][]string{},
 		secret:                 cfg.Secret,
 		accessTTL:              defaultDuration(cfg.AccessTTL, defaultAccessTTL),
 		refreshTTL:             defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
@@ -482,10 +493,52 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 		return nil, &sdkjsonrpc.Error{Code: codeScopeDenied, Message: s.scopeDeniedMessage(name)}
 	case errors.Is(err, ErrToolNotFound):
 		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeMethodNotFound, Message: err.Error()}
-	default:
-		log.FromContext(ctx).Error(err, "mcp: tool call failed", "tool", name)
-		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
 	}
+	if r := toolErrorResult(err); r != nil {
+		return r, nil
+	}
+	log.FromContext(ctx).Error(err, "mcp: tool call failed", "tool", name)
+	return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
+}
+
+// toolErrorResult renders domain-level failures (entity missing, bad
+// arguments, conflicts) as a CallToolResult with IsError=true and the real
+// message — the model gets "application X not found", not an opaque
+// -32603. Only Connect codes that carry caller-actionable detail map;
+// anything else still falls to the internal-error path.
+func toolErrorResult(err error) *sdkmcp.CallToolResult {
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		return nil
+	}
+	if !toolActionableCode(ce.Code()) {
+		return nil
+	}
+	text := ce.Error()
+	if inner := ce.Unwrap(); inner != nil {
+		text = inner.Error()
+	}
+	return &sdkmcp.CallToolResult{
+		IsError: true,
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: text},
+		},
+	}
+}
+
+// toolActionableCode reports whether a Connect error code carries a
+// caller-facing fix (missing entity, bad input) rather than a server fault.
+func toolActionableCode(c connect.Code) bool {
+	_, ok := actionableCodes[c]
+	return ok
+}
+
+var actionableCodes = map[connect.Code]struct{}{
+	connect.CodeNotFound:           {},
+	connect.CodeInvalidArgument:    {},
+	connect.CodeAlreadyExists:      {},
+	connect.CodeFailedPrecondition: {},
+	connect.CodePermissionDenied:   {},
 }
 
 // scopeDeniedMessage names the scope a tool requires, for the -32001 error

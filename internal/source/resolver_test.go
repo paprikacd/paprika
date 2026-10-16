@@ -434,8 +434,29 @@ func TestGitSourceResolve_RecoversCorruptWorktreeCache(t *testing.T) {
 		t.Fatalf("first Resolve() error: %v", err)
 	}
 
+	// Corrupt one loose blob in the disposable mirror — the checkout's
+	// object read must trip and trigger the protected rebuild. Rebuild the
+	// mirror with loose objects so the damage is not masked by pack data.
+	mirrorDir := filepath.Join(resolverWorkDir, "git-mirrors", RepoCacheKey(origin, ""))
+	if rmErr := os.RemoveAll(mirrorDir); rmErr != nil {
+		t.Fatalf("remove mirror: %v", rmErr)
+	}
+	runGit(t, filepath.Dir(mirrorDir), "clone", "--bare", "--no-hardlinks", origin, mirrorDir)
+	blob := gitOutput(t, mirrorDir, "rev-parse", "HEAD:chart/values.yaml")
+	looseObject := filepath.Join(mirrorDir, "objects", blob[:2], blob[2:])
+	if mkErr := os.MkdirAll(filepath.Dir(looseObject), 0o700); mkErr != nil {
+		t.Fatal(mkErr)
+	}
+	if wrErr := os.WriteFile(looseObject, []byte("corrupt synthetic blob"), 0o600); wrErr != nil {
+		t.Fatal(wrErr)
+	}
 	worktreeDir := filepath.Join(resolverWorkDir, "git-clones", RepoCacheKey(origin, ""))
-	corruptGitObject(t, filepath.Join(worktreeDir, ".git", "objects"))
+	if rmErr := os.RemoveAll(worktreeDir); rmErr != nil {
+		t.Fatalf("remove worktree: %v", rmErr)
+	}
+	if rmErr := os.Remove(worktreeDir + ".rev"); rmErr != nil && !os.IsNotExist(rmErr) {
+		t.Fatal(rmErr)
+	}
 
 	second, err := src.Resolve(ctx)
 	if err != nil {
@@ -532,36 +553,6 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return string(bytes.TrimSpace(out))
 }
 
-func corruptGitObject(t *testing.T, objectsDir string) {
-	t.Helper()
-
-	var target string
-	err := filepath.WalkDir(objectsDir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() || target != "" {
-			return nil
-		}
-		if d.Type().IsRegular() {
-			target = path
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk git objects: %v", err)
-	}
-	if target == "" {
-		t.Fatalf("no git object found under %s", objectsDir)
-	}
-	if err := os.Chmod(target, 0o600); err != nil {
-		t.Fatalf("chmod git object %s: %v", target, err)
-	}
-	if err := os.WriteFile(target, []byte("corrupt"), 0o600); err != nil {
-		t.Fatalf("corrupt git object %s: %v", target, err)
-	}
-}
-
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 
@@ -586,5 +577,149 @@ func writeChartFile(t *testing.T, dir, version string) {
 	}
 	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("version: "+version+"\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Regression: templates sharing a repo+credential cache key but requesting
+// different paths must each get their subtree materialized — the per-scope
+// marker must not suppress a path it never wrote.
+func TestGitSourceResolve_DifferentPathsShareMirror(t *testing.T) {
+	root := t.TempDir()
+	origin, work := filepath.Join(root, "origin.git"), filepath.Join(root, "work")
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+	for _, dir := range []string{"charts/app-a", "charts/app-b"} {
+		full := filepath.Join(work, dir)
+		if err := os.MkdirAll(full, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(full, "values.yaml"), []byte("app: "+dir+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, work, "add", ".")
+	runGit(t, work, "-c", "user.email=e2e@test", "-c", "user.name=e2e", "commit", "-m", "two charts")
+	runGit(t, work, "push", "-u", "origin", "main")
+
+	workDir := filepath.Join(root, "resolver")
+	resolvePath := func(path string) string {
+		src := &GitSource{RepoURL: origin, Revision: "main", Path: path, WorkDir: workDir, Shallow: true}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		res, err := src.Resolve(ctx)
+		if err != nil {
+			t.Fatalf("resolve path %s: %v", path, err)
+		}
+		return res.LocalPath
+	}
+
+	paths := map[string]string{
+		resolvePath("charts/app-a"): "app: charts/app-a\n",
+		resolvePath("charts/app-b"): "app: charts/app-b\n",
+	}
+	for localPath, want := range paths {
+		//nolint:gosec // test reads its own fixture files
+		content, err := os.ReadFile(filepath.Join(localPath, "values.yaml"))
+		if err != nil {
+			t.Fatalf("read materialized path %s: %v", localPath, err)
+		}
+		if string(content) != want {
+			t.Fatalf("content at %s = %q, want %q", localPath, content, want)
+		}
+	}
+}
+
+// Pinned commit SHAs are immutable — once mirrored, resolving must not
+// touch the remote at all. Simulates upstream unavailability.
+func TestGitSourceResolve_PinnedSHASkipsRemoteOnceMirrored(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+	writeChartFile(t, work, "first")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "first")
+	runGit(t, work, "push", "-u", "origin", "main")
+	pinned := gitOutput(t, work, "rev-parse", "HEAD")
+
+	src := &GitSource{RepoURL: origin, Revision: pinned, Path: "chart", WorkDir: resolverWorkDir, Shallow: true}
+	if _, err := src.Resolve(ctx); err != nil {
+		t.Fatalf("initial pinned Resolve() error: %v", err)
+	}
+
+	// Remote vanishes — a warm pinned mirror must still resolve.
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatal(err)
+	}
+	got, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("pinned Resolve() after remote loss: %v", err)
+	}
+	if got.Revision != pinned {
+		t.Fatalf("revision changed: %s", got.Revision)
+	}
+}
+
+// FetchTTL bounds remote chatter for moving refs: within the window the
+// previous fetch result is reused, past it the next push lands.
+func TestGitSourceResolve_FetchTTLBoundsRemoteFetches(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+	writeChartFile(t, work, "v1")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "v1")
+	runGit(t, work, "push", "-u", "origin", "main")
+
+	src := &GitSource{RepoURL: origin, Revision: "main", Path: "chart", WorkDir: resolverWorkDir, Shallow: true, FetchTTL: time.Hour}
+	first, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	// Push a new commit — the warm mirror must NOT see it inside the TTL.
+	writeChartFile(t, work, "v2")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "v2")
+	runGit(t, work, "push", "origin", "main")
+
+	second, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("in-TTL Resolve() error: %v", err)
+	}
+	if second.Revision != first.Revision {
+		t.Fatalf("in-TTL resolve saw pushed commit %s — mirror should be fresh-skipped", second.Revision)
+	}
+
+	// Expire the TTL by aging the fetch clock, then the push must land.
+	mirrorDir := filepath.Join(resolverWorkDir, "git-mirrors", RepoCacheKey(origin, ""))
+	old := time.Now().Add(-2 * time.Hour)
+	if chtErr := os.Chtimes(fetchClockFile(mirrorDir), old, old); chtErr != nil {
+		t.Fatal(chtErr)
+	}
+	third, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("post-TTL Resolve() error: %v", err)
+	}
+	if third.Revision == first.Revision {
+		t.Fatal("post-TTL resolve did not see the pushed commit")
 	}
 }

@@ -70,10 +70,14 @@ func (v *ProjectValidator) validate(ctx context.Context, project *corev1alpha1.A
 //nolint:gocritic // heavy CRD struct passed by value per API
 func validateSource(project *corev1alpha1.AppProject, source pipelinesv1alpha1.ApplicationSource) Violations {
 	var violations Violations
-	// Inline sources reference a local ConfigMap snapshot and do not require
-	// repository credentials or project repo authorization.
+	// Legacy local snapshots carry no repository identity. Versioned inline
+	// artifacts must obey the same source allow/deny lists as Git sources.
 	if source.Type == pipelinesv1alpha1.SourceTypeInline {
-		return violations
+		if source.Inline == nil || source.Inline.Artifact == nil {
+			return violations
+		}
+		source.RepoURL = source.Inline.Artifact.Repository
+		source.RepoRef = ""
 	}
 	if source.RepoURL != "" {
 		if err := CheckDenyList(project.Spec.SourceReposDeny, source.RepoURL, GlobMatch, "source repo %q denied by project %s", source.RepoURL, project.Name); err != nil {

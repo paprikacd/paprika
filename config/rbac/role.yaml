@@ -8,8 +8,10 @@ rules:
   - ""
   resources:
   - configmaps
+  - limitranges
   - namespaces
   - persistentvolumeclaims
+  - resourcequotas
   - serviceaccounts
   - services
   verbs:

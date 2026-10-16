@@ -142,6 +142,9 @@ jobs:
         with:
           version: v0.29.1
 
+      - name: Install syft for SBOM generation
+        uses: anchore/sbom-action/download-syft@a930d0ac434e3182448fe678398ba5713717112a # v0.21.0
+
       - name: Require resumable draft to remain empty
         run: |
           set -euo pipefail
@@ -243,20 +246,28 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p .dist
+          mkdir -p .dist .dist/remote
+          helm package charts/chart \
+            --destination .dist \
+            --version "${VERSION}" \
+            --app-version "${VERSION}"
           collision_error="$(mktemp)"
           trap 'rm -f -- "${collision_error}"' EXIT
-          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination .dist 2>"${collision_error}"; then
-            printf 'chart %s appeared after preflight; refusing to overwrite it\n' "${VERSION}" >&2
+          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination .dist/remote 2>"${collision_error}"; then
+            # Another job (e.g. the chart-bump publish on master) pushed the
+            # same version after preflight — reuse it when the contents match.
+            if bash hack/compare-helm-chart.sh \
+                ".dist/paprika-${VERSION}.tgz" \
+                ".dist/remote/paprika-${VERSION}.tgz"; then
+              printf 'chart %s published concurrently with matching contents; reusing\n' "${VERSION}"
+              exit 0
+            fi
+            printf 'chart %s appeared after preflight with different contents; refusing to overwrite it\n' "${VERSION}" >&2
             exit 1
           elif ! grep -Eiq '(not found|manifest unknown)' "${collision_error}"; then
             cat "${collision_error}" >&2
             exit 1
           fi
-          helm package charts/chart \
-            --destination .dist \
-            --version "${VERSION}" \
-            --app-version "${VERSION}"
           helm push ".dist/paprika-${VERSION}.tgz" \
             oci://ghcr.io/paprikacd/charts
 
@@ -355,6 +366,10 @@ jobs:
             "paprika_${VERSION}_darwin_arm64.tar.gz"
             "paprika_${VERSION}_linux_amd64.tar.gz"
             "paprika_${VERSION}_linux_arm64.tar.gz"
+            "paprika_${VERSION}_darwin_amd64.tar.gz.sbom.spdx.json"
+            "paprika_${VERSION}_darwin_arm64.tar.gz.sbom.spdx.json"
+            "paprika_${VERSION}_linux_amd64.tar.gz.sbom.spdx.json"
+            "paprika_${VERSION}_linux_arm64.tar.gz.sbom.spdx.json"
             "checksums.txt"
           )
           mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"${release_json}" | sort)
@@ -375,7 +390,9 @@ jobs:
           done
           cd assets
 
-          mapfile -t checksummed_assets < <(awk '{sub(/^\*/, "", $2); print $2}' checksums.txt | sort)
+          # checksums.txt covers every artifact (archives + SBOMs); the
+          # tarball-only check asserts each archive is checksummed.
+          mapfile -t checksummed_assets < <(awk '{sub(/^\*/, "", $2); print $2}' checksums.txt | grep '\.tar\.gz$' | sort)
           mapfile -t archive_assets < <(printf '%s\n' "${expected_assets[@]}" | grep '\.tar\.gz$' | sort)
           diff --unified \
             <(printf '%s\n' "${archive_assets[@]}") \
@@ -391,7 +408,7 @@ jobs:
           tar -xzf "paprika_${VERSION}_linux_amd64.tar.gz" -C linux-amd64
           cd linux-amd64
           version_output="$(./paprika version)"
-          grep -Fx "paprika ${VERSION}" <<<"${version_output}"
+          grep -F "paprika client: v${VERSION}" <<<"${version_output}"
           ./paprika login --help >/dev/null
           ./paprika status --help >/dev/null
           ./paprika version --help >/dev/null
@@ -405,6 +422,16 @@ jobs:
           docker pull --platform linux/amd64 "${IMAGE_DIGEST_REF}" >/dev/null
           test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${IMAGE_DIGEST_REF}")" = "linux/amd64"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${IMAGE_DIGEST_REF}")" = "${GITHUB_SHA}"
+          # Entrypoint smoke: the chart hardcodes /manager as the container
+          # command for every mode; a wrong path or missing binary fails here
+          # instead of crash-looping deployed pods (as v0.2.0 did).
+          docker run --rm --platform linux/amd64 --entrypoint /manager \
+            "${IMAGE_DIGEST_REF}" --version | grep -F "${VERSION}"
+          # Git/helm work is fully in-process (go-git, Helm SDK); the
+          # runtime only needs TLS roots and the bundled charts for
+          # local-path sources.
+          docker run --rm --platform linux/amd64 --entrypoint /bin/sh \
+            "${IMAGE_DIGEST_REF}" -c 'test -d /charts && ! command -v git >/dev/null'
 
           CHART_DIGEST_REF="${{ needs.helm.outputs.chart_digest_ref }}"
           if [[ ! "${CHART_DIGEST_REF}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then

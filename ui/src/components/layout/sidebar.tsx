@@ -369,14 +369,18 @@ function SidebarBrand() {
     <div className="border-b border-ink-rule px-4 pt-3.5 pb-[13px]">
       <Link
         href="/dashboard/"
-        className="block"
+        className="flex items-center gap-3"
         aria-label="Paprika operations overview"
       >
-        <span className="block font-cond text-count leading-none font-bold tracking-[0.14em]">
-          PAPRIKA
-        </span>
-        <span className="mt-[5px] block font-mono text-kicker tracking-[0.12em] text-ink-accent">
-          CONTROL PLANE
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/paprika-mark.png" alt="" className="size-9 shrink-0 rounded-sm" />
+        <span>
+          <span className="block font-cond text-count leading-none font-bold tracking-[0.14em]">
+            PAPRIKA
+          </span>
+          <span className="mt-[5px] block font-mono text-kicker tracking-[0.12em] text-ink-accent">
+            CONTROL PLANE
+          </span>
         </span>
       </Link>
     </div>

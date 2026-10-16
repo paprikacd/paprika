@@ -21,3 +21,7 @@
 # Re-include UI source for static export build
 !ui/**
 ui/**/node_modules/
+
+# Re-include the committed prebuilt UI export so Dockerfile.fast can
+# embed the real dashboard without rebuilding the UI
+!internal/api/uistatic/**

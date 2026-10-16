@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/policy"
 )
 
@@ -104,6 +106,51 @@ func TestApplyBundle_Success(t *testing.T) {
 	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "test-ns", Name: resp.Msg.Release.Name + "-manifests"}, &cm))
 	require.Len(t, cm.OwnerReferences, 1)
 	require.Equal(t, release.UID, cm.OwnerReferences[0].UID)
+}
+
+type advancingBundleClient struct {
+	client.Client
+	clock *clock.Fake
+}
+
+func (c *advancingBundleClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	err := c.Client.Create(ctx, obj, opts...)
+	if _, isStage := obj.(*pipelinesv1alpha1.Stage); isStage && err == nil {
+		c.clock.Add(time.Second)
+	}
+	return err
+}
+
+func TestApplyBundleKeepsOneReleaseIdentityAcrossSecondBoundary(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clk := clock.NewFake(time.Unix(1800000000, 0))
+	c := &advancingBundleClient{Client: newApplyBundleClient(t), clock: clk}
+	srv := NewPaprikaServer(c, nil, WithClock(clk))
+	resp, err := srv.ApplyBundle(ctx, connect.NewRequest(&paprikav1.ApplyBundleRequest{
+		Namespace: "boundary-ns", Name: "boundary-app", Manifests: sampleManifests(),
+	}))
+	require.NoError(t, err)
+	require.Equal(t, int64(1800000001), clk.Now().Unix(), "the apply must cross the boundary")
+	require.Contains(t, resp.Msg.Release.Name, "-1800000000", "retain the initial identity")
+	name := resp.Msg.Release.Name
+	snapshot := name + "-manifests"
+	var app pipelinesv1alpha1.Application
+	var stage pipelinesv1alpha1.Stage
+	var release pipelinesv1alpha1.Release
+	var cm corev1.ConfigMap
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "boundary-ns", Name: "boundary-app"}, &app))
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "boundary-ns", Name: "boundary-app-default"}, &stage))
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "boundary-ns", Name: name}, &release))
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "boundary-ns", Name: snapshot}, &cm))
+	require.Equal(t, name, app.Status.ReleaseRef)
+	require.Equal(t, snapshot, app.Spec.Source.Inline.ConfigMapRef)
+	require.Equal(t, name, stage.Labels[releaseLabel])
+	require.Equal(t, snapshot, release.Spec.ManifestSource.ConfigMapRef)
+	require.Equal(t, name, release.Labels[releaseLabel])
+	require.Equal(t, name, cm.Labels[releaseLabel])
+	require.Len(t, cm.OwnerReferences, 1)
+	require.Equal(t, name, cm.OwnerReferences[0].Name)
 }
 
 func TestApplyBundleStageCarriesExactApplicationControllerOwner(t *testing.T) {

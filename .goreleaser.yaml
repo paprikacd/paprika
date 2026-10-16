@@ -44,6 +44,10 @@ dockers:
     image_templates:
       - "ghcr.io/paprikacd/paprika:{{ .Version }}"
     dockerfile: Dockerfile.goreleaser
+    # The Dockerfile copies /charts into the runtime image — GoReleaser's
+    # docker context only carries the binary unless extra_files is set.
+    extra_files:
+      - charts/
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.title=paprika"

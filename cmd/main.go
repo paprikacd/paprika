@@ -1080,7 +1080,7 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 
 	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
-		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
+		connect.WithInterceptors(otelInterceptor, apiserver.K8sErrorInterceptor(), authInterceptor, paprikaServer.AuditInterceptor()),
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
 	return paprikaServer, connectHandler, nil

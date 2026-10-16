@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"connectrpc.com/connect"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1503,4 +1507,62 @@ func TestAuthorizeRejectsPartiallyUnrecognisedScopeMix(t *testing.T) {
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
 		assert.Equal(t, "invalid_scope", oerr.Error)
 	}
+}
+
+func TestRegisterMintsDynamicClientWithSafeRedirects(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := newTestServer(t)
+	srv.RegisterOAuthRoutes(mux)
+
+	body := strings.NewReader(`{"redirect_uris":["http://localhost:1455/auth/callback","https://claude.ai/api/mcp/auth_callback"],"client_name":"codex-cli"}`)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp/register", body))
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	//nolint:tagliatelle // RFC 7591 wire field names.
+	var resp struct {
+		ClientID     string   `json:"client_id"`
+		RedirectURIs []string `json:"redirect_uris"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.True(t, strings.HasPrefix(resp.ClientID, "paprika-"))
+	require.True(t, srv.clientIDAllowed(resp.ClientID), "registered client must pass the authorize check")
+	require.True(t, srv.isRegisteredRedirect(resp.ClientID, "http://localhost:1455/auth/callback"))
+	require.False(t, srv.isRegisteredRedirect(resp.ClientID, "https://attacker.example/cb"),
+		"redirects are bound to the registered client, not global")
+}
+
+func TestRegisterRejectsUnsafeRedirects(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := newTestServer(t)
+	srv.RegisterOAuthRoutes(mux)
+
+	for _, uris := range [][]string{
+		{`"http://evil.example.com/cb"`},
+		{`"http://169.254.169.254/cb"`},
+		{`"javascript:alert(1)"`},
+		{`"ftp://x/`},
+		{},
+	} {
+		body := strings.NewReader(`{"redirect_uris":[` + strings.Join(uris, ",") + `]}`)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp/register", body))
+		require.Equal(t, http.StatusBadRequest, rec.Code, "uris %v should be rejected", uris)
+	}
+	require.False(t, srv.clientIDAllowed("paprika-never"))
+}
+
+func TestToolErrorResultMapsDomainErrors(t *testing.T) {
+	notFound := connect.NewError(connect.CodeNotFound, errors.New("getting application: Application \"x\" not found"))
+	r := toolErrorResult(fmt.Errorf("investigate: %w", notFound))
+	require.NotNil(t, r)
+	require.True(t, r.IsError)
+	tc, ok := r.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, tc.Text, "not found")
+
+	require.Nil(t, toolErrorResult(errors.New("plain go error")),
+		"non-connect errors keep the internal-error path")
+	require.Nil(t, toolErrorResult(connect.NewError(connect.CodeInternal, errors.New("boom"))),
+		"internal connect codes stay internal")
 }

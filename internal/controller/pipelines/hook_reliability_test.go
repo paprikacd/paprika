@@ -2,7 +2,9 @@ package pipelines
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/engine/hooks"
 )
 
@@ -117,7 +120,8 @@ func TestHookDeletionTimeoutAndPermissionFailure(t *testing.T) {
 				return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: "batch", Resource: "jobs"}, "migrate", errors.New("denied"))
 			})
 			r := &ReleaseReconciler{Clock: clock.NewFake(now)}
-			err := r.deleteExistingHook(context.Background(), dyn, old, time.Minute)
+			release := &paprikav1.Release{ObjectMeta: metav1.ObjectMeta{Name: "release", Namespace: "tenant"}}
+			_, err := r.deleteExistingHook(context.Background(), dyn, old, release, time.Minute)
 			switch mode {
 			case "timeout":
 				require.ErrorContains(t, err, "deletion timed out")
@@ -139,7 +143,7 @@ func TestResyncStartsFreshHookAttemptOnlyForTerminalRelease(t *testing.T) {
 			scheme := runtime.NewScheme()
 			require.NoError(t, paprikav1.AddToScheme(scheme))
 			release := &paprikav1.Release{ObjectMeta: metav1.ObjectMeta{Name: "release", Namespace: "tenant", Annotations: map[string]string{resyncAnnotation: "retry"}}, Status: paprikav1.ReleaseStatus{
-				Phase: phase, HookStatuses: []paprikav1.HookStatus{{Kind: "Job", Name: "migrate", Namespace: "tenant", Phase: "PreSync", Status: hookStatusFailed}},
+				Phase: phase, HookAttempt: 2, HookStatuses: []paprikav1.HookStatus{{Kind: "Job", Name: "migrate", Namespace: "tenant", Phase: "PreSync", Status: hookStatusFailed}},
 				Conditions: []metav1.Condition{{Type: "Failed", Status: metav1.ConditionTrue, Reason: "PromotionFailed"}},
 			}}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(release).WithStatusSubresource(release).Build()
@@ -152,13 +156,99 @@ func TestResyncStartsFreshHookAttemptOnlyForTerminalRelease(t *testing.T) {
 			require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, stored))
 			if phase == paprikav1.ReleasePromoting {
 				require.Len(t, stored.Status.HookStatuses, 1)
+				require.EqualValues(t, 2, stored.Status.HookAttempt, "a running release keeps its attempt")
 			} else {
 				require.Equal(t, paprikav1.ReleasePending, stored.Status.Phase)
 				require.Empty(t, stored.Status.HookStatuses)
 				require.Empty(t, stored.Status.Conditions)
+				require.EqualValues(t, 3, stored.Status.HookAttempt, "a fresh hook run is a new attempt")
 			}
 		})
 	}
+}
+
+// A reconcile that works from a stale Release status, without the Running
+// entry an earlier reconcile stamped, must adopt the Job this attempt
+// created. Before this guard the BeforeHookCreation path deleted that Job as
+// a prior hook, and the next poll failed with NotFound.
+func TestStaleStatusAdoptsCurrentAttemptHook(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+	created := now.Add(-5 * time.Second)
+	gvr := schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}
+	dyn := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	deletes, applies := 0, 0
+	dyn.PrependReactor("delete", "jobs", func(action ktesting.Action) (bool, runtime.Object, error) {
+		deletes++
+		require.NoError(t, dyn.Tracker().Delete(gvr, "tenant", "migrate"))
+		return true, nil, nil
+	})
+	dyn.PrependReactor("patch", "jobs", func(action ktesting.Action) (bool, runtime.Object, error) {
+		applies++
+		patchAction, ok := action.(ktesting.PatchAction)
+		require.True(t, ok)
+		// Server-side apply persists the labels and annotations the
+		// controller stamped, which the adoption check reads back.
+		applied := &unstructured.Unstructured{}
+		require.NoError(t, json.Unmarshal(patchAction.GetPatch(), &applied.Object))
+		applied.SetUID(types.UID(fmt.Sprintf("job-%d", applies)))
+		applied.SetCreationTimestamp(metav1.Time{Time: created})
+		require.NoError(t, dyn.Tracker().Create(gvr, applied, "tenant"))
+		return true, applied, nil
+	})
+	r := &ReleaseReconciler{Clock: clock.NewFake(now)}
+	release := &paprikav1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "release", Namespace: "tenant", UID: "release-uid"},
+		Spec:       paprikav1.ReleaseSpec{SyncOptions: &paprikav1.SyncOptions{HookTimeoutSeconds: 60}},
+	}
+	resources := []hooks.Resource{{Obj: migrationHook(""), DeletePolicy: "BeforeHookCreation", Phase: hooks.PhasePreSync}}
+
+	require.ErrorIs(t, r.executeHooks(ctx, release, dyn, resources, hooks.PhasePreSync), errHookPhasePending)
+	require.Zero(t, deletes)
+	require.Equal(t, 1, applies)
+	require.Equal(t, hookStatusRunning, release.Status.HookStatuses[0].Status)
+	live, err := dyn.Resource(gvr).Namespace("tenant").Get(ctx, "migrate", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "release", live.GetLabels()[engine.ReleaseNameLabelKey])
+	require.Equal(t, "release-uid/0", live.GetAnnotations()[hookAttemptAnnotation])
+
+	// The next reconcile reads a status copy from before the Running stamp.
+	stale := release.DeepCopy()
+	stale.Status.HookStatuses = nil
+	require.ErrorIs(t, r.executeHooks(ctx, stale, dyn, resources, hooks.PhasePreSync), errHookPhasePending)
+	require.Zero(t, deletes, "the Job this attempt created must survive a stale status")
+	require.Equal(t, 1, applies, "an adopted hook is not applied again")
+	require.Equal(t, hookStatusRunning, stale.Status.HookStatuses[0].Status)
+	require.True(t, stale.Status.HookStatuses[0].StartedAt.Time.Equal(created), "adoption keeps the real start time")
+
+	// The adopted Job completes, and the stale reconcile records success.
+	live.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": "Complete", "status": "True"}}}
+	require.NoError(t, dyn.Tracker().Update(gvr, live, "tenant"))
+	require.NoError(t, r.executeHooks(ctx, stale, dyn, resources, hooks.PhasePreSync))
+	require.Equal(t, hookStatusSucceeded, stale.Status.HookStatuses[0].Status)
+	require.Equal(t, 1, applies)
+
+	// A completed Job of the current attempt is adopted as well, so a stale
+	// reconcile never runs the migration twice.
+	finished := release.DeepCopy()
+	finished.Status.HookStatuses = nil
+	require.NoError(t, r.executeHooks(ctx, finished, dyn, resources, hooks.PhasePreSync))
+	require.Zero(t, deletes)
+	require.Equal(t, 1, applies)
+	require.Equal(t, hookStatusSucceeded, finished.Status.HookStatuses[0].Status)
+
+	// An explicit retry is a new attempt. It replaces the previous Job.
+	retry := release.DeepCopy()
+	retry.Status.HookStatuses = nil
+	retry.Status.HookAttempt = 1
+	require.ErrorIs(t, r.executeHooks(ctx, retry, dyn, resources, hooks.PhasePreSync), errHookPhasePending)
+	require.Equal(t, 1, deletes, "a new attempt replaces the previous attempt's Job")
+	require.Equal(t, 1, applies)
+	require.ErrorIs(t, r.executeHooks(ctx, retry, dyn, resources, hooks.PhasePreSync), errHookPhasePending)
+	require.Equal(t, 2, applies)
+	replacement, err := dyn.Resource(gvr).Namespace("tenant").Get(ctx, "migrate", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "release-uid/1", replacement.GetAnnotations()[hookAttemptAnnotation])
 }
 
 func TestApplicationPhaseConditionsDoNotContradictRecovery(t *testing.T) {

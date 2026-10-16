@@ -135,7 +135,7 @@ variable "cloudflare_zone_id" {
 variable "paprika_lb_ip" {
   description = "Paprika Envoy Gateway LoadBalancer IP"
   type        = string
-  default     = "104.156.233.70"
+  default     = "139.180.161.184" # omega-ha envoy gateway LB (was 104.156.233.70 on omega)
 }
 
 # Versions
@@ -206,79 +206,14 @@ resource "github_repository_pages" "paprika" {
   }
 }
 
-# VKE cluster with GitHub Actions OIDC for CI deploys.
-resource "vultr_kubernetes" "omega" {
-  region  = var.vke_region
-  label   = "omega"
-  version = var.vke_kubernetes_version
-
-  oidc_issuer_url     = var.kubernetes_oidc_issuer_url
-  oidc_client_id      = var.kubernetes_oidc_client_id
-  oidc_username_claim = var.kubernetes_oidc_username_claim
-  oidc_groups_claim   = var.kubernetes_oidc_groups_claim
-
-  node_pools {
-    node_quantity = var.vke_node_count
-    plan          = var.vke_node_plan
-    label         = "core"
-    # Live pool (verified 2026-09-08): 4 nodes, autoscaler on, pinned 4..4. A
-    # read-only plan showed the previous defaults would have SHRUNK it; keep the
-    # count and max in step with what Vultr runs.
-    auto_scaler = true
-    min_nodes   = var.vke_node_count
-    max_nodes   = var.vke_core_max_nodes
-  }
-
-}
-
-# Dedicated pool for the heavy tenants (the Greenveil API runs 1.3-1.7 cores and
-# ~1.6 GiB per pod, steadily). On the 2-core `core` nodes one such pod starved
-# the kubelet into NotReady (2026-09-08); two 4c/8g nodes give each API replica
-# a node with real headroom while the many small tenants keep the core pool.
-# Created out of band via the Vultr API on 2026-09-08 and imported.
-resource "vultr_kubernetes_node_pools" "core_large" {
-  cluster_id    = vultr_kubernetes.omega.id
-  node_quantity = var.vke_core_large_node_count
-  plan          = var.vke_core_large_node_plan
-  label         = "core-large"
-  tag           = "tf-vke-core-large"
-  # Fixed size: pin the autoscaler bounds to the count so all three move together.
-  min_nodes = var.vke_core_large_node_count
-  max_nodes = var.vke_core_large_node_count
-}
-
-resource "vultr_kubernetes_node_pools" "search" {
-  cluster_id    = vultr_kubernetes.omega.id
-  node_quantity = var.vke_search_node_count
-  plan          = var.vke_search_node_plan
-  label         = "greenveil-search"
-
-  taints {
-    key    = "dedicated"
-    value  = "search"
-    effect = "NoSchedule"
-  }
-}
-
-# Write kubeconfig to disk so kubectl can use it
-resource "local_file" "kubeconfig" {
-  depends_on      = [vultr_kubernetes.omega]
-  content         = base64decode(vultr_kubernetes.omega.kube_config)
-  filename        = "${path.module}/omega.kubeconfig"
-  file_permission = "0600"
-}
-
-# Apply GitHub Actions deploy RBAC once the cluster is up.
-resource "null_resource" "github_actions_deployer_rbac" {
-  depends_on = [local_file.kubeconfig]
-  triggers = {
-    manifest_sha = filesha256("${path.module}/github-actions-deployer-rbac.yaml")
-  }
-
-  provisioner "local-exec" {
-    command = "KUBECONFIG=${local_file.kubeconfig.filename} kubectl apply -f ${abspath(path.module)}/github-actions-deployer-rbac.yaml"
-  }
-}
+# The original non-HA cluster `omega` (7997fb87-…) was retired 2026-09-28/29 and
+# removed from state; the serving cluster is `omega-ha` in omega_ha.tf. See
+# docs/guides/vke-ha-control-plane-migration.md (runbook log + teardown).
+#
+# GitHub Actions deploy RBAC (github-actions-deployer-rbac.yaml) used to be
+# applied here by a null_resource against omega's kubeconfig. It is applied to
+# omega-ha by hand:
+#   KUBECONFIG=omega-ha.kubeconfig kubectl apply -f github-actions-deployer-rbac.yaml
 
 # Cloudflare DNS for paprika.benebsworth.com
 # Import existing: terraform import cloudflare_record.paprika b18684990f8bbad83a5dada1824ad388/6866879f3afa54ced6498defce8e8286
@@ -300,27 +235,9 @@ resource "cloudflare_record" "demo_paprika" {
   ttl     = 1
 }
 
-output "cluster_id" {
-  value = vultr_kubernetes.omega.id
-}
-
-output "cluster_endpoint" {
-  value = vultr_kubernetes.omega.endpoint
-}
-
-output "kubeconfig_admin" {
-  description = "Path to admin kubeconfig"
-  value       = local_file.kubeconfig.filename
-}
-
 output "github_actions_oidc_audience" {
   description = "OIDC audience GitHub Actions must request for Kubernetes API access"
   value       = var.kubernetes_oidc_client_id
-}
-
-output "github_actions_deployer_rbac_applied" {
-  description = "Whether GitHub Actions deploy RBAC was applied"
-  value       = null_resource.github_actions_deployer_rbac.id
 }
 
 output "paprika_lb_ip" {

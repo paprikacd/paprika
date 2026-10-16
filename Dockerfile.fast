@@ -16,19 +16,21 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-# Copy source and build with cache mounts. The UI static export is not
-# needed for the controller-manager; create a placeholder so the embed
-# directive compiles.
+# Copy source and build with cache mounts. The committed UI export under
+# internal/api/uistatic ships when present; only stub index.html when the
+# export is absent so the embed directive still compiles.
 COPY . .
 RUN mkdir -p internal/api/uistatic && \
-    echo '<!DOCTYPE html><html><body>Paprika</body></html>' > internal/api/uistatic/index.html
+    if [ ! -s internal/api/uistatic/index.html ]; then \
+      echo '<!DOCTYPE html><html><body>Paprika</body></html>' > internal/api/uistatic/index.html; \
+    fi
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -o manager ./cmd
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates git && \
+RUN apk add --no-cache ca-certificates && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager /manager

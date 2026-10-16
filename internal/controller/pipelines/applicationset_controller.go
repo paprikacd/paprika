@@ -85,14 +85,14 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	params, err := r.generateParams(ctx, &appSet)
 	if err != nil {
 		result = resultError
-		r.patchStatus(ctx, &appSet, 0, false, "GenerationFailed", err.Error())
+		r.patchStatus(ctx, &appSet, 0, false, "GenerationFailed", err.Error(), nil)
 		return ctrl.Result{}, fmt.Errorf("generating parameters: %w", err)
 	}
 
 	desired, err := r.buildDesiredApplications(&appSet, params)
 	if err != nil {
 		result = resultError
-		r.patchStatus(ctx, &appSet, 0, false, "RenderFailed", err.Error())
+		r.patchStatus(ctx, &appSet, 0, false, "RenderFailed", err.Error(), nil)
 		return ctrl.Result{}, fmt.Errorf("rendering applications: %w", err)
 	}
 
@@ -107,17 +107,17 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		existingByName[existing[i].Name] = existing[i]
 	}
 
-	gated, err := r.applyApplicationUpdates(ctx, &appSet, desired, existingByName)
+	gated, progress, err := r.applyApplicationUpdates(ctx, &appSet, desired, existingByName)
 	if err != nil {
 		result = resultError
-		r.patchStatus(ctx, &appSet, len(desired), false, "UpdateFailed", err.Error())
+		r.patchStatus(ctx, &appSet, len(desired), false, "UpdateFailed", err.Error(), nil)
 		return ctrl.Result{}, err
 	}
 	if gated {
 		// A rolling-sync step is waiting on prior-step apps to become
 		// Healthy — poll again shortly rather than the steady 30s.
 		r.patchStatus(ctx, &appSet, len(desired), true, "RollingSyncGated",
-			"rolling sync waiting for earlier-step applications to become Healthy")
+			"rolling sync waiting for earlier-step applications to become Healthy", progress)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -128,13 +128,13 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		if deleteErr := r.client.Delete(ctx, &existingApp); deleteErr != nil {
 			result = resultError
-			r.patchStatus(ctx, &appSet, len(desired), false, "DeleteFailed", deleteErr.Error())
+			r.patchStatus(ctx, &appSet, len(desired), false, "DeleteFailed", deleteErr.Error(), nil)
 			return ctrl.Result{}, fmt.Errorf("deleting application %s: %w", name, deleteErr)
 		}
 	}
 
 	r.patchStatus(ctx, &appSet, len(desired), true, "ApplicationsGenerated",
-		fmt.Sprintf("Generated %d applications", len(desired)))
+		fmt.Sprintf("Generated %d applications", len(desired)), progress)
 
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
@@ -418,10 +418,11 @@ func (r *ApplicationSetReconciler) applyApplicationUpdates(
 	appSet *pipelinesv1alpha1.ApplicationSet,
 	desired map[string]pipelinesv1alpha1.Application,
 	existingByName map[string]pipelinesv1alpha1.Application,
-) (bool, error) {
+) (bool, *pipelinesv1alpha1.RollingSyncProgress, error) {
 	if appSet.Spec.Strategy == nil || appSet.Spec.Strategy.Type != "RollingSync" ||
 		appSet.Spec.Strategy.RollingSync == nil || len(appSet.Spec.Strategy.RollingSync.Steps) == 0 {
-		return r.applyAllApplicationUpdates(ctx, desired, existingByName)
+		gated, err := r.applyAllApplicationUpdates(ctx, desired, existingByName)
+		return gated, nil, err
 	}
 	return r.applyRollingSync(ctx, appSet, desired, existingByName)
 }
@@ -456,15 +457,22 @@ func (r *ApplicationSetReconciler) applyRollingSync(
 	appSet *pipelinesv1alpha1.ApplicationSet,
 	desired map[string]pipelinesv1alpha1.Application,
 	existingByName map[string]pipelinesv1alpha1.Application,
-) (bool, error) {
+) (bool, *pipelinesv1alpha1.RollingSyncProgress, error) {
 	log := log.FromContext(ctx)
 	steps := appSet.Spec.Strategy.RollingSync.Steps
 	stepOf := assignSyncSteps(desired, steps)
+	progress := rollingSyncProgress(desired, existingByName, stepOf, len(steps))
 
 	// Creates are unthrottled — a net-new app is safe to create in its step.
 	if err := r.createMissingApplications(ctx, desired, existingByName); err != nil {
-		return false, err
+		return false, progress, err
 	}
+
+	// Apps updated in this pass gate later steps until the next pass: their
+	// in-memory spec mutates at write time while resourceHealth is still the
+	// stale pre-update assessment, so without this marker a later step would
+	// read a just-updated prior app as "at desired and Healthy".
+	inFlight := make(map[string]bool, len(desired))
 
 	for i := 0; i <= len(steps); i++ {
 		var members []string
@@ -477,17 +485,57 @@ func (r *ApplicationSetReconciler) applyRollingSync(
 			continue
 		}
 		sort.Strings(members) // deterministic batching
-		if blocked := priorStepsUnhealthy(desired, existingByName, stepOf, i); blocked != "" {
+		if blocked := priorStepsUnhealthy(desired, existingByName, stepOf, inFlight, i); blocked != "" {
 			log.Info("RollingSync step gated on prior-step health",
 				"step", i, "blockedBy", blocked)
-			return true, nil
+			return true, gatedProgress(progress, i+1, blocked), nil
 		}
-		gated, err := r.applyRollingSyncStep(ctx, steps, i, members, desired, existingByName)
+		gated, err := r.applyRollingSyncStep(ctx, steps, i, members, desired, existingByName, inFlight)
 		if err != nil || gated {
-			return gated, err
+			return gated, gatedProgress(progress, i+1, ""), err
 		}
 	}
-	return false, nil
+	return false, progress, nil
+}
+
+// gatedProgress returns the progress object for a gated pass, allocating one
+// when pending was empty (the gate is purely on health — all specs written).
+func gatedProgress(progress *pipelinesv1alpha1.RollingSyncProgress, step int, waitingFor string) *pipelinesv1alpha1.RollingSyncProgress {
+	if progress == nil {
+		progress = &pipelinesv1alpha1.RollingSyncProgress{}
+	}
+	progress.Step = step
+	progress.WaitingFor = waitingFor
+	return progress
+}
+
+// rollingSyncProgress summarizes rollout state for status: the 1-based
+// active step, pending (not-yet-desired) app names, and the blocking app
+// when a step is health-gated.
+func rollingSyncProgress(
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+	stepOf map[string]int,
+	stepCount int,
+) *pipelinesv1alpha1.RollingSyncProgress {
+	pending := make([]string, 0)
+	firstPendingStep := stepCount + 1
+	for name := range desired {
+		existing, ok := existingByName[name]
+		desiredApp := desired[name]
+		if ok && applicationMatchesDesired(&existing, &desiredApp) {
+			continue
+		}
+		pending = append(pending, name)
+		if stepOf[name]+1 < firstPendingStep {
+			firstPendingStep = stepOf[name] + 1
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	sort.Strings(pending)
+	return &pipelinesv1alpha1.RollingSyncProgress{Step: firstPendingStep, Pending: pending}
 }
 
 // assignSyncSteps maps each desired app to its first matching step; unmatched
@@ -533,6 +581,7 @@ func (r *ApplicationSetReconciler) applyRollingSyncStep(
 	members []string,
 	desired map[string]pipelinesv1alpha1.Application,
 	existingByName map[string]pipelinesv1alpha1.Application,
+	inFlight map[string]bool,
 ) (bool, error) {
 	budget := stepMaxUpdate(steps, step, len(members))
 	updated := 0
@@ -551,6 +600,7 @@ func (r *ApplicationSetReconciler) applyRollingSyncStep(
 		if err := r.updateApplication(ctx, &existing, &desiredApp); err != nil {
 			return false, fmt.Errorf("updating application %s: %w", name, err)
 		}
+		inFlight[name] = true
 		updated++
 	}
 	return false, nil
@@ -571,6 +621,7 @@ func priorStepsUnhealthy(
 	desired map[string]pipelinesv1alpha1.Application,
 	existingByName map[string]pipelinesv1alpha1.Application,
 	stepOf map[string]int,
+	inFlight map[string]bool,
 	step int,
 ) string {
 	names := make([]string, 0, len(desired))
@@ -586,16 +637,61 @@ func priorStepsUnhealthy(
 		if !ok {
 			return name // created this pass; not yet healthy
 		}
+		if inFlight[name] {
+			return name // updated this pass; health is a pre-update assessment
+		}
 		desiredApp := desired[name]
 		if !applicationMatchesDesired(&existing, &desiredApp) {
 			return name
 		}
-		if existing.Status.Health != pipelinesv1alpha1.HealthHealthy &&
-			existing.Status.Phase != pipelinesv1alpha1.ApplicationHealthy {
+		if !applicationConverged(&existing) {
 			return name
 		}
 	}
 	return ""
+}
+
+// applicationConverged is the RollingSync convergence gate. At-desired spec
+// alone is not enough: status.phase flips Healthy as soon as the release
+// applies, status.health is the optional health-check aggregate, and
+// resourceHealth can still describe the previous generation (it refreshes
+// inside the same status write as observedGeneration, but the diff eval
+// only runs on the app's own poll cadence). So the gate additionally
+// requires the generation to be fully observed AND the live releaseRef to
+// match the release name derived from the current spec — both land only
+// after the new spec has been consumed by the release flow.
+func applicationConverged(app *pipelinesv1alpha1.Application) bool {
+	if app.Generation != app.Status.ObservedGeneration {
+		return false
+	}
+	if len(app.Spec.Stages) > 0 {
+		expected := applicationReleaseName(app, &app.Spec.Stages[0])
+		if app.Status.ReleaseRef != expected {
+			return false
+		}
+		// The live release for this spec must have finished — releaseRef
+		// settles when the release is created, but the stage phase only
+		// reads Complete once it has actually been applied.
+		stagePhase := ""
+		for _, s := range app.Status.Stages {
+			if s.Name == app.Spec.Stages[0].Name {
+				stagePhase = s.Phase
+				break
+			}
+		}
+		if stagePhase != "Complete" {
+			return false
+		}
+	}
+	if len(app.Status.ResourceHealth) == 0 {
+		return false
+	}
+	for _, rh := range app.Status.ResourceHealth {
+		if rh.Health != "Healthy" {
+			return false
+		}
+	}
+	return true
 }
 
 func stepMaxUpdate(steps []pipelinesv1alpha1.RollingSyncStep, step, members int) int {
@@ -619,6 +715,7 @@ func (r *ApplicationSetReconciler) patchStatus(
 	count int,
 	ready bool,
 	reason, message string,
+	progress *pipelinesv1alpha1.RollingSyncProgress,
 ) {
 	log := log.FromContext(ctx)
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -629,6 +726,7 @@ func (r *ApplicationSetReconciler) patchStatus(
 
 		fresh.Status.ObservedGeneration = fresh.Generation
 		fresh.Status.Applications = count
+		fresh.Status.RollingSync = progress
 
 		status := metav1.ConditionTrue
 		if !ready {

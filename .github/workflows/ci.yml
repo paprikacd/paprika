@@ -183,6 +183,18 @@ jobs:
       - name: Render VKE configuration
         run: helm template paprika charts/chart/ --values deploy/test-values.yaml
 
+      - name: Reject OIDC without clientID
+        # Regression guard: an empty client ID used to render
+        # --auth-oidc-client-id= and crash-loop the api-server at startup.
+        run: |
+          if helm template paprika charts/chart/ \
+            --set auth.oidc.enabled=true --set auth.oidc.clientID= \
+            2> /tmp/oidc-render-err.txt; then
+            echo "expected render failure for oidc.enabled without clientID" >&2
+            exit 1
+          fi
+          grep -q "auth.oidc.clientID is required" /tmp/oidc-render-err.txt
+
   release-contract:
     name: CLI release contract
     runs-on: ubuntu-latest

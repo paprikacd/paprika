@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/lib/auth-context"
 import { FormEvent, useEffect, useState } from "react"
-import { LogIn } from "lucide-react"
 
 export default function LoginPage() {
   const { user, isLoading, login } = useAuth()
@@ -57,9 +56,8 @@ export default function LoginPage() {
       <div className="relative w-full max-w-sm">
         <div className="rounded-2xl border border-border/50 bg-card p-8 shadow-lg">
           <div className="mb-8 text-center">
-            <span className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <LogIn className="size-5" />
-            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/paprika-mark.png" alt="" className="mx-auto mb-4 size-14 rounded-xl" />
             <h1 className="text-xl font-semibold tracking-tight">
               Sign in to Paprika
             </h1>

@@ -27,7 +27,7 @@ func (r *ApplicationReconciler) reconcileHealthStatus(ctx context.Context, app *
 		if err := r.client.Get(ctx, client.ObjectKeyFromObject(app), &latest); err != nil {
 			return fmt.Errorf("health status API operation: %w", err)
 		}
-		if latest.UID != app.UID || !equality.Semantic.DeepEqual(latest.Spec.HealthChecks, app.Spec.HealthChecks) {
+		if latest.UID != app.UID || !equality.Semantic.DeepEqual(effectiveDeploymentApp(&latest).Spec.HealthChecks, effectiveDeploymentApp(app).Spec.HealthChecks) {
 			return errors.New("health check configuration changed during observation; retrying")
 		}
 		base := latest.DeepCopy()
@@ -47,6 +47,7 @@ func (r *ApplicationReconciler) reconcileHealthStatus(ctx context.Context, app *
 }
 
 func nextHealthObservation(app *api.Application, now time.Time) time.Duration {
+	app = effectiveDeploymentApp(app)
 	delay := time.Hour
 	for _, check := range app.Spec.HealthChecks {
 		period := applicationHealthCheckInterval(check.Interval)

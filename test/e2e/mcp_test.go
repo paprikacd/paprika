@@ -256,9 +256,7 @@ subjects:
   name: %s
   namespace: %s
 `, saName, mcpNamespace)
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(rbacYAML)
-		_, err = utils.Run(cmd)
+		_, err = utils.ApplyManifest(rbacYAML)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create MCP read RBAC")
 
 		By("starting port-forward for the MCP api server")
@@ -288,18 +286,14 @@ subjects:
 		}
 
 		By("deleting the MCP RBAC")
-		cmd := exec.Command("kubectl", "delete", "clusterrolebinding", "paprika-mcp-read", "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command("kubectl", "delete", "clusterrole", "paprika-mcp-read", "--ignore-not-found")
-		_, _ = utils.Run(cmd)
+		_ = utils.DeleteNamed(utils.ManifestID{Kind: "ClusterRoleBinding", Name: "paprika-mcp-read"})
+		_ = utils.DeleteNamed(utils.ManifestID{Kind: "ClusterRole", Name: "paprika-mcp-read"})
 
 		By("uninstalling the MCP api-mode Helm release")
-		cmd = exec.Command("helm", "uninstall", mcpRelease, "--namespace", mcpNamespace)
-		_, _ = utils.Run(cmd)
+		_, _ = utils.Run(exec.Command("helm", "uninstall", mcpRelease, "--namespace", mcpNamespace))
 
 		By("removing MCP namespace")
-		cmd = exec.Command("kubectl", "delete", "ns", mcpNamespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
+		_, _ = utils.Kubectl("delete", "ns", mcpNamespace, "--ignore-not-found")
 	})
 
 	It("should serve OAuth discovery metadata", func() {

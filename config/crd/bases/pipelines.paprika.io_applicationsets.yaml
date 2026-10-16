@@ -975,6 +975,14 @@ spec:
                         description: S3 endpoint URL (for type=s3, use LocalStack
                           endpoint for testing)
                         type: string
+                      fetchTtl:
+                        description: |-
+                          FetchTTL bounds how often a warm git mirror consults the remote for
+                          branch/tag revisions (type=git), e.g. "45s". Within the TTL the
+                          previous refs are reused — poll loops stop paying a remote fetch per
+                          resolve. Empty always fetches (previous behaviour). Pinned SHAs
+                          always skip the remote once mirrored — commits are immutable.
+                        type: string
                       image:
                         description: 'Deprecated: Image is the legacy OCI URL field.
                           Use oci.url instead.'
@@ -983,11 +991,56 @@ spec:
                         description: Inline references a manifest snapshot ConfigMap
                           (for type=inline).
                         properties:
+                          artifact:
+                            description: |-
+                              Artifact declares validated immutable provenance for cross-environment promotion.
+                              Its snapshot ConfigMap must be immutable and contain matching workload images.
+                            properties:
+                              images:
+                                additionalProperties:
+                                  description: ArtifactImageReference is a full immutable
+                                    application image reference.
+                                  maxLength: 512
+                                  pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$
+                                  type: string
+                                description: |-
+                                  Images maps primary application component names to immutable full image references.
+                                  Each component must label a Deployment/StatefulSet/DaemonSet/Rollout/Pod
+                                  with app.kubernetes.io/component and name its primary container accordingly.
+                                  Other dependency images may differ between environments.
+                                maxProperties: 32
+                                minProperties: 1
+                                type: object
+                              repository:
+                                description: Repository is the logical Git repository
+                                  URL; Paprika does not fetch it.
+                                minLength: 1
+                                type: string
+                              revision:
+                                description: Revision is the exact source/image commit
+                                  represented by this bundle.
+                                pattern: ^[a-f0-9]{40}$
+                                type: string
+                            required:
+                            - images
+                            - repository
+                            - revision
+                            type: object
                           configMapRef:
                             description: ConfigMapRef is the name of the ConfigMap
                               containing the rendered manifest bundle.
                             type: string
+                          manifestHash:
+                            description: |-
+                              ManifestHash is the SHA256 of the exact manifests.yaml bytes, independent
+                              per environment. It binds verification and approval to the staged payload.
+                              Required when Artifact is declared.
+                            pattern: ^[a-f0-9]{64}$
+                            type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: versioned inline artifacts require manifestHash
+                          rule: '!has(self.artifact) || has(self.manifestHash)'
                       insecure:
                         description: Insecure allows plain HTTP for OCI registries
                           (type=oci)
@@ -2002,10 +2055,141 @@ spec:
                       - schedule
                       type: object
                     type: array
+                  trigger:
+                    description: |-
+                      Trigger selects how new deployment candidates are discovered. Omitted
+                      preserves GitOps behavior; syncPolicy remains the authorization policy.
+                    properties:
+                      from:
+                        description: From is the upstream environment whose completed
+                          release is promoted.
+                        properties:
+                          name:
+                            description: Name of the Application.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          namespace:
+                            description: Namespace defaults to the referencing Application's
+                              namespace.
+                            maxLength: 63
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      gates:
+                        description: Gates verify the upstream environment before
+                          its release is promoted.
+                        items:
+                          description: |-
+                            GateConfig defines a gate for stage promotion.
+                            GateConfig defines a gate for stage promotion.
+                          properties:
+                            endpoint:
+                              type: string
+                            timeout:
+                              type: integer
+                            type:
+                              enum:
+                              - smoke-test
+                              - duration
+                              type: string
+                          required:
+                          - type
+                          type: object
+                        type: array
+                      tests:
+                        description: |-
+                          Tests runs a new verification pipeline for each upstream release before deployment.
+                          Its container steps execute on the management cluster.
+                        properties:
+                          artifacts:
+                            items:
+                              description: PipelineOutput defines an output artifact
+                                of a pipeline.
+                              properties:
+                                name:
+                                  type: string
+                                path:
+                                  type: string
+                                step:
+                                  type: string
+                              required:
+                              - name
+                              - path
+                              type: object
+                            type: array
+                          maxParallel:
+                            type: integer
+                          sources:
+                            items:
+                              description: Source defines a source for the pipeline.
+                              properties:
+                                secretRef:
+                                  type: string
+                                type:
+                                  enum:
+                                  - git
+                                  type: string
+                                url:
+                                  type: string
+                              required:
+                              - type
+                              type: object
+                            type: array
+                          steps:
+                            items:
+                              description: |-
+                                ApplicationBuildStep defines a step in the build pipeline.
+                                ApplicationBuildStep defines a step in the build pipeline.
+                              properties:
+                                depends:
+                                  items:
+                                    type: string
+                                  type: array
+                                image:
+                                  type: string
+                                name:
+                                  type: string
+                                retry:
+                                  type: integer
+                                script:
+                                  type: string
+                                timeout:
+                                  type: integer
+                              required:
+                              - image
+                              - name
+                              - script
+                              type: object
+                            type: array
+                        required:
+                        - steps
+                        type: object
+                      type:
+                        description: Type selects GitOps, Promotion, or Manual triggering.
+                        enum:
+                        - GitOps
+                        - Promotion
+                        - Manual
+                        type: string
+                    required:
+                    - type
+                    type: object
+                    x-kubernetes-validations:
+                    - message: from is required only for Promotion triggers
+                      rule: 'self.type == ''Promotion'' ? has(self.from) : !has(self.from)'
+                    - message: tests and gates require a Promotion trigger
+                      rule: self.type == 'Promotion' || (!has(self.tests) && !has(self.gates))
                 required:
                 - source
                 - stages
                 type: object
+                x-kubernetes-validations:
+                - message: Promotion requires a Git source or a versioned inline artifact
+                  rule: '!has(self.trigger) || self.trigger.type != ''Promotion''
+                    || self.source.type == ''git'' || (self.source.type == ''inline''
+                    && has(self.source.inline) && has(self.source.inline.artifact))'
             required:
             - generators
             - template
@@ -2082,6 +2266,32 @@ spec:
                   the spec.
                 format: int64
                 type: integer
+              rollingSync:
+                description: |-
+                  RollingSync reports progressive-sync progress while a RollingSync
+                  rollout is active; cleared (nil) once all apps are at desired state.
+                properties:
+                  pending:
+                    description: Pending lists generated apps not yet at desired state,
+                      sorted by name.
+                    items:
+                      type: string
+                    type: array
+                  step:
+                    description: |-
+                      Step is the 1-based index of the step currently applying;
+                      len(steps)+1 means the implicit trailing step for unmatched apps.
+                      0 means every generated app is at desired state.
+                    type: integer
+                  waitingFor:
+                    description: |-
+                      WaitingFor names the earlier-step application gating progress —
+                      still out-of-date or not yet Healthy. Empty when the active step is
+                      updating rather than gated.
+                    type: string
+                required:
+                - step
+                type: object
             type: object
         required:
         - metadata

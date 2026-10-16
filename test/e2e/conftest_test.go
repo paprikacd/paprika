@@ -81,36 +81,22 @@ func releaseConftestCondition(g Gomega, conditionType string) string {
 }
 
 var _ = Context("ApplicationConftestGate", Ordered, func() {
+	var fx Fixture
+
 	AfterAll(func() {
 		By("cleaning up conftest e2e resources")
-		cmd := exec.Command("kubectl", "delete", "application", "e2e-conftest", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command("kubectl", "delete", "conftestpolicy", "e2e-deny-deployment", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-		_, _ = utils.Run(cmd)
-		for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
-			cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-conftest", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
-		}
-		for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
-			cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-conftest", "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
-		}
+		DeleteByLabel(namespace, "app.paprika.io/name=e2e-conftest",
+			"releases", "stages", "pipelines", "templates",
+			"deployments", "services", "ingresses", "configmaps", "jobs", "pods")
+		fx.Teardown()
 	})
 
 	It("should block promotion when an enforce policy denies the manifests", func() {
 		By("creating an enforce ConftestPolicy that denies Deployments")
-		policy := fmt.Sprintf(conftestPolicyEnforceFmt, namespace, "enforce")
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(policy)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create ConftestPolicy")
+		fx.Apply(fmt.Sprintf(conftestPolicyEnforceFmt, namespace, "enforce"))
 
 		By("creating an Application bound to the policy")
-		app := fmt.Sprintf(conftestApplicationFmt, namespace)
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(app)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
+		fx.Apply(fmt.Sprintf(conftestApplicationFmt, namespace))
 
 		By("waiting for the Release to report ConftestPassed=False")
 		Eventually(func(g Gomega) {
@@ -129,11 +115,7 @@ var _ = Context("ApplicationConftestGate", Ordered, func() {
 
 	It("should promote once the policy is switched to warn", func() {
 		By("switching the policy enforcement to warn")
-		policy := fmt.Sprintf(conftestPolicyEnforceFmt, namespace, "warn")
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(policy)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to update ConftestPolicy to warn")
+		fx.Apply(fmt.Sprintf(conftestPolicyEnforceFmt, namespace, "warn"))
 
 		By("waiting for the Application to reach Healthy")
 		Eventually(func(g Gomega) {

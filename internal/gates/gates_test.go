@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -76,6 +77,43 @@ func TestSmokeGate(t *testing.T) {
 				t.Fatalf("expected pass=%v, got pass=%v: %s", tc.wantPassed, result.Passed, result.Message)
 			}
 		})
+	}
+}
+
+func TestSmokeGateRejectsRedirectWithoutProbingAnotherEnvironment(t *testing.T) {
+	t.Parallel()
+	var upstreamCalls, policyCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, upstream.URL, http.StatusFound)
+	}))
+	defer target.Close()
+	client := target.Client()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		policyCalls.Add(1)
+		return nil
+	}
+	gate := NewSmokeGate(client)
+	result := gate.Execute(context.Background(), GateConfig{Type: "smoke-test", Endpoint: target.URL, Timeout: 1})
+	if result.Passed || result.Message != "HTTP 302 (expected 2xx)" || upstreamCalls.Load() != 0 {
+		t.Fatalf("redirect incorrectly qualified target: %+v; upstream calls=%d", result, upstreamCalls.Load())
+	}
+	// The original caller retains its redirect policy for unrelated requests.
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, target.URL, http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if policyCalls.Load() != 1 || upstreamCalls.Load() != 1 {
+		t.Fatal("smoke gate mutated caller's HTTP client")
 	}
 }
 

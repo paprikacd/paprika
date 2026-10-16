@@ -191,16 +191,16 @@ go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1 \
   crd:allowDangerousTypes=true paths=./api/... \
   output:crd:artifacts:config=config/crd/bases
 
-# Copy to chart
-for f in config/crd/bases/pipelines.paprika.io_{applications,applicationsets,releases}.yaml; do
-  base=$(basename $f)
-  chart_name=$(echo $base | sed 's/pipelines.paprika.io_//;s/\.yaml$/.pipelines.paprika.io.yaml/')
-  cp "$f" "charts/chart/templates/crd/$chart_name"
-done
+# Copy all CRDs to chart templates, preserving the crd.enable gate and keep annotation
+task chart:crds
 
 # Apply to cluster (or let Helm manage them)
+kubectl config current-context
 kubectl apply -f config/crd/bases/pipelines.paprika.io_applications.yaml
+kubectl get crd applications.pipelines.paprika.io
+kubectl config current-context
 kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
+kubectl get crd releases.pipelines.paprika.io
 ```
 
 ### HTTP/2 (h2c) Rollout Ordering

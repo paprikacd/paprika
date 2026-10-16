@@ -84,6 +84,7 @@ var _ = Describe("Rollout", Ordered, func() {
 		rollingName = "e2e-rolling"
 		canaryName  = "e2e-canary"
 	)
+	var fx Fixture
 
 	BeforeAll(func() {
 		By("creating a rolling-update Rollout")
@@ -98,10 +99,7 @@ var _ = Describe("Rollout", Ordered, func() {
 				"template": %s
 			}
 		}`, rollingName, rolloutNamespace, rolloutPodTemplate(rollingName))
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(manifest)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create rolling Rollout")
+		fx.Apply(manifest)
 
 		By("creating a canary Rollout")
 		manifest = fmt.Sprintf(`{
@@ -118,17 +116,12 @@ var _ = Describe("Rollout", Ordered, func() {
 				"template": %s
 			}
 		}`, canaryName, rolloutNamespace, rolloutPodTemplate(canaryName))
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(manifest)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create canary Rollout")
+		fx.Apply(manifest)
 	})
 
 	AfterAll(func() {
 		By("cleaning up Rollouts")
-		cmd := exec.Command("kubectl", "delete", "rollout", rollingName, canaryName,
-			"-n", rolloutNamespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
+		fx.Teardown()
 	})
 
 	It("should reconcile a rolling Rollout to Healthy", func() {
@@ -253,9 +246,7 @@ var _ = Describe("Rollout", Ordered, func() {
 				"template": %s
 			}
 		}`, rolloutNamespace, rolloutPodTemplate("e2e-invalid-canary"))
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(manifest)
-		_, err := utils.Run(cmd)
+		_, err := utils.ApplyManifest(manifest)
 		Expect(err).To(HaveOccurred(), "webhook should reject a canary strategy with zero steps")
 	})
 })

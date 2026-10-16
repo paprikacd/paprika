@@ -193,8 +193,11 @@ jobs:
       - name: Wait for all pods ready
         run: |
           echo "Waiting for all Paprika pods to be ready..."
+          # A pod the kubelet evicted (the repo-server at its /tmp sizeLimit)
+          # stays listed as Succeeded or Failed and never turns Ready.
           kubectl wait --for=condition=Ready pods \
             -l app.kubernetes.io/instance="${HELM_RELEASE}" \
+            --field-selector=status.phase!=Succeeded,status.phase!=Failed \
             -n "${VKE_NAMESPACE}" \
             --timeout=180s
 

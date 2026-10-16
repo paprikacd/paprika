@@ -40,24 +40,16 @@ COPY --from=ui-builder /ui/out/ internal/api/uistatic/
 # compatible with the current VKE node architecture.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -a -o manager ./cmd
 
-# Install helm in a separate stage
-FROM alpine:3.24 AS helm-builder
-RUN apk add --no-cache curl && \
-    ARCH=$(uname -m | sed 's/aarch64/arm64/' | sed 's/x86_64/amd64/') && \
-    curl -fsSL https://get.helm.sh/helm-v3.16.1-linux-${ARCH}.tar.gz -o /tmp/helm.tar.gz && \
-    tar -xzf /tmp/helm.tar.gz -C /tmp && \
-    mv /tmp/linux-${ARCH}/helm /helm
-
-# Use Alpine so the repo-backed renderer can execute git while keeping the
-# runtime image small and non-root.
+# Alpine: runtime needs ca-certificates for outbound TLS and tar (busybox)
+# for S3 archives. All git/helm work is in-process (go-git, Helm SDK) — no
+# binaries are exec'd.
 FROM alpine:3.24
 WORKDIR /
-RUN apk add --no-cache ca-certificates git && \
+RUN apk add --no-cache ca-certificates && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager .
 COPY --from=builder /workspace/charts /charts
-COPY --from=helm-builder /helm /usr/local/bin/helm
 ENV HELM_CACHE_HOME=/tmp/helm/cache \
     HELM_CONFIG_HOME=/tmp/helm/config \
     HELM_DATA_HOME=/tmp/helm/data

@@ -230,8 +230,23 @@ var serverManagedAnnotationPrefixes = []string{
 // Kubernetes-defaulted spec keys (present in live but absent in desired) are
 // ignored so that only user-declared configuration drives drift detection.
 func resourceEqual(desired, live unstructured.Unstructured) bool {
+	if desired.GetKind() == "PriorityClass" && strings.HasPrefix(desired.GetAPIVersion(), "scheduling.k8s.io/") {
+		desired = normalizePriorityClassDefaults(desired)
+		live = normalizePriorityClassDefaults(live)
+	}
 	if !metaEqual(desired, live) {
 		return false
+	}
+	if desired.GetAPIVersion() == "v1" && desired.GetKind() == "ResourceQuota" {
+		desired = normalizeQuotaQuantities(desired)
+		live = normalizeQuotaQuantities(live)
+	}
+	if desired.GetKind() == "NetworkPolicy" && strings.HasPrefix(desired.GetAPIVersion(), "networking.k8s.io/") {
+		var ok bool
+		desired, ok = normalizeEmptyNetworkPolicyRules(desired, live)
+		if !ok {
+			return false
+		}
 	}
 	return payloadContains(desired.Object, live.Object)
 }
@@ -363,11 +378,37 @@ func shouldIgnoreLiveResource(obj *unstructured.Unstructured) bool {
 }
 
 func isPaprikaInternalResource(obj *unstructured.Unstructured) bool {
+	if isApplicationManifestSnapshot(obj) {
+		return true
+	}
 	if obj.GetLabels()[ReleaseNameLabelKey] == "" {
 		return false
 	}
 	for _, ref := range obj.GetOwnerReferences() {
 		if ref.Kind == "Release" && strings.HasPrefix(ref.APIVersion, "pipelines.paprika.io/") {
+			return true
+		}
+	}
+	return false
+}
+
+// Pending and accepted immutable inline bundles can remain Application-owned
+// across releases. Their payload is a control-plane input, not a workload.
+func isApplicationManifestSnapshot(obj *unstructured.Unstructured) bool {
+	if obj.GetKind() != "ConfigMap" {
+		return false
+	}
+	immutable, _, err := unstructured.NestedBool(obj.Object, "immutable")
+	if err != nil || !immutable {
+		return false
+	}
+	_, hasPayload, err := unstructured.NestedString(obj.Object, "data", "manifests.yaml")
+	if err != nil || !hasPayload {
+		return false
+	}
+	for _, owner := range obj.GetOwnerReferences() {
+		if owner.Kind == "Application" && strings.HasPrefix(owner.APIVersion, "pipelines.paprika.io/") &&
+			owner.Name == obj.GetLabels()[ApplicationNameLabelKey] {
 			return true
 		}
 	}

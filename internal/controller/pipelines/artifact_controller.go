@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -111,7 +112,7 @@ func (r *ArtifactReconciler) handleStatusUpdateError(ctx context.Context, err er
 	*result = resultError
 	if apierrors.IsConflict(err) {
 		log.Info("Conflict updating Artifact status; will retry", "artifact", name)
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 	}
 	return ctrl.Result{}, err
 }

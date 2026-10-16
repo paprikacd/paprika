@@ -1,0 +1,78 @@
+{
+  "observedAt": "2026-01-01T00:00:00Z",
+  "state": "healthy",
+  "controllerReady": true,
+  "listenerReady": true,
+  "workers": 1,
+  "busy": 1,
+  "nodes": [
+    "node-a"
+  ],
+  "usage": {
+    "schema": "arc-usage/v1",
+    "clusterId": "cluster",
+    "clusterUid": "cluster-uid",
+    "nodeInventoryComplete": true,
+    "resources": [
+      {
+        "uid": "controller-pod-id",
+        "kind": "controller-pod",
+        "namespace": "systems",
+        "phase": "Running",
+        "resourceVersion": "1",
+        "nodeUid": "app-node-id"
+      },
+      {
+        "uid": "listener-id",
+        "kind": "listener-pod",
+        "namespace": "systems",
+        "phase": "Running",
+        "resourceVersion": "1",
+        "ownerUid": "listener-owner",
+        "nodeUid": "app-node-id"
+      },
+      {
+        "uid": "app-node-id",
+        "kind": "node",
+        "resourceVersion": "1",
+        "nodeClass": "shared",
+        "nodePool": "apps",
+        "purchaseModel": "unknown"
+      },
+      {
+        "uid": "node-id",
+        "kind": "node",
+        "resourceVersion": "1",
+        "nodeClass": "dedicated-ci",
+        "nodePool": "ci",
+        "machineType": "c4-standard-8",
+        "purchaseModel": "spot"
+      },
+      {
+        "uid": "pod-id",
+        "kind": "runner-pod",
+        "namespace": "runners",
+        "phase": "Running",
+        "resourceVersion": "1",
+        "ownerUid": "runner-id",
+        "nodeUid": "node-id",
+        "cpuRequestMillis": 1000,
+        "memoryRequestBytes": 1073741824
+      },
+      {
+        "uid": "runner-id",
+        "kind": "runner",
+        "namespace": "runners",
+        "phase": "Running",
+        "resourceVersion": "1",
+        "job": {
+          "repository": "example/infrastructure",
+          "workflowRunId": 123,
+          "jobId": "456",
+          "runnerId": 7,
+          "provenance": "arc-status"
+        }
+      }
+    ]
+  }
+}

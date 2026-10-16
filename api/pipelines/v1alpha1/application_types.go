@@ -42,6 +42,92 @@ const (
 	SyncManual SyncPolicy = "Manual"
 )
 
+// ApplicationTriggerType selects how a new deployment candidate is discovered.
+// +kubebuilder:validation:Enum=GitOps;Promotion;Manual
+type ApplicationTriggerType string
+
+const (
+	// ApplicationTriggerGitOps discovers candidates from the configured source.
+	ApplicationTriggerGitOps ApplicationTriggerType = "GitOps"
+	// ApplicationTriggerPromotion discovers candidates from a completed upstream Application release.
+	ApplicationTriggerPromotion ApplicationTriggerType = "Promotion"
+	// ApplicationTriggerManual discovers candidates only when an operator requests a sync.
+	ApplicationTriggerManual ApplicationTriggerType = "Manual"
+)
+
+// ApplicationReference identifies an Application on the Paprika management cluster.
+// The referenced Application's stages determine its deployment clusters.
+type ApplicationReference struct {
+	// Name of the Application.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+	// Namespace defaults to the referencing Application's namespace.
+	// +optional
+	// +kubebuilder:validation:MaxLength=63
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// ApplicationTrigger selects deployment candidates independently of syncPolicy,
+// which controls whether a selected candidate needs manual authorization.
+// Promotion supports Git sources and independently rendered immutable inline
+// artifacts. Each environment retains its own deployment configuration.
+// +kubebuilder:validation:XValidation:rule="self.type == 'Promotion' ? has(self.from) : !has(self.from)",message="from is required only for Promotion triggers"
+// +kubebuilder:validation:XValidation:rule="self.type == 'Promotion' || (!has(self.tests) && !has(self.gates))",message="tests and gates require a Promotion trigger"
+type ApplicationTrigger struct {
+	// Type selects GitOps, Promotion, or Manual triggering.
+	Type ApplicationTriggerType `json:"type"`
+	// From is the upstream environment whose completed release is promoted.
+	// +optional
+	From *ApplicationReference `json:"from,omitempty"`
+	// Tests runs a new verification pipeline for each upstream release before deployment.
+	// Its container steps execute on the management cluster.
+	// +optional
+	Tests *ApplicationBuildSpec `json:"tests,omitempty"`
+	// Gates verify the upstream environment before its release is promoted.
+	// +optional
+	Gates []GateConfig `json:"gates,omitempty"`
+}
+
+// ApplicationPromotionStatus records the selected upstream release and its
+// verification state. The source identity stays fixed while promotion runs.
+type ApplicationPromotionStatus struct {
+	SourceApplication    ApplicationReference `json:"sourceApplication"`
+	SourceApplicationUID string               `json:"sourceApplicationUID,omitempty"` //nolint:tagliatelle // Preserve the deployed Kubernetes UID wire field.
+	SourceRelease        string               `json:"sourceRelease,omitempty"`
+	SourceReleaseUID     string               `json:"sourceReleaseUID,omitempty"` //nolint:tagliatelle // Preserve the deployed Kubernetes UID wire field.
+	Revision             string               `json:"revision,omitempty"`
+	// +kubebuilder:validation:Enum=Verifying;AwaitingApproval;Ready;Promoting;Complete;Failed
+	Phase                   string `json:"phase,omitempty"`
+	VerificationPipelineRef string `json:"verificationPipelineRef,omitempty"`
+	// VerificationConfigHash invalidates verification when tests or gates change.
+	VerificationConfigHash string `json:"verificationConfigHash,omitempty"`
+	// VerificationAttempt is the last consumed explicit retry token. Each retry
+	// receives a fresh Pipeline identity; replaying this token cannot reopen it.
+	// +optional
+	VerificationAttempt string `json:"verificationAttempt,omitempty"`
+	// ConsumedVerificationAttempts prevents replay of older retry requests for
+	// this candidate. At most 32 retries are admitted; history is never evicted.
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	ConsumedVerificationAttempts []string `json:"consumedVerificationAttempts,omitempty"`
+	// VerificationStartedAt records when gates began after verification tests passed.
+	// It is reset when the verification configuration changes.
+	// +optional
+	VerificationStartedAt *metav1.Time `json:"verificationStartedAt,omitempty"`
+	Message               string       `json:"message,omitempty"`
+}
+
+// ApplicationDeploymentObservation binds the last successful desired/live diff
+// and live resource-health snapshot to the exact deployed release.
+type ApplicationDeploymentObservation struct {
+	Release            string      `json:"release"`
+	ReleaseUID         string      `json:"releaseUID"` //nolint:tagliatelle // Preserve the deployed Kubernetes UID wire field.
+	Revision           string      `json:"revision"`
+	ObservedGeneration int64       `json:"observedGeneration"`
+	ObservedAt         metav1.Time `json:"observedAt"`
+}
+
 // DeliveryStrategy defines the deployment strategy.
 // DeliveryStrategy defines the deployment strategy.
 type DeliveryStrategy string
@@ -215,11 +301,46 @@ const (
 	SourceTypeInline    = "inline"
 )
 
+// ArtifactImageReference is a full immutable application image reference.
+// +kubebuilder:validation:MaxLength=512
+// +kubebuilder:validation:Pattern="^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$"
+type ArtifactImageReference string
+
+// InlineArtifact identifies the immutable application version inside a rendered
+// bundle. Environments may vary configuration and dependencies, while declared
+// application components must deploy exactly the same immutable image refs.
+type InlineArtifact struct {
+	// Repository is the logical Git repository URL; Paprika does not fetch it.
+	// +kubebuilder:validation:MinLength=1
+	Repository string `json:"repository"`
+	// Revision is the exact source/image commit represented by this bundle.
+	// +kubebuilder:validation:Pattern="^[a-f0-9]{40}$"
+	Revision string `json:"revision"`
+	// Images maps primary application component names to immutable full image references.
+	// Each component must label a Deployment/StatefulSet/DaemonSet/Rollout/Pod
+	// with app.kubernetes.io/component and name its primary container accordingly.
+	// Other dependency images may differ between environments.
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=32
+	Images map[string]ArtifactImageReference `json:"images"`
+}
+
 // InlineSourceSpec references a manifest snapshot ConfigMap for inline sources.
+// +kubebuilder:validation:XValidation:rule="!has(self.artifact) || has(self.manifestHash)",message="versioned inline artifacts require manifestHash"
 type InlineSourceSpec struct {
 	// ConfigMapRef is the name of the ConfigMap containing the rendered manifest bundle.
 	// +optional
 	ConfigMapRef string `json:"configMapRef,omitempty"`
+	// ManifestHash is the SHA256 of the exact manifests.yaml bytes, independent
+	// per environment. It binds verification and approval to the staged payload.
+	// Required when Artifact is declared.
+	// +kubebuilder:validation:Pattern="^[a-f0-9]{64}$"
+	// +optional
+	ManifestHash string `json:"manifestHash,omitempty"`
+	// Artifact declares validated immutable provenance for cross-environment promotion.
+	// Its snapshot ConfigMap must be immutable and contain matching workload images.
+	// +optional
+	Artifact *InlineArtifact `json:"artifact,omitempty"`
 }
 
 // ApplicationSource defines the source of an application.
@@ -259,6 +380,13 @@ type ApplicationSource struct {
 	// Poll interval for change detection (default 30s)
 	// +kubebuilder:default="30s"
 	PollInterval string `json:"pollInterval,omitempty"`
+	// FetchTTL bounds how often a warm git mirror consults the remote for
+	// branch/tag revisions (type=git), e.g. "45s". Within the TTL the
+	// previous refs are reused — poll loops stop paying a remote fetch per
+	// resolve. Empty always fetches (previous behaviour). Pinned SHAs
+	// always skip the remote once mirrored — commits are immutable.
+	// +optional
+	FetchTTL string `json:"fetchTtl,omitempty"`
 	// TargetNamespace is the namespace passed to Helm for rendered resources.
 	// Defaults to the Application namespace.
 	// +optional
@@ -507,6 +635,7 @@ type HealthCheckResult struct {
 
 // ApplicationSpec defines the specification for an application.
 // ApplicationSpec defines the specification for an application.
+// +kubebuilder:validation:XValidation:rule="!has(self.trigger) || self.trigger.type != 'Promotion' || self.source.type == 'git' || (self.source.type == 'inline' && has(self.source.inline) && has(self.source.inline.artifact))",message="Promotion requires a Git source or a versioned inline artifact"
 type ApplicationSpec struct {
 	// Project references the AppProject that governs this application.
 	// +optional
@@ -515,6 +644,11 @@ type ApplicationSpec struct {
 
 	// Source defines where the application code/chart lives.
 	Source ApplicationSource `json:"source"`
+
+	// Trigger selects how new deployment candidates are discovered. Omitted
+	// preserves GitOps behavior; syncPolicy remains the authorization policy.
+	// +optional
+	Trigger *ApplicationTrigger `json:"trigger,omitempty"`
 
 	// Build defines the CI pipeline steps (optional — skip if no build needed).
 	// +optional
@@ -649,6 +783,21 @@ type ApplicationStatus struct {
 	PipelineRef    string   `json:"pipelineRef,omitempty"`
 	StageRefs      []string `json:"stageRefs,omitempty"`
 	ReleaseRef     string   `json:"releaseRef,omitempty"`
+
+	// Promotion records the upstream release selected by a Promotion trigger.
+	// +optional
+	Promotion *ApplicationPromotionStatus `json:"promotion,omitempty"`
+
+	// AcceptedDeployment preserves the deployment intent accepted by promotion.
+	// Generated Templates, Stages, and self-heal use this snapshot while spec
+	// changes await a future promotion candidate.
+	// +optional
+	AcceptedDeployment *ApplicationSpec `json:"acceptedDeployment,omitempty"`
+
+	// DeploymentObservation identifies the release observed by the most recent
+	// successful desired/live diff and live resource-health assessment.
+	// +optional
+	DeploymentObservation *ApplicationDeploymentObservation `json:"deploymentObservation,omitempty"`
 
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 

@@ -22,7 +22,7 @@ type GateConfig struct {
 	Timeout  int    `json:"timeout,omitempty"`
 }
 
-// SmokeGate performs HTTP smoke tests against an endpoint.
+// SmokeGate performs HTTP smoke tests against an endpoint without following redirects.
 type SmokeGate struct {
 	Client *http.Client
 }
@@ -51,7 +51,12 @@ func (g *SmokeGate) Execute(ctx context.Context, config GateConfig) GateResult {
 		return GateResult{Passed: false, Message: fmt.Sprintf("failed to create request: %v", err), Error: err}
 	}
 
-	resp, err := g.Client.Do(req)
+	// A redirect could make an unhealthy environment pass by serving the
+	// response from another environment. Keep the caller's transport and TLS
+	// settings without mutating its shared client or redirect policy.
+	client := *g.Client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
 	if err != nil {
 		return GateResult{Passed: false, Message: fmt.Sprintf("HTTP request failed: %v", err), Error: err}
 	}
@@ -82,14 +87,30 @@ func (g *DurationGate) Execute(ctx context.Context, config GateConfig) GateResul
 	}
 }
 
-// ExecuteGate dispatches to the appropriate gate implementation based on config type.
-func ExecuteGate(ctx context.Context, config GateConfig) GateResult {
+// Executor dispatches verification gates according to their configured type.
+type Executor struct {
+	smoke *SmokeGate
+}
+
+// NewExecutor creates a gate executor using client for HTTP smoke tests.
+// If client is nil, http.DefaultClient is used.
+func NewExecutor(client *http.Client) *Executor {
+	return &Executor{smoke: NewSmokeGate(client)}
+}
+
+// Execute runs the configured gate, rejecting unsupported gate types.
+func (e *Executor) Execute(ctx context.Context, config GateConfig) GateResult {
 	switch config.Type {
 	case "smoke-test":
-		return NewSmokeGate(nil).Execute(ctx, config)
+		return e.smoke.Execute(ctx, config)
 	case "duration":
 		return (&DurationGate{}).Execute(ctx, config)
 	default:
 		return GateResult{Passed: false, Message: "unknown gate type: " + config.Type}
 	}
+}
+
+// ExecuteGate dispatches to the appropriate gate implementation based on config type.
+func ExecuteGate(ctx context.Context, config GateConfig) GateResult {
+	return NewExecutor(nil).Execute(ctx, config)
 }

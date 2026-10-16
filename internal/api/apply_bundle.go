@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
 	"gopkg.in/yaml.v3"
@@ -100,6 +99,9 @@ func (s *PaprikaServer) ApplyBundle(
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("derive application name: %w", err))
 		}
 	}
+	if preflightErr := s.preflightBundleApplication(ctx, namespace, appName); preflightErr != nil {
+		return nil, preflightErr
+	}
 
 	var manifests []*unstructured.Unstructured
 	if s.governanceValidator != nil || s.governancePolicyEvaluator != nil {
@@ -125,7 +127,7 @@ func (s *PaprikaServer) ApplyBundle(
 
 	if req.Msg.DryRun {
 		app := s.buildApplication(appName, namespace, "", project)
-		rel := s.buildRelease(appName, namespace, "", project, bundle, evResult.Results)
+		rel := s.buildRelease(appName, namespace, "", project, s.generateReleaseName(appName, bundle), bundle, evResult.Results)
 		return connect.NewResponse(&paprikav1.ApplyBundleResponse{
 			Application:   convertApplication(app),
 			Release:       convertRelease(rel),
@@ -145,6 +147,32 @@ func (s *PaprikaServer) ApplyBundle(
 		PolicyResults: convertPolicyResults(evResult.Results),
 		Blocked:       false,
 	}), nil
+}
+
+func (s *PaprikaServer) preflightBundleApplication(ctx context.Context, namespace, name string) error {
+	var app pipelinesv1alpha1.Application
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &app); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect existing bundle Application: %w", err)
+	}
+	return validateLegacyBundleApplication(&app)
+}
+
+func validateLegacyBundleApplication(app *pipelinesv1alpha1.Application) error {
+	if applicationHasPromotionContract(&app.Spec) || applicationHasPromotionContract(app.Status.AcceptedDeployment) {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("ApplyBundle cannot overwrite a promotion or versioned artifact Application; update its full Application manifest or publisher instead"))
+	}
+	return nil
+}
+
+func applicationHasPromotionContract(spec *pipelinesv1alpha1.ApplicationSpec) bool {
+	if spec == nil {
+		return false
+	}
+	return (spec.Trigger != nil && spec.Trigger.Type == pipelinesv1alpha1.ApplicationTriggerPromotion) ||
+		(spec.Source.Inline != nil && spec.Source.Inline.Artifact != nil)
 }
 
 func (s *PaprikaServer) evaluateBundle(
@@ -410,6 +438,9 @@ func (s *PaprikaServer) findExistingCompleteRelease(
 		}
 		return nil, nil, false, fmt.Errorf("get application: %w", err)
 	}
+	if err := validateLegacyBundleApplication(&app); err != nil {
+		return nil, nil, false, err
+	}
 	if app.Status.ReleaseRef == "" {
 		return nil, nil, false, nil
 	}
@@ -481,7 +512,7 @@ func (s *PaprikaServer) applyInline(
 	bundle []byte,
 	policyResults []policy.Result,
 ) (*pipelinesv1alpha1.Application, *pipelinesv1alpha1.Release, error) {
-	releaseName := generateReleaseName(appName, bundle)
+	releaseName := s.generateReleaseName(appName, bundle)
 	snapshotName := releaseName + "-manifests"
 	stageName := appName + "-default"
 	if err := s.preflightStageApplicationOwner(ctx, namespace, appName, stageName); err != nil {
@@ -498,7 +529,7 @@ func (s *PaprikaServer) applyInline(
 		return nil, nil, fmt.Errorf("ensure stage: %w", err)
 	}
 
-	release := s.buildRelease(appName, namespace, snapshotName, project, bundle, policyResults)
+	release := s.buildRelease(appName, namespace, snapshotName, project, releaseName, bundle, policyResults)
 	release.OwnerReferences = []metav1.OwnerReference{{
 		APIVersion: pipelinesv1alpha1.GroupVersion.String(),
 		Kind:       "Application",
@@ -538,6 +569,9 @@ func (s *PaprikaServer) applyInline(
 		var freshApp pipelinesv1alpha1.Application
 		if err := s.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &freshApp); err != nil {
 			return fmt.Errorf("fetching application for releaseRef: %w", err)
+		}
+		if err := validateLegacyBundleApplication(&freshApp); err != nil {
+			return err
 		}
 		freshApp.Status.ReleaseRef = release.Name
 		if err := s.client.Status().Update(ctx, &freshApp); err != nil {
@@ -581,6 +615,9 @@ func (s *PaprikaServer) createOrUpdateApplication(
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: appName}, &existing); getErr != nil {
 			return fmt.Errorf("get application for update: %w", getErr)
+		}
+		if err := validateLegacyBundleApplication(&existing); err != nil {
+			return err
 		}
 		existing.Spec = app.Spec
 		if existing.Labels == nil {
@@ -843,11 +880,10 @@ func (s *PaprikaServer) buildApplication(appName, namespace, snapshotName, proje
 }
 
 func (s *PaprikaServer) buildRelease(
-	appName, namespace, snapshotName, project string,
+	appName, namespace, snapshotName, project, releaseName string,
 	bundle []byte,
 	policyResults []policy.Result,
 ) *pipelinesv1alpha1.Release {
-	releaseName := generateReleaseName(appName, bundle)
 	return &pipelinesv1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      releaseName,
@@ -880,10 +916,10 @@ func (s *PaprikaServer) baseLabels(appName, releaseName, project string) map[str
 	}
 }
 
-func generateReleaseName(appName string, bundle []byte) string {
+func (s *PaprikaServer) generateReleaseName(appName string, bundle []byte) string {
 	hash := sha256.Sum256(bundle)
 	short := hex.EncodeToString(hash[:4])
-	return fmt.Sprintf("%s-release-%s-%d", appName, short, time.Now().Unix())
+	return fmt.Sprintf("%s-release-%s-%d", appName, short, s.now().Unix())
 }
 
 func fullBundleSHA(bundle []byte) string {

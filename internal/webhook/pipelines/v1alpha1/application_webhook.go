@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,6 +34,7 @@ import (
 )
 
 var applicationlog = logf.Log.WithName("application-resource")
+var inlineManifestHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // SetupApplicationWebhookWithManager registers the Application webhooks.
 func SetupApplicationWebhookWithManager(mgr ctrl.Manager) error {
@@ -90,6 +92,7 @@ func (v *ApplicationCustomValidator) ValidateDelete(_ context.Context, obj *pipe
 func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, app *pipelinesv1alpha1.Application) error {
 	allErrs := v.validateSource(app)
 	allErrs = append(allErrs, validateApplicationOperations(app)...)
+	allErrs = append(allErrs, v.validateApplicationTrigger(ctx, app)...)
 
 	if len(app.Spec.Stages) == 0 {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec").Child("stages"), "At least one stage is required"))
@@ -119,19 +122,40 @@ func (v *ApplicationCustomValidator) validateSource(app *pipelinesv1alpha1.Appli
 
 	switch app.Spec.Source.Type {
 	case pipelinesv1alpha1.SourceTypeInline:
-		if app.Spec.Source.Inline == nil || app.Spec.Source.Inline.ConfigMapRef == "" {
-			allErrs = append(allErrs, field.Required(sourcePath.Child("inline").Child("configMapRef"), "configMapRef is required for inline source"))
-		}
+		allErrs = append(allErrs, validateInlineSource(app.Spec.Source.Inline, sourcePath.Child("inline"))...)
 	case pipelinesv1alpha1.SourceTypeGit:
-		if app.Spec.Source.RepoURL == "" {
-			allErrs = append(allErrs, field.Required(sourcePath.Child("repoUrl"), "Repo URL is required for git sources"))
-		}
+		allErrs = append(allErrs, v.validateGitSource(app, sourcePath)...)
 	case pipelinesv1alpha1.SourceTypeOCI:
-		if oci := app.Spec.Source.EffectiveOCI(); oci == nil || oci.URL == "" {
-			allErrs = append(allErrs, field.Required(sourcePath.Child("oci").Child("url"), "oci.url is required for oci sources"))
-		}
+		allErrs = append(allErrs, v.validateOCISource(app, sourcePath)...)
 	}
 	return allErrs
+}
+
+func validateInlineSource(source *pipelinesv1alpha1.InlineSourceSpec, path *field.Path) field.ErrorList {
+	if source == nil || source.ConfigMapRef == "" {
+		return field.ErrorList{field.Required(path.Child("configMapRef"), "configMapRef is required for inline source")}
+	}
+	if source.Artifact != nil && !inlineManifestHashPattern.MatchString(source.ManifestHash) {
+		return field.ErrorList{field.Invalid(path.Child("manifestHash"), source.ManifestHash, "versioned inline artifacts require an exact lowercase SHA-256 manifest hash")}
+	}
+	return nil
+}
+
+func (v *ApplicationCustomValidator) validateGitSource(app *pipelinesv1alpha1.Application, sourcePath *field.Path) field.ErrorList {
+	if app.Spec.Source.RepoURL == "" && app.Spec.Source.RepoRef == "" {
+		return field.ErrorList{field.Required(sourcePath.Child("repoUrl"), "repoUrl or repoRef is required for git sources")}
+	}
+	return nil
+}
+
+func (v *ApplicationCustomValidator) validateOCISource(app *pipelinesv1alpha1.Application, sourcePath *field.Path) field.ErrorList {
+	if app.Spec.Source.RepoRef != "" {
+		return nil
+	}
+	if oci := app.Spec.Source.EffectiveOCI(); oci == nil || oci.URL == "" {
+		return field.ErrorList{field.Required(sourcePath.Child("oci").Child("url"), "oci.url or repoRef is required for oci sources")}
+	}
+	return nil
 }
 
 func (v *ApplicationCustomValidator) validateProject(ctx context.Context, app *pipelinesv1alpha1.Application) field.ErrorList {

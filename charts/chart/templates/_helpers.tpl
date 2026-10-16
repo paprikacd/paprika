@@ -325,6 +325,12 @@ both Secret reference fields empty.
 {{- if ne (empty .Values.auth.oidc.existingSecretName) (empty .Values.auth.oidc.existingSecretKey) -}}
 {{- fail "auth.oidc.existingSecretName and auth.oidc.existingSecretKey must both be set" -}}
 {{- end -}}
+{{- if and .Values.auth.oidc.enabled (empty .Values.auth.oidc.clientID) -}}
+{{- fail "auth.oidc.clientID is required when auth.oidc.enabled=true: an empty client ID renders --auth-oidc-client-id= and the api-server fails startup with 'oidc client ID is required'" -}}
+{{- end -}}
+{{- if and .Values.auth.oidc.enabled (empty .Values.auth.oidc.issuerURL) -}}
+{{- fail "auth.oidc.issuerURL is required when auth.oidc.enabled=true" -}}
+{{- end -}}
 {{- end }}
 
 {{/*
