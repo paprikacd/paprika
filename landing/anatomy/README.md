@@ -8,4 +8,9 @@ Regenerate after editing the models:
 node landing/anatomy/build.mjs
 ```
 
-Each bench is an explanatory model. The selected carriage is controlled by the visitor and does not show a real pipeline or promotion state. Keep the captions aligned with `docs/guides/pipelines.md` and `docs/guides/gates.md` if the product behavior changes.
+The figures use different mechanisms because they explain different resources:
+
+- `pipeline.html` is a branching routing table. Its Git source, dependent container-step bays, and declared output are one illustrative `Pipeline` configuration. The movable front index selects an assembly; it does not show a running job.
+- `gates.html` is a vertical stage lift. It illustrates a handoff between separate `Application` resources linked by `spec.trigger.from`, using the same pinned Git revision. The side modules represent configured verification and optional approval; the preview control cannot approve or deploy a release.
+
+Both figures use the Paprika console's light, navy, and steel-blue palette, have native buttons and keyboard controls, and stop motion under `prefers-reduced-motion`. Keep their captions aligned with `docs/guides/pipelines.md`, `docs/guides/environment-promotion.md`, and `docs/guides/gates.md` when behavior changes. The vendored kit has SVG primitives only, so no Anatomy geometry audit is claimed.

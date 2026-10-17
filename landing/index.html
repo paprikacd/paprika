@@ -1,486 +1,231 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Paprika — Open source Kubernetes application delivery</title>
-  <meta name="description" content="Paprika is an Apache 2.0 Kubernetes operator for application releases, pipelines, health checks, and progressive delivery. Explore the source and self-host it on your cluster." />
+  <meta name="description" content="Paprika is an Apache 2.0 Kubernetes operator for traceable application releases, dependent pipeline steps, staged promotion, and health evidence. Explore the source and try it on a non-production cluster." />
   <link rel="canonical" href="https://paprikacd.github.io/paprika/" />
   <link rel="icon" type="image/png" href="./paprika-mark.png" />
-  <meta name="theme-color" content="#0c0b0a" />
+  <meta name="theme-color" content="#1d2d3d" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Paprika — Open source Kubernetes application delivery" />
-  <meta property="og:description" content="An Apache 2.0 Kubernetes operator for application releases, pipelines, health checks, and progressive delivery." />
+  <meta property="og:description" content="Trace Application releases from source through rollout and health, with optional Pipeline steps and staged promotion. Apache 2.0 and built in the open." />
   <meta property="og:url" content="https://paprikacd.github.io/paprika/" />
-  <meta property="og:image" content="https://paprikacd.github.io/paprika/delivery-art.jpg" />
-  <meta property="og:image:alt" content="Abstract paprika-colored delivery paths on a dark background" />
+  <meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp" />
+  <meta property="og:image:alt" content="Paprika console application inventory with local synthetic fleet data" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image" content="https://paprikacd.github.io/paprika/delivery-art.jpg" />
+  <meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp" />
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Paprika","description":"Open source Kubernetes application delivery operator","url":"https://paprikacd.github.io/paprika/","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go"}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <style>
-    *,*::before,*::after{box-sizing:border-box}
-
-:root{--bg:#0c0c0d;--surface:#171614;--surface-2:#211e1b;--ink:#f8f4ef;--muted:#c3b9b0;--orange:#f18457;--cream:#eee6da;--dark:#25211e;--sans:'Instrument Sans',system-ui,sans-serif}
-
-html{scroll-behavior:smooth}
-    body{margin:0;background:var(--bg);color:var(--ink);font:400 1rem/1.6 var(--sans);-webkit-font-smoothing:antialiased}
-    a{color:inherit;text-decoration:none}
-    img,svg{display:block;max-width:100%}
-    button{font:inherit}
-    a:focus-visible,button:focus-visible{outline:3px solid var(--orange);outline-offset:4px}
-    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-    .skip-link{position:fixed;z-index:100;top:1rem;left:1rem;padding:.65rem 1rem;background:var(--orange);color:#17110e;transform:translateY(-200%)}
-    .skip-link:focus-visible{transform:translateY(0)}
-
-.max-w-7xl{max-width:82rem;margin-inline:auto;padding-inline:clamp(1.25rem,4vw,4rem)}
-    .max-w-5xl{max-width:72rem;margin-inline:auto;padding-inline:clamp(1.25rem,4vw,4rem)}
-    .py-24{padding-block:clamp(5rem,9vw,9rem)}
-    section[id]{scroll-margin-top:5rem}
-
-.nav{position:sticky;z-index:50;top:0;background:#0c0c0df2}
-    .nav-inner{display:flex;align-items:center;justify-content:space-between;gap:2rem;max-width:82rem;min-height:4.5rem;margin:auto;padding-inline:clamp(1.25rem,4vw,4rem)}
-    .nav-logo{display:flex;align-items:center;gap:.7rem;font-weight:700;font-size:1.2rem;letter-spacing:-.04em}
-    .nav-logo-mark img{width:2rem;height:2rem}
-    .nav-links{display:flex;align-items:center;gap:clamp(.5rem,1.8vw,1.6rem)}
-    .nav-links a{font-size:.9rem;font-weight:600;color:var(--muted)}
-    .nav-links a:hover,.nav-links a:focus-visible{color:var(--ink)}
-    .nav-links .nav-github{color:var(--orange)}
-    .nav-links svg{display:none}
-
-.btn-primary,.btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:.6rem;min-height:3.25rem;padding:.7rem 1.4rem;font-weight:700;font-size:1rem;transition:background .2s,color .2s,transform .2s}
-    .btn-primary{background:var(--orange);color:#1c110d}
-    .btn-primary:hover{background:#ffa27c;transform:translateY(-2px)}
-    .btn-secondary{color:var(--ink);border-bottom:2px solid var(--orange)}
-    .btn-secondary:hover{color:var(--orange)}
-    .section-title{max-width:17ch;margin:0;font-size:clamp(2.6rem,5vw,5rem);line-height:1.06;letter-spacing:-.055em;font-weight:700}
-    .section-desc{max-width:49rem;margin:1.4rem 0 0;color:var(--muted);font-size:clamp(1.05rem,1.5vw,1.2rem);line-height:1.65}
-
-.hero{position:relative;overflow:hidden;padding:clamp(5rem,8vw,9rem) 0 5rem}
-    .hero-bg{animation:art-drift 18s ease-in-out infinite alternate;position:absolute;inset:0;background:url('./delivery-art.webp') right top/cover no-repeat;opacity:.2;pointer-events:none}
-    .hero-glow{display:none}
-    .hero-content{position:relative}
-    .hero-copy{animation:arrive .8s ease-out both}
-    .hero-preview{animation:arrive .9s .15s ease-out both}
-    @keyframes arrive{from{opacity:0;transform:translateY(22px)}
-    to{opacity:1;transform:translateY(0)}
-    }
-    @keyframes art-drift{from{transform:translateX(0)}
-    to{transform:translateX(-1.5%)}
-    }
-    .hero-main{display:flex;flex-direction:column;gap:3.8rem}
-    .hero-copy{max-width:66rem}
-    .hero-badge{margin:0 0 1.4rem;color:var(--orange);font-size:.97rem;font-weight:700}
-    .hero h1{max-width:15ch;margin:0;font-size:clamp(3.5rem,8vw,8rem);line-height:.98;letter-spacing:-.075em;font-weight:700}
-    .hero h1 span{color:var(--orange)}
-    .hero-copy>p:not(.hero-badge){max-width:42rem;margin:1.8rem 0 0;color:#e3d8cf;font-size:clamp(1.1rem,1.8vw,1.35rem);line-height:1.58}
-    .hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:1rem;margin-top:2rem}
-    .hero .hero-footnote{font-size:.9rem!important;color:var(--muted)!important}
-    .product-shot{min-width:0;margin:0;background:#f3f3f5}
-    .product-shot img{width:100%;height:auto}
-    .shot-chrome{display:flex;align-items:center;justify-content:space-between;gap:1rem;min-height:2.5rem;padding:.4rem .8rem;background:#24201d;color:#eee5dc;font-size:.8rem;font-weight:600}
-    .demo-pill{color:#ffc29f}
-    .scroll-hint{display:none}
-    .product-shot figcaption{padding:.5rem .8rem;background:#24201d;color:#eee5dc;font-size:.78rem}
-    .hero-preview{width:100%;max-width:76rem;margin-inline:auto;border-right:16px solid #f18457;border-bottom:16px solid #f18457}
-    .hero-paths{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2rem;max-width:76rem;margin:3rem auto 0}
-    .hero-path{display:flex;flex-direction:column;gap:.25rem;padding:0 0 .5rem}
-    .hero-path strong{font-size:1.22rem}
-    .hero-path strong span,.community-links strong span{color:var(--orange)}
-    .hero-path>span{max-width:25rem;color:var(--muted);font-size:1rem}
-
-.showcase{background:var(--surface)}
-    .showcase-head{display:grid;grid-template-columns:1.1fr .9fr;gap:4rem;align-items:end}
-    .showcase .section-desc{margin:0}
-    .showcase-tabs{display:flex;gap:.25rem;margin:3.5rem 0 1.5rem}
-    .showcase-tabs button{min-height:3.1rem;padding:.65rem 1.35rem;border:0;background:transparent;color:var(--muted);font-size:1rem;font-weight:700;cursor:pointer}
-    .showcase-tabs button[aria-selected=true]{background:var(--orange);color:#22150f}
-    .showcase-tabs button:hover:not([aria-selected=true]){color:var(--ink)}
-    .showcase-panel{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(17rem,.55fr);gap:3.5rem;align-items:center}
-    .showcase-panel[hidden]{display:none}
-    .showcase-frame{grid-column:1;grid-row:1}
-    .showcase-copy{grid-column:2;grid-row:1}
-    .showcase-copy h3{max-width:18ch;margin:0;font-size:clamp(2rem,3vw,3.2rem);line-height:1.12;letter-spacing:-.045em}
-    .showcase-copy p{margin:1.15rem 0;color:var(--muted);font-size:1rem}
-    .showcase-copy a,.anatomy-card>a{color:var(--orange);font-weight:700;text-decoration:underline;text-underline-offset:.25em}
-
-.anatomy-section{background:#25211e}
-    .anatomy-intro{max-width:65rem;margin-bottom:3.5rem}
-    .anatomy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3.5rem}
-    .anatomy-card{min-width:0}
-    .anatomy-card h3{margin:0;font-size:2rem;letter-spacing:-.04em}
-    .anatomy-card>p{max-width:35rem;margin:.7rem 0 1.5rem;color:var(--muted);font-size:1rem}
-    .anatomy-card iframe{display:block;width:100%;height:565px;border:0}
-    .anatomy-card>a{display:inline-block;margin-top:1rem}
-
-#get-started{background:var(--cream);color:var(--dark)}
-    #get-started .section-desc{color:#574e48}
-    .start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(1.5rem,4vw,4rem);margin:4rem 0 2rem}
-    .start-card{padding-top:1.2rem;border-top:3px solid #b14b2d}
-    .start-card h3{margin:0;font-size:1.55rem;letter-spacing:-.035em}
-    .start-card p{margin:.7rem 0 0;color:#574e48;font-size:1rem}
-    .start-actions{display:flex;flex-wrap:wrap;gap:1rem}
-    #get-started .btn-secondary{color:var(--dark)}
-
-#install{background:#111111}
-    .install-intro{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:end;margin-bottom:3rem}
-    .install-intro h2{max-width:12ch;margin:0;font-size:clamp(2.6rem,5vw,4.5rem);line-height:1.08;letter-spacing:-.055em}
-    .install-intro p{max-width:39rem;margin:0;color:var(--muted);font-size:1.05rem}
-    .install-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(18rem,.7fr);gap:4rem;align-items:start}
-    .install-terminal{min-width:0;max-width:100%;overflow:hidden;background:#24201d}
-    .install-terminal-header{display:flex;justify-content:space-between;gap:1rem;padding:1rem 1.2rem;background:var(--orange);color:#22150f;font-size:.9rem;font-weight:700}
-    .command-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:1rem;padding:1.25rem 1.2rem;}
-    .command-text{min-width:0;overflow-x:auto}
-    .install-command-label{display:block;margin-bottom:.5rem;color:#f5e8da;font-size:.9rem;font-weight:700}
-    .command-text code{display:block;width:max-content;min-width:100%;color:#fff;font:400 .84rem/1.6 monospace;white-space:nowrap}
-    .copy-button{min-width:4.5rem;min-height:2.7rem;border:0;background:#eee6da;color:#231710;font-weight:700;cursor:pointer}
-    .copy-button:hover{background:#ffaf88}
-    .copy-support{display:flex;justify-content:space-between;gap:1rem;padding:.8rem 1.2rem;color:#e1d7cd;font-size:.85rem}
-    .copy-support p{margin:0}
-    .copy-feedback{min-width:8rem;text-align:right}
-    .install-note{padding:0 0 1.6rem;margin-bottom:1.6rem;}
-    .install-note h3{margin:0;font-size:1.12rem}
-    .install-note p{margin:.5rem 0 0;color:var(--muted);font-size:.95rem}
-    .install-note a{color:var(--orange);text-decoration:underline;text-underline-offset:.2em}
-    .install-note code{overflow-wrap:anywhere;font:400 .84rem/1.5 monospace}
-    .source-command{overflow-x:auto;padding:1rem;background:#25211e;color:#f5e9df;font:400 .82rem/1.65 monospace}
-
-.resource-story{background:var(--surface);overflow:hidden}
-    .resource-layout{display:grid;grid-template-columns:minmax(19rem,.85fr) minmax(0,1.15fr);gap:clamp(2rem,6vw,7rem);align-items:center}
-    .resource-copy h2{max-width:14ch;margin:0;font-size:clamp(2.7rem,5vw,5rem);line-height:1.06;letter-spacing:-.055em}
-    .resource-copy>p:not(.section-label){max-width:36rem;color:var(--muted);font-size:1.14rem}
-    .resource-points{list-style:none;padding:0;margin:2rem 0 0}
-    .resource-points li{padding:1rem 0;padding-top:1.3rem;font-size:1.05rem}
-    .resource-points strong{display:block;font-size:1.18rem;color:var(--ink)}
-    .resource-points span{color:var(--muted)}
-    .resource-visual{margin:0;min-width:0}
-    .resource-visual img{display:block;width:100%;height:auto}
-    .resource-visual figcaption{margin-top:.7rem;color:var(--muted);font-size:.85rem}
-
-#community{background:#0c0c0d}
-    .community-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2.5rem;margin-top:3.5rem}
-    .community-links a{display:flex;flex-direction:column;gap:.5rem;padding:1.1rem 0 0;border-top:3px solid var(--orange)}
-    .community-links strong{font-size:1.4rem;letter-spacing:-.035em}
-    .community-links a>span{color:var(--muted);font-size:1rem}
-    .fit-note{margin:2rem 0 0;color:var(--muted);font-size:.95rem}
-    .fit-note a,.footer a{color:var(--orange);text-decoration:underline;text-underline-offset:.2em}
-
-.cta-card{padding:clamp(3rem,7vw,7rem);background:var(--orange);color:#24160f}
-    .cta-glow{display:none}
-    .cta-content h2{max-width:12ch;margin:0;font-size:clamp(3rem,6vw,6rem);line-height:1;letter-spacing:-.065em}
-    .cta-content h2 span{color:#24160f}
-    .cta-content p{max-width:34rem;margin:1.5rem 0 0;font-size:1.12rem}
-    .cta-actions{display:flex;flex-wrap:wrap;gap:1rem;margin-top:2rem}
-    .cta-card .btn-primary{background:#24160f;color:#fff}
-    .cta-card .btn-primary:hover{background:#423026}
-    .cta-card .btn-secondary{color:#24160f;border-bottom:2px solid #24160f}
-    .cta-actions svg{width:1rem}
-    .cta-footer{margin-top:1rem;color:var(--muted);font-size:.9rem}
-    .footer{padding:2rem 0}
-    .footer-inner{display:flex;justify-content:space-between;gap:1rem;max-width:82rem;margin:auto;padding-inline:clamp(1.25rem,4vw,4rem);color:var(--muted);font-size:.9rem}
-
-@media(max-width:900px){.showcase-head,.install-intro,.install-layout,.resource-layout{grid-template-columns:minmax(0,1fr);gap:2rem}
-    .showcase-panel{grid-template-columns:1fr;gap:1.5rem}
-    .showcase-frame,.showcase-copy{grid-column:1;grid-row:auto}
-    .showcase-copy{grid-row:1}
-    .anatomy-grid{grid-template-columns:1fr;gap:4rem}
-    .community-links{gap:1.25rem}
-    .resource-visual{max-width:45rem}
-    }
-
-@media(max-width:650px){.nav-inner{flex-wrap:wrap;gap:.1rem;padding-block:.6rem}
-    .nav-links{width:100%;justify-content:space-between;gap:.25rem}
-    .nav-links a{font-size:.8rem;padding:.25rem 0}
-    .nav-github{display:none!important}
-    .hero{padding-top:4rem}
-    .hero h1{font-size:clamp(3.5rem,15vw,5.5rem);max-width:11ch}
-    .hero-main{gap:2.5rem}
-    .hero-preview{width:calc(100% + 1.25rem);max-width:none;overflow-x:auto;border-right:8px solid var(--orange);border-bottom:8px solid var(--orange)}
-    .scroll-hint{display:inline}.hero-preview img{min-width:42rem}
-    .hero-paths,.start-grid,.community-links{grid-template-columns:1fr;gap:1.5rem}
-    .showcase-tabs{gap:0}
-    .showcase-tabs button{flex:1;min-width:0;padding:.6rem .35rem;font-size:.86rem}
-    .showcase-frame{overflow-x:auto}
-    .showcase-frame img{min-width:39rem}
-    .start-grid{margin-top:2.5rem}
-    .install-terminal .command-row{grid-template-columns:1fr}
-    .copy-button{justify-self:start}
-    .copy-support{flex-direction:column}
-    .copy-feedback{text-align:left}
-    .anatomy-card iframe{height:505px}
-    .cta-card{margin-inline:-1.25rem}
-    .footer-inner{flex-wrap:wrap}
-    }
-
-[data-enter]{transition:opacity .65s ease,transform .65s ease}
-    .motion-ready [data-enter]:not(.is-visible){opacity:0;transform:translateY(24px)}
-
-@media(prefers-reduced-motion:reduce){.hero-preview,.hero-copy,.hero-bg{animation:none}html{scroll-behavior:auto}
-    *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./site.css" />
+  <style>a:focus-visible,button:focus-visible,.skip-link:focus-visible{outline:3px solid #94bce3;outline-offset:4px}@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}</style>
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to main content</a>
-
-  <!-- Nav -->
-  <header class="nav">
-    <div class="nav-inner">
-      <a href="./" class="nav-logo" aria-label="Paprika home">
-        <span class="nav-logo-mark"><img src="./paprika-mark.png" alt="" width="28" height="28" /></span>
-        <span>Paprika</span>
-      </a>
-      <div class="nav-links">
+  <header class="masthead nav">
+    <div class="masthead-inner shell">
+      <a href="./" class="wordmark" aria-label="Paprika home"><img src="./paprika-mark.png" width="35" height="35" alt="" /><span>Paprika</span></a>
+      <nav class="nav-links" aria-label="Main navigation">
         <a href="#product">Product</a>
+        <a href="#pipeline">Pipelines</a>
+        <a href="#promotion">Promotion</a>
         <a href="#get-started">Get started</a>
         <a href="#community">Community</a>
-        <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Docs</a>
-        <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener" class="nav-github">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
-          GitHub
-        </a>
-      </div>
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <div class="mobile-menu-links">
+            <a href="#product">Product</a>
+            <a href="#pipeline">Pipelines</a>
+            <a href="#promotion">Promotion</a>
+            <a href="#get-started">Get started</a>
+            <a href="#community">Community</a>
+          </div>
+        </details>
+        <a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub ↗</a>
+      </nav>
     </div>
   </header>
-
   <main id="main-content" tabindex="-1">
-    <!-- Hero -->
     <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-bg" aria-hidden="true"></div>
-      <div class="hero-glow" aria-hidden="true"></div>
-      <div class="hero-content max-w-7xl">
-        <div class="hero-main">
-          <div class="hero-copy">
-            <p class="hero-badge">An open source Kubernetes operator · Apache 2.0</p>
-            <h1 id="hero-title">Every release, <span>visible.</span></h1>
-            <p>Paprika turns an Application resource into a release you can trace: from source and pipeline steps to staged rollout and health. Run the operator on your cluster and help build it in the open.</p>
-            <div class="hero-actions">
-              <a href="#get-started" class="btn-primary">Start self-hosting</a>
-              <a href="https://github.com/paprikacd/paprika" class="btn-secondary">Explore the source</a>
-            </div>
-            <p class="hero-footnote">Early stage and ready for hands-on evaluation.</p>
+      <div class="hero-grid shell">
+        <div class="hero-copy">
+          <p class="eyeline">Open source Kubernetes delivery</p>
+          <h1 id="hero-title">Trace every <span>release.</span></h1>
+          <p>Follow an Application from source to rollout and health. When configured, Pipeline steps and staged promotion add their own inspectable records.</p>
+          <div class="hero-actions">
+            <a href="#get-started" class="btn">Start self-hosting</a>
+            <a href="https://github.com/paprikacd/paprika" class="link-arrow">Explore the source</a>
           </div>
-          <figure class="hero-preview product-shot" data-ui tabindex="0">
-            <div class="shot-chrome"><span>Paprika console / applications</span><span class="demo-pill">Synthetic demo</span></div>
-            <img src="./demo-applications.webp" width="1440" height="900" alt="Paprika application inventory showing demo projects, health, sync state, and available actions" fetchpriority="high" />
-            <figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption>
+          <p class="hero-note">Apache 2.0 · early stage · evaluate on a non-production cluster.</p>
+        </div>
+        <div class="hero-media">
+          <figure class="hero-product scroll-frame" tabindex="0" aria-label="Application console capture; scroll horizontally to inspect on narrow screens" data-ui data-enter>
+            <div class="frame-head"><span>Paprika console / applications</span><span class="demo-tag">Synthetic demo</span></div>
+            <img src="./demo-applications.webp" width="1440" height="900" alt="Actual Paprika console showing a synthetic project-grouped application inventory with target, health and sync columns" fetchpriority="high" />
+            <figcaption><span class="mobile-cue">Scroll to inspect ↔ · </span>Actual console, connected to local synthetic fleet data.</figcaption>
           </figure>
         </div>
-        <div class="hero-paths" aria-label="Choose a starting path">
-          <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md" class="hero-path"><strong>Run it yourself <span aria-hidden="true">↗</span></strong><span>Requirements, image build, Helm install, and a first Application.</span></a>
-          <a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md" class="hero-path"><strong>Contribute <span aria-hidden="true">↗</span></strong><span>Find a first issue, set up locally, and propose a change.</span></a>
+      </div>
+      <div class="trace-band" aria-label="Paprika resource path">
+        <div class="trace-inner shell">
+          <div class="trace-intro">One possible resource path</div>
+          <div class="trace-cell"><b>01</b> Source</div><div class="trace-cell"><b>02</b> Pipeline (optional)</div><div class="trace-cell"><b>03</b> Stage</div><div class="trace-cell"><b>04</b> Release</div>
         </div>
       </div>
     </section>
 
-    <!-- Product views use real UI with deterministic demo data. -->
-    <section id="product" class="showcase py-24" aria-labelledby="product-title">
-      <div class="max-w-7xl">
-        <div class="showcase-head">
-          <div><h2 id="product-title" class="section-title">See the work, not just the status.</h2></div>
-          <p class="section-desc">These are screenshots from Paprika’s actual console, connected to a local synthetic fleet. Explore the views that help operators understand a release.</p>
+    <section id="product" class="fleet on-dark" aria-labelledby="fleet-title">
+      <div class="shell">
+        <div class="fleet-heading">
+          <div data-enter><p class="eyeline">The fleet</p><h2 id="fleet-title">Find the signal.</h2></div>
+          <p class="section-lede" data-enter>Group Applications by project, inspect target, health and sync together, and open the resource that needs a closer look.</p>
         </div>
-        <div class="showcase-tabs" role="tablist" aria-label="Paprika console views">
-          <button type="button" id="tab-applications" role="tab" aria-selected="true" aria-controls="panel-applications" tabindex="0">Applications</button>
-          <button type="button" id="tab-pipelines" role="tab" aria-selected="false" aria-controls="panel-pipelines" tabindex="-1">Pipelines</button>
-          <button type="button" id="tab-rollouts" role="tab" aria-selected="false" aria-controls="panel-rollouts" tabindex="-1">Rollouts</button>
-        </div>
-        <div id="panel-applications" role="tabpanel" aria-labelledby="tab-applications" class="showcase-panel">
-          <div class="showcase-copy"><h3>Find what needs attention.</h3><p>Group applications by project, filter by health or sync state, and open a target for details. The demo includes healthy, progressing, and degraded examples.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Explore the application model <span aria-hidden="true">↗</span></a></div>
-          <figure class="showcase-frame product-shot" data-ui tabindex="0"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Applications</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-applications.webp" width="1440" height="900" alt="Paprika inventory grouping synthetic applications by project with health and sync columns" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption></figure>
-        </div>
-        <div id="panel-pipelines" role="tabpanel" aria-labelledby="tab-pipelines" class="showcase-panel" hidden>
-          <div class="showcase-copy"><h3>Follow each run from build to result.</h3><p>See pipeline phase and step progress in one place. This fixture exercises completed and running examples without connecting to a live cluster.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">Read the pipeline docs <span aria-hidden="true">↗</span></a></div>
-          <figure class="showcase-frame product-shot" data-ui tabindex="0"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Pipelines</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-pipelines.webp" width="1440" height="900" alt="Paprika pipelines list with synthetic succeeded and running step states" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption></figure>
-        </div>
-        <div id="panel-rollouts" role="tabpanel" aria-labelledby="tab-rollouts" class="showcase-panel" hidden>
-          <div class="showcase-copy"><h3>Know when a rollout is moving or paused.</h3><p>Inspect each rollout’s target and phase, then open the release for more detail. Strategy and traffic information appear when a rollout is configured for them.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/canary.md">Read the rollout guide <span aria-hidden="true">↗</span></a></div>
-          <figure class="showcase-frame product-shot" data-ui tabindex="0"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Rollouts</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-rollouts.webp" width="1440" height="900" alt="Paprika rollout list showing synthetic healthy, paused, degraded, and progressing phases" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption></figure>
-        </div>
-      </div>
-    </section>
-
-    <!-- Interactive isometric explanations built from the Anatomy SVG kit. -->
-    <section id="how-it-works" class="anatomy-section py-24" aria-labelledby="anatomy-title">
-      <div class="max-w-7xl">
-        <div class="anatomy-intro">
-
-          <h2 id="anatomy-title" class="section-title">Trace the path from source to stage.</h2>
-          <p class="section-desc">Two interactive bench models illustrate documented Paprika resources. Select a station to see what it represents; the diagrams are explanations, not live cluster telemetry.</p>
-        </div>
-        <div class="anatomy-grid">
-          <article class="anatomy-card">
-            <h3>Pipeline workflow</h3>
-            <p>Git sources, dependent container steps, and a recorded artifact reference are all part of a Pipeline resource.</p>
-            <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">Read the Pipeline guide <span aria-hidden="true">↗</span></a>
-            <iframe title="Interactive isometric diagram of a Paprika Pipeline" src="./anatomy/pipeline.html" loading="lazy" height="565"></iframe>
-          </article>
-          <article class="anatomy-card">
-            <h3>Staged promotion</h3>
-            <p>A stage can verify a release with automated gates. A manual approval gate is available when configured.</p>
-            <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/gates.md">Read the gates guide <span aria-hidden="true">↗</span></a>
-            <iframe title="Interactive isometric diagram of Paprika promotion gates" src="./anatomy/gates.html" loading="lazy" height="565"></iframe>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- Self-hosted start -->
-    <section id="get-started" class="py-24">
-      <div class="max-w-5xl">
-
-        <h2 class="section-title">Your cluster. Your first release.</h2>
-        <p class="section-desc">Paprika is available under Apache 2.0. The self-hosted path uses a Kubernetes cluster, an image you build or select, and the Helm chart in the repository. Check the cluster context before installing.</p>
-        <div class="start-grid">
-          <div class="start-card"><h3>Prepare the cluster</h3><p>Set up Kubernetes, Helm, kubectl, Docker, and cert-manager when enabling webhooks. The chart defaults to a placeholder image, so choose a real image before install.</p></div>
-          <div class="start-card"><h3>Install the operator</h3><p>Build and push an image, install the chart in your namespace, and check the operator pods. The guide keeps every command together.</p></div>
-          <div class="start-card"><h3>Create an Application</h3><p>Apply a complete example, inspect its Release, and try a small change. Use the feature guides when you are ready for gates or canary routing.</p></div>
-        </div>
-        <div class="start-actions">
-          <a class="btn-primary" href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Read the getting started guide <span aria-hidden="true">↗</span></a>
-          <a class="btn-secondary" href="https://github.com/paprikacd/paprika/tree/master/config/samples">Browse sample manifests <span aria-hidden="true">↗</span></a>
-        </div>
-      </div>
-    </section>
-
-    <!-- Install -->
-    <section id="install" class="py-24">
-      <div class="max-w-5xl">
-        <div class="install-intro reveal">
-          <h2>Explore a fleet with the CLI</h2>
-          <p>The CLI is a separate way to inspect Paprika. Its release installer checks the downloaded archive. The example login below connects to the project’s hosted API; a self-hosted installation uses your own server address.</p>
-        </div>
-        <div class="install-layout">
-          <div class="install-terminal reveal-left" data-ui>
-            <div class="install-terminal-header">
-              <span>install.sh</span>
-              <span>verified release archive</span>
-            </div>
-            <div class="command-row">
-              <span class="command-text">
-                <span class="install-command-label">Latest published release</span>
-                <code id="install-latest-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code>
-              </span>
-              <button type="button" data-copy-target="install-latest-command" data-copy-feedback="install-copy-feedback" aria-label="Copy latest release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button>
-            </div>
-            <div class="command-row">
-              <span class="command-text">
-                <span class="install-command-label">Pin a release</span>
-                <code id="install-version-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh</code>
-              </span>
-              <button type="button" data-copy-target="install-version-command" data-copy-feedback="install-copy-feedback" aria-label="Copy pinned release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button>
-            </div>
-            <div class="command-row">
-              <span class="command-text">
-                <span class="install-command-label">Choose a writable destination</span>
-                <code id="install-dir-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh</code>
-              </span>
-              <button type="button" data-copy-target="install-dir-command" data-copy-feedback="install-copy-feedback" aria-label="Copy custom install directory command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button>
-            </div>
-            <div class="copy-support">
-              <p id="install-copy-guidance" class="copy-guidance">Copy unavailable? Select the command text and copy it manually.</p>
-              <p id="install-copy-feedback" class="copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
-            </div>
-          </div>
-
-          <div class="install-notes reveal">
-            <div class="install-note">
-              <h3>Platform and integrity</h3>
-              <p>Supports Darwin (macOS) and Linux on amd64 and arm64. The installer downloads over HTTPS and verifies the selected archive against the release checksum before replacing the binary.</p>
-            </div>
-            <div class="install-note">
-              <h3>Version and checksum</h3>
-              <p>Set <code>PAPRIKA_VERSION=vX.Y.Z</code> for a reproducible install. Audit the <a href="https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt" target="_blank" rel="noopener">latest published checksums</a>. A pinned release uses <code>https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</code>.</p>
-            </div>
-            <div class="install-note">
-              <h3>No implicit privilege escalation</h3>
-              <p>The script never invokes <code>sudo</code>. Set <code>PAPRIKA_INSTALL_DIR</code> to any writable directory; if it falls back to <code>~/.local/bin</code>, it prints the exact <code>PATH</code> export to add. A Homebrew formula is not yet supported.</p>
-            </div>
-            <div class="install-note">
-              <h3>Build from source</h3>
-              <p>Prefer to inspect and compile the CLI yourself? Clone the canonical repository and build the CLI with the pinned Go toolchain.</p>
-              <pre class="source-command">git clone https://github.com/paprikacd/paprika.git
-cd paprika
-go build -o ./bin/paprika ./cmd/paprika</pre>
-            </div>
+        <div class="fleet-body">
+          <figure class="product-frame scroll-frame" tabindex="0" aria-label="Fleet console capture; scroll horizontally to inspect on narrow screens" data-ui data-enter>
+            <div class="frame-head"><span>Paprika console / fleet inventory</span><span class="demo-tag">Synthetic demo</span></div>
+            <img src="./demo-applications.webp" width="1440" height="900" alt="Paprika project-grouped inventory showing synthetic healthy, progressing and degraded examples" loading="lazy" />
+            <figcaption><span class="mobile-cue">Scroll to inspect ↔ · </span>Actual Paprika UI · local synthetic fleet data</figcaption>
+          </figure>
+          <div class="fleet-notes" data-enter>
+            <div><strong>Scope the fleet.</strong><p>Project, cluster and stage controls keep large inventories navigable.</p></div>
+            <div><strong>Read both signals.</strong><p>Health and sync are separate states. A healthy workload can still differ from its desired resources.</p></div>
+            <div><strong>Follow the resource.</strong><p>The Application owns related Template, Stage and Release records.</p><a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Application guide</a></div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- A practical view of the resource model -->
-    <section class="resource-story py-24" aria-labelledby="resource-title">
-      <div class="resource-layout max-w-7xl">
-        <div class="resource-copy">
-
-          <h2 id="resource-title">A release you can inspect.</h2>
-          <p>Start with an Application that names a source and a stage. Paprika creates the related Template, Stage, and Release resources so the delivery path stays inspectable.</p>
-          <ul class="resource-points">
-            <li><strong>Choose a source</strong><span>Render a Git repository or Helm chart.</span></li>
-            <li><strong>Promote in stages</strong><span>Add health checks and approval gates where needed.</span></li>
-            <li><strong>Inspect the result</strong><span>Follow status through Kubernetes resources and the console.</span></li>
-          </ul>
+    <section id="pipeline" class="pipeline" aria-labelledby="pipeline-title">
+      <div class="shell">
+        <div class="pipeline-top">
+          <div data-enter><p class="eyeline">Pipeline workflow</p><h2 id="pipeline-title">Dependencies are the route.</h2></div>
+          <p class="section-lede" data-enter>A Pipeline runs container steps with declared dependencies. Independent steps can run in parallel when the configuration permits; an output can record a declared artifact reference.</p>
         </div>
-        <figure class="resource-visual">
-          <img src="./delivery-art.webp" width="1440" height="811" alt="Abstract paprika-colored paths converging into a shared delivery route" loading="lazy" />
-          <figcaption>Illustration of a delivery path. Read the <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Application walkthrough</a> for the actual resource model.</figcaption>
+        <figure class="pipeline-art" data-enter>
+          <img src="./art-pipeline-routing.webp" width="1840" height="854" alt="Illustrative low, branching routing table with two dependent work bays converging on one output drawer" loading="lazy" />
+          <figcaption>Illustration of one possible dependency graph, not a live run.</figcaption>
         </figure>
-      </div>
-    </section>
-
-    <!-- Community -->
-    <section id="community" class="py-24">
-      <div class="max-w-5xl">
-
-        <h2 class="section-title">Help shape Paprika.</h2>
-        <p class="section-desc">Report a reproducible bug, ask a usage question, suggest a feature, improve an example, or review a pull request. Issues are the current public support and planning channel.</p>
-        <div class="community-links">
-          <a href="https://github.com/paprikacd/paprika/issues/new/choose"><strong>Ask or report <span aria-hidden="true">↗</span></strong><span>Choose a question, bug, or feature issue template.</span></a>
-          <a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md"><strong>Contribute <span aria-hidden="true">↗</span></strong><span>Local setup, checks, and pull request guidance.</span></a>
-          <a href="https://github.com/paprikacd/paprika/blob/master/SECURITY.md"><strong>Report a vulnerability <span aria-hidden="true">↗</span></strong><span>Use the private route in the security policy.</span></a>
-        </div>
-        <p class="fit-note">Participation follows the <a href="https://github.com/paprikacd/paprika/blob/master/CODE_OF_CONDUCT.md">Code of Conduct</a>. Review the <a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0 license</a> before reusing the code.</p>
-      </div>
-    </section>
-
-    <!-- CTA -->
-    <section style="border-bottom:none" class="py-24">
-      <div class="max-w-7xl">
-        <div class="cta-card reveal">
-          <div class="cta-glow"></div>
-          <div class="cta-content">
-            <h2>Try Paprika on <span>your cluster</span></h2>
-            <p>Follow the self-hosted guide, try one application, and share what worked or broke. Your feedback can improve the next contributor’s first run.</p>
-            <div class="cta-actions">
-              <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md" class="btn-primary">
-                Start with the guide
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-              </a>
-              <a href="https://github.com/paprikacd/paprika/issues/new/choose" class="btn-secondary">Share feedback</a>
-            </div>
+        <div class="pipeline-grid">
+          <figure class="diagram-frame" data-enter>
+            <iframe title="Interactive isometric diagram of one Paprika Pipeline dependency configuration" src="./anatomy/pipeline.html" loading="lazy" height="570"></iframe>
+            <figcaption>Choose a part to see how this example maps to Pipeline configuration.</figcaption>
+          </figure>
+          <div class="pipeline-side" data-enter>
+            <figure class="product-frame" data-ui>
+              <div class="frame-head"><span>Pipeline list</span><span class="demo-tag">Synthetic demo</span></div>
+              <div class="shot-crop"><img src="./demo-pipelines.webp" width="1440" height="900" alt="Actual Paprika pipeline list with synthetic running and succeeded examples" loading="lazy" /></div>
+              <figcaption>Actual console · local synthetic fleet data</figcaption>
+            </figure>
+            <p>The diagram explains configuration. The console capture shows where run phase and step progress can be inspected.</p>
+            <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md" class="link-arrow">Read the Pipeline guide</a>
           </div>
         </div>
-        <div class="cta-footer reveal" style="transition-delay:0.3s">
-          Source and documentation are available on GitHub under Apache 2.0.
+      </div>
+    </section>
+
+    <section id="promotion" class="promotion" aria-labelledby="promotion-title">
+      <div class="shell">
+        <div class="promotion-grid">
+          <div class="promotion-copy" data-enter>
+            <p class="eyeline">Staged promotion</p>
+            <h2 id="promotion-title">Promote one commit.</h2>
+            <p class="section-lede">Use a separate Application for each environment. A downstream Promotion trigger selects the upstream completed release’s exact Git commit, then applies its own configured verification and deployment policy.</p>
+            <dl class="stage-ledger"><div><dt>Dev</dt><dd>Discovers the source candidate.</dd></div><div><dt>Staging</dt><dd>Verifies the upstream release before deployment.</dd></div><div><dt>Production</dt><dd>Can require manual approval when configured.</dd></div></dl>
+            <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/environment-promotion.md">Read the promotion guide</a>
+          </div>
+          <figure class="promotion-art" data-enter>
+            <img src="./art-promotion-lift.webp" width="1230" height="1278" alt="Illustrative upright stage lift with verification unit and optional manual approval latch around a release cassette" loading="lazy" />
+            <figcaption>Illustration of configured gates. Selecting this page does not approve a release.</figcaption>
+          </figure>
         </div>
+        <div class="promotion-lower">
+          <figure class="product-frame rollout-proof" data-ui data-enter>
+            <div class="frame-head"><span>Paprika console / rollouts</span><span class="demo-tag">Synthetic demo</span></div>
+            <img src="./demo-rollouts.webp" width="1440" height="900" alt="Actual Paprika rollout list with synthetic healthy, paused, degraded and progressing phases" loading="lazy" />
+            <figcaption>Actual console · local synthetic fleet data</figcaption>
+          </figure>
+          <figure class="diagram-frame" data-enter>
+            <iframe title="Interactive isometric diagram of Paprika stage verification and optional approval" src="./anatomy/gates.html" loading="lazy" height="595"></iframe>
+            <figcaption>Explore verification, optional approval, and the next stage in this illustrative lift.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="observability" class="evidence on-dark" aria-labelledby="evidence-title">
+      <div class="shell evidence-grid">
+        <div class="evidence-copy" data-enter>
+          <p class="eyeline">Resource evidence</p>
+          <h2 id="evidence-title">Inspect the result.</h2>
+          <p class="section-lede">Read Application and Release status, then compare desired resources with what the cluster reports. Paprika exposes current out-of-sync and prunable resource counts as metrics.</p>
+          <ul class="evidence-list"><li><b>Status</b><span>Phase, conditions and related Release state</span></li><li><b>Sync</b><span>Desired and live resource comparison</span></li><li><b>Metrics</b><span>Current resource counts, not a fabricated score</span></li></ul>
+          <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/metrics.md">Read the metrics guide</a>
+        </div>
+        <div class="evidence-visual" data-enter>
+          <figure class="evidence-art"><img src="./art-resource-comparator.webp" width="1312" height="1199" alt="Illustrative C-frame comparator with desired and live resource specimens and a gauge" loading="lazy" /><figcaption>Illustrative desired/live comparator, not telemetry.</figcaption></figure>
+          <div class="metric-plate" aria-label="Documented metric meanings"><div><code>paprika_out_of_sync</code><span>Current out-of-sync resource count</span></div><div><code>paprika_prunable</code><span>Current prunable resource count</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="get-started" class="get-started" aria-labelledby="start-title">
+      <div class="shell">
+        <div class="start-head"><div data-enter><p class="eyeline">Run it yourself</p><h2 id="start-title">Start on a test cluster.</h2></div><p class="section-lede" data-enter>Self-hosting means selecting a registry image the cluster can pull, installing the Helm chart, and applying a complete Application manifest. Check the active Kubernetes context first.</p></div>
+        <div class="start-grid">
+          <div data-enter><ol class="start-steps"><li><span class="num">01</span><div><h3>Prepare</h3><p>Use Kubernetes, kubectl, Helm, Docker and Go 1.26+. Cert-manager is needed only if you enable admission webhooks.</p></div></li><li><span class="num">02</span><div><h3>Install</h3><p>Build and push an operator image, pass its tag to the chart, then check the controller pod.</p></div></li><li><span class="num">03</span><div><h3>Apply</h3><p>Create an Application from a complete manifest. Inspect its status and the related Release.</p></div></li></ol><div class="start-actions"><a class="btn" href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Read the setup guide</a><a class="link-arrow" href="https://github.com/paprikacd/paprika/tree/master/config/samples">Browse samples</a></div></div>
+          <div class="terminal" data-ui data-enter><div class="terminal-head"><span>Self-hosted operator</span><span>documented sequence</span></div><pre><code>git clone https://github.com/paprikacd/paprika.git
+cd paprika
+kubectl config current-context
+
+<span class="comment"># Replace with your registry and immutable tag.</span>
+make docker-build docker-push IMG=YOUR_REGISTRY/paprika:YOUR_TAG
+make helm-deploy IMG=YOUR_REGISTRY/paprika:YOUR_TAG
+kubectl get pods -n paprika-system
+
+<span class="comment"># After saving a complete Application manifest:</span>
+kubectl apply -f application.yaml</code></pre><div class="terminal-note">The guide explains each prerequisite and the first Application. These commands affect your selected cluster.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" class="install" aria-labelledby="install-title">
+      <div class="shell">
+        <div class="install-head"><div data-enter><p class="eyeline">Optional CLI</p><h2 id="install-title">Inspect with the command line.</h2></div><p data-enter>The CLI installer downloads a published release archive and verifies its checksum. The CLI is separate from installing the operator. Use your own server address when self-hosting.</p></div>
+        <div class="install-layout">
+          <div class="install-terminal" data-ui data-enter><div class="install-terminal-header"><span>install.sh</span><span>verified release archive</span></div>
+            <div class="command-row"><span class="command-text"><span class="install-command-label">Latest published release</span><code id="install-latest-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code></span><button type="button" data-copy-target="install-latest-command" data-copy-feedback="install-copy-feedback" aria-label="Copy latest release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
+            <div class="command-row"><span class="command-text"><span class="install-command-label">Pin a release</span><code id="install-version-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh</code></span><button type="button" data-copy-target="install-version-command" data-copy-feedback="install-copy-feedback" aria-label="Copy pinned release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
+            <div class="command-row"><span class="command-text"><span class="install-command-label">Choose a writable destination</span><code id="install-dir-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh</code></span><button type="button" data-copy-target="install-dir-command" data-copy-feedback="install-copy-feedback" aria-label="Copy custom install directory command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
+            <div class="copy-support"><p id="install-copy-guidance">Copy unavailable? Select the command text and copy it manually.</p><p id="install-copy-feedback" class="copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p></div>
+          </div>
+          <div class="install-notes" data-enter>
+            <div class="install-note"><h3>Platform and integrity</h3><p>Darwin (macOS) and Linux on amd64 and arm64. The installer checks the archive against the release checksum before replacing the binary.</p></div>
+            <div class="install-note"><h3>Version and checksum</h3><p>Set <code>PAPRIKA_VERSION=vX.Y.Z</code>. Audit the <a href="https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt">latest published checksums</a>. A pinned release uses <code>https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</code>.</p></div>
+            <div class="install-note"><h3>No implicit privilege escalation</h3><p>The script never invokes <code>sudo</code>. Set <code>PAPRIKA_INSTALL_DIR</code> to a writable directory; if it falls back to <code>~/.local/bin</code>, it prints the exact <code>PATH</code> export. Homebrew is not yet supported.</p></div>
+            <div class="install-note"><h3>Build from source</h3><p>Clone the canonical repository and compile the CLI with the pinned Go toolchain.</p><pre class="source-command">git clone https://github.com/paprikacd/paprika.git
+cd paprika
+go build -o ./bin/paprika ./cmd/paprika</pre></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="community" class="community on-dark" aria-labelledby="community-title">
+      <div class="shell"><div class="community-grid"><div class="community-copy" data-enter><p class="eyeline">Build in the open</p><h2 id="community-title">Help shape Paprika.</h2><p class="section-lede">Bring a reproducible bug, a question from your first install, a focused feature idea, or a docs fix. Issues are the current public support and planning channel.</p><a class="btn btn-light" href="https://github.com/paprikacd/paprika/issues/new/choose">Open an issue</a></div>
+        <div class="community-links" data-enter><a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md"><span><strong>Contribute</strong><br />Local setup, checks and pull request guidance.</span><span class="arrow" aria-hidden="true">↗</span></a><a href="https://github.com/paprikacd/paprika/blob/master/docs/features.md"><span><strong>Read the guides</strong><br />Features, resource models and use cases.</span><span class="arrow" aria-hidden="true">↗</span></a><a href="https://github.com/paprikacd/paprika/blob/master/SECURITY.md"><span><strong>Report a vulnerability</strong><br />Use the private route in the security policy.</span><span class="arrow" aria-hidden="true">↗</span></a></div></div>
+        <p class="community-footnote">Participation follows the <a href="https://github.com/paprikacd/paprika/blob/master/CODE_OF_CONDUCT.md">Code of Conduct</a>. Review the <a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0 license</a> before reusing the code.</p>
+        <div class="big-close" aria-label="Paprika"><strong>Paprika</strong><span>Source. Stage. Release.</span></div>
       </div>
     </section>
   </main>
-
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="footer-inner">
-      <span>&copy; 2026 Paprika CD</span>
-      <a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0 License</a>
-    </div>
-  </footer>
-
+  <footer class="footer"><div class="footer-inner shell"><span>© 2026 Paprika CD</span><a href="https://github.com/paprikacd/paprika">GitHub repository</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0 License</a></div></footer>
   <script>
     // The page stays fully visible without JavaScript or when motion is reduced.
     if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const enterTargets = document.querySelectorAll('.showcase-head, .showcase-tabs, .showcase-panel, .anatomy-intro, .anatomy-card, .start-card, .install-intro, .install-terminal, .install-notes, .resource-copy, .resource-visual, .community-links a, .cta-content');
+      const enterTargets = document.querySelectorAll('[data-enter]');
       enterTargets.forEach(element => element.setAttribute('data-enter', ''));
       const enterObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
@@ -597,29 +342,9 @@ go build -o ./bin/paprika ./cmd/paprika</pre>
       });
     });
 
-    const productTabs = Array.from(document.querySelectorAll('.showcase-tabs [role="tab"]'));
-    function selectProductTab(nextTab, moveFocus = false) {
-      productTabs.forEach(tab => {
-        const selected = tab === nextTab;
-        tab.setAttribute('aria-selected', String(selected));
-        tab.tabIndex = selected ? 0 : -1;
-        document.getElementById(tab.getAttribute('aria-controls')).hidden = !selected;
-      });
-      if (moveFocus) nextTab.focus();
-    }
-    productTabs.forEach((tab, index) => {
-      tab.addEventListener('click', () => selectProductTab(tab));
-      tab.addEventListener('keydown', event => {
-        const next = {
-          ArrowRight: (index + 1) % productTabs.length,
-          ArrowLeft: (index - 1 + productTabs.length) % productTabs.length,
-          Home: 0,
-          End: productTabs.length - 1,
-        }[event.key];
-        if (next === undefined) return;
-        event.preventDefault();
-        selectProductTab(productTabs[next], true);
-      });
+    const mobileMenu = document.querySelector('.mobile-menu');
+    mobileMenu.addEventListener('click', event => {
+      if (event.target.closest('.mobile-menu-links a')) mobileMenu.open = false;
     });
   </script>
 </body>
