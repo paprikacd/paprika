@@ -77,6 +77,34 @@
       </div>
     </section>
 
+    <section id="release-proof" class="release-proof" aria-labelledby="release-proof-title">
+      <div class="shell">
+        <div class="release-proof-head">
+          <div data-enter>
+            <p class="eyeline">Interactive release instrument</p>
+            <h2 id="release-proof-title">The release proof press.</h2>
+          </div>
+          <p class="section-lede" data-enter>A downstream Application selects the exact Git revision from a completed upstream Release after the required evidence and configured checks qualify it. Explore the mechanism, then follow the records in Paprika.</p>
+        </div>
+        <div class="release-proof-grid">
+          <figure class="release-proof-model" data-enter>
+            <iframe title="Interactive 3D illustration of Paprika release proof, optional approval, and separate Application deployment" src="./anatomy/release-press/index.html" loading="lazy" height="830"></iframe>
+            <figcaption>Illustrative preview. These controls inspect a scenario; they cannot approve or deploy a Release. <a href="./anatomy/release-press/index.html">Open the full model ↗</a></figcaption>
+          </figure>
+          <div class="release-proof-notes" data-enter>
+            <p class="release-proof-kicker">Read the mechanism</p>
+            <ol>
+              <li><span>01</span><div><strong>Pin the candidate.</strong><p>A completed upstream Release supplies the exact Git commit for a separate downstream Application.</p></div></li>
+              <li><span>02</span><div><strong>Check the proof.</strong><p>Upstream health, sync, and a fresh desired/live observation matter. Configured tests and gates must also pass.</p></div></li>
+              <li><span>03</span><div><strong>Hold when configured.</strong><p>An optional approval stays bound to the reviewed candidate and deployment settings.</p></div></li>
+              <li><span>04</span><div><strong>Observe the target.</strong><p>The downstream Application deploys its own Release, then reports health in that environment.</p></div></li>
+            </ol>
+            <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/environment-promotion.md">Read the promotion guide</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="product" class="fleet on-dark" aria-labelledby="fleet-title">
       <div class="shell">
         <div class="fleet-heading">
@@ -132,13 +160,16 @@
           <div class="promotion-copy" data-enter>
             <p class="eyeline">Staged promotion</p>
             <h2 id="promotion-title">Promote one commit.</h2>
-            <p class="section-lede">Use a separate Application for each environment. A downstream Promotion trigger selects the upstream completed release’s exact Git commit, then applies its own configured verification and deployment policy.</p>
+            <p class="section-lede">Use a separate Application for each environment. A downstream promotion trigger selects the upstream completed release’s exact Git commit, then applies its own configured verification and deployment policy.</p>
             <dl class="stage-ledger"><div><dt>Dev</dt><dd>Discovers the source candidate.</dd></div><div><dt>Staging</dt><dd>Verifies the upstream release before deployment.</dd></div><div><dt>Production</dt><dd>Can require manual approval when configured.</dd></div></dl>
             <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/environment-promotion.md">Read the promotion guide</a>
           </div>
           <figure class="promotion-art" data-enter>
-            <img src="./art-promotion-lift.webp" width="1230" height="1278" alt="Illustrative upright stage lift with verification unit and optional manual approval latch around a release cassette" loading="lazy" />
-            <figcaption>Illustration of configured gates. Selecting this page does not approve a release.</figcaption>
+            <picture>
+              <source media="(max-width: 600px)" srcset="./art-environment-test-chain-mobile.webp" width="1024" height="1536" />
+              <img src="./art-environment-test-chain.webp" width="1536" height="1024" alt="Isometric concept with separate DEV, STG and PROD Application platforms and two testing stations between them" loading="lazy" decoding="async" />
+            </picture>
+            <figcaption>Concept illustration. The blue token stands for a pinned Git revision selected by separate Applications. The path is a metaphor; Paprika does not transfer an image or artifact between them.</figcaption>
           </figure>
         </div>
         <div class="promotion-lower">
