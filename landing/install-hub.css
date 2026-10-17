@@ -1,0 +1,266 @@
+/* CLI download plates and command fields. Uses Paprika tokens and Gamma's
+   existing SpotlightSurface behavior; all actions remain native links/buttons. */
+.install.install-hub {
+  padding-block: 110px 118px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.install-hub .install-head {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+  gap: 48px;
+  align-items: end;
+  margin-bottom: 42px;
+}
+.install-hub .install-head .eyeline { margin: 0 0 22px; font: 600 13px/1.3 var(--mono); }
+.install-hub .install-head h2 {
+  max-width: 17ch;
+  font-size: clamp(48px, 5.2vw, 78px);
+  margin: 0;
+}
+.install-hub .install-head > p {
+  max-width: 37rem;
+  font-size: 19px;
+  line-height: 1.5;
+}
+.install-hub .install-head > p > a {
+  display: table;
+  margin-top: 14px;
+  color: var(--steel-dark);
+  border-bottom: 1px solid currentColor;
+  font-size: 16px;
+  font-weight: 600;
+}
+.download-release,
+.download-release > div,
+.download-release nav {
+  display: flex;
+  align-items: center;
+}
+.download-release {
+  justify-content: space-between;
+  gap: 16px 28px;
+  padding: 17px 0;
+  border-block: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+.download-release > div { gap: 12px; }
+.download-release strong { font: 600 22px/1.1 var(--display); }
+.release-indicator { width: 8px; height: 8px; background: var(--steel-dark); box-shadow: 0 0 0 4px var(--steel-pale); }
+.download-version {
+  padding: 4px 7px;
+  border: 1px solid rgba(65, 97, 128, .4);
+  color: var(--steel-dark);
+  font: 500 11px/1.4 var(--mono);
+}
+.download-release nav { gap: 24px; flex-wrap: wrap; }
+.download-release nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--steel-dark);
+  font: 600 14px/1.3 var(--sans);
+}
+.download-release nav a:hover { color: var(--navy); text-decoration: underline; text-underline-offset: 4px; }
+.download-platforms {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 24px;
+  margin: 0 8px 48px 0;
+}
+.download-platform {
+  min-width: 0;
+  padding: 0 24px 19px;
+  box-shadow: 7px 7px 0 rgba(89, 128, 166, .14);
+  border-color: rgba(29, 45, 61, .24);
+  --spotlight-size: 360px;
+}
+.platform-index {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-block: 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--steel-dark);
+  font: 500 10px/1.3 var(--mono);
+  letter-spacing: .065em;
+}
+.platform-identity {
+  display: flex;
+  align-items: center;
+  gap: 21px;
+  min-height: 153px;
+  padding-block: 26px 30px;
+}
+.platform-icon-plate {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  flex: 0 0 74px;
+  width: 74px;
+  height: 74px;
+  border: 1px solid rgba(29, 45, 61, .22);
+  background: var(--steel-pale);
+  color: var(--navy);
+  box-shadow: 5px 5px 0 #c8d6e3;
+}
+.platform-icon-plate::after {
+  content: '';
+  position: absolute;
+  inset: 5px -6px -6px 5px;
+  z-index: -1;
+  border: 1px solid rgba(29, 45, 61, .12);
+  pointer-events: none;
+}
+.platform-icon-plate > svg { width: 58px; height: 58px; }
+.platform-identity h3 { font-size: 35px; line-height: 1; margin: 0 0 9px; }
+.platform-identity p { color: var(--muted); font-size: 14px; line-height: 1.4; margin: 0; }
+.platform-downloads { display: grid; gap: 9px; }
+.platform-download {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 49px;
+  padding: 11px 14px;
+  border: 1px solid var(--steel-dark);
+  background: var(--steel-dark);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: background 160ms, border-color 160ms;
+}
+.platform-download > span:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 11px; }
+.platform-download code { color: #d9e8f5; font: 400 11px/1.3 var(--mono); }
+.platform-download > svg { flex: 0 0 18px; width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; fill: none; }
+.platform-download:hover { background: var(--navy); border-color: var(--navy); }
+.download-platform .platform-footnote { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.platform-source { background: #eef0f2; --gamma-ui-surface: #eef0f2; }
+.platform-source .platform-icon-plate { background: #e2e7eb; box-shadow: 5px 5px 0 #ced7df; }
+.platform-download-source { background: transparent; border-color: rgba(29, 45, 61, .28); color: var(--navy); }
+.platform-download-source:hover { background: var(--steel-pale); border-color: var(--steel-dark); }
+.install-hub .install-layout { gap: 30px; }
+.install-hub .install-terminal { border: 1px solid var(--navy); box-shadow: 7px 7px 0 #d7e0e8; }
+.install-hub .install-terminal-header {
+  min-height: 58px;
+  align-items: center;
+  padding: 14px 23px;
+  background: var(--navy);
+  border-bottom: 1px solid rgba(242, 242, 243, .22);
+  font: 500 11px/1.4 var(--mono);
+  color: #c4d9eb;
+}
+.install-hub .install-terminal-header > span:first-child { display: inline-flex; align-items: center; gap: 12px; color: #fff; }
+.terminal-prompt { color: #b5d9fd; font-size: 18px; line-height: 1; }
+.install-hub .command-row { grid-template-columns: minmax(0, 1fr) auto; gap: 18px; padding: 22px 23px; background: var(--navy-2); }
+.install-hub .command-text { overflow: visible; min-width: 0; }
+.install-hub .install-command-label { display: flex; align-items: center; gap: 12px; margin-bottom: 11px; color: #c4d9eb; font: 400 12px/1.4 var(--sans); }
+.install-hub .install-command-label > span { font: 500 10px/1.2 var(--mono); color: #b5d9fd; }
+.install-hub .command-text code {
+  width: 100%;
+  min-width: 0;
+  padding-bottom: 5px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #5980a6 var(--navy);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.install-hub .copy-button { min-height: 44px; min-width: 74px; padding: 9px 13px; border-color: #8eacc8; background: rgba(255, 255, 255, .03); font-size: 17px; }
+.install-hub .copy-button:hover { background: var(--steel-dark); }
+.install-hub .copy-support { min-height: 51px; align-items: baseline; padding: 14px 23px; background: var(--navy); color: #c4d9eb; font-size: 12px; }
+.install-hub .copy-feedback { min-width: 8rem; }
+.install-hub .install-notes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+.install-hub .install-note { padding: 22px 0 24px; border-top: 1px solid var(--line); }
+.install-hub .install-note:last-child { grid-column: auto; }
+.install-note-index { display: block; margin-bottom: 11px; color: var(--steel-dark); font: 500 10px/1.3 var(--mono); letter-spacing: .05em; }
+.install-hub .install-note h3 { font-size: 27px; margin-bottom: 9px; }
+.install-hub .install-note p { font-size: 15px; line-height: 1.55; }
+.install-hub .install-note code { font-size: 12px; }
+.install-hub .source-command { padding: 12px 14px; margin-bottom: 0; border: 1px solid var(--line-soft); background: #fff; font-size: 12px; }
+.install-operator-note { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; max-width: none; margin: 4px 0 0; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+.install-operator-note > span { color: var(--steel-dark); margin-right: 5px; }
+.install-operator-note a { color: var(--steel-dark); text-decoration: underline; text-underline-offset: 4px; }
+.install-hub :is(a, button):focus-visible { outline: 3px solid #5980a6; outline-offset: 4px; }
+.install-hub .install-terminal button:focus-visible { outline-color: #b5d9fd; }
+
+/* Match the operator setup to the CLI's instrument-panel treatment. */
+.get-started .start-grid { gap: clamp(32px, 5vw, 76px); align-items: start; }
+.get-started .start-steps { border-top: 2px solid var(--navy); }
+.get-started .start-steps .num { display: grid; place-items: center; align-self: start; width: 36px; height: 36px; border: 1px solid rgba(65, 97, 128, .35); background: var(--steel-pale); font-size: 12px; }
+.get-started .start-steps li { gap: 10px; }
+.get-started .terminal { border: 1px solid var(--navy); box-shadow: 7px 7px 0 var(--steel-pale); }
+.get-started .terminal-head { min-height: 53px; padding-inline: 20px; background: var(--navy); border-bottom: 1px solid var(--line-on-dark); color: #c4d9eb; font-size: 11px; }
+.get-started .terminal-head > span:first-child { color: #fff; }
+.get-started .terminal pre { background: var(--navy-2); font-size: 13px; line-height: 1.85; }
+.get-started .terminal-note { padding: 16px 20px; font-size: 13px; }
+
+@media (max-width: 1050px) {
+  .download-platforms { gap: 18px; }
+  .download-platform { padding-inline: 18px; }
+  .platform-identity { gap: 15px; }
+  .platform-icon-plate { flex-basis: 61px; width: 61px; height: 61px; }
+  .platform-icon-plate > svg { width: 49px; height: 49px; }
+  .platform-identity h3 { font-size: 31px; }
+  .platform-download { padding-inline: 11px; font-size: 15px; }
+}
+@media (max-width: 850px) {
+  .install-hub .install-head { grid-template-columns: 1fr; gap: 22px; }
+  .download-release { align-items: start; }
+  .download-release nav { gap: 0 15px; justify-content: end; }
+  .download-platforms { grid-template-columns: 1fr; gap: 25px; }
+  .download-platform { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, .9fr); gap: 0 28px; padding-inline: 24px; }
+  .platform-index { grid-column: 1 / -1; }
+  .platform-identity { min-height: 136px; }
+  .platform-downloads { align-self: center; padding-top: 10px; }
+  .download-platform .platform-footnote { grid-column: 1 / -1; margin-top: 0; }
+  .platform-icon-plate { flex-basis: 70px; width: 70px; height: 70px; }
+  .platform-icon-plate > svg { width: 56px; height: 56px; }
+  .platform-identity h3 { font-size: 35px; }
+}
+@media (max-width: 600px) {
+  .install.install-hub { padding-block: 76px 82px; }
+  .install-hub .install-head { margin-bottom: 30px; }
+  .install-hub .install-head h2 { font-size: clamp(46px, 12.2vw, 62px); }
+  .install-hub .install-head > p { font-size: 17px; }
+  .download-release { display: block; padding-block: 16px 7px; }
+  .download-release > div { margin-bottom: 7px; }
+  .download-release nav { justify-content: start; gap: 0 21px; }
+  .download-release nav a { font-size: 13px; }
+  .download-platforms { margin-bottom: 35px; }
+  .download-platform { display: block; padding-inline: 21px; }
+  .platform-identity { min-height: 137px; gap: 24px; padding-block: 24px 28px; }
+  .platform-downloads { padding: 0; }
+  .platform-download { min-height: 48px; padding-inline: 14px; font-size: 16px; }
+  .download-platform .platform-footnote { margin-top: 15px; }
+  .install-hub .install-terminal-header { display: block; padding: 16px; }
+  .install-hub .install-terminal-header > span:first-child { margin-bottom: 9px; }
+  .install-hub .install-terminal-header > span:last-child { display: block; padding-left: 31px; font-size: 10px; }
+  .install-hub .command-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 19px 15px; }
+  .install-hub .install-command-label { max-width: 25ch; align-items: start; gap: 8px; min-height: 32px; font-size: 12px; }
+  .install-hub .install-command-label > span { padding-top: 3px; }
+  .install-hub .command-text code { font-size: 12px; }
+  .install-hub .copy-button { min-width: 57px; padding-inline: 9px; font-size: 16px; align-self: end; margin-bottom: 3px; }
+  .install-hub .copy-support { padding-inline: 15px; gap: 7px; }
+  .install-hub .copy-feedback { min-height: 17px; }
+  .install-hub .install-notes { grid-template-columns: 1fr; }
+  .install-hub .install-note { padding-block: 21px; }
+  .install-operator-note { display: block; line-height: 1.6; }
+  .install-operator-note a { display: table; margin-top: 6px; }
+  .get-started .terminal-head { flex-wrap: wrap; gap: 6px; padding: 14px 16px; }
+  .get-started .terminal pre { padding-inline: 16px; font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .platform-download { transition: none; }
+}
+@media (forced-colors: active) {
+  .download-platform, .platform-icon-plate, .install-hub .install-terminal { box-shadow: none; }
+  .platform-download, .platform-icon-plate { border: 1px solid ButtonText; }
+  .platform-icon-plate svg { forced-color-adjust: none; color: #1d2d3d; }
+}

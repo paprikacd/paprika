@@ -23,6 +23,8 @@
   <link rel="stylesheet" href="./site.css?v=gamma-story-1" />
   <link rel="stylesheet" href="./gamma-ui.css?v=gamma-story-1" />
   <link rel="stylesheet" href="./story.css?v=gamma-story-1" />
+  <link rel="stylesheet" href="./install-hub.css?v=install-connect-1" />
+  <link rel="stylesheet" href="./agents.css?v=install-connect-1" />
   <script src="./gamma-ui.js?v=gamma-story-1" defer></script>
   <script src="./story.js?v=gamma-story-1" defer></script>
   <style>a:focus-visible,button:focus-visible,.skip-link:focus-visible{outline:3px solid #94bce3;outline-offset:4px}@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}</style>
@@ -37,6 +39,7 @@
         <a href="#pipeline">Pipelines</a>
         <a href="#promotion">Promotion</a>
         <a href="#get-started">Get started</a>
+        <a href="#agents">Skills &amp; MCP</a>
         <a href="#community">Community</a>
         <details class="mobile-menu">
           <summary>Menu</summary>
@@ -45,6 +48,7 @@
             <a href="#pipeline">Pipelines</a>
             <a href="#promotion">Promotion</a>
             <a href="#get-started">Get started</a>
+            <a href="#agents">Skills &amp; MCP</a>
             <a href="#community">Community</a>
           </div>
         </details>
@@ -206,24 +210,88 @@ kubectl apply -f application.yaml</code></pre><div class="terminal-note">The gui
       </div>
     </section>
 
-    <section id="install" class="install" aria-labelledby="install-title">
+    <section id="install" class="install install-hub" aria-labelledby="install-title">
       <div class="shell">
-        <div class="install-head"><div data-enter><p class="eyeline">Optional CLI</p><h2 id="install-title">Inspect with the command line.</h2></div><p data-enter>The CLI installer downloads a published release archive and verifies its checksum. The CLI is separate from installing the operator. Use your own server address when self-hosting.</p></div>
+        <div class="install-head">
+          <div data-enter><p class="eyeline">Optional CLI</p><h2 id="install-title">Your control plane.<br />At the command line.</h2></div>
+          <p data-enter>Inspect Applications, Releases and fleet health from your terminal. Download the CLI for your platform, then connect it to your own Paprika server. <a href="#get-started">Set up the operator first ↗</a></p>
+        </div>
+        <div class="download-release" data-enter>
+          <div><span class="release-indicator" aria-hidden="true"></span><strong>Paprika CLI</strong><span class="download-version">v0.3.6</span></div>
+          <nav aria-label="CLI release resources"><a href="https://github.com/paprikacd/paprika/releases/tag/v0.3.6">Release notes ↗</a><a href="https://github.com/paprikacd/paprika/releases/download/v0.3.6/checksums.txt">Checksums ↗</a><a href="https://github.com/paprikacd/paprika/releases">All releases ↗</a></nav>
+        </div>
+        <div class="download-platforms" data-enter>
+          <article class="download-platform" data-spotlight aria-labelledby="download-macos-title">
+            <div class="platform-index"><span>01 / DARWIN</span><span>.tar.gz</span></div>
+            <div class="platform-identity"><div class="platform-icon-plate" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="M44 23c0-8 5-14 13-15 1 8-4 14-13 15Z" fill="currentColor"/><path d="M56 27c-5-2-10 1-14 1s-8-3-14-1C14 32 16 52 24 63c3 4 6 9 10 9s6-3 10-3 6 3 10 3c5 0 10-8 13-16-10-4-13-18-3-25-3-2-5-3-8-4Z" fill="currentColor"/><path d="M22 53c2 6 5 11 8 13" stroke="#c5deef" stroke-width="2" stroke-linecap="square"/></svg></div><div><h3 id="download-macos-title">macOS</h3><p>Choose your processor.</p></div></div>
+            <div class="platform-downloads"><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.3.6/paprika_0.3.6_darwin_arm64.tar.gz" aria-label="Download Paprika CLI v0.3.6 for macOS Apple Silicon arm64"><span>Apple Silicon <code>arm64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.3.6/paprika_0.3.6_darwin_amd64.tar.gz" aria-label="Download Paprika CLI v0.3.6 for macOS Intel amd64"><span>Intel <code>amd64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a></div>
+            <p class="platform-footnote">Native macOS binary · checksum available</p>
+          </article>
+          <article class="download-platform" data-spotlight aria-labelledby="download-linux-title">
+            <div class="platform-index"><span>02 / LINUX</span><span>.tar.gz</span></div>
+            <div class="platform-identity"><div class="platform-icon-plate" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="M27 32c-1-15 5-23 13-23s14 8 13 23c5 8 10 18 10 27 0 8-10 10-23 10S17 67 17 59c0-9 5-19 10-27Z" fill="currentColor"/><path d="M27 48c0-10 6-16 13-16s13 6 13 16c0 12-6 17-13 17s-13-5-13-17Z" fill="#e7f0f8"/><ellipse cx="34" cy="28" rx="5" ry="7" fill="#e7f0f8"/><ellipse cx="46" cy="28" rx="5" ry="7" fill="#e7f0f8"/><path d="m32 37 8-5 8 5-8 7-8-7Z" fill="#5980a6"/><path d="m21 62-8 8 18 1 5-6m23-3 8 8-18 1-5-6" fill="#5980a6"/><path d="M35 27v3m10-3v3" stroke="currentColor" stroke-width="2"/></svg></div><div><h3 id="download-linux-title">Linux</h3><p>Ready for your shell.</p></div></div>
+            <div class="platform-downloads"><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.3.6/paprika_0.3.6_linux_amd64.tar.gz" aria-label="Download Paprika CLI v0.3.6 for Linux x86_64 amd64"><span>x86_64 <code>amd64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.3.6/paprika_0.3.6_linux_arm64.tar.gz" aria-label="Download Paprika CLI v0.3.6 for Linux ARM64 arm64"><span>ARM64 <code>arm64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a></div>
+            <p class="platform-footnote">Native Linux binary · checksum available</p>
+          </article>
+          <article class="download-platform platform-source" data-spotlight aria-labelledby="download-windows-title">
+            <div class="platform-index"><span>03 / WINDOWS</span><span>Source</span></div>
+            <div class="platform-identity"><div class="platform-icon-plate" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="m12 20 24-3v22H12V20Zm28-4 28-4v27H40V16ZM12 43h24v22l-24-3V43Zm28 0h28v27l-28-4V43Z" fill="currentColor"/><path d="M16 24h16M44 21h19" stroke="#c5deef" stroke-width="2"/></svg></div><div><h3 id="download-windows-title">Windows</h3><p>No native release yet.</p></div></div>
+            <div class="platform-downloads"><a class="platform-download platform-download-source" href="https://github.com/paprikacd/paprika/tree/master/cmd/paprika"><span>Explore CLI source</span><span aria-hidden="true">↗</span></a><a class="platform-download platform-download-source" href="https://github.com/paprikacd/paprika/releases"><span>Browse published releases</span><span aria-hidden="true">↗</span></a></div>
+            <p class="platform-footnote">Current archives target macOS and Linux.</p>
+          </article>
+        </div>
         <div class="install-layout">
-          <div class="install-terminal" data-ui data-enter><div class="install-terminal-header"><span>install.sh</span><span>verified release archive</span></div>
-            <div class="command-row"><span class="command-text"><span class="install-command-label">Latest published release</span><code id="install-latest-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code></span><button type="button" data-copy-target="install-latest-command" data-copy-feedback="install-copy-feedback" aria-label="Copy latest release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
-            <div class="command-row"><span class="command-text"><span class="install-command-label">Pin a release</span><code id="install-version-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh</code></span><button type="button" data-copy-target="install-version-command" data-copy-feedback="install-copy-feedback" aria-label="Copy pinned release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
-            <div class="command-row"><span class="command-text"><span class="install-command-label">Choose a writable destination</span><code id="install-dir-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh</code></span><button type="button" data-copy-target="install-dir-command" data-copy-feedback="install-copy-feedback" aria-label="Copy custom install directory command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
+          <div class="install-terminal" data-ui data-enter>
+            <div class="install-terminal-header"><span><span class="terminal-prompt" aria-hidden="true">&gt;_</span> Automatic install</span><span>macOS + Linux / checksum verified</span></div>
+            <div class="command-row"><span class="command-text"><span class="install-command-label"><span>01</span> Latest published release</span><code id="install-latest-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code></span><button type="button" data-copy-target="install-latest-command" data-copy-feedback="install-copy-feedback" aria-label="Copy latest release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
+            <div class="command-row"><span class="command-text"><span class="install-command-label"><span>02</span> Pin a release</span><code id="install-version-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh</code></span><button type="button" data-copy-target="install-version-command" data-copy-feedback="install-copy-feedback" aria-label="Copy pinned release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
+            <div class="command-row"><span class="command-text"><span class="install-command-label"><span>03</span> Choose a writable destination</span><code id="install-dir-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh</code></span><button type="button" data-copy-target="install-dir-command" data-copy-feedback="install-copy-feedback" aria-label="Copy custom install directory command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button></div>
             <div class="copy-support"><p id="install-copy-guidance">Copy unavailable? Select the command text and copy it manually.</p><p id="install-copy-feedback" class="copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p></div>
           </div>
           <div class="install-notes" data-enter>
-            <div class="install-note"><h3>Platform and integrity</h3><p>Darwin (macOS) and Linux on amd64 and arm64. The installer checks the archive against the release checksum before replacing the binary.</p></div>
-            <div class="install-note"><h3>Version and checksum</h3><p>Set <code>PAPRIKA_VERSION=vX.Y.Z</code>. Audit the <a href="https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt">latest published checksums</a>. A pinned release uses <code>https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</code>.</p></div>
-            <div class="install-note"><h3>No implicit privilege escalation</h3><p>The script never invokes <code>sudo</code>. Set <code>PAPRIKA_INSTALL_DIR</code> to a writable directory; if it falls back to <code>~/.local/bin</code>, it prints the exact <code>PATH</code> export. Homebrew is not yet supported.</p></div>
-            <div class="install-note"><h3>Build from source</h3><p>Clone the canonical repository and compile the CLI with the pinned Go toolchain.</p><pre class="source-command">git clone https://github.com/paprikacd/paprika.git
+            <div class="install-note"><span class="install-note-index" aria-hidden="true">INTEGRITY / 01</span><h3>Platform and integrity</h3><p>Darwin (macOS) and Linux on amd64 and arm64. The installer checks the archive against the release checksum before replacing the binary.</p></div>
+            <div class="install-note"><span class="install-note-index" aria-hidden="true">VERSION / 02</span><h3>Version and checksum</h3><p>Set <code>PAPRIKA_VERSION=vX.Y.Z</code>. Audit the <a href="https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt">latest published checksums</a>. A pinned release uses <code>https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</code>.</p></div>
+            <div class="install-note"><span class="install-note-index" aria-hidden="true">DESTINATION / 03</span><h3>Your directory. Your permissions.</h3><p>The script never invokes <code>sudo</code>. Set <code>PAPRIKA_INSTALL_DIR</code> to a writable directory; if it falls back to <code>~/.local/bin</code>, it prints the exact <code>PATH</code> export. Homebrew is not yet supported.</p></div>
+            <div class="install-note install-source-note"><span class="install-note-index" aria-hidden="true">SOURCE / 04</span><h3>Build from source</h3><p>Clone the canonical repository and compile the CLI with the pinned Go toolchain.</p><pre class="source-command">git clone https://github.com/paprikacd/paprika.git
 cd paprika
 go build -o ./bin/paprika ./cmd/paprika</pre></div>
           </div>
+        </div>
+        <p class="install-operator-note"><span aria-hidden="true">↳</span> The CLI is a client. Installing it does not install the operator. <a href="#get-started">Follow the self-hosting guide above ↗</a></p>
+      </div>
+    </section>
+
+    <section id="agents" class="agents-hub on-dark" aria-labelledby="agents-title">
+      <div class="shell">
+        <div class="story-heading"><div data-enter><p class="eyeline">Skills &amp; MCP</p><h2 id="agents-title">Bring your agent<br />into the delivery loop.</h2></div><p class="section-lede" data-enter>Give your client fleet context and a clear way to investigate. The Paprika skill guides the work; the remote MCP server exposes the tools your connection is allowed to use.</p></div>
+        <div class="agent-connect-grid">
+          <article class="agent-skill-card" data-spotlight data-enter>
+            <div class="agent-card-top"><svg viewBox="0 0 64 64" width="56" height="56" fill="none" aria-hidden="true"><path d="M13 6h27l11 11v41H13z" stroke="currentColor" stroke-width="2"/><path d="M40 6v13h11M22 29h20M22 37h14M22 45h9" stroke="currentColor" stroke-width="2"/><path d="m42 39 2.5 6.5L51 48l-6.5 2.5L42 57l-2.5-6.5L33 48l6.5-2.5z" fill="currentColor"/></svg><span class="agent-badge">Repository skill</span></div>
+            <h3>Paprika, with context.</h3><p>The operations skill guides fleet inspection, drift diagnosis, release investigation, Pipeline runs and controlled delivery actions.</p>
+            <div class="skill-file"><span>plugins/paprika/skills/paprika/</span><strong>SKILL.md</strong><span>Guidance for Codex &amp; Claude Code</span></div>
+            <div class="skill-links"><a class="btn btn-light" href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika/skills/paprika/SKILL.md">Read the skill <span aria-hidden="true">↗</span></a><a class="link-arrow" href="https://github.com/paprikacd/paprika/tree/master/plugins/paprika">Get the plugin</a></div>
+            <p class="skill-endpoint-note">The repository plugin points to Ben’s hosted fleet. For self-hosting, configure your own MCP endpoint with the client options alongside.</p>
+          </article>
+          <div class="mcp-client-board" data-gamma-tabs data-enter>
+            <div class="workbench-label"><span>Remote MCP / your Paprika server</span><span>Native OAuth · HTTP</span></div>
+            <div role="tablist" aria-label="MCP client setup options">
+              <button type="button" role="tab" id="mcp-codex-tab" aria-controls="mcp-codex" aria-selected="true">Codex</button>
+              <button type="button" role="tab" id="mcp-claude-tab" aria-controls="mcp-claude" aria-selected="false">Claude Code</button>
+              <button type="button" role="tab" id="mcp-other-tab" aria-controls="mcp-other" aria-selected="false">Other clients</button>
+            </div>
+            <div class="mcp-client-panel" role="tabpanel" id="mcp-codex" aria-labelledby="mcp-codex-tab" tabindex="0"><div class="mcp-panel-intro"><span class="agent-client-mark" aria-hidden="true">&gt;_</span><div><h3>Connect from Codex.</h3><p>Add the remote endpoint, then complete sign-in in the browser opened by Codex.</p></div></div><div class="mcp-command-field"><div class="mcp-command-label"><span>Terminal</span><button type="button" class="copy-button" data-copy-target="mcp-codex-command" data-copy-feedback="mcp-copy-feedback" aria-describedby="mcp-copy-guidance" aria-label="Copy Codex MCP setup commands">Copy commands</button></div><pre><code id="mcp-codex-command">codex mcp add paprika --url https://paprika.example.com/mcp
+codex mcp login paprika</code></pre></div><p class="mcp-host-note">Replace <code>https://paprika.example.com/mcp</code> with your server’s MCP URL. These examples do not provision a fleet.</p></div>
+            <div class="mcp-client-panel" role="tabpanel" id="mcp-claude" aria-labelledby="mcp-claude-tab" tabindex="0"><div class="mcp-panel-intro"><span class="agent-client-mark agent-client-star" aria-hidden="true">✳</span><div><h3>Connect from Claude Code.</h3><p>Register a remote HTTP server, then authenticate through Claude Code’s native OAuth flow.</p></div></div><div class="mcp-command-field"><div class="mcp-command-label"><span>Terminal</span><button type="button" class="copy-button" data-copy-target="mcp-claude-command" data-copy-feedback="mcp-copy-feedback" aria-describedby="mcp-copy-guidance" aria-label="Copy Claude Code MCP setup commands">Copy commands</button></div><pre><code id="mcp-claude-command">claude mcp add --scope user --transport http paprika https://paprika.example.com/mcp
+claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the example host with your MCP URL. For the repository plugin route, follow the <a href="https://github.com/paprikacd/paprika/tree/master/plugins/paprika">plugin instructions</a>.</p></div>
+            <div class="mcp-client-panel" role="tabpanel" id="mcp-other" aria-labelledby="mcp-other-tab" tabindex="0"><div class="mcp-panel-intro"><span class="agent-client-mark" aria-hidden="true">↔</span><div><h3>Use a remote MCP client.</h3><p>Add your server URL in a client that supports remote HTTP MCP and native OAuth.</p></div></div><div class="mcp-command-field"><div class="mcp-command-label"><span>Example endpoint · replace this host</span><button type="button" class="copy-button" data-copy-target="mcp-endpoint-command" data-copy-feedback="mcp-copy-feedback" aria-describedby="mcp-copy-guidance" aria-label="Copy example MCP endpoint">Copy URL</button></div><pre><code id="mcp-endpoint-command">https://paprika.example.com/mcp</code></pre></div><p class="mcp-host-note">Choose scopes in the client’s authorization flow. Complete sign-in through Paprika; do not paste access tokens into a chat.</p></div>
+            <div class="mcp-copy-support"><p id="mcp-copy-guidance">Copy unavailable? Select the text and copy it manually.</p><p id="mcp-copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p></div>
+            <div class="mcp-board-footer"><span>Self-hosted MCP must be enabled and configured by your administrator.</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/mcp-client-setup.md">Setup guide <span aria-hidden="true">↗</span></a></div>
+          </div>
+        </div>
+        <div class="mcp-capability-grid" data-enter>
+          <details class="mcp-capability"><summary><span class="capability-mark" aria-hidden="true">◎</span><span><strong>Inspect the fleet.</strong><small>Health, resources, logs and delivery records</small></span><span class="capability-expand" aria-hidden="true">+</span></summary><div><p>Read Application and cluster state, resource trees, releases, rollouts and Pipeline runs with the tools allowed by your read scope.</p><code>fleet_status · get_resource_tree · get_pipeline_run</code></div></details>
+          <details class="mcp-capability"><summary><span class="capability-mark" aria-hidden="true">⌕</span><span><strong>Follow the evidence.</strong><small>A guided investigation, one resource at a time</small></span><span class="capability-expand" aria-hidden="true">+</span></summary><div><p>The skill starts with fleet context, investigates the affected Application, then follows logs and resource evidence.</p><code>fleet_status → investigate → get_logs</code></div></details>
+          <details class="mcp-capability"><summary><span class="capability-mark" aria-hidden="true">↗</span><span><strong>Act with permission.</strong><small>Sync, gates, rollout and Pipeline controls</small></span><span class="capability-expand" aria-hidden="true">+</span></summary><div><p>Read and write scopes are separate. Actions need <code>paprika:write</code>; destructive actions require confirmation bound to the exact arguments.</p><code>sync_application · hold_rollout · retry_step</code></div></details>
         </div>
       </div>
     </section>

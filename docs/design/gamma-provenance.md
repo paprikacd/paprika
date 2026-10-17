@@ -6,6 +6,8 @@ Paprika's static landing page uses small vanilla JavaScript and CSS adaptations 
 | --- | --- | --- | --- |
 | MorphTabs | `src/components/MorphTabs.tsx` and component CSS | `gamma://explore/component/morph-tabs` | Directional pointer panel reveal, shared moving underline, automatic keyboard selection |
 | SpotlightSurface | `src/components/SpotlightSurface.tsx` and component CSS | `gamma://explore/component/spotlight-surface` | Local pointer light behind meaningful content and native actions; centered keyboard accent |
+| CopyField | `src/components/CopyField.tsx` and component CSS | `gamma://explore/component/copy-field` | Integrated command copy surfaces with visible recovery; existing Paprika clipboard behavior retained |
+| DisclosureStack | `src/components/DisclosureStack.tsx` and component CSS | `gamma://explore/component/disclosure-stack` | Capability disclosures adapted to native `details`/`summary` |
 | ProgressStack | `src/components/ProgressStack.tsx` and component CSS | `gamma://explore/component/progress-stack` | Layered process-card composition for clearly labelled illustrative states |
 
 The implementation is in [`landing/gamma-ui.js`](../../landing/gamma-ui.js) and [`landing/gamma-ui.css`](../../landing/gamma-ui.css). Paprika's Barlow typefaces, square corners, paper/navy surfaces, and steel accents replace Gamma's default tokens. The Gamma component bundles returned no third-party copyright or license notice. The SpotlightSurface catalogue explicitly describes its behavior, markup, and token styles as original Gamma work with no external component source or assets imported. This adaptation preserves that provenance; it does not claim that external reference material grants a source-code license.

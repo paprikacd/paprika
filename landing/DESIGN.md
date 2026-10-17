@@ -48,6 +48,14 @@ The page's versioned local stylesheet URLs prevent a newly published HTML page f
 
 The built-in image generation tool produced [`gamma-delivery-vision.png`](../docs/design/gamma-delivery-vision.png) as an inspiration board. Its upright document cards, target islands, Pod stacks and quiet construction grid informed the native implementation. The generated board is design reference material and is not served as a factual product diagram. The full prompt and tool mode are recorded in [`gamma-imagegen-brief.md`](../docs/design/gamma-imagegen-brief.md).
 
+## Install and agent onboarding
+
+The CLI download hub uses native SVG platform motifs on dimensional plates, direct version-pinned macOS and Linux archives, architecture labels, checksums and an all-releases route. The Windows plate explicitly states that no native release is published. It must never imply an available `.exe`, MSI, PowerShell installer, or tested WSL route without new release evidence. The automatic shell installer remains separate from installing the Kubernetes operator.
+
+The Skills & MCP section presents the one repository-shipped Paprika operations skill and three client routes: Codex, Claude Code and other remote HTTP MCP clients. Every self-hosted example uses the clearly labelled `https://paprika.example.com/mcp` placeholder. The bundled plugin's hosted-fleet default is stated separately. Showing these options does not enable the server or change account permissions.
+
+Gamma CopyField's integrated action/recovery pattern informs the command surfaces; the existing clipboard implementation supplies fallback selection and avoids taking focus after asynchronous completion. Gamma DisclosureStack's visual pattern is adapted to native `<details>` elements for capability descriptions. Preserve selectable code, pending/success/failure feedback, named copy controls, and the read/write scope distinction.
+
 ## Content and review
 
 Check claims against the current [feature list](../docs/features.md), [getting-started guide](../docs/getting-started.md), [Pipeline guide](../docs/guides/pipelines.md), and [promotion guide](../docs/guides/environment-promotion.md). A Pipeline is optional for a Release. Staged promotion is a configured link between separate Applications.
