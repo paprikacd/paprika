@@ -18,20 +18,46 @@ The source of truth for tokens, type scales, and breakpoints is [`site.css`](sit
 
 ## Visual grammar
 
-- **Pipeline:** a wide, branching routing table. The fork represents declared step dependencies and possible parallel work. A drawer represents a declared output reference. It is one possible configuration, not a live execution trace.
-- **Promotion:** an upright stage lift. Its release cassette carries one upstream Git revision to a separate downstream Application. Verification and optional approval are controls on the stage, not buttons that approve a real release from this page.
-- **Environment chain artwork:** three distinct DEV, STG, and PROD platforms, with a testing chamber between each pair. The pictured token is a metaphor for selecting a pinned Git commit, not an image or artifact moving between clusters. The wide and mobile images were generated with the image generation skill for this page; their captions keep the product meaning explicit.
-- **Release proof press:** a custom turning instrument for the promotion decision. Its revision die, health/sync probes, and separate Application bays make candidate selection and target deployment distinct. Nearby notes explain fresh observation and configured verification; the preview control illustrates an optional approval hold. It is an illustrative model, not a live fleet trace or a deployment control. Keep this figure separate from the narrower Pipeline and stage-lift examples.
-- **Resource evidence:** a comparator with desired and live specimens. The accompanying metric labels describe documented current resource counts, not a score or a telemetry reading from the illustration.
+Use recognizable software entities: Git revision cards, Application configuration, container Jobs, rendered manifests, Release records and Kubernetes resource stacks. Depth and light should help separate these entities. A decorative machine must not carry product meaning that is only recoverable from its caption.
 
-The landing uses transparent `art-pipeline-routing.webp`, `art-environment-test-chain.webp`, `art-environment-test-chain-mobile.webp`, and `art-resource-comparator.webp`. Preserve their alpha channels when replacing them and inspect each on its page background. `art-promotion-lift.webp` remains in the repository as the earlier visual concept. Keep `alt` text and captions explicit about illustration versus product capture. Use the console screenshots only with their synthetic-data labels.
+The page tells four distinct stories, each with one primary figure:
 
-The environment pair was generated from one art brief in wide and portrait compositions: an isometric industrial instrument, three separate Application platforms labeled DEV, STG, and PROD, a compact TEST chamber between each pair, a small blue revision token, navy and steel enamel with restrained brass details, and a transparent background. Render the labels as part of the machines and keep the scene readable at 390px. The token is a visual reference to one Git revision, so every reuse needs adjacent text explaining that no image or artifact is transferred between environments.
+| Story | Diagram | Meaning |
+| --- | --- | --- |
+| Deployment | `diagrams/deployment.svg` | Application source resolves a revision; an optional Pipeline executes configured work; a Release renders and applies resources; health and sync observations return from the target. Stage/cluster is target configuration. |
+| Pipeline | `diagrams/pipeline-running.svg`, `pipeline-blocked.svg` | Container step dependencies, bounded parallel work, and a failed prerequisite preventing a dependent step from running. Outputs are declared references. |
+| Promotion | `diagrams/promotion.svg` | Separate management-cluster Application records select distinct workload targets. Verification Jobs run on the management cluster against the upstream environment. Production can retain its accepted Release while a candidate awaits approval. |
+| Resource evidence | `diagrams/evidence.svg` | A synthetic desired manifest and live object differ in a field. Sync comparison and health assessment remain distinct. |
 
-The interactive figures live in [`anatomy/`](anatomy/README.md). Edit `anatomy/build.mjs`, run `node landing/anatomy/build.mjs` from the repository root, and commit the generated `pipeline.html` and `gates.html` with the source. The custom release proof press has its own source and standalone page in [`anatomy/release-press/`](anatomy/release-press/). Its transparent stage should compose cleanly on paper, and its controls must remain previews that never call Paprika or change cluster state.
+Each figure has a purpose-built mobile composition. Keep labels as native SVG text and supply adjacent HTML explanation and useful alt text. The static diagrams use Anatomy isometric primitives; their generator, license notice and product semantics live in [`diagrams/`](diagrams/README.md). No moving 3D geometry is introduced by these figures.
+
+The earlier routing table, stage lift, environment conveyor, comparator and release press remain in the repository as previous explorations. They are no longer embedded in the landing page. Do not reintroduce multiple promotion metaphors or imply that an image/package travels between environment clusters.
+
+## Gamma components and effects
+
+The maintained Gamma MCP implementations of MorphTabs, SpotlightSurface and ProgressStack inform [`gamma-ui.js`](gamma-ui.js) and [`gamma-ui.css`](gamma-ui.css). These small vanilla adaptations use Paprika's tokens and do not add a React runtime. Preserve the source provenance and contracts in [`docs/design/gamma-provenance.md`](../docs/design/gamma-provenance.md).
+
+- Tabs change readable explanatory panels, with a moving underline and short directional entrance for pointer input. Keyboard selection is immediate and uses Left/Right, Home and End.
+- Spotlight surfaces add a local pointer highlight behind meaningful copy and native actions. Keyboard focus gets a centered equivalent; touch keeps normal scrolling.
+- Process cards explain clearly labelled illustrative states. They do not simulate live telemetry, percentages or deployment progress.
+- Reduced motion removes movement. Content stays readable if JavaScript fails or is disabled. Hover must never reveal the only explanation or action.
+
+The page's versioned local stylesheet URLs prevent a newly published HTML page from using a previous cached layout. Bump the version suffix when changing these layout contracts.
+
+## Imagegen direction
+
+The built-in image generation tool produced [`gamma-delivery-vision.png`](../docs/design/gamma-delivery-vision.png) as an inspiration board. Its upright document cards, target islands, Pod stacks and quiet construction grid informed the native implementation. The generated board is design reference material and is not served as a factual product diagram. The full prompt and tool mode are recorded in [`gamma-imagegen-brief.md`](../docs/design/gamma-imagegen-brief.md).
+
+## Install and agent onboarding
+
+The CLI download hub uses native SVG platform motifs on dimensional plates, direct version-pinned macOS and Linux archives, architecture labels, checksums and an all-releases route. The Windows plate explicitly states that no native release is published. It must never imply an available `.exe`, MSI, PowerShell installer, or tested WSL route without new release evidence. The automatic shell installer remains separate from installing the Kubernetes operator.
+
+The Skills & MCP section presents the one repository-shipped Paprika operations skill and three client routes: Codex, Claude Code and other remote HTTP MCP clients. Every self-hosted example uses the clearly labelled `https://paprika.example.com/mcp` placeholder. The bundled plugin's hosted-fleet default is stated separately. Showing these options does not enable the server or change account permissions.
+
+Gamma CopyField's integrated action/recovery pattern informs the command surfaces; the existing clipboard implementation supplies fallback selection and avoids taking focus after asynchronous completion. Gamma DisclosureStack's visual pattern is adapted to native `<details>` elements for capability descriptions. Preserve selectable code, pending/success/failure feedback, named copy controls, and the read/write scope distinction.
 
 ## Content and review
 
 Check claims against the current [feature list](../docs/features.md), [getting-started guide](../docs/getting-started.md), [Pipeline guide](../docs/guides/pipelines.md), and [promotion guide](../docs/guides/environment-promotion.md). A Pipeline is optional for a Release. Staged promotion is a configured link between separate Applications.
 
-Run `bash hack/test-landing-install.sh` from the repository root after editing install copy or markup. Review desktop and 390px layouts, keyboard navigation, horizontal console capture scrolling, reduced motion, and all three interactive figures before publishing. The static page is deployed from `landing/` by `.github/workflows/gh-pages.yml` after a merge to `master`.
+Run `bash hack/test-landing-install.sh` from the repository root after editing install copy or markup. Review desktop and 390px layouts, keyboard navigation, horizontal console capture scrolling, reduced motion, no-JavaScript content, tab interactions, and all four diagram stories before publishing. The static page is deployed from `landing/` by `.github/workflows/gh-pages.yml` after a merge to `master`.
