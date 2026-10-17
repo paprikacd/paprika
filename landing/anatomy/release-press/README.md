@@ -29,6 +29,8 @@ node landing/anatomy/release-press/build.mjs
 
 Open `landing/anatomy/release-press/index.html`, or serve `landing/` and open `/anatomy/release-press/index.html`. The file includes the drawing, styles, live data, and runtime; it needs no CDN or build server on GitHub Pages. Source edits require a rebuild and a commit of the generated file.
 
+The standalone preview declares `noindex, follow`; the landing page is the canonical public entry point for this illustration.
+
 For geometry inspection, `node landing/anatomy/release-press/build.mjs --verify` writes `index-verify.html`. The optional `--audit` path runs the Anatomy orbit checker and is CPU intensive; coordinate it with other local builds.
 
 ## Anatomy provenance and limits

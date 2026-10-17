@@ -232,7 +232,7 @@ const ui = `<div class="rp-shell"><div class="rp-eyebrow"><span>Delivery instrum
 const page = k.pageHtml({ title: "Paprika release proof indexer", theme: "light", width: 900,
   body: `<style>${out.css}\n${css}</style>${ui}`,
   script: runtime + "\n" + (verify ? `window.__isoVerify = ${JSON.stringify(out.verify)};\n` : "") + liveJs,
-});
+}).replace('<title>Paprika release proof indexer</title>', '<meta name="robots" content="noindex, follow"><title>Paprika release proof indexer</title>');
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const output = join(HERE, verify ? "index-verify.html" : "index.html");
   writeFileSync(output, page);
