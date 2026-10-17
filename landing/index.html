@@ -20,7 +20,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./site.css" />
+  <link rel="stylesheet" href="./site.css?v=gamma-story-1" />
+  <link rel="stylesheet" href="./gamma-ui.css?v=gamma-story-1" />
+  <link rel="stylesheet" href="./story.css?v=gamma-story-1" />
+  <script src="./gamma-ui.js?v=gamma-story-1" defer></script>
+  <script src="./story.js?v=gamma-story-1" defer></script>
   <style>a:focus-visible,button:focus-visible,.skip-link:focus-visible{outline:3px solid #94bce3;outline-offset:4px}@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}</style>
 </head>
 <body>
@@ -29,7 +33,7 @@
     <div class="masthead-inner shell">
       <a href="./" class="wordmark" aria-label="Paprika home"><img src="./paprika-mark.png" width="35" height="35" alt="" /><span>Paprika</span></a>
       <nav class="nav-links" aria-label="Main navigation">
-        <a href="#product">Product</a>
+        <a href="#deployment">Deploy</a>
         <a href="#pipeline">Pipelines</a>
         <a href="#promotion">Promotion</a>
         <a href="#get-started">Get started</a>
@@ -37,7 +41,7 @@
         <details class="mobile-menu">
           <summary>Menu</summary>
           <div class="mobile-menu-links">
-            <a href="#product">Product</a>
+            <a href="#deployment">Deploy</a>
             <a href="#pipeline">Pipelines</a>
             <a href="#promotion">Promotion</a>
             <a href="#get-started">Get started</a>
@@ -71,35 +75,45 @@
       </div>
       <div class="trace-band" aria-label="Paprika resource path">
         <div class="trace-inner shell">
-          <div class="trace-intro">One possible resource path</div>
-          <div class="trace-cell"><b>01</b> Source</div><div class="trace-cell"><b>02</b> Pipeline (optional)</div><div class="trace-cell"><b>03</b> Stage</div><div class="trace-cell"><b>04</b> Release</div>
+          <div class="trace-intro">An Application connects the records</div>
+          <div class="trace-cell">Resolve source</div><div class="trace-cell">Render</div><div class="trace-cell">Apply</div><div class="trace-cell">Observe</div>
         </div>
       </div>
     </section>
 
-    <section id="release-proof" class="release-proof" aria-labelledby="release-proof-title">
+    <section id="deployment" class="delivery-story" aria-labelledby="deployment-title">
       <div class="shell">
-        <div class="release-proof-head">
-          <div data-enter>
-            <p class="eyeline">Interactive release instrument</p>
-            <h2 id="release-proof-title">The release proof press.</h2>
-          </div>
-          <p class="section-lede" data-enter>A downstream Application selects the exact Git revision from a completed upstream Release after the required evidence and configured checks qualify it. Explore the mechanism, then follow the records in Paprika.</p>
+        <div class="story-heading">
+          <div data-enter><p class="eyeline">Application delivery</p><h2 id="deployment-title">From a revision<br />to running resources.</h2></div>
+          <p class="section-lede" data-enter>Source, execution, deployment and observation each leave a record. Start with an Application, then follow what Paprika resolves, renders, applies and observes.</p>
         </div>
-        <div class="release-proof-grid">
-          <figure class="release-proof-model" data-enter>
-            <iframe title="Interactive 3D illustration of Paprika release proof, optional approval, and separate Application deployment" src="./anatomy/release-press/index.html" loading="lazy" height="830"></iframe>
-            <figcaption>Illustrative preview. These controls inspect a scenario; they cannot approve or deploy a Release. <a href="./anatomy/release-press/index.html">Open the full model ↗</a></figcaption>
+        <div class="delivery-workbench" data-gamma-tabs data-enter>
+          <div class="workbench-label"><span>Application / checkout</span><span>Illustrative configuration</span></div>
+          <div class="story-tabs" role="tablist" aria-label="Explore the deployment lifecycle">
+            <button type="button" role="tab" id="deploy-source-tab" aria-controls="deploy-source" aria-selected="true">Resolve source</button>
+            <button type="button" role="tab" id="deploy-build-tab" aria-controls="deploy-build" aria-selected="false">Build optionally</button>
+            <button type="button" role="tab" id="deploy-apply-tab" aria-controls="deploy-apply" aria-selected="false">Render &amp; apply</button>
+            <button type="button" role="tab" id="deploy-observe-tab" aria-controls="deploy-observe" aria-selected="false">Observe target</button>
+          </div>
+          <figure class="software-diagram deployment-diagram">
+            <picture><source media="(max-width: 600px)" srcset="./diagrams/deployment-mobile.svg" width="600" height="910" /><img src="./diagrams/deployment.svg" width="1200" height="620" alt="Application source resolves a Git revision, optionally runs a Pipeline, renders manifests for a Release and applies resources to a Kubernetes target; health and sync observations return from that target" loading="lazy" /></picture>
+            <figcaption>Select a phase to highlight its records. Illustrative Git deployment; a Stage selects the target and Pipeline work is optional.</figcaption>
           </figure>
-          <div class="release-proof-notes" data-enter>
-            <p class="release-proof-kicker">Read the mechanism</p>
-            <ol>
-              <li><span>01</span><div><strong>Pin the candidate.</strong><p>A completed upstream Release supplies the exact Git commit for a separate downstream Application.</p></div></li>
-              <li><span>02</span><div><strong>Check the proof.</strong><p>Upstream health, sync, and a fresh desired/live observation matter. Configured tests and gates must also pass.</p></div></li>
-              <li><span>03</span><div><strong>Hold when configured.</strong><p>An optional approval stays bound to the reviewed candidate and deployment settings.</p></div></li>
-              <li><span>04</span><div><strong>Observe the target.</strong><p>The downstream Application deploys its own Release, then reports health in that environment.</p></div></li>
-            </ol>
-            <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/environment-promotion.md">Read the promotion guide</a>
+          <div class="story-panel" role="tabpanel" id="deploy-source" aria-labelledby="deploy-source-tab" tabindex="0">
+            <div><h3>Pin the source revision.</h3><p>The Application selects its source. For Git, the Release render pins the resolved commit so the revision remains traceable through deployment.</p></div>
+            <div class="record-card" data-spotlight><span class="record-type">Source identity</span><strong>Git revision → Release</strong><p>A branch finds the candidate. A commit identifies the source used for the render.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md" class="link-arrow">Read the Application guide</a></div>
+          </div>
+          <div class="story-panel" role="tabpanel" id="deploy-build" aria-labelledby="deploy-build-tab" tabindex="0">
+            <div><h3>Add execution when needed.</h3><p>Configured build steps run as container Jobs through a Pipeline. Dependencies decide which steps become eligible, and <code>maxParallel</code> limits concurrency.</p></div>
+            <div class="record-card" data-spotlight><span class="record-type">Optional record</span><strong>Pipeline → step results</strong><p>A Release can deploy without a Pipeline. Declared artifact references describe outputs from configured steps.</p><a href="#pipeline" class="link-arrow">Explore the dependency example</a></div>
+          </div>
+          <div class="story-panel" role="tabpanel" id="deploy-apply" aria-labelledby="deploy-apply-tab" tabindex="0">
+            <div><h3>Render for this target.</h3><p>Paprika renders desired manifests and applies them through a Release. The Application’s Stage selects the target cluster and deployment configuration.</p></div>
+            <div class="record-card" data-spotlight><span class="record-type">Deployment record</span><strong>Release → target resources</strong><p>The target receives Kubernetes resources. Its namespace, values and parameters belong to that Application’s configuration.</p><a href="https://github.com/paprikacd/paprika/tree/master/config/samples" class="link-arrow">Inspect complete manifests</a></div>
+          </div>
+          <div class="story-panel" role="tabpanel" id="deploy-observe" aria-labelledby="deploy-observe-tab" tabindex="0">
+            <div><h3>Read health and sync separately.</h3><p>Live resource observations show whether the workload is healthy and whether its resources match the desired state. An accepted manifest alone does not confirm a healthy deployment.</p></div>
+            <div class="record-card" data-spotlight><span class="record-type">Observed evidence</span><strong>Health + desired/live comparison</strong><p>Follow phase, conditions and the related Release in the console, CLI or API.</p><a href="#observability" class="link-arrow">See the resource comparison</a></div>
           </div>
         </div>
       </div>
@@ -126,79 +140,49 @@
       </div>
     </section>
 
-    <section id="pipeline" class="pipeline" aria-labelledby="pipeline-title">
+    <section id="pipeline" class="pipeline story-pipeline" aria-labelledby="pipeline-title">
       <div class="shell">
-        <div class="pipeline-top">
-          <div data-enter><p class="eyeline">Pipeline workflow</p><h2 id="pipeline-title">Dependencies are the route.</h2></div>
-          <p class="section-lede" data-enter>A Pipeline runs container steps with declared dependencies. Independent steps can run in parallel when the configuration permits; an output can record a declared artifact reference.</p>
+        <div class="story-heading">
+          <div data-enter><p class="eyeline">Pipeline workflow</p><h2 id="pipeline-title">Run jobs.<br />Respect dependencies.</h2></div>
+          <p class="section-lede" data-enter>Each node is a configured container step. Independent branches can run together; a dependent step waits for every prerequisite to succeed.</p>
         </div>
-        <figure class="pipeline-art" data-enter>
-          <img src="./art-pipeline-routing.webp" width="1840" height="854" alt="Illustrative low, branching routing table with two dependent work bays converging on one output drawer" loading="lazy" />
-          <figcaption>Illustration of one possible dependency graph, not a live run.</figcaption>
-        </figure>
-        <div class="pipeline-grid">
-          <figure class="diagram-frame" data-enter>
-            <iframe title="Interactive isometric diagram of one Paprika Pipeline dependency configuration" src="./anatomy/pipeline.html" loading="lazy" height="570"></iframe>
-            <figcaption>Choose a part to see how this example maps to Pipeline configuration.</figcaption>
-          </figure>
-          <div class="pipeline-side" data-enter>
-            <figure class="product-frame" data-ui>
-              <div class="frame-head"><span>Pipeline list</span><span class="demo-tag">Synthetic demo</span></div>
-              <div class="shot-crop"><img src="./demo-pipelines.webp" width="1440" height="900" alt="Actual Paprika pipeline list with synthetic running and succeeded examples" loading="lazy" /></div>
-              <figcaption>Actual console · local synthetic fleet data</figcaption>
-            </figure>
-            <p>The diagram explains configuration. The console capture shows where run phase and step progress can be inspected.</p>
-            <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md" class="link-arrow">Read the Pipeline guide</a>
+        <div class="pipeline-workbench" data-gamma-tabs data-enter>
+          <div class="workbench-label"><span>Pipeline / example-build</span><span>Illustrative states · maxParallel: 2</span></div>
+          <div class="story-tabs" role="tablist" aria-label="Compare Pipeline dependency states">
+            <button type="button" role="tab" id="pipeline-parallel-tab" aria-controls="pipeline-parallel" aria-selected="true">Parallel execution</button>
+            <button type="button" role="tab" id="pipeline-blocked-tab" aria-controls="pipeline-blocked" aria-selected="false">Failed prerequisite</button>
+          </div>
+          <div role="tabpanel" id="pipeline-parallel" aria-labelledby="pipeline-parallel-tab" tabindex="0">
+            <figure class="software-diagram"><picture><source media="(max-width: 600px)" srcset="./diagrams/pipeline-running-mobile.svg" width="600" height="880" /><img src="./diagrams/pipeline-running.svg" width="1200" height="620" alt="Build completes, unit-test and policy-test run in parallel, and package waits for both dependencies" loading="lazy" /></picture><figcaption>Example state. The container image and script for each step are supplied by your configuration.</figcaption></figure>
+            <div class="pipeline-detail"><div><h3>One fork. Two eligible jobs.</h3><p>Both test steps depend on <code>build</code>. With two execution slots, they can run together. <code>package</code> remains queued until both succeed.</p></div><ol class="gamma-step-stack" aria-label="Illustrative Pipeline step states"><li class="gamma-step-card" data-state="done"><span class="gamma-step-title">build</span><span class="gamma-step-state">Succeeded</span></li><li class="gamma-step-card" data-state="active"><span class="gamma-step-title">unit-test + policy-test</span><span class="gamma-step-state">Running in parallel</span></li><li class="gamma-step-card" data-state="pending"><span class="gamma-step-title">package</span><span class="gamma-step-state">Waiting for dependencies</span></li></ol></div>
+          </div>
+          <div role="tabpanel" id="pipeline-blocked" aria-labelledby="pipeline-blocked-tab" tabindex="0">
+            <figure class="software-diagram"><picture><source media="(max-width: 600px)" srcset="./diagrams/pipeline-blocked-mobile.svg" width="600" height="880" /><img src="./diagrams/pipeline-blocked.svg" width="1200" height="620" alt="Policy-test fails in the example, leaving the dependent package step blocked even though unit-test succeeded" loading="lazy" /></picture><figcaption>Illustrative failed branch. A declared output reference does not imply that an output was produced.</figcaption></figure>
+            <div class="pipeline-detail"><div><h3>A failed branch stops the join.</h3><p>A step becomes eligible only after all declared dependencies succeed. Configured retries can retry a failing step; exhausted failure prevents this example’s package step from running.</p></div><ol class="gamma-step-stack" aria-label="Illustrative failed Pipeline states"><li class="gamma-step-card" data-state="done"><span class="gamma-step-title">unit-test</span><span class="gamma-step-state">Succeeded</span></li><li class="gamma-step-card" data-state="failed"><span class="gamma-step-title">policy-test</span><span class="gamma-step-state">Failed</span></li><li class="gamma-step-card" data-state="pending"><span class="gamma-step-title">package</span><span class="gamma-step-state">Blocked by dependency</span></li></ol></div>
           </div>
         </div>
+        <div class="console-evidence" data-enter><figure class="product-frame" data-ui><div class="frame-head"><span>Paprika console / pipelines</span><span class="demo-tag">Synthetic demo</span></div><img src="./demo-pipelines.webp" width="1440" height="900" alt="Actual Paprika Pipeline list with synthetic execution phases" loading="lazy" /><figcaption>Actual console · local synthetic fleet data</figcaption></figure><div><h3>Follow the actual run.</h3><p>Inspect Pipeline phase, step results and declared output references in the console. The diagrams above explain one possible configuration.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md" class="link-arrow">Read the Pipeline guide</a></div></div>
       </div>
     </section>
 
-    <section id="promotion" class="promotion" aria-labelledby="promotion-title">
+    <section id="promotion" class="promotion story-promotion" aria-labelledby="promotion-title">
       <div class="shell">
-        <div class="promotion-grid">
-          <div class="promotion-copy" data-enter>
-            <p class="eyeline">Staged promotion</p>
-            <h2 id="promotion-title">Promote one commit.</h2>
-            <p class="section-lede">Use a separate Application for each environment. A downstream promotion trigger selects the upstream completed release’s exact Git commit, then applies its own configured verification and deployment policy.</p>
-            <dl class="stage-ledger"><div><dt>Dev</dt><dd>Discovers the source candidate.</dd></div><div><dt>Staging</dt><dd>Verifies the upstream release before deployment.</dd></div><div><dt>Production</dt><dd>Can require manual approval when configured.</dd></div></dl>
-            <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/environment-promotion.md">Read the promotion guide</a>
-          </div>
-          <figure class="promotion-art" data-enter>
-            <picture>
-              <source media="(max-width: 600px)" srcset="./art-environment-test-chain-mobile.webp" width="1024" height="1536" />
-              <img src="./art-environment-test-chain.webp" width="1536" height="1024" alt="Isometric concept with separate DEV, STG and PROD Application platforms and two testing stations between them" loading="lazy" decoding="async" />
-            </picture>
-            <figcaption>Concept illustration. The blue token stands for a pinned Git revision selected by separate Applications. The path is a metaphor; Paprika does not transfer an image or artifact between them.</figcaption>
-          </figure>
+        <div class="story-heading"><div data-enter><p class="eyeline">Environment promotion</p><h2 id="promotion-title">Three Applications.<br />One pinned revision.</h2></div><p class="section-lede" data-enter>Dev, staging and production have separate Application records and deployment targets. A downstream Application selects the exact Git SHA from its upstream completed Release after fresh evidence and configured verification qualify the candidate.</p></div>
+        <figure class="software-diagram promotion-diagram" data-enter><div class="workbench-label"><span>Management plane → workload targets</span><span>Illustrative promotion candidate</span></div><picture><source media="(max-width: 600px)" srcset="./diagrams/promotion-mobile.svg" width="600" height="1090" /><img src="./diagrams/promotion.svg" width="1200" height="720" alt="Separate dev, staging and production Application records on the management cluster select target clusters; verification Jobs probe the upstream environment, and production keeps its accepted release while approval is pending" loading="lazy" /></picture><figcaption>Matching SHA labels represent source selection. Each Application renders and deploys with its own path, values, namespace and target settings.</figcaption></figure>
+        <div class="promotion-explanation" data-enter>
+          <article class="story-callout" data-spotlight><span class="record-type">Before target deployment</span><h3>Test the upstream environment.</h3><p><code>trigger.tests</code> creates a verification Pipeline. Its Jobs run on the management cluster and test the upstream environment before the downstream Release is admitted.</p></article>
+          <article class="story-callout" data-spotlight><span class="record-type">Admission</span><h3>Hold the reviewed candidate.</h3><p>With manual sync policy, approval stays bound to the candidate and its deployment settings. A waiting or failed candidate leaves the accepted downstream Release in place.</p></article>
+          <article class="story-callout" data-spotlight><span class="record-type">After target deployment</span><h3>Observe the new target.</h3><p>Stage gates check the newly deployed environment. Health and sync observations provide evidence for any later promotion.</p></article>
         </div>
-        <div class="promotion-lower">
-          <figure class="product-frame rollout-proof" data-ui data-enter>
-            <div class="frame-head"><span>Paprika console / rollouts</span><span class="demo-tag">Synthetic demo</span></div>
-            <img src="./demo-rollouts.webp" width="1440" height="900" alt="Actual Paprika rollout list with synthetic healthy, paused, degraded and progressing phases" loading="lazy" />
-            <figcaption>Actual console · local synthetic fleet data</figcaption>
-          </figure>
-          <figure class="diagram-frame" data-enter>
-            <iframe title="Interactive isometric diagram of Paprika stage verification and optional approval" src="./anatomy/gates.html" loading="lazy" height="595"></iframe>
-            <figcaption>Explore verification, optional approval, and the next stage in this illustrative lift.</figcaption>
-          </figure>
-        </div>
+        <div class="story-guide"><p>A configured promotion chain can use different clusters and namespaces while retaining the upstream Git revision.</p><a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/environment-promotion.md">Read the promotion guide</a></div>
       </div>
     </section>
 
-    <section id="observability" class="evidence on-dark" aria-labelledby="evidence-title">
-      <div class="shell evidence-grid">
-        <div class="evidence-copy" data-enter>
-          <p class="eyeline">Resource evidence</p>
-          <h2 id="evidence-title">Inspect the result.</h2>
-          <p class="section-lede">Read Application and Release status, then compare desired resources with what the cluster reports. Paprika exposes current out-of-sync and prunable resource counts as metrics.</p>
-          <ul class="evidence-list"><li><b>Status</b><span>Phase, conditions and related Release state</span></li><li><b>Sync</b><span>Desired and live resource comparison</span></li><li><b>Metrics</b><span>Current resource counts, not a fabricated score</span></li></ul>
-          <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/metrics.md">Read the metrics guide</a>
-        </div>
-        <div class="evidence-visual" data-enter>
-          <figure class="evidence-art"><img src="./art-resource-comparator.webp" width="1312" height="1199" alt="Illustrative C-frame comparator with desired and live resource specimens and a gauge" loading="lazy" /><figcaption>Illustrative desired/live comparator, not telemetry.</figcaption></figure>
-          <div class="metric-plate" aria-label="Documented metric meanings"><div><code>paprika_out_of_sync</code><span>Current out-of-sync resource count</span></div><div><code>paprika_prunable</code><span>Current prunable resource count</span></div></div>
-        </div>
+    <section id="observability" class="evidence on-dark story-evidence" aria-labelledby="evidence-title">
+      <div class="shell">
+        <div class="story-heading"><div data-enter><p class="eyeline">Resource evidence</p><h2 id="evidence-title">Compare the desired.<br />Inspect the live.</h2></div><p class="section-lede" data-enter>Sync compares rendered manifests with live Kubernetes resources. Health assesses the workload’s observed state. Read both signals when deciding what needs attention.</p></div>
+        <figure class="software-diagram evidence-diagram" data-enter><div class="workbench-label"><span>Desired manifest ↔ live object</span><span>Synthetic field difference</span></div><picture><source media="(max-width: 600px)" srcset="./diagrams/evidence-mobile.svg" width="600" height="860" /><img src="./diagrams/evidence.svg" width="1200" height="620" alt="Synthetic Deployment comparison with desired replicas three and live replicas two, shown as separate manifest and Kubernetes resource stacks; health is assessed separately from sync" loading="lazy" /></picture><figcaption>Illustrative resource comparison. These values are a teaching example, not live fleet telemetry.</figcaption></figure>
+        <div class="evidence-summary" data-enter><div><h3>Keep the evidence attached.</h3><p>Open Application and Release status, inspect phase and conditions, then compare the desired resources with the target. Current resource counts are also exposed as metrics.</p><a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/metrics.md">Read the metrics guide</a></div><div class="metric-plate" aria-label="Documented metric meanings"><div><code>paprika_out_of_sync</code><span>Current out-of-sync resource count</span></div><div><code>paprika_prunable</code><span>Current prunable resource count</span></div></div></div>
       </div>
     </section>
 
