@@ -881,7 +881,7 @@ function ResourceBoard({
   selectedId: string | null
   driftedCount: number
 }) {
-  const managed = nodes.length
+  const resourceCount = nodes.length
   const [attentionOnly, setAttentionOnly] = useState(false)
   const issueCount = useMemo(
     () => nodes.filter(resourceNeedsAttention).length,
@@ -891,7 +891,7 @@ function ResourceBoard({
     <Blueprint>
       <BoardHeader
         title="Resource graph"
-        meta={`${managed} managed · ${issueCount} ${issueCount === 1 ? "issue" : "issues"} · ${driftedCount} drifted`}
+        meta={`${resourceCount} resources · ${issueCount} ${issueCount === 1 ? "issue" : "issues"} · ${driftedCount} drifted`}
         actions={
           <span className="flex items-center gap-2.5">
             {view === "tree" ? (
