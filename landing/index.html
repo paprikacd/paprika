@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="./story.css?v=gamma-story-1" />
   <link rel="stylesheet" href="./install-hub.css?v=install-connect-1" />
   <link rel="stylesheet" href="./agents.css?v=install-connect-1" />
+  <link rel="stylesheet" href="./tour-launch.css?v=fleet-tour-1" />
   <script src="./gamma-ui.js?v=gamma-story-1" defer></script>
   <script src="./story.js?v=gamma-story-1" defer></script>
   <style>a:focus-visible,button:focus-visible,.skip-link:focus-visible{outline:3px solid #94bce3;outline-offset:4px}@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}</style>
@@ -41,6 +42,7 @@
         <a href="#get-started">Get started</a>
         <a href="#agents">Skills &amp; MCP</a>
         <a href="#community">Community</a>
+        <a href="./tour.html" class="tour-nav-link">Demo</a>
         <details class="mobile-menu">
           <summary>Menu</summary>
           <div class="mobile-menu-links">
@@ -50,6 +52,7 @@
             <a href="#get-started">Get started</a>
             <a href="#agents">Skills &amp; MCP</a>
             <a href="#community">Community</a>
+            <a href="./tour.html">Explore the demo</a>
           </div>
         </details>
         <a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub ↗</a>
@@ -65,6 +68,7 @@
           <p>Follow an Application from source to rollout and health. When configured, Pipeline steps and staged promotion add their own inspectable records.</p>
           <div class="hero-actions">
             <a href="#get-started" class="btn">Start self-hosting</a>
+            <a href="./tour.html" class="btn btn-tour">Explore the demo <span aria-hidden="true">↗</span></a>
             <a href="https://github.com/paprikacd/paprika" class="link-arrow">Explore the source</a>
           </div>
           <p class="hero-note">Apache 2.0 · early stage · evaluate on a non-production cluster.</p>
@@ -141,6 +145,11 @@
             <div><strong>Follow the resource.</strong><p>The Application owns related Template, Stage and Release records.</p><a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Application guide</a></div>
           </div>
         </div>
+        <a class="tour-launch" href="./tour.html" data-spotlight>
+          <span class="tour-launch-label"><span class="tour-launch-mark" aria-hidden="true">↳</span><span>Guided console tour <small>Real console captures · synthetic fleet data</small></span></span>
+          <span class="tour-launch-story"><strong>Follow the evidence.</strong><span>Applications <b aria-hidden="true">→</b> Heatmap <b aria-hidden="true">→</b> Drilldown <b aria-hidden="true">→</b> Resources <b aria-hidden="true">→</b> Logs</span></span>
+          <span class="tour-launch-action">Open the tour <span aria-hidden="true">↗</span></span>
+        </a>
       </div>
     </section>
 
