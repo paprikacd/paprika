@@ -1,6 +1,6 @@
 # Getting Started with paprika
 
-This guide walks through deploying paprika on a Kubernetes cluster, creating an Application CR, and understanding what happens under the hood.
+This guide walks through deploying Paprika on your Kubernetes cluster and creating an Application. Start on a non-production cluster. Check the target context before every install or apply command.
 
 ## Install the CLI
 
@@ -39,7 +39,7 @@ cd paprika
 go build -o ./bin/paprika ./cmd/paprika
 ```
 
-Log in to the hosted API and confirm the CLI can read your fleet:
+For the project-hosted API only, log in and inspect its status. For your own installation, use your server address and configured authentication:
 
 ```sh
 paprika login --server https://paprika.benebsworth.com
@@ -48,53 +48,38 @@ paprika status
 
 ## Prerequisites
 
-- Kubernetes cluster (v1.29+)
-- [cert-manager](https://cert-manager.io/docs/installation/) installed (webhook certificates)
-- `kubectl` configured for your cluster
-- Docker (for building the operator image)
+- Kubernetes cluster (v1.29+ recommended)
+- `kubectl` configured for your cluster, plus Helm, Docker, and Go 1.26+
+- Registry credentials that let you push an image and let the cluster pull it
+- [cert-manager](https://cert-manager.io/docs/installation/) only when enabling admission webhooks
 
-## Installation
+## Install the operator
 
-### Option 1: Deploy from Source
+The in-repository Helm chart defaults to a placeholder `controller` image. Build and
+push an explicit image tag to a registry your cluster can access, then pass that
+same tag to the chart. These commands change the cluster selected by your current
+`kubectl` context:
 
 ```sh
 git clone https://github.com/paprikacd/paprika.git
 cd paprika
+kubectl config current-context
 
-# Install CRDs
-make install
-
-# Build and push the operator image to your registry
-export IMG=ghcr.io/YOUR_USER/paprika:latest
-make docker-build docker-push IMG=$IMG
-
-# Deploy the operator
-make deploy IMG=$IMG
-
-# Verify
+# Replace these placeholders with your registry and immutable tag.
+make docker-build docker-push IMG=YOUR_REGISTRY/paprika:YOUR_TAG
+make helm-deploy IMG=YOUR_REGISTRY/paprika:YOUR_TAG
 kubectl get pods -n paprika-system
 ```
 
-### Option 2: Deploy via Helm
-
-```sh
-# Generate Helm chart
-make helm-generate
-
-# Install via Helm
-helm install paprika charts/chart --namespace paprika-system --create-namespace
-```
-
-### Option 3: Single YAML Bundle
-
-```sh
-make build-installer IMG=ghcr.io/YOUR_USER/paprika:latest
-kubectl apply -f dist/install.yaml
-```
+The chart installs Paprika CRDs. Its default webhooks and cert-manager integration
+are disabled; enable both only after installing cert-manager and reviewing the
+[chart values](../charts/chart/values.yaml). For a local controller development
+loop instead, follow [CONTRIBUTING.md](../CONTRIBUTING.md) and check the active
+Kubernetes context first.
 
 ## Creating Your First Application
 
-An `Application` is the top-level resource that models your entire deployment. Minimal example:
+An `Application` is the top-level resource that models a deployment. This example uses a Helm chart source; verify the chart name and version still exist before applying it:
 
 ```yaml
 apiVersion: pipelines.paprika.io/v1alpha1
@@ -117,6 +102,7 @@ spec:
 ```
 
 ```sh
+kubectl config current-context
 kubectl apply -f application.yaml
 ```
 
@@ -137,7 +123,7 @@ Check status:
 kubectl get application my-app -n paprika-system -o yaml
 ```
 
-The `status.phase` field shows the current state: `Pending` → `Promoting` → `Healthy` or `Degraded`.
+Inspect `status.phase`, conditions, and the related Release. A healthy result depends on the source, cluster access, and workload health; an accepted manifest alone does not confirm deployment.
 
 For the complete Paprika-managed DeepHost example, including Git source
 resolution, chart rendering, cluster-scoped RBAC, health-gated promotion, and
@@ -380,7 +366,7 @@ make uninstall
 
 ## Next Steps
 
-- Read the [architecture overview](README.md#architecture) to understand the system design
+- Read the [architecture overview](../README.md#architecture) to understand the system design
 - Review the `config/samples/` directory for more examples
 - Explore the [API types](../api/pipelines/v1alpha1/) for all available fields
 - See the [design docs](superpowers/specs/) for detailed design decisions

@@ -1,12 +1,13 @@
 # Contributing to paprika
 
-Thank you for considering contributing to paprika! We welcome contributions of all kinds — bug fixes, features, documentation, tests, and design feedback.
+Thank you for considering a contribution. Bug reports, usage questions, documentation fixes, tests, design feedback, and code changes are all useful.
 
 ## Before You Start
 
-- Check [open issues](https://github.com/benebsworth/paprika/issues) for existing discussions
-- For new features, open an issue first to discuss the design before writing code
-- Review [ARCHITECTURE.md](#) and the [codebase overview](README.md#architecture) to understand the project structure
+- Search [open issues](https://github.com/paprikacd/paprika/issues) before filing a new one.
+- Use the [question, bug, or feature template](https://github.com/paprikacd/paprika/issues/new/choose) so maintainers have the context they need. For a larger feature, describe the problem in an issue before writing code.
+- For a first contribution, improve an example or guide, reproduce a reported bug, or add a focused test. Say in the issue that you plan to work on it to avoid duplicate effort.
+- Read the [codebase overview](README.md#architecture) and the [getting started guide](docs/getting-started.md).
 
 ## Development Setup
 
@@ -15,7 +16,7 @@ Thank you for considering contributing to paprika! We welcome contributions of a
 - Go 1.26+
 - Docker
 - kubectl
-- Access to a Kubernetes cluster (v1.29+) or [Kind](https://kind.sigs.k8s.io/) for local testing
+- Access to a Kubernetes cluster (v1.29+) or [Kind](https://kind.sigs.k8s.io/) for integration testing
 - [golangci-lint](https://golangci-lint.run/) v2.x (`make lint` installs it automatically)
 
 ### Local Development
@@ -28,13 +29,14 @@ cd paprika
 # Install dependencies
 go mod download
 
-# Run unit tests
-make test
+# Run the focused Go tests required for controller work
+go test ./internal/engine ./internal/controller/pipelines -count=1
 
-# Run linter
+# Run the linter before a code PR
 make lint
 
-# Run locally against your current kubeconfig context
+# Check the target before running a controller against a cluster
+kubectl config current-context
 ENABLE_WEBHOOKS=false make run
 ```
 
@@ -49,7 +51,7 @@ git config core.hooksPath .githooks
 
 ### E2E Testing
 
-E2E tests create an isolated Kind cluster:
+E2E tests create an isolated Kind cluster. They build images and take longer than the focused tests:
 
 ```sh
 make test-e2e
@@ -67,9 +69,9 @@ make test-e2e
 
 ### Branching
 
-- Create a branch from `main` for your work: `git checkout -b feature/my-feature`
+- Create a branch from `master` for your work: `git switch -c feature/my-feature`
 - Keep branches focused — one feature or fix per branch
-- Rebase onto `main` before opening a PR
+- Update your branch from `master` before opening a PR
 
 ### Commit Messages
 
@@ -115,8 +117,9 @@ controller/application: skip pipeline creation when no build steps
 
 ## Getting Help
 
-- Open a [discussion](https://github.com/benebsworth/paprika/discussions) or issue
-- Tag `@benebsworth` in issues or PRs
+- Ask a usage question with the [question template](https://github.com/paprikacd/paprika/issues/new?template=question.md). Include the Paprika version, Kubernetes version, deployment method, and what you tried.
+- Report a bug with the [bug template](https://github.com/paprikacd/paprika/issues/new?template=bug_report.md), including a small reproduction and relevant redacted logs.
+- Send suspected vulnerabilities through the private route in [SECURITY.md](SECURITY.md), not a public issue.
 
 ## Code of Conduct
 
