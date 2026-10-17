@@ -3,8 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Paprika CD — One Operator to Replace ArgoCD, Rollouts &amp; Workflows</title>
-  <meta name="description" content="Paprika consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single Kubernetes operator." />
+  <title>Paprika — Open source Kubernetes application delivery</title>
+  <meta name="description" content="Paprika is an Apache 2.0 Kubernetes operator for application releases, pipelines, health checks, and progressive delivery. Explore the source and self-host it on your cluster." />
+  <link rel="canonical" href="https://paprikacd.github.io/paprika/" />
+  <link rel="icon" type="image/png" href="./paprika-mark.png" />
+  <meta name="theme-color" content="#0c0b0a" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Paprika — Open source Kubernetes application delivery" />
+  <meta property="og:description" content="An Apache 2.0 Kubernetes operator for application releases, pipelines, health checks, and progressive delivery." />
+  <meta property="og:url" content="https://paprikacd.github.io/paprika/" />
+  <meta property="og:image" content="https://paprikacd.github.io/paprika/paprika-mark.png" />
+  <meta property="og:image:alt" content="Paprika pepper mark" />
+  <meta name="twitter:card" content="summary" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Paprika","description":"Open source Kubernetes application delivery operator","url":"https://paprikacd.github.io/paprika/","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go"}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -109,11 +120,9 @@
       width: 1.75rem;
       height: 1.75rem;
       border-radius: 0.375rem;
-      background: var(--primary);
-      color: var(--primary-fg);
-      font-size: 0.75rem;
-      font-weight: 700;
+      background: transparent;
     }
+    .nav-logo-mark img { width: 1.75rem; height: 1.75rem; object-fit: contain; }
     .nav-links {
       display: flex;
       align-items: center;
@@ -176,10 +185,7 @@
     .py-16 { padding-top: 4rem; padding-bottom: 4rem; }
 
     /* Animations */
-    .reveal { opacity: 0; transform: translateY(1.5rem); transition: opacity 0.6s, transform 0.6s; transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1); }
-    .reveal.show { opacity: 1; transform: translateY(0); }
-    .reveal-left { opacity: 0; transform: translateX(-1.25rem); transition: opacity 0.5s, transform 0.5s; transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1); }
-    .reveal-left.show { opacity: 1; transform: translateX(0); }
+    .reveal, .reveal-left { opacity: 1; transform: none; }
 
     /* Hero */
     .hero {
@@ -251,7 +257,8 @@
     }
     .hero h1 span { color: var(--primary); }
     .hero p {
-      margin-top: 1.25rem;
+      margin: 1.25rem auto 0;
+      text-align: center;
       font-size: 1rem;
       line-height: 1.6;
       color: var(--fg-muted);
@@ -631,6 +638,23 @@
     }
     .footer-inner span { font-size: 0.75rem; color: var(--fg-muted); }
 
+    .hero-paths { display: grid; gap: 0.75rem; max-width: 44rem; margin: 2rem auto 0; text-align: left; }
+    .hero-path, .community-links a { display: flex; flex-direction: column; gap: 0.4rem; padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+    .hero-path:hover, .community-links a:hover { border-color: var(--primary); }
+    .hero-path strong, .community-links strong { font-size: 0.875rem; }
+    .hero-path span, .community-links span { font-size: 0.75rem; line-height: 1.6; color: var(--fg-muted); }
+    .hero-path strong span, .community-links strong span { color: var(--primary); font-size: inherit; }
+    .start-grid { display: grid; gap: 1rem; margin-top: 2.5rem; }
+    .start-card { padding: 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+    .start-card h3 { margin-top: 0.75rem; font-size: 1rem; }
+    .start-card p, .fit-note { margin-top: 0.75rem; color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.7; }
+    .start-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.75rem; }
+    .community-links { display: grid; gap: 0.75rem; margin-top: 2rem; }
+    .fit-note a, .footer a { color: var(--primary); text-decoration: underline; text-underline-offset: 0.2em; }
+    @media (min-width: 640px) { .hero-paths { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 768px) { .start-grid { grid-template-columns: repeat(3, 1fr); } .community-links { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 639px) { .nav-inner { height: auto; min-height: 3rem; flex-wrap: wrap; gap: 0.25rem; padding-top: 0.5rem; padding-bottom: 0.5rem; } .nav-links { flex-wrap: wrap; } .nav-links a { min-height: 2.5rem; } }
+
     /* Responsive */
     @media (min-width: 640px) {
       .hero h1 { font-size: 3rem; }
@@ -679,13 +703,14 @@
   <!-- Nav -->
   <header class="nav">
     <div class="nav-inner">
-      <a href="/" class="nav-logo">
-        <span class="nav-logo-mark">P</span>
+      <a href="./" class="nav-logo" aria-label="Paprika home">
+        <span class="nav-logo-mark"><img src="./paprika-mark.png" alt="" width="28" height="28" /></span>
         <span>Paprika</span>
       </a>
       <div class="nav-links">
-        <a href="#install">Install CLI</a>
-        <a href="https://paprika.benebsworth.com/login">Dashboard</a>
+        <a href="#get-started">Get started</a>
+        <a href="#community">Community</a>
+        <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Docs</a>
         <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener" class="nav-github">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
           GitHub
@@ -703,53 +728,38 @@
         <div class="reveal show">
           <span class="hero-badge">
             <span class="hero-badge-dot"></span>
-            Open source · Early access
+            Apache 2.0 · Open source
           </span>
         </div>
         <h1 class="reveal show" style="transition-delay: 0.1s">
-          One Operator to <br class="sm-only" /><span>Replace ArgoCD,<br />Rollouts &amp; Workflows</span>
+          Open source Kubernetes delivery, <span>from source to rollout</span>
         </h1>
         <p class="reveal show" style="transition-delay: 0.2s">
-          Paprika consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single Kubernetes operator. One resource model. One API. One dashboard.
+          Define applications in Kubernetes, run pipeline steps, and promote releases with health checks and optional traffic shifting. Read the code, deploy the operator on your cluster, and help shape what comes next.
         </p>
         <div class="hero-actions reveal show" style="transition-delay: 0.3s">
-          <a href="#install" class="btn-primary">
-            Install CLI
+          <a href="#get-started" class="btn-primary">
+            Get started
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           </a>
-          <a href="https://paprika.benebsworth.com/login" class="btn-secondary">
-            Open Dashboard
+          <a href="https://github.com/paprikacd/paprika" class="btn-secondary">
+            Explore the source
           </a>
         </div>
-        <div class="quick-start reveal show" style="transition-delay: 0.35s" aria-label="CLI quick start">
-          <div class="quick-start-header">
-            <span>Three commands to a live fleet view</span>
-            <span>terminal</span>
-          </div>
-          <div class="command-row">
-            <span class="command-number" aria-hidden="true">1</span>
-            <span class="command-text"><code id="hero-install-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code></span>
-            <button type="button" data-copy-target="hero-install-command" data-copy-feedback="hero-copy-feedback" aria-label="Copy install command" aria-describedby="hero-copy-guidance" class="copy-button">Copy</button>
-          </div>
-          <div class="command-row">
-            <span class="command-number" aria-hidden="true">2</span>
-            <span class="command-text"><code id="hero-login-command">paprika login --server https://paprika.benebsworth.com</code></span>
-            <button type="button" data-copy-target="hero-login-command" data-copy-feedback="hero-copy-feedback" aria-label="Copy login command" aria-describedby="hero-copy-guidance" class="copy-button">Copy</button>
-          </div>
-          <div class="command-row">
-            <span class="command-number" aria-hidden="true">3</span>
-            <span class="command-text"><code id="hero-status-command">paprika status</code></span>
-            <button type="button" data-copy-target="hero-status-command" data-copy-feedback="hero-copy-feedback" aria-label="Copy status command" aria-describedby="hero-copy-guidance" class="copy-button">Copy</button>
-          </div>
-          <div class="copy-support">
-            <p id="hero-copy-guidance" class="copy-guidance">Copy unavailable? Select the command text and copy it manually.</p>
-            <p id="hero-copy-feedback" class="copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
-          </div>
+        <div class="hero-paths reveal show" aria-label="Choose a starting path">
+          <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md" class="hero-path">
+            <strong>Run it yourself <span aria-hidden="true">↗</span></strong>
+            <span>Requirements, image build, Helm install, and a first Application.</span>
+          </a>
+          <a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md" class="hero-path">
+            <strong>Contribute <span aria-hidden="true">↗</span></strong>
+            <span>Find a first issue, set up locally, and propose a change.</span>
+          </a>
         </div>
         <div class="hero-viz reveal show" style="transition-delay: 0.4s">
           <div class="viz-card">
             <!-- Pipeline SVG -->
-            <svg viewBox="0 0 660 170" style="width:100%;height:auto;max-height:200px" aria-label="Pipeline flow visualization">
+            <svg viewBox="0 -30 660 190" style="width:100%;height:auto;max-height:200px" role="img" aria-label="Source, build and test, staging, canary and production pipeline flow">
               <defs>
                 <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
                   <circle cx="2" cy="2" r="1" fill="var(--border)"/>
@@ -776,12 +786,30 @@
       </div>
     </section>
 
+    <!-- Self-hosted start -->
+    <section id="get-started" class="py-24">
+      <div class="max-w-5xl">
+        <p class="section-label">Start with the open source operator</p>
+        <h2 class="section-title">Your cluster. Your first release.</h2>
+        <p class="section-desc">Paprika is available under Apache 2.0. The self-hosted path uses a Kubernetes cluster, an image you build or select, and the Helm chart in the repository. Check the cluster context before installing.</p>
+        <div class="start-grid">
+          <div class="start-card"><span class="step-number">01 / Prepare</span><h3>Read the requirements</h3><p>Set up Kubernetes, Helm, kubectl, Docker, and cert-manager when enabling webhooks. The chart defaults to a placeholder image, so choose a real image before install.</p></div>
+          <div class="start-card"><span class="step-number">02 / Deploy</span><h3>Follow the install guide</h3><p>Build and push an image, install the chart in your namespace, and check the operator pods. The guide keeps every command together.</p></div>
+          <div class="start-card"><span class="step-number">03 / Learn</span><h3>Create an Application</h3><p>Apply a complete example, inspect its Release, and try a small change. Use the feature guides when you are ready for gates or canary routing.</p></div>
+        </div>
+        <div class="start-actions">
+          <a class="btn-primary" href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Read the getting started guide <span aria-hidden="true">↗</span></a>
+          <a class="btn-secondary" href="https://github.com/paprikacd/paprika/tree/master/config/samples">Browse sample manifests <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+    </section>
+
     <!-- Install -->
     <section id="install" class="py-24">
       <div class="max-w-5xl">
         <div class="install-intro reveal">
-          <h2>Install the CLI. See what needs attention.</h2>
-          <p>The installer chooses the release archive for your machine, verifies it before installation, and leaves privilege decisions with you. Then authenticate against the hosted Paprika API and inspect your fleet.</p>
+          <h2>Explore a fleet with the CLI</h2>
+          <p>The CLI is a separate way to inspect Paprika. Its release installer checks the downloaded archive. The example login below connects to the project’s hosted API; a self-hosted installation uses your own server address.</p>
         </div>
         <div class="install-layout">
           <div class="install-terminal reveal-left">
@@ -845,33 +873,33 @@ go build -o ./bin/paprika ./cmd/paprika</pre>
     <section class="py-24">
       <div class="max-w-7xl text-center">
         <div class="reveal"><p class="section-label">Why Paprika</p></div>
-        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">Everything You Need for <span>Application Delivery</span></h2></div>
-        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">Paprika consolidates the tools your team needs into a single operator — no more stitching together Argo projects with different UIs and upgrade cycles.</p></div>
+        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">Core pieces of <span>Application Delivery</span></h2></div>
+        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">The project combines these capabilities in Kubernetes resources. Start with a release path, then add the controls you need.</p></div>
         <div class="feature-grid">
           <div class="feature-card reveal" style="transition-delay:0s">
             <div class="feature-header">
               <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
+                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
               </div>
-              <span class="feature-tag">3 tools → 1 CRD</span>
+              <span class="feature-tag">Application CRD</span>
             </div>
             <h3>Unified Resource Model</h3>
-            <p>Replace ArgoCD, Rollouts, and Workflows with a single Application CRD. One operator, one resource model, one consistent API. No more stitching together three projects with different conventions.</p>
+            <p>Define a source and stages in an Application resource. Paprika creates and tracks the related release resources.</p>
           </div>
           <div class="feature-card reveal" style="transition-delay:0.05s">
             <div class="feature-header">
               <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
+                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
               </div>
-              <span class="feature-tag">Automated rollbacks</span>
+              <span class="feature-tag">Canary steps</span>
             </div>
             <h3>Progressive Delivery</h3>
-            <p>Canary and blue-green deployments with configurable step weights. Traffic shifts gradually with health verification at every step. Roll back automatically if error rates spike.</p>
+            <p>Configure canary steps and verification checks for staged rollouts. Rollback behavior depends on the selected strategy and checks.</p>
           </div>
           <div class="feature-card reveal" style="transition-delay:0.1s">
             <div class="feature-header">
               <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>
+                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>
               </div>
               <span class="feature-tag">Istio + Gateway API</span>
             </div>
@@ -881,32 +909,32 @@ go build -o ./bin/paprika ./cmd/paprika</pre>
           <div class="feature-card reveal" style="transition-delay:0.15s">
             <div class="feature-header">
               <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
               </div>
-              <span class="feature-tag">Any cluster, per stage</span>
+              <span class="feature-tag">Cluster references</span>
             </div>
             <h3>Multi-Cluster by Default</h3>
-            <p>Stage-level cluster references let you deploy to different clusters per environment. No pre-configured cluster secrets required. Each stage can target a different Kubernetes cluster.</p>
+            <p>Target a registered cluster from a stage. Review the multi-cluster guide for credentials, setup, and supported modes.</p>
           </div>
           <div class="feature-card reveal" style="transition-delay:0.2s">
             <div class="feature-header">
               <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
               </div>
               <span class="feature-tag">Verify before promote</span>
             </div>
             <h3>CEL Health Verification</h3>
-            <p>Health checks evaluate every resource at every stage using Common Expression Language. Built-in resource health rules, approval gates, and automated rollback on failure.</p>
+            <p>Use built-in resource health assessment and optional CEL checks to control promotion. Add manual approval gates where people need to review a release.</p>
           </div>
           <div class="feature-card reveal" style="transition-delay:0.25s">
             <div class="feature-header">
               <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
               </div>
               <span class="feature-tag">Live via SSE</span>
             </div>
             <h3>Real-time Dashboard</h3>
-            <p>Live visibility into pipelines, releases, stages, and applications. Connect-RPC API for programmatic access. Server-sent events push updates so you never miss a state change.</p>
+            <p>Inspect applications, pipelines, releases, and resources in the dashboard. The API also provides programmatic access to fleet state.</p>
           </div>
         </div>
       </div>
@@ -922,115 +950,75 @@ go build -o ./bin/paprika ./cmd/paprika</pre>
       <div class="max-w-7xl steps">
         <div class="step reveal-left">
           <div class="step-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.15V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2h-3.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="m5 16-3 3 3 3"/><path d="m9 22 3-3-3-3"/></svg>
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.15V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2h-3.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="m5 16-3 3 3 3"/><path d="m9 22 3-3-3-3"/></svg>
           </div>
           <div class="step-content">
             <div style="display:flex;align-items:center;gap:0.75rem">
               <span class="step-number">Step 1</span>
               <h3>Define Your Application</h3>
             </div>
-            <p>Create a single Application resource that references your Helm chart, Git repo, or S3 bucket. Specify build steps, stages, and deployment strategy in one manifest. Paprika handles the rest.</p>
+            <p>Create an Application that names its source, stages, and release strategy. The getting started guide includes a complete manifest.</p>
           </div>
-          <div class="step-code">
-            <pre>apiVersion: pipelines.paprika.io/v1alpha1
-kind: Application
-metadata:
-  name: my-app
-spec:
-  source:
-    git:
-      url: https://github.com/example/app
-      revision: main
-  strategy: Canary</pre>
-          </div>
+
         </div>
 
         <div class="step reveal-left">
           <div class="step-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"/><path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"/></svg>
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"/><path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"/></svg>
           </div>
           <div class="step-content">
             <div style="display:flex;align-items:center;gap:0.75rem">
               <span class="step-number">Step 2</span>
               <h3>Promote Through Stages</h3>
             </div>
-            <p>Paprika renders manifests using the Helm SDK, runs pipeline steps as Kubernetes Jobs, and promotes releases through stages. Each stage supports its own canary config, traffic routing, and cluster target.</p>
+            <p>Paprika renders the source and creates a release. Pipeline steps can run as Kubernetes Jobs; stages can target registered clusters.</p>
           </div>
-          <div class="step-code">
-            <pre>  stages:
-    - name: staging
-      canary:
-        steps:
-          - weight: 10
-          - weight: 50
-          - weight: 100
-    - name: production
-      gates:
-        - name: approve
-          type: ManualApproval</pre>
-          </div>
+
         </div>
 
         <div class="step reveal-left">
           <div class="step-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
           </div>
           <div class="step-content">
             <div style="display:flex;align-items:center;gap:0.75rem">
               <span class="step-number">Step 3</span>
               <h3>Verify and Release</h3>
             </div>
-            <p>Health checks evaluate every resource at each stage. Traffic routing shifts weights gradually. Approval gates pause for manual verification. If checks fail, Paprika rolls back automatically.</p>
+            <p>Inspect resource health and release status as each stage progresses. Add canary traffic routing or manual gates when the application needs them.</p>
           </div>
-          <div class="step-code">
-            <pre>  stages:
-    - name: production
-      trafficRouter:
-        istio:
-          virtualService: my-app
-          host: app.example.com</pre>
-          </div>
+
         </div>
       </div>
     </section>
 
-    <!-- Comparison -->
+    <!-- Where Paprika fits -->
     <section class="py-24">
-      <div class="max-w-5xl text-center">
-        <div class="reveal"><p class="section-label">The Comparison</p></div>
-        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">One Platform vs <span style="color:var(--fg-muted)">Three Separate Tools</span></h2></div>
-        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">ArgoCD, Argo Rollouts, and Argo Workflows each have their own CRDs, controllers, UIs, and upgrade cycles. Paprika replaces all three with one cohesive operator.</p></div>
-      </div>
       <div class="max-w-5xl">
-        <div class="comparison-table reveal" style="transition-delay:0.15s">
-          <table>
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>Paprika</th>
-                <th>ArgoCD + Rollouts + Workflows</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td>Unified resource model</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
-              <tr><td>Single operator binary</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
-              <tr><td>Built-in CI/CD pipelines</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Workflows only</span></td></tr>
-              <tr><td>Canary deployments</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Rollouts only</span></td></tr>
-              <tr><td>Traffic routing (Istio/Gateway API)</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Rollouts only</span></td></tr>
-              <tr><td>Multi-cluster stages</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Via ArgoCD only</span></td></tr>
-              <tr><td>CEL health checks</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
-              <tr><td>Approval gates</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Workflows only</span></td></tr>
-              <tr><td>Real-time dashboard</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Per-project</span></td></tr>
-              <tr><td>SSE live updates</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
-            </tbody>
-          </table>
+        <p class="section-label">Where it fits</p>
+        <h2 class="section-title">Build a delivery path around your application</h2>
+        <p class="section-desc">Paprika is an early-stage project for teams willing to run a Kubernetes operator and shape its behavior in the open.</p>
+        <div class="start-grid">
+          <div class="start-card"><h3>Git or Helm sources</h3><p>Render application manifests from a repository or chart and follow each release through the same resource model.</p></div>
+          <div class="start-card"><h3>Progressive releases</h3><p>Add staged promotion, health verification, approval gates, and canary routing where your deployment needs them.</p></div>
+          <div class="start-card"><h3>Operator visibility</h3><p>Inspect application status and drift through Kubernetes resources, the dashboard, CLI, and API.</p></div>
         </div>
-        <div class="reveal" style="transition-delay:0.3s;margin-top:2rem;text-align:center">
-          <a href="https://paprika.benebsworth.com/login" class="btn-primary">
-            Try Paprika
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </a>
+        <p class="fit-note">Evaluating Paprika alongside an existing delivery stack? Start with a non-production cluster and compare the workflows that matter to your team.</p>
+      </div>
+    </section>
+
+    <!-- Community -->
+    <section id="community" class="py-24">
+      <div class="max-w-5xl">
+        <p class="section-label">Build in the open</p>
+        <h2 class="section-title">There is a place to start, even without a code change.</h2>
+        <p class="section-desc">Report a reproducible bug, ask a usage question, suggest a feature, improve an example, or review a pull request. Issues are the current public support and planning channel.</p>
+        <div class="community-links">
+          <a href="https://github.com/paprikacd/paprika/issues/new/choose"><strong>Ask or report <span aria-hidden="true">↗</span></strong><span>Choose a question, bug, or feature issue template.</span></a>
+          <a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md"><strong>Contribute <span aria-hidden="true">↗</span></strong><span>Local setup, checks, and pull request guidance.</span></a>
+          <a href="https://github.com/paprikacd/paprika/blob/master/SECURITY.md"><strong>Report a vulnerability <span aria-hidden="true">↗</span></strong><span>Use the private route in the security policy.</span></a>
         </div>
+        <p class="fit-note">Participation follows the <a href="https://github.com/paprikacd/paprika/blob/master/CODE_OF_CONDUCT.md">Code of Conduct</a>. Review the <a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0 license</a> before reusing the code.</p>
       </div>
     </section>
 
@@ -1040,19 +1028,19 @@ spec:
         <div class="cta-card reveal">
           <div class="cta-glow"></div>
           <div class="cta-content">
-            <h2>Ready to Simplify Your <span>Application Delivery</span>?</h2>
-            <p>Paprika is early-stage and looking for early adopters. Deploy the operator on your cluster, open an issue on GitHub, or just star the repo to follow along.</p>
+            <h2>Try Paprika on <span>your cluster</span></h2>
+            <p>Follow the self-hosted guide, try one application, and share what worked or broke. Your feedback can improve the next contributor’s first run.</p>
             <div class="cta-actions">
-              <a href="https://paprika.benebsworth.com/login" class="btn-primary">
-                Get Started
+              <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md" class="btn-primary">
+                Start with the guide
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
               </a>
-              <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener" class="btn-secondary">Star on GitHub</a>
+              <a href="https://github.com/paprikacd/paprika/issues/new/choose" class="btn-secondary">Share feedback</a>
             </div>
           </div>
         </div>
         <div class="cta-footer reveal" style="transition-delay:0.3s">
-          Apache 2.0 License. No telemetry. No vendor lock-in.
+          Source and documentation are available on GitHub under Apache 2.0.
         </div>
       </div>
     </section>
@@ -1062,24 +1050,11 @@ spec:
   <footer class="footer">
     <div class="footer-inner">
       <span>&copy; 2026 Paprika CD</span>
-      <span>Apache 2.0 License</span>
+      <a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0 License</a>
     </div>
   </footer>
 
   <script>
-    // Intersection Observer for scroll reveals
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('show');
-        }
-      });
-    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
-
-    document.querySelectorAll('.reveal, .reveal-left').forEach(el => {
-      observer.observe(el);
-    });
-
     const copyStates = new WeakMap();
     const feedbackStates = new WeakMap();
 
