@@ -19,799 +19,206 @@
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Paprika","description":"Open source Kubernetes application delivery operator","url":"https://paprikacd.github.io/paprika/","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go"}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --font-sans: 'Instrument Sans', system-ui, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-      --bg: #0c0b0a;
-      --bg-card: #161412;
-      --bg-secondary: #1c1a17;
-      --fg: #f0edea;
-      --fg-muted: #9c968e;
-      --border: #2b2824;
-      --primary: oklch(0.63 0.19 35);
-      --primary-fg: #0c0b0a;
-      --primary-glow: oklch(0.63 0.19 35 / 0.06);
-      --success: oklch(0.62 0.16 145);
-      --destructive: oklch(0.58 0.22 25);
-      --radius: 0.75rem;
+    *,*::before,*::after{box-sizing:border-box}
+
+:root{--bg:#0c0c0d;--surface:#171614;--surface-2:#211e1b;--ink:#f8f4ef;--muted:#c3b9b0;--orange:#f18457;--cream:#eee6da;--dark:#25211e;--sans:'Instrument Sans',system-ui,sans-serif}
+
+html{scroll-behavior:smooth}
+    body{margin:0;background:var(--bg);color:var(--ink);font:400 1rem/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+    a{color:inherit;text-decoration:none}
+    img,svg{display:block;max-width:100%}
+    button{font:inherit}
+    a:focus-visible,button:focus-visible{outline:3px solid var(--orange);outline-offset:4px}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    .skip-link{position:fixed;z-index:100;top:1rem;left:1rem;padding:.65rem 1rem;background:var(--orange);color:#17110e;transform:translateY(-200%)}
+    .skip-link:focus-visible{transform:translateY(0)}
+
+.max-w-7xl{max-width:82rem;margin-inline:auto;padding-inline:clamp(1.25rem,4vw,4rem)}
+    .max-w-5xl{max-width:72rem;margin-inline:auto;padding-inline:clamp(1.25rem,4vw,4rem)}
+    .py-24{padding-block:clamp(5rem,9vw,9rem)}
+    section[id]{scroll-margin-top:5rem}
+
+.nav{position:sticky;z-index:50;top:0;background:#0c0c0df2}
+    .nav-inner{display:flex;align-items:center;justify-content:space-between;gap:2rem;max-width:82rem;min-height:4.5rem;margin:auto;padding-inline:clamp(1.25rem,4vw,4rem)}
+    .nav-logo{display:flex;align-items:center;gap:.7rem;font-weight:700;font-size:1.2rem;letter-spacing:-.04em}
+    .nav-logo-mark img{width:2rem;height:2rem}
+    .nav-links{display:flex;align-items:center;gap:clamp(.5rem,1.8vw,1.6rem)}
+    .nav-links a{font-size:.9rem;font-weight:600;color:var(--muted)}
+    .nav-links a:hover,.nav-links a:focus-visible{color:var(--ink)}
+    .nav-links .nav-github{color:var(--orange)}
+    .nav-links svg{display:none}
+
+.btn-primary,.btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:.6rem;min-height:3.25rem;padding:.7rem 1.4rem;font-weight:700;font-size:1rem;transition:background .2s,color .2s,transform .2s}
+    .btn-primary{background:var(--orange);color:#1c110d}
+    .btn-primary:hover{background:#ffa27c;transform:translateY(-2px)}
+    .btn-secondary{color:var(--ink);border-bottom:2px solid var(--orange)}
+    .btn-secondary:hover{color:var(--orange)}
+    .section-title{max-width:17ch;margin:0;font-size:clamp(2.6rem,5vw,5rem);line-height:1.06;letter-spacing:-.055em;font-weight:700}
+    .section-desc{max-width:49rem;margin:1.4rem 0 0;color:var(--muted);font-size:clamp(1.05rem,1.5vw,1.2rem);line-height:1.65}
+
+.hero{position:relative;overflow:hidden;padding:clamp(5rem,8vw,9rem) 0 5rem}
+    .hero-bg{animation:art-drift 18s ease-in-out infinite alternate;position:absolute;inset:0;background:url('./delivery-art.webp') right top/cover no-repeat;opacity:.2;pointer-events:none}
+    .hero-glow{display:none}
+    .hero-content{position:relative}
+    .hero-copy{animation:arrive .8s ease-out both}
+    .hero-preview{animation:arrive .9s .15s ease-out both}
+    @keyframes arrive{from{opacity:0;transform:translateY(22px)}
+    to{opacity:1;transform:translateY(0)}
     }
-    html { scroll-behavior: smooth; }
-    body {
-      font-family: var(--font-sans);
-      background: var(--bg);
-      color: var(--fg);
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
+    @keyframes art-drift{from{transform:translateX(0)}
+    to{transform:translateX(-1.5%)}
     }
-    a { color: inherit; text-decoration: none; }
-    img, svg { display: block; max-width: 100%; }
-    a:focus-visible,
-    button:focus-visible {
-      outline: 2px solid var(--primary);
-      outline-offset: 3px;
-    }
-    .skip-link {
-      position: fixed;
-      top: 0.75rem;
-      left: 0.75rem;
-      z-index: 100;
-      padding: 0.625rem 0.875rem;
-      border-radius: 0.375rem;
-      background: var(--primary);
-      color: var(--primary-fg);
-      font-size: 0.8125rem;
-      font-weight: 600;
-      transform: translateY(calc(-100% - 1rem));
-    }
-    .skip-link:focus-visible { transform: translateY(0); }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
+    .hero-main{display:flex;flex-direction:column;gap:3.8rem}
+    .hero-copy{max-width:66rem}
+    .hero-badge{margin:0 0 1.4rem;color:var(--orange);font-size:.97rem;font-weight:700}
+    .hero h1{max-width:15ch;margin:0;font-size:clamp(3.5rem,8vw,8rem);line-height:.98;letter-spacing:-.075em;font-weight:700}
+    .hero h1 span{color:var(--orange)}
+    .hero-copy>p:not(.hero-badge){max-width:42rem;margin:1.8rem 0 0;color:#e3d8cf;font-size:clamp(1.1rem,1.8vw,1.35rem);line-height:1.58}
+    .hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:1rem;margin-top:2rem}
+    .hero .hero-footnote{font-size:.9rem!important;color:var(--muted)!important}
+    .product-shot{min-width:0;margin:0;background:#f3f3f5}
+    .product-shot img{width:100%;height:auto}
+    .shot-chrome{display:flex;align-items:center;justify-content:space-between;gap:1rem;min-height:2.5rem;padding:.4rem .8rem;background:#24201d;color:#eee5dc;font-size:.8rem;font-weight:600}
+    .demo-pill{color:#ffc29f}
+    .scroll-hint{display:none}
+    .product-shot figcaption{padding:.5rem .8rem;background:#24201d;color:#eee5dc;font-size:.78rem}
+    .hero-preview{width:100%;max-width:76rem;margin-inline:auto;border-right:16px solid #f18457;border-bottom:16px solid #f18457}
+    .hero-paths{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2rem;max-width:76rem;margin:3rem auto 0}
+    .hero-path{display:flex;flex-direction:column;gap:.25rem;padding:0 0 .5rem}
+    .hero-path strong{font-size:1.22rem}
+    .hero-path strong span,.community-links strong span{color:var(--orange)}
+    .hero-path>span{max-width:25rem;color:var(--muted);font-size:1rem}
+
+.showcase{background:var(--surface)}
+    .showcase-head{display:grid;grid-template-columns:1.1fr .9fr;gap:4rem;align-items:end}
+    .showcase .section-desc{margin:0}
+    .showcase-tabs{display:flex;gap:.25rem;margin:3.5rem 0 1.5rem}
+    .showcase-tabs button{min-height:3.1rem;padding:.65rem 1.35rem;border:0;background:transparent;color:var(--muted);font-size:1rem;font-weight:700;cursor:pointer}
+    .showcase-tabs button[aria-selected=true]{background:var(--orange);color:#22150f}
+    .showcase-tabs button:hover:not([aria-selected=true]){color:var(--ink)}
+    .showcase-panel{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(17rem,.55fr);gap:3.5rem;align-items:center}
+    .showcase-panel[hidden]{display:none}
+    .showcase-frame{grid-column:1;grid-row:1}
+    .showcase-copy{grid-column:2;grid-row:1}
+    .showcase-copy h3{max-width:18ch;margin:0;font-size:clamp(2rem,3vw,3.2rem);line-height:1.12;letter-spacing:-.045em}
+    .showcase-copy p{margin:1.15rem 0;color:var(--muted);font-size:1rem}
+    .showcase-copy a,.anatomy-card>a{color:var(--orange);font-weight:700;text-decoration:underline;text-underline-offset:.25em}
+
+.anatomy-section{background:#25211e}
+    .anatomy-intro{max-width:65rem;margin-bottom:3.5rem}
+    .anatomy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3.5rem}
+    .anatomy-card{min-width:0}
+    .anatomy-card h3{margin:0;font-size:2rem;letter-spacing:-.04em}
+    .anatomy-card>p{max-width:35rem;margin:.7rem 0 1.5rem;color:var(--muted);font-size:1rem}
+    .anatomy-card iframe{display:block;width:100%;height:565px;border:0}
+    .anatomy-card>a{display:inline-block;margin-top:1rem}
+
+#get-started{background:var(--cream);color:var(--dark)}
+    #get-started .section-desc{color:#574e48}
+    .start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(1.5rem,4vw,4rem);margin:4rem 0 2rem}
+    .start-card{padding-top:1.2rem;border-top:3px solid #b14b2d}
+    .start-card h3{margin:0;font-size:1.55rem;letter-spacing:-.035em}
+    .start-card p{margin:.7rem 0 0;color:#574e48;font-size:1rem}
+    .start-actions{display:flex;flex-wrap:wrap;gap:1rem}
+    #get-started .btn-secondary{color:var(--dark)}
+
+#install{background:#111111}
+    .install-intro{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:end;margin-bottom:3rem}
+    .install-intro h2{max-width:12ch;margin:0;font-size:clamp(2.6rem,5vw,4.5rem);line-height:1.08;letter-spacing:-.055em}
+    .install-intro p{max-width:39rem;margin:0;color:var(--muted);font-size:1.05rem}
+    .install-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(18rem,.7fr);gap:4rem;align-items:start}
+    .install-terminal{min-width:0;max-width:100%;overflow:hidden;background:#24201d}
+    .install-terminal-header{display:flex;justify-content:space-between;gap:1rem;padding:1rem 1.2rem;background:var(--orange);color:#22150f;font-size:.9rem;font-weight:700}
+    .command-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:1rem;padding:1.25rem 1.2rem;}
+    .command-text{min-width:0;overflow-x:auto}
+    .install-command-label{display:block;margin-bottom:.5rem;color:#f5e8da;font-size:.9rem;font-weight:700}
+    .command-text code{display:block;width:max-content;min-width:100%;color:#fff;font:400 .84rem/1.6 monospace;white-space:nowrap}
+    .copy-button{min-width:4.5rem;min-height:2.7rem;border:0;background:#eee6da;color:#231710;font-weight:700;cursor:pointer}
+    .copy-button:hover{background:#ffaf88}
+    .copy-support{display:flex;justify-content:space-between;gap:1rem;padding:.8rem 1.2rem;color:#e1d7cd;font-size:.85rem}
+    .copy-support p{margin:0}
+    .copy-feedback{min-width:8rem;text-align:right}
+    .install-note{padding:0 0 1.6rem;margin-bottom:1.6rem;}
+    .install-note h3{margin:0;font-size:1.12rem}
+    .install-note p{margin:.5rem 0 0;color:var(--muted);font-size:.95rem}
+    .install-note a{color:var(--orange);text-decoration:underline;text-underline-offset:.2em}
+    .install-note code{overflow-wrap:anywhere;font:400 .84rem/1.5 monospace}
+    .source-command{overflow-x:auto;padding:1rem;background:#25211e;color:#f5e9df;font:400 .82rem/1.65 monospace}
+
+.resource-story{background:var(--surface);overflow:hidden}
+    .resource-layout{display:grid;grid-template-columns:minmax(19rem,.85fr) minmax(0,1.15fr);gap:clamp(2rem,6vw,7rem);align-items:center}
+    .resource-copy h2{max-width:14ch;margin:0;font-size:clamp(2.7rem,5vw,5rem);line-height:1.06;letter-spacing:-.055em}
+    .resource-copy>p:not(.section-label){max-width:36rem;color:var(--muted);font-size:1.14rem}
+    .resource-points{list-style:none;padding:0;margin:2rem 0 0}
+    .resource-points li{padding:1rem 0;padding-top:1.3rem;font-size:1.05rem}
+    .resource-points strong{display:block;font-size:1.18rem;color:var(--ink)}
+    .resource-points span{color:var(--muted)}
+    .resource-visual{margin:0;min-width:0}
+    .resource-visual img{display:block;width:100%;height:auto}
+    .resource-visual figcaption{margin-top:.7rem;color:var(--muted);font-size:.85rem}
+
+#community{background:#0c0c0d}
+    .community-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2.5rem;margin-top:3.5rem}
+    .community-links a{display:flex;flex-direction:column;gap:.5rem;padding:1.1rem 0 0;border-top:3px solid var(--orange)}
+    .community-links strong{font-size:1.4rem;letter-spacing:-.035em}
+    .community-links a>span{color:var(--muted);font-size:1rem}
+    .fit-note{margin:2rem 0 0;color:var(--muted);font-size:.95rem}
+    .fit-note a,.footer a{color:var(--orange);text-decoration:underline;text-underline-offset:.2em}
+
+.cta-card{padding:clamp(3rem,7vw,7rem);background:var(--orange);color:#24160f}
+    .cta-glow{display:none}
+    .cta-content h2{max-width:12ch;margin:0;font-size:clamp(3rem,6vw,6rem);line-height:1;letter-spacing:-.065em}
+    .cta-content h2 span{color:#24160f}
+    .cta-content p{max-width:34rem;margin:1.5rem 0 0;font-size:1.12rem}
+    .cta-actions{display:flex;flex-wrap:wrap;gap:1rem;margin-top:2rem}
+    .cta-card .btn-primary{background:#24160f;color:#fff}
+    .cta-card .btn-primary:hover{background:#423026}
+    .cta-card .btn-secondary{color:#24160f;border-bottom:2px solid #24160f}
+    .cta-actions svg{width:1rem}
+    .cta-footer{margin-top:1rem;color:var(--muted);font-size:.9rem}
+    .footer{padding:2rem 0}
+    .footer-inner{display:flex;justify-content:space-between;gap:1rem;max-width:82rem;margin:auto;padding-inline:clamp(1.25rem,4vw,4rem);color:var(--muted);font-size:.9rem}
+
+@media(max-width:900px){.showcase-head,.install-intro,.install-layout,.resource-layout{grid-template-columns:minmax(0,1fr);gap:2rem}
+    .showcase-panel{grid-template-columns:1fr;gap:1.5rem}
+    .showcase-frame,.showcase-copy{grid-column:1;grid-row:auto}
+    .showcase-copy{grid-row:1}
+    .anatomy-grid{grid-template-columns:1fr;gap:4rem}
+    .community-links{gap:1.25rem}
+    .resource-visual{max-width:45rem}
     }
 
-    /* Layout */
-    .max-w-7xl { max-width: 80rem; margin: 0 auto; padding: 0 1.5rem; }
-    .max-w-5xl { max-width: 64rem; margin: 0 auto; padding: 0 1.5rem; }
-    .max-w-3xl { max-width: 48rem; margin: 0 auto; }
-    .max-w-2xl { max-width: 42rem; margin: 0 auto; }
-    .text-center { text-align: center; }
-
-    /* Nav */
-    .nav {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      border-bottom: 1px solid var(--border);
-      background: color-mix(in srgb, var(--bg) 80%, transparent);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-    }
-    .nav-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 3rem;
-      max-width: 80rem;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-    }
-    .nav-logo {
-      display: flex;
-      align-items: center;
-      gap: 0.625rem;
-      font-size: 0.875rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-    .nav-logo-mark {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.75rem;
-      height: 1.75rem;
-      border-radius: 0.375rem;
-      background: transparent;
-    }
-    .nav-logo-mark img { width: 1.75rem; height: 1.75rem; object-fit: contain; }
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-    }
-    .nav-links a {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.375rem 0.625rem;
-      border-radius: 0.375rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: var(--fg-muted);
-      transition: color 0.15s;
-    }
-    .nav-links a:hover { color: var(--fg); }
-    .nav-links svg { width: 0.875rem; height: 0.875rem; }
-
-    .btn-primary {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      height: 2.5rem;
-      padding: 0 1.25rem;
-      border-radius: var(--radius);
-      background: var(--primary);
-      color: var(--primary-fg);
-      font-size: 0.875rem;
-      font-weight: 500;
-      border: none;
-      cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s;
-    }
-    .btn-primary:hover { opacity: 0.9; }
-    .btn-primary:active { transform: scale(0.97); }
-
-    .btn-secondary {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      height: 2.5rem;
-      padding: 0 1.25rem;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      color: var(--fg);
-      font-size: 0.875rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
-    }
-    .btn-secondary:hover { background: var(--bg-secondary); }
-    .btn-secondary:active { transform: scale(0.97); }
-
-    /* Sections */
-    section { border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent); }
-    section[id] { scroll-margin-top: 4rem; }
-    .py-24 { padding-top: 6rem; padding-bottom: 6rem; }
-    .py-16 { padding-top: 4rem; padding-bottom: 4rem; }
-
-    /* Animations */
-    .reveal, .reveal-left { opacity: 1; transform: none; }
-
-    /* Hero */
-    .hero {
-      position: relative;
-      overflow: hidden;
-      padding: 6rem 0 8rem;
-    }
-    .hero-bg {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(to bottom, var(--primary-glow), transparent);
-    }
-    .hero-glow {
-      position: absolute;
-      left: 50%;
-      top: 0;
-      transform: translateX(-50%);
-      width: 48rem;
-      height: 48rem;
-      border-radius: 50%;
-      background: color-mix(in srgb, var(--primary) 3%, transparent);
-      filter: blur(4rem);
-      pointer-events: none;
-    }
-    .hero-content { position: relative; }
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.25rem 1rem;
-      border-radius: 9999px;
-      border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
-      background: color-mix(in srgb, var(--primary) 6%, transparent);
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: var(--primary);
-      margin-bottom: 1.5rem;
-    }
-    .hero-badge-dot {
-      position: relative;
-      width: 0.375rem;
-      height: 0.375rem;
-    }
-    .hero-badge-dot::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background: var(--primary);
-      animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-    }
-    .hero-badge-dot::after {
-      content: '';
-      position: relative;
-      display: block;
-      width: 0.375rem;
-      height: 0.375rem;
-      border-radius: 50%;
-      background: var(--primary);
-    }
-    @keyframes ping {
-      75%, 100% { transform: scale(2); opacity: 0; }
-    }
-    .hero h1 {
-      font-size: 2.25rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.1;
-    }
-    .hero h1 span { color: var(--primary); }
-    .hero p {
-      margin: 1.25rem auto 0;
-      text-align: center;
-      font-size: 1rem;
-      line-height: 1.6;
-      color: var(--fg-muted);
-      max-width: 36rem;
-    }
-    .hero-actions { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
-    .quick-start {
-      max-width: 56rem;
-      margin: 2rem auto 0;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--bg-card);
-      text-align: left;
-    }
-    .quick-start-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--border);
-      color: var(--fg-muted);
-      font-size: 0.6875rem;
-      font-weight: 500;
-    }
-    .quick-start-header span:last-child { font-family: var(--font-mono); }
-    .command-row {
-      display: grid;
-      grid-template-columns: 1.5rem minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 0.75rem;
-      min-height: 3rem;
-      padding: 0.625rem 0.75rem 0.625rem 1rem;
-      border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-    }
-    .command-row:last-child { border-bottom: 0; }
-    .command-number {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.5rem;
-      height: 1.5rem;
-      border-radius: 9999px;
-      background: color-mix(in srgb, var(--primary) 10%, transparent);
-      color: var(--primary);
-      font-family: var(--font-mono);
-      font-size: 0.625rem;
-      font-weight: 500;
-    }
-    .command-text {
-      min-width: 0;
-      overflow-x: auto;
-      scrollbar-width: thin;
-    }
-    .command-text code {
-      display: block;
-      width: max-content;
-      min-width: 100%;
-      font-family: var(--font-mono);
-      font-size: 0.6875rem;
-      line-height: 1.6;
-      color: color-mix(in srgb, var(--fg) 88%, transparent);
-      white-space: nowrap;
-    }
-    .copy-button {
-      min-width: 4.5rem;
-      min-height: 2rem;
-      padding: 0.25rem 0.625rem;
-      border: 1px solid var(--border);
-      border-radius: 0.375rem;
-      background: var(--bg-secondary);
-      color: var(--fg-muted);
-      font: 500 0.6875rem/1 var(--font-sans);
-      cursor: pointer;
-      transition: color 0.15s, border-color 0.15s, background 0.15s;
-    }
-    .copy-button:hover {
-      border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
-      color: var(--fg);
-    }
-    .copy-support {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 0.75rem;
-      min-height: 2.5rem;
-      padding: 0.625rem 1rem;
-      border-top: 1px solid var(--border);
-      color: var(--fg-muted);
-      font-size: 0.6875rem;
-      line-height: 1.5;
-    }
-    .copy-support p {
-      max-width: none;
-      margin: 0;
-      color: inherit;
-      font-size: inherit;
-      line-height: inherit;
-    }
-    .copy-feedback {
-      min-width: 9rem;
-      color: var(--fg);
-      text-align: right;
-    }
-    .hero-viz { margin-top: 4rem; }
-
-    .viz-card {
-      border-radius: var(--radius);
-      border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
-      background: color-mix(in srgb, var(--bg-card) 30%, transparent);
-      padding: 0.75rem;
-      box-shadow: 0 4px 24px color-mix(in srgb, black 5%, transparent);
-      backdrop-filter: blur(4px);
+@media(max-width:650px){.nav-inner{flex-wrap:wrap;gap:.1rem;padding-block:.6rem}
+    .nav-links{width:100%;justify-content:space-between;gap:.25rem}
+    .nav-links a{font-size:.8rem;padding:.25rem 0}
+    .nav-github{display:none!important}
+    .hero{padding-top:4rem}
+    .hero h1{font-size:clamp(3.5rem,15vw,5.5rem);max-width:11ch}
+    .hero-main{gap:2.5rem}
+    .hero-preview{width:calc(100% + 1.25rem);max-width:none;overflow-x:auto;border-right:8px solid var(--orange);border-bottom:8px solid var(--orange)}
+    .scroll-hint{display:inline}.hero-preview img{min-width:42rem}
+    .hero-paths,.start-grid,.community-links{grid-template-columns:1fr;gap:1.5rem}
+    .showcase-tabs{gap:0}
+    .showcase-tabs button{flex:1;min-width:0;padding:.6rem .35rem;font-size:.86rem}
+    .showcase-frame{overflow-x:auto}
+    .showcase-frame img{min-width:39rem}
+    .start-grid{margin-top:2.5rem}
+    .install-terminal .command-row{grid-template-columns:1fr}
+    .copy-button{justify-self:start}
+    .copy-support{flex-direction:column}
+    .copy-feedback{text-align:left}
+    .anatomy-card iframe{height:505px}
+    .cta-card{margin-inline:-1.25rem}
+    .footer-inner{flex-wrap:wrap}
     }
 
-    /* Install */
-    .install-intro {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      margin-bottom: 3rem;
-    }
-    .install-intro h2 {
-      max-width: 18ch;
-      font-size: 1.75rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      line-height: 1.15;
-    }
-    .install-intro p {
-      max-width: 38rem;
-      color: var(--fg-muted);
-      font-size: 0.875rem;
-      line-height: 1.7;
-    }
-    .install-layout {
-      display: grid;
-      gap: 2.5rem;
-      align-items: start;
-    }
-    .install-layout > * { min-width: 0; }
-    .install-terminal {
-      overflow: hidden;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--bg-card);
-    }
-    .install-terminal-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--border);
-      color: var(--fg-muted);
-      font-family: var(--font-mono);
-      font-size: 0.6875rem;
-    }
-    .install-terminal .command-row { grid-template-columns: minmax(0, 1fr) auto; }
-    .install-command-label {
-      display: block;
-      margin-bottom: 0.25rem;
-      color: var(--fg-muted);
-      font-family: var(--font-sans);
-      font-size: 0.625rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .install-notes { border-top: 1px solid var(--border); }
-    .install-note {
-      padding: 1.25rem 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .install-note h3 { font-size: 0.8125rem; font-weight: 600; }
-    .install-note p {
-      margin-top: 0.375rem;
-      color: var(--fg-muted);
-      font-size: 0.75rem;
-      line-height: 1.65;
-    }
-    .install-note code,
-    .install-note a {
-      font-family: var(--font-mono);
-      font-size: 0.6875rem;
-    }
-    .install-note code { overflow-wrap: anywhere; }
-    .install-note a {
-      color: var(--primary);
-      overflow-wrap: anywhere;
-      text-decoration: underline;
-      text-underline-offset: 0.2em;
-    }
-    .source-command {
-      margin-top: 0.75rem;
-      overflow-x: auto;
-      padding: 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      background: var(--bg-card);
-      color: color-mix(in srgb, var(--fg) 88%, transparent);
-      font: 0.6875rem/1.6 var(--font-mono);
-      white-space: pre;
-    }
+[data-enter]{transition:opacity .65s ease,transform .65s ease}
+    .motion-ready [data-enter]:not(.is-visible){opacity:0;transform:translateY(24px)}
 
-    /* Feature grid */
-    .feature-grid { display: grid; gap: 1rem; margin-top: 3rem; }
-    .feature-card {
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      padding: 1.5rem;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .feature-card:hover { border-color: color-mix(in srgb, var(--primary) 25%, transparent); box-shadow: 0 1px 3px color-mix(in srgb, black 5%, transparent); }
-    .feature-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-    .feature-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.5rem;
-      height: 2.5rem;
-      border-radius: var(--radius);
-      background: color-mix(in srgb, var(--primary) 8%, transparent);
-      flex-shrink: 0;
-    }
-    .feature-icon svg { width: 1.25rem; height: 1.25rem; color: var(--primary); }
-    .feature-tag {
-      border-radius: 0.375rem;
-      background: color-mix(in srgb, var(--primary) 6%, transparent);
-      padding: 0.125rem 0.5rem;
-      font-size: 0.6875rem;
-      font-weight: 500;
-      color: color-mix(in srgb, var(--primary) 80%, transparent);
-      flex-shrink: 0;
-    }
-    .feature-card h3 { margin-top: 1rem; font-size: 0.875rem; font-weight: 600; }
-    .feature-card p { margin-top: 0.5rem; font-size: 0.75rem; line-height: 1.6; color: var(--fg-muted); }
-
-    .section-label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--primary);
-      margin-bottom: 0.75rem;
-    }
-    .section-title {
-      font-size: 1.5rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-    .section-title span { color: var(--primary); }
-    .section-desc {
-      margin-top: 0.75rem;
-      font-size: 0.875rem;
-      color: var(--fg-muted);
-    }
-
-    /* How it works */
-    .steps { margin-top: 3rem; display: flex; flex-direction: column; gap: 4rem; }
-    .step { display: flex; flex-direction: column; gap: 1.5rem; }
-    .step-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.5rem;
-      height: 2.5rem;
-      border-radius: var(--radius);
-      border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
-      background: color-mix(in srgb, var(--primary) 6%, transparent);
-      flex-shrink: 0;
-    }
-    .step-icon svg { width: 1rem; height: 1rem; color: var(--primary); }
-    .step-content { min-width: 0; flex: 1; }
-    .step-number {
-      font-size: 0.625rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: color-mix(in srgb, var(--primary) 70%, transparent);
-    }
-    .step-content h3 { font-size: 1rem; font-weight: 600; }
-    .step-content p { margin-top: 0.5rem; font-size: 0.875rem; line-height: 1.6; color: var(--fg-muted); }
-    .step-code {
-      width: 100%;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      padding: 1rem;
-      overflow-x: auto;
-    }
-    .step-code pre {
-      font-family: var(--font-mono);
-      font-size: 0.6875rem;
-      line-height: 1.6;
-      color: color-mix(in srgb, var(--fg) 80%, transparent);
-      white-space: pre;
-    }
-    @media (min-width: 768px) {
-      .step { flex-direction: row; align-items: flex-start; }
-      .step-code { width: 20rem; flex-shrink: 0; }
-    }
-
-    /* Comparison table */
-    .comparison-table {
-      margin-top: 2.5rem;
-      overflow: hidden;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-    }
-    .comparison-table table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-    .comparison-table th {
-      padding: 0.875rem 1.25rem;
-      text-align: left;
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--fg-muted);
-      border-bottom: 1px solid var(--border);
-    }
-    .comparison-table th:nth-child(2) { text-align: center; width: 7rem; color: var(--primary); }
-    .comparison-table th:nth-child(3) { text-align: center; width: 10rem; }
-    .comparison-table td {
-      padding: 0.75rem 1.25rem;
-      border-bottom: 1px solid color-mix(in srgb, var(--border) 20%, transparent);
-      font-size: 0.8125rem;
-    }
-    .comparison-table tr:last-child td { border-bottom: none; }
-    .comparison-table td:nth-child(2),
-    .comparison-table td:nth-child(3) { text-align: center; }
-    .check { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: color-mix(in srgb, var(--success) 10%, transparent); }
-    .check svg { width: 0.875rem; height: 0.875rem; color: var(--success); }
-    .cross { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: color-mix(in srgb, var(--destructive) 10%, transparent); }
-    .cross svg { width: 0.875rem; height: 0.875rem; color: var(--destructive); }
-    .comparison-muted { font-size: 0.75rem; font-style: italic; color: color-mix(in srgb, var(--fg-muted) 60%, transparent); }
-
-    /* CTA */
-    .cta-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: 1rem;
-      border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
-      background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 8%, transparent), color-mix(in srgb, var(--primary) 3%, transparent), transparent);
-      padding: 4rem 2rem;
-      text-align: center;
-    }
-    .cta-glow {
-      position: absolute;
-      left: 50%;
-      top: 0;
-      transform: translateX(-50%);
-      width: 32rem;
-      height: 32rem;
-      border-radius: 50%;
-      background: color-mix(in srgb, var(--primary) 4%, transparent);
-      filter: blur(4rem);
-      pointer-events: none;
-    }
-    .cta-content { position: relative; }
-    .cta-content h2 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
-    .cta-content h2 span { color: var(--primary); }
-    .cta-content p { margin: 1rem auto 0; max-width: 32rem; font-size: 0.875rem; line-height: 1.6; color: var(--fg-muted); }
-    .cta-actions { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
-    .cta-footer { margin-top: 1.5rem; font-size: 0.75rem; color: var(--fg-muted); text-align: center; }
-
-    /* Footer */
-    .footer {
-      border-top: 1px solid var(--border);
-      padding: 1.5rem 0;
-    }
-    .footer-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      max-width: 80rem;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-    }
-    .footer-inner span { font-size: 0.75rem; color: var(--fg-muted); }
-
-    .hero-paths { display: grid; gap: 0.75rem; max-width: 44rem; margin: 2rem auto 0; text-align: left; }
-    .hero-path, .community-links a { display: flex; flex-direction: column; gap: 0.4rem; padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
-    .hero-path:hover, .community-links a:hover { border-color: var(--primary); }
-    .hero-path strong, .community-links strong { font-size: 0.875rem; }
-    .hero-path span, .community-links span { font-size: 0.75rem; line-height: 1.6; color: var(--fg-muted); }
-    .hero-path strong span, .community-links strong span { color: var(--primary); font-size: inherit; }
-    .start-grid { display: grid; gap: 1rem; margin-top: 2.5rem; }
-    .start-card { padding: 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
-    .start-card h3 { margin-top: 0.75rem; font-size: 1rem; }
-    .start-card p, .fit-note { margin-top: 0.75rem; color: var(--fg-muted); font-size: 0.8125rem; line-height: 1.7; }
-    .start-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.75rem; }
-    .community-links { display: grid; gap: 0.75rem; margin-top: 2rem; }
-    .fit-note a, .footer a { color: var(--primary); text-decoration: underline; text-underline-offset: 0.2em; }
-    @media (min-width: 640px) { .hero-paths { grid-template-columns: repeat(2, 1fr); } }
-    @media (min-width: 768px) { .start-grid { grid-template-columns: repeat(3, 1fr); } .community-links { grid-template-columns: repeat(3, 1fr); } }
-    @media (max-width: 639px) { .nav-inner { height: auto; min-height: 3rem; flex-wrap: wrap; gap: 0.25rem; padding-top: 0.5rem; padding-bottom: 0.5rem; } .nav-links { flex-wrap: wrap; } .nav-links a { min-height: 2.5rem; } }
-
-    /* Responsive */
-    @media (min-width: 640px) {
-      .hero h1 { font-size: 3rem; }
-      .feature-grid { grid-template-columns: repeat(2, 1fr); }
-      .install-intro { flex-direction: row; align-items: end; justify-content: space-between; }
-      .install-intro p { max-width: 28rem; }
-    }
-    @media (min-width: 840px) {
-      .install-layout { grid-template-columns: minmax(0, 1.45fr) minmax(16rem, 0.75fr); gap: 4rem; }
-    }
-    @media (min-width: 1024px) {
-      .hero h1 { font-size: 3.75rem; }
-      .hero { padding: 8rem 0 10rem; }
-      .feature-grid { grid-template-columns: repeat(3, 1fr); }
-    }
-    @media (max-width: 479px) {
-      .nav-inner { padding: 0 1rem; }
-      .nav-github { display: none !important; }
-      .hero { padding: 4.5rem 0 6rem; }
-      .max-w-7xl, .max-w-5xl { padding-left: 1rem; padding-right: 1rem; }
-      .quick-start { margin-top: 1.5rem; }
-      .command-row { grid-template-columns: 1.5rem minmax(0, 1fr); gap: 0.5rem; padding: 0.75rem; }
-      .command-row .copy-button { grid-column: 2; justify-self: start; }
-      .install-terminal .command-row { grid-template-columns: minmax(0, 1fr); }
-      .install-terminal .command-row .copy-button { grid-column: 1; }
-      .copy-support { grid-template-columns: 1fr; }
-      .copy-feedback { min-width: 0; text-align: left; }
-      .footer-inner { padding: 0 1rem; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      *, *::before, *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
-        transition-duration: 0.01ms !important;
-      }
-      .reveal,
-      .reveal-left { opacity: 1; transform: none; }
-    }
-
-    /* Product story: shared surfaces, a restrained brand illustration, and real UI. */
-    :root {
-      --bg: #0c0c0d;
-      --bg-card: #181716;
-      --bg-secondary: #211e1b;
-      --border: #36302b;
-      --fg: #f8f4ef;
-      --fg-muted: #b5aaa0;
-      --primary: #f18457;
-      --primary-glow: rgb(241 132 87 / 0.09);
-      --radius: 0.875rem;
-    }
-    .nav { background: rgb(12 12 13 / 0.9); }
-    .nav-inner { height: 4rem; }
-    .btn-primary, .btn-secondary { min-height: 2.75rem; font-weight: 600; }
-    .btn-primary:hover { opacity: 1; background: #ffa27b; transform: translateY(-2px); }
-    .btn-secondary:hover { border-color: #8c6350; transform: translateY(-2px); }
-    .hero { padding: 5.5rem 0 3.5rem; }
-    .hero-bg {
-      background: linear-gradient(90deg, #0c0c0d 5%, rgb(12 12 13 / 0.72) 52%, rgb(12 12 13 / 0.44)),
-        url('./delivery-art.webp') center bottom / cover no-repeat;
-      opacity: 0.78;
-    }
-    .hero-glow { top: -18rem; opacity: 0.45; }
-    .hero-main { display: grid; align-items: center; gap: clamp(2rem, 5vw, 5rem); }
-    .hero-copy { position: relative; text-align: left; }
-    .hero h1 { max-width: 14ch; font-size: clamp(2.7rem, 5.2vw, 5.4rem); line-height: 1.04; letter-spacing: -0.055em; }
-    .hero p { margin: 1.5rem 0 0; max-width: 35rem; text-align: left; font-size: 1.025rem; line-height: 1.72; color: #d1c6bd; }
-    .hero-actions { justify-content: flex-start; }
-    .hero .hero-footnote { margin-top: 1rem; font: 0.72rem/1.5 var(--font-mono); color: var(--fg-muted); }
-    .hero-preview { animation: rise-in 750ms cubic-bezier(.2,.8,.2,1) both; }
-    @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-    .product-shot {
-      min-width: 0;
-      overflow: hidden;
-      border: 1px solid #665146;
-      border-radius: 1rem;
-      background: #131719;
-      box-shadow: 0 22px 80px rgb(0 0 0 / 0.42), 0 0 0 8px rgb(255 255 255 / 0.025);
-    }
-    .product-shot img { width: 100%; height: auto; background: #f2f3f5; }
-    .product-shot figcaption { padding: 0.6rem 0.9rem; color: #c8bdb4; font: 0.68rem/1.4 var(--font-mono); border-top: 1px solid var(--border); }
-    .shot-chrome { min-height: 2.55rem; display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem 0.85rem; color: #d6c9bf; font: 0.68rem/1.3 var(--font-mono); border-bottom: 1px solid var(--border); }
-    .shot-lights { display: inline-flex; gap: 0.35rem; }
-    .shot-lights i { display: block; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: #744b3d; }
-    .shot-lights i:nth-child(2) { background: #a26947; }
-    .shot-lights i:nth-child(3) { background: #c8925e; }
-    .demo-pill { margin-left: auto; padding: 0.2rem 0.45rem; border: 1px solid #775342; border-radius: 999px; color: #ffae8a; white-space: nowrap; }
-    .hero-paths { max-width: none; margin: 3rem 0 0; }
-    .hero-path, .start-card, .feature-card, .community-links a { border-color: #423a33; background: linear-gradient(145deg, #1d1b19, #151413); }
-    .hero-path, .start-card, .feature-card, .community-links a { transition: border-color .2s, transform .2s, box-shadow .2s; }
-    .hero-path:hover, .start-card:hover, .feature-card:hover, .community-links a:hover { border-color: #b77555; transform: translateY(-3px); box-shadow: 0 12px 30px rgb(0 0 0 / .15); }
-    .hero-path { padding: 1.25rem 1.5rem; }
-    .hero-path strong { font-size: 0.95rem; }
-    .showcase { background: radial-gradient(circle at 12% 10%, rgb(241 132 87 / .08), transparent 38%), #111111; }
-    .showcase-head { display: grid; gap: 1rem; align-items: end; }
-    .showcase .section-title { margin-top: 0.8rem; max-width: 16ch; }
-    .showcase .section-desc { margin: 0; max-width: 30rem; }
-    .showcase-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 2.5rem 0 1.25rem; }
-    .showcase-tabs button {
-      min-height: 2.75rem; padding: 0.55rem 0.95rem; border: 1px solid #4b413a; border-radius: 0.55rem;
-      background: #1b1a19; color: #a9988d; font: 0.72rem var(--font-mono); cursor: pointer;
-      transition: background .2s, border-color .2s, color .2s, transform .2s;
-    }
-    .showcase-tabs button span { margin-left: 0.4rem; font: 600 0.84rem var(--font-sans); }
-    .showcase-tabs button:hover { color: var(--fg); border-color: #b77555; }
-    .showcase-tabs button[aria-selected="true"] { color: #19110d; background: var(--primary); border-color: var(--primary); }
-    .showcase-panel { display: grid; gap: 2rem; align-items: center; animation: rise-in 300ms ease-out both; }
-    .showcase-panel[hidden] { display: none; }
-    .showcase-copy { padding: 0.5rem 0; }
-    .demo-eyebrow { color: var(--primary); font: 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: .07em; }
-    .showcase-copy h3 { max-width: 14ch; margin-top: 1rem; font-size: clamp(1.75rem, 3vw, 2.6rem); line-height: 1.15; letter-spacing: -.035em; }
-    .showcase-copy p { max-width: 35rem; margin-top: 1.1rem; color: var(--fg-muted); font-size: .93rem; line-height: 1.75; }
-    .showcase-copy a { display: inline-block; margin-top: 1.5rem; color: var(--primary); font-size: .82rem; text-decoration: underline; text-underline-offset: .25em; }
-    .showcase-frame { max-width: 100%; }
-    .anatomy-section { border-top: 1px solid var(--border); background: #141210; }
-    .anatomy-intro { max-width: 46rem; margin-bottom: 2.5rem; }
-    .anatomy-intro .section-desc { margin-top: 1rem; }
-    .anatomy-grid { display: grid; gap: 2rem; }
-    .anatomy-card h3 { font-size: 1.35rem; letter-spacing: -.025em; }
-    .anatomy-card > p { max-width: 37rem; margin: .65rem 0 1.15rem; color: var(--fg-muted); font-size: .88rem; line-height: 1.65; }
-    .anatomy-card iframe { display: block; width: 100%; height: 565px; border: 0; }
-    .anatomy-card > a { display: inline-block; margin-top: .5rem; color: var(--primary); font-size: .8rem; text-decoration: underline; text-underline-offset: .2em; }
-    @media (min-width: 840px) {
-      .hero-main { grid-template-columns: minmax(0, .95fr) minmax(0, 1.25fr); }
-      .showcase-head { grid-template-columns: 1fr 1fr; }
-      .showcase-panel { grid-template-columns: minmax(14rem, .6fr) minmax(0, 1.5fr); }
-    }
-    @media (min-width: 1000px) { .anatomy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 839px) {
-      .hero { padding-top: 4.5rem; }
-      .hero-main { gap: 2.5rem; }
-      .hero h1 { max-width: 15ch; }
-      .hero-preview { max-width: 46rem; }
-      .showcase-frame { overflow-x: auto; }
-      .showcase-frame img, .showcase-frame .shot-chrome, .showcase-frame figcaption { min-width: 38rem; }
-    }
-    @media (max-width: 479px) {
-      .nav-inner { min-height: 4rem; height: auto; }
-      .hero { padding-top: 3.25rem; }
-      .hero h1 { font-size: clamp(2.7rem, 12vw, 3.5rem); letter-spacing: -.04em; word-spacing: .035em; }
-      .hero p { font-size: .95rem; }
-      .hero-actions { display: grid; justify-content: stretch; }
-      .hero-actions a { justify-content: center; }
-      .hero-paths { margin-top: 2rem; }
-      .showcase-tabs button { flex: 1 1 auto; }
-      .showcase-tabs button span { display: block; margin: .2rem 0 0; }
-      .hero-preview .shot-chrome { font-size: .57rem; }
-      .hero-preview .shot-lights { display: none; }
-      .hero-preview figcaption { font-size: .58rem; }
-      .anatomy-card iframe { height: 495px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .hero-preview, .showcase-panel { animation: none; }
-      .hero-path, .start-card, .feature-card, .community-links a { transform: none !important; }
+@media(prefers-reduced-motion:reduce){.hero-preview,.hero-copy,.hero-bg{animation:none}html{scroll-behavior:auto}
+    *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
     }
   </style>
 </head>
@@ -846,19 +253,19 @@
       <div class="hero-content max-w-7xl">
         <div class="hero-main">
           <div class="hero-copy">
-            <span class="hero-badge"><span class="hero-badge-dot" aria-hidden="true"></span> Apache 2.0 · Open source</span>
-            <h1 id="hero-title">Open source Kubernetes delivery, <span>from source to rollout</span></h1>
-            <p>Define applications in Kubernetes, run pipeline steps, and promote releases with health checks and optional traffic shifting. Explore the operator, run it on your cluster, and help shape what comes next.</p>
+            <p class="hero-badge">An open source Kubernetes operator · Apache 2.0</p>
+            <h1 id="hero-title">Every release, <span>visible.</span></h1>
+            <p>Paprika turns an Application resource into a release you can trace: from source and pipeline steps to staged rollout and health. Run the operator on your cluster and help build it in the open.</p>
             <div class="hero-actions">
               <a href="#get-started" class="btn-primary">Start self-hosting</a>
               <a href="https://github.com/paprikacd/paprika" class="btn-secondary">Explore the source</a>
             </div>
-            <p class="hero-footnote">A project you can inspect, extend, and operate yourself.</p>
+            <p class="hero-footnote">Early stage and ready for hands-on evaluation.</p>
           </div>
-          <figure class="hero-preview product-shot">
-            <div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Paprika console / applications</span><span class="demo-pill">Synthetic demo</span></div>
+          <figure class="hero-preview product-shot" data-ui tabindex="0">
+            <div class="shot-chrome"><span>Paprika console / applications</span><span class="demo-pill">Synthetic demo</span></div>
             <img src="./demo-applications.webp" width="1440" height="900" alt="Paprika application inventory showing demo projects, health, sync state, and available actions" fetchpriority="high" />
-            <figcaption>Actual Paprika UI · local synthetic fleet data</figcaption>
+            <figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption>
           </figure>
         </div>
         <div class="hero-paths" aria-label="Choose a starting path">
@@ -872,25 +279,25 @@
     <section id="product" class="showcase py-24" aria-labelledby="product-title">
       <div class="max-w-7xl">
         <div class="showcase-head">
-          <div><p class="section-label">Inside the control plane</p><h2 id="product-title" class="section-title">See the work, not just the status.</h2></div>
+          <div><h2 id="product-title" class="section-title">See the work, not just the status.</h2></div>
           <p class="section-desc">These are screenshots from Paprika’s actual console, connected to a local synthetic fleet. Explore the views that help operators understand a release.</p>
         </div>
         <div class="showcase-tabs" role="tablist" aria-label="Paprika console views">
-          <button type="button" id="tab-applications" role="tab" aria-selected="true" aria-controls="panel-applications" tabindex="0">01 <span>Applications</span></button>
-          <button type="button" id="tab-pipelines" role="tab" aria-selected="false" aria-controls="panel-pipelines" tabindex="-1">02 <span>Pipelines</span></button>
-          <button type="button" id="tab-rollouts" role="tab" aria-selected="false" aria-controls="panel-rollouts" tabindex="-1">03 <span>Rollouts</span></button>
+          <button type="button" id="tab-applications" role="tab" aria-selected="true" aria-controls="panel-applications" tabindex="0">Applications</button>
+          <button type="button" id="tab-pipelines" role="tab" aria-selected="false" aria-controls="panel-pipelines" tabindex="-1">Pipelines</button>
+          <button type="button" id="tab-rollouts" role="tab" aria-selected="false" aria-controls="panel-rollouts" tabindex="-1">Rollouts</button>
         </div>
         <div id="panel-applications" role="tabpanel" aria-labelledby="tab-applications" class="showcase-panel">
-          <div class="showcase-copy"><span class="demo-eyebrow">01 / Fleet inventory</span><h3>Find the application that needs you.</h3><p>Group applications by project, filter by health or sync state, and open a target for details. The demo includes healthy, progressing, and degraded examples.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Explore the application model <span aria-hidden="true">↗</span></a></div>
-          <figure class="showcase-frame product-shot"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Applications</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-applications.webp" width="1440" height="900" alt="Paprika inventory grouping synthetic applications by project with health and sync columns" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data</figcaption></figure>
+          <div class="showcase-copy"><h3>Find what needs attention.</h3><p>Group applications by project, filter by health or sync state, and open a target for details. The demo includes healthy, progressing, and degraded examples.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Explore the application model <span aria-hidden="true">↗</span></a></div>
+          <figure class="showcase-frame product-shot" data-ui tabindex="0"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Applications</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-applications.webp" width="1440" height="900" alt="Paprika inventory grouping synthetic applications by project with health and sync columns" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption></figure>
         </div>
         <div id="panel-pipelines" role="tabpanel" aria-labelledby="tab-pipelines" class="showcase-panel" hidden>
-          <div class="showcase-copy"><span class="demo-eyebrow">02 / Pipeline steps</span><h3>Follow each run from build to result.</h3><p>See pipeline phase and step progress in one place. This fixture exercises completed and running examples without connecting to a live cluster.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">Read the pipeline docs <span aria-hidden="true">↗</span></a></div>
-          <figure class="showcase-frame product-shot"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Pipelines</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-pipelines.webp" width="1440" height="900" alt="Paprika pipelines list with synthetic succeeded and running step states" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data</figcaption></figure>
+          <div class="showcase-copy"><h3>Follow each run from build to result.</h3><p>See pipeline phase and step progress in one place. This fixture exercises completed and running examples without connecting to a live cluster.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">Read the pipeline docs <span aria-hidden="true">↗</span></a></div>
+          <figure class="showcase-frame product-shot" data-ui tabindex="0"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Pipelines</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-pipelines.webp" width="1440" height="900" alt="Paprika pipelines list with synthetic succeeded and running step states" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption></figure>
         </div>
         <div id="panel-rollouts" role="tabpanel" aria-labelledby="tab-rollouts" class="showcase-panel" hidden>
-          <div class="showcase-copy"><span class="demo-eyebrow">03 / Rollout state</span><h3>Know when a rollout is moving or paused.</h3><p>Inspect each rollout’s target and phase, then open the release for more detail. Strategy and traffic information appear when a rollout is configured for them.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/canary.md">Read the rollout guide <span aria-hidden="true">↗</span></a></div>
-          <figure class="showcase-frame product-shot"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Rollouts</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-rollouts.webp" width="1440" height="900" alt="Paprika rollout list showing synthetic healthy, paused, degraded, and progressing phases" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data</figcaption></figure>
+          <div class="showcase-copy"><h3>Know when a rollout is moving or paused.</h3><p>Inspect each rollout’s target and phase, then open the release for more detail. Strategy and traffic information appear when a rollout is configured for them.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/canary.md">Read the rollout guide <span aria-hidden="true">↗</span></a></div>
+          <figure class="showcase-frame product-shot" data-ui tabindex="0"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Rollouts</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-rollouts.webp" width="1440" height="900" alt="Paprika rollout list showing synthetic healthy, paused, degraded, and progressing phases" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data <span class="scroll-hint">· Swipe to inspect →</span></figcaption></figure>
         </div>
       </div>
     </section>
@@ -899,7 +306,7 @@
     <section id="how-it-works" class="anatomy-section py-24" aria-labelledby="anatomy-title">
       <div class="max-w-7xl">
         <div class="anatomy-intro">
-          <p class="section-label">The mechanics</p>
+
           <h2 id="anatomy-title" class="section-title">Trace the path from source to stage.</h2>
           <p class="section-desc">Two interactive bench models illustrate documented Paprika resources. Select a station to see what it represents; the diagrams are explanations, not live cluster telemetry.</p>
         </div>
@@ -907,14 +314,14 @@
           <article class="anatomy-card">
             <h3>Pipeline workflow</h3>
             <p>Git sources, dependent container steps, and a recorded artifact reference are all part of a Pipeline resource.</p>
-            <iframe title="Interactive isometric diagram of a Paprika Pipeline" src="./anatomy/pipeline.html" loading="lazy" height="565"></iframe>
             <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">Read the Pipeline guide <span aria-hidden="true">↗</span></a>
+            <iframe title="Interactive isometric diagram of a Paprika Pipeline" src="./anatomy/pipeline.html" loading="lazy" height="565"></iframe>
           </article>
           <article class="anatomy-card">
             <h3>Staged promotion</h3>
             <p>A stage can verify a release with automated gates. A manual approval gate is available when configured.</p>
-            <iframe title="Interactive isometric diagram of Paprika promotion gates" src="./anatomy/gates.html" loading="lazy" height="565"></iframe>
             <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/gates.md">Read the gates guide <span aria-hidden="true">↗</span></a>
+            <iframe title="Interactive isometric diagram of Paprika promotion gates" src="./anatomy/gates.html" loading="lazy" height="565"></iframe>
           </article>
         </div>
       </div>
@@ -923,13 +330,13 @@
     <!-- Self-hosted start -->
     <section id="get-started" class="py-24">
       <div class="max-w-5xl">
-        <p class="section-label">Start with the open source operator</p>
+
         <h2 class="section-title">Your cluster. Your first release.</h2>
         <p class="section-desc">Paprika is available under Apache 2.0. The self-hosted path uses a Kubernetes cluster, an image you build or select, and the Helm chart in the repository. Check the cluster context before installing.</p>
         <div class="start-grid">
-          <div class="start-card"><span class="step-number">01 / Prepare</span><h3>Read the requirements</h3><p>Set up Kubernetes, Helm, kubectl, Docker, and cert-manager when enabling webhooks. The chart defaults to a placeholder image, so choose a real image before install.</p></div>
-          <div class="start-card"><span class="step-number">02 / Deploy</span><h3>Follow the install guide</h3><p>Build and push an image, install the chart in your namespace, and check the operator pods. The guide keeps every command together.</p></div>
-          <div class="start-card"><span class="step-number">03 / Learn</span><h3>Create an Application</h3><p>Apply a complete example, inspect its Release, and try a small change. Use the feature guides when you are ready for gates or canary routing.</p></div>
+          <div class="start-card"><h3>Prepare the cluster</h3><p>Set up Kubernetes, Helm, kubectl, Docker, and cert-manager when enabling webhooks. The chart defaults to a placeholder image, so choose a real image before install.</p></div>
+          <div class="start-card"><h3>Install the operator</h3><p>Build and push an image, install the chart in your namespace, and check the operator pods. The guide keeps every command together.</p></div>
+          <div class="start-card"><h3>Create an Application</h3><p>Apply a complete example, inspect its Release, and try a small change. Use the feature guides when you are ready for gates or canary routing.</p></div>
         </div>
         <div class="start-actions">
           <a class="btn-primary" href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Read the getting started guide <span aria-hidden="true">↗</span></a>
@@ -946,7 +353,7 @@
           <p>The CLI is a separate way to inspect Paprika. Its release installer checks the downloaded archive. The example login below connects to the project’s hosted API; a self-hosted installation uses your own server address.</p>
         </div>
         <div class="install-layout">
-          <div class="install-terminal reveal-left">
+          <div class="install-terminal reveal-left" data-ui>
             <div class="install-terminal-header">
               <span>install.sh</span>
               <span>verified release archive</span>
@@ -1003,149 +410,31 @@ go build -o ./bin/paprika ./cmd/paprika</pre>
       </div>
     </section>
 
-    <!-- Features -->
-    <section class="py-24">
-      <div class="max-w-7xl text-center">
-        <div class="reveal"><p class="section-label">Why Paprika</p></div>
-        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">Core pieces of <span>Application Delivery</span></h2></div>
-        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">The project combines these capabilities in Kubernetes resources. Start with a release path, then add the controls you need.</p></div>
-        <div class="feature-grid">
-          <div class="feature-card reveal" style="transition-delay:0s">
-            <div class="feature-header">
-              <div class="feature-icon">
-                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
-              </div>
-              <span class="feature-tag">Application CRD</span>
-            </div>
-            <h3>Unified Resource Model</h3>
-            <p>Define a source and stages in an Application resource. Paprika creates and tracks the related release resources.</p>
-          </div>
-          <div class="feature-card reveal" style="transition-delay:0.05s">
-            <div class="feature-header">
-              <div class="feature-icon">
-                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
-              </div>
-              <span class="feature-tag">Canary steps</span>
-            </div>
-            <h3>Progressive Delivery</h3>
-            <p>Configure canary steps and verification checks for staged rollouts. Rollback behavior depends on the selected strategy and checks.</p>
-          </div>
-          <div class="feature-card reveal" style="transition-delay:0.1s">
-            <div class="feature-header">
-              <div class="feature-icon">
-                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>
-              </div>
-              <span class="feature-tag">Istio + Gateway API</span>
-            </div>
-            <h3>Pluggable Traffic Routing</h3>
-            <p>Built-in support for Istio VirtualServices and Gateway API HTTPRoutes. Per-stage traffic router configuration gives you fine-grained control over how traffic reaches your canaries.</p>
-          </div>
-          <div class="feature-card reveal" style="transition-delay:0.15s">
-            <div class="feature-header">
-              <div class="feature-icon">
-                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
-              </div>
-              <span class="feature-tag">Cluster references</span>
-            </div>
-            <h3>Multi-Cluster by Default</h3>
-            <p>Target a registered cluster from a stage. Review the multi-cluster guide for credentials, setup, and supported modes.</p>
-          </div>
-          <div class="feature-card reveal" style="transition-delay:0.2s">
-            <div class="feature-header">
-              <div class="feature-icon">
-                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
-              </div>
-              <span class="feature-tag">Verify before promote</span>
-            </div>
-            <h3>CEL Health Verification</h3>
-            <p>Use built-in resource health assessment and optional CEL checks to control promotion. Add manual approval gates where people need to review a release.</p>
-          </div>
-          <div class="feature-card reveal" style="transition-delay:0.25s">
-            <div class="feature-header">
-              <div class="feature-icon">
-                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
-              </div>
-              <span class="feature-tag">Live via SSE</span>
-            </div>
-            <h3>Real-time Dashboard</h3>
-            <p>Inspect applications, pipelines, releases, and resources in the dashboard. The API also provides programmatic access to fleet state.</p>
-          </div>
+    <!-- A practical view of the resource model -->
+    <section class="resource-story py-24" aria-labelledby="resource-title">
+      <div class="resource-layout max-w-7xl">
+        <div class="resource-copy">
+
+          <h2 id="resource-title">A release you can inspect.</h2>
+          <p>Start with an Application that names a source and a stage. Paprika creates the related Template, Stage, and Release resources so the delivery path stays inspectable.</p>
+          <ul class="resource-points">
+            <li><strong>Choose a source</strong><span>Render a Git repository or Helm chart.</span></li>
+            <li><strong>Promote in stages</strong><span>Add health checks and approval gates where needed.</span></li>
+            <li><strong>Inspect the result</strong><span>Follow status through Kubernetes resources and the console.</span></li>
+          </ul>
         </div>
-      </div>
-    </section>
-
-    <!-- How It Works -->
-    <section class="py-24">
-      <div class="max-w-7xl text-center">
-        <div class="reveal"><p class="section-label">How It Works</p></div>
-        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">From Source to Production in Three Steps</h2></div>
-        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">Define, promote, verify — Paprika handles rendering, traffic routing, and health checking so you don't have to.</p></div>
-      </div>
-      <div class="max-w-7xl steps">
-        <div class="step reveal-left">
-          <div class="step-icon">
-            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.15V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2h-3.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="m5 16-3 3 3 3"/><path d="m9 22 3-3-3-3"/></svg>
-          </div>
-          <div class="step-content">
-            <div style="display:flex;align-items:center;gap:0.75rem">
-              <span class="step-number">Step 1</span>
-              <h3>Define Your Application</h3>
-            </div>
-            <p>Create an Application that names its source, stages, and release strategy. The getting started guide includes a complete manifest.</p>
-          </div>
-
-        </div>
-
-        <div class="step reveal-left">
-          <div class="step-icon">
-            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"/><path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"/></svg>
-          </div>
-          <div class="step-content">
-            <div style="display:flex;align-items:center;gap:0.75rem">
-              <span class="step-number">Step 2</span>
-              <h3>Promote Through Stages</h3>
-            </div>
-            <p>Paprika renders the source and creates a release. Pipeline steps can run as Kubernetes Jobs; stages can target registered clusters.</p>
-          </div>
-
-        </div>
-
-        <div class="step reveal-left">
-          <div class="step-icon">
-            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
-          </div>
-          <div class="step-content">
-            <div style="display:flex;align-items:center;gap:0.75rem">
-              <span class="step-number">Step 3</span>
-              <h3>Verify and Release</h3>
-            </div>
-            <p>Inspect resource health and release status as each stage progresses. Add canary traffic routing or manual gates when the application needs them.</p>
-          </div>
-
-        </div>
-      </div>
-    </section>
-
-    <!-- Where Paprika fits -->
-    <section class="py-24">
-      <div class="max-w-5xl">
-        <p class="section-label">Where it fits</p>
-        <h2 class="section-title">Build a delivery path around your application</h2>
-        <p class="section-desc">Paprika is an early-stage project for teams willing to run a Kubernetes operator and shape its behavior in the open.</p>
-        <div class="start-grid">
-          <div class="start-card"><h3>Git or Helm sources</h3><p>Render application manifests from a repository or chart and follow each release through the same resource model.</p></div>
-          <div class="start-card"><h3>Progressive releases</h3><p>Add staged promotion, health verification, approval gates, and canary routing where your deployment needs them.</p></div>
-          <div class="start-card"><h3>Operator visibility</h3><p>Inspect application status and drift through Kubernetes resources, the dashboard, CLI, and API.</p></div>
-        </div>
-        <p class="fit-note">Evaluating Paprika alongside an existing delivery stack? Start with a non-production cluster and compare the workflows that matter to your team.</p>
+        <figure class="resource-visual">
+          <img src="./delivery-art.webp" width="1440" height="811" alt="Abstract paprika-colored paths converging into a shared delivery route" loading="lazy" />
+          <figcaption>Illustration of a delivery path. Read the <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Application walkthrough</a> for the actual resource model.</figcaption>
+        </figure>
       </div>
     </section>
 
     <!-- Community -->
     <section id="community" class="py-24">
       <div class="max-w-5xl">
-        <p class="section-label">Build in the open</p>
-        <h2 class="section-title">There is a place to start, even without a code change.</h2>
+
+        <h2 class="section-title">Help shape Paprika.</h2>
         <p class="section-desc">Report a reproducible bug, ask a usage question, suggest a feature, improve an example, or review a pull request. Issues are the current public support and planning channel.</p>
         <div class="community-links">
           <a href="https://github.com/paprikacd/paprika/issues/new/choose"><strong>Ask or report <span aria-hidden="true">↗</span></strong><span>Choose a question, bug, or feature issue template.</span></a>
@@ -1189,6 +478,21 @@ go build -o ./bin/paprika ./cmd/paprika</pre>
   </footer>
 
   <script>
+    // The page stays fully visible without JavaScript or when motion is reduced.
+    if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const enterTargets = document.querySelectorAll('.showcase-head, .showcase-tabs, .showcase-panel, .anatomy-intro, .anatomy-card, .start-card, .install-intro, .install-terminal, .install-notes, .resource-copy, .resource-visual, .community-links a, .cta-content');
+      enterTargets.forEach(element => element.setAttribute('data-enter', ''));
+      const enterObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add('is-visible');
+          enterObserver.unobserve(entry.target);
+        });
+      }, { threshold: 0.08 });
+      enterTargets.forEach(element => enterObserver.observe(element));
+      document.documentElement.classList.add('motion-ready');
+    }
+
     const copyStates = new WeakMap();
     const feedbackStates = new WeakMap();
 
