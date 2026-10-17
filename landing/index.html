@@ -12,9 +12,10 @@
   <meta property="og:title" content="Paprika — Open source Kubernetes application delivery" />
   <meta property="og:description" content="An Apache 2.0 Kubernetes operator for application releases, pipelines, health checks, and progressive delivery." />
   <meta property="og:url" content="https://paprikacd.github.io/paprika/" />
-  <meta property="og:image" content="https://paprikacd.github.io/paprika/paprika-mark.png" />
-  <meta property="og:image:alt" content="Paprika pepper mark" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://paprikacd.github.io/paprika/delivery-art.jpg" />
+  <meta property="og:image:alt" content="Abstract paprika-colored delivery paths on a dark background" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://paprikacd.github.io/paprika/delivery-art.jpg" />
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Paprika","description":"Open source Kubernetes application delivery operator","url":"https://paprikacd.github.io/paprika/","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go"}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -695,6 +696,123 @@
       .reveal,
       .reveal-left { opacity: 1; transform: none; }
     }
+
+    /* Product story: shared surfaces, a restrained brand illustration, and real UI. */
+    :root {
+      --bg: #0c0c0d;
+      --bg-card: #181716;
+      --bg-secondary: #211e1b;
+      --border: #36302b;
+      --fg: #f8f4ef;
+      --fg-muted: #b5aaa0;
+      --primary: #f18457;
+      --primary-glow: rgb(241 132 87 / 0.09);
+      --radius: 0.875rem;
+    }
+    .nav { background: rgb(12 12 13 / 0.9); }
+    .nav-inner { height: 4rem; }
+    .btn-primary, .btn-secondary { min-height: 2.75rem; font-weight: 600; }
+    .btn-primary:hover { opacity: 1; background: #ffa27b; transform: translateY(-2px); }
+    .btn-secondary:hover { border-color: #8c6350; transform: translateY(-2px); }
+    .hero { padding: 5.5rem 0 3.5rem; }
+    .hero-bg {
+      background: linear-gradient(90deg, #0c0c0d 5%, rgb(12 12 13 / 0.72) 52%, rgb(12 12 13 / 0.44)),
+        url('./delivery-art.webp') center bottom / cover no-repeat;
+      opacity: 0.78;
+    }
+    .hero-glow { top: -18rem; opacity: 0.45; }
+    .hero-main { display: grid; align-items: center; gap: clamp(2rem, 5vw, 5rem); }
+    .hero-copy { position: relative; text-align: left; }
+    .hero h1 { max-width: 14ch; font-size: clamp(2.7rem, 5.2vw, 5.4rem); line-height: 1.04; letter-spacing: -0.055em; }
+    .hero p { margin: 1.5rem 0 0; max-width: 35rem; text-align: left; font-size: 1.025rem; line-height: 1.72; color: #d1c6bd; }
+    .hero-actions { justify-content: flex-start; }
+    .hero .hero-footnote { margin-top: 1rem; font: 0.72rem/1.5 var(--font-mono); color: var(--fg-muted); }
+    .hero-preview { animation: rise-in 750ms cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+    .product-shot {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid #665146;
+      border-radius: 1rem;
+      background: #131719;
+      box-shadow: 0 22px 80px rgb(0 0 0 / 0.42), 0 0 0 8px rgb(255 255 255 / 0.025);
+    }
+    .product-shot img { width: 100%; height: auto; background: #f2f3f5; }
+    .product-shot figcaption { padding: 0.6rem 0.9rem; color: #c8bdb4; font: 0.68rem/1.4 var(--font-mono); border-top: 1px solid var(--border); }
+    .shot-chrome { min-height: 2.55rem; display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem 0.85rem; color: #d6c9bf; font: 0.68rem/1.3 var(--font-mono); border-bottom: 1px solid var(--border); }
+    .shot-lights { display: inline-flex; gap: 0.35rem; }
+    .shot-lights i { display: block; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: #744b3d; }
+    .shot-lights i:nth-child(2) { background: #a26947; }
+    .shot-lights i:nth-child(3) { background: #c8925e; }
+    .demo-pill { margin-left: auto; padding: 0.2rem 0.45rem; border: 1px solid #775342; border-radius: 999px; color: #ffae8a; white-space: nowrap; }
+    .hero-paths { max-width: none; margin: 3rem 0 0; }
+    .hero-path, .start-card, .feature-card, .community-links a { border-color: #423a33; background: linear-gradient(145deg, #1d1b19, #151413); }
+    .hero-path, .start-card, .feature-card, .community-links a { transition: border-color .2s, transform .2s, box-shadow .2s; }
+    .hero-path:hover, .start-card:hover, .feature-card:hover, .community-links a:hover { border-color: #b77555; transform: translateY(-3px); box-shadow: 0 12px 30px rgb(0 0 0 / .15); }
+    .hero-path { padding: 1.25rem 1.5rem; }
+    .hero-path strong { font-size: 0.95rem; }
+    .showcase { background: radial-gradient(circle at 12% 10%, rgb(241 132 87 / .08), transparent 38%), #111111; }
+    .showcase-head { display: grid; gap: 1rem; align-items: end; }
+    .showcase .section-title { margin-top: 0.8rem; max-width: 16ch; }
+    .showcase .section-desc { margin: 0; max-width: 30rem; }
+    .showcase-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 2.5rem 0 1.25rem; }
+    .showcase-tabs button {
+      min-height: 2.75rem; padding: 0.55rem 0.95rem; border: 1px solid #4b413a; border-radius: 0.55rem;
+      background: #1b1a19; color: #a9988d; font: 0.72rem var(--font-mono); cursor: pointer;
+      transition: background .2s, border-color .2s, color .2s, transform .2s;
+    }
+    .showcase-tabs button span { margin-left: 0.4rem; font: 600 0.84rem var(--font-sans); }
+    .showcase-tabs button:hover { color: var(--fg); border-color: #b77555; }
+    .showcase-tabs button[aria-selected="true"] { color: #19110d; background: var(--primary); border-color: var(--primary); }
+    .showcase-panel { display: grid; gap: 2rem; align-items: center; animation: rise-in 300ms ease-out both; }
+    .showcase-panel[hidden] { display: none; }
+    .showcase-copy { padding: 0.5rem 0; }
+    .demo-eyebrow { color: var(--primary); font: 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: .07em; }
+    .showcase-copy h3 { max-width: 14ch; margin-top: 1rem; font-size: clamp(1.75rem, 3vw, 2.6rem); line-height: 1.15; letter-spacing: -.035em; }
+    .showcase-copy p { max-width: 35rem; margin-top: 1.1rem; color: var(--fg-muted); font-size: .93rem; line-height: 1.75; }
+    .showcase-copy a { display: inline-block; margin-top: 1.5rem; color: var(--primary); font-size: .82rem; text-decoration: underline; text-underline-offset: .25em; }
+    .showcase-frame { max-width: 100%; }
+    .anatomy-section { border-top: 1px solid var(--border); background: #141210; }
+    .anatomy-intro { max-width: 46rem; margin-bottom: 2.5rem; }
+    .anatomy-intro .section-desc { margin-top: 1rem; }
+    .anatomy-grid { display: grid; gap: 2rem; }
+    .anatomy-card h3 { font-size: 1.35rem; letter-spacing: -.025em; }
+    .anatomy-card > p { max-width: 37rem; margin: .65rem 0 1.15rem; color: var(--fg-muted); font-size: .88rem; line-height: 1.65; }
+    .anatomy-card iframe { display: block; width: 100%; height: 565px; border: 0; }
+    .anatomy-card > a { display: inline-block; margin-top: .5rem; color: var(--primary); font-size: .8rem; text-decoration: underline; text-underline-offset: .2em; }
+    @media (min-width: 840px) {
+      .hero-main { grid-template-columns: minmax(0, .95fr) minmax(0, 1.25fr); }
+      .showcase-head { grid-template-columns: 1fr 1fr; }
+      .showcase-panel { grid-template-columns: minmax(14rem, .6fr) minmax(0, 1.5fr); }
+    }
+    @media (min-width: 1000px) { .anatomy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 839px) {
+      .hero { padding-top: 4.5rem; }
+      .hero-main { gap: 2.5rem; }
+      .hero h1 { max-width: 15ch; }
+      .hero-preview { max-width: 46rem; }
+      .showcase-frame { overflow-x: auto; }
+      .showcase-frame img, .showcase-frame .shot-chrome, .showcase-frame figcaption { min-width: 38rem; }
+    }
+    @media (max-width: 479px) {
+      .nav-inner { min-height: 4rem; height: auto; }
+      .hero { padding-top: 3.25rem; }
+      .hero h1 { font-size: clamp(2.7rem, 12vw, 3.5rem); letter-spacing: -.04em; word-spacing: .035em; }
+      .hero p { font-size: .95rem; }
+      .hero-actions { display: grid; justify-content: stretch; }
+      .hero-actions a { justify-content: center; }
+      .hero-paths { margin-top: 2rem; }
+      .showcase-tabs button { flex: 1 1 auto; }
+      .showcase-tabs button span { display: block; margin: .2rem 0 0; }
+      .hero-preview .shot-chrome { font-size: .57rem; }
+      .hero-preview .shot-lights { display: none; }
+      .hero-preview figcaption { font-size: .58rem; }
+      .anatomy-card iframe { height: 495px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hero-preview, .showcase-panel { animation: none; }
+      .hero-path, .start-card, .feature-card, .community-links a { transform: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -708,6 +826,7 @@
         <span>Paprika</span>
       </a>
       <div class="nav-links">
+        <a href="#product">Product</a>
         <a href="#get-started">Get started</a>
         <a href="#community">Community</a>
         <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Docs</a>
@@ -721,67 +840,82 @@
 
   <main id="main-content" tabindex="-1">
     <!-- Hero -->
-    <section class="hero">
-      <div class="hero-bg"></div>
-      <div class="hero-glow"></div>
-      <div class="hero-content max-w-7xl text-center">
-        <div class="reveal show">
-          <span class="hero-badge">
-            <span class="hero-badge-dot"></span>
-            Apache 2.0 · Open source
-          </span>
-        </div>
-        <h1 class="reveal show" style="transition-delay: 0.1s">
-          Open source Kubernetes delivery, <span>from source to rollout</span>
-        </h1>
-        <p class="reveal show" style="transition-delay: 0.2s">
-          Define applications in Kubernetes, run pipeline steps, and promote releases with health checks and optional traffic shifting. Read the code, deploy the operator on your cluster, and help shape what comes next.
-        </p>
-        <div class="hero-actions reveal show" style="transition-delay: 0.3s">
-          <a href="#get-started" class="btn-primary">
-            Get started
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </a>
-          <a href="https://github.com/paprikacd/paprika" class="btn-secondary">
-            Explore the source
-          </a>
-        </div>
-        <div class="hero-paths reveal show" aria-label="Choose a starting path">
-          <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md" class="hero-path">
-            <strong>Run it yourself <span aria-hidden="true">↗</span></strong>
-            <span>Requirements, image build, Helm install, and a first Application.</span>
-          </a>
-          <a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md" class="hero-path">
-            <strong>Contribute <span aria-hidden="true">↗</span></strong>
-            <span>Find a first issue, set up locally, and propose a change.</span>
-          </a>
-        </div>
-        <div class="hero-viz reveal show" style="transition-delay: 0.4s">
-          <div class="viz-card">
-            <!-- Pipeline SVG -->
-            <svg viewBox="0 -30 660 190" style="width:100%;height:auto;max-height:200px" role="img" aria-label="Source, build and test, staging, canary and production pipeline flow">
-              <defs>
-                <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-                  <circle cx="2" cy="2" r="1" fill="var(--border)"/>
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#dots)" opacity="0.3"/>
-              <!-- Edges -->
-              <g><path d="M80 60 Q170 13 260 -10" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="260" cy="-10" r="2.5" fill="var(--primary)"/></g>
-              <g><path d="M80 60 Q170 83 260 130" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="260" cy="130" r="2.5" fill="var(--primary)"/></g>
-              <g><path d="M260 -10 Q350 13 440 60" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="386" cy="29" r="2.5" fill="var(--primary)"/></g>
-              <g><path d="M260 130 Q350 83 440 60" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="386" cy="71" r="2.5" fill="var(--primary)"/></g>
-              <g><path d="M440 60 Q530 13 620 -10" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="512" cy="21" r="2.5" fill="var(--primary)"/></g>
-              <g><path d="M440 60 Q530 83 620 130" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="476" cy="67" r="2.5" fill="var(--primary)"/></g>
-              <!-- Nodes -->
-              <g><rect x="50" y="49" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="80" y="64" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Source</text></g>
-              <g><rect x="230" y="-21" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="260" y="-6" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Build</text></g>
-              <g><rect x="230" y="119" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="260" y="134" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Test</text></g>
-              <g><rect x="410" y="49" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="440" y="64" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Staging</text></g>
-              <g><rect x="590" y="-21" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="620" y="-6" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Canary</text></g>
-              <g><rect x="590" y="119" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="620" y="134" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Production</text></g>
-            </svg>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-bg" aria-hidden="true"></div>
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-content max-w-7xl">
+        <div class="hero-main">
+          <div class="hero-copy">
+            <span class="hero-badge"><span class="hero-badge-dot" aria-hidden="true"></span> Apache 2.0 · Open source</span>
+            <h1 id="hero-title">Open source Kubernetes delivery, <span>from source to rollout</span></h1>
+            <p>Define applications in Kubernetes, run pipeline steps, and promote releases with health checks and optional traffic shifting. Explore the operator, run it on your cluster, and help shape what comes next.</p>
+            <div class="hero-actions">
+              <a href="#get-started" class="btn-primary">Start self-hosting</a>
+              <a href="https://github.com/paprikacd/paprika" class="btn-secondary">Explore the source</a>
+            </div>
+            <p class="hero-footnote">A project you can inspect, extend, and operate yourself.</p>
           </div>
+          <figure class="hero-preview product-shot">
+            <div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Paprika console / applications</span><span class="demo-pill">Synthetic demo</span></div>
+            <img src="./demo-applications.webp" width="1440" height="900" alt="Paprika application inventory showing demo projects, health, sync state, and available actions" fetchpriority="high" />
+            <figcaption>Actual Paprika UI · local synthetic fleet data</figcaption>
+          </figure>
+        </div>
+        <div class="hero-paths" aria-label="Choose a starting path">
+          <a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md" class="hero-path"><strong>Run it yourself <span aria-hidden="true">↗</span></strong><span>Requirements, image build, Helm install, and a first Application.</span></a>
+          <a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md" class="hero-path"><strong>Contribute <span aria-hidden="true">↗</span></strong><span>Find a first issue, set up locally, and propose a change.</span></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Product views use real UI with deterministic demo data. -->
+    <section id="product" class="showcase py-24" aria-labelledby="product-title">
+      <div class="max-w-7xl">
+        <div class="showcase-head">
+          <div><p class="section-label">Inside the control plane</p><h2 id="product-title" class="section-title">See the work, not just the status.</h2></div>
+          <p class="section-desc">These are screenshots from Paprika’s actual console, connected to a local synthetic fleet. Explore the views that help operators understand a release.</p>
+        </div>
+        <div class="showcase-tabs" role="tablist" aria-label="Paprika console views">
+          <button type="button" id="tab-applications" role="tab" aria-selected="true" aria-controls="panel-applications" tabindex="0">01 <span>Applications</span></button>
+          <button type="button" id="tab-pipelines" role="tab" aria-selected="false" aria-controls="panel-pipelines" tabindex="-1">02 <span>Pipelines</span></button>
+          <button type="button" id="tab-rollouts" role="tab" aria-selected="false" aria-controls="panel-rollouts" tabindex="-1">03 <span>Rollouts</span></button>
+        </div>
+        <div id="panel-applications" role="tabpanel" aria-labelledby="tab-applications" class="showcase-panel">
+          <div class="showcase-copy"><span class="demo-eyebrow">01 / Fleet inventory</span><h3>Find the application that needs you.</h3><p>Group applications by project, filter by health or sync state, and open a target for details. The demo includes healthy, progressing, and degraded examples.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">Explore the application model <span aria-hidden="true">↗</span></a></div>
+          <figure class="showcase-frame product-shot"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Applications</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-applications.webp" width="1440" height="900" alt="Paprika inventory grouping synthetic applications by project with health and sync columns" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data</figcaption></figure>
+        </div>
+        <div id="panel-pipelines" role="tabpanel" aria-labelledby="tab-pipelines" class="showcase-panel" hidden>
+          <div class="showcase-copy"><span class="demo-eyebrow">02 / Pipeline steps</span><h3>Follow each run from build to result.</h3><p>See pipeline phase and step progress in one place. This fixture exercises completed and running examples without connecting to a live cluster.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">Read the pipeline docs <span aria-hidden="true">↗</span></a></div>
+          <figure class="showcase-frame product-shot"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Pipelines</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-pipelines.webp" width="1440" height="900" alt="Paprika pipelines list with synthetic succeeded and running step states" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data</figcaption></figure>
+        </div>
+        <div id="panel-rollouts" role="tabpanel" aria-labelledby="tab-rollouts" class="showcase-panel" hidden>
+          <div class="showcase-copy"><span class="demo-eyebrow">03 / Rollout state</span><h3>Know when a rollout is moving or paused.</h3><p>Inspect each rollout’s target and phase, then open the release for more detail. Strategy and traffic information appear when a rollout is configured for them.</p><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/canary.md">Read the rollout guide <span aria-hidden="true">↗</span></a></div>
+          <figure class="showcase-frame product-shot"><div class="shot-chrome"><span class="shot-lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Rollouts</span><span class="demo-pill">Synthetic demo</span></div><img src="./demo-rollouts.webp" width="1440" height="900" alt="Paprika rollout list showing synthetic healthy, paused, degraded, and progressing phases" loading="lazy" /><figcaption>Actual Paprika UI · local synthetic fleet data</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive isometric explanations built from the Anatomy SVG kit. -->
+    <section id="how-it-works" class="anatomy-section py-24" aria-labelledby="anatomy-title">
+      <div class="max-w-7xl">
+        <div class="anatomy-intro">
+          <p class="section-label">The mechanics</p>
+          <h2 id="anatomy-title" class="section-title">Trace the path from source to stage.</h2>
+          <p class="section-desc">Two interactive bench models illustrate documented Paprika resources. Select a station to see what it represents; the diagrams are explanations, not live cluster telemetry.</p>
+        </div>
+        <div class="anatomy-grid">
+          <article class="anatomy-card">
+            <h3>Pipeline workflow</h3>
+            <p>Git sources, dependent container steps, and a recorded artifact reference are all part of a Pipeline resource.</p>
+            <iframe title="Interactive isometric diagram of a Paprika Pipeline" src="./anatomy/pipeline.html" loading="lazy" height="565"></iframe>
+            <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">Read the Pipeline guide <span aria-hidden="true">↗</span></a>
+          </article>
+          <article class="anatomy-card">
+            <h3>Staged promotion</h3>
+            <p>A stage can verify a release with automated gates. A manual approval gate is available when configured.</p>
+            <iframe title="Interactive isometric diagram of Paprika promotion gates" src="./anatomy/gates.html" loading="lazy" height="565"></iframe>
+            <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/gates.md">Read the gates guide <span aria-hidden="true">↗</span></a>
+          </article>
         </div>
       </div>
     </section>
@@ -1156,6 +1290,31 @@ go build -o ./bin/paprika ./cmd/paprika</pre>
           feedback.textContent = '';
           state.timer = null;
         }, 1800);
+      });
+    });
+
+    const productTabs = Array.from(document.querySelectorAll('.showcase-tabs [role="tab"]'));
+    function selectProductTab(nextTab, moveFocus = false) {
+      productTabs.forEach(tab => {
+        const selected = tab === nextTab;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        document.getElementById(tab.getAttribute('aria-controls')).hidden = !selected;
+      });
+      if (moveFocus) nextTab.focus();
+    }
+    productTabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => selectProductTab(tab));
+      tab.addEventListener('keydown', event => {
+        const next = {
+          ArrowRight: (index + 1) % productTabs.length,
+          ArrowLeft: (index - 1 + productTabs.length) % productTabs.length,
+          Home: 0,
+          End: productTabs.length - 1,
+        }[event.key];
+        if (next === undefined) return;
+        event.preventDefault();
+        selectProductTab(productTabs[next], true);
       });
     });
   </script>
