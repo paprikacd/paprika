@@ -1,6 +1,8 @@
-# Paprika landing diagrams
+# Previous Paprika diagram explorations
 
-The Pipeline and promotion figures are built with the [Anatomy](https://github.com/wheresryan22/anatomy) isometric SVG kit (`iso-kit.mjs`, MIT; see `LICENSE`). The generated `pipeline.html` and `gates.html` are standalone so the GitHub Pages landing page needs no JavaScript framework or third-party runtime.
+These earlier Pipeline and promotion figures are retained as standalone design explorations. The landing page now uses the software-specific figures in [`../diagrams/`](../diagrams/README.md).
+
+The earlier figures are built with the [Anatomy](https://github.com/wheresryan22/anatomy) isometric SVG kit (`iso-kit.mjs`, MIT; see `LICENSE`). The generated `pipeline.html` and `gates.html` are standalone so the GitHub Pages landing page needs no JavaScript framework or third-party runtime.
 
 Regenerate after editing the models:
 
@@ -17,7 +19,7 @@ Both figures use the Paprika console's light, navy, and steel-blue palette, have
 
 ## Custom release proof press
 
-[`release-press/index.html`](release-press/index.html) is a separate, custom 3D Anatomy model embedded near the top of the landing page. Its turning revision die and separate Application bays make the promotion handoff tangible. The bays include health and sync probes; nearby page notes explain fresh desired/live observation and configured verification. A preview control illustrates an optional approval hold. A downstream Release deploys the pinned Git revision under its own Application and is then observed in its target environment.
+[`release-press/index.html`](release-press/index.html) is a separate, custom 3D Anatomy design exploration. It is retained as a standalone model and is no longer embedded in the landing page. Its turning revision die and separate Application bays make the promotion handoff tangible. The bays include health and sync probes; nearby page notes explain fresh desired/live observation and configured verification. A preview control illustrates an optional approval hold. A downstream Release deploys the pinned Git revision under its own Application and is then observed in its target environment.
 
 Edit [`release-press/build.mjs`](release-press/build.mjs), [`release-press/live.js`](release-press/live.js), and [`release-press/style.css`](release-press/style.css) for this model, then regenerate its standalone `index.html` from the build script.
 

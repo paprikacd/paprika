@@ -1,0 +1,266 @@
+/* Paprika adaptations of Gamma MorphTabs, SpotlightSurface and ProgressStack.
+   Component source and adaptation notes: ../docs/design/gamma-provenance.md. */
+
+[data-gamma-tabs],
+[data-spotlight],
+.gamma-step-stack {
+  --gamma-ui-ink: var(--ink, #1d1f20);
+  --gamma-ui-muted: var(--muted, #4f555a);
+  --gamma-ui-accent: var(--steel-dark, #416180);
+  --gamma-ui-surface: var(--white, #fff);
+  --gamma-ui-surface-subtle: var(--steel-pale, #e7f0f8);
+  --gamma-ui-border: var(--line, rgba(29, 31, 32, .16));
+  --gamma-ui-focus: #5980a6;
+  --gamma-ui-ease: cubic-bezier(.2, .75, .25, 1);
+  min-width: 0;
+  color: var(--gamma-ui-ink);
+}
+
+.on-dark [data-gamma-tabs],
+.on-dark [data-spotlight],
+.on-dark .gamma-step-stack,
+[data-gamma-theme="dark"] {
+  --gamma-ui-ink: var(--paper, #f2f2f3);
+  --gamma-ui-muted: #d2dce5;
+  --gamma-ui-accent: #b5d9fd;
+  --gamma-ui-surface: var(--navy-2, #263c50);
+  --gamma-ui-surface-subtle: var(--navy, #1d2d3d);
+  --gamma-ui-border: var(--line-on-dark, rgba(242, 242, 243, .2));
+  --gamma-ui-focus: #b5d9fd;
+}
+
+/* MorphTabs: every panel remains readable until JavaScript validates the set. */
+[data-gamma-tabs] [role="tablist"] {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--gamma-ui-border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--gamma-ui-accent) transparent;
+}
+
+[data-gamma-tabs] [role="tab"] {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 96px;
+  min-height: 56px;
+  margin: 0;
+  padding: 14px 22px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--gamma-ui-muted);
+  font: 600 22px/1.15 var(--display, 'Barlow Condensed', Arial, sans-serif);
+  white-space: nowrap;
+  touch-action: manipulation;
+  cursor: pointer;
+  transition: color 160ms var(--gamma-ui-ease), background 160ms var(--gamma-ui-ease);
+}
+
+[data-gamma-tabs] [role="tab"]:hover,
+[data-gamma-tabs] [role="tab"][aria-selected="true"] {
+  color: var(--gamma-ui-ink);
+  background: color-mix(in srgb, var(--gamma-ui-accent) 8%, transparent);
+}
+
+[data-gamma-tabs] [role="tab"]:disabled,
+[data-gamma-tabs] [role="tab"][aria-disabled="true"] {
+  opacity: .45;
+  cursor: default;
+}
+
+[data-gamma-tabs] [role="tab"]:focus-visible {
+  outline: 2px solid var(--gamma-ui-focus);
+  outline-offset: -4px;
+}
+
+.gamma-tab-index {
+  color: var(--gamma-ui-accent);
+  font: 500 11px/1 var(--mono, monospace);
+  letter-spacing: .04em;
+}
+
+.gamma-tabs-underline {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--gamma-ui-accent);
+  pointer-events: none;
+  transition: width 240ms var(--gamma-ui-ease), transform 240ms var(--gamma-ui-ease);
+}
+
+[data-gamma-tabs]:not([data-gamma-ready]) [role="tab"][aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: var(--gamma-ui-accent);
+}
+
+[data-gamma-tabs] [role="tabpanel"] {
+  min-width: 0;
+  padding-block: 30px 4px;
+}
+
+[data-gamma-tabs]:not([data-gamma-ready]) [role="tabpanel"] + [role="tabpanel"] {
+  margin-top: 28px;
+  border-top: 1px solid var(--gamma-ui-border);
+}
+
+[data-gamma-tabs][data-gamma-ready] [role="tabpanel"][hidden] {
+  display: none !important;
+}
+
+[data-gamma-tabs] [role="tabpanel"]:focus-visible {
+  outline: 2px solid var(--gamma-ui-focus);
+  outline-offset: 6px;
+}
+
+/* SpotlightSurface: one decorative layer; content keeps its native semantics. */
+[data-spotlight] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--gamma-ui-border);
+  border-radius: 0;
+  background: var(--gamma-ui-surface);
+}
+
+[data-spotlight]::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: radial-gradient(
+    circle var(--spotlight-size, 320px) at var(--spotlight-x, 50%) var(--spotlight-y, 50%),
+    color-mix(in srgb, var(--gamma-ui-accent) 16%, transparent),
+    transparent 72%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms var(--gamma-ui-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-spotlight]:hover::before { opacity: 1; }
+}
+
+[data-spotlight]:focus-within::before { opacity: 1; }
+[data-spotlight][data-spotlight-disabled="true"]::before { opacity: 0; }
+
+[data-spotlight] :is(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--gamma-ui-focus);
+  outline-offset: 4px;
+}
+
+/* ProgressStack's layered composition, with readable illustrative step labels.
+   These are process cards, not live telemetry or percentage progress bars. */
+.gamma-step-stack {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 0;
+  list-style: none;
+}
+
+.gamma-step-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 18px;
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--gamma-ui-border);
+  border-left: 3px solid var(--gamma-ui-border);
+  border-radius: 0;
+  background: var(--gamma-ui-surface);
+}
+
+.gamma-step-card[data-state="active"] {
+  z-index: 1;
+  border-left-color: var(--gamma-ui-accent);
+  box-shadow: 6px 6px 0 color-mix(in srgb, var(--gamma-ui-accent) 14%, transparent);
+}
+
+.gamma-step-card[data-state="done"] {
+  margin-inline: 10px;
+  border-left-color: var(--green, #3f6b48);
+}
+
+.gamma-step-card[data-state="pending"] {
+  margin-inline: 10px;
+  background: var(--gamma-ui-surface-subtle);
+}
+
+.gamma-step-card[data-state="hold"] { border-left-color: #9c6c2e; }
+
+.gamma-step-kicker {
+  grid-column: 1;
+  color: var(--gamma-ui-accent);
+  font: 500 11px/1.3 var(--mono, monospace);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.gamma-step-title {
+  grid-column: 1;
+  margin: 0;
+  font: 600 26px/1.12 var(--display, 'Barlow Condensed', Arial, sans-serif);
+  letter-spacing: -.01em;
+}
+
+.gamma-step-detail {
+  grid-column: 1;
+  margin: 0;
+  color: var(--gamma-ui-muted);
+  font: 400 14px/1.45 var(--sans, Barlow, Arial, sans-serif);
+}
+
+.gamma-step-state {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  padding: 5px 8px;
+  border: 1px solid var(--gamma-ui-border);
+  color: var(--gamma-ui-muted);
+  font: 500 10px/1.3 var(--mono, monospace);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.gamma-step-card[data-state="active"] .gamma-step-state {
+  border-color: var(--gamma-ui-accent);
+  color: var(--gamma-ui-accent);
+}
+
+@media (max-width: 600px) {
+  [data-gamma-tabs] [role="tab"] { min-height: 52px; padding-inline: 16px; font-size: 20px; }
+  [data-gamma-tabs] [role="tabpanel"] { padding-top: 22px; }
+  .gamma-step-card { padding: 17px 16px; gap: 6px 10px; }
+  .gamma-step-title { font-size: 24px; }
+  .gamma-step-state { font-size: 9px; padding: 5px 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gamma-tabs] [role="tab"],
+  .gamma-tabs-underline,
+  [data-spotlight]::before { transition: none; }
+  [data-spotlight]::before {
+    background: radial-gradient(
+      circle var(--spotlight-size, 320px) at center,
+      color-mix(in srgb, var(--gamma-ui-accent) 16%, transparent),
+      transparent 72%
+    );
+  }
+}

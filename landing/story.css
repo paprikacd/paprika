@@ -1,0 +1,52 @@
+/* Software delivery diagrams and Gamma component composition. */
+.delivery-story{padding:116px 0 124px;background:var(--white)}
+.story-heading{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:clamp(32px,6vw,96px);align-items:end;margin-bottom:42px}
+.story-heading h2{margin-bottom:0;max-width:none;font-size:clamp(48px,5.2vw,78px)}
+.story-heading .section-lede{margin:0;max-width:35rem}
+.delivery-workbench,.pipeline-workbench{position:relative;border:1px solid var(--line);background:var(--paper);box-shadow:12px 12px 0 var(--steel-pale)}
+.workbench-label{display:flex;justify-content:space-between;align-items:center;gap:16px;min-height:44px;padding:11px 20px;border-bottom:1px solid var(--line);background:var(--navy);color:var(--paper);font:500 12px/1.4 var(--mono)}
+.workbench-label span:last-child{color:#c4d9eb;text-align:right}
+.story-tabs{background:var(--white);padding-inline:12px}
+.software-diagram{position:relative;min-width:0;margin:0;background-color:var(--paper);background-image:linear-gradient(rgba(89,128,166,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(89,128,166,.055) 1px,transparent 1px);background-size:28px 28px}
+.software-diagram picture,.software-diagram img{display:block;width:100%;height:auto}
+.software-diagram figcaption{max-width:none;margin:0;padding:13px 22px;border-top:1px solid var(--line);background:var(--white);font-size:13px;line-height:1.45;color:var(--muted)}
+.delivery-workbench .story-panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.85fr);align-items:start;gap:clamp(24px,5vw,70px);padding:30px 36px 36px;background:var(--white);border-top:1px solid var(--line)}
+.story-panel h3,.pipeline-detail h3{max-width:20ch;font-size:clamp(28px,3vw,40px);margin-bottom:12px}
+.story-panel p,.pipeline-detail p{margin-bottom:0;font-size:17px;line-height:1.5;color:var(--muted)}
+.record-card{padding:23px 26px}
+.record-type{display:block;margin-bottom:12px;color:var(--steel-dark);font:500 11px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.record-card strong{display:block;margin-bottom:8px;font:600 28px/1.1 var(--display)}
+.record-card p{font-size:15px;max-width:45ch;margin:0 0 18px}
+.record-card a{font-size:15px}
+.story-pipeline{background:var(--paper)}
+.pipeline-workbench{background:var(--white);box-shadow:12px 12px 0 rgba(89,128,166,.15)}
+.pipeline-workbench [role=tabpanel]{padding:0}
+.pipeline-detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(28px,5vw,90px);padding:32px 36px 36px;border-top:1px solid var(--line);align-items:center}
+.pipeline-detail code,.story-panel code{font:500 .82em var(--mono);color:var(--steel-dark)}
+.pipeline-detail .gamma-step-stack{padding:0}
+.gamma-step-card[data-state="failed"]{border-left-color:#a33d3d}
+.gamma-step-card[data-state="failed"] .gamma-step-state{color:#923535;border-color:#bc7777}
+.console-evidence{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.7fr);gap:clamp(28px,5vw,80px);align-items:center;margin-top:70px}
+.console-evidence h3{max-width:14ch;font-size:clamp(32px,3.4vw,48px)}
+.console-evidence p{max-width:34ch;font-size:17px;color:var(--muted)}
+.console-evidence .product-frame{box-shadow:8px 8px 0 rgba(89,128,166,.12)}
+.story-promotion .story-heading h2{max-width:none}
+.promotion-diagram{border:1px solid var(--line)}
+.promotion-explanation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:28px}
+.story-callout{padding:26px 25px 28px}
+.story-callout h3{font-size:30px;margin:0 0 13px;max-width:17ch}
+.story-callout p{margin:0;font-size:16px;line-height:1.5;color:var(--muted)}
+.story-callout code{font:500 12px var(--mono);color:var(--steel-dark)}
+.story-guide{display:flex;align-items:center;justify-content:space-between;gap:30px;padding:28px 0 0}
+.story-guide p{margin:0;max-width:62ch;font-size:16px;color:var(--muted)}
+.story-guide a{flex-shrink:0}
+.story-evidence .story-heading .section-lede{color:#d2dce5}
+.evidence-diagram{border:1px solid var(--line-on-dark)}
+.story-evidence .software-diagram figcaption{color:var(--muted)}
+.evidence-summary{display:grid;grid-template-columns:1fr 1fr;gap:clamp(30px,6vw,90px);align-items:start;margin-top:42px}
+.evidence-summary h3{font-size:38px;max-width:18ch}
+.evidence-summary p{color:#d2dce5;font-size:17px;max-width:45ch}
+.evidence-summary .metric-plate{margin:0;grid-template-columns:1fr}
+.evidence-summary .metric-plate div{padding:23px}
+@media(max-width:900px){.story-heading{grid-template-columns:1fr;gap:22px}.story-heading .section-lede{max-width:48rem}.delivery-workbench .story-panel{grid-template-columns:1fr 1fr;gap:24px;padding:28px}.promotion-explanation{grid-template-columns:1fr}.story-callout{display:grid;grid-template-columns:.7fr 1fr;gap:0 26px}.story-callout .record-type{grid-column:1}.story-callout h3{grid-column:1;max-width:20ch}.story-callout p{grid-column:2;grid-row:1/span 2;align-self:center}.story-guide{align-items:start}.console-evidence{grid-template-columns:1fr .7fr;gap:28px}}
+@media(max-width:600px){.delivery-story{padding:80px 0 86px}.story-heading{margin-bottom:28px;gap:20px}.story-heading h2{font-size:clamp(46px,11.7vw,66px);max-width:16ch}.delivery-workbench,.pipeline-workbench{box-shadow:6px 6px 0 var(--steel-pale)}.workbench-label{padding:10px 13px;align-items:start;font-size:10px}.workbench-label span:last-child{max-width:16ch}.story-tabs{padding-inline:0}.delivery-workbench .story-panel{grid-template-columns:1fr;padding:24px 20px;gap:22px}.software-diagram figcaption{padding:12px 15px;font-size:12px}.story-panel h3,.pipeline-detail h3{font-size:31px}.story-panel p,.pipeline-detail p{font-size:16px}.record-card{padding:20px}.record-card strong{font-size:26px}.record-card p{font-size:15px}.pipeline-detail{grid-template-columns:1fr;padding:24px 20px;gap:26px}.pipeline-detail .gamma-step-title{font-size:21px}.pipeline-detail .gamma-step-card{padding:15px 12px}.pipeline-detail .gamma-step-state{white-space:normal;max-width:13ch;text-align:center}.console-evidence{grid-template-columns:1fr;margin-top:44px;gap:28px}.console-evidence h3{font-size:36px}.console-evidence p{font-size:16px;max-width:100%}.promotion-explanation{gap:14px;margin-top:20px}.story-callout{display:block;padding:23px}.story-callout h3{font-size:29px}.story-callout p{font-size:15px}.story-guide{display:grid;gap:18px;padding-top:26px}.story-guide p{font-size:15px}.story-guide a{justify-self:start}.evidence-summary{grid-template-columns:1fr;gap:28px;margin-top:30px}.evidence-summary h3{font-size:34px}.evidence-summary p{font-size:16px}}
