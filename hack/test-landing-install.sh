@@ -96,9 +96,6 @@ status = "paprika status"
 pin = "curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh"
 install_dir = 'curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh'
 expected_targets = {
-    "hero-install-command": install,
-    "hero-login-command": login,
-    "hero-status-command": status,
     "install-latest-command": install,
     "install-version-command": pin,
     "install-dir-command": install_dir,
@@ -120,18 +117,17 @@ for button in buttons:
         fail(f"copy target {target!r} must be expected and unique")
     button_targets.add(target)
     describedby = button.attrs.get("aria-describedby")
-    expected_group = "hero" if target.startswith("hero-") else "install"
-    if describedby != f"{expected_group}-copy-guidance" or button.attrs.get("data-copy-feedback") != f"{expected_group}-copy-feedback":
+    if describedby != "install-copy-guidance" or button.attrs.get("data-copy-feedback") != "install-copy-feedback":
         fail(f"copy control for {target!r} must reference visible fallback guidance")
 
-for region_id in ("hero-copy-feedback", "install-copy-feedback"):
+for region_id in ("install-copy-feedback",):
     region = ids.get(region_id)
     if not region or not visible(region) or region.attrs.get("role") != "status" or region.attrs.get("aria-live") != "polite":
         fail(f"{region_id} must be a polite visible status region")
     if "sr-only" in region.classes:
         fail(f"{region_id} must be visually available")
 
-for guidance_id in ("hero-copy-guidance", "install-copy-guidance"):
+for guidance_id in ("install-copy-guidance",):
     guidance = ids.get(guidance_id)
     if not guidance or not visible(guidance) or "select" not in guidance.text().lower() or "copy" not in guidance.text().lower():
         fail(f"{guidance_id} must give visible manual-copy recovery guidance")
@@ -141,10 +137,10 @@ def has_anchor(container, href, text):
 
 nav = next((node for node in nodes if node.tag == "header" and "nav" in node.classes), None)
 hero = next((node for node in nodes if node.tag == "section" and "hero" in node.classes), None)
-if not nav or not has_anchor(nav, "#install", "Install CLI"):
-    fail("nav must contain an exact visible Install CLI link to #install")
-if not hero or not has_anchor(hero, "#install", "Install CLI"):
-    fail("hero must contain an exact visible Install CLI link to #install")
+if not nav or not has_anchor(nav, "#get-started", "Get started"):
+    fail("nav must link to the self-hosted getting started section")
+if not hero or not has_anchor(hero, "#get-started", "Get started"):
+    fail("hero must link to the self-hosted getting started section")
 
 skip = next((node for node in nodes if node.tag == "a" and "skip-link" in node.classes), None)
 main = ids.get("main-content")

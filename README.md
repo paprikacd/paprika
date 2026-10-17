@@ -1,13 +1,21 @@
 # paprika
 
-[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/paprikacd/paprika/actions/workflows/ci.yml/badge.svg)](https://github.com/paprikacd/paprika/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/benebsworth/paprika)](https://goreportcard.com/report/github.com/benebsworth/paprika)
 
-**paprika** is a Kubernetes-native application delivery platform that consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single operator. It replaces the need for separate ArgoCD, Argo Rollouts, and Argo Workflows deployments with a unified, controller-driven approach.
+**paprika** is an Apache 2.0 Kubernetes operator for application delivery. It models sources, pipelines, stages, and releases with Kubernetes resources and supports health checks and progressive rollout strategies. The project is early-stage; evaluate it on a non-production cluster before depending on it for critical workloads.
 
 Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika extends Kubernetes with Custom Resource Definitions (CRDs) that model the entire application lifecycle in familiar Kubernetes YAML.
+
+## Start here
+
+- [Self-host Paprika and create a first Application](docs/getting-started.md)
+- [Browse the feature guide](docs/features.md)
+- [Ask a question, report a bug, or suggest a feature](https://github.com/paprikacd/paprika/issues/new/choose)
+- [Contribute code, tests, documentation, or examples](CONTRIBUTING.md)
+- [Report security issues privately](SECURITY.md) and read the [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Visit the project landing page](https://paprikacd.github.io/paprika/)
 
 ## Features
 
@@ -27,7 +35,7 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 
 ## CLI Quickstart
 
-Install the latest Paprika CLI, authenticate with the hosted server, and check its status:
+To inspect the hosted Paprika API with the CLI, install the latest release and authenticate. For a self-hosted operator, follow the [getting started guide](docs/getting-started.md) and use your own server address:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
@@ -126,9 +134,9 @@ relationship to DeepHost's local E2E suite.
 
 ### Prerequisites
 
-- Go 1.25+, Docker, kubectl
+- Go 1.26+, Docker, kubectl, Helm
 - Access to a Kubernetes cluster (v1.29+ recommended)
-- [cert-manager](https://cert-manager.io/docs/installation/) installed on the cluster (for webhook certificates)
+- [cert-manager](https://cert-manager.io/docs/installation/) if you enable admission webhooks
 
 ### Build & Deploy
 
@@ -136,13 +144,13 @@ relationship to DeepHost's local E2E suite.
 # Clone the repository
 git clone https://github.com/paprikacd/paprika.git
 cd paprika
+kubectl config current-context
 
-# Install CRDs
-make install
+# Build and push an image to a registry your cluster can pull from
+make docker-build docker-push IMG=YOUR_REGISTRY/paprika:YOUR_TAG
 
-# Build and deploy the operator
-make docker-build docker-push IMG=ghcr.io/paprikacd/paprika:latest
-make deploy IMG=ghcr.io/paprikacd/paprika:latest
+# Install the chart with that image
+make helm-deploy IMG=YOUR_REGISTRY/paprika:YOUR_TAG
 
 # Verify the operator is running
 kubectl get pods -n paprika-system
@@ -151,10 +159,10 @@ kubectl get pods -n paprika-system
 ### Deploy a Sample Application
 
 ```sh
-kubectl apply -f config/samples/
+kubectl apply -f your-application.yaml
 ```
 
-This creates an `Application` resource that deploys a demo Helm chart, creating a Template, Stage, and Release automatically.
+Use the complete example and status checks in the [getting started guide](docs/getting-started.md); the repository sample Application is a scaffold, not a ready-to-deploy demo.
 
 ### Run Locally
 
