@@ -139,7 +139,7 @@ nav = next((node for node in nodes if node.tag == "header" and "nav" in node.cla
 hero = next((node for node in nodes if node.tag == "section" and "hero" in node.classes), None)
 if not nav or not has_anchor(nav, "#get-started", "Get started"):
     fail("nav must link to the self-hosted getting started section")
-if not hero or not has_anchor(hero, "#get-started", "Get started"):
+if not hero or not has_anchor(hero, "#get-started", "Start self-hosting"):
     fail("hero must link to the self-hosted getting started section")
 
 skip = next((node for node in nodes if node.tag == "a" and "skip-link" in node.classes), None)
