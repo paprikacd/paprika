@@ -56,6 +56,14 @@ The Skills & MCP section presents the one repository-shipped Paprika operations 
 
 Gamma CopyField's integrated action/recovery pattern informs the command surfaces; the existing clipboard implementation supplies fallback selection and avoids taking focus after asynchronous completion. Gamma DisclosureStack's visual pattern is adapted to native `<details>` elements for capability descriptions. Preserve selectable code, pending/success/failure feedback, named copy controls, and the read/write scope distinction.
 
+## Captured console tour
+
+[`tour.html`](tour.html) follows one synthetic Application through inventory, Overview target health, Application detail, its Kubernetes resource hierarchy and resource logs. The UI images come from the real compiled console connected to `test/fleetconsole`; the surrounding navigation is a guided capture viewer. Its highlighted targets advance the tour. Controls drawn inside the captures are not live controls. Keep that distinction visible, including on narrow screens and in the enlarged-image dialog.
+
+The example `team-00/checkout-service` is healthy and synced now. Its synthetic workload logs replay an earlier dependency failure and recovery. Preserve that sequence across the app state, resource manifests, events, health history and log timestamps. Never turn it into an active incident through copy or decorative status badges. Capture provenance and refresh instructions live in [`docs/design/synthetic-tour.md`](../docs/design/synthetic-tour.md).
+
+Use steel focus plates and restrained amber attention cues, a changing screenshot composition, readable narrative and fixed five-step progress. Keep native Previous/Next/Replay actions, keyboard Left/Right/Home/End navigation, a zoomable image and all five readable stages when JavaScript is disabled. Images remain selectable evidence; they must not introduce speculative product features.
+
 ## Content and review
 
 Check claims against the current [feature list](../docs/features.md), [getting-started guide](../docs/getting-started.md), [Pipeline guide](../docs/guides/pipelines.md), and [promotion guide](../docs/guides/environment-promotion.md). A Pipeline is optional for a Release. Staged promotion is a configured link between separate Applications.
