@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"k8s.io/apimachinery/pkg/types"
@@ -16,6 +17,7 @@ import (
 
 	clusters "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 // LinkPrefix is where the generated Connect handler mounts the stream.
@@ -43,11 +45,16 @@ func (s *LinkServer) Connect(
 ) error {
 	cluster, key, token, err := s.handshake(ctx, stream)
 	if err != nil {
+		metrics.SatelliteLinkEvents.Add(ctx, 1, metrics.SatelliteLinkAttributes(metrics.SatelliteLinkRefused))
 		return err
 	}
 
 	link := s.hub.Attach(key)
-	defer s.hub.Detach(key, link)
+	metrics.SatelliteLinkEvents.Add(ctx, 1, metrics.SatelliteLinkAttributes(metrics.SatelliteLinkAttached))
+	defer func() {
+		s.hub.Detach(key, link)
+		metrics.SatelliteLinkEvents.Add(ctx, 1, metrics.SatelliteLinkAttributes(metrics.SatelliteLinkDetached))
+	}()
 
 	logger := log.FromContext(ctx)
 	logger.Info("Satellite link attached", "cluster", key.String())
@@ -189,6 +196,14 @@ func (s *LinkServer) acceptUpdate(
 	update *paprikav1.SatelliteUpdate,
 	token string,
 ) error {
+	started := time.Now()
+	outcome := metrics.SatelliteReportRejected
+	defer func() {
+		attrs := metrics.SatelliteReportAttributes(metrics.SatelliteTransportStream, outcome)
+		metrics.SatelliteReports.Add(ctx, 1, attrs)
+		metrics.SatelliteReportDuration.Record(ctx, time.Since(started).Seconds(), attrs)
+	}()
+
 	report, err := decodeReport(update.GetReport())
 	if err != nil {
 		// An undecodable report is a satellite bug or a version mismatch. It is
@@ -207,10 +222,13 @@ func (s *LinkServer) acceptUpdate(
 			}); sendErr != nil {
 				return fmt.Errorf("send resync acknowledgement: %w", sendErr)
 			}
+			outcome = metrics.SatelliteReportResync
 			return nil
 		}
 		return fmt.Errorf("accept satellite update: %w", err)
 	}
+	outcome = metrics.SatelliteReportAccepted
+	metrics.SatelliteReportBytes.Record(ctx, int64(len(update.GetReport())))
 	if sendErr := stream.Send(&paprikav1.SatelliteFrame{
 		Frame: &paprikav1.SatelliteFrame_Ack{Ack: &paprikav1.SatelliteAck{
 			Sequence: report.Sequence,

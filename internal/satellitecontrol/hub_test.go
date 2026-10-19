@@ -124,3 +124,44 @@ func TestSatelliteLinkDropsResultsNobodyWaitsFor(t *testing.T) {
 	// panic.
 	link.complete(&paprikav1.SatelliteTaskResult{Id: "unknown"})
 }
+
+// TestConnectedClustersReflectsAttachAndDetach covers the source of the link
+// gauge: a cluster appears while its link is held and disappears afterwards.
+func TestConnectedClustersReflectsAttachAndDetach(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	first := types.NamespacedName{Namespace: "paprika-system", Name: "edge-a"}
+	second := types.NamespacedName{Namespace: "paprika-system", Name: "edge-b"}
+
+	linkA := hub.Attach(first)
+	hub.Attach(second)
+
+	got := hub.ConnectedClusters()
+	if len(got) != 2 {
+		t.Fatalf("connected clusters = %v, want two", got)
+	}
+
+	hub.Detach(first, linkA)
+	got = hub.ConnectedClusters()
+	if len(got) != 1 || got[0] != second {
+		t.Fatalf("connected clusters after detach = %v, want only %s", got, second)
+	}
+}
+
+// TestSatelliteTaskActionNamesTheApplyPath keeps the metric label set bounded:
+// an unset or future task kind reports as unknown rather than inventing a name.
+func TestSatelliteTaskActionNamesTheApplyPath(t *testing.T) {
+	t.Parallel()
+
+	apply := &paprikav1.SatelliteTask{Task: &paprikav1.SatelliteTask_Apply{Apply: &paprikav1.SatelliteApplyTask{}}}
+	if got := satelliteTaskAction(apply); got != "apply" {
+		t.Fatalf("apply action = %q, want apply", got)
+	}
+	if got := satelliteTaskAction(&paprikav1.SatelliteTask{}); got != "unknown" {
+		t.Fatalf("empty action = %q, want unknown", got)
+	}
+	if got := satelliteTaskAction(nil); got != "unknown" {
+		t.Fatalf("nil action = %q, want unknown", got)
+	}
+}

@@ -40,6 +40,7 @@ import (
 	"github.com/benebsworth/paprika/internal/clusterconfig"
 	"github.com/benebsworth/paprika/internal/clusterprovider"
 	"github.com/benebsworth/paprika/internal/kube"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 )
 
@@ -502,8 +503,42 @@ func (r *ClusterReconciler) updatePhase(ctx context.Context, cluster *clustersv1
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// satelliteObservations is the scrape-time view of every satellite
+// registration: how long ago it last reported and how much it reported.
+func (r *ClusterReconciler) satelliteObservations(ctx context.Context) []metrics.SatelliteObservation {
+	var list clustersv1alpha1.ClusterList
+	if err := r.client.List(ctx, &list); err != nil {
+		return nil
+	}
+	now := time.Now()
+	out := make([]metrics.SatelliteObservation, 0, len(list.Items))
+	for i := range list.Items {
+		cluster := &list.Items[i]
+		state := cluster.Status.Satellite
+		if state == nil && cluster.Spec.Mode != clustersv1alpha1.ClusterModeAgent {
+			continue
+		}
+		observation := metrics.SatelliteObservation{Namespace: cluster.Namespace, Name: cluster.Name}
+		if state != nil {
+			observation.Applications = int64(len(state.Applications))
+			if state.LastSeen != nil {
+				observation.HasReport = true
+				observation.ReportAgeSeconds = now.Sub(state.LastSeen.Time).Seconds()
+			}
+		}
+		out = append(out, observation)
+	}
+	return out
+}
+
 func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.client = mgr.GetClient()
+	// Report freshness is what tells an operator a satellite went quiet: the
+	// fleet view keeps serving the last accepted report, so nothing else in the
+	// process knows how old it is.
+	if _, err := metrics.RegisterSatelliteGauges(r.satelliteObservations); err != nil {
+		return fmt.Errorf("register satellite gauges: %w", err)
+	}
 	err := ctrl.NewControllerManagedBy(mgr).
 		For(&clustersv1alpha1.Cluster{}).
 		Named("clusters-cluster").

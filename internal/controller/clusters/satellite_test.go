@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 func TestReconcileSatelliteFreshnessAndDisabled(t *testing.T) {
@@ -68,5 +69,63 @@ func TestReconcileSatelliteFreshnessAndDisabled(t *testing.T) {
 				t.Fatal("health controller clobbered reporting baseline")
 			}
 		})
+	}
+}
+
+// TestSatelliteObservationsCoverTheRegistrationsThatMatter pins which clusters
+// the freshness gauge describes: satellites, plus agent registrations that have
+// not reported yet. A direct cluster has no report to be stale.
+func TestSatelliteObservationsCoverTheRegistrationsThatMatter(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	if err := clustersv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+	reported := time.Now().Add(-90 * time.Second)
+	satellite := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "reported", Namespace: "paprika-system"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeAgent, Satellite: &clustersv1alpha1.SatelliteSpec{}},
+		Status: clustersv1alpha1.ClusterStatus{Satellite: &clustersv1alpha1.SatelliteStatus{
+			LastSeen:     &metav1.Time{Time: reported},
+			Applications: []clustersv1alpha1.SatelliteApplication{{Name: "web"}, {Name: "api"}},
+		}},
+	}
+	connecting := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "connecting", Namespace: "paprika-system"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeAgent, Satellite: &clustersv1alpha1.SatelliteSpec{}},
+	}
+	direct := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "direct", Namespace: "paprika-system"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeDirect},
+	}
+
+	r := &ClusterReconciler{client: fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(satellite, connecting, direct).Build()}
+
+	observations := r.satelliteObservations(context.Background())
+	byName := make(map[string]metrics.SatelliteObservation, len(observations))
+	for _, observation := range observations {
+		byName[observation.Name] = observation
+	}
+	if _, ok := byName["direct"]; ok {
+		t.Fatal("a direct cluster should not appear in satellite freshness")
+	}
+	reportedState, ok := byName["reported"]
+	if !ok {
+		t.Fatal("the reporting satellite is missing")
+	}
+	if !reportedState.HasReport || reportedState.ReportAgeSeconds < 60 {
+		t.Fatalf("reported age = %+v, want a report roughly 90s old", reportedState)
+	}
+	if reportedState.Applications != 2 {
+		t.Fatalf("applications = %d, want 2", reportedState.Applications)
+	}
+	connectingState, ok := byName["connecting"]
+	if !ok {
+		t.Fatal("an agent registration without a report must still be counted")
+	}
+	if connectingState.HasReport {
+		t.Fatal("a registration that never reported must not carry an age")
 	}
 }

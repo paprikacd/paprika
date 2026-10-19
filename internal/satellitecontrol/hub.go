@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 // ErrSatelliteOffline means no stream is attached for that registration. It is
@@ -100,10 +101,19 @@ func (h *Hub) Dispatch(
 	key types.NamespacedName,
 	task *paprikav1.SatelliteTask,
 ) (*paprikav1.SatelliteTaskResult, error) {
+	started := time.Now()
+	outcome := metrics.SatelliteTaskError
+	defer func() {
+		attrs := metrics.SatelliteTaskAttributes(satelliteTaskAction(task), outcome)
+		metrics.SatelliteTasks.Add(ctx, 1, attrs)
+		metrics.SatelliteTaskDuration.Record(ctx, time.Since(started).Seconds(), attrs)
+	}()
+
 	h.mu.Lock()
 	link, ok := h.links[key]
 	h.mu.Unlock()
 	if !ok {
+		outcome = metrics.SatelliteTaskOffline
 		return nil, fmt.Errorf("%w: %s/%s", ErrSatelliteOffline, key.Namespace, key.Name)
 	}
 
@@ -117,6 +127,7 @@ func (h *Hub) Dispatch(
 	link.mu.Lock()
 	if link.closed {
 		link.mu.Unlock()
+		outcome = metrics.SatelliteTaskOffline
 		return nil, fmt.Errorf("%w: %s/%s", ErrSatelliteOffline, key.Namespace, key.Name)
 	}
 	link.waiting[id] = result
@@ -131,9 +142,40 @@ func (h *Hub) Dispatch(
 
 	select {
 	case res := <-result:
+		if res.GetOk() {
+			outcome = metrics.SatelliteTaskOK
+		} else {
+			outcome = metrics.SatelliteTaskFailed
+		}
 		return res, nil
 	case <-ctx.Done():
 		return nil, fmt.Errorf("await result from %s/%s: %w", key.Namespace, key.Name, ctx.Err())
+	}
+}
+
+// ConnectedClusters lists the registrations with an attached link, for the
+// link gauge. It is a snapshot; a link can detach right after the read, which
+// is the same staleness any scrape of a live connection has.
+func (h *Hub) ConnectedClusters() []types.NamespacedName {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]types.NamespacedName, 0, len(h.links))
+	for key := range h.links {
+		out = append(out, key)
+	}
+	return out
+}
+
+// satelliteTaskAction names the task kind for metrics without admitting future
+// kinds into the label set silently.
+func satelliteTaskAction(task *paprikav1.SatelliteTask) string {
+	switch {
+	case task == nil:
+		return "unknown"
+	case task.GetApply() != nil:
+		return "apply"
+	default:
+		return "unknown"
 	}
 }
 

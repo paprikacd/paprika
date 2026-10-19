@@ -17,8 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
@@ -47,9 +45,9 @@ func refuse(code int, message string) error { return &reportError{code, message}
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
-	outcome := "rejected"
+	outcome := metrics.SatelliteReportRejected
 	defer func(ctx context.Context) {
-		attrs := metric.WithAttributes(attribute.String("outcome", outcome))
+		attrs := metrics.SatelliteReportAttributes(metrics.SatelliteTransportPost, outcome)
 		metrics.SatelliteReports.Add(ctx, 1, attrs)
 		metrics.SatelliteReportDuration.Record(ctx, time.Since(started).Seconds(), attrs)
 	}(r.Context())
@@ -91,7 +89,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "satellite report persistence failed", http.StatusServiceUnavailable)
 		return
 	}
-	outcome = "accepted"
+	outcome = metrics.SatelliteReportAccepted
 	metrics.SatelliteReportBytes.Record(r.Context(), int64(len(body)))
 	w.WriteHeader(http.StatusNoContent)
 }

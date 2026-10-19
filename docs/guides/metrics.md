@@ -83,12 +83,37 @@ counter and unit suffixes.
 
 | OTel instrument | Type | Attributes | Description |
 |-----------------|------|------------|-------------|
-| `paprika.satellite.reports` | Counter | `outcome` | Accepted or rejected report requests |
-| `paprika.satellite.report.duration` | Histogram (seconds) | `outcome` | Time to authenticate and persist a report |
+| `paprika.satellite.reports` | Counter | `transport`, `outcome` | Reports by transport (`post`, `stream`) and outcome (`accepted`, `resync`, `rejected`) |
+| `paprika.satellite.report.duration` | Histogram (seconds) | `transport`, `outcome` | Time to authenticate and persist a report |
 | `paprika.satellite.report.bytes` | Histogram (bytes) | none | Uncompressed size of accepted reports |
+| `paprika.satellite.link.events` | Counter | `event` | Link lifecycle: `attached`, `detached`, `refused` |
+| `paprika.satellite.tasks` | Counter | `action`, `outcome` | Dispatched tasks by outcome (`ok`, `failed`, `offline`, `error`) |
+| `paprika.satellite.task.duration` | Histogram (seconds) | `action` | Round-trip duration of a dispatched task |
+| `paprika.satellite.link.up` | Gauge | `namespace`, `cluster` | Present with value 1 while a cluster holds a link |
+| `paprika.satellite.report.age` | Gauge (seconds) | `namespace`, `cluster` | Time since the last accepted report; absent before the first one |
+| `paprika.satellite.applications` | Gauge | `namespace`, `cluster` | Applications in the last accepted report |
 
-Connection freshness and last-known inventory are available through fleet
-cluster views and `Cluster.status.satellite.lastSeen`. See the
+The two transports report separately because they fail separately: a link that
+stops accepting reports and a POST endpoint returning 401 are different
+incidents. `outcome="resync"` is not a failure — the control plane is asking the
+satellite to open a new session.
+
+Report age is the signal that a satellite went quiet. The fleet view keeps
+serving the last accepted report, so nothing else in the process knows how old
+it is. `link.up` covers the case where the connection is gone but the age has
+not crossed the alert threshold yet; the series is absent when no link exists.
+
+```promql
+# A satellite that has not reported in five minutes.
+paprika_satellite_report_age_seconds > 300
+# Link churn: more than three detaches in ten minutes.
+sum by (cluster) (increase(paprika_satellite_link_events_total{event="detached"}[10m])) > 3
+# Refused handshakes mean a credential or cluster-identity problem.
+increase(paprika_satellite_link_events_total{event="refused"}[15m]) > 0
+```
+
+Name suffixes follow the exporter's conventions: counters end in `_total` and
+gauges with unit `1` end in `_ratio`. See the
 [multi-cluster guide](multi-cluster.md) for heartbeat and timeout settings.
 
 ### Kubernetes Gauges

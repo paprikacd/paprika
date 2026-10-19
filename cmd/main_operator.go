@@ -208,7 +208,7 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("build operator governance: %w", err)
 	}
 
-	deps.satelliteHub = satellitecontrol.NewHub()
+	deps.satelliteHub = newInstrumentedHub()
 
 	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.OperatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.tuning(), cfg.EnableWebhooks, gov.capacityProviders); err != nil {
 		return fmt.Errorf("setup operator controllers: %w", err)
