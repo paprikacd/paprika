@@ -207,52 +207,202 @@ var findDefaultCredentials = google.FindDefaultCredentials
 // refusal would misdescribe what happened.
 var ErrNoAmbientCredentials = errors.New("no Google application-default credentials found")
 
+// ErrAmbientEndpointRefused marks a provider that names no credential
+// document but points the connector at a host outside googleapis.com, over
+// plain HTTP, or with TLS verification off. Ambient identity is the
+// gateway's own, so its token goes only to Google over verified TLS; a
+// custom endpoint needs its own credentialsSecretRef. Connectors map it to
+// StateNotConfigured: nothing was sent.
+var ErrAmbientEndpointRefused = errors.New("ambient Google credentials are sent only to googleapis.com over verified TLS")
+
 // Token-source failures (an unreachable token endpoint, a refused grant)
 // surface as request errors from the returned client, classified by Do —
 // that is the honest report of what happened.
 //
-// InsecureSkipTLS applies only to backend API calls. OAuth token exchanges
-// always verify certificates, including when the backend uses a local
-// self-signed certificate.
-func Client(ctx context.Context, credentials []byte, insecureSkipTLS bool) (*http.Client, error) {
+// cfg.InsecureSkipTLS applies only to backend API calls. OAuth token
+// exchanges always verify certificates, including when the backend uses a
+// local self-signed certificate.
+func Client(ctx context.Context, cfg Config, credentials []byte) (*http.Client, error) {
 	// Token exchanges must not follow redirects either: a 307/308 could
 	// otherwise replay a signed JWT or federated credential to another host.
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, secureHTTPClient)
 	var tokenSource oauth2.TokenSource
+	var err error
 	if len(bytes.TrimSpace(credentials)) == 0 {
-		adc, err := findDefaultCredentials(ctx, scopes...)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrNoAmbientCredentials, err)
-		}
-		tokenSource = adc.TokenSource
+		tokenSource, err = ambientTokenSource(ctx, cfg)
 	} else {
-		var head struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(credentials, &head); err != nil {
-			return nil, fmt.Errorf("credential document is not valid JSON: %w", err)
-		}
-		switch head.Type {
-		case string(google.ServiceAccount), string(google.ExternalAccount),
-			string(google.ImpersonatedServiceAccount):
-		default:
-			return nil, errors.New("unsupported credential type; expected service_account, external_account or impersonated_service_account")
-		}
-
-		creds, err := google.CredentialsFromJSONWithType(ctx, credentials, google.CredentialsType(head.Type), scopes...)
-		if err != nil {
-			// Credential loaders may quote a token URL or other fields.
-			return nil, errors.New("parsing credential document failed")
-		}
-		tokenSource = creds.TokenSource
+		tokenSource, err = documentTokenSource(ctx, credentials)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	client := oauth2.NewClient(ctx, tokenSource)
-	if insecureSkipTLS {
+	if cfg.InsecureSkipTLS {
 		client.Transport = &oauth2.Transport{Source: tokenSource, Base: insecureTransport}
 	}
 	client.CheckRedirect = httphelp.RejectRedirect
 	return client, nil
+}
+
+// ambientTokenSource resolves the gateway's own Google identity, once
+// checkAmbientEndpoint has established that cfg sends it only to Google.
+func ambientTokenSource(ctx context.Context, cfg Config) (oauth2.TokenSource, error) {
+	if err := checkAmbientEndpoint(cfg); err != nil {
+		return nil, err
+	}
+	adc, err := findDefaultCredentials(ctx, scopes...)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNoAmbientCredentials, err)
+	}
+	return adc.TokenSource, nil
+}
+
+// documentTokenSource loads a credential document of one of the accepted
+// types, after checkFederatedCredential has pinned its token-bearing URLs.
+func documentTokenSource(ctx context.Context, credentials []byte) (oauth2.TokenSource, error) {
+	var head struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(credentials, &head); err != nil {
+		return nil, fmt.Errorf("credential document is not valid JSON: %w", err)
+	}
+	switch head.Type {
+	case string(google.ServiceAccount), string(google.ExternalAccount),
+		string(google.ImpersonatedServiceAccount):
+	default:
+		return nil, errors.New("unsupported credential type; expected service_account, external_account or impersonated_service_account")
+	}
+	if err := checkFederatedCredential(credentials, 0); err != nil {
+		return nil, err
+	}
+	creds, err := google.CredentialsFromJSONWithType(ctx, credentials, google.CredentialsType(head.Type), scopes...)
+	if err != nil {
+		// Credential loaders may quote a token URL or other fields.
+		return nil, errors.New("parsing credential document failed")
+	}
+	return creds.TokenSource, nil
+}
+
+// checkAmbientEndpoint refuses to attach ambient identity to anything but a
+// Google API host over verified TLS. Without it, a provider with no
+// credentials and a custom endpoint would hand the gateway's own Google
+// token to whatever host the endpoint names.
+func checkAmbientEndpoint(cfg Config) error {
+	if cfg.InsecureSkipTLS {
+		return ErrAmbientEndpointRefused
+	}
+	if cfg.Endpoint == "" {
+		return nil
+	}
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil || u.Scheme != "https" || !googleAPIsHost(u.Hostname()) {
+		return ErrAmbientEndpointRefused
+	}
+	return nil
+}
+
+func googleAPIsHost(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	return host == "googleapis.com" || strings.HasSuffix(host, ".googleapis.com")
+}
+
+// federatedCredential holds the fields of an external_account or
+// impersonated_service_account document that decide where x/oauth2 sends
+// tokens and what it runs. x/oauth2 does not validate them, and its
+// documentation asks callers that accept a credential document from
+// elsewhere to do so.
+//
+//nolint:tagliatelle // Google credential documents use snake_case wire fields.
+type federatedCredential struct {
+	Type                           string          `json:"type"`
+	TokenURL                       string          `json:"token_url"`
+	TokenInfoURL                   string          `json:"token_info_url"`
+	ServiceAccountImpersonationURL string          `json:"service_account_impersonation_url"`
+	UniverseDomain                 string          `json:"universe_domain"`
+	CredentialSource               json.RawMessage `json:"credential_source"`
+	SourceCredentials              json.RawMessage `json:"source_credentials"`
+}
+
+// maxFederatedCredentialDepth bounds impersonation chains: a document
+// impersonating through a federated source is one level deep.
+const maxFederatedCredentialDepth = 2
+
+// checkFederatedCredential pins every token-bearing URL of a federated
+// credential document to a Google API host over HTTPS, keeps the universe
+// domain on googleapis.com (x/oauth2 derives the default STS host from it),
+// and refuses executable credential sources. A document naming another
+// token_url could otherwise make the gateway read a local file — its own
+// service-account token — and post it to that host. Errors name the field,
+// never its value. Service-account keys are not federated: their token_uri
+// only ever receives a JWT signed by the document's own key.
+func checkFederatedCredential(document []byte, depth int) error {
+	var doc federatedCredential
+	if err := json.Unmarshal(document, &doc); err != nil {
+		return errors.New("credential document is not valid JSON")
+	}
+	if doc.Type != string(google.ExternalAccount) && doc.Type != string(google.ImpersonatedServiceAccount) {
+		return nil
+	}
+	if doc.UniverseDomain != "" && doc.UniverseDomain != "googleapis.com" {
+		return errors.New("credential document universe_domain must be googleapis.com")
+	}
+	if err := checkGoogleURLFields(&doc); err != nil {
+		return err
+	}
+	if err := checkCredentialSource(doc.CredentialSource); err != nil {
+		return err
+	}
+	if !jsonPresent(doc.SourceCredentials) {
+		return nil
+	}
+	if depth+1 >= maxFederatedCredentialDepth {
+		return errors.New("credential document impersonation chain is too deep")
+	}
+	return checkFederatedCredential(doc.SourceCredentials, depth+1)
+}
+
+// checkGoogleURLFields requires every token-bearing URL a federated document
+// sets to be an https googleapis.com URL.
+func checkGoogleURLFields(doc *federatedCredential) error {
+	for field, value := range map[string]string{
+		"token_url":                         doc.TokenURL,
+		"token_info_url":                    doc.TokenInfoURL,
+		"service_account_impersonation_url": doc.ServiceAccountImpersonationURL,
+	} {
+		if value == "" {
+			continue
+		}
+		u, err := url.Parse(value)
+		if err != nil || u.Scheme != "https" || u.User != nil || !googleAPIsHost(u.Hostname()) {
+			return fmt.Errorf("credential document %s must be an https googleapis.com URL", field)
+		}
+	}
+	return nil
+}
+
+// checkCredentialSource refuses an executable credential source: the
+// gateway never runs commands named by a credential document.
+func checkCredentialSource(raw json.RawMessage) error {
+	if !jsonPresent(raw) {
+		return nil
+	}
+	var source struct {
+		Executable json.RawMessage `json:"executable"`
+	}
+	if err := json.Unmarshal(raw, &source); err != nil {
+		return errors.New("credential document credential_source is not a JSON object")
+	}
+	if jsonPresent(source.Executable) {
+		return errors.New("credential document credential_source.executable is not supported")
+	}
+	return nil
+}
+
+// jsonPresent reports whether a raw JSON field was set to something other
+// than null.
+func jsonPresent(raw json.RawMessage) bool {
+	return len(raw) > 0 && string(raw) != "null"
 }
 
 // insecureTransport serves connectors whose config sets InsecureSkipTLS. It
@@ -389,26 +539,37 @@ func ClassifyState(err error) connector.State {
 const reasonNoAmbientCredentials = "no Google credentials are configured; " +
 	"set a credentialsSecretRef or attach Workload Identity"
 
+// reasonAmbientEndpointRefused is the fixed sentence for a provider whose
+// ambient identity would have gone to a non-Google or unverified endpoint.
+const reasonAmbientEndpointRefused = "ambient Google credentials are sent only to googleapis.com over verified TLS; " +
+	"set a credentialsSecretRef to use a custom endpoint"
+
+// CredentialState classifies a credential-construction failure onto the
+// state and fixed sentence status reports. The absence of ambient identity,
+// and ambient identity refused for the configured endpoint, are
+// StateNotConfigured: the backend was never contacted, so the refusal
+// StateForbidden would claim misdescribes what happened.
+func CredentialState(err error) (state connector.State, reason string) {
+	switch {
+	case errors.Is(err, ErrNoAmbientCredentials):
+		return connector.StateNotConfigured, reasonNoAmbientCredentials
+	case errors.Is(err, ErrAmbientEndpointRefused):
+		return connector.StateNotConfigured, reasonAmbientEndpointRefused
+	default:
+		return connector.StateForbidden, ReasonFor(connector.StateForbidden)
+	}
+}
+
 // CredentialError converts a credential-construction failure into its dual
 // result and error, the way every GCP connector reports one: the result
-// carries the fixed user-facing sentence for status, the error travels
-// through unchanged for the caller to wrap with connector context (it
-// already carries the sentinel or parse detail). A refused, malformed or
+// carries CredentialState's verdict for status, the error travels through
+// unchanged for the caller to wrap with connector context (it already
+// carries the sentinel or parse detail). A refused, malformed or
 // unparseable credential document is a caller bug, so — unlike backend
-// failures — the error is non-nil. The absence of ambient identity is
-// different: the backend was never contacted, so the verdict is
-// StateNotConfigured rather than the refusal StateForbidden would claim.
+// failures — the error is non-nil.
 func CredentialError(err error) (*connector.QueryResult, error) {
-	if errors.Is(err, ErrNoAmbientCredentials) {
-		return &connector.QueryResult{
-			State:  connector.StateNotConfigured,
-			Reason: reasonNoAmbientCredentials,
-		}, err
-	}
-	return &connector.QueryResult{
-		State:  connector.StateForbidden,
-		Reason: ReasonFor(connector.StateForbidden),
-	}, err
+	state, reason := CredentialState(err)
+	return &connector.QueryResult{State: state, Reason: reason}, err
 }
 
 // ReasonFor returns the fixed user-facing sentence for a classified state.

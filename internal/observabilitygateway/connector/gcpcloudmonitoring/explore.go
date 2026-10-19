@@ -80,7 +80,7 @@ func (CloudMonitoring) Explore(ctx context.Context, req connector.ExploreRequest
 	if err != nil {
 		return exploreError(err), nil
 	}
-	client, err := gcpcommon.Client(ctx, req.Credentials, cfg.InsecureSkipTLS)
+	client, err := gcpcommon.Client(ctx, cfg, req.Credentials)
 	if err != nil {
 		result, credErr := exploreCredentialError(err)
 		return result, credErr
@@ -333,18 +333,10 @@ func exploreError(err error) *connector.ExploreResult {
 }
 
 // exploreCredentialError maps a credential-construction failure onto the
-// dual result+error contract: the fixed user-facing sentence travels in the
-// result, connector-wrapped sanitized detail in the error for logs. The
-// missing-ambient-identity sentence mirrors gcpcommon.reasonNoAmbientCredentials.
+// dual result+error contract: gcpcommon.CredentialState's fixed sentence
+// travels in the result, connector-wrapped sanitized detail in the error for
+// logs.
 func exploreCredentialError(err error) (*connector.ExploreResult, error) {
-	if errors.Is(err, gcpcommon.ErrNoAmbientCredentials) {
-		return &connector.ExploreResult{
-			State:  connector.StateNotConfigured,
-			Reason: "no Google credentials are configured; set a credentialsSecretRef or attach Workload Identity",
-		}, fmt.Errorf("gcp-cloudmonitoring: %w", err)
-	}
-	return &connector.ExploreResult{
-		State:  connector.StateForbidden,
-		Reason: gcpcommon.ReasonFor(connector.StateForbidden),
-	}, fmt.Errorf("gcp-cloudmonitoring: %w", err)
+	state, reason := gcpcommon.CredentialState(err)
+	return &connector.ExploreResult{State: state, Reason: reason}, fmt.Errorf("gcp-cloudmonitoring: %w", err)
 }

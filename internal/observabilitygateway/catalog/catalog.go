@@ -123,7 +123,7 @@ const (
 // "user:password" selects HTTP Basic, anything else a Bearer token.
 var noCredential = CredentialInfo{
 	Kind: credentialKindNone,
-	Help: "No credential is required by default. Setting credentialsSecretRef is optional: a document containing user:password is sent as HTTP Basic auth, anything else as an Authorization: Bearer token.",
+	Help: "No credential is required by default. Setting credentialsSecretRef is optional: a document containing user:password is sent as HTTP Basic auth, anything else as an Authorization: Bearer token. Label that Secret observability.paprika.io/credentials=true: the gateway reads no other Secret.",
 }
 
 // gcpServiceAccountCredential is the credential shape of the three Google
@@ -131,7 +131,7 @@ var noCredential = CredentialInfo{
 // applies — with Workload Identity as the keyless GKE alternative.
 var gcpServiceAccountCredential = CredentialInfo{
 	Kind: credentialKindGCPServiceAccount,
-	Help: "A Google credential JSON — service_account, external_account or impersonated_service_account — stored as the credentials key (the default) of a Secret you create, referenced by credentialsSecretRef. On GKE, omit credentialsSecretRef and attach Workload Identity to the gateway's service account instead.",
+	Help: "A Google credential JSON — service_account, external_account or impersonated_service_account — stored as the credentials key (the default) of a Secret you create, referenced by credentialsSecretRef. Label that Secret observability.paprika.io/credentials=true: the gateway reads no other Secret. On GKE, omit credentialsSecretRef and attach Workload Identity to the gateway's service account instead.",
 }
 
 // vultrAPICredential is the credential shape of the Vultr connector: a raw
@@ -139,7 +139,7 @@ var gcpServiceAccountCredential = CredentialInfo{
 // document the Vultr cluster provider accepts.
 var vultrAPICredential = CredentialInfo{
 	Kind: credentialKindVultrAPIKey,
-	Help: "A raw Vultr API key, stored as the credentials key (the default) of a Secret you create, referenced by credentialsSecretRef. The key is sent as an Authorization: Bearer token to the Vultr v2 API.",
+	Help: "A raw Vultr API key, stored as the credentials key (the default) of a Secret you create, referenced by credentialsSecretRef. Label that Secret observability.paprika.io/credentials=true: the gateway reads no other Secret. The key is sent as an Authorization: Bearer token to the Vultr v2 API.",
 }
 
 // awsKeysCredential is the credential shape of the four AWS connectors: the
@@ -147,7 +147,7 @@ var vultrAPICredential = CredentialInfo{
 // the ambient SDK chain (IRSA, IMDS) as the keyless EKS alternative.
 var awsKeysCredential = CredentialInfo{
 	Kind: credentialKindAWSKeys,
-	Help: "A JSON document with snake_case keys access_key_id, secret_access_key and optional session_token — the same document shape the EKS cluster provider accepts — stored as the credentials key (the default) of a Secret you create, referenced by credentialsSecretRef. On EKS, omit credentialsSecretRef and let the ambient SDK chain supply credentials instead.",
+	Help: "A JSON document with snake_case keys access_key_id, secret_access_key and optional session_token — the same document shape the EKS cluster provider accepts — stored as the credentials key (the default) of a Secret you create, referenced by credentialsSecretRef. On EKS, omit credentialsSecretRef and let the ambient SDK chain supply credentials instead. Label that Secret observability.paprika.io/credentials=true: the gateway reads no other Secret.",
 }
 
 // insecureSkipTLSField is the TLS opt-in shared by every connector whose
@@ -683,7 +683,9 @@ spec:
 				Body:  "The gateway needs one Vultr API key with read access to account and instance bandwidth. Create it at my.vultr.com under Account → API, then store it in a Secret.",
 				Code: `kubectl create secret generic vultr-monitoring-credentials \
   --namespace=paprika-e2e \
-  --from-literal=credentials="<your vultr api key>"`,
+  --from-literal=credentials="<your vultr api key>"
+kubectl label secret vultr-monitoring-credentials \
+  --namespace=paprika-e2e observability.paprika.io/credentials=true`,
 			},
 			applyStep(`apiVersion: observability.paprika.io/v1alpha1
 kind: ObservabilityProvider

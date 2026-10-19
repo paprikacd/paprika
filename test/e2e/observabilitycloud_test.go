@@ -216,7 +216,12 @@ func obsCloudSecret(name, document string) map[string]interface{} {
 	return map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "Secret",
-		"metadata":   map[string]interface{}{"name": name, "namespace": obsNamespace},
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": obsNamespace,
+			// The gateway reads only credential Secrets opted in by label.
+			"labels": map[string]interface{}{"observability.paprika.io/credentials": "true"},
+		},
 		"type":       "Opaque",
 		"stringData": map[string]interface{}{"credentials": document},
 	}

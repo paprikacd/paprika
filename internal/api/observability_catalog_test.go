@@ -329,6 +329,8 @@ func TestCreateObservabilityProviderCreatesSecretAndCR(t *testing.T) {
 	// what the create path wrote.
 	assert.Equal(t, `{"user":"paprika","password":"s3cret"}`, secret.StringData["credentials"])
 	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
+	assert.Equal(t, "true", secret.Labels[observabilityv1alpha1.CredentialsSecretLabel],
+		"the gateway reads only credential Secrets opted in by label")
 
 	var provider observabilityv1alpha1.ObservabilityProvider
 	require.NoError(t, server.client.Get(ctx, client.ObjectKey{Namespace: "obs", Name: "loki"}, &provider))

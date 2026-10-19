@@ -128,10 +128,10 @@ func TestResolveProject(t *testing.T) {
 func TestClientRejectsUnsupportedCredentialType(t *testing.T) {
 	t.Parallel()
 
-	_, err := Client(context.Background(), json.RawMessage(`{"type":"authorized_user"}`), false)
+	_, err := Client(context.Background(), Config{}, json.RawMessage(`{"type":"authorized_user"}`))
 	require.ErrorContains(t, err, "unsupported credential type")
 
-	_, err = Client(context.Background(), json.RawMessage(`{`), false)
+	_, err = Client(context.Background(), Config{}, json.RawMessage(`{`))
 	require.ErrorContains(t, err, "credential document is not valid JSON")
 }
 
@@ -143,7 +143,7 @@ func TestCloudTraceUsesPublishedReadOnlyScope(t *testing.T) {
 
 func TestCredentialTypeAndEndpointErrorsNeverEchoValues(t *testing.T) {
 	t.Parallel()
-	_, err := Client(context.Background(), json.RawMessage(`{"type":"never-echo-secret"}`), false)
+	_, err := Client(context.Background(), Config{}, json.RawMessage(`{"type":"never-echo-secret"}`))
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "never-echo-secret")
 	for _, endpoint := range []string{"https://user:never-echo-secret@example.com", "https://example.com?key=never-echo-secret", "https://example.com#never-echo-secret"} {
@@ -188,7 +188,7 @@ func TestClientAmbientWithoutIdentityFailsClosed(t *testing.T) {
 	}
 	t.Cleanup(func() { findDefaultCredentials = original })
 
-	_, err := Client(context.Background(), nil, false)
+	_, err := Client(context.Background(), Config{}, nil)
 	require.ErrorIs(t, err, ErrNoAmbientCredentials)
 }
 
@@ -366,4 +366,108 @@ func TestClassifyStateDelegates(t *testing.T) {
 	require.Equal(t, connector.StateNotConfigured, ClassifyState(connector.ErrNotConfigured))
 	require.Equal(t, connector.StateError, ClassifyState(errors.New("boom")))
 	require.NotEmpty(t, ReasonFor(connector.StateForbidden))
+}
+
+// TestClientRefusesAmbientIdentityForForeignEndpoints: the gateway's own
+// Google identity goes only to a googleapis.com host over verified TLS. Any
+// other endpoint is refused before the ambient lookup runs, so no token is
+// minted for it at all.
+func TestClientRefusesAmbientIdentityForForeignEndpoints(t *testing.T) {
+	var lookups atomic.Int32
+	original := findDefaultCredentials
+	findDefaultCredentials = func(context.Context, ...string) (*google.Credentials, error) {
+		lookups.Add(1)
+		return &google.Credentials{TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "gateway-identity"})}, nil
+	}
+	t.Cleanup(func() { findDefaultCredentials = original })
+
+	refused := []Config{
+		{Endpoint: "https://attacker.example"},
+		{Endpoint: "http://logging.googleapis.com"},
+		{Endpoint: "https://logging.googleapis.com.attacker.example"},
+		{Endpoint: "https://evilgoogleapis.com"},
+		{InsecureSkipTLS: true},
+		{Endpoint: "https://logging.googleapis.com", InsecureSkipTLS: true},
+	}
+	for _, cfg := range refused {
+		_, err := Client(context.Background(), cfg, nil)
+		require.ErrorIs(t, err, ErrAmbientEndpointRefused, "%+v", cfg)
+		require.NotContains(t, err.Error(), "attacker", "the error must not echo the endpoint")
+	}
+	require.Zero(t, lookups.Load(), "a refused endpoint must not even resolve ambient identity")
+
+	allowed := []Config{
+		{},
+		{Endpoint: "https://logging.googleapis.com"},
+		{Endpoint: "https://monitoring.googleapis.com:443/"},
+		{Endpoint: "https://private.googleapis.com"},
+		{Endpoint: "https://LOGGING.GOOGLEAPIS.COM."},
+	}
+	for _, cfg := range allowed {
+		client, err := Client(context.Background(), cfg, nil)
+		require.NoError(t, err, "%+v", cfg)
+		require.NotNil(t, client)
+	}
+}
+
+// TestCredentialStateMapsAmbientEndpointRefusal: nothing was sent, so the
+// verdict is NotConfigured with a sentence naming the way forward.
+func TestCredentialStateMapsAmbientEndpointRefusal(t *testing.T) {
+	t.Parallel()
+	state, reason := CredentialState(fmt.Errorf("gcp-cloudlogging: %w", ErrAmbientEndpointRefused))
+	require.Equal(t, connector.StateNotConfigured, state)
+	require.Contains(t, reason, "credentialsSecretRef")
+}
+
+// TestClientPinsFederatedCredentialURLsToGoogle: an external_account or
+// impersonated_service_account document decides where x/oauth2 posts subject
+// tokens and access tokens. Only Google API hosts over HTTPS are accepted;
+// otherwise a document could make the gateway read its own service-account
+// token from disk and post it elsewhere. Errors name the field, never the
+// value.
+func TestClientPinsFederatedCredentialURLsToGoogle(t *testing.T) {
+	t.Parallel()
+
+	const validSource = `{"type":"external_account",` +
+		`"audience":"//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/pool/providers/vke",` +
+		`"subject_token_type":"urn:ietf:params:oauth:token-type:jwt",` +
+		`"token_url":"https://sts.googleapis.com/v1/token",` +
+		`"credential_source":{"file":"/var/run/secrets/tokens/gcp"}}`
+	withField := func(field, value string) string {
+		return strings.Replace(validSource, `"type":"external_account",`, fmt.Sprintf(`"type":"external_account",%q:%q,`, field, value), 1)
+	}
+
+	refused := map[string]string{
+		"token_url":                         strings.Replace(validSource, "https://sts.googleapis.com/v1/token", "https://attacker.example/token", 1),
+		"plain-http token_url":              strings.Replace(validSource, "https://sts.googleapis.com/v1/token", "http://sts.googleapis.com/v1/token", 1),
+		"service_account_impersonation_url": withField("service_account_impersonation_url", "https://attacker.example/impersonate"),
+		"token_info_url":                    withField("token_info_url", "https://attacker.example/info"),
+		"universe_domain":                   withField("universe_domain", "attacker.example"),
+		"executable": strings.Replace(validSource, `{"file":"/var/run/secrets/tokens/gcp"}`,
+			`{"executable":{"command":"/bin/sh -c id"}}`, 1),
+		"impersonated url": `{"type":"impersonated_service_account",` +
+			`"service_account_impersonation_url":"https://attacker.example/impersonate",` +
+			`"source_credentials":` + validSource + `}`,
+		"impersonated source": `{"type":"impersonated_service_account",` +
+			`"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/sa@p.iam.gserviceaccount.com:generateAccessToken",` +
+			`"source_credentials":` + strings.Replace(validSource, "https://sts.googleapis.com/v1/token", "https://attacker.example/token", 1) + `}`,
+	}
+	for name, document := range refused {
+		_, err := Client(context.Background(), Config{}, []byte(document))
+		require.Error(t, err, name)
+		require.NotContains(t, err.Error(), "attacker", "%s: the error must not echo the document", name)
+		require.NotContains(t, err.Error(), "/bin/sh", "%s: the error must not echo the document", name)
+	}
+
+	accepted := map[string]string{
+		"workload identity federation": validSource,
+		"impersonation through federation": `{"type":"impersonated_service_account",` +
+			`"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/sa@p.iam.gserviceaccount.com:generateAccessToken",` +
+			`"source_credentials":` + validSource + `}`,
+	}
+	for name, document := range accepted {
+		client, err := Client(context.Background(), Config{}, []byte(document))
+		require.NoError(t, err, name)
+		require.NotNil(t, client, name)
+	}
 }

@@ -66,7 +66,9 @@ spec:
                   CredentialsSecretRef references the Secret holding the credential
                   used to authenticate against the backend. Nil means no credentials,
                   which is not an error — connectors that reach anonymous or ambient-
-                  identity backends work without one.
+                  identity backends work without one. The Secret must carry the label
+                  observability.paprika.io/credentials=true; the gateway refuses any
+                  other Secret.
                 properties:
                   key:
                     description: |-
@@ -79,7 +81,9 @@ spec:
                   namespace:
                     description: |-
                       Namespace of the Secret. Defaults to the provider's own namespace
-                      when empty.
+                      when empty. A Secret in another namespace is read only for a caller
+                      authorized for providers in that namespace; the status prober, which
+                      acts for no caller, reports such a provider NotConfigured.
                     type: string
                 required:
                 - name
