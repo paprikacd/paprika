@@ -35,7 +35,7 @@ var pinnedActionRevisions = map[string]string{
 	"actions/checkout":                   "3d3c42e5aac5ba805825da76410c181273ba90b1",
 	"anchore/sbom-action/download-syft":  "a930d0ac434e3182448fe678398ba5713717112a",
 	"actions/upload-artifact":            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-	"actions/setup-go":                   "4a3601121dd01d1626a1e23e37211e3254c1c06c",
+	"actions/setup-go":                   "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
 	"actions/setup-node":                 "249970729cb0ef3589644e2896645e5dc5ba9c38",
 	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
 	"docker/build-push-action":           "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
@@ -737,7 +737,7 @@ func testDownstreamActionPins(t *testing.T) {
 
 	const (
 		checkoutRevision    = "3d3c42e5aac5ba805825da76410c181273ba90b1"
-		setupGoRevision     = "4a3601121dd01d1626a1e23e37211e3254c1c06c"
+		setupGoRevision     = "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
 		setupHelmRevision   = "59b1c81c6280f5abebb1fb1bc585696daa7dfb42"
 		setupBuildxRevision = "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c"
 		buildPushRevision   = "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a"
