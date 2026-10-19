@@ -379,6 +379,7 @@ type ApplicationSource struct {
 	Insecure bool `json:"insecure,omitempty"`
 	// Poll interval for change detection (default 30s)
 	// +kubebuilder:default="30s"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
 	PollInterval string `json:"pollInterval,omitempty"`
 	// FetchTTL bounds how often a warm git mirror consults the remote for
 	// branch/tag revisions (type=git), e.g. "45s". Within the TTL the

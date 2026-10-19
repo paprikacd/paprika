@@ -201,6 +201,9 @@ jobs:
         with:
           version: v3.21.2
 
+      - name: Set up Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
+
       - name: Verify OIDC Secret rendering
         run: bash hack/test-oidc-secret-rendering.sh
 
@@ -238,6 +241,9 @@ jobs:
             exit 1
           fi
           grep -q "auth.oidc.clientID is required" /tmp/oidc-render-err.txt
+
+      - name: Validate rendered args across value matrices
+        run: task chart:validate
 
   release-contract:
     name: CLI release contract
