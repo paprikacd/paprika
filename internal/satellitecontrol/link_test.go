@@ -2,7 +2,6 @@ package satellitecontrol
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -72,8 +71,8 @@ func linkTestSecret() *corev1.Secret {
 	}
 }
 
-func linkTestReport(session string, sequence uint64, snapshot bool) []byte {
-	body, err := json.Marshal(&satellite.Report{
+func linkTestReport(session string, sequence uint64, snapshot bool) *satellite.Report {
+	return &satellite.Report{
 		ProtocolVersion:  satellite.ProtocolVersion,
 		ClusterNamespace: linkTestNamespace,
 		ClusterName:      linkTestCluster,
@@ -88,11 +87,7 @@ func linkTestReport(session string, sequence uint64, snapshot bool) []byte {
 		Capacity: clusters.SatelliteCapacity{
 			CPUMillicores: clusters.SatelliteResourceUsage{Allocatable: 4000, UsedKnown: false},
 		},
-	})
-	if err != nil {
-		panic(err)
 	}
-	return body
 }
 
 // newLinkTestServer mounts the link handler on an HTTP/2 test server, which is
@@ -182,8 +177,8 @@ func TestLinkAcceptsAReportAndAcknowledgesIt(t *testing.T) {
 	server := newLinkTestServer(t, NewHub())
 	sender := linkTestSender(t, server, nil)
 
-	if err := sender.SendEncoded(context.Background(), linkTestReport("earlier", 2, false)); err != nil {
-		t.Fatalf("SendEncoded: %v", err)
+	if err := sender.Send(context.Background(), linkTestReport("earlier", 2, false)); err != nil {
+		t.Fatalf("Send: %v", err)
 	}
 }
 
@@ -195,7 +190,7 @@ func TestLinkAsksForAResyncOnARejectedBaseline(t *testing.T) {
 
 	// The stored baseline is session "earlier" at sequence 1; a different session
 	// that is not a snapshot cannot extend it.
-	err := sender.SendEncoded(context.Background(), linkTestReport(linkTestSession, 5, false))
+	err := sender.Send(context.Background(), linkTestReport(linkTestSession, 5, false))
 	if !errors.Is(err, satellite.ErrResync) {
 		t.Fatalf("err = %v, want ErrResync so the collector opens a new session", err)
 	}

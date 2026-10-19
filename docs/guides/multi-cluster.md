@@ -263,6 +263,22 @@ so both transports produce the same result. A failed apply over a live link is
 reported and **not** retried through the agent endpoint: the cluster may have
 half the bundle applied, and a second attempt would race the satellite's own.
 
+Deployability is a runtime question, not a field. A registration with
+`mode: agent`, a `satellite` block and no inbound endpoint can observe but
+cannot apply until the link attaches. Target resolution asks the dispatcher for
+a live link and refuses the target when there is none; the release then fails
+with "connect the satellite" instead of trying an endpoint that was never going
+to answer.
+
+The link is an HTTP/2 bidirectional Connect stream, so it needs an HTTP/2
+server. A cleartext `http://` endpoint is accepted for loopback only (a sidecar
+or a local run), and the satellite speaks prior-knowledge h2c there. Go's
+transport does not attempt h2c on its own, so a plain `http://` client
+negotiates HTTP/1.1 and the stream never opens. The collector hands the sender a
+report rather than encoded bytes, because the two transports frame differently:
+the POST path sends gzip with `Content-Encoding`, the link puts the JSON
+document inside a protobuf message.
+
 Two limits apply today. Task dispatch needs the link and the dispatcher in one
 process, which is `deploymentMode: monolith`; in split mode the API server holds
 the links and the controller has no route to them, so agent clusters fall back to

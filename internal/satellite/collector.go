@@ -49,6 +49,11 @@ type Collector struct {
 	ready                         atomic.Bool
 	applicationProbeInterval      time.Duration
 	coreWatchErrors               chan error
+	// delivered records whether the control plane has ever acknowledged a
+	// report. It is the satellite's only honest evidence of connectivity: the
+	// transport drops the acknowledgement when the link or POST fails, so a
+	// report built before the first success says Connecting.
+	delivered atomic.Bool
 }
 
 // NewCollector prepares a satellite without making Kubernetes API requests.
@@ -457,11 +462,7 @@ func (c *Collector) publish(ctx context.Context) error {
 			waitForTick = true
 			continue
 		}
-		body, err := EncodeReport(&pending.report)
-		if err != nil {
-			return err
-		}
-		resync, err := c.sendWithRetries(ctx, body, &state.retryDelay)
+		resync, err := c.sendWithRetries(ctx, &pending.report, &state.retryDelay)
 		if err != nil {
 			if !state.retry(ctx, resync) {
 				return nil
@@ -469,6 +470,7 @@ func (c *Collector) publish(ctx context.Context) error {
 			waitForTick = false
 			continue
 		}
+		c.delivered.Store(true)
 		state.acknowledge(pending)
 		waitForTick = true
 	}
@@ -514,10 +516,24 @@ func (c *Collector) buildPublication(state *publicationState) (*publication, err
 		NodePools:           nodePools,
 		Policies:            c.config.ManagementPolicies,
 		Autonomy:            c.config.Autonomy,
+		OperatingState:      c.operatingState(),
 		Applications:        changed,
 		DeletedApplications: deleted,
 	}
 	return &publication{current: current, report: report}, nil
+}
+
+// operatingState is what the satellite is doing, from its own point of view.
+//
+// It reports only the two states it can actually observe. Autonomous and
+// OverrideHeld describe local reconciliation the satellite does not run yet;
+// claiming them from a connectivity guess would tell the control plane it can
+// stand down when nothing is enforcing the application.
+func (c *Collector) operatingState() clustersv1alpha1.SatelliteOperatingState {
+	if c.delivered.Load() {
+		return clustersv1alpha1.SatelliteOperatingConnected
+	}
+	return clustersv1alpha1.SatelliteOperatingConnecting
 }
 
 // reportPending is the aggregate state a report carries. It exists so
@@ -562,9 +578,9 @@ func (s *publicationState) retry(ctx context.Context, resync bool) bool {
 	return !resync || waitContext(ctx, s.retryDelay)
 }
 
-func (c *Collector) sendWithRetries(ctx context.Context, body []byte, delay *time.Duration) (resync bool, err error) {
+func (c *Collector) sendWithRetries(ctx context.Context, report *Report, delay *time.Duration) (resync bool, err error) {
 	for attempt := 0; attempt < 3; attempt++ {
-		err = c.client.SendEncoded(ctx, body)
+		err = c.client.Send(ctx, report)
 		if err == nil {
 			return false, nil
 		}

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	clusters "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -392,5 +394,25 @@ func TestStatefulAndDaemonWorkloadsAreProjected(t *testing.T) {
 		if !ok || projection.app.Health != "Healthy" {
 			t.Fatalf("workload projection = %#v", projection)
 		}
+	}
+}
+
+// TestOperatingStateOnlyClaimsWhatItCanObserve pins the report's connectivity
+// field to the satellite's own evidence.
+//
+// Autonomous and OverrideHeld describe local reconciliation this build does not
+// run. Reporting one because the control plane looks unreachable would tell an
+// operator to stand down while nothing is enforcing the application, so the
+// satellite reports Connecting until the control plane acknowledges a report.
+func TestOperatingStateOnlyClaimsWhatItCanObserve(t *testing.T) {
+	t.Parallel()
+
+	collector := &Collector{}
+	if got := collector.operatingState(); got != clusters.SatelliteOperatingConnecting {
+		t.Fatalf("before the first acknowledgement: state = %q, want Connecting", got)
+	}
+	collector.delivered.Store(true)
+	if got := collector.operatingState(); got != clusters.SatelliteOperatingConnected {
+		t.Fatalf("after an acknowledgement: state = %q, want Connected", got)
 	}
 }

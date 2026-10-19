@@ -151,6 +151,16 @@ func EncodeReport(report *Report) ([]byte, error) {
 	return compressed.Bytes(), nil
 }
 
+// Send encodes one report and posts it. Encoding happens here so the collector
+// never holds another transport's wire form.
+func (c *Client) Send(ctx context.Context, report *Report) error {
+	body, err := EncodeReport(report)
+	if err != nil {
+		return err
+	}
+	return c.SendEncoded(ctx, body)
+}
+
 // SendEncoded sends one pre-encoded report. A mounted token is read for each
 // attempt, so rotations do not require restarting the agent or its session.
 func (c *Client) SendEncoded(ctx context.Context, body []byte) error {

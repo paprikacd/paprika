@@ -16,6 +16,7 @@ import (
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/httpx"
 	"github.com/benebsworth/paprika/internal/version"
 )
 
@@ -37,12 +38,15 @@ func newSender(config *Config) (Sender, error) {
 	})
 }
 
-// Sender is the outbound transport a satellite uses for one encoded report.
-// Two implementations exist: a pooled HTTPS POST and the bidirectional link.
-// The collector depends on this interface rather than on either one, so the
-// transport is a configuration choice and not a second publish loop.
+// Sender is the outbound transport a satellite uses for one report.
+//
+// It takes the report rather than pre-encoded bytes because the two transports
+// frame differently: the POST carries gzip in an HTTP body, the link carries
+// JSON inside a protobuf frame. Encoding is the transport's business, and
+// feeding one transport's bytes to the other is exactly the bug this shape
+// prevents.
 type Sender interface {
-	SendEncoded(ctx context.Context, body []byte) error
+	Send(ctx context.Context, report *Report) error
 	Close()
 }
 
@@ -112,7 +116,7 @@ func NewLinkSender(config *LinkConfig) (*LinkSender, error) {
 	}
 	base := config.HTTPClient
 	if base == nil {
-		transport, err := linkTransport(config.CAFile, config.TokenFile)
+		transport, err := linkTransport(endpoint, config.CAFile)
 		if err != nil {
 			return nil, err
 		}
@@ -145,25 +149,31 @@ func linkEndpoint(base string) (string, error) {
 	return u.String(), nil
 }
 
-// linkTransport adds the rotation-aware credential to each request and keeps
-// the same CA trust rules as the POST transport.
-func linkTransport(caFile, tokenFile string) (http.RoundTripper, error) {
-	base, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		return nil, errors.New("satellite default HTTP transport is unavailable")
+// linkTransport builds the transport a bidirectional stream needs.
+//
+// A stream is HTTP/2 only, so a cleartext endpoint has to speak prior-knowledge
+// h2c rather than the HTTP/1.1 default: http:// is allowed exactly for loopback
+// (local development, a sidecar), and those listeners serve h2c through
+// httpx.WithH2C. Reusing the shared transport keeps the h2c dial and pooling
+// rules in one place instead of a second copy that drifts.
+func linkTransport(endpoint, caFile string) (http.RoundTripper, error) {
+	if strings.HasPrefix(endpoint, "http://") {
+		return httpx.ConnectTransport(endpoint), nil
 	}
-	transport := base.Clone()
-	transport.ForceAttemptHTTP2 = true
-	transport.MaxIdleConnsPerHost = 2
-	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	transport, ok := httpx.ConnectTransport(endpoint).(*http.Transport)
+	if !ok {
+		return nil, errors.New("satellite TLS transport is unavailable")
+	}
+	secure := transport.Clone()
+	secure.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	if caFile != "" {
 		roots, err := reportRoots(caFile)
 		if err != nil {
 			return nil, err
 		}
-		transport.TLSClientConfig.RootCAs = roots
+		secure.TLSClientConfig.RootCAs = roots
 	}
-	return &tokenTransport{base: transport, tokenFile: tokenFile}, nil
+	return secure, nil
 }
 
 // tokenTransport reads the mounted token per request, so a rotated Secret takes
@@ -289,12 +299,16 @@ func (s *LinkSender) runTask(
 	}
 }
 
-// SendEncoded sends one report and waits for its acknowledgement.
-func (s *LinkSender) SendEncoded(ctx context.Context, body []byte) error {
-	sequence, err := reportSequence(body)
+// Send frames one report and waits for its acknowledgement.
+func (s *LinkSender) Send(ctx context.Context, report *Report) error {
+	body, err := json.Marshal(report)
 	if err != nil {
-		return err
+		return fmt.Errorf("encode satellite report: %w", err)
 	}
+	if len(body) > MaxReportBytes {
+		return fmt.Errorf("satellite report exceeds %d bytes", MaxReportBytes)
+	}
+	sequence := report.Sequence
 	if err := s.connect(ctx); err != nil {
 		return err
 	}
@@ -355,17 +369,4 @@ func (s *LinkSender) Close() {
 	}
 	s.cancel()
 	s.http.CloseIdleConnections()
-}
-
-// reportSequence extracts the sequence a report carries. The acknowledgement
-// echoes it, so reading it here is cheaper than threading it through the
-// collector's publication state.
-func reportSequence(body []byte) (uint64, error) {
-	var envelope struct {
-		Sequence uint64 `json:"sequence"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return 0, fmt.Errorf("read satellite report sequence: %w", err)
-	}
-	return envelope.Sequence, nil
 }
