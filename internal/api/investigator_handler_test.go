@@ -15,6 +15,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 )
@@ -27,6 +28,11 @@ func newInvestigatorServer(t *testing.T, dynamicObjs []runtime.Object) *PaprikaS
 
 	app := &pipelinesv1alpha1.Application{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-app", Namespace: "test-ns"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			// A single stage with no cluster ref is the control plane's own
+			// cluster, which is what these fixtures exercise.
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+		},
 		Status: pipelinesv1alpha1.ApplicationStatus{
 			Phase: "Degraded",
 			Resources: []pipelinesv1alpha1.ResourceSync{
@@ -174,4 +180,45 @@ func TestListInvestigatorPlugins(t *testing.T) {
 			require.Equal(t, "deterministic", p.Name)
 		}
 	}
+}
+
+// TestInvestigateRefusesAnUnreadableTarget pins the rule that an investigation
+// describes the application's own cluster. A satellite target has no live read
+// path, and answering from the management cluster would describe whatever
+// happens to share names there.
+func TestInvestigateRefusesAnUnreadableTarget(t *testing.T) {
+	t.Parallel()
+
+	scheme := targetTestScheme(t)
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "checkout"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{
+				Name:    "prod",
+				Cluster: pipelinesv1alpha1.ClusterRef{Name: "edge-eu", Namespace: "paprika-system"},
+			}},
+		},
+	}
+	cluster := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "edge-eu", Namespace: "paprika-system"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeAgent},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app, cluster).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).Build()
+	srv := NewPaprikaServer(c, nil,
+		WithDynamicClient(dynamicfake.NewSimpleDynamicClient(scheme)),
+		WithK8sClient(k8sfake.NewSimpleClientset()))
+
+	_, err := srv.Investigate(context.Background(), connect.NewRequest(&paprikav1.InvestigateRequest{
+		ApplicationNamespace: "checkout",
+		ApplicationName:      "api",
+		ResourceKind:         "Deployment",
+		ResourceName:         "api",
+		ResourceNamespace:    "checkout",
+	}))
+	require.Error(t, err)
+	var connectErr *connect.Error
+	require.ErrorAs(t, err, &connectErr)
+	require.Equal(t, connect.CodeUnavailable, connectErr.Code())
+	require.Contains(t, err.Error(), "satellite")
 }

@@ -61,14 +61,32 @@ func (s *PaprikaServer) Investigate(
 		App: &app,
 	}
 
-	live, _, err := s.fetchInvestigatorLiveManifest(ctx, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	// Live state belongs to the cluster the application deploys to, not to the
+	// cluster this server runs in. An investigation built from the management
+	// cluster's objects would describe a different deployment that happens to
+	// share names.
+	target, err := s.applicationTargetCluster(ctx, &app)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable,
+			fmt.Errorf("investigate %s/%s: %w", app.Namespace, app.Name, err))
+	}
+	if target.agent {
+		// The detectors need live state — ready replicas, container statuses,
+		// events, logs. Reporting "all clear" from an empty live manifest would be
+		// worse than refusing, because it reads as a healthy deployment.
+		return nil, connect.NewError(connect.CodeUnavailable,
+			fmt.Errorf("investigate %s/%s: %w: %s is reached through a satellite, which does not serve live reads yet",
+				app.Namespace, app.Name, ErrTargetUnavailable, target.label))
+	}
+
+	live, _, err := s.fetchInvestigatorLiveManifest(ctx, target, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
 	if err == nil {
 		in.LiveManifest = live
 	}
 
-	in.Diff = s.fetchInvestigatorDiff(ctx, &app, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
-	in.Events = s.fetchInvestigatorEvents(ctx, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
-	in.Logs = s.fetchInvestigatorLogs(ctx, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	in.Diff = s.fetchInvestigatorDiff(ctx, target, &app, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	in.Events = s.fetchInvestigatorEvents(ctx, target, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	in.Logs = s.fetchInvestigatorLogs(ctx, target, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
 
 	resp, err := investigatorRegistry.Investigate(ctx, in)
 	if err != nil {
@@ -109,15 +127,21 @@ func (s *PaprikaServer) ListInvestigatorPlugins(
 
 // fetchInvestigatorLiveManifest retrieves the live unstructured manifest for
 // the given resource via the dynamic client. Returns nil, nil if unavailable.
-func (s *PaprikaServer) fetchInvestigatorLiveManifest(ctx context.Context, kind, name, namespace string) (*unstructured.Unstructured, string, error) {
-	if s.dynamicClient == nil {
+func (s *PaprikaServer) fetchInvestigatorLiveManifest(ctx context.Context, target targetCluster, kind, name, namespace string) (*unstructured.Unstructured, string, error) {
+	dynamicClient, clientErr := s.targetDynamicClient(ctx, target)
+	if errors.Is(clientErr, ErrTargetUnavailable) {
+		// The investigation still runs on whatever status the application
+		// carries; live detectors simply have nothing to look at.
 		return nil, "", nil
+	}
+	if clientErr != nil {
+		return nil, "", clientErr
 	}
 	gvr, ok := knownResourceGVRs[kind]
 	if !ok {
 		return nil, "", fmt.Errorf("unknown kind %q", kind)
 	}
-	resource := s.dynamicClient.Resource(gvr)
+	resource := dynamicClient.Resource(gvr)
 	var obj *unstructured.Unstructured
 	if gvr.Group == "" && gvr.Resource == "namespaces" {
 		got, err := resource.Get(ctx, name, metav1.GetOptions{})
@@ -141,7 +165,7 @@ func (s *PaprikaServer) fetchInvestigatorLiveManifest(ctx context.Context, kind,
 
 // fetchInvestigatorDiff renders the desired vs. live diff using the
 // existing resource_handler helpers. Returns "" if anything is missing.
-func (s *PaprikaServer) fetchInvestigatorDiff(ctx context.Context, app *pipelinesv1alpha1.Application, kind, name, namespace string) string {
+func (s *PaprikaServer) fetchInvestigatorDiff(ctx context.Context, target targetCluster, app *pipelinesv1alpha1.Application, kind, name, namespace string) string {
 	if s.renderer == nil {
 		return ""
 	}
@@ -149,33 +173,23 @@ func (s *PaprikaServer) fetchInvestigatorDiff(ctx context.Context, app *pipeline
 	if err != nil {
 		return ""
 	}
-	live, err := s.getLiveManifestYAML(ctx, kind, name, namespace)
-	if err != nil {
+	_, live, err := s.fetchInvestigatorLiveManifest(ctx, target, kind, name, namespace)
+	if err != nil || live == "" {
 		return ""
 	}
 	return unifiedDiff(desired, live)
 }
 
-func (s *PaprikaServer) getLiveManifestYAML(ctx context.Context, kind, name, namespace string) (string, error) {
-	if s.dynamicClient == nil {
-		return "", errors.New("no dynamic client")
-	}
-	_, yaml, err := s.fetchInvestigatorLiveManifest(ctx, kind, name, namespace)
-	if err != nil {
-		return "", err
-	}
-	return yaml, nil
-}
-
-func (s *PaprikaServer) fetchInvestigatorEvents(ctx context.Context, kind, name, namespace string) []investigator.KubernetesEvent {
-	if s.k8sClient == nil {
+func (s *PaprikaServer) fetchInvestigatorEvents(ctx context.Context, target targetCluster, kind, name, namespace string) []investigator.KubernetesEvent {
+	typedClient, clientErr := s.targetTypedClient(ctx, target)
+	if clientErr != nil {
 		return nil
 	}
 	fieldSelector := fmt.Sprintf("involvedObject.kind=%s,involvedObject.name=%s", kind, name)
 	if namespace != "" {
 		fieldSelector += ",involvedObject.namespace=" + namespace
 	}
-	list, err := s.k8sClient.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+	list, err := typedClient.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
 		FieldSelector: fieldSelector,
 		Limit:         investigatorEventsLimit,
 	})
@@ -206,12 +220,16 @@ func (s *PaprikaServer) fetchInvestigatorEvents(ctx context.Context, kind, name,
 	return out
 }
 
-func (s *PaprikaServer) fetchInvestigatorLogs(ctx context.Context, kind, name, namespace string) []string {
-	if s.k8sClient == nil || kind != "Pod" {
+func (s *PaprikaServer) fetchInvestigatorLogs(ctx context.Context, target targetCluster, kind, name, namespace string) []string {
+	if kind != "Pod" {
+		return nil
+	}
+	typedClient, clientErr := s.targetTypedClient(ctx, target)
+	if clientErr != nil {
 		return nil
 	}
 	tail := int64(investigatorLogsTailLines)
-	logs, err := s.k8sClient.CoreV1().Pods(namespace).GetLogs(name, &corev1.PodLogOptions{TailLines: &tail}).Stream(ctx)
+	logs, err := typedClient.CoreV1().Pods(namespace).GetLogs(name, &corev1.PodLogOptions{TailLines: &tail}).Stream(ctx)
 	if err != nil {
 		return nil
 	}
