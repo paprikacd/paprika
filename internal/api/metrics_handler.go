@@ -35,6 +35,14 @@ func (m *metricsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	metrics.APIRequestTotal.WithLabelValues(r.Method, path, strconv.Itoa(rw.statusCode)).Inc()
 }
 
+// responseWriter records the status code so the metric can label by it.
+//
+// It must keep the wrapped writer's optional interfaces reachable. A streaming
+// RPC — the satellite link, StreamResourceLogs — flushes as it goes, and a
+// wrapper that hides Flush turns a working stream into
+// "*apiserver.responseWriter does not implement http.Flusher". Unwrap is what
+// http.ResponseController walks to find Flush/Hijack/SetReadDeadline, so the
+// wrapper stays transparent to anything the handler underneath expects.
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -43,6 +51,18 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Flush forwards to the wrapped writer so streamed frames reach the client.
+func (rw *responseWriter) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Unwrap exposes the wrapped writer to http.ResponseController.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
 }
 
 func normalizePath(path string) string {
