@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { ApplicationReleaseHistory } from "@/components/dashboard/application-release-history"
+import { ApplicationPlacements, ObservedApplicationDetail } from "@/components/dashboard/application-placements"
 import { InvestigationTriage } from "@/components/dashboard/investigation-triage"
 import {
   ResourceDetailPanel,
@@ -42,7 +43,7 @@ import {
 import { useConnection } from "@/lib/connection-context"
 import { FOCUSED_REFRESH_INTERVAL_MS, useFocusedRefresh } from "@/lib/fleet-refresh"
 import { STATUS_TONES, type StatusTone } from "@/lib/status-tone"
-import { applicationClient as client, useApplicationData } from "@/lib/use-application-data"
+import { applicationClient as client, isApplicationNotFound, useApplicationData } from "@/lib/use-application-data"
 import { ApplicationHealth } from "@/components/dashboard/application-health"
 import { ApplicationSLOs } from "@/components/dashboard/application-slos"
 import { OperationalLinkIcon } from "@/components/dashboard/operational-link-icon"
@@ -254,15 +255,17 @@ function ApplicationDetail() {
 
   const queries = useApplicationData(namespace, name, ["overview", "resources", "health"].includes(tab))
   const application = queries.application.data?.application ?? null
+  const observation = queries.observation.data?.summary
+  const observationOnly = !application && isApplicationNotFound(queries.application.error)
   const releases = queries.releases.data?.releases
   const tree = queries.tree.data?.nodes
   const sources = queries.sources.data?.sources
   const ownership = application?.operations ?? queries.ownership.data?.ownership
   const lifecycle = queries.lifecycle.data?.lifecycle?.phases
   const commit = queries.commit.data?.commit
-  const loading = queries.application.isPending
+  const loading = queries.application.isPending || (observationOnly && queries.observation.isPending)
   const error = queries.application.isError ? (application ? "Could not refresh this application. Showing the last available observation." : "Could not load this application. Check your access and connection, then retry.") : null
-  const refreshedAt = queries.application.dataUpdatedAt || undefined
+  const refreshedAt = (observationOnly ? queries.observation.dataUpdatedAt : queries.application.dataUpdatedAt) || undefined
   const fetchData = queries.refresh
 
   useFocusedRefresh(fetchData, {
@@ -270,12 +273,12 @@ function ApplicationDetail() {
     onRequestOutcome: reportRequestOutcome,
   })
   useEffect(() => {
-    if (!queries.application.isPending) reportRequestOutcome(!queries.application.isError)
-  }, [queries.application.isPending, queries.application.isError, reportRequestOutcome])
+    if (!loading) reportRequestOutcome(!queries.application.isError || (observationOnly && Boolean(observation) && !queries.observation.isError))
+  }, [loading, queries.application.isError, queries.observation.isError, observationOnly, observation, reportRequestOutcome])
 
   usePublishConsoleScope({
-    indexGeneration: queries.sources.data?.indexGeneration,
-    refreshedAt, isRefreshing: queries.application.isFetching,
+    indexGeneration: queries.observation.data?.indexGeneration ?? queries.sources.data?.indexGeneration,
+    refreshedAt, isRefreshing: queries.application.isFetching || queries.observation.isFetching,
     intervalMs: FOCUSED_REFRESH_INTERVAL_MS,
   })
 
@@ -411,6 +414,8 @@ function ApplicationDetail() {
     )
   }
 
+  if (observationOnly && observation) return <ObservedApplicationDetail application={observation} refreshError={queries.observation.isError} />
+
   if (!application) {
     return (
       <div className="px-5 py-12">
@@ -422,8 +427,13 @@ function ApplicationDetail() {
     )
   }
 
-  const healthTone = phaseTone(application.health || application.phase)
-  const syncIsClean = driftedCount === 0 && application.synced
+  const healthTone = phaseTone(observation?.health || application.health || application.phase)
+  const syncIsClean = observation ? observation.sync === "synced" : driftedCount === 0 && application.synced
+  const syncLabel = observation?.sync === "unknown" || observation?.sync === "unspecified"
+    ? "Sync unknown"
+    : syncIsClean ? "In sync" : `${observation?.driftCount ?? driftedCount} out of sync`
+  const syncTone = observation?.sync === "unknown" || observation?.sync === "unspecified"
+    ? "unknown" : syncIsClean ? "healthy" : "degraded"
 
   return (
     <div className="bg-background">
@@ -455,8 +465,8 @@ function ApplicationDetail() {
                 className="gap-1.5 text-note"
               />
               <StatusPill
-                tone={syncIsClean ? "healthy" : "degraded"}
-                label={syncIsClean ? "In sync" : `${driftedCount} out of sync`}
+                tone={syncTone}
+                label={syncLabel}
                 className="gap-1.5 text-note"
               />
             </div>
@@ -577,6 +587,7 @@ function ApplicationDetail() {
       >
         {tab === "overview" ? (
           <>
+            {observation ? <ApplicationPlacements application={observation} /> : null}
             <DeliveryTimeline
               gate={lifecycleGate}
               phases={lifecycle}

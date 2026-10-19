@@ -430,6 +430,12 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 	if preparation != nil {
 		return *preparation, nil
 	}
+	if result, err := r.prepareTriggeredSource(ctx, app); result != nil || err != nil {
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		return *result, nil
+	}
 
 	if r.hasSyncTrigger(app) {
 		return r.handleSyncTrigger(ctx, app)
@@ -1271,6 +1277,10 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 	if result := r.releaseCreationGate(ctx, app, targetStage.Name, manualOverride); result != nil {
 		return *result, nil
 	}
+	if promotionTriggered(app) && !promotionReady(app) {
+		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingPromotion", "waiting for a verified upstream release")
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+	}
 
 	release := r.buildRelease(app, targetStage)
 	if err := ctrl.SetControllerReference(app, release, r.Scheme); err != nil {
@@ -1798,6 +1808,9 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	}
 	if !usable {
 		return false, nil
+	}
+	if promotionTriggered(app) && newRevision != app.Status.SourceRevision {
+		return false, fmt.Errorf("promoted source resolved revision %q instead of accepted revision %q", newRevision, app.Status.SourceRevision)
 	}
 
 	oldHash := app.Status.SourceHash

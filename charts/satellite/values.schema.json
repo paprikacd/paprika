@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["controlPlaneURL", "cluster", "token"],
+  "properties": {
+    "controlPlaneURL": {"type": "string", "pattern": "^https?://[^/]+", "description": "Central API origin; HTTPS is required except for loopback development."},
+    "cluster": {
+      "type": "object",
+      "required": ["name", "namespace"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+        "namespace": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+        "displayName": {"type": "string"}
+      }
+    },
+    "token": {
+      "type": "object",
+      "required": ["existingSecret", "key"],
+      "properties": {
+        "existingSecret": {"type": "string", "minLength": 1},
+        "key": {"type": "string", "minLength": 1, "pattern": "^[-._a-zA-Z0-9]+$"}
+      }
+    },
+    "ca": {
+      "type": "object",
+      "properties": {
+        "existingConfigMap": {"type": "string"},
+        "key": {"type": "string", "minLength": 1, "pattern": "^[-._a-zA-Z0-9]+$"}
+      }
+    },
+    "heartbeatInterval": {"type": "string", "minLength": 1},
+    "batchInterval": {"type": "string", "minLength": 1},
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string"},
+        "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
+      },
+      "allOf": [{
+        "if": {"properties": {"repository": {"not": {"pattern": "@"}}}},
+        "then": {"required": ["tag"], "properties": {"tag": {"minLength": 1}}}
+      }]
+    },
+    "extraArgs": {"type": "array", "items": {"type": "string"}},
+    "serviceAccount": {
+      "type": "object",
+      "properties": {"create": {"type": "boolean"}, "name": {"type": "string"}}
+    },
+    "rbac": {"type": "object", "properties": {"create": {"type": "boolean"}}}
+  }
+}

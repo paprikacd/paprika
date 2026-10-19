@@ -1,0 +1,119 @@
+{{- $controlPlaneURL := required "controlPlaneURL is required" .Values.controlPlaneURL -}}
+{{- $clusterName := required "cluster.name is required" .Values.cluster.name -}}
+{{- $clusterNamespace := required "cluster.namespace is required" .Values.cluster.namespace -}}
+{{- $tokenSecret := required "token.existingSecret is required" .Values.token.existingSecret -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "paprika-satellite.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "paprika-satellite.labels" . | nindent 4 }}
+spec:
+  # One reporter owns the cluster session. Recreate prevents an upgrade from
+  # running two sessions for the same cluster concurrently.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "paprika-satellite.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "paprika-satellite.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "paprika-satellite.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: satellite
+          image: "{{ .Values.image.repository }}{{- if not (contains "@" .Values.image.repository) }}:{{ required "image.tag is required unless image.repository contains a digest; select a build containing satellite mode" .Values.image.tag }}{{- end }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [/manager]
+          args:
+            - satellite
+            - {{ printf "--satellite-control-plane-url=%s" $controlPlaneURL | quote }}
+            - {{ printf "--satellite-cluster-name=%s" $clusterName | quote }}
+            - {{ printf "--satellite-cluster-namespace=%s" $clusterNamespace | quote }}
+            {{- if .Values.cluster.displayName }}
+            - {{ printf "--satellite-display-name=%s" .Values.cluster.displayName | quote }}
+            {{- end }}
+            - --satellite-token-file=/var/run/paprika-satellite/token
+            - {{ printf "--satellite-heartbeat-interval=%s" .Values.heartbeatInterval | quote }}
+            - {{ printf "--satellite-batch-interval=%s" .Values.batchInterval | quote }}
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address=0
+            {{- if .Values.ca.existingConfigMap }}
+            - --satellite-ca-file=/var/run/paprika-satellite-ca/ca.crt
+            {{- end }}
+            {{- range .Values.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: probe
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probe
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probe
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: satellite-token
+              mountPath: /var/run/paprika-satellite
+              readOnly: true
+            {{- if .Values.ca.existingConfigMap }}
+            - name: satellite-ca
+              mountPath: /var/run/paprika-satellite-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: satellite-token
+          secret:
+            secretName: {{ $tokenSecret | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ required "token.key is required" .Values.token.key | quote }}
+                path: token
+        {{- if .Values.ca.existingConfigMap }}
+        - name: satellite-ca
+          configMap:
+            name: {{ .Values.ca.existingConfigMap | quote }}
+            items:
+              - key: {{ required "ca.key is required" .Values.ca.key | quote }}
+                path: ca.crt
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

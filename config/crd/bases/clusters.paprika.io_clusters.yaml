@@ -160,6 +160,26 @@ spec:
                     - aks
                     type: string
                 type: object
+              satellite:
+                description: |-
+                  Satellite configures outbound state reporting. Direct clusters may keep
+                  their kubeconfig deployment connection while reporting via a satellite.
+                properties:
+                  tokenSecretRef:
+                    description: SecretRef references a Kubernetes Secret.
+                    properties:
+                      key:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - tokenSecretRef
+                type: object
               server:
                 type: string
               serviceAccount:
@@ -364,6 +384,73 @@ spec:
                     description: Type is the provider the controller resolved, e.g.
                       "vultr".
                     type: string
+                type: object
+              satellite:
+                description: |-
+                  SatelliteStatus persists the accepted baseline across API replica restarts.
+                  A kube-system UID binds a registration to the physical cluster; sessions and
+                  sequences protect delta application against gaps and duplicate deliveries.
+                properties:
+                  applications:
+                    items:
+                      description: |-
+                        SatelliteApplication is an observation, not a desired-state Application.
+                        Namespace and logical identity keep deployments in different tenants apart.
+                      properties:
+                        health:
+                          type: string
+                        identity:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        outOfSync:
+                          format: int32
+                          type: integer
+                        phase:
+                          type: string
+                        project:
+                          type: string
+                        resourceCount:
+                          format: int32
+                          type: integer
+                        sourceRevision:
+                          type: string
+                        syncKnown:
+                          type: boolean
+                      required:
+                      - name
+                      - namespace
+                      type: object
+                    maxItems: 2000
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - namespace
+                    - name
+                    x-kubernetes-list-type: map
+                  clusterUid:
+                    type: string
+                  lastSeen:
+                    format: date-time
+                    type: string
+                  reportDigest:
+                    type: string
+                  retiredSessions:
+                    items:
+                      type: string
+                    maxItems: 16
+                    type: array
+                  sequence:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  sessionId:
+                    type: string
+                required:
+                - clusterUid
+                - sequence
+                - sessionId
                 type: object
               version:
                 type: string

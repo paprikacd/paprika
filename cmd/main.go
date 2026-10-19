@@ -145,37 +145,45 @@ func newScheme() *runtime.Scheme {
 // the viper key, which is the flag name for flag-backed settings and a
 // kebab-case key for env-only settings.
 type cliConfig struct {
-	MetricsAddr        string `mapstructure:"metrics-bind-address"`
-	MetricsCertPath    string `mapstructure:"metrics-cert-path"`
-	MetricsCertName    string `mapstructure:"metrics-cert-name"`
-	MetricsCertKey     string `mapstructure:"metrics-cert-key"`
-	WebhookCertPath    string `mapstructure:"webhook-cert-path"`
-	WebhookCertName    string `mapstructure:"webhook-cert-name"`
-	WebhookCertKey     string `mapstructure:"webhook-cert-key"`
-	ProbeAddr          string `mapstructure:"health-probe-bind-address"`
-	UIAddr             string `mapstructure:"ui-bind-address"`
-	WebhookAddr        string `mapstructure:"webhook-bind-address"`
-	PprofAddr          string `mapstructure:"pprof-bind-address"`
-	OperatorNamespace  string `mapstructure:"operator-namespace"`
-	Mode               string `mapstructure:"mode"`
-	K8sAPIServer       string `mapstructure:"k8s-api-server"`
-	K8sTokenFile       string `mapstructure:"k8s-token-file"`
-	RepoServerAddr     string `mapstructure:"repo-server-addr"`
-	RepoWorkDir        string `mapstructure:"repo-workdir"`
-	AgentClusterID     string `mapstructure:"agent-cluster-id"`
-	WebhookSecret      string `mapstructure:"webhook-secret"`
-	AuthRBACRules      string `mapstructure:"auth-rbac-rules"`
-	CacheBackend       string `mapstructure:"cache-backend"`
-	CacheRedisAddr     string `mapstructure:"cache-redis-addr"`
-	CacheRedisPassword string `mapstructure:"cache-redis-password"`
-	CacheRedisDB       int    `mapstructure:"cache-redis-db"`
-	ShardID            int    `mapstructure:"shard-id"`
-	ShardTotal         int    `mapstructure:"shard-total"`
-	ShardIDSource      string `mapstructure:"shard-id-source"`
-	APIMaxConns        int    `mapstructure:"api-max-conns"`
-	AuditLogEnabled    bool   `mapstructure:"audit-enabled"`
+	MetricsAddr                string        `mapstructure:"metrics-bind-address"`
+	MetricsCertPath            string        `mapstructure:"metrics-cert-path"`
+	MetricsCertName            string        `mapstructure:"metrics-cert-name"`
+	MetricsCertKey             string        `mapstructure:"metrics-cert-key"`
+	WebhookCertPath            string        `mapstructure:"webhook-cert-path"`
+	WebhookCertName            string        `mapstructure:"webhook-cert-name"`
+	WebhookCertKey             string        `mapstructure:"webhook-cert-key"`
+	ProbeAddr                  string        `mapstructure:"health-probe-bind-address"`
+	UIAddr                     string        `mapstructure:"ui-bind-address"`
+	WebhookAddr                string        `mapstructure:"webhook-bind-address"`
+	PprofAddr                  string        `mapstructure:"pprof-bind-address"`
+	OperatorNamespace          string        `mapstructure:"operator-namespace"`
+	Mode                       string        `mapstructure:"mode"`
+	K8sAPIServer               string        `mapstructure:"k8s-api-server"`
+	K8sTokenFile               string        `mapstructure:"k8s-token-file"`
+	RepoServerAddr             string        `mapstructure:"repo-server-addr"`
+	RepoWorkDir                string        `mapstructure:"repo-workdir"`
 	ObservabilityGatewayAddr   string        `mapstructure:"observability-gateway-addr"`
 	ObsProviderProbeInterval   time.Duration `mapstructure:"obs-provider-probe-interval"`
+	AgentClusterID             string        `mapstructure:"agent-cluster-id"`
+	SatelliteControlPlaneURL   string        `mapstructure:"satellite-control-plane-url"`
+	SatelliteClusterName       string        `mapstructure:"satellite-cluster-name"`
+	SatelliteClusterNamespace  string        `mapstructure:"satellite-cluster-namespace"`
+	SatelliteDisplayName       string        `mapstructure:"satellite-display-name"`
+	SatelliteTokenFile         string        `mapstructure:"satellite-token-file"`
+	SatelliteCAFile            string        `mapstructure:"satellite-ca-file"`
+	SatelliteHeartbeatInterval time.Duration `mapstructure:"satellite-heartbeat-interval"`
+	SatelliteBatchInterval     time.Duration `mapstructure:"satellite-batch-interval"`
+	WebhookSecret              string        `mapstructure:"webhook-secret"`
+	AuthRBACRules              string        `mapstructure:"auth-rbac-rules"`
+	CacheBackend               string        `mapstructure:"cache-backend"`
+	CacheRedisAddr             string        `mapstructure:"cache-redis-addr"`
+	CacheRedisPassword         string        `mapstructure:"cache-redis-password"`
+	CacheRedisDB               int           `mapstructure:"cache-redis-db"`
+	ShardID                    int           `mapstructure:"shard-id"`
+	ShardTotal                 int           `mapstructure:"shard-total"`
+	ShardIDSource              string        `mapstructure:"shard-id-source"`
+	APIMaxConns                int           `mapstructure:"api-max-conns"`
+	AuditLogEnabled            bool          `mapstructure:"audit-enabled"`
 
 	EnableLeaderElection bool `mapstructure:"leader-elect"`
 	SecureMetrics        bool `mapstructure:"metrics-secure"`
@@ -269,7 +277,7 @@ func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Co
 
 	root := &cobra.Command{
 		Use:           "manager",
-		Short:         "Paprika manager — operator, API, webhook, repo-server and agent modes",
+		Short:         "Paprika manager — operator, API, webhook, repo-server, agent and satellite modes",
 		Version:       buildinfo.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -394,6 +402,8 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 // each stay readable.
 func startMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
 	switch cfg.Mode {
+	case "satellite":
+		return runSatelliteMode(ctx, cfg, setupLog)
 	case "agent":
 		return runAgentMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.AgentClusterID, cfg.MetricsAddr, cfg.PprofAddr, setupLog)
 	case "repo-server":
@@ -664,7 +674,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 			"connections wait in the kernel accept queue. 0 disables the limit.")
 	registerControllerTuningFlags(fs)
 	fs.String("mode", "operator",
-		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent). "+
+		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), 'agent' (apply agent), or 'satellite' (outbound state reporting). "+
 			"The mode subcommands are equivalent: 'manager api' == 'manager --mode=api'.")
 	fs.String("k8s-api-server", "",
 		"Kubernetes API server URL. Only used in 'api' mode.")
@@ -675,6 +685,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 	registerRepoServerFlags(fs)
 	fs.String("agent-cluster-id", "",
 		"Cluster ID for the in-cluster agent. Only used in 'agent' mode.")
+	registerSatelliteFlags(fs)
 	fs.Bool("auth-enabled", false,
 		"Enable authentication and authorization for the API server.")
 	fs.String("auth-basic-username", "",
@@ -952,6 +963,11 @@ func buildAPIExtraMuxHandlers(
 		return nil, nil, err
 	}
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
+	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme())
+	if err != nil {
+		return nil, nil, err
+	}
+	extraMuxHandlers = append(extraMuxHandlers, satelliteRegistrar)
 
 	var mcpCache *cache.Cache
 	if cfg.MCPEnabled {
@@ -999,7 +1015,14 @@ func prepareStandaloneFleetRuntime(
 	if err = fleetRuntime.Register(ctx); err != nil {
 		return nil, fmt.Errorf("register fleet index informers: %w", err)
 	}
-	clients.fleetReader = fleetRuntime.Reader()
+	satelliteSource, err := fleet.NewClusterSatelliteSource(ctx, clients.cacheBundle.Cache)
+	if err != nil {
+		return nil, fmt.Errorf("build satellite fleet source: %w", err)
+	}
+	clients.fleetReader, err = fleet.NewSatelliteReader(fleetRuntime.Reader(), satelliteSource)
+	if err != nil {
+		return nil, fmt.Errorf("build combined fleet reader: %w", err)
+	}
 	return fleetRuntime, nil
 }
 

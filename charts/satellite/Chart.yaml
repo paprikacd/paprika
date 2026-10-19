@@ -1,0 +1,14 @@
+apiVersion: v2
+name: paprika-satellite
+description: A read-only Paprika satellite that reports cluster state to a central control plane
+type: application
+version: 0.1.0
+appVersion: "0.2.3"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/benebsworth/paprika
+sources:
+  - https://github.com/benebsworth/paprika
+keywords:
+  - kubernetes
+  - multi-cluster
+  - paprika

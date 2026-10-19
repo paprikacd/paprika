@@ -17,7 +17,7 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 | Feature | Description | Guide |
 |---------|-------------|-------|
 | **Canary** | Weighted traffic shifting with configurable steps, intervals, and automated analysis. | [Canary Guide](guides/canary.md) |
-| **Multi-cluster** | Deploy to remote clusters via kubeconfig secrets, agents, or in-cluster mode. | [Multi-cluster Guide](guides/multi-cluster.md) |
+| **Multi-cluster** | Automatically onboard remote state through outbound satellites, merge shared app placements, and deploy through Stage-level cluster connections. | [Multi-cluster Guide](guides/multi-cluster.md) |
 | **Gates** | Automated smoke-test and duration gates plus manual approval gates. | [Gates Guide](guides/gates.md) |
 | **Health Checks** | CEL-based and HTTP-probe health evaluations for applications and resources. | [Getting Started](getting-started.md) |
 | **DeepHost delivery** | Git-sourced Helm delivery of a Kubernetes hosting platform with staged promotion, router health checks, rollback, and shared Envoy integration. | [DeepHost Integration](guides/deephost.md) |

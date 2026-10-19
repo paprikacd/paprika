@@ -1,6 +1,13 @@
-# Multi-Cluster Deployments
+# Multi-Cluster Orchestration
 
-Paprika can deploy applications to remote Kubernetes clusters. Each `Stage` references a `Cluster` resource that describes how the operator should connect to the target cluster.
+Paprika combines cluster registrations, application placement, and observed
+health into one fleet. A satellite in each remote cluster watches local state
+and sends compact reports to the central control plane over an outbound HTTPS
+connection. The first authorized report registers the cluster and adds its
+applications to the existing fleet views.
+
+Each `Stage` also references a `Cluster` resource that describes how the
+operator should connect to its deployment target.
 
 ## Cluster Modes
 
@@ -10,7 +17,250 @@ The `Cluster` CR supports three connection modes:
 |------|----------|
 | `in-cluster` | The operator runs inside the target cluster and uses its own service account. |
 | `direct` | The operator connects to a remote API server using a kubeconfig stored in a Secret. |
-| `agent` | The operator connects via a Paprika agent running in the remote cluster. |
+| `agent` | A satellite reports observed state through an outbound connection. Deployment through the existing apply agent additionally requires a reachable agent endpoint. |
+
+## Satellite Onboarding
+
+Install the central chart and CRDs from a build containing satellite support.
+The API and operator serve `/api/satellite/report`; expose that route at the
+central API origin. Satellite authentication uses a token scoped to one cluster
+registration and is independent of browser or MCP authentication.
+
+For each physical cluster, choose a unique, stable central name. A satellite
+derives the physical cluster's identity from the `kube-system` namespace UID.
+The control plane pins that UID on the first report and rejects a different
+cluster using the same registration.
+
+Create one random token and provision it in both environments. The central
+Secret must be named `<cluster-name>-satellite-token` and carry the label
+`paprika.io/satellite-cluster: <cluster-name>`. The satellite chart references
+an existing local Secret; keep the token out of values files, command flags,
+and version control.
+
+```sh
+# Replace these values with the intended contexts and central API origin.
+PAPRIKA_CONTROL_CONTEXT=control-plane
+PAPRIKA_SATELLITE_CONTEXT=edge-eu
+PAPRIKA_CONTROL_NAMESPACE=paprika-system
+PAPRIKA_SATELLITE_NAMESPACE=paprika-satellite
+PAPRIKA_CLUSTER_NAME=edge-eu
+PAPRIKA_CONTROL_URL=https://paprika.example.com
+PAPRIKA_IMAGE_TAG=replace-with-immutable-build-tag
+
+paprika_satellite_tmp="$(mktemp -d)"
+chmod 700 "$paprika_satellite_tmp"
+trap 'rm -rf "$paprika_satellite_tmp"' EXIT
+openssl rand -hex 32 | tr -d '\n' > "$paprika_satellite_tmp/token"
+chmod 600 "$paprika_satellite_tmp/token"
+
+kubectl config use-context "$PAPRIKA_CONTROL_CONTEXT"
+kubectl config current-context
+kubectl -n "$PAPRIKA_CONTROL_NAMESPACE" create secret generic \
+  "$PAPRIKA_CLUSTER_NAME-satellite-token" \
+  --from-file="token=$paprika_satellite_tmp/token"
+kubectl -n "$PAPRIKA_CONTROL_NAMESPACE" get secret \
+  "$PAPRIKA_CLUSTER_NAME-satellite-token"
+
+kubectl config current-context
+kubectl -n "$PAPRIKA_CONTROL_NAMESPACE" label secret \
+  "$PAPRIKA_CLUSTER_NAME-satellite-token" \
+  "paprika.io/satellite-cluster=$PAPRIKA_CLUSTER_NAME"
+kubectl -n "$PAPRIKA_CONTROL_NAMESPACE" get secret \
+  "$PAPRIKA_CLUSTER_NAME-satellite-token" --show-labels
+
+kubectl config use-context "$PAPRIKA_SATELLITE_CONTEXT"
+kubectl config current-context
+kubectl create namespace "$PAPRIKA_SATELLITE_NAMESPACE"
+kubectl get namespace "$PAPRIKA_SATELLITE_NAMESPACE"
+
+kubectl config current-context
+kubectl -n "$PAPRIKA_SATELLITE_NAMESPACE" create secret generic \
+  paprika-satellite-token --from-file="token=$paprika_satellite_tmp/token"
+kubectl -n "$PAPRIKA_SATELLITE_NAMESPACE" get secret paprika-satellite-token
+
+helm template paprika-satellite charts/satellite/ \
+  --namespace "$PAPRIKA_SATELLITE_NAMESPACE" \
+  --set "controlPlaneURL=$PAPRIKA_CONTROL_URL" \
+  --set "cluster.name=$PAPRIKA_CLUSTER_NAME" \
+  --set "cluster.namespace=$PAPRIKA_CONTROL_NAMESPACE" \
+  --set token.existingSecret=paprika-satellite-token \
+  --set "image.tag=$PAPRIKA_IMAGE_TAG"
+
+kubectl config current-context
+helm upgrade --install paprika-satellite charts/satellite/ \
+  --namespace "$PAPRIKA_SATELLITE_NAMESPACE" \
+  --set "controlPlaneURL=$PAPRIKA_CONTROL_URL" \
+  --set "cluster.name=$PAPRIKA_CLUSTER_NAME" \
+  --set "cluster.namespace=$PAPRIKA_CONTROL_NAMESPACE" \
+  --set token.existingSecret=paprika-satellite-token \
+  --set "image.tag=$PAPRIKA_IMAGE_TAG" \
+  --wait --timeout 5m
+kubectl -n "$PAPRIKA_SATELLITE_NAMESPACE" get deployments,pods
+
+kubectl --context "$PAPRIKA_CONTROL_CONTEXT" \
+  -n "$PAPRIKA_CONTROL_NAMESPACE" get cluster "$PAPRIKA_CLUSTER_NAME" -o yaml
+```
+
+If the satellite namespace already exists, omit its creation. No Paprika CRDs
+are required in the remote cluster: standard Deployments, StatefulSets, and
+DaemonSets supply application observations. When the remote cluster also has
+Paprika Applications, the satellite watches their status and uses those
+application identities.
+
+For a pre-existing agent registration, declare the satellite token explicitly:
+
+```yaml
+apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: edge-eu
+  namespace: paprika-system
+spec:
+  displayName: Edge Europe
+  mode: agent
+  satellite:
+    tokenSecretRef:
+      name: edge-eu-satellite-token
+      key: token
+```
+
+Newly onboarded clusters appear in the cluster board and their applications
+join fleet queries automatically. An existing `direct` registration can opt
+into reporting by adding `spec.satellite.tokenSecretRef`; its kubeconfig and
+deployment connection keep working. A newly onboarded `agent` Cluster can
+later use `mode: direct` with a `kubeconfigSecretRef` to enable central
+deployment orchestration while retaining its satellite observations.
+The `in-cluster` registration continues to use the control plane's own service
+account for inventory.
+
+### State Transport and Reconnects
+
+One satellite Deployment runs per cluster. Shared Kubernetes watches maintain
+a local cache for nodes, pods, namespaces, supported workloads, and optional
+Paprika Applications. The initial report contains a complete application
+snapshot; later reports send changed applications and deletion keys, with
+cluster inventory as an aggregate. Reports are batched every two seconds by
+default, gzip-compressed, and sent over a reusable HTTP connection. Idle
+clusters send a heartbeat every 30 seconds.
+
+Each report carries a session ID and sequence number. Retries preserve the
+same report identity, allowing the control plane to acknowledge duplicate
+delivery without repeating its effects. Reconnects begin with a fresh snapshot
+so deleted applications do not remain in the central view. The current protocol
+bounds each uncompressed report to 1 MiB and each cluster to 2,000 observed
+applications.
+
+Cluster reports persist in `Cluster.status.satellite`, so a control-plane
+restart reconstructs the view from Kubernetes. If heartbeats stop, observations
+remain visible with unknown health and sync state. The cluster becomes
+`Unhealthy` after the greater of three health-check intervals and
+`connectionTimeout` (90 seconds with defaults).
+If you increase the chart's `heartbeatInterval` beyond this window, also
+increase the central Cluster's `spec.healthCheck.interval` so idle clusters
+remain current between heartbeats.
+
+The chart uses a single replica and a `Recreate` deployment strategy to avoid
+overlapping reporters during upgrades. It exposes only the local probe port;
+the central control plane does not require inbound network access to the
+satellite. The service account grants `get`, `list`, and `watch` for the watched
+resources and `get` on `/version`. It does not need access to Secrets or
+permission to apply application manifests.
+
+### Application Identity Across Clusters
+
+Application identity defaults to namespace and application name. Instances of
+`production/payments` on multiple clusters become one logical application with
+one placement per cluster. `staging/payments` remains a separate application.
+The fleet retains each placement's health and connection state and aggregates
+the logical application using the least healthy placement and combined
+resource counts. Paprika Applications report their known drift; native
+workloads report unknown sync state because they have no Paprika desired-state
+comparison. Aggregate drift counts are shown where reported; the placement
+table shows health and connectivity.
+
+To group differently named instances within a namespace, set
+`app.paprika.io/identity` to the same valid DNS subdomain on their Paprika
+Applications or workloads:
+
+```yaml
+metadata:
+  name: payments-eu
+  namespace: production
+  labels:
+    app.paprika.io/identity: payments
+```
+
+Namespaced identity also applies to this explicit label; it cannot merge
+different namespaces. Observations must agree on their declared project before
+they can join one application. A central Application retains its release and
+control metadata while gaining remote placements. Applications discovered only
+through satellites are visible as observations and have no central mutation
+capabilities.
+
+### Private CAs and Credential Rotation
+
+For a private HTTPS CA, create a ConfigMap containing `ca.crt` in the satellite
+namespace and set `ca.existingConfigMap` (and `ca.key` if necessary). The
+satellite adds that CA to its trust store. HTTPS is required for remote
+endpoints; plain HTTP is accepted only for loopback development.
+
+The mounted token is read for each report, so a Secret update can rotate it
+without restarting the satellite. Update the central token and then the local
+token; reports retry through the short mismatch window. Disabling the central
+Cluster or removing its central token Secret stops report authorization.
+
+### Deployment Transport
+
+Satellite reporting supplies fleet observation. Deploying to a remote target
+continues to use the existing `direct` kubeconfig connection or reachable
+`agent` apply endpoint. The registered Cluster's `spec.mode` is authoritative;
+a Stage reference cannot override it with a different mode. For direct
+deployment, the registration must provide `spec.kubeconfigSecretRef` pointing
+to a central Secret whose `kubeconfig` key contains the remote kubeconfig.
+Set `key: kubeconfig` explicitly. Install and grant that deployment transport
+the permissions required by its manifests separately from the read-only
+satellite. Satellite onboarding alone does not grant remote deployment
+permissions.
+
+For example, enable deployment on an onboarded cluster while retaining its
+satellite reports:
+
+```yaml
+apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: edge-eu
+  namespace: paprika-system
+spec:
+  displayName: Edge Europe
+  mode: direct
+  kubeconfigSecretRef:
+    name: edge-eu-kubeconfig
+    namespace: paprika-system
+    key: kubeconfig
+  satellite:
+    tokenSecretRef:
+      name: edge-eu-satellite-token
+      key: token
+```
+
+Remote hook lifecycles, `trafficRouter` changes, live `podMetrics` analysis,
+desired-resource drift checks, and Release resource cleanup use the Stage's target cluster and the same
+registered kubeconfig credentials as workload apply. The inbound agent
+transport supports manifest apply; these other operations require direct
+transport and report an explicit error when configured against an agent
+target.
+
+When the current deployment target cannot supply live resource reads, the
+Application records `DiffUnavailable`, marks health unknown and sync incomplete,
+and pauses drift-triggered self-healing. It retains last-known resource status
+until the target becomes readable again; a missing remote resource is never
+inferred from the control plane's local cluster.
+
+Release deletion keeps the cleanup finalizer when its Stage or target
+transport cannot be resolved. Preserve Stage and Cluster registrations and
+their credentials until Release deletion completes so cleanup can reach the
+resources on the correct cluster.
 
 ## Registering a Cluster
 
@@ -47,7 +297,10 @@ metadata:
 spec:
   displayName: Edge
   mode: agent
-  agentAddress: paprika-agent.edge:443
+  satellite:
+    tokenSecretRef:
+      name: edge-cluster-satellite-token
+      key: token
 ```
 
 ## Kubeconfig Secret
@@ -239,11 +492,37 @@ spec:
   cluster:
     name: prod-cluster
     namespace: paprika-system
-    mode: direct
-    kubeconfigSecret: prod-kubeconfig
 ```
 
-The `cluster` block in `ApplicationPromotionStage` supports the same fields and can be used inline in an `Application`.
+The `cluster` block in `ApplicationPromotionStage` supports the same reference
+and can be used inline in an `Application`. Use one stage for each target:
+
+```yaml
+metadata:
+  name: payments
+  namespace: production
+spec:
+  stages:
+    - name: dev
+      ring: 1
+    - name: prod-eu
+      ring: 2
+      cluster:
+        name: edge-eu
+        namespace: paprika-system
+    - name: prod-au
+      ring: 3
+      cluster:
+        name: edge-au
+        namespace: paprika-system
+```
+
+Add these stages to the Application's source and delivery configuration.
+Paprika creates Stage resources named `payments-dev`, `payments-prod-eu`,
+and `payments-prod-au` in `production`. The dev stage defaults to the
+control plane's in-cluster target; the two production stages resolve their
+respective registrations. Register `edge-eu` and `edge-au` with direct
+credentials to run the full deployment lifecycle on both clusters.
 
 ## Full Example
 
@@ -310,8 +589,6 @@ spec:
       cluster:
         name: prod
         namespace: paprika-system
-        mode: direct
-        kubeconfigSecret: prod-kubeconfig
 ```
 
 ## Cluster Health
@@ -322,7 +599,10 @@ The cluster controller periodically health-checks registered clusters. Check sta
 kubectl get cluster -n paprika-system
 ```
 
-A cluster in `Unhealthy` phase will block deployments to stages that reference it.
+Cluster health describes the latest connection or satellite report status.
+Deployment operations resolve the Stage's transport separately; a missing,
+disabled, unsupported, or failing transport stops the Release operation with
+an error.
 
 ## The In-Cluster Registration
 

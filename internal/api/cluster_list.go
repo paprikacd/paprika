@@ -182,6 +182,10 @@ func clusterMessage(
 		message.HealthCheckTimeout = cluster.Spec.HealthCheck.Timeout
 	}
 	message.Inventory = clusterInventoryMessage(cluster.Status.Inventory)
+	if cluster.Spec.Satellite != nil && summary.Connection != fleet.ConnectionStateHealthy {
+		message.Inventory.State = paprikav1.DataState_DATA_STATE_NOT_AVAILABLE
+		message.Inventory.UnavailableReason = "satellite inventory is unavailable until reporting resumes"
+	}
 	message.Provider = clusterProviderMessage(cluster.Status.Provider)
 
 	return message

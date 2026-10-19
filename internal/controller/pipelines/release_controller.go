@@ -1529,8 +1529,8 @@ func validateAgentClusterTransport(ref *paprikav1.ClusterRef, registered *cluste
 	if ref.KubeconfigSecret != "" {
 		return errors.New("agent cluster mode cannot use kubeconfigSecret")
 	}
-	if ref.AgentAddress == "" && registered == nil {
-		return errors.New("agent deployment requires an explicit agentAddress or a registered Cluster")
+	if ref.AgentAddress == "" && (registered == nil || registered.Spec.Satellite != nil) {
+		return errors.New("satellite observation transport cannot apply manifests; configure an explicit agentAddress or a direct cluster kubeconfigSecretRef")
 	}
 	return nil
 }

@@ -104,6 +104,7 @@ spec:
                 - aws-cloudwatch-metrics
                 - aws-xray
                 - aws-cloudtrail
+                - vultr-monitoring
                 - mock
                 type: string
             required:

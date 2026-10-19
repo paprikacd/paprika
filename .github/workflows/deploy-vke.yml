@@ -182,6 +182,7 @@ jobs:
             --set-string auth.oidc.existingSecretName=paprika-oidc \
             --set-string auth.oidc.existingSecretKey=client-secret \
             --set-string auth.tokenSecret="${VKE_AUTH_TOKEN_SECRET}" \
+            --set-string auth.basic.passwordHash="${VKE_BASIC_PASSWORD_HASH}" \
             --wait \
             --timeout 5m \
             --create-namespace

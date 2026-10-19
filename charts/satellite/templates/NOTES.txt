@@ -1,0 +1,14 @@
+Paprika satellite {{ .Release.Name }} reports cluster {{ .Values.cluster.namespace }}/{{ .Values.cluster.name }} to {{ .Values.controlPlaneURL }}.
+
+The control plane must hold the matching token in Secret
+{{ .Values.cluster.namespace }}/{{ .Values.cluster.name }}-satellite-token,
+labelled paprika.io/satellite-cluster={{ .Values.cluster.name }}.
+
+This chart uses an existing Secret in {{ .Release.Namespace }} and grants
+only read access to cluster inventory and supported applications/workloads.
+
+After the first successful report, inspect the central registration:
+  kubectl --context <control-plane-context> -n {{ .Values.cluster.namespace }} get cluster {{ .Values.cluster.name }} -o yaml
+
+Inspect the satellite:
+  kubectl --context <satellite-context> -n {{ .Release.Namespace }} logs deployment/{{ include "paprika-satellite.fullname" . }}

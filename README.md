@@ -23,7 +23,7 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 - **Progressive Delivery** — Canary and rolling deployments with configurable step weights and interval throttling
 - **Pluggable Traffic Router** — Built-in support for Istio (VirtualService) and Gateway API (HTTPRoute) traffic splitting
 - **Multi-Source Support** — Helm charts (local or remote), Git repositories, and S3 buckets as template sources
-- **Multi-Cluster Deployments** — Stage-level cluster references with kubeconfig-based authentication
+- **Multi-Cluster Orchestration** — Outbound satellites automatically onboard cluster state, merge shared applications across placements, and complement Stage-level deployment targets; [onboarding guide](docs/guides/multi-cluster.md)
 - **Health Evaluation** — CEL-based health checks with a library of built-in resource health rules
 - **Drift Detection** — API-group-aware diff engine with label-selector scoping, null-value handling, and generated-child exclusion
 - **Garbage Collection** — Opt-in pruning of stale resources after apply, with protection annotations and cluster-scoped kind allowlists

@@ -57,6 +57,7 @@ func projectApplication(input *projectionInput) (ApplicationSummary, ProjectionR
 	id := types.NamespacedName{Namespace: app.Namespace, Name: app.Name}
 	summary := ApplicationSummary{
 		Identity:             id,
+		LogicalIdentityName:  app.Labels[SatelliteIdentityLabel],
 		Project:              declaredProject(app),
 		SourceType:           mapSourceType(app.Spec.Source.Type),
 		SourceRevision:       app.Status.SourceRevision,

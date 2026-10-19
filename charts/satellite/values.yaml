@@ -1,0 +1,72 @@
+# Central Paprika API origin, for example https://paprika.example.com.
+controlPlaneURL: ""
+
+cluster:
+  # Cluster registration identity in the central control plane. Use a unique
+  # name for each physical cluster and keep it stable across reinstallations.
+  name: ""
+  namespace: paprika-system
+  displayName: ""
+
+# Provision a scoped enrollment token outside Helm, in the satellite release
+# namespace. This chart never creates a Secret or embeds a literal token.
+token:
+  existingSecret: ""
+  key: token
+
+# Optional private CA bundle for the central HTTPS endpoint. Public CAs work
+# without this setting. The ConfigMap must exist in the satellite namespace.
+ca:
+  existingConfigMap: ""
+  key: ca.crt
+
+heartbeatInterval: 30s
+batchInterval: 2s
+
+image:
+  repository: ghcr.io/paprikacd/paprika
+  # Required unless repository contains an immutable @sha256 digest. Choose
+  # a build containing satellite mode; the chart does not infer an image tag.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+
+nameOverride: ""
+fullnameOverride: ""
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# Additional non-secret satellite flags. Authentication uses the token file.
+extraArgs: []

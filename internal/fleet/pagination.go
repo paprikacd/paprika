@@ -87,7 +87,7 @@ func (s *Snapshot) QueryApplications(
 	for index := start; index < end; index++ {
 		page.Applications = append(page.Applications, ApplicationQueryResult{
 			Summary:      cloneQueryApplicationSummary(&entries[index].summary),
-			Capabilities: scope.SortedCapabilities(entries[index].summary.Project),
+			Capabilities: applicationQueryCapabilities(scope, &entries[index].summary),
 		})
 	}
 
@@ -98,6 +98,13 @@ func (s *Snapshot) QueryApplications(
 		}
 	}
 	return page, nil
+}
+
+func applicationQueryCapabilities(scope QueryScope, app *ApplicationSummary) []Capability {
+	if app.SatelliteOnly {
+		return nil
+	}
+	return scope.SortedCapabilities(app.Project)
 }
 
 func seekApplicationPage(entries []applicationPageEntry, query *ApplicationQuery, cursor string) (int, error) {

@@ -1,0 +1,72 @@
+package clusters
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+)
+
+func TestReconcileSatelliteFreshnessAndDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		age      time.Duration
+		disabled bool
+		reported bool
+		want     clustersv1alpha1.ClusterPhase
+	}{
+		{"awaiting", 0, false, false, clustersv1alpha1.ClusterPhasePending},
+		{"connected", time.Second, false, true, clustersv1alpha1.ClusterPhaseHealthy},
+		{"disconnected", 2 * time.Minute, false, true, clustersv1alpha1.ClusterPhaseUnhealthy},
+		{"disabled", time.Second, true, true, clustersv1alpha1.ClusterPhaseDisabled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := clustersv1alpha1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			cluster := &clustersv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "east", Namespace: "paprika-system"}, Spec: clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeAgent, Disabled: tc.disabled, Satellite: &clustersv1alpha1.SatelliteSpec{TokenSecretRef: clustersv1alpha1.SecretRef{Name: "east-satellite-token"}}}, Status: clustersv1alpha1.ClusterStatus{Phase: clustersv1alpha1.ClusterPhaseHealthy, Inventory: &clustersv1alpha1.ClusterInventory{NodeCount: 3}, Conditions: []metav1.Condition{{Type: "Healthy", Status: metav1.ConditionTrue, Reason: "Old", LastTransitionTime: metav1.Now()}}}}
+			if tc.reported {
+				lastSeen := metav1.NewTime(time.Now().Add(-tc.age))
+				cluster.Status.Satellite = &clustersv1alpha1.SatelliteStatus{ClusterUID: "physical-east", SessionID: "s1", Sequence: 99, LastSeen: &lastSeen, Applications: []clustersv1alpha1.SatelliteApplication{{Namespace: "shop", Name: "api"}}}
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&clustersv1alpha1.Cluster{}).WithObjects(cluster).Build()
+			r := &ClusterReconciler{client: c, Scheme: scheme}
+			key := client.ObjectKeyFromObject(cluster)
+			result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.RequeueAfter <= 0 {
+				t.Fatal("no heartbeat expiry requeue")
+			}
+			var got clustersv1alpha1.Cluster
+			if err := c.Get(context.Background(), key, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Status.Phase != tc.want {
+				t.Fatalf("phase %s want %s", got.Status.Phase, tc.want)
+			}
+			if !meta.IsStatusConditionTrue(got.Status.Conditions, string(tc.want)) {
+				t.Fatal("active phase condition missing")
+			}
+			if tc.want != clustersv1alpha1.ClusterPhaseHealthy && meta.IsStatusConditionTrue(got.Status.Conditions, "Healthy") {
+				t.Fatal("stale healthy condition")
+			}
+			if got.Status.Inventory.NodeCount != 3 {
+				t.Fatal("health controller clobbered reported inventory")
+			}
+			if tc.reported && (got.Status.Satellite.Sequence != 99 || len(got.Status.Satellite.Applications) != 1) {
+				t.Fatal("health controller clobbered reporting baseline")
+			}
+		})
+	}
+}

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockClient = vi.hoisted(() => ({
   getApplication: vi.fn(),
+  queryApplications: vi.fn(),
   listReleases: vi.fn(),
   getResourceTreeDetailed: vi.fn(),
   getDataSources: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 vi.mock("@connectrpc/connect", () => ({
+  Code: {NotFound: 5},
   createPromiseClient: vi.fn(() => mockClient),
 }))
 
@@ -53,7 +55,7 @@ vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
 }))
 
-import { DataClass, DataState } from "@/gen/paprika/v1/api_pb"
+import { ApplicationSummary, DataClass, DataState, FleetConnectionState, FleetHealth, FleetSyncState, QueryApplicationsResponse } from "@/gen/paprika/v1/api_pb"
 
 import ApplicationDetailPage from "./page"
 
@@ -110,11 +112,21 @@ function lifecyclePhases() {
   }))
 }
 
+function observedResponse() {
+  return new QueryApplicationsResponse({applications: [new ApplicationSummary({
+    identity: {namespace: "payments", name: "checkout-api"},
+    health: FleetHealth.DEGRADED, sync: FleetSyncState.UNKNOWN,
+    resourceCount: 4, sourceRevision: "abcdef1234",
+    targets: [{stableId: "satellite:edge-eu:checkout-api", cluster: {namespace: "paprika-system", name: "edge-eu"}, clusterLabel: "edge-eu", health: FleetHealth.UNKNOWN, clusterConnection: FleetConnectionState.UNHEALTHY}],
+  })]})
+}
+
 describe("ApplicationDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSearch.value = "namespace=payments&name=checkout-api"
     mockClient.getApplication.mockResolvedValue({ application: { ...APPLICATION } })
+    mockClient.queryApplications.mockResolvedValue(new QueryApplicationsResponse())
     mockClient.listReleases.mockResolvedValue({ releases: [] })
     mockClient.getResourceTreeDetailed.mockResolvedValue({ nodes: [] })
     mockClient.getDataSources.mockResolvedValue({
@@ -135,6 +147,39 @@ describe("ApplicationDetailPage", () => {
     ).toBeInTheDocument()
     expect(screen.getByText("Degraded")).toBeInTheDocument()
     expect(screen.getByText("3 out of sync")).toBeInTheDocument()
+  })
+
+  it("opens satellite-only applications as read-only observations with cluster placement health", async () => {
+    mockClient.getApplication.mockRejectedValue({code: 5})
+    mockClient.queryApplications.mockResolvedValue(observedResponse())
+    render(<ApplicationDetailPage />)
+    await screen.findByRole("heading", {level: 1, name: "checkout-api"})
+    expect(screen.getByText("Read-only observation")).toBeInTheDocument()
+    expect(screen.getByText("edge-eu")).toBeInTheDocument()
+    expect(screen.getByText("Disconnected")).toBeInTheDocument()
+    expect(screen.getByText("abcdef1234")).toBeInTheDocument()
+    expect(screen.queryByRole("button", {name: /^Sync/i})).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+    expect(mockClient.getResourceTreeDetailed).not.toHaveBeenCalled()
+    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(reportRequestOutcome).toHaveBeenLastCalledWith(true)
+  })
+
+  it("keeps permission failures unavailable even when an indexed observation exists", async () => {
+    mockClient.getApplication.mockRejectedValue({code: 7})
+    mockClient.queryApplications.mockResolvedValue(observedResponse())
+    render(<ApplicationDetailPage />)
+    await screen.findByRole("heading", {name: "Application unavailable"})
+    expect(screen.queryByText("Read-only observation")).not.toBeInTheDocument()
+  })
+
+  it("shows merged cluster placements alongside a central application's controls", async () => {
+    mockClient.queryApplications.mockResolvedValue(observedResponse())
+    render(<ApplicationDetailPage />)
+    await screen.findByRole("heading", {name: "Cluster placements"})
+    expect(screen.getByText("edge-eu")).toBeInTheDocument()
+    expect(screen.queryByText("Read-only observation")).not.toBeInTheDocument()
+    expect(mockClient.getResourceTreeDetailed).toHaveBeenCalled()
   })
 
   describe("OWNERSHIP is NOT_CONFIGURED", () => {

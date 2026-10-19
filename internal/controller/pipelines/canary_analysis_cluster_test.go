@@ -72,7 +72,7 @@ func TestPodAnalysisRunsOnRemoteClusterWithoutChangingSharedAnalyzer(t *testing.
 }
 
 func TestAgentPodAnalysisFailsBeforeCentralReads(t *testing.T) {
-	registered := &clusters.Cluster{ObjectMeta: metav1.ObjectMeta{Namespace: "registrations", Name: "east"}, Spec: clusters.ClusterSpec{Mode: clusters.ClusterModeAgent}}
+	registered := &clusters.Cluster{ObjectMeta: metav1.ObjectMeta{Namespace: "registrations", Name: "east"}, Spec: clusters.ClusterSpec{Mode: clusters.ClusterModeAgent, Satellite: &clusters.SatelliteSpec{}}}
 	r := routingReconciler(t, registered)
 	central := kubefake.NewSimpleClientset()
 	r.Analyzer = analysis.NewCELAnalyzer(central, "workloads", nil, nil)

@@ -75,6 +75,22 @@ These use the OTel API (`otel.Meter("paprika")`) and appear with the
 | `paprika_sse_connections` | UpDownCounter | Active SSE connections |
 | `paprika_events_published_total` | Counter | Events published |
 
+### Satellite Reporting
+
+The central API records these OTel instruments for outbound satellite reports.
+Prometheus translates the dotted names to underscores and adds its standard
+counter and unit suffixes.
+
+| OTel instrument | Type | Attributes | Description |
+|-----------------|------|------------|-------------|
+| `paprika.satellite.reports` | Counter | `outcome` | Accepted or rejected report requests |
+| `paprika.satellite.report.duration` | Histogram (seconds) | `outcome` | Time to authenticate and persist a report |
+| `paprika.satellite.report.bytes` | Histogram (bytes) | none | Uncompressed size of accepted reports |
+
+Connection freshness and last-known inventory are available through fleet
+cluster views and `Cluster.status.satellite.lastSeen`. See the
+[multi-cluster guide](multi-cluster.md) for heartbeat and timeout settings.
+
 ### Kubernetes Gauges
 
 These are observable gauges populated from the K8s API on each scrape:

@@ -147,7 +147,14 @@ type StageTargetSummary struct {
 // fleet queries. Capabilities are intentionally absent: authorization derives
 // them for each request instead of persisting them in a shared snapshot.
 type ApplicationSummary struct {
-	Identity                     types.NamespacedName
+	Identity types.NamespacedName
+	// SatelliteOnly means the record has no Application in the central control
+	// plane. Its observations may be read, but central mutation capabilities
+	// must not be offered for the virtual identity.
+	SatelliteOnly bool
+	// LogicalIdentityName is an optional namespace-scoped identity label. The
+	// central Application keeps its physical Identity for action routing.
+	LogicalIdentityName          string
 	Project                      ProjectKey
 	Targets                      []StageTargetSummary
 	CurrentStage                 string

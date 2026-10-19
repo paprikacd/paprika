@@ -128,6 +128,7 @@ func validateCluster(cluster *clustersv1alpha1.Cluster) error {
 	}
 
 	allErrs = append(allErrs, validateClusterProvider(cluster.Spec.Provider, specPath)...)
+	allErrs = append(allErrs, validateClusterSatellite(cluster, specPath)...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -137,6 +138,24 @@ func validateCluster(cluster *clustersv1alpha1.Cluster) error {
 		cluster.Name,
 		allErrs,
 	)
+}
+
+func validateClusterSatellite(cluster *clustersv1alpha1.Cluster, specPath *field.Path) field.ErrorList {
+	if cluster.Spec.Satellite == nil {
+		return nil
+	}
+	var allErrs field.ErrorList
+	if cluster.Spec.Mode != clustersv1alpha1.ClusterModeAgent && cluster.Spec.Mode != clustersv1alpha1.ClusterModeDirect {
+		allErrs = append(allErrs, field.Invalid(specPath.Child("satellite"), "", "satellite reporting requires agent or direct mode"))
+	}
+	ref := cluster.Spec.Satellite.TokenSecretRef
+	if ref.Name == "" {
+		allErrs = append(allErrs, field.Required(specPath.Child("satellite", "tokenSecretRef", "name"), "satellite token secret name is required"))
+	}
+	if ref.Namespace != "" && ref.Namespace != cluster.Namespace {
+		allErrs = append(allErrs, field.Invalid(specPath.Child("satellite", "tokenSecretRef", "namespace"), ref.Namespace, "satellite credentials must be in the cluster registration namespace"))
+	}
+	return allErrs
 }
 
 // validateClusterProvider checks spec.provider's cross-field requirements.

@@ -63,6 +63,46 @@ type AgentInfo struct {
 	Address   string       `json:"address,omitempty"`
 }
 
+// SatelliteSpec authorizes outbound inventory reports from one remote cluster.
+// The credential is distinct from kubeconfig and provider credentials.
+type SatelliteSpec struct {
+	TokenSecretRef SecretRef `json:"tokenSecretRef"`
+}
+
+// SatelliteApplication is an observation, not a desired-state Application.
+// Namespace and logical identity keep deployments in different tenants apart.
+type SatelliteApplication struct {
+	Namespace      string `json:"namespace"`
+	Name           string `json:"name"`
+	Identity       string `json:"identity,omitempty"`
+	Project        string `json:"project,omitempty"`
+	Health         string `json:"health,omitempty"`
+	Phase          string `json:"phase,omitempty"`
+	OutOfSync      uint32 `json:"outOfSync,omitempty"`
+	SyncKnown      bool   `json:"syncKnown,omitempty"`
+	ResourceCount  uint32 `json:"resourceCount,omitempty"`
+	SourceRevision string `json:"sourceRevision,omitempty"`
+}
+
+// SatelliteStatus persists the accepted baseline across API replica restarts.
+// A kube-system UID binds a registration to the physical cluster; sessions and
+// sequences protect delta application against gaps and duplicate deliveries.
+type SatelliteStatus struct {
+	ClusterUID string `json:"clusterUid"`
+	SessionID  string `json:"sessionId"`
+	// +kubebuilder:validation:Minimum=1
+	Sequence     int64  `json:"sequence"`
+	ReportDigest string `json:"reportDigest,omitempty"`
+	// +kubebuilder:validation:MaxItems=16
+	RetiredSessions []string     `json:"retiredSessions,omitempty"`
+	LastSeen        *metav1.Time `json:"lastSeen,omitempty"`
+	// +kubebuilder:validation:MaxItems=2000
+	// +listType=map
+	// +listMapKey=namespace
+	// +listMapKey=name
+	Applications []SatelliteApplication `json:"applications,omitempty"`
+}
+
 // ClusterProviderSpec selects and configures the cloud-provider integration
 // for a Cluster. The provider API reports infrastructure details Kubernetes
 // itself does not carry — managed-cluster identity, node pools and their
@@ -195,6 +235,10 @@ type ClusterSpec struct {
 	// Provider configures cloud-provider enrichment. Nil disables enrichment;
 	// a non-nil provider with type "auto" still runs detection-only inventory.
 	Provider *ClusterProviderSpec `json:"provider,omitempty"`
+
+	// Satellite configures outbound state reporting. Direct clusters may keep
+	// their kubeconfig deployment connection while reporting via a satellite.
+	Satellite *SatelliteSpec `json:"satellite,omitempty"`
 }
 
 // ClusterStatus defines the observed state of a Cluster.
@@ -214,6 +258,8 @@ type ClusterStatus struct {
 	Version string `json:"version,omitempty"`
 
 	AgentInfo *AgentInfo `json:"agentInfo,omitempty"`
+
+	Satellite *SatelliteStatus `json:"satellite,omitempty"`
 
 	// Inventory is what the Kubernetes API reports about the cluster itself.
 	// Populated on each successful health check; nil until the first one

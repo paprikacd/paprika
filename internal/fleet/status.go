@@ -94,9 +94,13 @@ func (s *Snapshot) QueryStatus(
 	result.Attention = make([]ApplicationQueryResult, 0, end)
 	for _, entry := range attention[:end] {
 		summary := s.Applications[entry.identity]
+		capabilities := scope.SortedCapabilities(summary.Project)
+		if summary.SatelliteOnly {
+			capabilities = nil
+		}
 		result.Attention = append(result.Attention, ApplicationQueryResult{
 			Summary:      cloneQueryApplicationSummary(&summary),
-			Capabilities: scope.SortedCapabilities(summary.Project),
+			Capabilities: capabilities,
 		})
 	}
 	result.HasMoreAttention = result.AttentionTotal > uint64(len(result.Attention))

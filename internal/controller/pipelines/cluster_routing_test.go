@@ -44,6 +44,10 @@ func TestRegisteredClusterRoutingUsesAuthoritativeModeAndCredentialNamespace(t *
 			configure: func(c *clustersv1alpha1.Cluster) {
 				c.Spec.KubeconfigSecretRef = &clustersv1alpha1.SecretRef{Name: "remote-kubeconfig", Namespace: "credentials"}
 			}, wantNamespace: "credentials"},
+		{name: "satellite requires apply endpoint", mode: paprikav1.ClusterModeAgent,
+			configure: func(c *clustersv1alpha1.Cluster) { c.Spec.Satellite = &clustersv1alpha1.SatelliteSpec{} }, errContains: "observation transport cannot apply"},
+		{name: "satellite explicit apply endpoint", mode: paprikav1.ClusterModeAgent, ref: paprikav1.ClusterRef{AgentAddress: "https://agent.example"},
+			configure: func(c *clustersv1alpha1.Cluster) { c.Spec.Satellite = &clustersv1alpha1.SatelliteSpec{} }, wantNamespace: "registrations"},
 		{name: "classic registered agent keeps service discovery", mode: paprikav1.ClusterModeAgent, wantNamespace: "registrations"},
 		{name: "explicit mode conflict", mode: paprikav1.ClusterModeAgent, ref: paprikav1.ClusterRef{Mode: paprikav1.ClusterModeInCluster}, errContains: "does not match registered"},
 		{name: "disabled cluster", mode: paprikav1.ClusterModeInCluster, configure: func(c *clustersv1alpha1.Cluster) { c.Spec.Disabled = true }, errContains: "disabled"},
@@ -128,6 +132,7 @@ func TestRemoteApplyAndHooksSeparateCredentialsFromWorkloadNamespace(t *testing.
 
 	cluster.Spec.Mode = paprikav1.ClusterModeAgent
 	cluster.Spec.KubeconfigSecretRef = nil
+	cluster.Spec.Satellite = &clustersv1alpha1.SatelliteSpec{}
 	r = routingReconciler(t, cluster)
 	stage.Spec.Cluster.AgentAddress = "https://agent.example"
 	_, err = r.dynClientForStage(context.Background(), stage, release.Namespace)

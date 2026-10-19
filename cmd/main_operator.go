@@ -247,7 +247,15 @@ func buildOperatorManagerAndFleetRuntime(
 	if err = mgr.Add(fleetRuntime); err != nil {
 		return nil, nil, fmt.Errorf("register fleet index runtime: %w", err)
 	}
-	return mgr, fleetRuntime.Reader(), nil
+	satelliteSource, err := fleet.NewClusterSatelliteSource(ctx, mgr.GetCache())
+	if err != nil {
+		return nil, nil, fmt.Errorf("build satellite fleet source: %w", err)
+	}
+	fleetReader, err := fleet.NewSatelliteReader(fleetRuntime.Reader(), satelliteSource)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build combined fleet reader: %w", err)
+	}
+	return mgr, fleetReader, nil
 }
 
 func registerGauges(setupLog logr.Logger, c client.Client) {
@@ -566,6 +574,11 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	if err != nil {
 		return nil, fmt.Errorf("build UI handler: %w", err)
 	}
+	satelliteRegistrar, err := satelliteMuxRegistrar(mgr.GetConfig(), mgr.GetScheme())
+	if err != nil {
+		return nil, err
+	}
+	githubExchangeHandlers = append(githubExchangeHandlers, satelliteRegistrar)
 	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
 
 	return httpx.WithH2C(&http.Server{

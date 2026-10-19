@@ -634,7 +634,6 @@ type HealthCheckResult struct {
 }
 
 // ApplicationSpec defines the specification for an application.
-// ApplicationSpec defines the specification for an application.
 // +kubebuilder:validation:XValidation:rule="!has(self.trigger) || self.trigger.type != 'Promotion' || self.source.type == 'git' || (self.source.type == 'inline' && has(self.source.inline) && has(self.source.inline.artifact))",message="Promotion requires a Git source or a versioned inline artifact"
 type ApplicationSpec struct {
 	// Project references the AppProject that governs this application.

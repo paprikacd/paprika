@@ -182,6 +182,11 @@ func (r *Runtime) eventHandler(kind ResourceKind) cache.ResourceEventHandler {
 			if sameRuntimeResourceVersion(oldObject, newObject) {
 				return
 			}
+			if kind == ResourceCluster && sameSatelliteClusterProjection(oldObject, newObject) {
+				// The satellite source handles its own observations. Report-only
+				// updates must not rebuild every central app targeting this cluster.
+				return
+			}
 			affected := runtimeAffectedApplications(kind, oldObject, newObject)
 			r.enqueueObject(kind, oldObject, affected)
 			if oldKey, oldOK := runtimeObjectKey(oldObject); oldOK {

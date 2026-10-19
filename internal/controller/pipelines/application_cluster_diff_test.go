@@ -104,6 +104,7 @@ func TestUnavailableApplicationTargetDoesNotUseCentralDiffHealthOrSelfHeal(t *te
 	t.Parallel()
 	r, app, cluster := remoteApplicationDiffFixture(t, remoteConfigManifest)
 	cluster.Spec.Mode, cluster.Spec.KubeconfigSecretRef = paprikav1.ClusterModeAgent, nil
+	cluster.Spec.Satellite = &clustersv1alpha1.SatelliteSpec{}
 	require.NoError(t, r.client.Update(context.Background(), cluster))
 	shared := &applicationDiffRecorder{}
 	r.DiffEngine = shared

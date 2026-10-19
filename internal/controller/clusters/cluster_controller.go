@@ -90,7 +90,13 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 	}
 
 	if cluster.Spec.Disabled {
+		if cluster.Spec.Satellite != nil {
+			return r.reconcileSatellite(ctx, req.NamespacedName)
+		}
 		return r.updatePhase(ctx, &cluster, clustersv1alpha1.ClusterPhaseDisabled, "Disabled", "cluster is disabled")
+	}
+	if cluster.Spec.Satellite != nil {
+		return r.reconcileSatellite(ctx, req.NamespacedName)
 	}
 
 	cfg, err := r.buildConfig(ctx, &cluster)
