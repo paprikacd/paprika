@@ -178,6 +178,7 @@ jobs:
             --set-string apiServer.image.repository="${IMAGE_REFERENCE}" \
             --set-string repoServer.image.repository="${IMAGE_REFERENCE}" \
             --set-string webhookReceiver.image.repository="${IMAGE_REFERENCE}" \
+            --set-string observabilityGateway.image.repository="${IMAGE_REFERENCE}" \
             --set-string auth.oidc.clientID="${VKE_OIDC_CLIENT_ID}" \
             --set-string auth.oidc.existingSecretName=paprika-oidc \
             --set-string auth.oidc.existingSecretKey=client-secret \
