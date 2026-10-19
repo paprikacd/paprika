@@ -792,6 +792,71 @@ spec:
         namespace: paprika-system
 ```
 
+## Fanning Out with an ApplicationSet
+
+An `ApplicationSet` with a `clusters` generator produces one Application per
+registered cluster, so a fleet addition is a registration rather than an edit
+to every application:
+
+```yaml
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: checkout
+  namespace: checkout
+spec:
+  generators:
+    - clusters:
+        namespace: paprika-system
+        selector:
+          matchLabels:
+            tier: production
+  template:
+    metadata:
+      labels:
+        region: "{{.region}}"
+        placement: "{{.name}}"
+    project: default
+    source:
+      type: git
+      repoURL: https://github.com/example/checkout
+      targetRevision: main
+      path: deploy
+    stages:
+      - name: "{{.name}}"
+        ring: 1
+        cluster:
+          name: "{{.name}}"
+          namespace: "{{.namespace}}"
+```
+
+`namespace` is the namespace holding the registrations, which is usually the
+control plane's rather than the application's; it defaults to the
+ApplicationSet's own namespace. `selector` matches labels on the `Cluster`
+object or in its `spec.labels`. `names` lists registrations explicitly and
+resolves them the same way.
+
+Each registration contributes these parameters:
+
+| Parameter | Value |
+|-----------|-------|
+| `name` | Cluster resource name, and the `cluster.name` a stage needs |
+| `namespace` | Namespace holding the registration, for `cluster.namespace` |
+| `mode` | `direct`, `agent`, or `in-cluster` |
+| `server` | API server URL when the registration sets one |
+| `provider` | Detected cloud provider, when one was detected |
+| `region`, `tier` | Convenience copies of those two labels |
+| `label_<key>` | Every `spec.labels` entry, with characters outside `[A-Za-z0-9_]` replaced by `_` |
+
+Disabled clusters are skipped: generating an Application that can only fail
+fills the console with placements that will never converge. A name listed in
+`names` that has no registration still generates an Application, which then
+fails where an operator can see it.
+
+Generator parameters feed the Application name, so changing them (adding a
+generator parameter, moving a set to a selector) renames the generated
+Applications and replaces them. That is a real rollout, not a no-op.
+
 ## Cluster Health
 
 The cluster controller periodically health-checks registered clusters. Check status with:

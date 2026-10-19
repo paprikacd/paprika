@@ -15,6 +15,7 @@ import (
 	"text/template"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -224,36 +225,123 @@ func (r *ApplicationSetReconciler) generateGitDirectories(g *pipelinesv1alpha1.G
 }
 
 func (r *ApplicationSetReconciler) generateClusters(ctx context.Context, ns string, g *pipelinesv1alpha1.ClustersGenerator) ([]map[string]string, error) {
+	// Registrations usually live in the control plane's namespace, not the
+	// application's, so the generator can name the namespace to read.
+	clusterNamespace := g.Namespace
+	if clusterNamespace == "" {
+		clusterNamespace = ns
+	}
 	if len(g.Names) > 0 {
-		out := make([]map[string]string, 0, len(g.Names))
-		for _, name := range g.Names {
-			out = append(out, map[string]string{"name": name})
-		}
-		return out, nil
+		return r.clusterParamsForNames(ctx, clusterNamespace, g.Names)
+	}
+	if g.Selector == nil {
+		return nil, errors.New("clusters generator requires names or selector")
 	}
 
-	if g.Selector != nil {
-		var list clustersv1alpha1.ClusterList
-		if err := r.client.List(ctx, &list, client.InNamespace(ns)); err != nil {
-			return nil, fmt.Errorf("listing clusters: %w", err)
-		}
+	var list clustersv1alpha1.ClusterList
+	if err := r.client.List(ctx, &list, client.InNamespace(clusterNamespace)); err != nil {
+		return nil, fmt.Errorf("listing clusters: %w", err)
+	}
 
-		sel, err := metav1.LabelSelectorAsSelector(g.Selector)
+	sel, err := metav1.LabelSelectorAsSelector(g.Selector)
+	if err != nil {
+		return nil, fmt.Errorf("parsing selector: %w", err)
+	}
+
+	out := make([]map[string]string, 0, len(list.Items))
+	for i := range list.Items {
+		cluster := &list.Items[i]
+		if !sel.Matches(labels.Set(cluster.GetLabels())) && !sel.Matches(labels.Set(cluster.Spec.Labels)) {
+			continue
+		}
+		if clusterParamsSkippable(ctx, cluster) {
+			continue
+		}
+		out = append(out, clusterGeneratorParams(cluster))
+	}
+	return out, nil
+}
+
+// clusterParamsForNames resolves each named cluster so a static list produces
+// the same parameters a selector does. An unknown name still yields a parameter
+// set: the generated Application then fails where an operator can see it,
+// instead of the name silently disappearing from the set.
+func (r *ApplicationSetReconciler) clusterParamsForNames(ctx context.Context, ns string, names []string) ([]map[string]string, error) {
+	out := make([]map[string]string, 0, len(names))
+	for _, name := range names {
+		var cluster clustersv1alpha1.Cluster
+		err := r.client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &cluster)
+		if apierrors.IsNotFound(err) {
+			out = append(out, map[string]string{"name": name, "namespace": ns})
+			continue
+		}
 		if err != nil {
-			return nil, fmt.Errorf("parsing selector: %w", err)
+			return nil, fmt.Errorf("reading cluster %s/%s: %w", ns, name, err)
 		}
-
-		out := make([]map[string]string, 0, len(list.Items))
-		for i := range list.Items {
-			cluster := &list.Items[i]
-			if sel.Matches(labels.Set(cluster.GetLabels())) || sel.Matches(labels.Set(cluster.Spec.Labels)) {
-				out = append(out, map[string]string{"name": cluster.Name})
-			}
+		if clusterParamsSkippable(ctx, &cluster) {
+			continue
 		}
-		return out, nil
+		out = append(out, clusterGeneratorParams(&cluster))
 	}
+	return out, nil
+}
 
-	return nil, errors.New("clusters generator requires names or selector")
+// clusterParamsSkippable reports whether a registration can take a deployment.
+// A disabled cluster cannot, and generating an Application that can only fail
+// fills the console with placements that are never going to converge.
+func clusterParamsSkippable(ctx context.Context, cluster *clustersv1alpha1.Cluster) bool {
+	if !cluster.Spec.Disabled && cluster.Status.Phase != clustersv1alpha1.ClusterPhaseDisabled {
+		return false
+	}
+	log.FromContext(ctx).V(1).Info("Clusters generator skipped a disabled cluster",
+		"cluster", cluster.Namespace+"/"+cluster.Name)
+	return true
+}
+
+// clusterGeneratorParams flattens a registration for the template.
+//
+// The template data is a flat string map, so cluster labels appear as
+// label_<sanitized key>; region and tier are also exposed directly because they
+// are what a placement template usually branches on. name and namespace are
+// separate parameters because a ClusterRef needs both.
+func clusterGeneratorParams(cluster *clustersv1alpha1.Cluster) map[string]string {
+	params := map[string]string{
+		"name":      cluster.Name,
+		"namespace": cluster.Namespace,
+	}
+	if cluster.Spec.Mode != "" {
+		params["mode"] = string(cluster.Spec.Mode)
+	}
+	if cluster.Spec.Server != "" {
+		params["server"] = cluster.Spec.Server
+	}
+	if cluster.Status.Provider != nil && cluster.Status.Provider.Type != "" {
+		params["provider"] = cluster.Status.Provider.Type
+	}
+	for key, value := range cluster.Spec.Labels {
+		params["label_"+sanitizeClusterParamKey(key)] = value
+	}
+	for _, key := range []string{"region", "tier"} {
+		if value, ok := cluster.Spec.Labels[key]; ok {
+			params[key] = value
+		}
+	}
+	return params
+}
+
+// sanitizeClusterParamKey keeps a label key usable in a Go template field name,
+// where a dot or slash would parse as a selector rather than part of the key.
+func sanitizeClusterParamKey(key string) string {
+	var b strings.Builder
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func (r *ApplicationSetReconciler) generateMatrix(ctx context.Context, ns string, g *pipelinesv1alpha1.MatrixGenerator) ([]map[string]string, error) {

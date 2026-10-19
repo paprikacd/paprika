@@ -48,6 +48,13 @@ type ClustersGenerator struct {
 	// Selector filters Cluster resources by labels.
 	// +optional
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+	// Namespace holds the Cluster registrations to generate from. Defaults to
+	// the ApplicationSet's own namespace.
+	//
+	// Registrations usually live in the control plane's namespace while
+	// applications live in theirs, so a cross-namespace set names it here.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // NestedApplicationSetGenerator is a generator that can be used inside a Matrix.
