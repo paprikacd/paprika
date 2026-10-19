@@ -11857,3 +11857,307 @@ export declare class HealthCheckFailure extends Message<HealthCheckFailure> {
   static equals(a: HealthCheckFailure | PlainMessage<HealthCheckFailure> | undefined, b: HealthCheckFailure | PlainMessage<HealthCheckFailure> | undefined): boolean;
 }
 
+/**
+ * SatelliteFrame is one message in either direction. Exactly one variant is
+ * set; a frame with none is a protocol error rather than an empty heartbeat.
+ *
+ * @generated from message paprika.v1.SatelliteFrame
+ */
+export declare class SatelliteFrame extends Message<SatelliteFrame> {
+  /**
+   * @generated from oneof paprika.v1.SatelliteFrame.frame
+   */
+  frame: {
+    /**
+     * @generated from field: paprika.v1.SatelliteHello hello = 1;
+     */
+    value: SatelliteHello;
+    case: "hello";
+  } | {
+    /**
+     * @generated from field: paprika.v1.SatelliteUpdate update = 2;
+     */
+    value: SatelliteUpdate;
+    case: "update";
+  } | {
+    /**
+     * @generated from field: paprika.v1.SatelliteAck ack = 3;
+     */
+    value: SatelliteAck;
+    case: "ack";
+  } | {
+    /**
+     * @generated from field: paprika.v1.SatelliteTask task = 4;
+     */
+    value: SatelliteTask;
+    case: "task";
+  } | {
+    /**
+     * @generated from field: paprika.v1.SatelliteTaskResult task_result = 5;
+     */
+    value: SatelliteTaskResult;
+    case: "taskResult";
+  } | { case: undefined; value?: undefined };
+
+  constructor(data?: PartialMessage<SatelliteFrame>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SatelliteFrame";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SatelliteFrame;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SatelliteFrame;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SatelliteFrame;
+
+  static equals(a: SatelliteFrame | PlainMessage<SatelliteFrame> | undefined, b: SatelliteFrame | PlainMessage<SatelliteFrame> | undefined): boolean;
+}
+
+/**
+ * SatelliteHello opens a stream. It names the registration the satellite
+ * claims and the physical cluster it runs on, so the control plane can refuse
+ * a registration reused by a different cluster before any state is accepted.
+ *
+ * @generated from message paprika.v1.SatelliteHello
+ */
+export declare class SatelliteHello extends Message<SatelliteHello> {
+  /**
+   * @generated from field: string cluster_namespace = 1;
+   */
+  clusterNamespace: string;
+
+  /**
+   * @generated from field: string cluster_name = 2;
+   */
+  clusterName: string;
+
+  /**
+   * @generated from field: string cluster_uid = 3;
+   */
+  clusterUid: string;
+
+  /**
+   * @generated from field: string session_id = 4;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string version = 5;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string kubernetes_version = 6;
+   */
+  kubernetesVersion: string;
+
+  /**
+   * @generated from field: int32 protocol_version = 7;
+   */
+  protocolVersion: number;
+
+  constructor(data?: PartialMessage<SatelliteHello>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SatelliteHello";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SatelliteHello;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SatelliteHello;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SatelliteHello;
+
+  static equals(a: SatelliteHello | PlainMessage<SatelliteHello> | undefined, b: SatelliteHello | PlainMessage<SatelliteHello> | undefined): boolean;
+}
+
+/**
+ * SatelliteUpdate carries one encoded report.
+ *
+ * The payload is the same JSON document the HTTP transport posts. That is
+ * deliberate: sequencing, baseline validation and status persistence live in
+ * one place keyed on one schema, so the two transports cannot drift into
+ * accepting different reports. The stream's value is the reverse channel and
+ * the single long-lived connection, not a different encoding.
+ *
+ * @generated from message paprika.v1.SatelliteUpdate
+ */
+export declare class SatelliteUpdate extends Message<SatelliteUpdate> {
+  /**
+   * @generated from field: bytes report = 1;
+   */
+  report: Uint8Array;
+
+  constructor(data?: PartialMessage<SatelliteUpdate>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SatelliteUpdate";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SatelliteUpdate;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SatelliteUpdate;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SatelliteUpdate;
+
+  static equals(a: SatelliteUpdate | PlainMessage<SatelliteUpdate> | undefined, b: SatelliteUpdate | PlainMessage<SatelliteUpdate> | undefined): boolean;
+}
+
+/**
+ * SatelliteAck acknowledges an update by the sequence the report carried. A
+ * resync flag means the receiver holds no baseline for that session and the
+ * satellite must open a new one with a full snapshot.
+ *
+ * @generated from message paprika.v1.SatelliteAck
+ */
+export declare class SatelliteAck extends Message<SatelliteAck> {
+  /**
+   * @generated from field: uint64 sequence = 1;
+   */
+  sequence: bigint;
+
+  /**
+   * @generated from field: bool resync = 2;
+   */
+  resync: boolean;
+
+  constructor(data?: PartialMessage<SatelliteAck>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SatelliteAck";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SatelliteAck;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SatelliteAck;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SatelliteAck;
+
+  static equals(a: SatelliteAck | PlainMessage<SatelliteAck> | undefined, b: SatelliteAck | PlainMessage<SatelliteAck> | undefined): boolean;
+}
+
+/**
+ * SatelliteTask is one unit of work for the satellite to run locally.
+ *
+ * @generated from message paprika.v1.SatelliteTask
+ */
+export declare class SatelliteTask extends Message<SatelliteTask> {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from oneof paprika.v1.SatelliteTask.task
+   */
+  task: {
+    /**
+     * @generated from field: paprika.v1.SatelliteApplyTask apply = 2;
+     */
+    value: SatelliteApplyTask;
+    case: "apply";
+  } | { case: undefined; value?: undefined };
+
+  constructor(data?: PartialMessage<SatelliteTask>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SatelliteTask";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SatelliteTask;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SatelliteTask;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SatelliteTask;
+
+  static equals(a: SatelliteTask | PlainMessage<SatelliteTask> | undefined, b: SatelliteTask | PlainMessage<SatelliteTask> | undefined): boolean;
+}
+
+/**
+ * SatelliteApplyTask asks the satellite to apply a rendered manifest bundle in
+ * its own cluster. It is the same bundle the control plane would apply through
+ * a direct kubeconfig, which is what lets an agent-mode cluster be deployed to
+ * without one.
+ *
+ * @generated from message paprika.v1.SatelliteApplyTask
+ */
+export declare class SatelliteApplyTask extends Message<SatelliteApplyTask> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string app_name = 2;
+   */
+  appName: string;
+
+  /**
+   * @generated from field: bytes manifests = 3;
+   */
+  manifests: Uint8Array;
+
+  constructor(data?: PartialMessage<SatelliteApplyTask>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SatelliteApplyTask";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SatelliteApplyTask;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SatelliteApplyTask;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SatelliteApplyTask;
+
+  static equals(a: SatelliteApplyTask | PlainMessage<SatelliteApplyTask> | undefined, b: SatelliteApplyTask | PlainMessage<SatelliteApplyTask> | undefined): boolean;
+}
+
+/**
+ * SatelliteTaskResult reports one task's outcome. Failures are returned in the
+ * frame rather than as a stream error: one bad apply must not tear down the
+ * link that carries every other observation.
+ *
+ * @generated from message paprika.v1.SatelliteTaskResult
+ */
+export declare class SatelliteTaskResult extends Message<SatelliteTaskResult> {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: bool ok = 2;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: string error = 3;
+   */
+  error: string;
+
+  /**
+   * @generated from field: int32 applied = 4;
+   */
+  applied: number;
+
+  /**
+   * @generated from field: repeated string errors = 5;
+   */
+  errors: string[];
+
+  constructor(data?: PartialMessage<SatelliteTaskResult>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SatelliteTaskResult";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SatelliteTaskResult;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SatelliteTaskResult;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SatelliteTaskResult;
+
+  static equals(a: SatelliteTaskResult | PlainMessage<SatelliteTaskResult> | undefined, b: SatelliteTaskResult | PlainMessage<SatelliteTaskResult> | undefined): boolean;
+}
+

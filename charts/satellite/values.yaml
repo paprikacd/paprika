@@ -41,6 +41,14 @@ failoverTimeout: 2m
 managementPolicies:
   - "*"
 
+# stream keeps one bidirectional link to the control plane instead of posting
+# each report. It is what lets the control plane dispatch work — an apply —
+# down the same connection, so a cluster behind a firewall needs no inbound
+# route. Off by default: the POST transport is what every existing satellite
+# runs, and switching is a deployment decision.
+stream:
+  enabled: false
+
 image:
   repository: ghcr.io/paprikacd/paprika
   # Required unless repository contains an immutable @sha256 digest. Choose

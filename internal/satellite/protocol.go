@@ -100,4 +100,12 @@ type Config struct {
 	// Autonomy is the mode this satellite was started in. It is reported so the
 	// control plane can tell "connected" apart from "autonomous by design".
 	Autonomy clustersv1alpha1.AutonomyMode
+	// Stream selects the bidirectional link over the pooled POST. It is opt-in
+	// because the POST path is the one every existing satellite runs: turning
+	// the link on is a deployment decision, not an upgrade side effect.
+	Stream bool
+	// Executor runs tasks the control plane sends down the link. Nil means the
+	// satellite reports state and declines work, which is a coherent
+	// configuration for an observe-only cluster.
+	Executor TaskExecutor
 }

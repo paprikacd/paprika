@@ -178,12 +178,16 @@ type ReleaseReconciler struct {
 	ShardFilter           *sharding.Filter
 	RateLimiter           *ratelimit.ControllerRateLimit
 	AgentClientBuilder    func(baseURL string) AgentApplier
-	EventRecorder         record.EventRecorder
-	ProjectValidator      *governance.ProjectValidator
-	PolicyEvaluator       *governance.PolicyEvaluator
-	ConftestEvaluator     ConftestEvaluator
-	EventBroker           *events.Broker
-	Clock                 clock.Clock
+	// SatelliteTasks dispatches work down a live satellite link. Nil in split
+	// mode, where the API pod holds the links and this controller has no route
+	// to it; agent clusters then fall back to the inbound agent endpoint.
+	SatelliteTasks    SatelliteTaskDispatcher
+	EventRecorder     record.EventRecorder
+	ProjectValidator  *governance.ProjectValidator
+	PolicyEvaluator   *governance.PolicyEvaluator
+	ConftestEvaluator ConftestEvaluator
+	EventBroker       *events.Broker
+	Clock             clock.Clock
 	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
 	MaxConcurrentWorkers int
 }
@@ -1422,17 +1426,11 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 	}
 
 	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
-		filteredManifests, fErr := selectiveAgentManifests(manifests, sel, namespace)
-		if fErr != nil {
-			return fErr
-		}
-		err = r.applyViaAgent(ctx, cluster, namespace, appName, filteredManifests)
+		err = r.applyToAgentTarget(ctx, cluster, namespace, appName, manifests, sel)
 	} else {
-		kubeconfigSecret := ""
-		if cluster.KubeconfigSecret != "" {
-			kubeconfigSecret = cluster.KubeconfigSecret
-		}
-		err = r.applyManifestsWithCredentialNamespace(ctx, manifests, namespace, clusterCredentialNamespace(cluster, namespace), kubeconfigSecret, appName, releaseName, opts, sel, policies)
+		err = r.applyManifestsWithCredentialNamespace(ctx, manifests, namespace,
+			clusterCredentialNamespace(cluster, namespace), cluster.KubeconfigSecret,
+			appName, releaseName, opts, sel, policies)
 	}
 	if selective {
 		metrics.SelectiveSyncTotal.Add(ctx, 1, metric.WithAttributes(
@@ -1452,6 +1450,26 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 	}
 
 	return err
+}
+
+// applyToAgentTarget sends the bundle to an agent-mode cluster, preferring a
+// live satellite link over the inbound agent endpoint.
+func (r *ReleaseReconciler) applyToAgentTarget(
+	ctx context.Context,
+	cluster *paprikav1.ClusterRef,
+	namespace, appName string,
+	manifests []byte,
+	sel *syncResourcesPayload,
+) error {
+	filtered, err := selectiveAgentManifests(manifests, sel, namespace)
+	if err != nil {
+		return err
+	}
+	dispatched, linkErr := r.applyViaSatelliteLink(ctx, cluster, namespace, appName, filtered)
+	if dispatched {
+		return linkErr
+	}
+	return r.applyViaAgent(ctx, cluster, namespace, appName, filtered)
 }
 
 // selectiveAgentManifests trims the manifest set to the selected documents

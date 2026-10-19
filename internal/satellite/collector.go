@@ -41,7 +41,7 @@ type Collector struct {
 	core                          kubernetes.Interface
 	dynamic                       dynamic.Interface
 	config                        Config
-	client                        *Client
+	client                        Sender
 	state                         *observationState
 	factory                       informers.SharedInformerFactory
 	coreSynced                    []cache.InformerSynced
@@ -61,7 +61,7 @@ func NewCollector(core kubernetes.Interface, dyn dynamic.Interface, config Confi
 	if err := normalizeCollectorConfig(&config); err != nil {
 		return nil, err
 	}
-	client, err := NewClient(config)
+	client, err := newSender(&config)
 	if err != nil {
 		return nil, err
 	}
@@ -572,7 +572,7 @@ func (c *Collector) sendWithRetries(ctx context.Context, body []byte, delay *tim
 			return false, fmt.Errorf("satellite delivery cancelled: %w", ctx.Err())
 		}
 		if errors.Is(err, ErrResync) {
-			return true, err
+			return true, fmt.Errorf("satellite receiver asked for a resync: %w", err)
 		}
 		log.FromContext(ctx).Info("Satellite report delivery will retry", "reason", err.Error())
 		if !waitContext(ctx, *delay+retryJitter(*delay)) {
@@ -580,7 +580,7 @@ func (c *Collector) sendWithRetries(ctx context.Context, body []byte, delay *tim
 		}
 		*delay = min(*delay*2, 30*time.Second)
 	}
-	return false, err
+	return false, fmt.Errorf("satellite report delivery failed: %w", err)
 }
 
 func retryJitter(delay time.Duration) time.Duration {

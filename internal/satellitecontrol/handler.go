@@ -143,6 +143,33 @@ func readReport(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	return body, nil
 }
 
+// Authenticate resolves the registration a satellite credential authorizes.
+//
+// It refuses a missing registration rather than enrolling one: enrolment needs a
+// full snapshot to seed a baseline, which only a report can supply, so a stream
+// handshake that created a Cluster would leave a registration with no state and
+// no fence.
+func (h *Handler) Authenticate(ctx context.Context, namespace, name, token string) (*clusters.Cluster, error) {
+	if h.client == nil {
+		return nil, refuse(http.StatusServiceUnavailable, "satellite reporting unavailable")
+	}
+	var cluster clusters.Cluster
+	err := h.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &cluster)
+	if apierrors.IsNotFound(err) {
+		return nil, refuse(http.StatusUnauthorized, "satellite credential refused")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read satellite registration: %w", err)
+	}
+	if !acceptsReports(&cluster) {
+		return nil, refuse(http.StatusForbidden, "cluster does not accept satellite reports")
+	}
+	if err := h.authorize(ctx, &cluster, token); err != nil {
+		return nil, err
+	}
+	return &cluster, nil
+}
+
 func (h *Handler) authorize(ctx context.Context, cluster *clusters.Cluster, token string) error {
 	ref := clusters.SecretRef{Name: cluster.Name + "-satellite-token", Key: "token"}
 	if cluster.Spec.Satellite != nil {

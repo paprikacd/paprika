@@ -116,8 +116,16 @@ func toolRPCs() map[string][]string {
 func TestEveryProtoRPCIsExposedOrOptedOut(t *testing.T) {
 	data, err := os.ReadFile("../../../proto/paprika/v1/api.proto")
 	require.NoError(t, err)
+	// Only PaprikaService is a tool surface. The satellite link is an
+	// agent-facing RPC on its own service with its own credential, so no MCP
+	// tool can reach it and opting it out here would imply a decision that does
+	// not exist.
+	serviceRE := regexp.MustCompile(`(?ms)^service PaprikaService \{.*?^\}`)
+	service := serviceRE.FindString(string(data))
+	require.NotEmpty(t, service, "no PaprikaService block parsed from api.proto")
+
 	re := regexp.MustCompile(`(?m)^\s+rpc\s+([A-Za-z]+)\s*\(`)
-	matches := re.FindAllStringSubmatch(string(data), -1)
+	matches := re.FindAllStringSubmatch(service, -1)
 	require.NotEmpty(t, matches)
 
 	r := NewRegistry()

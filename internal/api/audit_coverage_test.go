@@ -36,8 +36,15 @@ func TestEveryProtoRPCIsClassified(t *testing.T) {
 	data, err := os.ReadFile("../../proto/paprika/v1/api.proto")
 	require.NoError(t, err)
 
-	re := regexp.MustCompile(`(?m)^\s+rpc\s+([A-Za-z]+)\s*\(`)
-	matches := re.FindAllStringSubmatch(string(data), -1)
+	// Only PaprikaService is audited: the middleware wraps that service's
+	// handler, and the satellite link is an agent-facing RPC on its own service
+	// with its own credential, so console audit verbs say nothing about it.
+	re := regexp.MustCompile(`(?ms)^service PaprikaService \{.*?^\}`)
+	service := re.FindString(string(data))
+	require.NotEmpty(t, service, "no service block parsed from api.proto")
+
+	rpc := regexp.MustCompile(`(?m)^\s+rpc\s+([A-Za-z]+)\s*\(`)
+	matches := rpc.FindAllStringSubmatch(service, -1)
 	require.NotEmpty(t, matches, "no RPCs parsed from api.proto")
 
 	for _, m := range matches {

@@ -176,6 +176,7 @@ type cliConfig struct {
 	SatelliteBatchInterval        time.Duration `mapstructure:"satellite-batch-interval"`
 	SatelliteManagementPolicies   []string      `mapstructure:"satellite-management-policies"`
 	SatelliteAutonomy             string        `mapstructure:"satellite-autonomy"`
+	SatelliteStreamEnabled        bool          `mapstructure:"satellite-stream-enabled"`
 	WebhookSecret                 string        `mapstructure:"webhook-secret"`
 	AuthRBACRules                 string        `mapstructure:"auth-rbac-rules"`
 	CacheBackend                  string        `mapstructure:"cache-backend"`
@@ -978,7 +979,7 @@ func buildAPIExtraMuxHandlers(
 		return nil, nil, err
 	}
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
-	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme())
+	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme(), nil)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -54,13 +54,25 @@ func NewClient(config Config) (*Client, error) {
 	}, nil
 }
 
-func reportURL(base string) (*url.URL, error) {
+// parseControlPlaneURL validates the configured origin. Both transports share
+// it so the POST path and the stream cannot disagree about what is an
+// acceptable endpoint — a credential must never travel to a scheme or host the
+// other transport would refuse.
+func parseControlPlaneURL(base string) (*url.URL, error) {
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return nil, errors.New("satellite control plane URL must be an absolute URL without credentials, query or fragment")
 	}
 	if u.Scheme != "https" && (u.Scheme != "http" || !loopbackHost(u.Hostname())) {
 		return nil, errors.New("satellite control plane URL requires HTTPS")
+	}
+	return u, nil
+}
+
+func reportURL(base string) (*url.URL, error) {
+	u, err := parseControlPlaneURL(base)
+	if err != nil {
+		return nil, err
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + ReportPath
 	u.RawPath = ""

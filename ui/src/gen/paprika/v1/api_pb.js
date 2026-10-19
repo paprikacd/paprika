@@ -3795,3 +3795,121 @@ export const HealthCheckFailure = /*@__PURE__*/ proto3.makeMessageType(
   ],
 );
 
+/**
+ * SatelliteFrame is one message in either direction. Exactly one variant is
+ * set; a frame with none is a protocol error rather than an empty heartbeat.
+ *
+ * @generated from message paprika.v1.SatelliteFrame
+ */
+export const SatelliteFrame = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SatelliteFrame",
+  () => [
+    { no: 1, name: "hello", kind: "message", T: SatelliteHello, oneof: "frame" },
+    { no: 2, name: "update", kind: "message", T: SatelliteUpdate, oneof: "frame" },
+    { no: 3, name: "ack", kind: "message", T: SatelliteAck, oneof: "frame" },
+    { no: 4, name: "task", kind: "message", T: SatelliteTask, oneof: "frame" },
+    { no: 5, name: "task_result", kind: "message", T: SatelliteTaskResult, oneof: "frame" },
+  ],
+);
+
+/**
+ * SatelliteHello opens a stream. It names the registration the satellite
+ * claims and the physical cluster it runs on, so the control plane can refuse
+ * a registration reused by a different cluster before any state is accepted.
+ *
+ * @generated from message paprika.v1.SatelliteHello
+ */
+export const SatelliteHello = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SatelliteHello",
+  () => [
+    { no: 1, name: "cluster_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "cluster_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "cluster_uid", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "session_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "kubernetes_version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "protocol_version", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ],
+);
+
+/**
+ * SatelliteUpdate carries one encoded report.
+ *
+ * The payload is the same JSON document the HTTP transport posts. That is
+ * deliberate: sequencing, baseline validation and status persistence live in
+ * one place keyed on one schema, so the two transports cannot drift into
+ * accepting different reports. The stream's value is the reverse channel and
+ * the single long-lived connection, not a different encoding.
+ *
+ * @generated from message paprika.v1.SatelliteUpdate
+ */
+export const SatelliteUpdate = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SatelliteUpdate",
+  () => [
+    { no: 1, name: "report", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+  ],
+);
+
+/**
+ * SatelliteAck acknowledges an update by the sequence the report carried. A
+ * resync flag means the receiver holds no baseline for that session and the
+ * satellite must open a new one with a full snapshot.
+ *
+ * @generated from message paprika.v1.SatelliteAck
+ */
+export const SatelliteAck = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SatelliteAck",
+  () => [
+    { no: 1, name: "sequence", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 2, name: "resync", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * SatelliteTask is one unit of work for the satellite to run locally.
+ *
+ * @generated from message paprika.v1.SatelliteTask
+ */
+export const SatelliteTask = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SatelliteTask",
+  () => [
+    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "apply", kind: "message", T: SatelliteApplyTask, oneof: "task" },
+  ],
+);
+
+/**
+ * SatelliteApplyTask asks the satellite to apply a rendered manifest bundle in
+ * its own cluster. It is the same bundle the control plane would apply through
+ * a direct kubeconfig, which is what lets an agent-mode cluster be deployed to
+ * without one.
+ *
+ * @generated from message paprika.v1.SatelliteApplyTask
+ */
+export const SatelliteApplyTask = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SatelliteApplyTask",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "app_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "manifests", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+  ],
+);
+
+/**
+ * SatelliteTaskResult reports one task's outcome. Failures are returned in the
+ * frame rather than as a stream error: one bad apply must not tear down the
+ * link that carries every other observation.
+ *
+ * @generated from message paprika.v1.SatelliteTaskResult
+ */
+export const SatelliteTaskResult = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SatelliteTaskResult",
+  () => [
+    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "ok", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 3, name: "error", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "applied", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 5, name: "errors", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ],
+);
+

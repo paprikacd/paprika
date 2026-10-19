@@ -54,6 +54,9 @@ spec:
             - {{ printf "--satellite-batch-interval=%s" .Values.batchInterval | quote }}
             - {{ printf "--satellite-autonomy=%s" .Values.autonomy | quote }}
             - {{ printf "--satellite-management-policies=%s" (join "," .Values.managementPolicies) | quote }}
+            {{- if .Values.stream.enabled }}
+            - --satellite-stream-enabled=true
+            {{- end }}
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=0
             {{- if .Values.ca.existingConfigMap }}

@@ -2433,3 +2433,89 @@ message HealthCheckFailure {
   string http_body = 7;
   bool body_truncated = 8;
 }
+
+// SatelliteLink is the outbound channel a satellite keeps open to the control
+// plane: observations travel up, work travels down, over one connection. A
+// cluster behind a firewall therefore needs no inbound route, and the control
+// plane keeps no kubeconfig for it.
+//
+// It is a separate service from PaprikaService because its caller is a cluster
+// agent with its own credential, not a console user. Sharing the service would
+// put an agent-scoped RPC behind console authentication and a console RPC
+// behind an agent token.
+service SatelliteLink {
+  rpc Connect(stream SatelliteFrame) returns (stream SatelliteFrame);
+}
+
+// SatelliteFrame is one message in either direction. Exactly one variant is
+// set; a frame with none is a protocol error rather than an empty heartbeat.
+message SatelliteFrame {
+  oneof frame {
+    SatelliteHello hello = 1;
+    SatelliteUpdate update = 2;
+    SatelliteAck ack = 3;
+    SatelliteTask task = 4;
+    SatelliteTaskResult task_result = 5;
+  }
+}
+
+// SatelliteHello opens a stream. It names the registration the satellite
+// claims and the physical cluster it runs on, so the control plane can refuse
+// a registration reused by a different cluster before any state is accepted.
+message SatelliteHello {
+  string cluster_namespace = 1;
+  string cluster_name = 2;
+  string cluster_uid = 3;
+  string session_id = 4;
+  string version = 5;
+  string kubernetes_version = 6;
+  int32 protocol_version = 7;
+}
+
+// SatelliteUpdate carries one encoded report.
+//
+// The payload is the same JSON document the HTTP transport posts. That is
+// deliberate: sequencing, baseline validation and status persistence live in
+// one place keyed on one schema, so the two transports cannot drift into
+// accepting different reports. The stream's value is the reverse channel and
+// the single long-lived connection, not a different encoding.
+message SatelliteUpdate {
+  bytes report = 1;
+}
+
+// SatelliteAck acknowledges an update by the sequence the report carried. A
+// resync flag means the receiver holds no baseline for that session and the
+// satellite must open a new one with a full snapshot.
+message SatelliteAck {
+  uint64 sequence = 1;
+  bool resync = 2;
+}
+
+// SatelliteTask is one unit of work for the satellite to run locally.
+message SatelliteTask {
+  string id = 1;
+  oneof task {
+    SatelliteApplyTask apply = 2;
+  }
+}
+
+// SatelliteApplyTask asks the satellite to apply a rendered manifest bundle in
+// its own cluster. It is the same bundle the control plane would apply through
+// a direct kubeconfig, which is what lets an agent-mode cluster be deployed to
+// without one.
+message SatelliteApplyTask {
+  string namespace = 1;
+  string app_name = 2;
+  bytes manifests = 3;
+}
+
+// SatelliteTaskResult reports one task's outcome. Failures are returned in the
+// frame rather than as a stream error: one bad apply must not tear down the
+// link that carries every other observation.
+message SatelliteTaskResult {
+  string id = 1;
+  bool ok = 2;
+  string error = 3;
+  int32 applied = 4;
+  repeated string errors = 5;
+}

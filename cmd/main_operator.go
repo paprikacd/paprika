@@ -68,6 +68,7 @@ import (
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
+	"github.com/benebsworth/paprika/internal/satellitecontrol"
 	"github.com/benebsworth/paprika/internal/sharding"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
 )
@@ -88,6 +89,10 @@ type operatorDependencies struct {
 	repoServerAddr string
 	coordinator    *coordinator.Coordinator
 	fleetReader    fleet.Reader
+	// satelliteHub tracks live satellite links. It is created in operator mode
+	// because the same process both serves the link and dispatches work down it;
+	// split mode has the link but no dispatcher in the API pod.
+	satelliteHub *satellitecontrol.Hub
 }
 
 // bridgeZapWithOTel tees raw's zap core with an otelzap core that forwards
@@ -203,11 +208,13 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("build operator governance: %w", err)
 	}
 
+	deps.satelliteHub = satellitecontrol.NewHub()
+
 	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.OperatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.tuning(), cfg.EnableWebhooks, gov.capacityProviders); err != nil {
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.AuditLogEnabled, gov.capacityProviders, setupLog); err != nil {
+	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.AuditLogEnabled, gov.capacityProviders, deps.satelliteHub, setupLog); err != nil {
 		return fmt.Errorf("start UI server: %w", err)
 	}
 
@@ -491,8 +498,8 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 	return nil
 }
 
-func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, setupLog logr.Logger) error {
-	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, fleetReader, auditEnabled, capacityRegistry, setupLog)
+func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, satelliteHub *satellitecontrol.Hub, setupLog logr.Logger) error {
+	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, fleetReader, auditEnabled, capacityRegistry, satelliteHub, setupLog)
 	if err != nil {
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
@@ -526,7 +533,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 	}
 }
 
-func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, setupLog logr.Logger) (*http.Server, error) {
+func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, satelliteHub *satellitecontrol.Hub, setupLog logr.Logger) (*http.Server, error) {
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetCache())
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -574,7 +581,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	if err != nil {
 		return nil, fmt.Errorf("build UI handler: %w", err)
 	}
-	satelliteRegistrar, err := satelliteMuxRegistrar(mgr.GetConfig(), mgr.GetScheme())
+	satelliteRegistrar, err := satelliteMuxRegistrar(mgr.GetConfig(), mgr.GetScheme(), satelliteHub)
 	if err != nil {
 		return nil, err
 	}

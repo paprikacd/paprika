@@ -20032,6 +20032,557 @@ func (x *HealthCheckFailure) GetBodyTruncated() bool {
 	return false
 }
 
+// SatelliteFrame is one message in either direction. Exactly one variant is
+// set; a frame with none is a protocol error rather than an empty heartbeat.
+type SatelliteFrame struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Frame:
+	//
+	//	*SatelliteFrame_Hello
+	//	*SatelliteFrame_Update
+	//	*SatelliteFrame_Ack
+	//	*SatelliteFrame_Task
+	//	*SatelliteFrame_TaskResult
+	Frame         isSatelliteFrame_Frame `protobuf_oneof:"frame"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SatelliteFrame) Reset() {
+	*x = SatelliteFrame{}
+	mi := &file_paprika_v1_api_proto_msgTypes[237]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatelliteFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatelliteFrame) ProtoMessage() {}
+
+func (x *SatelliteFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[237]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatelliteFrame.ProtoReflect.Descriptor instead.
+func (*SatelliteFrame) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{237}
+}
+
+func (x *SatelliteFrame) GetFrame() isSatelliteFrame_Frame {
+	if x != nil {
+		return x.Frame
+	}
+	return nil
+}
+
+func (x *SatelliteFrame) GetHello() *SatelliteHello {
+	if x != nil {
+		if x, ok := x.Frame.(*SatelliteFrame_Hello); ok {
+			return x.Hello
+		}
+	}
+	return nil
+}
+
+func (x *SatelliteFrame) GetUpdate() *SatelliteUpdate {
+	if x != nil {
+		if x, ok := x.Frame.(*SatelliteFrame_Update); ok {
+			return x.Update
+		}
+	}
+	return nil
+}
+
+func (x *SatelliteFrame) GetAck() *SatelliteAck {
+	if x != nil {
+		if x, ok := x.Frame.(*SatelliteFrame_Ack); ok {
+			return x.Ack
+		}
+	}
+	return nil
+}
+
+func (x *SatelliteFrame) GetTask() *SatelliteTask {
+	if x != nil {
+		if x, ok := x.Frame.(*SatelliteFrame_Task); ok {
+			return x.Task
+		}
+	}
+	return nil
+}
+
+func (x *SatelliteFrame) GetTaskResult() *SatelliteTaskResult {
+	if x != nil {
+		if x, ok := x.Frame.(*SatelliteFrame_TaskResult); ok {
+			return x.TaskResult
+		}
+	}
+	return nil
+}
+
+type isSatelliteFrame_Frame interface {
+	isSatelliteFrame_Frame()
+}
+
+type SatelliteFrame_Hello struct {
+	Hello *SatelliteHello `protobuf:"bytes,1,opt,name=hello,proto3,oneof"`
+}
+
+type SatelliteFrame_Update struct {
+	Update *SatelliteUpdate `protobuf:"bytes,2,opt,name=update,proto3,oneof"`
+}
+
+type SatelliteFrame_Ack struct {
+	Ack *SatelliteAck `protobuf:"bytes,3,opt,name=ack,proto3,oneof"`
+}
+
+type SatelliteFrame_Task struct {
+	Task *SatelliteTask `protobuf:"bytes,4,opt,name=task,proto3,oneof"`
+}
+
+type SatelliteFrame_TaskResult struct {
+	TaskResult *SatelliteTaskResult `protobuf:"bytes,5,opt,name=task_result,json=taskResult,proto3,oneof"`
+}
+
+func (*SatelliteFrame_Hello) isSatelliteFrame_Frame() {}
+
+func (*SatelliteFrame_Update) isSatelliteFrame_Frame() {}
+
+func (*SatelliteFrame_Ack) isSatelliteFrame_Frame() {}
+
+func (*SatelliteFrame_Task) isSatelliteFrame_Frame() {}
+
+func (*SatelliteFrame_TaskResult) isSatelliteFrame_Frame() {}
+
+// SatelliteHello opens a stream. It names the registration the satellite
+// claims and the physical cluster it runs on, so the control plane can refuse
+// a registration reused by a different cluster before any state is accepted.
+type SatelliteHello struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ClusterNamespace  string                 `protobuf:"bytes,1,opt,name=cluster_namespace,json=clusterNamespace,proto3" json:"cluster_namespace,omitempty"`
+	ClusterName       string                 `protobuf:"bytes,2,opt,name=cluster_name,json=clusterName,proto3" json:"cluster_name,omitempty"`
+	ClusterUid        string                 `protobuf:"bytes,3,opt,name=cluster_uid,json=clusterUid,proto3" json:"cluster_uid,omitempty"`
+	SessionId         string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Version           string                 `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
+	KubernetesVersion string                 `protobuf:"bytes,6,opt,name=kubernetes_version,json=kubernetesVersion,proto3" json:"kubernetes_version,omitempty"`
+	ProtocolVersion   int32                  `protobuf:"varint,7,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *SatelliteHello) Reset() {
+	*x = SatelliteHello{}
+	mi := &file_paprika_v1_api_proto_msgTypes[238]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatelliteHello) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatelliteHello) ProtoMessage() {}
+
+func (x *SatelliteHello) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[238]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatelliteHello.ProtoReflect.Descriptor instead.
+func (*SatelliteHello) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{238}
+}
+
+func (x *SatelliteHello) GetClusterNamespace() string {
+	if x != nil {
+		return x.ClusterNamespace
+	}
+	return ""
+}
+
+func (x *SatelliteHello) GetClusterName() string {
+	if x != nil {
+		return x.ClusterName
+	}
+	return ""
+}
+
+func (x *SatelliteHello) GetClusterUid() string {
+	if x != nil {
+		return x.ClusterUid
+	}
+	return ""
+}
+
+func (x *SatelliteHello) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SatelliteHello) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *SatelliteHello) GetKubernetesVersion() string {
+	if x != nil {
+		return x.KubernetesVersion
+	}
+	return ""
+}
+
+func (x *SatelliteHello) GetProtocolVersion() int32 {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return 0
+}
+
+// SatelliteUpdate carries one encoded report.
+//
+// The payload is the same JSON document the HTTP transport posts. That is
+// deliberate: sequencing, baseline validation and status persistence live in
+// one place keyed on one schema, so the two transports cannot drift into
+// accepting different reports. The stream's value is the reverse channel and
+// the single long-lived connection, not a different encoding.
+type SatelliteUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Report        []byte                 `protobuf:"bytes,1,opt,name=report,proto3" json:"report,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SatelliteUpdate) Reset() {
+	*x = SatelliteUpdate{}
+	mi := &file_paprika_v1_api_proto_msgTypes[239]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatelliteUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatelliteUpdate) ProtoMessage() {}
+
+func (x *SatelliteUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[239]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatelliteUpdate.ProtoReflect.Descriptor instead.
+func (*SatelliteUpdate) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{239}
+}
+
+func (x *SatelliteUpdate) GetReport() []byte {
+	if x != nil {
+		return x.Report
+	}
+	return nil
+}
+
+// SatelliteAck acknowledges an update by the sequence the report carried. A
+// resync flag means the receiver holds no baseline for that session and the
+// satellite must open a new one with a full snapshot.
+type SatelliteAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sequence      uint64                 `protobuf:"varint,1,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Resync        bool                   `protobuf:"varint,2,opt,name=resync,proto3" json:"resync,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SatelliteAck) Reset() {
+	*x = SatelliteAck{}
+	mi := &file_paprika_v1_api_proto_msgTypes[240]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatelliteAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatelliteAck) ProtoMessage() {}
+
+func (x *SatelliteAck) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[240]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatelliteAck.ProtoReflect.Descriptor instead.
+func (*SatelliteAck) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{240}
+}
+
+func (x *SatelliteAck) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *SatelliteAck) GetResync() bool {
+	if x != nil {
+		return x.Resync
+	}
+	return false
+}
+
+// SatelliteTask is one unit of work for the satellite to run locally.
+type SatelliteTask struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Types that are valid to be assigned to Task:
+	//
+	//	*SatelliteTask_Apply
+	Task          isSatelliteTask_Task `protobuf_oneof:"task"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SatelliteTask) Reset() {
+	*x = SatelliteTask{}
+	mi := &file_paprika_v1_api_proto_msgTypes[241]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatelliteTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatelliteTask) ProtoMessage() {}
+
+func (x *SatelliteTask) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[241]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatelliteTask.ProtoReflect.Descriptor instead.
+func (*SatelliteTask) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{241}
+}
+
+func (x *SatelliteTask) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SatelliteTask) GetTask() isSatelliteTask_Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+func (x *SatelliteTask) GetApply() *SatelliteApplyTask {
+	if x != nil {
+		if x, ok := x.Task.(*SatelliteTask_Apply); ok {
+			return x.Apply
+		}
+	}
+	return nil
+}
+
+type isSatelliteTask_Task interface {
+	isSatelliteTask_Task()
+}
+
+type SatelliteTask_Apply struct {
+	Apply *SatelliteApplyTask `protobuf:"bytes,2,opt,name=apply,proto3,oneof"`
+}
+
+func (*SatelliteTask_Apply) isSatelliteTask_Task() {}
+
+// SatelliteApplyTask asks the satellite to apply a rendered manifest bundle in
+// its own cluster. It is the same bundle the control plane would apply through
+// a direct kubeconfig, which is what lets an agent-mode cluster be deployed to
+// without one.
+type SatelliteApplyTask struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	AppName       string                 `protobuf:"bytes,2,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`
+	Manifests     []byte                 `protobuf:"bytes,3,opt,name=manifests,proto3" json:"manifests,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SatelliteApplyTask) Reset() {
+	*x = SatelliteApplyTask{}
+	mi := &file_paprika_v1_api_proto_msgTypes[242]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatelliteApplyTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatelliteApplyTask) ProtoMessage() {}
+
+func (x *SatelliteApplyTask) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[242]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatelliteApplyTask.ProtoReflect.Descriptor instead.
+func (*SatelliteApplyTask) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{242}
+}
+
+func (x *SatelliteApplyTask) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *SatelliteApplyTask) GetAppName() string {
+	if x != nil {
+		return x.AppName
+	}
+	return ""
+}
+
+func (x *SatelliteApplyTask) GetManifests() []byte {
+	if x != nil {
+		return x.Manifests
+	}
+	return nil
+}
+
+// SatelliteTaskResult reports one task's outcome. Failures are returned in the
+// frame rather than as a stream error: one bad apply must not tear down the
+// link that carries every other observation.
+type SatelliteTaskResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Ok            bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	Applied       int32                  `protobuf:"varint,4,opt,name=applied,proto3" json:"applied,omitempty"`
+	Errors        []string               `protobuf:"bytes,5,rep,name=errors,proto3" json:"errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SatelliteTaskResult) Reset() {
+	*x = SatelliteTaskResult{}
+	mi := &file_paprika_v1_api_proto_msgTypes[243]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SatelliteTaskResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SatelliteTaskResult) ProtoMessage() {}
+
+func (x *SatelliteTaskResult) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[243]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SatelliteTaskResult.ProtoReflect.Descriptor instead.
+func (*SatelliteTaskResult) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{243}
+}
+
+func (x *SatelliteTaskResult) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SatelliteTaskResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *SatelliteTaskResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *SatelliteTaskResult) GetApplied() int32 {
+	if x != nil {
+		return x.Applied
+	}
+	return 0
+}
+
+func (x *SatelliteTaskResult) GetErrors() []string {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
+}
+
 var File_paprika_v1_api_proto protoreflect.FileDescriptor
 
 const file_paprika_v1_api_proto_rawDesc = "" +
@@ -21658,7 +22209,44 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x10http_status_code\x18\x05 \x01(\x05R\x0ehttpStatusCode\x12'\n" +
 	"\x0fduration_millis\x18\x06 \x01(\x03R\x0edurationMillis\x12\x1b\n" +
 	"\thttp_body\x18\a \x01(\tR\bhttpBody\x12%\n" +
-	"\x0ebody_truncated\x18\b \x01(\bR\rbodyTruncated*I\n" +
+	"\x0ebody_truncated\x18\b \x01(\bR\rbodyTruncated\"\xa7\x02\n" +
+	"\x0eSatelliteFrame\x122\n" +
+	"\x05hello\x18\x01 \x01(\v2\x1a.paprika.v1.SatelliteHelloH\x00R\x05hello\x125\n" +
+	"\x06update\x18\x02 \x01(\v2\x1b.paprika.v1.SatelliteUpdateH\x00R\x06update\x12,\n" +
+	"\x03ack\x18\x03 \x01(\v2\x18.paprika.v1.SatelliteAckH\x00R\x03ack\x12/\n" +
+	"\x04task\x18\x04 \x01(\v2\x19.paprika.v1.SatelliteTaskH\x00R\x04task\x12B\n" +
+	"\vtask_result\x18\x05 \x01(\v2\x1f.paprika.v1.SatelliteTaskResultH\x00R\n" +
+	"taskResultB\a\n" +
+	"\x05frame\"\x94\x02\n" +
+	"\x0eSatelliteHello\x12+\n" +
+	"\x11cluster_namespace\x18\x01 \x01(\tR\x10clusterNamespace\x12!\n" +
+	"\fcluster_name\x18\x02 \x01(\tR\vclusterName\x12\x1f\n" +
+	"\vcluster_uid\x18\x03 \x01(\tR\n" +
+	"clusterUid\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\tR\aversion\x12-\n" +
+	"\x12kubernetes_version\x18\x06 \x01(\tR\x11kubernetesVersion\x12)\n" +
+	"\x10protocol_version\x18\a \x01(\x05R\x0fprotocolVersion\")\n" +
+	"\x0fSatelliteUpdate\x12\x16\n" +
+	"\x06report\x18\x01 \x01(\fR\x06report\"B\n" +
+	"\fSatelliteAck\x12\x1a\n" +
+	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12\x16\n" +
+	"\x06resync\x18\x02 \x01(\bR\x06resync\"_\n" +
+	"\rSatelliteTask\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x126\n" +
+	"\x05apply\x18\x02 \x01(\v2\x1e.paprika.v1.SatelliteApplyTaskH\x00R\x05applyB\x06\n" +
+	"\x04task\"k\n" +
+	"\x12SatelliteApplyTask\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x19\n" +
+	"\bapp_name\x18\x02 \x01(\tR\aappName\x12\x1c\n" +
+	"\tmanifests\x18\x03 \x01(\fR\tmanifests\"}\n" +
+	"\x13SatelliteTaskResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12\x18\n" +
+	"\aapplied\x18\x04 \x01(\x05R\aapplied\x12\x16\n" +
+	"\x06errors\x18\x05 \x03(\tR\x06errors*I\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bCRITICAL\x10\x01\x12\v\n" +
@@ -21965,7 +22553,9 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x1eListObservabilityProviderTypes\x121.paprika.v1.ListObservabilityProviderTypesRequest\x1a2.paprika.v1.ListObservabilityProviderTypesResponse\x12\x81\x01\n" +
 	"\x1cGetObservabilityProviderType\x12/.paprika.v1.GetObservabilityProviderTypeRequest\x1a0.paprika.v1.GetObservabilityProviderTypeResponse\x12\x84\x01\n" +
 	"\x1dValidateObservabilityProvider\x120.paprika.v1.ValidateObservabilityProviderRequest\x1a1.paprika.v1.ValidateObservabilityProviderResponse\x12~\n" +
-	"\x1bCreateObservabilityProvider\x12..paprika.v1.CreateObservabilityProviderRequest\x1a/.paprika.v1.CreateObservabilityProviderResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
+	"\x1bCreateObservabilityProvider\x12..paprika.v1.CreateObservabilityProviderRequest\x1a/.paprika.v1.CreateObservabilityProviderResponse2V\n" +
+	"\rSatelliteLink\x12E\n" +
+	"\aConnect\x12\x1a.paprika.v1.SatelliteFrame\x1a\x1a.paprika.v1.SatelliteFrame(\x010\x01B8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
 
 var (
 	file_paprika_v1_api_proto_rawDescOnce sync.Once
@@ -21980,7 +22570,7 @@ func file_paprika_v1_api_proto_rawDescGZIP() []byte {
 }
 
 var file_paprika_v1_api_proto_enumTypes = make([]protoimpl.EnumInfo, 33)
-var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 247)
+var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 254)
 var file_paprika_v1_api_proto_goTypes = []any{
 	(Severity)(0),                                  // 0: paprika.v1.Severity
 	(FleetHealth)(0),                               // 1: paprika.v1.FleetHealth
@@ -22252,33 +22842,40 @@ var file_paprika_v1_api_proto_goTypes = []any{
 	(*CommitSummary)(nil),                          // 267: paprika.v1.CommitSummary
 	(*VerificationCheck)(nil),                      // 268: paprika.v1.VerificationCheck
 	(*HealthCheckFailure)(nil),                     // 269: paprika.v1.HealthCheckFailure
-	nil,                                            // 270: paprika.v1.HTTPProbe.HeadersEntry
-	nil,                                            // 271: paprika.v1.AnalysisRun.ArgsEntry
-	nil,                                            // 272: paprika.v1.Application.ParametersEntry
-	nil,                                            // 273: paprika.v1.Application.OperationalMetadataEntry
-	nil,                                            // 274: paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
-	nil,                                            // 275: paprika.v1.NotificationDestination.HeadersEntry
-	nil,                                            // 276: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
-	nil,                                            // 277: paprika.v1.GetResourceResponse.LabelsEntry
-	nil,                                            // 278: paprika.v1.GetResourceResponse.AnnotationsEntry
-	nil,                                            // 279: paprika.v1.Cluster.LabelsEntry
+	(*SatelliteFrame)(nil),                         // 270: paprika.v1.SatelliteFrame
+	(*SatelliteHello)(nil),                         // 271: paprika.v1.SatelliteHello
+	(*SatelliteUpdate)(nil),                        // 272: paprika.v1.SatelliteUpdate
+	(*SatelliteAck)(nil),                           // 273: paprika.v1.SatelliteAck
+	(*SatelliteTask)(nil),                          // 274: paprika.v1.SatelliteTask
+	(*SatelliteApplyTask)(nil),                     // 275: paprika.v1.SatelliteApplyTask
+	(*SatelliteTaskResult)(nil),                    // 276: paprika.v1.SatelliteTaskResult
+	nil,                                            // 277: paprika.v1.HTTPProbe.HeadersEntry
+	nil,                                            // 278: paprika.v1.AnalysisRun.ArgsEntry
+	nil,                                            // 279: paprika.v1.Application.ParametersEntry
+	nil,                                            // 280: paprika.v1.Application.OperationalMetadataEntry
+	nil,                                            // 281: paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
+	nil,                                            // 282: paprika.v1.NotificationDestination.HeadersEntry
+	nil,                                            // 283: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	nil,                                            // 284: paprika.v1.GetResourceResponse.LabelsEntry
+	nil,                                            // 285: paprika.v1.GetResourceResponse.AnnotationsEntry
+	nil,                                            // 286: paprika.v1.Cluster.LabelsEntry
 }
 var file_paprika_v1_api_proto_depIdxs = []int32{
 	36,  // 0: paprika.v1.ApplicationSource.chart:type_name -> paprika.v1.ChartRef
 	37,  // 1: paprika.v1.ApplicationSource.inline:type_name -> paprika.v1.InlineSource
 	38,  // 2: paprika.v1.ApplicationSource.oci:type_name -> paprika.v1.OCISource
-	270, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
+	277, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
 	41,  // 4: paprika.v1.HealthCheck.http_probe:type_name -> paprika.v1.HTTPProbe
 	43,  // 5: paprika.v1.HealthCheck.slo:type_name -> paprika.v1.AvailabilitySLO
 	44,  // 6: paprika.v1.SLOSummary.timeline:type_name -> paprika.v1.SLOBucket
 	45,  // 7: paprika.v1.HealthCheckResult.slo:type_name -> paprika.v1.SLOSummary
 	269, // 8: paprika.v1.HealthCheckResult.recent_failures:type_name -> paprika.v1.HealthCheckFailure
-	271, // 9: paprika.v1.AnalysisRun.args:type_name -> paprika.v1.AnalysisRun.ArgsEntry
+	278, // 9: paprika.v1.AnalysisRun.args:type_name -> paprika.v1.AnalysisRun.ArgsEntry
 	52,  // 10: paprika.v1.AnalysisRun.results:type_name -> paprika.v1.AnalysisRunResult
 	50,  // 11: paprika.v1.AnalysisRun.conditions:type_name -> paprika.v1.Condition
 	40,  // 12: paprika.v1.Application.stages:type_name -> paprika.v1.ApplicationStage
 	39,  // 13: paprika.v1.Application.source:type_name -> paprika.v1.ApplicationSource
-	272, // 14: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
+	279, // 14: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
 	46,  // 15: paprika.v1.Application.health_checks:type_name -> paprika.v1.HealthCheckResult
 	47,  // 16: paprika.v1.Application.resources:type_name -> paprika.v1.ResourceSync
 	48,  // 17: paprika.v1.Application.resource_health:type_name -> paprika.v1.ResourceHealth
@@ -22287,7 +22884,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	51,  // 20: paprika.v1.Application.analysis_results:type_name -> paprika.v1.AnalysisResult
 	42,  // 21: paprika.v1.Application.health_check_definitions:type_name -> paprika.v1.HealthCheck
 	239, // 22: paprika.v1.Application.operations:type_name -> paprika.v1.Ownership
-	273, // 23: paprika.v1.Application.operational_metadata:type_name -> paprika.v1.Application.OperationalMetadataEntry
+	280, // 23: paprika.v1.Application.operational_metadata:type_name -> paprika.v1.Application.OperationalMetadataEntry
 	33,  // 24: paprika.v1.Pipeline.steps:type_name -> paprika.v1.Step
 	34,  // 25: paprika.v1.Pipeline.step_statuses:type_name -> paprika.v1.StepStatus
 	35,  // 26: paprika.v1.Pipeline.artifacts:type_name -> paprika.v1.ArtifactRef
@@ -22299,7 +22896,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	268, // 32: paprika.v1.Release.verification_checks:type_name -> paprika.v1.VerificationCheck
 	63,  // 33: paprika.v1.TrafficRouter.istio:type_name -> paprika.v1.IstioRouterConfig
 	64,  // 34: paprika.v1.TrafficRouter.gateway_api:type_name -> paprika.v1.GatewayAPIRouterConfig
-	274, // 35: paprika.v1.RolloutAnalysisCheck.http_headers:type_name -> paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
+	281, // 35: paprika.v1.RolloutAnalysisCheck.http_headers:type_name -> paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
 	55,  // 36: paprika.v1.ListPipelinesResponse.pipelines:type_name -> paprika.v1.Pipeline
 	58,  // 37: paprika.v1.ListReleasesResponse.releases:type_name -> paprika.v1.Release
 	61,  // 38: paprika.v1.ListStagesResponse.stages:type_name -> paprika.v1.Stage
@@ -22310,7 +22907,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	81,  // 43: paprika.v1.ListApplicationSetsResponse.applicationsets:type_name -> paprika.v1.ApplicationSet
 	81,  // 44: paprika.v1.GetApplicationSetResponse.applicationset:type_name -> paprika.v1.ApplicationSet
 	54,  // 45: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
-	275, // 46: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
+	282, // 46: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
 	89,  // 47: paprika.v1.NotificationConfig.triggers:type_name -> paprika.v1.NotificationTrigger
 	90,  // 48: paprika.v1.NotificationConfig.destinations:type_name -> paprika.v1.NotificationDestination
 	91,  // 49: paprika.v1.NotificationConfig.smtp:type_name -> paprika.v1.SMTPConfig
@@ -22319,7 +22916,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	54,  // 52: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
 	49,  // 53: paprika.v1.ListGateStatusResponse.gates:type_name -> paprika.v1.GateStatus
 	54,  // 54: paprika.v1.RejectGateResponse.application:type_name -> paprika.v1.Application
-	276, // 55: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	283, // 55: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
 	54,  // 56: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
 	58,  // 57: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
 	57,  // 58: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
@@ -22339,8 +22936,8 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	35,  // 72: paprika.v1.GetArtifactResponse.artifact:type_name -> paprika.v1.ArtifactRef
 	35,  // 73: paprika.v1.ListArtifactsResponse.artifacts:type_name -> paprika.v1.ArtifactRef
 	138, // 74: paprika.v1.GetResourceResponse.events:type_name -> paprika.v1.KubernetesEvent
-	277, // 75: paprika.v1.GetResourceResponse.labels:type_name -> paprika.v1.GetResourceResponse.LabelsEntry
-	278, // 76: paprika.v1.GetResourceResponse.annotations:type_name -> paprika.v1.GetResourceResponse.AnnotationsEntry
+	284, // 75: paprika.v1.GetResourceResponse.labels:type_name -> paprika.v1.GetResourceResponse.LabelsEntry
+	285, // 76: paprika.v1.GetResourceResponse.annotations:type_name -> paprika.v1.GetResourceResponse.AnnotationsEntry
 	141, // 77: paprika.v1.GetResourceTreeResponse.nodes:type_name -> paprika.v1.ResourceNode
 	146, // 78: paprika.v1.GetResourceTreeDetailedResponse.nodes:type_name -> paprika.v1.ResourceTreeNode
 	0,   // 79: paprika.v1.InvestigationFinding.severity:type_name -> paprika.v1.Severity
@@ -22421,7 +23018,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	182, // 154: paprika.v1.ClusterProvider.node_pools:type_name -> paprika.v1.ClusterNodePool
 	157, // 155: paprika.v1.Cluster.identity:type_name -> paprika.v1.FleetObjectKey
 	17,  // 156: paprika.v1.Cluster.mode:type_name -> paprika.v1.ClusterMode
-	279, // 157: paprika.v1.Cluster.labels:type_name -> paprika.v1.Cluster.LabelsEntry
+	286, // 157: paprika.v1.Cluster.labels:type_name -> paprika.v1.Cluster.LabelsEntry
 	18,  // 158: paprika.v1.Cluster.phase:type_name -> paprika.v1.ClusterPhase
 	12,  // 159: paprika.v1.Cluster.connection:type_name -> paprika.v1.FleetConnectionState
 	50,  // 160: paprika.v1.Cluster.conditions:type_name -> paprika.v1.Condition
@@ -22545,143 +23142,151 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	263, // 278: paprika.v1.SyncResourcesRequest.resources:type_name -> paprika.v1.ResourceSelector
 	263, // 279: paprika.v1.SyncResourcesResponse.unmatched:type_name -> paprika.v1.ResourceSelector
 	27,  // 280: paprika.v1.OwnershipSummary.tier:type_name -> paprika.v1.OwnershipTier
-	68,  // 281: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
-	70,  // 282: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
-	72,  // 283: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
-	74,  // 284: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
-	76,  // 285: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
-	83,  // 286: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
-	85,  // 287: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
-	94,  // 288: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
-	79,  // 289: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
-	87,  // 290: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
-	96,  // 291: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
-	98,  // 292: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
-	100, // 293: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
-	102, // 294: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
-	104, // 295: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
-	106, // 296: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
-	108, // 297: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
-	111, // 298: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
-	113, // 299: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
-	115, // 300: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
-	117, // 301: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
-	119, // 302: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
-	121, // 303: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
-	123, // 304: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
-	125, // 305: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
-	127, // 306: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
-	129, // 307: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
-	131, // 308: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
-	133, // 309: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
-	135, // 310: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
-	137, // 311: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
-	140, // 312: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
-	143, // 313: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
-	145, // 314: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
-	155, // 315: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
-	148, // 316: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
-	152, // 317: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
-	166, // 318: paprika.v1.PaprikaService.QueryApplications:input_type -> paprika.v1.QueryApplicationsRequest
-	169, // 319: paprika.v1.PaprikaService.QueryFleetMap:input_type -> paprika.v1.QueryFleetMapRequest
-	173, // 320: paprika.v1.PaprikaService.QueryFleetMatrix:input_type -> paprika.v1.QueryFleetMatrixRequest
-	164, // 321: paprika.v1.PaprikaService.GetSystemStatus:input_type -> paprika.v1.GetSystemStatusRequest
-	176, // 322: paprika.v1.PaprikaService.GetDataSources:input_type -> paprika.v1.GetDataSourcesRequest
-	186, // 323: paprika.v1.PaprikaService.ListClusters:input_type -> paprika.v1.ListClustersRequest
-	188, // 324: paprika.v1.PaprikaService.GetCluster:input_type -> paprika.v1.GetClusterRequest
-	192, // 325: paprika.v1.PaprikaService.QueryApplicationSignals:input_type -> paprika.v1.QueryApplicationSignalsRequest
-	197, // 326: paprika.v1.PaprikaService.QueryCost:input_type -> paprika.v1.QueryCostRequest
-	223, // 327: paprika.v1.PaprikaService.ListSourceEvents:input_type -> paprika.v1.ListSourceEventsRequest
-	227, // 328: paprika.v1.PaprikaService.ListRolloutHistory:input_type -> paprika.v1.ListRolloutHistoryRequest
-	234, // 329: paprika.v1.PaprikaService.ListPipelineRuns:input_type -> paprika.v1.ListPipelineRunsRequest
-	236, // 330: paprika.v1.PaprikaService.GetPipelineRun:input_type -> paprika.v1.GetPipelineRunRequest
-	220, // 331: paprika.v1.PaprikaService.GetRevisionInfo:input_type -> paprika.v1.GetRevisionInfoRequest
-	240, // 332: paprika.v1.PaprikaService.GetApplicationOwnership:input_type -> paprika.v1.GetApplicationOwnershipRequest
-	244, // 333: paprika.v1.PaprikaService.ListDriftDetails:input_type -> paprika.v1.ListDriftDetailsRequest
-	249, // 334: paprika.v1.PaprikaService.GetApplicationLifecycle:input_type -> paprika.v1.GetApplicationLifecycleRequest
-	252, // 335: paprika.v1.PaprikaService.GetRolloutHold:input_type -> paprika.v1.GetRolloutHoldRequest
-	254, // 336: paprika.v1.PaprikaService.HoldRollout:input_type -> paprika.v1.HoldRolloutRequest
-	256, // 337: paprika.v1.PaprikaService.ResumeRollout:input_type -> paprika.v1.ResumeRolloutRequest
-	259, // 338: paprika.v1.PaprikaService.IgnoreDriftedField:input_type -> paprika.v1.IgnoreDriftedFieldRequest
-	261, // 339: paprika.v1.PaprikaService.ApplyResourcePatch:input_type -> paprika.v1.ApplyResourcePatchRequest
-	264, // 340: paprika.v1.PaprikaService.SyncResources:input_type -> paprika.v1.SyncResourcesRequest
-	199, // 341: paprika.v1.PaprikaService.ListObservabilityProviders:input_type -> paprika.v1.ListObservabilityProvidersRequest
-	202, // 342: paprika.v1.PaprikaService.GetObservabilityUsage:input_type -> paprika.v1.GetObservabilityUsageRequest
-	205, // 343: paprika.v1.PaprikaService.ListObservabilityProviderTypes:input_type -> paprika.v1.ListObservabilityProviderTypesRequest
-	208, // 344: paprika.v1.PaprikaService.GetObservabilityProviderType:input_type -> paprika.v1.GetObservabilityProviderTypeRequest
-	215, // 345: paprika.v1.PaprikaService.ValidateObservabilityProvider:input_type -> paprika.v1.ValidateObservabilityProviderRequest
-	217, // 346: paprika.v1.PaprikaService.CreateObservabilityProvider:input_type -> paprika.v1.CreateObservabilityProviderRequest
-	69,  // 347: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
-	71,  // 348: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
-	73,  // 349: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
-	75,  // 350: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
-	77,  // 351: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
-	84,  // 352: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
-	86,  // 353: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
-	95,  // 354: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
-	80,  // 355: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
-	88,  // 356: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
-	97,  // 357: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
-	99,  // 358: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
-	101, // 359: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
-	103, // 360: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
-	105, // 361: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
-	107, // 362: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
-	109, // 363: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
-	112, // 364: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
-	114, // 365: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
-	116, // 366: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
-	118, // 367: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
-	120, // 368: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
-	122, // 369: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
-	124, // 370: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
-	126, // 371: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
-	128, // 372: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
-	130, // 373: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
-	132, // 374: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
-	134, // 375: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
-	136, // 376: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
-	139, // 377: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
-	142, // 378: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
-	144, // 379: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
-	147, // 380: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
-	156, // 381: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
-	151, // 382: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
-	154, // 383: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
-	167, // 384: paprika.v1.PaprikaService.QueryApplications:output_type -> paprika.v1.QueryApplicationsResponse
-	170, // 385: paprika.v1.PaprikaService.QueryFleetMap:output_type -> paprika.v1.QueryFleetMapResponse
-	174, // 386: paprika.v1.PaprikaService.QueryFleetMatrix:output_type -> paprika.v1.QueryFleetMatrixResponse
-	165, // 387: paprika.v1.PaprikaService.GetSystemStatus:output_type -> paprika.v1.GetSystemStatusResponse
-	177, // 388: paprika.v1.PaprikaService.GetDataSources:output_type -> paprika.v1.GetDataSourcesResponse
-	187, // 389: paprika.v1.PaprikaService.ListClusters:output_type -> paprika.v1.ListClustersResponse
-	189, // 390: paprika.v1.PaprikaService.GetCluster:output_type -> paprika.v1.GetClusterResponse
-	193, // 391: paprika.v1.PaprikaService.QueryApplicationSignals:output_type -> paprika.v1.QueryApplicationSignalsResponse
-	198, // 392: paprika.v1.PaprikaService.QueryCost:output_type -> paprika.v1.QueryCostResponse
-	224, // 393: paprika.v1.PaprikaService.ListSourceEvents:output_type -> paprika.v1.ListSourceEventsResponse
-	228, // 394: paprika.v1.PaprikaService.ListRolloutHistory:output_type -> paprika.v1.ListRolloutHistoryResponse
-	235, // 395: paprika.v1.PaprikaService.ListPipelineRuns:output_type -> paprika.v1.ListPipelineRunsResponse
-	237, // 396: paprika.v1.PaprikaService.GetPipelineRun:output_type -> paprika.v1.GetPipelineRunResponse
-	221, // 397: paprika.v1.PaprikaService.GetRevisionInfo:output_type -> paprika.v1.GetRevisionInfoResponse
-	241, // 398: paprika.v1.PaprikaService.GetApplicationOwnership:output_type -> paprika.v1.GetApplicationOwnershipResponse
-	245, // 399: paprika.v1.PaprikaService.ListDriftDetails:output_type -> paprika.v1.ListDriftDetailsResponse
-	250, // 400: paprika.v1.PaprikaService.GetApplicationLifecycle:output_type -> paprika.v1.GetApplicationLifecycleResponse
-	253, // 401: paprika.v1.PaprikaService.GetRolloutHold:output_type -> paprika.v1.GetRolloutHoldResponse
-	255, // 402: paprika.v1.PaprikaService.HoldRollout:output_type -> paprika.v1.HoldRolloutResponse
-	257, // 403: paprika.v1.PaprikaService.ResumeRollout:output_type -> paprika.v1.ResumeRolloutResponse
-	260, // 404: paprika.v1.PaprikaService.IgnoreDriftedField:output_type -> paprika.v1.IgnoreDriftedFieldResponse
-	262, // 405: paprika.v1.PaprikaService.ApplyResourcePatch:output_type -> paprika.v1.ApplyResourcePatchResponse
-	265, // 406: paprika.v1.PaprikaService.SyncResources:output_type -> paprika.v1.SyncResourcesResponse
-	201, // 407: paprika.v1.PaprikaService.ListObservabilityProviders:output_type -> paprika.v1.ListObservabilityProvidersResponse
-	204, // 408: paprika.v1.PaprikaService.GetObservabilityUsage:output_type -> paprika.v1.GetObservabilityUsageResponse
-	207, // 409: paprika.v1.PaprikaService.ListObservabilityProviderTypes:output_type -> paprika.v1.ListObservabilityProviderTypesResponse
-	214, // 410: paprika.v1.PaprikaService.GetObservabilityProviderType:output_type -> paprika.v1.GetObservabilityProviderTypeResponse
-	216, // 411: paprika.v1.PaprikaService.ValidateObservabilityProvider:output_type -> paprika.v1.ValidateObservabilityProviderResponse
-	218, // 412: paprika.v1.PaprikaService.CreateObservabilityProvider:output_type -> paprika.v1.CreateObservabilityProviderResponse
-	347, // [347:413] is the sub-list for method output_type
-	281, // [281:347] is the sub-list for method input_type
-	281, // [281:281] is the sub-list for extension type_name
-	281, // [281:281] is the sub-list for extension extendee
-	0,   // [0:281] is the sub-list for field type_name
+	271, // 281: paprika.v1.SatelliteFrame.hello:type_name -> paprika.v1.SatelliteHello
+	272, // 282: paprika.v1.SatelliteFrame.update:type_name -> paprika.v1.SatelliteUpdate
+	273, // 283: paprika.v1.SatelliteFrame.ack:type_name -> paprika.v1.SatelliteAck
+	274, // 284: paprika.v1.SatelliteFrame.task:type_name -> paprika.v1.SatelliteTask
+	276, // 285: paprika.v1.SatelliteFrame.task_result:type_name -> paprika.v1.SatelliteTaskResult
+	275, // 286: paprika.v1.SatelliteTask.apply:type_name -> paprika.v1.SatelliteApplyTask
+	68,  // 287: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
+	70,  // 288: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
+	72,  // 289: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
+	74,  // 290: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
+	76,  // 291: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
+	83,  // 292: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
+	85,  // 293: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
+	94,  // 294: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
+	79,  // 295: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
+	87,  // 296: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
+	96,  // 297: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
+	98,  // 298: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
+	100, // 299: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
+	102, // 300: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
+	104, // 301: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
+	106, // 302: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
+	108, // 303: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
+	111, // 304: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
+	113, // 305: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
+	115, // 306: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
+	117, // 307: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
+	119, // 308: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
+	121, // 309: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
+	123, // 310: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
+	125, // 311: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
+	127, // 312: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
+	129, // 313: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
+	131, // 314: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
+	133, // 315: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
+	135, // 316: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
+	137, // 317: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
+	140, // 318: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
+	143, // 319: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
+	145, // 320: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
+	155, // 321: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
+	148, // 322: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
+	152, // 323: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
+	166, // 324: paprika.v1.PaprikaService.QueryApplications:input_type -> paprika.v1.QueryApplicationsRequest
+	169, // 325: paprika.v1.PaprikaService.QueryFleetMap:input_type -> paprika.v1.QueryFleetMapRequest
+	173, // 326: paprika.v1.PaprikaService.QueryFleetMatrix:input_type -> paprika.v1.QueryFleetMatrixRequest
+	164, // 327: paprika.v1.PaprikaService.GetSystemStatus:input_type -> paprika.v1.GetSystemStatusRequest
+	176, // 328: paprika.v1.PaprikaService.GetDataSources:input_type -> paprika.v1.GetDataSourcesRequest
+	186, // 329: paprika.v1.PaprikaService.ListClusters:input_type -> paprika.v1.ListClustersRequest
+	188, // 330: paprika.v1.PaprikaService.GetCluster:input_type -> paprika.v1.GetClusterRequest
+	192, // 331: paprika.v1.PaprikaService.QueryApplicationSignals:input_type -> paprika.v1.QueryApplicationSignalsRequest
+	197, // 332: paprika.v1.PaprikaService.QueryCost:input_type -> paprika.v1.QueryCostRequest
+	223, // 333: paprika.v1.PaprikaService.ListSourceEvents:input_type -> paprika.v1.ListSourceEventsRequest
+	227, // 334: paprika.v1.PaprikaService.ListRolloutHistory:input_type -> paprika.v1.ListRolloutHistoryRequest
+	234, // 335: paprika.v1.PaprikaService.ListPipelineRuns:input_type -> paprika.v1.ListPipelineRunsRequest
+	236, // 336: paprika.v1.PaprikaService.GetPipelineRun:input_type -> paprika.v1.GetPipelineRunRequest
+	220, // 337: paprika.v1.PaprikaService.GetRevisionInfo:input_type -> paprika.v1.GetRevisionInfoRequest
+	240, // 338: paprika.v1.PaprikaService.GetApplicationOwnership:input_type -> paprika.v1.GetApplicationOwnershipRequest
+	244, // 339: paprika.v1.PaprikaService.ListDriftDetails:input_type -> paprika.v1.ListDriftDetailsRequest
+	249, // 340: paprika.v1.PaprikaService.GetApplicationLifecycle:input_type -> paprika.v1.GetApplicationLifecycleRequest
+	252, // 341: paprika.v1.PaprikaService.GetRolloutHold:input_type -> paprika.v1.GetRolloutHoldRequest
+	254, // 342: paprika.v1.PaprikaService.HoldRollout:input_type -> paprika.v1.HoldRolloutRequest
+	256, // 343: paprika.v1.PaprikaService.ResumeRollout:input_type -> paprika.v1.ResumeRolloutRequest
+	259, // 344: paprika.v1.PaprikaService.IgnoreDriftedField:input_type -> paprika.v1.IgnoreDriftedFieldRequest
+	261, // 345: paprika.v1.PaprikaService.ApplyResourcePatch:input_type -> paprika.v1.ApplyResourcePatchRequest
+	264, // 346: paprika.v1.PaprikaService.SyncResources:input_type -> paprika.v1.SyncResourcesRequest
+	199, // 347: paprika.v1.PaprikaService.ListObservabilityProviders:input_type -> paprika.v1.ListObservabilityProvidersRequest
+	202, // 348: paprika.v1.PaprikaService.GetObservabilityUsage:input_type -> paprika.v1.GetObservabilityUsageRequest
+	205, // 349: paprika.v1.PaprikaService.ListObservabilityProviderTypes:input_type -> paprika.v1.ListObservabilityProviderTypesRequest
+	208, // 350: paprika.v1.PaprikaService.GetObservabilityProviderType:input_type -> paprika.v1.GetObservabilityProviderTypeRequest
+	215, // 351: paprika.v1.PaprikaService.ValidateObservabilityProvider:input_type -> paprika.v1.ValidateObservabilityProviderRequest
+	217, // 352: paprika.v1.PaprikaService.CreateObservabilityProvider:input_type -> paprika.v1.CreateObservabilityProviderRequest
+	270, // 353: paprika.v1.SatelliteLink.Connect:input_type -> paprika.v1.SatelliteFrame
+	69,  // 354: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
+	71,  // 355: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
+	73,  // 356: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
+	75,  // 357: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
+	77,  // 358: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
+	84,  // 359: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
+	86,  // 360: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
+	95,  // 361: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
+	80,  // 362: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
+	88,  // 363: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
+	97,  // 364: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
+	99,  // 365: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
+	101, // 366: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
+	103, // 367: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
+	105, // 368: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
+	107, // 369: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
+	109, // 370: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
+	112, // 371: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
+	114, // 372: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
+	116, // 373: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
+	118, // 374: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
+	120, // 375: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
+	122, // 376: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
+	124, // 377: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
+	126, // 378: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
+	128, // 379: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
+	130, // 380: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
+	132, // 381: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
+	134, // 382: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
+	136, // 383: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
+	139, // 384: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
+	142, // 385: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
+	144, // 386: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
+	147, // 387: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
+	156, // 388: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
+	151, // 389: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
+	154, // 390: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
+	167, // 391: paprika.v1.PaprikaService.QueryApplications:output_type -> paprika.v1.QueryApplicationsResponse
+	170, // 392: paprika.v1.PaprikaService.QueryFleetMap:output_type -> paprika.v1.QueryFleetMapResponse
+	174, // 393: paprika.v1.PaprikaService.QueryFleetMatrix:output_type -> paprika.v1.QueryFleetMatrixResponse
+	165, // 394: paprika.v1.PaprikaService.GetSystemStatus:output_type -> paprika.v1.GetSystemStatusResponse
+	177, // 395: paprika.v1.PaprikaService.GetDataSources:output_type -> paprika.v1.GetDataSourcesResponse
+	187, // 396: paprika.v1.PaprikaService.ListClusters:output_type -> paprika.v1.ListClustersResponse
+	189, // 397: paprika.v1.PaprikaService.GetCluster:output_type -> paprika.v1.GetClusterResponse
+	193, // 398: paprika.v1.PaprikaService.QueryApplicationSignals:output_type -> paprika.v1.QueryApplicationSignalsResponse
+	198, // 399: paprika.v1.PaprikaService.QueryCost:output_type -> paprika.v1.QueryCostResponse
+	224, // 400: paprika.v1.PaprikaService.ListSourceEvents:output_type -> paprika.v1.ListSourceEventsResponse
+	228, // 401: paprika.v1.PaprikaService.ListRolloutHistory:output_type -> paprika.v1.ListRolloutHistoryResponse
+	235, // 402: paprika.v1.PaprikaService.ListPipelineRuns:output_type -> paprika.v1.ListPipelineRunsResponse
+	237, // 403: paprika.v1.PaprikaService.GetPipelineRun:output_type -> paprika.v1.GetPipelineRunResponse
+	221, // 404: paprika.v1.PaprikaService.GetRevisionInfo:output_type -> paprika.v1.GetRevisionInfoResponse
+	241, // 405: paprika.v1.PaprikaService.GetApplicationOwnership:output_type -> paprika.v1.GetApplicationOwnershipResponse
+	245, // 406: paprika.v1.PaprikaService.ListDriftDetails:output_type -> paprika.v1.ListDriftDetailsResponse
+	250, // 407: paprika.v1.PaprikaService.GetApplicationLifecycle:output_type -> paprika.v1.GetApplicationLifecycleResponse
+	253, // 408: paprika.v1.PaprikaService.GetRolloutHold:output_type -> paprika.v1.GetRolloutHoldResponse
+	255, // 409: paprika.v1.PaprikaService.HoldRollout:output_type -> paprika.v1.HoldRolloutResponse
+	257, // 410: paprika.v1.PaprikaService.ResumeRollout:output_type -> paprika.v1.ResumeRolloutResponse
+	260, // 411: paprika.v1.PaprikaService.IgnoreDriftedField:output_type -> paprika.v1.IgnoreDriftedFieldResponse
+	262, // 412: paprika.v1.PaprikaService.ApplyResourcePatch:output_type -> paprika.v1.ApplyResourcePatchResponse
+	265, // 413: paprika.v1.PaprikaService.SyncResources:output_type -> paprika.v1.SyncResourcesResponse
+	201, // 414: paprika.v1.PaprikaService.ListObservabilityProviders:output_type -> paprika.v1.ListObservabilityProvidersResponse
+	204, // 415: paprika.v1.PaprikaService.GetObservabilityUsage:output_type -> paprika.v1.GetObservabilityUsageResponse
+	207, // 416: paprika.v1.PaprikaService.ListObservabilityProviderTypes:output_type -> paprika.v1.ListObservabilityProviderTypesResponse
+	214, // 417: paprika.v1.PaprikaService.GetObservabilityProviderType:output_type -> paprika.v1.GetObservabilityProviderTypeResponse
+	216, // 418: paprika.v1.PaprikaService.ValidateObservabilityProvider:output_type -> paprika.v1.ValidateObservabilityProviderResponse
+	218, // 419: paprika.v1.PaprikaService.CreateObservabilityProvider:output_type -> paprika.v1.CreateObservabilityProviderResponse
+	270, // 420: paprika.v1.SatelliteLink.Connect:output_type -> paprika.v1.SatelliteFrame
+	354, // [354:421] is the sub-list for method output_type
+	287, // [287:354] is the sub-list for method input_type
+	287, // [287:287] is the sub-list for extension type_name
+	287, // [287:287] is the sub-list for extension extendee
+	0,   // [0:287] is the sub-list for field type_name
 }
 
 func init() { file_paprika_v1_api_proto_init() }
@@ -22721,15 +23326,25 @@ func file_paprika_v1_api_proto_init() {
 	file_paprika_v1_api_proto_msgTypes[190].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[194].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[201].OneofWrappers = []any{}
+	file_paprika_v1_api_proto_msgTypes[237].OneofWrappers = []any{
+		(*SatelliteFrame_Hello)(nil),
+		(*SatelliteFrame_Update)(nil),
+		(*SatelliteFrame_Ack)(nil),
+		(*SatelliteFrame_Task)(nil),
+		(*SatelliteFrame_TaskResult)(nil),
+	}
+	file_paprika_v1_api_proto_msgTypes[241].OneofWrappers = []any{
+		(*SatelliteTask_Apply)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paprika_v1_api_proto_rawDesc), len(file_paprika_v1_api_proto_rawDesc)),
 			NumEnums:      33,
-			NumMessages:   247,
+			NumMessages:   254,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_paprika_v1_api_proto_goTypes,
 		DependencyIndexes: file_paprika_v1_api_proto_depIdxs,

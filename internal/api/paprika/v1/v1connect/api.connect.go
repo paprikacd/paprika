@@ -23,6 +23,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// PaprikaServiceName is the fully-qualified name of the PaprikaService service.
 	PaprikaServiceName = "paprika.v1.PaprikaService"
+	// SatelliteLinkName is the fully-qualified name of the SatelliteLink service.
+	SatelliteLinkName = "paprika.v1.SatelliteLink"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -229,6 +231,8 @@ const (
 	// PaprikaServiceCreateObservabilityProviderProcedure is the fully-qualified name of the
 	// PaprikaService's CreateObservabilityProvider RPC.
 	PaprikaServiceCreateObservabilityProviderProcedure = "/paprika.v1.PaprikaService/CreateObservabilityProvider"
+	// SatelliteLinkConnectProcedure is the fully-qualified name of the SatelliteLink's Connect RPC.
+	SatelliteLinkConnectProcedure = "/paprika.v1.SatelliteLink/Connect"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -1989,4 +1993,74 @@ func (UnimplementedPaprikaServiceHandler) ValidateObservabilityProvider(context.
 
 func (UnimplementedPaprikaServiceHandler) CreateObservabilityProvider(context.Context, *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.CreateObservabilityProvider is not implemented"))
+}
+
+// SatelliteLinkClient is a client for the paprika.v1.SatelliteLink service.
+type SatelliteLinkClient interface {
+	Connect(context.Context) *connect.BidiStreamForClient[v1.SatelliteFrame, v1.SatelliteFrame]
+}
+
+// NewSatelliteLinkClient constructs a client for the paprika.v1.SatelliteLink service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSatelliteLinkClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SatelliteLinkClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	satelliteLinkMethods := v1.File_paprika_v1_api_proto.Services().ByName("SatelliteLink").Methods()
+	return &satelliteLinkClient{
+		connect: connect.NewClient[v1.SatelliteFrame, v1.SatelliteFrame](
+			httpClient,
+			baseURL+SatelliteLinkConnectProcedure,
+			connect.WithSchema(satelliteLinkMethods.ByName("Connect")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// satelliteLinkClient implements SatelliteLinkClient.
+type satelliteLinkClient struct {
+	connect *connect.Client[v1.SatelliteFrame, v1.SatelliteFrame]
+}
+
+// Connect calls paprika.v1.SatelliteLink.Connect.
+func (c *satelliteLinkClient) Connect(ctx context.Context) *connect.BidiStreamForClient[v1.SatelliteFrame, v1.SatelliteFrame] {
+	return c.connect.CallBidiStream(ctx)
+}
+
+// SatelliteLinkHandler is an implementation of the paprika.v1.SatelliteLink service.
+type SatelliteLinkHandler interface {
+	Connect(context.Context, *connect.BidiStream[v1.SatelliteFrame, v1.SatelliteFrame]) error
+}
+
+// NewSatelliteLinkHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSatelliteLinkHandler(svc SatelliteLinkHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	satelliteLinkMethods := v1.File_paprika_v1_api_proto.Services().ByName("SatelliteLink").Methods()
+	satelliteLinkConnectHandler := connect.NewBidiStreamHandler(
+		SatelliteLinkConnectProcedure,
+		svc.Connect,
+		connect.WithSchema(satelliteLinkMethods.ByName("Connect")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/paprika.v1.SatelliteLink/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SatelliteLinkConnectProcedure:
+			satelliteLinkConnectHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSatelliteLinkHandler returns CodeUnimplemented from all methods.
+type UnimplementedSatelliteLinkHandler struct{}
+
+func (UnimplementedSatelliteLinkHandler) Connect(context.Context, *connect.BidiStream[v1.SatelliteFrame, v1.SatelliteFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.SatelliteLink.Connect is not implemented"))
 }

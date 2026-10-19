@@ -239,6 +239,37 @@ Capacity for an `agent`-mode cluster is served from the satellite report. A
 `direct` cluster keeps the live read even when it also reports through a
 satellite, because a live read is fresher than a heartbeat.
 
+### Stream Transport
+
+Set `stream.enabled=true` on the satellite chart to keep one bidirectional
+Connect stream open instead of posting each report. Reports still travel in the
+same JSON document the POST transport sends, validated and fenced by the same
+code — the transport changes how the bytes arrive, never what the control plane
+accepts. The link is off by default because the POST path is what every existing
+satellite runs.
+
+The link's reason to exist is the reverse direction. With a live link, a release
+that targets an `agent`-mode cluster can apply its rendered bundle *down the
+satellite's own outbound connection*, so the cluster needs no inbound route and
+the control plane keeps no kubeconfig for it:
+
+```text
+control plane ──task: apply bundle──▶ satellite ──server-side apply──▶ cluster API
+              ◀──result: 12 applied──
+```
+
+The satellite runs the bundle through the same apply path as the inbound agent,
+so both transports produce the same result. A failed apply over a live link is
+reported and **not** retried through the agent endpoint: the cluster may have
+half the bundle applied, and a second attempt would race the satellite's own.
+
+Two limits apply today. Task dispatch needs the link and the dispatcher in one
+process, which is `deploymentMode: monolith`; in split mode the API server holds
+the links and the controller has no route to them, so agent clusters fall back to
+the inbound agent endpoint. And the link accepts only reports and applies — the
+resource-tree, log and live-diff reads that need a command channel are not wired
+to it yet.
+
 ### State Transport and Reconnects
 
 One satellite Deployment runs per cluster. Shared Kubernetes watches maintain
