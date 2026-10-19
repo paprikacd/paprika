@@ -38,7 +38,7 @@ var pinnedActionRevisions = map[string]string{
 	"actions/setup-go":                   "4a3601121dd01d1626a1e23e37211e3254c1c06c",
 	"actions/setup-node":                 "249970729cb0ef3589644e2896645e5dc5ba9c38",
 	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
-	"docker/build-push-action":           "ca052bb54ab0790a636c9b5f226502c73d547a25",
+	"docker/build-push-action":           "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
 	"docker/login-action":                "abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
 	"docker/setup-buildx-action":         "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
 	"google-github-actions/auth":         "7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
@@ -740,7 +740,7 @@ func testDownstreamActionPins(t *testing.T) {
 		setupGoRevision     = "4a3601121dd01d1626a1e23e37211e3254c1c06c"
 		setupHelmRevision   = "59b1c81c6280f5abebb1fb1bc585696daa7dfb42"
 		setupBuildxRevision = "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c"
-		buildPushRevision   = "ca052bb54ab0790a636c9b5f226502c73d547a25"
+		buildPushRevision   = "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a"
 	)
 	assertActionRevision(t, loadWorkflow(t, "deploy-vke.yml"), "actions/checkout", checkoutRevision)
 	assertActionRevision(t, loadWorkflow(t, "deploy-vke.yml"), "actions/setup-go", setupGoRevision)
