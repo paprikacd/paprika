@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -32,8 +33,17 @@ func (s *PaprikaServer) GetResourceLogs(
 	}
 
 	resp := &paprikav1.GetResourceLogsResponse{}
-	if s.k8sClient == nil {
-		resp.Error = "kubernetes client not configured"
+	// Logs come from the cluster the application is deployed to, never from the
+	// one this server happens to run in: the pod names usually exist on both, so
+	// reading the wrong one answers confidently and incorrectly.
+	target, targetErr := s.applicationTargetCluster(ctx, &app)
+	if targetErr != nil {
+		resp.Error = targetUnavailableMessage(target, targetErr)
+		return connect.NewResponse(resp), nil
+	}
+	typed, err := s.targetTypedClient(ctx, target)
+	if err != nil {
+		resp.Error = targetUnavailableMessage(target, err)
 		return connect.NewResponse(resp), nil
 	}
 
@@ -42,7 +52,7 @@ func (s *PaprikaServer) GetResourceLogs(
 		ns = app.Namespace
 	}
 
-	pod, err := s.resolveLogsPod(ctx, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	pod, err := resolveLogsPod(ctx, typed, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
 	if err != nil {
 		resp.Error = err.Error()
 		return connect.NewResponse(resp), nil
@@ -58,7 +68,7 @@ func (s *PaprikaServer) GetResourceLogs(
 		resp.ContainerName = containerNames[0]
 	}
 
-	logs, err := s.streamPodLogs(ctx, ns, pod.Name, req.Msg.TailLines)
+	logs, err := s.streamPodLogs(ctx, typed, ns, pod.Name, req.Msg.TailLines)
 	if err != nil {
 		resp.Error = err.Error()
 		return connect.NewResponse(resp), nil
@@ -68,17 +78,18 @@ func (s *PaprikaServer) GetResourceLogs(
 }
 
 // resolveLogsPod maps any supported resource kind to a single Pod object to
-// fetch logs from. Returns an error (not a panic) when unsupported.
-func (s *PaprikaServer) resolveLogsPod(ctx context.Context, kind, name, namespace string) (*corev1.Pod, error) {
+// fetch logs from, on the cluster that pod lives on. Returns an error (not a
+// panic) when unsupported.
+func resolveLogsPod(ctx context.Context, typed kubernetes.Interface, kind, name, namespace string) (*corev1.Pod, error) {
 	switch kind {
 	case "Pod":
-		pod, err := s.k8sClient.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		pod, err := typed.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("pod %s/%s not found", namespace, name)
 		}
 		return pod, nil
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet", "Job":
-		pods, err := s.k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		pods, err := typed.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=" + name,
 			Limit:         1,
 		})

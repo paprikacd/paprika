@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -42,6 +43,7 @@ import (
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/kube"
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
@@ -146,6 +148,12 @@ type PaprikaServer struct {
 	// nil, the AuditInterceptor falls back to a NoopAuditor.
 	Auditor audit.Auditor
 	Clock   clock.Clock
+
+	// kubeClients caches one client set per remote cluster so a console
+	// drill-down reuses a connection pool instead of dialling per request. It is
+	// created on first use unless injected through WithKubeClients.
+	kubeClients     *kube.Clients
+	kubeClientsOnce sync.Once
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.

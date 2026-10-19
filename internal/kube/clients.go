@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/metrics/pkg/client/clientset/versioned"
@@ -17,6 +18,11 @@ import (
 // ClientBuilder constructs a clientset and the HTTP client backing it. It is a
 // seam so tests can exercise the cache without a real API server.
 type ClientBuilder func(*rest.Config) (kubernetes.Interface, *http.Client, error)
+
+// DynamicBuilder constructs the dynamic client for a cluster over an HTTP
+// client that has already been built for it, so a drill-down into a remote
+// resource shares the connection pool the core client holds.
+type DynamicBuilder func(*rest.Config, *http.Client) (dynamic.Interface, error)
 
 // MetricsBuilder constructs the metrics.k8s.io clientset for a cluster over an
 // HTTP client that has already been built for it, so the aggregated API shares
@@ -48,6 +54,7 @@ type MetricsBuilder func(*rest.Config, *http.Client) (versioned.Interface, error
 type Clients struct {
 	build        ClientBuilder
 	buildMetrics MetricsBuilder
+	buildDynamic DynamicBuilder
 
 	// clusterKey -> *entry. Never deleted except by Close or a credential
 	// change, so the map stays the size of the fleet.
@@ -69,16 +76,21 @@ type entry struct {
 	// MetricsFor.
 	metrics    versioned.Interface
 	metricsErr error
+
+	// dynamic holds the unstructured client used to read a remote cluster's
+	// arbitrary resources, built over the same http client as the typed one.
+	dynamic    dynamic.Interface
+	dynamicErr error
 }
 
 // NewClients returns a cache that builds real clientsets.
 func NewClients() *Clients {
-	return &Clients{build: defaultBuilder, buildMetrics: defaultMetricsBuilder}
+	return &Clients{build: defaultBuilder, buildMetrics: defaultMetricsBuilder, buildDynamic: defaultDynamicBuilder}
 }
 
 // NewClientsWithBuilder returns a cache that builds clients through fn.
 func NewClientsWithBuilder(fn ClientBuilder) *Clients {
-	return &Clients{build: fn, buildMetrics: defaultMetricsBuilder}
+	return &Clients{build: fn, buildMetrics: defaultMetricsBuilder, buildDynamic: defaultDynamicBuilder}
 }
 
 func defaultBuilder(cfg *rest.Config) (kubernetes.Interface, *http.Client, error) {
@@ -101,6 +113,36 @@ func defaultMetricsBuilder(cfg *rest.Config, httpClient *http.Client) (versioned
 		return nil, fmt.Errorf("building metrics clientset: %w", err)
 	}
 	return metricsClient, nil
+}
+
+// defaultDynamicBuilder builds the dynamic client over httpClient, so it reuses
+// the connection pool the typed client already holds for cfg.
+func defaultDynamicBuilder(cfg *rest.Config, httpClient *http.Client) (dynamic.Interface, error) {
+	client, err := dynamic.NewForConfigAndClient(cfg, httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("building dynamic client: %w", err)
+	}
+	return client, nil
+}
+
+// DynamicFor returns the dynamic client for clusterKey, building it on first
+// use alongside the typed client and sharing that client's connections.
+//
+// cfg must be the same config For is called with for this cluster: the clients
+// live in one cache entry, keyed by one credential fingerprint, and are evicted
+// together when those credentials rotate.
+func (c *Clients) DynamicFor(clusterKey string, cfg *rest.Config) (dynamic.Interface, error) {
+	current, err := c.entryFor(clusterKey, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if current.dynamicErr != nil {
+		return nil, current.dynamicErr
+	}
+	if current.dynamic == nil {
+		return nil, fmt.Errorf("no dynamic client is configured for cluster %q", clusterKey)
+	}
+	return current.dynamic, nil
 }
 
 // For returns the client for clusterKey, building it on first use.
@@ -173,10 +215,18 @@ func (c *Clients) entryFor(clusterKey string, cfg *rest.Config) (*entry, error) 
 
 		current.once.Do(func() {
 			current.client, current.http, current.err = c.build(cfg)
-			if current.err != nil || c.buildMetrics == nil {
+			if current.err != nil {
 				return
 			}
-			current.metrics, current.metricsErr = c.buildMetrics(cfg, current.http)
+			// Each optional client is built independently: a cluster whose
+			// metrics.k8s.io client cannot be built must still serve core and
+			// dynamic reads, and a test cache may install only some builders.
+			if c.buildMetrics != nil {
+				current.metrics, current.metricsErr = c.buildMetrics(cfg, current.http)
+			}
+			if c.buildDynamic != nil {
+				current.dynamic, current.dynamicErr = c.buildDynamic(cfg, current.http)
+			}
 		})
 		if current.err != nil {
 			// A failed build must not be cached forever, or a cluster that was

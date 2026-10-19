@@ -3,6 +3,7 @@ package apiserver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -86,9 +89,16 @@ func (s *PaprikaServer) GetResource(
 	}
 
 	populateResourceStatus(resp, &app)
-	s.populateLiveManifest(ctx, resp, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
+
+	// The live half of this view belongs to the cluster the application is
+	// deployed to. A target we cannot read yields the status and desired halves
+	// without fabricating a live manifest from another cluster.
+	target, targetErr := s.applicationTargetCluster(ctx, &app)
+	dyn := s.targetDynamicClientOrNil(ctx, target, targetErr)
+	typed := s.targetTypedClientOrNil(ctx, target, targetErr)
+	s.populateLiveManifest(ctx, dyn, targetMapper(s, target), resp, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
 	s.populateDesiredManifest(ctx, resp, &app, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
-	s.populateEvents(ctx, resp, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
+	s.populateEvents(ctx, typed, resp, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
 
 	return connect.NewResponse(resp), nil
 }
@@ -118,12 +128,29 @@ func findHealthStatus(healths []pipelinesv1alpha1.ResourceHealth, kind, name, na
 	return "", ""
 }
 
+// targetMapper returns the RESTMapper to resolve a kind against. Only the
+// control plane's own cluster has one here: a remote target is resolved through
+// the known-kind table, and an unknown kind is skipped rather than guessed with
+// the wrong cluster's discovery data.
+func targetMapper(s *PaprikaServer, target targetCluster) meta.RESTMapper {
+	if target.key == "" {
+		return s.restMapper
+	}
+	return nil
+}
+
 // populateLiveManifest fetches the live resource from the cluster and fills in LiveManifest.
-func (s *PaprikaServer) populateLiveManifest(ctx context.Context, resp *paprikav1.GetResourceResponse, kind, name, namespace string) {
-	if s.dynamicClient == nil {
+func (s *PaprikaServer) populateLiveManifest(
+	ctx context.Context,
+	dyn dynamic.Interface,
+	mapper meta.RESTMapper,
+	resp *paprikav1.GetResourceResponse,
+	kind, name, namespace string,
+) {
+	if dyn == nil {
 		return
 	}
-	if obj, mapping, err := s.getLiveResource(ctx, kind, name, namespace); err == nil {
+	if obj, mapping, err := getLiveResource(ctx, dyn, mapper, kind, name, namespace); err == nil {
 		populateResourceIdentity(resp, obj, &mapping)
 		if live, err := manifestToYAML(obj.Object); err == nil {
 			resp.LiveManifest = live
@@ -147,20 +174,30 @@ func (s *PaprikaServer) populateDesiredManifest(ctx context.Context, resp *papri
 }
 
 // populateEvents fetches Kubernetes events for the resource.
-func (s *PaprikaServer) populateEvents(ctx context.Context, resp *paprikav1.GetResourceResponse, kind, name, namespace string) {
-	if s.k8sClient == nil {
+func (s *PaprikaServer) populateEvents(
+	ctx context.Context,
+	typed kubernetes.Interface,
+	resp *paprikav1.GetResourceResponse,
+	kind, name, namespace string,
+) {
+	if typed == nil {
 		return
 	}
-	resp.Events = s.getResourceEvents(ctx, kind, name, namespace)
+	resp.Events = s.getResourceEvents(ctx, typed, kind, name, namespace)
 }
 
-func (s *PaprikaServer) getLiveResource(ctx context.Context, kind, name, namespace string) (*unstructured.Unstructured, resolvedResourceMapping, error) {
-	mapping, err := s.resolveResourceMapping(kind)
+func getLiveResource(
+	ctx context.Context,
+	dyn dynamic.Interface,
+	mapper meta.RESTMapper,
+	kind, name, namespace string,
+) (*unstructured.Unstructured, resolvedResourceMapping, error) {
+	mapping, err := resolveResourceMapping(mapper, kind)
 	if err != nil {
 		return nil, resolvedResourceMapping{}, err
 	}
 
-	resource := s.dynamicClient.Resource(mapping.gvr)
+	resource := dyn.Resource(mapping.gvr)
 	if mapping.scope == meta.RESTScopeNameRoot {
 		obj, getErr := resource.Get(ctx, name, metav1.GetOptions{})
 		if getErr != nil {
@@ -175,7 +212,7 @@ func (s *PaprikaServer) getLiveResource(ctx context.Context, kind, name, namespa
 	return obj, mapping, nil
 }
 
-func (s *PaprikaServer) resolveResourceMapping(kind string) (resolvedResourceMapping, error) {
+func resolveResourceMapping(mapper meta.RESTMapper, kind string) (resolvedResourceMapping, error) {
 	if gvr, ok := knownResourceGVRs[kind]; ok {
 		scope := meta.RESTScopeNameNamespace
 		if clusterScopedResources[gvr] {
@@ -187,10 +224,10 @@ func (s *PaprikaServer) resolveResourceMapping(kind string) (resolvedResourceMap
 			scope: scope,
 		}, nil
 	}
-	if s.restMapper == nil {
+	if mapper == nil {
 		return resolvedResourceMapping{}, fmt.Errorf("unknown kind %q", kind)
 	}
-	mapping, err := s.restMapper.RESTMapping(schema.GroupKind{Kind: kind})
+	mapping, err := mapper.RESTMapping(schema.GroupKind{Kind: kind})
 	if err == nil {
 		return resolvedResourceMapping{
 			gvr:   mapping.Resource,
@@ -198,7 +235,7 @@ func (s *PaprikaServer) resolveResourceMapping(kind string) (resolvedResourceMap
 			scope: mapping.Scope.Name(),
 		}, nil
 	}
-	mapping, err = s.resolveResourceMappingByPlural(kind)
+	mapping, err = resolveResourceMappingByPlural(mapper, kind)
 	if err != nil {
 		return resolvedResourceMapping{}, fmt.Errorf("resolve kind %q: %w", kind, err)
 	}
@@ -209,14 +246,17 @@ func (s *PaprikaServer) resolveResourceMapping(kind string) (resolvedResourceMap
 	}, nil
 }
 
-func (s *PaprikaServer) resolveResourceMappingByPlural(kind string) (*meta.RESTMapping, error) {
+func resolveResourceMappingByPlural(mapper meta.RESTMapper, kind string) (*meta.RESTMapping, error) {
+	if mapper == nil {
+		return nil, errors.New("no REST mapper is configured for this target")
+	}
 	resourceName := kindToResourceName(kind)
-	resources, err := s.restMapper.ResourcesFor(schema.GroupVersionResource{Resource: resourceName})
+	resources, err := mapper.ResourcesFor(schema.GroupVersionResource{Resource: resourceName})
 	if err != nil {
 		return nil, fmt.Errorf("resolve resource %q: %w", resourceName, err)
 	}
 	for _, gvr := range resources {
-		gvks, err := s.restMapper.KindsFor(gvr)
+		gvks, err := mapper.KindsFor(gvr)
 		if err != nil {
 			continue
 		}
@@ -224,7 +264,7 @@ func (s *PaprikaServer) resolveResourceMappingByPlural(kind string) (*meta.RESTM
 			if gvk.Kind != kind {
 				continue
 			}
-			mapping, err := s.restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+			mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 			if err == nil {
 				return mapping, nil
 			}
@@ -327,12 +367,16 @@ func findManifestDoc(manifests []byte, kind, name string) (found string, err err
 	return "", fmt.Errorf("resource %s/%s not found in rendered manifests", kind, name)
 }
 
-func (s *PaprikaServer) getResourceEvents(ctx context.Context, kind, name, namespace string) []*paprikav1.KubernetesEvent {
+func (s *PaprikaServer) getResourceEvents(
+	ctx context.Context,
+	typed kubernetes.Interface,
+	kind, name, namespace string,
+) []*paprikav1.KubernetesEvent {
 	fieldSelector := fmt.Sprintf("involvedObject.kind=%s,involvedObject.name=%s", kind, name)
 	if namespace != "" {
 		fieldSelector = fmt.Sprintf("involvedObject.kind=%s,involvedObject.name=%s,involvedObject.namespace=%s", kind, name, namespace)
 	}
-	list, err := s.k8sClient.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+	list, err := typed.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
 		FieldSelector: fieldSelector,
 		Limit:         50,
 	})

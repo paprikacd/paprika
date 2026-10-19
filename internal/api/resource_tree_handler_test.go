@@ -32,6 +32,11 @@ func setupResourceTreeTest(t *testing.T) *PaprikaServer {
 	uid := types.UID("deploy-uid-123")
 	app := &pipelinesv1alpha1.Application{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-app", Namespace: "test-ns"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			// A deployment target must be recorded before live reads know which
+			// cluster to ask; one stage with no ref means this control plane's own.
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+		},
 		Status: pipelinesv1alpha1.ApplicationStatus{
 			Phase: "Healthy",
 			Resources: []pipelinesv1alpha1.ResourceSync{
@@ -238,6 +243,11 @@ func buildDetHarnessClient(t *testing.T) client.Client {
 	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
 	app := &pipelinesv1alpha1.Application{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-app", Namespace: "test-ns"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			// A deployment target must be recorded before live reads know which
+			// cluster to ask; one stage with no ref means this control plane's own.
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+		},
 		Status: pipelinesv1alpha1.ApplicationStatus{
 			Phase: "Healthy",
 			Resources: []pipelinesv1alpha1.ResourceSync{
@@ -257,6 +267,11 @@ func TestGetResourceTreeDetailed_PodPhase(t *testing.T) {
 	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
 	app := &pipelinesv1alpha1.Application{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-app", Namespace: "test-ns"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			// One stage with no cluster ref deploys to the control plane's own
+			// cluster, which is the target these live reads are served from.
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+		},
 		Status: pipelinesv1alpha1.ApplicationStatus{
 			Resources: []pipelinesv1alpha1.ResourceSync{
 				{Kind: "Pod", Name: "demo-pod", Namespace: "test-ns", Status: "Synced"},
@@ -328,7 +343,7 @@ func TestResourceTreeListsEachKindOnceAndKeepsLargeDescendantTrees(t *testing.T)
 		}
 	}
 	dyn.ClearActions()
-	nodes := srv.discoverChildren(context.Background(), "test-ns", roots)
+	nodes := srv.discoverChildren(context.Background(), srv.dynamicClient, "test-ns", roots)
 	require.Len(t, nodes, 420, "must include grandchildren above the former 100-child limit in both namespaces")
 	actions := dyn.Actions()
 	require.Len(t, actions, 4, "one ReplicaSet and Pod list per target namespace")
@@ -338,6 +353,6 @@ func TestResourceTreeListsEachKindOnceAndKeepsLargeDescendantTrees(t *testing.T)
 	}
 	// A new request must observe changes, rather than reusing another app's tree.
 	dyn.ClearActions()
-	require.Empty(t, srv.discoverChildren(context.Background(), "tenant-a", []*paprikav1.ResourceNode{{Kind: "Deployment", Name: "unrelated", Namespace: "tenant-a"}}))
+	require.Empty(t, srv.discoverChildren(context.Background(), srv.dynamicClient, "tenant-a", []*paprikav1.ResourceNode{{Kind: "Deployment", Name: "unrelated", Namespace: "tenant-a"}}))
 	require.Len(t, dyn.Actions(), 1)
 }

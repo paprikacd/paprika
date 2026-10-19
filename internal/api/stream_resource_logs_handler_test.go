@@ -119,7 +119,7 @@ func TestStreamResourceLogs_EndToEnd_NoDynamicClientError(t *testing.T) {
 	// connect.NewError(CodeFailedPrecondition). Verify by calling the public
 	// resolver directly (since the handler binds to *connect.ServerStream and
 	// can't be invoked from unit tests).
-	_, err := srv.resolveLogsPod(ctx, "ConfigMap", "demo-cm", "paprika-e2e")
+	_, err := resolveLogsPod(ctx, srv.k8sClient, "ConfigMap", "demo-cm", "paprika-e2e")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Pod")
 }
@@ -166,15 +166,15 @@ func TestStreamResourceLogs_StreamWrapsRealKubeServer(t *testing.T) {
 			},
 		},
 	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).WithStatusSubresource(&pipelinesv1alpha1.Application{}).Build()
-
-	srv := NewPaprikaServer(c, nil, WithK8sClient(k8s))
+	// The application client is not needed: this test drives the resolver and the
+	// forwarder directly, which is all the handler does around the kube stream.
+	_ = fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).WithStatusSubresource(&pipelinesv1alpha1.Application{}).Build()
 
 	// Open the kube log stream directly (mirroring what the handler does) and
 	// pump it through forwardLogLines via a real *connect.ServerStream is
 	// impossible from unit tests. Instead we verify the kube stream + the
 	// forwarder wiring by running them sequentially.
-	pod, err := srv.resolveLogsPod(ctx, "Pod", "demo-pod", ns)
+	pod, err := resolveLogsPod(ctx, k8s, "Pod", "demo-pod", ns)
 	require.NoError(t, err)
 
 	kubeStream, err := k8s.CoreV1().Pods(ns).GetLogs(pod.Name, &corev1.PodLogOptions{}).Stream(ctx)

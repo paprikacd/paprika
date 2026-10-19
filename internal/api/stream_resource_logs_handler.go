@@ -34,8 +34,15 @@ func (s *PaprikaServer) StreamResourceLogs(
 	if err := s.authorizeApplication(ctx, auth.ActionRead, &app); err != nil {
 		return connect.NewError(connect.CodePermissionDenied, err)
 	}
-	if s.k8sClient == nil {
-		return connect.NewError(connect.CodeUnavailable, errors.New("kubernetes client not configured"))
+	// The stream reads the cluster the application deploys to. A target the
+	// control plane cannot reach is a failed precondition, not an empty stream.
+	target, err := s.applicationTargetCluster(ctx, &app)
+	if err != nil {
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	typed, err := s.targetTypedClient(ctx, target)
+	if err != nil {
+		return connect.NewError(connect.CodeUnavailable, err)
 	}
 
 	ns := req.Msg.ResourceNamespace
@@ -43,7 +50,7 @@ func (s *PaprikaServer) StreamResourceLogs(
 		ns = app.Namespace
 	}
 
-	pod, err := s.resolveLogsPod(ctx, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	pod, err := resolveLogsPod(ctx, typed, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
 	if err != nil {
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
@@ -53,7 +60,7 @@ func (s *PaprikaServer) StreamResourceLogs(
 		Container:  req.Msg.ContainerName,
 		Timestamps: false,
 	}
-	kubeStream, err := s.k8sClient.CoreV1().Pods(ns).GetLogs(pod.Name, opts).Stream(ctx)
+	kubeStream, err := typed.CoreV1().Pods(ns).GetLogs(pod.Name, opts).Stream(ctx)
 	if err != nil {
 		return fmt.Errorf("opening log stream: %w", err)
 	}

@@ -10,6 +10,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -67,11 +70,12 @@ func (s *PaprikaServer) GetResourceTree(
 		})
 	}
 
-	// Discover live children for each managed resource.
-	if s.dynamicClient != nil {
-		discovered := s.discoverChildren(ctx, app.Namespace, nodes)
-		nodes = append(nodes, discovered...)
-	}
+	// Discover live children on the cluster the application is deployed to, not
+	// on the one this server runs in. A cluster that cannot be read yields the
+	// managed nodes alone rather than another cluster's children.
+	target, targetErr := s.applicationTargetCluster(ctx, &app)
+	dyn := s.targetDynamicClientOrNil(ctx, target, targetErr)
+	nodes = append(nodes, s.discoverChildren(ctx, dyn, app.Namespace, nodes)...)
 
 	return connect.NewResponse(&paprikav1.GetResourceTreeResponse{Nodes: nodes}), nil
 }
@@ -114,15 +118,18 @@ func (s *PaprikaServer) GetResourceTreeDetailed(
 		nodes = append(nodes, n)
 	}
 
-	// Discover live children for each managed resource.
-	if s.dynamicClient != nil {
+	// Discover live children on the application's own deployment target.
+	target, targetErr := s.applicationTargetCluster(ctx, &app)
+	dyn := s.targetDynamicClientOrNil(ctx, target, targetErr)
+	typed := s.targetTypedClientOrNil(ctx, target, targetErr)
+	if dyn != nil {
 		existing := make([]*paprikav1.ResourceNode, 0, len(nodes))
 		for _, n := range nodes {
 			existing = append(existing, &paprikav1.ResourceNode{
 				Kind: n.Kind, Name: n.Name, Namespace: n.Namespace,
 			})
 		}
-		discovered := s.discoverChildren(ctx, app.Namespace, existing)
+		discovered := s.discoverChildren(ctx, dyn, app.Namespace, existing)
 		for _, d := range discovered {
 			tree := &paprikav1.ResourceTreeNode{
 				Kind:       d.Kind,
@@ -137,13 +144,16 @@ func (s *PaprikaServer) GetResourceTreeDetailed(
 		}
 	}
 
-	if err := s.populateTreeDetails(ctx, nodes); err != nil {
+	if err := s.populateTreeDetails(ctx, typed, nodes); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&paprikav1.GetResourceTreeDetailedResponse{Nodes: nodes}), nil
 }
 
-func (s *PaprikaServer) populateTreeDetails(ctx context.Context, nodes []*paprikav1.ResourceTreeNode) error {
+func (s *PaprikaServer) populateTreeDetails(ctx context.Context, typed kubernetes.Interface, nodes []*paprikav1.ResourceTreeNode) error {
+	if typed == nil {
+		return nil
+	}
 	// Keep Kubernetes reads bounded while allowing independent status reads to overlap.
 	var wg sync.WaitGroup
 	permits := make(chan struct{}, 8)
@@ -158,7 +168,7 @@ func (s *PaprikaServer) populateTreeDetails(ctx context.Context, nodes []*paprik
 		go func(n *paprikav1.ResourceTreeNode) {
 			defer wg.Done()
 			defer func() { <-permits }()
-			s.populateNodeDetail(ctx, n)
+			s.populateNodeDetail(ctx, typed, n)
 		}(node)
 	}
 	wg.Wait()
@@ -167,24 +177,32 @@ func (s *PaprikaServer) populateTreeDetails(ctx context.Context, nodes []*paprik
 
 // populateNodeDetail fetches status-specific fields via the typed clientset
 // (protobuf-negotiated). Failures are silent — leave fields empty.
-func (s *PaprikaServer) populateNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
-	if s.k8sClient == nil || n.Name == "" {
+func (s *PaprikaServer) populateNodeDetail(
+	ctx context.Context,
+	typed kubernetes.Interface,
+	n *paprikav1.ResourceTreeNode,
+) {
+	if typed == nil || n.Name == "" {
 		return
 	}
 	switch n.Kind {
 	case "Pod":
-		s.populatePodNodeDetail(ctx, n)
+		s.populatePodNodeDetail(ctx, typed, n)
 	case "Deployment":
-		s.populateDeploymentNodeDetail(ctx, n)
+		s.populateDeploymentNodeDetail(ctx, typed, n)
 	case "StatefulSet":
-		s.populateStatefulSetNodeDetail(ctx, n)
+		s.populateStatefulSetNodeDetail(ctx, typed, n)
 	case "DaemonSet":
-		s.populateDaemonSetNodeDetail(ctx, n)
+		s.populateDaemonSetNodeDetail(ctx, typed, n)
 	}
 }
 
-func (s *PaprikaServer) populatePodNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
-	pod, err := s.k8sClient.CoreV1().Pods(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+func (s *PaprikaServer) populatePodNodeDetail(
+	ctx context.Context,
+	typed kubernetes.Interface,
+	n *paprikav1.ResourceTreeNode,
+) {
+	pod, err := typed.CoreV1().Pods(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
 	if err != nil {
 		return
 	}
@@ -207,8 +225,12 @@ func (s *PaprikaServer) populatePodNodeDetail(ctx context.Context, n *paprikav1.
 	}
 }
 
-func (s *PaprikaServer) populateDeploymentNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
-	d, err := s.k8sClient.AppsV1().Deployments(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+func (s *PaprikaServer) populateDeploymentNodeDetail(
+	ctx context.Context,
+	typed kubernetes.Interface,
+	n *paprikav1.ResourceTreeNode,
+) {
+	d, err := typed.AppsV1().Deployments(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
 	if err != nil {
 		return
 	}
@@ -221,8 +243,12 @@ func (s *PaprikaServer) populateDeploymentNodeDetail(ctx context.Context, n *pap
 	}
 }
 
-func (s *PaprikaServer) populateStatefulSetNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
-	ss, err := s.k8sClient.AppsV1().StatefulSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+func (s *PaprikaServer) populateStatefulSetNodeDetail(
+	ctx context.Context,
+	typed kubernetes.Interface,
+	n *paprikav1.ResourceTreeNode,
+) {
+	ss, err := typed.AppsV1().StatefulSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
 	if err != nil {
 		return
 	}
@@ -230,8 +256,12 @@ func (s *PaprikaServer) populateStatefulSetNodeDetail(ctx context.Context, n *pa
 	n.Total = ss.Status.Replicas
 }
 
-func (s *PaprikaServer) populateDaemonSetNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
-	ds, err := s.k8sClient.AppsV1().DaemonSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+func (s *PaprikaServer) populateDaemonSetNodeDetail(
+	ctx context.Context,
+	typed kubernetes.Interface,
+	n *paprikav1.ResourceTreeNode,
+) {
+	ds, err := typed.AppsV1().DaemonSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
 	if err != nil {
 		return
 	}
@@ -249,7 +279,12 @@ func boundedInt32(value int) int32 {
 
 // discoverChildren queries the cluster for child resources owned by any node
 // already in the tree. Returns newly discovered nodes with parent references set.
-func (s *PaprikaServer) discoverChildren(ctx context.Context, namespace string, existing []*paprikav1.ResourceNode) []*paprikav1.ResourceNode {
+func (s *PaprikaServer) discoverChildren(ctx context.Context, dyn dynamic.Interface, namespace string, existing []*paprikav1.ResourceNode) []*paprikav1.ResourceNode {
+	if dyn == nil {
+		// No client for the target means no live children. The managed nodes the
+		// application reports are still returned by the caller.
+		return nil
+	}
 	// Request-local indexes avoid repeating namespace-wide lists for every parent.
 	// Nothing is shared across applications or authorization decisions.
 	indexes := make(map[string]map[string][]unstructured.Unstructured)
@@ -262,37 +297,65 @@ func (s *PaprikaServer) discoverChildren(ctx context.Context, namespace string, 
 	var discovered []*paprikav1.ResourceNode
 	for i := 0; i < len(queue) && ctx.Err() == nil; i++ {
 		parent := queue[i]
-		ns := treeNodeNamespace(namespace, parent)
-		for _, childKind := range childDiscovery[parent.Kind] {
-			gvr, ok := knownResourceGVRs[childKind]
-			if !ok {
-				continue
-			}
-			cacheKey := ns + "/" + childKind
-			index, loaded := indexes[cacheKey]
-			if !loaded {
-				index = make(map[string][]unstructured.Unstructured)
-				indexes[cacheKey] = index
-				list, err := s.dynamicClient.Resource(gvr).Namespace(ns).List(ctx, metav1.ListOptions{})
-				if err != nil {
-					continue
-				}
-				indexChildrenByOwner(index, list.Items)
-			}
-			for _, item := range index[parent.Kind+"/"+parent.Name] {
-				key := ns + "/" + childKind + "/" + item.GetName()
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
-				node := &paprikav1.ResourceNode{Kind: childKind, Name: item.GetName(), Namespace: ns,
-					ParentKind: parent.Kind, ParentName: parent.Name, Uid: string(item.GetUID())}
-				discovered = append(discovered, node)
-				queue = append(queue, node)
-			}
-		}
+		children := s.discoverDirectChildren(ctx, dyn, treeNodeNamespace(namespace, parent), parent, indexes, seen)
+		discovered = append(discovered, children...)
+		queue = append(queue, children...)
 	}
 	return discovered
+}
+
+// discoverDirectChildren lists one parent's children, caching the namespace-wide
+// list per child kind so a tree with many pods lists each kind once.
+func (s *PaprikaServer) discoverDirectChildren(
+	ctx context.Context,
+	dyn dynamic.Interface,
+	ns string,
+	parent *paprikav1.ResourceNode,
+	indexes map[string]map[string][]unstructured.Unstructured,
+	seen map[string]bool,
+) []*paprikav1.ResourceNode {
+	var children []*paprikav1.ResourceNode
+	for _, childKind := range childDiscovery[parent.Kind] {
+		gvr, ok := knownResourceGVRs[childKind]
+		if !ok {
+			continue
+		}
+		for _, item := range childKindIndex(ctx, dyn, ns, childKind, gvr, indexes)[parent.Kind+"/"+parent.Name] {
+			key := ns + "/" + childKind + "/" + item.GetName()
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			children = append(children, &paprikav1.ResourceNode{
+				Kind: childKind, Name: item.GetName(), Namespace: ns,
+				ParentKind: parent.Kind, ParentName: parent.Name, Uid: string(item.GetUID()),
+			})
+		}
+	}
+	return children
+}
+
+// childKindIndex returns (and caches) the owner-indexed list of one child kind in
+// one namespace.
+func childKindIndex(
+	ctx context.Context,
+	dyn dynamic.Interface,
+	ns, childKind string,
+	gvr schema.GroupVersionResource,
+	indexes map[string]map[string][]unstructured.Unstructured,
+) map[string][]unstructured.Unstructured {
+	cacheKey := ns + "/" + childKind
+	if index, loaded := indexes[cacheKey]; loaded {
+		return index
+	}
+	index := make(map[string][]unstructured.Unstructured)
+	indexes[cacheKey] = index
+	list, err := dyn.Resource(gvr).Namespace(ns).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return index
+	}
+	indexChildrenByOwner(index, list.Items)
+	return index
 }
 
 // hasOwnerRef checks if obj has an ownerReference of the given apiVersion/kind/name.

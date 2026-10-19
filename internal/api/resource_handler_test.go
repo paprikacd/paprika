@@ -133,13 +133,20 @@ func setupGetResourceTest(t *testing.T) (*PaprikaServer, client.Client) {
 	release := &pipelinesv1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-app-release", Namespace: "test-ns"},
 		Spec: pipelinesv1alpha1.ReleaseSpec{
+			// The release names the stage it deploys into; live reads follow it.
+			Target:     "demo-app-dev",
 			Parameters: map[string]string{"replicaCount": "1"},
 		},
+	}
+	// One stage with no cluster ref deploys to this control plane's own cluster.
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-app-dev", Namespace: "test-ns"},
+		Spec:       pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1},
 	}
 
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(app, tmpl, release).
+		WithObjects(app, tmpl, release, stage).
 		WithStatusSubresource(&pipelinesv1alpha1.Application{}, &pipelinesv1alpha1.Release{}).
 		Build()
 

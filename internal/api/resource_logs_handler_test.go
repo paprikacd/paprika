@@ -57,6 +57,11 @@ func logsTestPaprika(t *testing.T, ns, podName, logBody string) (*PaprikaServer,
 	scheme := logsTestScheme(t)
 	app := &pipelinesv1alpha1.Application{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-app", Namespace: ns},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			// Logs are read from the deployment target; one stage with no cluster
+			// ref means this control plane's own cluster.
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+		},
 		Status: pipelinesv1alpha1.ApplicationStatus{
 			Resources: []pipelinesv1alpha1.ResourceSync{
 				{Kind: "Pod", Name: podName, Namespace: ns, Status: "Synced"},

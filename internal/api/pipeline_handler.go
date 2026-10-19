@@ -14,6 +14,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -291,7 +292,7 @@ func (s *PaprikaServer) GetStepLogs(
 		return nil, err
 	}
 
-	logs, err := s.streamPodLogs(ctx, req.Msg.PipelineNamespace, pod.Name, req.Msg.TailLines)
+	logs, err := s.streamPodLogs(ctx, s.k8sClient, req.Msg.PipelineNamespace, pod.Name, req.Msg.TailLines)
 	if err != nil {
 		return nil, err
 	}
@@ -330,14 +331,17 @@ func (s *PaprikaServer) findJobPod(ctx context.Context, namespace, jobName strin
 	return &pods.Items[0], nil
 }
 
-func (s *PaprikaServer) streamPodLogs(ctx context.Context, namespace, podName string, tailLines int32) (string, error) {
+// streamPodLogs reads a pod's tail from the cluster the client reaches. Callers
+// pass the client deliberately: pipeline step logs live on the control plane's
+// own cluster, while resource logs come from the application's.
+func (s *PaprikaServer) streamPodLogs(ctx context.Context, typed kubernetes.Interface, namespace, podName string, tailLines int32) (string, error) {
 	podLogOpts := &corev1.PodLogOptions{}
 	if tailLines > 0 {
 		tl := int64(min(tailLines, 10000))
 		podLogOpts.TailLines = &tl
 	}
 
-	logStream, err := s.k8sClient.CoreV1().Pods(namespace).GetLogs(podName, podLogOpts).Stream(ctx)
+	logStream, err := typed.CoreV1().Pods(namespace).GetLogs(podName, podLogOpts).Stream(ctx)
 	if err != nil {
 		return "", fmt.Errorf("streaming step logs: %w", err)
 	}
