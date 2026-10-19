@@ -176,6 +176,12 @@ type StageSpec struct {
 	RolloutStrategy *rolloutsv1alpha1.RolloutStrategy `json:"rolloutStrategy,omitempty"`
 	// +optional
 	TrafficRouter *TrafficRouter `json:"trafficRouter,omitempty"`
+	// ManagementPolicies narrows what Paprika may do in this stage, intersected
+	// with the target Cluster's ceiling. Unset means full management; an
+	// explicitly empty list makes the stage observe-only.
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	ManagementPolicies []ManagementPolicy `json:"managementPolicies,omitempty"`
 }
 
 // StageStatus represents the status of a stage.

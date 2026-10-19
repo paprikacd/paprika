@@ -80,7 +80,17 @@ type capacityOutcome struct {
 // capacity source is a state the console renders, not a reason to fail a read
 // of the rest of the cluster. Every failure becomes a non-OK state with a
 // zeroed number beside it.
+//
+// A satellite-managed cluster is answered from the satellite's own report
+// first. That is the only capacity source such a cluster has: the control plane
+// cannot dial it, so provider bindings have nothing to read. A cluster the
+// control plane can reach keeps the live read, which is fresher than the last
+// heartbeat.
 func (s *PaprikaServer) clusterCapacity(ctx context.Context, namespace, name string) *paprikav1.ClusterCapacity {
+	if reported := s.satelliteReportedCapacity(ctx, namespace, name); reported != nil {
+		return reported
+	}
+
 	outcome := s.readCapacity(ctx, s.capacityScope(ctx, namespace, name), namespace+"/"+name)
 
 	return &paprikav1.ClusterCapacity{
@@ -88,6 +98,77 @@ func (s *PaprikaServer) clusterCapacity(ctx context.Context, namespace, name str
 		Memory:        capacityMeterMessage(paprikav1.ResourceUnit_RESOURCE_UNIT_BYTES, &outcome.reading.MemoryBytes),
 		UsageProvider: outcome.usageProvider,
 	}
+}
+
+// satelliteReportedCapacity builds meters from a satellite's own accounting, or
+// returns nil when this cluster is not answered that way.
+//
+// The rule is narrow on purpose: only agent-mode clusters qualify. A direct
+// cluster that also reports through a satellite still has a live API the
+// control plane can read, and a live read beats a heartbeat-old one.
+func (s *PaprikaServer) satelliteReportedCapacity(ctx context.Context, namespace, name string) *paprikav1.ClusterCapacity {
+	if s.client == nil {
+		return nil
+	}
+	var cluster clustersv1alpha1.Cluster
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &cluster); err != nil {
+		return nil
+	}
+	if cluster.Spec.Mode != clustersv1alpha1.ClusterModeAgent ||
+		cluster.Status.Satellite == nil || cluster.Status.Satellite.Capacity == nil {
+		return nil
+	}
+	return satelliteCapacityMessage(cluster.Status.Satellite.Capacity)
+}
+
+// satelliteCapacityMessage maps a satellite's accounting onto the wire.
+//
+// Used carries its own state because metrics.k8s.io is optional on the remote
+// cluster: when the satellite could not measure usage it says so, and the meter
+// must not read zero as if the cluster were idle. Requested and allocatable are
+// always measured — the satellite sums them from nodes and pods it already
+// watches — so they are OK whenever a capacity report exists at all.
+func satelliteCapacityMessage(capacity *clustersv1alpha1.SatelliteCapacity) *paprikav1.ClusterCapacity {
+	cpu := capacityMeterFromSatellite(paprikav1.ResourceUnit_RESOURCE_UNIT_MILLICORES, &capacity.CPUMillicores)
+	memory := capacityMeterFromSatellite(paprikav1.ResourceUnit_RESOURCE_UNIT_BYTES, &capacity.MemoryBytes)
+	if capacity.ObservedAt != nil {
+		observed := capacity.ObservedAt.UnixMilli()
+		cpu.ObservedAtUnixMs = observed
+		memory.ObservedAtUnixMs = observed
+	}
+	return &paprikav1.ClusterCapacity{
+		Cpu:    cpu,
+		Memory: memory,
+		// The satellite measured all three fields itself, so naming it is
+		// literally what supplied the usage.
+		UsageProvider: satelliteUsageProvider,
+	}
+}
+
+const satelliteUsageProvider = "satellite"
+
+// satelliteUsedUnavailableReason explains a missing usage figure on a cluster
+// the satellite observed. It names the fix, because installing metrics-server is
+// the operator's decision and nothing on the Paprika side can substitute for it.
+const satelliteUsedUnavailableReason = "the satellite could not read metrics.k8s.io on this cluster; install metrics-server to report usage"
+
+func capacityMeterFromSatellite(unit paprikav1.ResourceUnit, usage *clustersv1alpha1.SatelliteResourceUsage) *paprikav1.ResourceMeter {
+	meter := &paprikav1.ResourceMeter{
+		Unit:              unit,
+		UsedState:         paprikav1.DataState_DATA_STATE_NOT_CONFIGURED,
+		Used:              0,
+		RequestedState:    paprikav1.DataState_DATA_STATE_OK,
+		Requested:         float64(usage.Requested),
+		AllocatableState:  paprikav1.DataState_DATA_STATE_OK,
+		Allocatable:       float64(usage.Allocatable),
+		UnavailableReason: satelliteUsedUnavailableReason,
+	}
+	if usage.UsedKnown {
+		meter.UsedState = paprikav1.DataState_DATA_STATE_OK
+		meter.Used = float64(usage.Used)
+		meter.UnavailableReason = ""
+	}
+	return meter
 }
 
 // capacityDataSourceStatus answers the GetDataSources probe for

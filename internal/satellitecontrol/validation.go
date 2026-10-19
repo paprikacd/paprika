@@ -31,7 +31,106 @@ func validateReport(r *satellite.Report) error {
 	if !validInventory(&r.Inventory) {
 		return errors.New("invalid inventory")
 	}
+	return validateObservationPayload(r)
+}
+
+// validateObservationPayload checks everything a report carries about the
+// cluster itself, as opposed to its applications. It is separate from
+// validateReport so the top-level contract stays readable.
+func validateObservationPayload(r *satellite.Report) error {
+	if err := validateCapacity(&r.Capacity); err != nil {
+		return err
+	}
+	if err := validateNodePools(r.NodePools); err != nil {
+		return err
+	}
+	if err := validatePolicyReport(r); err != nil {
+		return err
+	}
 	return validateTopology(&r.Inventory)
+}
+
+// maxNodePools bounds the pool list a report may carry. A cluster with more
+// pools than this has a naming problem, not a reporting one.
+const maxNodePools = 64
+
+// validateCapacity rejects negative resource figures. A negative count is not a
+// measurement, and accepting one would let a satellite put a nonsensical meter
+// in front of an operator.
+func validateCapacity(capacity *clusters.SatelliteCapacity) error {
+	if capacity == nil {
+		return nil
+	}
+	for _, usage := range []clusters.SatelliteResourceUsage{capacity.CPUMillicores, capacity.MemoryBytes} {
+		if usage.Used < 0 || usage.Requested < 0 || usage.Allocatable < 0 {
+			return errors.New("invalid capacity")
+		}
+	}
+	return nil
+}
+
+// validateNodePools bounds pool identity and rejects a non-positive node count.
+// A pool that exists with zero nodes is real; a negative one is not.
+func validateNodePools(pools []clusters.ClusterNodePool) error {
+	if len(pools) > maxNodePools {
+		return errors.New("report exceeds pool limit")
+	}
+	for i := range pools {
+		pool := &pools[i]
+		if !validName(pool.Name) || len(pool.Name) > 253 {
+			return errors.New("invalid node pool name")
+		}
+		if len(pool.MachineType) > 253 {
+			return errors.New("invalid node pool machine type")
+		}
+		if pool.NodeCount < 0 || pool.AllocatableCPUMillis < 0 || pool.AllocatableMemoryBytes < 0 {
+			return errors.New("invalid node pool capacity")
+		}
+	}
+	return nil
+}
+
+// validatePolicyReport bounds the policy and autonomy a satellite claims. The
+// values are informational — the Cluster's own ceiling is authoritative — but a
+// report still must not carry an unbounded or unrecognised vocabulary.
+func validatePolicyReport(r *satellite.Report) error {
+	if len(r.Policies) > 8 {
+		return errors.New("report exceeds policy limit")
+	}
+	for _, policy := range r.Policies {
+		if !validPolicy(policy) {
+			return errors.New("invalid management policy")
+		}
+	}
+	if r.Autonomy != "" && !r.Autonomy.Valid() {
+		return errors.New("invalid autonomy mode")
+	}
+	if r.OperatingState != "" && !validOperatingState(r.OperatingState) {
+		return errors.New("invalid operating state")
+	}
+	return nil
+}
+
+func validOperatingState(state clusters.SatelliteOperatingState) bool {
+	switch state {
+	case clusters.SatelliteOperatingConnecting, clusters.SatelliteOperatingConnected,
+		clusters.SatelliteOperatingAutonomous, clusters.SatelliteOperatingOverrideHeld,
+		clusters.SatelliteOperatingDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+func validPolicy(policy clusters.ManagementPolicy) bool {
+	switch policy {
+	case clusters.ManagementPolicyObserve, clusters.ManagementPolicyApply, clusters.ManagementPolicyPrune,
+		clusters.ManagementPolicyDelete, clusters.ManagementPolicySelfHeal, clusters.ManagementPolicyRollout,
+		clusters.ManagementPolicyAll:
+		return true
+	default:
+		return false
+	}
 }
 
 func validReportIdentity(r *satellite.Report) bool {

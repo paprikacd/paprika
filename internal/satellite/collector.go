@@ -158,7 +158,9 @@ func (c *Collector) Run(ctx context.Context) error {
 	optionalReady := make(chan struct{})
 	optionalDone := make(chan struct{})
 	go func() { defer close(optionalDone); c.runOptionalApplications(runCtx, optionalReady) }()
-	defer func() { cancel(); c.factory.Shutdown(); <-optionalDone }()
+	metricsDone := make(chan struct{})
+	go func() { defer close(metricsDone); c.runOptionalNodeMetrics(runCtx) }()
+	defer func() { cancel(); c.factory.Shutdown(); <-optionalDone; <-metricsDone }()
 	if !cache.WaitForCacheSync(runCtx.Done(), c.coreSynced...) {
 		if ctx.Err() != nil {
 			return nil
@@ -334,9 +336,99 @@ func optionalUnavailable(err error) bool {
 	return apierrors.IsNotFound(err) || apierrors.IsForbidden(err) || apierrors.IsMethodNotSupported(err)
 }
 
+// runOptionalNodeMetrics watches metrics.k8s.io when the cluster has it. Usage
+// is the one capacity dimension Kubernetes core does not expose, so a cluster
+// without the aggregated API simply reports requests and allocatable and says
+// usage is unknown — it is never a reason to stop reporting.
+func (c *Collector) runOptionalNodeMetrics(ctx context.Context) {
+	if c.dynamic == nil {
+		return
+	}
+	for ctx.Err() == nil {
+		if !c.discoverNodeMetrics(ctx) {
+			c.state.clearKind(nodeMetricsKind)
+			if !waitContext(ctx, c.applicationProbeInterval) {
+				return
+			}
+			continue
+		}
+		if !c.watchNodeMetrics(ctx) {
+			return
+		}
+		c.state.clearKind(nodeMetricsKind)
+		if !waitContext(ctx, c.applicationProbeInterval) {
+			return
+		}
+	}
+}
+
+func (c *Collector) discoverNodeMetrics(ctx context.Context) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := c.dynamic.Resource(NodeMetricsResource).List(probeCtx, metav1.ListOptions{Limit: 1})
+	if err != nil && !optionalUnavailable(err) {
+		log.FromContext(ctx).Info("Satellite node-metrics discovery will retry")
+	}
+	return err == nil
+}
+
+// watchNodeMetrics runs one metrics informer until the watch fails or the
+// context ends. A failed or removed metrics API returns true so the caller
+// re-probes later; a cancelled context returns false so the collector stops.
+func (c *Collector) watchNodeMetrics(ctx context.Context) bool {
+	watchCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	unavailable := make(chan struct{}, 1)
+	failed := func(watchErr error) {
+		if routineWatchError(watchErr) {
+			return
+		}
+		select {
+		case unavailable <- struct{}{}:
+		default:
+		}
+		stop()
+	}
+	resource := c.dynamic.Resource(NodeMetricsResource)
+	informer := cache.NewSharedIndexInformer(cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
+		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+			result, err := resource.List(ctx, options)
+			observeError(ctx, err, failed)
+			if err != nil {
+				return result, fmt.Errorf("list node metrics: %w", err)
+			}
+			return result, nil
+		},
+		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+			result, err := resource.Watch(ctx, options)
+			return observeWatch(ctx, result, err, failed)
+		},
+	}, c.dynamic), &unstructured.Unstructured{}, 0, cache.Indexers{})
+	synced, err := c.attach(informer)
+	if err != nil {
+		return true
+	}
+	if err := informer.SetWatchErrorHandler(func(_ *cache.Reflector, watchErr error) { failed(watchErr) }); err != nil {
+		return true
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); informer.Run(watchCtx.Done()) }()
+	defer func() { stop(); <-done }()
+	cache.WaitForCacheSync(watchCtx.Done(), synced)
+	select {
+	case <-ctx.Done():
+		return false
+	case <-unavailable:
+		return true
+	}
+}
+
 type publicationState struct {
 	previous   map[string]Application
 	inventory  clustersv1alpha1.ClusterInventory
+	capacity   clustersv1alpha1.SatelliteCapacity
+	nodePools  []clustersv1alpha1.ClusterNodePool
+	provider   string
 	session    string
 	sequence   uint64
 	lastSent   time.Time
@@ -385,6 +477,7 @@ func (c *Collector) publish(ctx context.Context) error {
 
 func (c *Collector) buildPublication(state *publicationState) (*publication, error) {
 	inventory, current := c.state.snapshot()
+	capacity, nodePools, providerType := c.state.capacitySnapshot()
 	if len(current) > MaxApplications {
 		return nil, fmt.Errorf("satellite observes more than %d applications", MaxApplications)
 	}
@@ -396,23 +489,64 @@ func (c *Collector) buildPublication(state *publicationState) (*publication, err
 		state.session, state.sequence = session, 1
 	}
 	changed, deleted := applicationDelta(state.previous, current)
-	if !state.needsReport(&inventory, len(changed), len(deleted), c.config.HeartbeatInterval) {
+	pending := reportPending{
+		inventory: inventory, capacity: capacity, nodePools: nodePools, provider: providerType,
+		changed: len(changed), deleted: len(deleted),
+	}
+	if !state.needsReport(&pending, c.config.HeartbeatInterval) {
 		return nil, nil
 	}
-	return &publication{current: current, report: Report{
-		ProtocolVersion: ProtocolVersion, ClusterNamespace: c.config.ClusterNamespace, ClusterName: c.config.ClusterName,
-		ClusterUID: c.clusterUID, DisplayName: c.config.DisplayName, SessionID: state.session, Sequence: state.sequence,
-		Snapshot: state.previous == nil, ObservedAt: time.Now().UTC(), Version: version.Version, KubernetesVersion: c.kubernetesVersion,
-		Inventory: inventory, Applications: changed, DeletedApplications: deleted,
-	}}, nil
+	report := Report{
+		ProtocolVersion:     ProtocolVersion,
+		ClusterNamespace:    c.config.ClusterNamespace,
+		ClusterName:         c.config.ClusterName,
+		ClusterUID:          c.clusterUID,
+		DisplayName:         c.config.DisplayName,
+		SessionID:           state.session,
+		Sequence:            state.sequence,
+		Snapshot:            state.previous == nil,
+		ObservedAt:          time.Now().UTC(),
+		Version:             version.Version,
+		KubernetesVersion:   c.kubernetesVersion,
+		Inventory:           inventory,
+		Capacity:            capacity,
+		ProviderType:        providerType,
+		NodePools:           nodePools,
+		Policies:            c.config.ManagementPolicies,
+		Autonomy:            c.config.Autonomy,
+		Applications:        changed,
+		DeletedApplications: deleted,
+	}
+	return &publication{current: current, report: report}, nil
 }
 
-func (s *publicationState) needsReport(inventory *clustersv1alpha1.ClusterInventory, changed, deleted int, heartbeat time.Duration) bool {
-	return s.previous == nil || changed > 0 || deleted > 0 || !reflect.DeepEqual(s.inventory, *inventory) || time.Since(s.lastSent) >= heartbeat
+// reportPending is the aggregate state a report carries. It exists so
+// needsReport compares the same values it will acknowledge, rather than reading
+// them a second time from a state that may have moved on.
+type reportPending struct {
+	inventory clustersv1alpha1.ClusterInventory
+	capacity  clustersv1alpha1.SatelliteCapacity
+	nodePools []clustersv1alpha1.ClusterNodePool
+	provider  string
+	changed   int
+	deleted   int
+}
+
+func (s *publicationState) needsReport(pending *reportPending, heartbeat time.Duration) bool {
+	return s.previous == nil || pending.changed > 0 || pending.deleted > 0 ||
+		!reflect.DeepEqual(s.inventory, pending.inventory) ||
+		!reflect.DeepEqual(s.capacity, pending.capacity) ||
+		!reflect.DeepEqual(s.nodePools, pending.nodePools) ||
+		s.provider != pending.provider ||
+		time.Since(s.lastSent) >= heartbeat
 }
 
 func (s *publicationState) acknowledge(pending *publication) {
-	s.previous, s.inventory = pending.current, pending.report.Inventory
+	s.previous = pending.current
+	s.capacity = pending.report.Capacity
+	s.nodePools = pending.report.NodePools
+	s.provider = pending.report.ProviderType
+	s.inventory = pending.report.Inventory
 	s.sequence++
 	s.lastSent = time.Now()
 	s.retryDelay = time.Second

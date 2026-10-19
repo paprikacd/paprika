@@ -12,6 +12,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clusterprovider"
 )
 
 // Re-read on every conflict and change only phase/conditions. The report
@@ -34,6 +36,7 @@ func (r *ClusterReconciler) reconcileSatellite(ctx context.Context, key types.Na
 		}
 		cluster.Status.Phase = phase
 		cluster.Status.ObservedGeneration = cluster.Generation
+		applySatelliteStatus(&cluster)
 		for i := range cluster.Status.Conditions {
 			if cluster.Status.Conditions[i].Type != string(phase) {
 				cluster.Status.Conditions[i].Status = metav1.ConditionFalse
@@ -46,4 +49,52 @@ func (r *ClusterReconciler) reconcileSatellite(ctx context.Context, key types.Na
 		return ctrl.Result{}, fmt.Errorf("update satellite cluster health: %w", err)
 	}
 	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+}
+
+// applySatelliteStatus folds declaration and observation into the status fields
+// a satellite registration owns.
+//
+// It runs on every health reconcile rather than only on report acceptance, so a
+// spec edit (a narrowed policy ceiling, a cluster set to disabled) is reflected
+// without waiting for the next heartbeat — and so a cluster whose satellite has
+// gone silent still reports the ceiling the control plane would enforce if it
+// came back.
+func applySatelliteStatus(cluster *clustersv1alpha1.Cluster) {
+	state := cluster.Status.Satellite
+	if state == nil {
+		return
+	}
+	state.EffectivePolicies = paprikav1.IntersectManagementPolicies(
+		cluster.Spec.ManagementPolicies, paprikav1.DefaultManagementPolicies())
+	if cluster.Spec.Disabled {
+		state.OperatingState = clustersv1alpha1.SatelliteOperatingDisabled
+	}
+	cluster.Status.Provider = satelliteProviderStatus(state)
+}
+
+// satelliteProviderStatus projects provider facts the satellite observed into
+// the same status shape a directly-read cluster fills.
+//
+// The provider *type* and the node-pool breakdown come from the satellite, so a
+// cluster the control plane cannot dial still shows its pools. The state is
+// NotConfigured even when a type was detected, because the provider API has not
+// answered here: reporting OK would claim autoscaler bounds and plan sizes this
+// control plane never asked for.
+func satelliteProviderStatus(state *clustersv1alpha1.SatelliteStatus) *clustersv1alpha1.ClusterProviderStatus {
+	if state == nil || (state.ProviderType == "" && len(state.NodePools) == 0) {
+		return nil
+	}
+	status := &clustersv1alpha1.ClusterProviderStatus{
+		Type:      state.ProviderType,
+		NodePools: append([]clustersv1alpha1.ClusterNodePool(nil), state.NodePools...),
+	}
+	if state.LastSeen != nil {
+		observed := state.LastSeen.DeepCopy()
+		status.ObservedAt = observed
+	}
+	if state.ProviderType != "" {
+		status.State = clusterprovider.StateNotConfigured
+		status.Reason = "provider detected from satellite inventory; set spec.provider.clusterId and credentials to enrich it from the provider API"
+	}
+	return status
 }

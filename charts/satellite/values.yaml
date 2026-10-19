@@ -23,6 +23,24 @@ ca:
 heartbeatInterval: 30s
 batchInterval: 2s
 
+# autonomy is what this satellite does while it cannot reach the control plane:
+#   ObserveOnly — report only, never reconcile locally.
+#   Failover    — the control plane reconciles while connected; the satellite
+#                 takes over after failoverTimeout without contact.
+#   Delegated   — the satellite always reconciles; the control plane supplies
+#                 desired state.
+# It is reported to the control plane and must agree with the Cluster's own
+# spec.satellite.autonomy; the Cluster's ceiling stays authoritative there.
+autonomy: Failover
+failoverTimeout: 2m
+
+# managementPolicies is the set of actions this satellite claims it permits:
+# Observe, Apply, Prune, Delete, SelfHeal, Rollout, or "*". It is a claim, not a
+# grant: the Cluster's spec.managementPolicies is what the control plane
+# enforces, and a disagreement is visible in status.effectivePolicies.
+managementPolicies:
+  - "*"
+
 image:
   repository: ghcr.io/paprikacd/paprika
   # Required unless repository contains an immutable @sha256 digest. Choose

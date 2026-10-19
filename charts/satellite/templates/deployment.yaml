@@ -52,6 +52,8 @@ spec:
             - --satellite-token-file=/var/run/paprika-satellite/token
             - {{ printf "--satellite-heartbeat-interval=%s" .Values.heartbeatInterval | quote }}
             - {{ printf "--satellite-batch-interval=%s" .Values.batchInterval | quote }}
+            - {{ printf "--satellite-autonomy=%s" .Values.autonomy | quote }}
+            - {{ printf "--satellite-management-policies=%s" (join "," .Values.managementPolicies) | quote }}
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=0
             {{- if .Values.ca.existingConfigMap }}

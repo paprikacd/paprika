@@ -573,6 +573,40 @@ func (r *ReleaseReconciler) requeueForHooks(
 	return ctrl.Result{RequeueAfter: hookPhaseRequeue}, nil
 }
 
+// managementPolicyRequeueInterval is how often a release parked on a withheld
+// policy rechecks. It is minutes, not seconds: the only thing that changes the
+// answer is an operator editing a Cluster, and polling faster would just add
+// status writes without shortening anyone's wait in practice.
+const managementPolicyRequeueInterval = 5 * time.Minute
+
+// requeueForManagementPolicy parks a release whose target withholds the action
+// it needs. The phase stays Promoting — the release has not failed, it is
+// waiting — and a condition names the refused action and the effective policy
+// set so the fix is a specific edit rather than a guess.
+func (r *ReleaseReconciler) requeueForManagementPolicy(
+	ctx context.Context,
+	release *paprikav1.Release,
+	oldPhase paprikav1.ReleasePhase,
+	cause error,
+	result *string,
+) (ctrl.Result, error) {
+	logf.FromContext(ctx).Info("Promotion is waiting on the target's management policies",
+		"release", release.Name, "reason", cause.Error())
+	meta.SetStatusCondition(&release.Status.Conditions, metav1.Condition{
+		Type:               "PromotionPolicyWithheld",
+		Status:             metav1.ConditionTrue,
+		Reason:             "ManagementPolicyRefused",
+		Message:            cause.Error(),
+		ObservedGeneration: release.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+		*result = resultError
+		return ctrl.Result{}, fmt.Errorf("failed to record withheld management policy: %w", err)
+	}
+	return ctrl.Result{RequeueAfter: managementPolicyRequeueInterval}, nil
+}
+
 func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	oldPhase := release.Status.Phase
@@ -603,6 +637,9 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 	}
 
 	if err := r.promote(ctx, release); err != nil {
+		if errors.Is(err, ErrManagementPolicyWithheld) {
+			return r.requeueForManagementPolicy(ctx, release, oldPhase, err, result)
+		}
 		if errors.Is(err, errHookPhasePending) || errors.Is(err, errSyncWavePending) {
 			return r.requeueForHooks(ctx, release, oldPhase, result)
 		}
@@ -624,20 +661,35 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 		return ctrl.Result{}, nil
 	}
 
+	return r.advanceAfterPromotion(ctx, release, oldPhase, result)
+}
+
+// advanceAfterPromotion selects the delivery strategy the promoted release now
+// follows: an advanced Rollout, a canary ladder, or straight verification.
+func (r *ReleaseReconciler) advanceAfterPromotion(
+	ctx context.Context,
+	release *paprikav1.Release,
+	oldPhase paprikav1.ReleasePhase,
+	result *string,
+) (ctrl.Result, error) {
 	var stage paprikav1.Stage
-	if err := r.client.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: release.Namespace}, &stage); err != nil {
-		release.Status.Phase = paprikav1.ReleaseVerifying
-		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
-	} else if stage.Spec.RolloutStrategy != nil {
-		return r.reconcileRolloutManagedRelease(ctx, release, &stage, result)
-	} else if stage.Spec.Canary != nil && len(stage.Spec.Canary.Steps) > 0 {
+	stageErr := r.client.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: release.Namespace}, &stage)
+	if stageErr == nil {
+		if policyErr := r.rolloutPolicyError(ctx, &stage, release.Namespace); policyErr != nil {
+			return r.requeueForManagementPolicy(ctx, release, oldPhase, policyErr, result)
+		}
+		if stage.Spec.RolloutStrategy != nil {
+			return r.reconcileRolloutManagedRelease(ctx, release, &stage, result)
+		}
+	}
+
+	switch {
+	case stageErr == nil && stage.Spec.Canary != nil && len(stage.Spec.Canary.Steps) > 0:
 		release.Status.Phase = paprikav1.ReleaseCanarying
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Canarying").Inc()
 		release.Status.CanaryStepIndex = 0
-		if len(stage.Spec.Canary.Steps) > 0 {
-			release.Status.CanaryWeight = stage.Spec.Canary.Steps[0]
-		}
-	} else {
+		release.Status.CanaryWeight = stage.Spec.Canary.Steps[0]
+	default:
 		release.Status.Phase = paprikav1.ReleaseVerifying
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
 	}
@@ -921,6 +973,18 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	stage, err := r.fetchStage(ctx, release)
 	if err != nil {
 		return fmt.Errorf("fetch stage: %w", err)
+	}
+
+	// Refuse before rendering: a target that withholds Apply does not need its
+	// manifests rendered, governed or snapshotted. applyManifestsForCluster
+	// checks again at the write, which covers the paths that do not come through
+	// here.
+	policies, err := r.policiesForStage(ctx, stage, release.Namespace)
+	if err != nil {
+		return err
+	}
+	if !policies.allows(paprikav1.ManagementPolicyApply) {
+		return policies.refusal(paprikav1.ManagementPolicyApply)
 	}
 
 	log.Info("Rendering release manifests", "stage", stage.Name)
@@ -1207,7 +1271,7 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 	return app, nil
 }
 
-func (r *ReleaseReconciler) applyManifestsWithCredentialNamespace(ctx context.Context, manifests []byte, namespace, credentialNamespace, kubeconfigSecret, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) error {
+func (r *ReleaseReconciler) applyManifestsWithCredentialNamespace(ctx context.Context, manifests []byte, namespace, credentialNamespace, kubeconfigSecret, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload, policies policySet) error {
 	log := logf.FromContext(ctx)
 
 	dynClient, err := r.resolveDynamicClient(ctx, kubeconfigSecret, credentialNamespace)
@@ -1238,17 +1302,39 @@ func (r *ReleaseReconciler) applyManifestsWithCredentialNamespace(ctx context.Co
 	}
 
 	if opts != nil && opts.Prune {
-		pruned, pruneErr := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts)
-		if pruneErr != nil {
-			// Prune is garbage collection; a failure here should not fail the
-			// release itself. Log and continue.
-			log.Error(pruneErr, "Failed to prune stale resources after apply")
-		}
-		if pruned > 0 {
-			log.Info("Pruned stale resources after apply", "count", pruned)
-		}
+		r.pruneAfterApply(ctx, log, dynClient, docs, namespace, appName, opts, policies)
 	}
 	return nil
+}
+
+// pruneAfterApply collects resources the desired set no longer names.
+//
+// Prune is its own policy because adopting an existing cluster usually wants
+// Apply without it: the manifests converge, and a resource an operator has not
+// migrated into source yet is not deleted for them. A prune failure never fails
+// the release — the apply already happened, and garbage collection is not the
+// release's contract.
+func (r *ReleaseReconciler) pruneAfterApply(
+	ctx context.Context,
+	log logr.Logger,
+	dynClient dynamic.Interface,
+	docs [][]byte,
+	namespace, appName string,
+	opts *paprikav1.SyncOptions,
+	policies policySet,
+) {
+	if !policies.allows(paprikav1.ManagementPolicyPrune) {
+		log.Info("Prune is withheld by the effective management policies; stale resources were left in place",
+			"namespace", namespace, "app", appName)
+		return
+	}
+	pruned, err := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts)
+	if err != nil {
+		log.Error(err, "Failed to prune stale resources after apply")
+	}
+	if pruned > 0 {
+		log.Info("Pruned stale resources after apply", "count", pruned)
+	}
 }
 
 func (r *ReleaseReconciler) fetchStage(ctx context.Context, release *paprikav1.Release) (*paprikav1.Stage, error) {
@@ -1301,8 +1387,12 @@ func (r *ReleaseReconciler) applyPromotedManifests(ctx context.Context, release 
 	if err != nil {
 		return fmt.Errorf("invalid %s annotation: %w", syncResourcesAnnotation, err)
 	}
+	policies, err := r.policiesForStage(ctx, stage, release.Namespace)
+	if err != nil {
+		return err
+	}
 	appName := release.Labels["app.paprika.io/name"]
-	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, sel)
+	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, sel, policies)
 }
 
 // parseSyncResourcesPayload decodes the selective-sync annotation; absent or
@@ -1318,10 +1408,18 @@ func parseSyncResourcesPayload(raw string) (*syncResourcesPayload, error) {
 	return &p, nil
 }
 
-func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName, releaseName string, manifests []byte, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) error {
+func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName, releaseName string, manifests []byte, opts *paprikav1.SyncOptions, sel *syncResourcesPayload, policies policySet) error {
 	start := time.Now()
 	selective := sel != nil && len(sel.Resources) > 0
 	var err error
+
+	// The Apply gate sits here, at the one place every manifest write passes
+	// through, rather than at each caller. A target whose effective policies
+	// withhold Apply is a target nothing writes to, which is what makes Observe
+	// mode more than a label.
+	if !policies.allows(paprikav1.ManagementPolicyApply) {
+		return policies.refusal(paprikav1.ManagementPolicyApply)
+	}
 
 	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
 		filteredManifests, fErr := selectiveAgentManifests(manifests, sel, namespace)
@@ -1334,7 +1432,7 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 		if cluster.KubeconfigSecret != "" {
 			kubeconfigSecret = cluster.KubeconfigSecret
 		}
-		err = r.applyManifestsWithCredentialNamespace(ctx, manifests, namespace, clusterCredentialNamespace(cluster, namespace), kubeconfigSecret, appName, releaseName, opts, sel)
+		err = r.applyManifestsWithCredentialNamespace(ctx, manifests, namespace, clusterCredentialNamespace(cluster, namespace), kubeconfigSecret, appName, releaseName, opts, sel, policies)
 	}
 	if selective {
 		metrics.SelectiveSyncTotal.Add(ctx, 1, metric.WithAttributes(
@@ -3141,6 +3239,12 @@ func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release
 	if err != nil {
 		return fmt.Errorf("resolve release cleanup targets: %w", err)
 	}
+	// Delete is separable from Apply so deleting an Application cannot destroy a
+	// cluster's workloads unless the operator said it may. A withheld Delete
+	// leaves the resources in place and lets the finalizer finish: the
+	// alternative — blocking deletion forever — makes an unowned release
+	// impossible to remove.
+	targets = r.deletePermittedTargets(ctx, log, release, targets)
 
 	gvrs, err := r.gvrsFromSnapshot(ctx, release)
 	if err != nil {
@@ -3173,6 +3277,35 @@ func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release
 			}
 		}
 	}
+	return nil
+}
+
+// deletePermittedTargets drops cleanup targets whose effective policies withhold
+// Delete, logging each one. It is a separate step so the reason a cluster's
+// resources survived a release deletion is in the log beside the deletion, not
+// inferred later from leftover objects.
+func (r *ReleaseReconciler) deletePermittedTargets(
+	ctx context.Context,
+	log logr.Logger,
+	release *paprikav1.Release,
+	targets []dynamic.Interface,
+) []dynamic.Interface {
+	stage, err := r.fetchStage(ctx, release)
+	if err != nil {
+		// No stage means a standalone release, which has no registration to read
+		// a ceiling from and therefore keeps full management.
+		return targets
+	}
+	policies, policyErr := r.policiesForStage(ctx, stage, release.Namespace)
+	if policyErr != nil {
+		log.Error(policyErr, "Could not resolve management policies for release cleanup; skipping cleanup")
+		return nil
+	}
+	if policies.allows(paprikav1.ManagementPolicyDelete) {
+		return targets
+	}
+	log.Info("Release cleanup is withheld by the effective management policies; managed resources were left in place",
+		"release", release.Name, "target", policies.target)
 	return nil
 }
 
@@ -3633,12 +3766,16 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 		return fmt.Errorf("failed to store canary manifest snapshot: %w", storeErr)
 	}
 
+	policies, policyErr := r.policiesForStage(ctx, stage, release.Namespace)
+	if policyErr != nil {
+		return policyErr
+	}
 	resolvedCluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
 	if err != nil {
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, nil); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, nil, policies); err != nil {
 		return fmt.Errorf("failed to apply canary manifests: %w", err)
 	}
 
@@ -3682,12 +3819,16 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 		return fmt.Errorf("failed to store promoted manifest snapshot: %w", storeErr)
 	}
 
+	policies, policyErr := r.policiesForStage(ctx, stage, release.Namespace)
+	if policyErr != nil {
+		return policyErr
+	}
 	resolvedCluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
 	if err != nil {
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, nil); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, nil, policies); err != nil {
 		return fmt.Errorf("failed to apply promoted manifests: %w", err)
 	}
 

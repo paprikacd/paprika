@@ -51,6 +51,14 @@ func (r *ApplicationReconciler) reconcileSelfHeal(ctx context.Context, app *papr
 		return nil
 	}
 
+	// Self-heal mutates without an operator asking, so it is its own grant. A
+	// cluster that permits Apply but not SelfHeal still deploys; it just does not
+	// repair itself behind the operator's back.
+	if err := r.selfHealPolicyError(ctx, app); err != nil {
+		r.setSelfHealCondition(app, metav1.ConditionFalse, "ManagementPolicyWithheld", err.Error())
+		return nil
+	}
+
 	if r.selfHealOnCooldown(app) {
 		return nil
 	}
@@ -75,6 +83,24 @@ func (r *ApplicationReconciler) reconcileSelfHeal(ctx context.Context, app *papr
 
 	r.setSelfHealCondition(app, metav1.ConditionFalse, "NoActionNeeded", "No drift or health failure detected")
 	return nil
+}
+
+// selfHealPolicyError reports whether the current deployment target permits
+// self-heal. An Application with no stages has no target and no self-heal to
+// guard, so it is allowed and the rest of reconcile decides.
+func (r *ApplicationReconciler) selfHealPolicyError(ctx context.Context, app *paprikav1.Application) error {
+	deployment := effectiveDeploymentApp(app)
+	if len(deployment.Spec.Stages) == 0 {
+		return nil
+	}
+	policies, err := r.policiesForApplicationStage(ctx, &deployment.Spec.Stages[0], app.Namespace)
+	if err != nil {
+		return err
+	}
+	if policies.allows(paprikav1.ManagementPolicySelfHeal) {
+		return nil
+	}
+	return policies.refusal(paprikav1.ManagementPolicySelfHeal)
 }
 
 func (r *ApplicationReconciler) selfHealAllowedPhase(phase paprikav1.ApplicationPhase) bool {

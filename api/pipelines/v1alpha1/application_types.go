@@ -459,6 +459,14 @@ type ApplicationPromotionStage struct {
 	// Auto-promote to the next ring after this stage is healthy
 	// +optional
 	AutoPromote bool `json:"autoPromote,omitempty"`
+	// ManagementPolicies narrows what Paprika may do in this stage. The
+	// effective set is this list intersected with the target Cluster's own
+	// ceiling, so a cluster set to Observe cannot be written to by any stage.
+	// Unset means full management; an explicitly empty list makes the stage
+	// observe-only.
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	ManagementPolicies []ManagementPolicy `json:"managementPolicies,omitempty"`
 }
 
 // HealthStatus represents the health status of an application or resource.

@@ -89,6 +89,34 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              managementPolicies:
+                description: |-
+                  ManagementPolicies is this cluster's ceiling: the most any placement
+                  targeting it may do, whether the control plane dials it directly or drives
+                  it through a satellite. Unset means full management; an explicitly empty
+                  list makes the whole cluster read-only. A Stage's own policies are
+                  intersected with this ceiling, never added to it.
+                items:
+                  description: |-
+                    ManagementPolicy names one capability Paprika may exercise against a target
+                    cluster. The vocabulary follows Crossplane's managementPolicies: a policy set
+                    is an allow-list, so a nil set means "unspecified" and defaults to full
+                    management, while an explicitly empty set grants nothing.
+
+                    The set is evaluated per action, not per resource: a release that may Apply
+                    but not Prune leaves removed manifests in the cluster rather than deleting
+                    them, which is what an operator adopting an existing cluster needs.
+                  enum:
+                  - Observe
+                  - Apply
+                  - Prune
+                  - Delete
+                  - SelfHeal
+                  - Rollout
+                  - '*'
+                  type: string
+                maxItems: 8
+                type: array
               mode:
                 default: in-cluster
                 description: ClusterMode defines how the controller connects to a
@@ -168,6 +196,26 @@ spec:
                   Satellite configures outbound state reporting. Direct clusters may keep
                   their kubeconfig deployment connection while reporting via a satellite.
                 properties:
+                  autonomy:
+                    default: Failover
+                    description: |-
+                      Autonomy selects what the satellite does while it cannot reach the
+                      control plane. ObserveOnly keeps it a pure reporter; Failover hands
+                      reconciliation over after FailoverTimeout; Delegated always reconciles
+                      locally.
+                    enum:
+                    - ObserveOnly
+                    - Failover
+                    - Delegated
+                    type: string
+                  failoverTimeout:
+                    default: 2m
+                    description: |-
+                      FailoverTimeout is how long a satellite in Failover mode waits without
+                      control-plane contact before taking over reconciliation. Ignored in the
+                      other modes.
+                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+                    type: string
                   tokenSecretRef:
                     description: SecretRef references a Kubernetes Secret.
                     properties:
@@ -394,6 +442,13 @@ spec:
                   A kube-system UID binds a registration to the physical cluster; sessions and
                   sequences protect delta application against gaps and duplicate deliveries.
                 properties:
+                  activeOverrides:
+                    description: |-
+                      ActiveOverrides counts local actions taken during an outage that the
+                      control plane has not acknowledged. Non-zero puts the cluster in
+                      OverrideHeld so an operator sees it before the next push overwrites it.
+                    format: int32
+                    type: integer
                   applications:
                     items:
                       description: |-
@@ -432,10 +487,162 @@ spec:
                     - namespace
                     - name
                     x-kubernetes-list-type: map
+                  autonomousSince:
+                    description: |-
+                      AutonomousSince records when the satellite last took over
+                      reconciliation. Cleared when the control plane resumes authority.
+                    format: date-time
+                    type: string
+                  capacity:
+                    description: |-
+                      Capacity is the satellite's resource accounting. Nil until a report
+                      carries it, and never synthesized from the control plane's own cluster.
+                    properties:
+                      cpuMillicores:
+                        description: |-
+                          SatelliteResourceUsage is one resource dimension as the satellite measured
+                          it. Used is only meaningful when UsedKnown is true: a cluster without
+                          metrics.k8s.io reports requests and allocatable, and says so rather than
+                          claiming zero usage.
+                        properties:
+                          allocatable:
+                            format: int64
+                            type: integer
+                          requested:
+                            format: int64
+                            type: integer
+                          used:
+                            format: int64
+                            type: integer
+                          usedKnown:
+                            description: |-
+                              UsedKnown reports whether the cluster served metrics.k8s.io. When false,
+                              Used is zero because nothing was measured, not because nothing is running.
+                            type: boolean
+                        type: object
+                      memoryBytes:
+                        description: |-
+                          SatelliteResourceUsage is one resource dimension as the satellite measured
+                          it. Used is only meaningful when UsedKnown is true: a cluster without
+                          metrics.k8s.io reports requests and allocatable, and says so rather than
+                          claiming zero usage.
+                        properties:
+                          allocatable:
+                            format: int64
+                            type: integer
+                          requested:
+                            format: int64
+                            type: integer
+                          used:
+                            format: int64
+                            type: integer
+                          usedKnown:
+                            description: |-
+                              UsedKnown reports whether the cluster served metrics.k8s.io. When false,
+                              Used is zero because nothing was measured, not because nothing is running.
+                            type: boolean
+                        type: object
+                      observedAt:
+                        format: date-time
+                        type: string
+                    type: object
                   clusterUid:
                     type: string
+                  effectivePolicies:
+                    description: |-
+                      EffectivePolicies is the ceiling the satellite is enforcing, with the
+                      wildcard expanded. An empty list grants nothing: the registration exists
+                      and Paprika neither reads from nor writes to the cluster.
+                    items:
+                      description: |-
+                        ManagementPolicy names one capability Paprika may exercise against a target
+                        cluster. The vocabulary follows Crossplane's managementPolicies: a policy set
+                        is an allow-list, so a nil set means "unspecified" and defaults to full
+                        management, while an explicitly empty set grants nothing.
+
+                        The set is evaluated per action, not per resource: a release that may Apply
+                        but not Prune leaves removed manifests in the cluster rather than deleting
+                        them, which is what an operator adopting an existing cluster needs.
+                      enum:
+                      - Observe
+                      - Apply
+                      - Prune
+                      - Delete
+                      - SelfHeal
+                      - Rollout
+                      - '*'
+                      type: string
+                    maxItems: 8
+                    type: array
                   lastSeen:
                     format: date-time
+                    type: string
+                  nodePools:
+                    description: |-
+                      NodePools is the pool shape the satellite derived from node labels. It is
+                      present without any provider credential, which is what makes node pools
+                      visible for clusters the control plane cannot dial.
+                    items:
+                      description: |-
+                        ClusterNodePool describes one node pool as reported by the cloud provider
+                        (or derived from node labels when no provider credential is configured).
+                      properties:
+                        allocatableCpuMillis:
+                          description: |-
+                            AllocatableCPUMillis and AllocatableMemoryBytes sum the pool nodes'
+                            status.allocatable: the CPU and memory workloads can actually draw on.
+                            Derived pools always carry them; API-enriched pools inherit them from
+                            the derived set when the provider does not report a figure.
+                          format: int64
+                          type: integer
+                        allocatableMemoryBytes:
+                          format: int64
+                          type: integer
+                        autoScaled:
+                          description: |-
+                            AutoScaled reports whether the provider has the pool under autoscaler
+                            control. Derived pools leave it false.
+                          type: boolean
+                        machineType:
+                          type: string
+                        maxNodes:
+                          format: int32
+                          type: integer
+                        minNodes:
+                          description: |-
+                            MinNodes and MaxNodes are the autoscaler bounds. Zero when the pool is
+                            not autoscaled or the bound is unknown.
+                          format: int32
+                          type: integer
+                        name:
+                          type: string
+                        nodeCount:
+                          format: int32
+                          type: integer
+                      required:
+                      - name
+                      - nodeCount
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  operatingState:
+                    description: |-
+                      OperatingState is what the satellite is doing right now. It follows
+                      spec.satellite.autonomy, but records which branch the satellite is in
+                      rather than what the operator asked for.
+                    enum:
+                    - Connecting
+                    - Connected
+                    - Autonomous
+                    - OverrideHeld
+                    - Disabled
+                    type: string
+                  providerType:
+                    description: |-
+                      ProviderType is the cloud provider the satellite detected from node
+                      providerID prefixes. Empty when detection found nothing.
                     type: string
                   reportDigest:
                     type: string

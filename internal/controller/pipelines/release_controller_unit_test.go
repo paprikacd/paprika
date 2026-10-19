@@ -569,7 +569,8 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 		AgentAddress: "http://agent.example:8083",
 	}
 
-	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", "my-release", []byte("k: v\n"), nil, nil); err != nil {
+	unrestricted := policySet{policies: pipelinesv1alpha1.DefaultManagementPolicies(), target: "remote"}
+	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", "my-release", []byte("k: v\n"), nil, nil, unrestricted); err != nil {
 		t.Fatalf("applyManifestsForCluster returned error: %v", err)
 	}
 }

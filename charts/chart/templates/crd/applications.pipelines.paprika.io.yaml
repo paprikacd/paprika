@@ -1000,6 +1000,34 @@ spec:
                         - type
                         type: object
                       type: array
+                    managementPolicies:
+                      description: |-
+                        ManagementPolicies narrows what Paprika may do in this stage. The
+                        effective set is this list intersected with the target Cluster's own
+                        ceiling, so a cluster set to Observe cannot be written to by any stage.
+                        Unset means full management; an explicitly empty list makes the stage
+                        observe-only.
+                      items:
+                        description: |-
+                          ManagementPolicy names one capability Paprika may exercise against a target
+                          cluster. The vocabulary follows Crossplane's managementPolicies: a policy set
+                          is an allow-list, so a nil set means "unspecified" and defaults to full
+                          management, while an explicitly empty set grants nothing.
+
+                          The set is evaluated per action, not per resource: a release that may Apply
+                          but not Prune leaves removed manifests in the cluster rather than deleting
+                          them, which is what an operator adopting an existing cluster needs.
+                        enum:
+                        - Observe
+                        - Apply
+                        - Prune
+                        - Delete
+                        - SelfHeal
+                        - Rollout
+                        - '*'
+                        type: string
+                      maxItems: 8
+                      type: array
                     name:
                       type: string
                     parameters:
@@ -2788,6 +2816,34 @@ spec:
                             required:
                             - type
                             type: object
+                          type: array
+                        managementPolicies:
+                          description: |-
+                            ManagementPolicies narrows what Paprika may do in this stage. The
+                            effective set is this list intersected with the target Cluster's own
+                            ceiling, so a cluster set to Observe cannot be written to by any stage.
+                            Unset means full management; an explicitly empty list makes the stage
+                            observe-only.
+                          items:
+                            description: |-
+                              ManagementPolicy names one capability Paprika may exercise against a target
+                              cluster. The vocabulary follows Crossplane's managementPolicies: a policy set
+                              is an allow-list, so a nil set means "unspecified" and defaults to full
+                              management, while an explicitly empty set grants nothing.
+
+                              The set is evaluated per action, not per resource: a release that may Apply
+                              but not Prune leaves removed manifests in the cluster rather than deleting
+                              them, which is what an operator adopting an existing cluster needs.
+                            enum:
+                            - Observe
+                            - Apply
+                            - Prune
+                            - Delete
+                            - SelfHeal
+                            - Rollout
+                            - '*'
+                            type: string
+                          maxItems: 8
                           type: array
                         name:
                           type: string

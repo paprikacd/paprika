@@ -1289,6 +1289,9 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
+	if result := r.applyPolicyGate(ctx, app, targetStage); result != nil {
+		return *result, nil
+	}
 	if result := r.releaseCreationGate(ctx, app, targetStage.Name, manualOverride); result != nil {
 		return *result, nil
 	}
@@ -1313,6 +1316,24 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 	markPromotionStarted(app)
 	r.updatePhase(ctx, app, paprikav1.ApplicationPromoting, "ReleaseCreated", "created release for stage "+targetStage.Name)
 	return ctrl.Result{}, nil
+}
+
+// applyPolicyGate stops before creating a Release for a target that withholds
+// Apply. Creating the Release anyway would only produce one that can never
+// promote, and an Application stuck in Promoting reads like a stuck rollout
+// rather than a read-only target.
+func (r *ApplicationReconciler) applyPolicyGate(ctx context.Context, app *paprikav1.Application, stage *paprikav1.ApplicationPromotionStage) *ctrl.Result {
+	policies, err := r.policiesForApplicationStage(ctx, stage, app.Namespace)
+	if err != nil {
+		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "ManagementPolicyUnresolved", err.Error())
+		return &ctrl.Result{RequeueAfter: r.transientRequeue()}
+	}
+	if policies.allows(paprikav1.ManagementPolicyApply) {
+		return nil
+	}
+	r.updatePhase(ctx, app, paprikav1.ApplicationPending, "ManagementPolicyRefused",
+		policies.refusal(paprikav1.ManagementPolicyApply).Error())
+	return &ctrl.Result{RequeueAfter: managementPolicyRequeueInterval}
 }
 
 func (r *ApplicationReconciler) releaseCreationGate(ctx context.Context, app *paprikav1.Application, stageName string, manualOverride bool) *ctrl.Result {

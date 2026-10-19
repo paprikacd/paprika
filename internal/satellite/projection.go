@@ -22,6 +22,10 @@ type observation struct {
 	app                          Application
 	ready, running               bool
 	region, zone, kubeletVersion string
+	// capacity holds the resource-accounting inputs for nodes, pods and node
+	// metrics. It is only populated for those kinds; an Application leaves it
+	// zero, which also keeps the struct comparable.
+	capacity capacityObservation
 }
 
 // observationState retains no raw Kubernetes objects. All updates coalesce in
@@ -33,6 +37,9 @@ type observationState struct {
 	cachedVersion      uint64
 	cachedInventory    clustersv1alpha1.ClusterInventory
 	cachedApplications map[string]Application
+	cachedCapacity     clustersv1alpha1.SatelliteCapacity
+	cachedNodePools    []clustersv1alpha1.ClusterNodePool
+	cachedProviderType string
 }
 
 func newObservationState() *observationState {
@@ -73,11 +80,16 @@ func (s *observationState) delete(obj any) {
 	s.mu.Unlock()
 }
 
-func (s *observationState) clearApplications() {
+func (s *observationState) clearApplications() { s.clearKind("Application") }
+
+// clearKind drops every observation of one kind. It runs when an optional API
+// disappears: retention of a removed source's last reading would report a
+// cluster state nobody can observe any more.
+func (s *observationState) clearKind(kind string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, object := range s.objects {
-		if object.kind == "Application" {
+		if object.kind == kind {
 			delete(s.objects, key)
 			s.version++
 		}
@@ -89,17 +101,38 @@ func (s *observationState) clearApplications() {
 // change. Watch updates affecting only resource versions, pod specs, or other
 // unreported fields do not invalidate the cache.
 func (s *observationState) snapshot() (inventory clustersv1alpha1.ClusterInventory, apps map[string]Application) {
+	s.ensureProjection()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cachedInventory, s.cachedApplications
+}
+
+// capacitySnapshot returns the resource accounting built from the same cached
+// projection snapshot() uses. Two accessors rather than one keeps the existing
+// inventory contract intact while guaranteeing the numbers cannot disagree:
+// both are produced by one rebuild per observation version.
+func (s *observationState) capacitySnapshot() (clustersv1alpha1.SatelliteCapacity, []clustersv1alpha1.ClusterNodePool, string) {
+	s.ensureProjection()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cachedCapacity, s.cachedNodePools, s.cachedProviderType
+}
+
+// ensureProjection rebuilds the cached view once per observation version. It
+// takes the write lock only when a rebuild is actually needed, so the common
+// steady-state call is a read-locked version check.
+func (s *observationState) ensureProjection() {
 	s.mu.RLock()
 	if s.cachedApplications != nil && s.cachedVersion == s.version {
-		inventory, apps = s.cachedInventory, s.cachedApplications
 		s.mu.RUnlock()
-		return inventory, apps
+		return
 	}
 	s.mu.RUnlock()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cachedApplications != nil && s.cachedVersion == s.version {
-		return s.cachedInventory, s.cachedApplications
+		return
 	}
 	projection := newSnapshotProjection()
 	for _, object := range s.objects {
@@ -110,9 +143,13 @@ func (s *observationState) snapshot() (inventory clustersv1alpha1.ClusterInvento
 			projection.apps[object.app.Key()] = object.app
 		}
 	}
-	inventory = projection.inventory()
-	s.cachedVersion, s.cachedInventory, s.cachedApplications = s.version, inventory, projection.apps
-	return inventory, projection.apps
+	capacity, nodePools, providerType := projection.capacity.build()
+	s.cachedVersion = s.version
+	s.cachedInventory = projection.inventory()
+	s.cachedApplications = projection.apps
+	s.cachedCapacity = capacity
+	s.cachedNodePools = nodePools
+	s.cachedProviderType = providerType
 }
 
 type snapshotProjection struct {
@@ -120,6 +157,7 @@ type snapshotProjection struct {
 	regions, zones, versions map[string]bool
 	apps                     map[string]Application
 	conflictingGroups        map[string]bool
+	capacity                 capacityBuilder
 }
 
 func newSnapshotProjection() *snapshotProjection {
@@ -134,11 +172,15 @@ func (p *snapshotProjection) add(object *observation) {
 			p.counts.ReadyNodeCount++
 		}
 		p.regions[object.region], p.zones[object.zone], p.versions[object.kubeletVersion] = true, true, true
+		p.capacity.addNode(&object.capacity)
 	case "Pod":
 		p.counts.PodCount++
 		if object.running {
 			p.counts.RunningPodCount++
 		}
+		p.capacity.addPod(&object.capacity)
+	case nodeMetricsKind:
+		p.capacity.addNodeMetrics(&object.capacity)
 	case "Namespace":
 		p.counts.NamespaceCount++
 	case "Deployment", "StatefulSet", "DaemonSet":
@@ -221,6 +263,7 @@ func projectObject(obj any) (observation, bool) {
 	case *corev1.Pod:
 		o := baseObservation("Pod", &typed.ObjectMeta)
 		o.running = typed.Status.Phase == corev1.PodRunning
+		o.capacity.projectPod(typed)
 		return o, true
 	case *corev1.Namespace:
 		return baseObservation("Namespace", &typed.ObjectMeta), true
@@ -231,10 +274,24 @@ func projectObject(obj any) (observation, bool) {
 	case *appsv1.DaemonSet:
 		return projectDaemonSet(typed), true
 	case *unstructured.Unstructured:
+		if isNodeMetricsValue(typed) {
+			return projectNodeMetrics(typed)
+		}
 		return projectApplication(typed), true
 	default:
 		return observation{}, false
 	}
+}
+
+// projectNodeMetrics turns one NodeMetrics object into a usage observation. An
+// object with no parsable usage is dropped so a broken metrics API cannot report
+// a phantom idle cluster.
+func projectNodeMetrics(nodeMetrics *unstructured.Unstructured) (observation, bool) {
+	o := baseObservation(nodeMetricsKind, &metav1.ObjectMeta{Name: nodeMetrics.GetName()})
+	if !o.capacity.projectNodeMetrics(nodeMetrics) {
+		return observation{}, false
+	}
+	return o, true
 }
 
 func projectNode(node *corev1.Node) observation {
@@ -245,6 +302,7 @@ func projectNode(node *corev1.Node) observation {
 			o.ready = condition.Status == corev1.ConditionTrue
 		}
 	}
+	o.capacity.projectNode(node)
 	return o
 }
 
@@ -394,9 +452,17 @@ func setWorkloadHealth(o *observation, healthy bool, ready, desired int32) {
 func compactObject(obj any) (any, error) {
 	switch typed := obj.(type) {
 	case *corev1.Node:
-		return &corev1.Node{ObjectMeta: compactMetadata(&typed.ObjectMeta), Status: corev1.NodeStatus{Conditions: compactNodeConditions(typed.Status.Conditions), NodeInfo: corev1.NodeSystemInfo{KubeletVersion: typed.Status.NodeInfo.KubeletVersion}}}, nil
+		return &corev1.Node{
+			ObjectMeta: compactMetadata(&typed.ObjectMeta),
+			Spec:       corev1.NodeSpec{ProviderID: typed.Spec.ProviderID},
+			Status: corev1.NodeStatus{
+				Conditions:  compactNodeConditions(typed.Status.Conditions),
+				NodeInfo:    corev1.NodeSystemInfo{KubeletVersion: typed.Status.NodeInfo.KubeletVersion},
+				Allocatable: compactAllocatable(typed.Status.Allocatable),
+			},
+		}, nil
 	case *corev1.Pod:
-		return &corev1.Pod{ObjectMeta: compactMetadata(&typed.ObjectMeta), Status: corev1.PodStatus{Phase: typed.Status.Phase}}, nil
+		return compactPod(typed), nil
 	case *corev1.Namespace:
 		return &corev1.Namespace{ObjectMeta: compactMetadata(&typed.ObjectMeta)}, nil
 	case *appsv1.Deployment:
@@ -416,26 +482,71 @@ func compactObject(obj any) (any, error) {
 		status.Conditions = nil
 		return &appsv1.DaemonSet{ObjectMeta: compactMetadata(&typed.ObjectMeta), Status: status}, nil
 	case *unstructured.Unstructured:
-		o, _ := projectObject(typed)
-		return &unstructured.Unstructured{Object: map[string]any{
-			"apiVersion": "pipelines.paprika.io/v1alpha1", "kind": "Application",
-			"metadata": map[string]any{"name": o.name, "namespace": o.namespace, "uid": string(o.uid), "resourceVersion": typed.GetResourceVersion(), "labels": map[string]any{"app.paprika.io/identity": o.app.Identity}},
-			"spec":     map[string]any{"project": o.app.Project},
-			"status":   map[string]any{"health": o.app.Health, "phase": o.app.Phase, "outOfSync": int64(o.app.OutOfSync), "syncKnown": o.app.SyncKnown, "resourceCount": int64(o.app.ResourceCount), "sourceRevision": o.app.SourceRevision},
-		}}, nil
+		return compactDynamicObject(typed), nil
 	default:
 		return nil, fmt.Errorf("unsupported satellite watch object %T", obj)
 	}
 }
 
+// compactDynamicObject narrows the dynamic-informer path, which carries both
+// Paprika Applications and metrics.k8s.io NodeMetrics.
+func compactDynamicObject(typed *unstructured.Unstructured) *unstructured.Unstructured {
+	if isNodeMetricsValue(typed) {
+		return compactNodeMetrics(typed)
+	}
+	o, _ := projectObject(typed)
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "pipelines.paprika.io/v1alpha1",
+		"kind":       "Application",
+		"metadata": map[string]any{
+			"name": o.name, "namespace": o.namespace, "uid": string(o.uid),
+			"resourceVersion": typed.GetResourceVersion(),
+			"labels":          map[string]any{"app.paprika.io/identity": o.app.Identity},
+		},
+		"spec": map[string]any{"project": o.app.Project},
+		"status": map[string]any{
+			"health": o.app.Health, "phase": o.app.Phase,
+			"outOfSync": int64(o.app.OutOfSync), "syncKnown": o.app.SyncKnown,
+			"resourceCount": int64(o.app.ResourceCount), "sourceRevision": o.app.SourceRevision,
+		},
+	}}
+}
+
+// compactMetadataLabelKeys is the union of the labels Paprika reads. It is a
+// package value because compaction runs on every watch event: assembling the
+// list per object would allocate on the hot path for a set that never changes.
+var compactMetadataLabelKeys = append([]string{
+	"app.paprika.io/name",
+	"app.paprika.io/identity",
+	"app.paprika.io/project",
+	"app.kubernetes.io/part-of",
+	"app.kubernetes.io/name",
+}, capacityLabelKeys...)
+
+// compactMetadata keeps the labels Paprika reads and nothing else. Node-pool
+// and topology labels are on the list because capacity accounting derives pools
+// from them; an operator's own bookkeeping labels stay on the cluster.
 func compactMetadata(metadata *metav1.ObjectMeta) metav1.ObjectMeta {
-	labels := make(map[string]string)
-	for _, key := range []string{"app.paprika.io/name", "app.paprika.io/identity", "app.paprika.io/project", "app.kubernetes.io/part-of", "app.kubernetes.io/name", "topology.kubernetes.io/region", "topology.kubernetes.io/zone"} {
+	labels := make(map[string]string, len(compactMetadataLabelKeys))
+	for _, key := range compactMetadataLabelKeys {
 		if value := metadata.Labels[key]; value != "" {
 			labels[key] = value
 		}
 	}
 	return metav1.ObjectMeta{Name: metadata.Name, Namespace: metadata.Namespace, UID: metadata.UID, ResourceVersion: metadata.ResourceVersion, Generation: metadata.Generation, Labels: labels}
+}
+
+// compactAllocatable retains only the two dimensions capacity accounting sums.
+// The full ResourceList also carries ephemeral storage and hugepages, none of
+// which a fleet capacity meter reports.
+func compactAllocatable(allocatable corev1.ResourceList) corev1.ResourceList {
+	compacted := corev1.ResourceList{}
+	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		if quantity, ok := allocatable[name]; ok {
+			compacted[name] = quantity.DeepCopy()
+		}
+	}
+	return compacted
 }
 
 func compactNodeConditions(conditions []corev1.NodeCondition) []corev1.NodeCondition {

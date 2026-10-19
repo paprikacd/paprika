@@ -99,7 +99,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func decodeReport(body []byte) (*satellite.Report, error) {
 	var report satellite.Report
 	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
+	// Unknown fields are tolerated on purpose. A satellite is deployed
+	// independently of the control plane it reports to, so a newer satellite
+	// must not have its reports rejected in their entirety because it added a
+	// field. Every field the receiver acts on is validated by validateReport;
+	// the fields it does not know about are ignored, not trusted.
 	if err := decoder.Decode(&report); err != nil {
 		return nil, fmt.Errorf("decode satellite report: %w", err)
 	}

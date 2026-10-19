@@ -67,6 +67,46 @@ type AgentInfo struct {
 // The credential is distinct from kubeconfig and provider credentials.
 type SatelliteSpec struct {
 	TokenSecretRef SecretRef `json:"tokenSecretRef"`
+
+	// Autonomy selects what the satellite does while it cannot reach the
+	// control plane. ObserveOnly keeps it a pure reporter; Failover hands
+	// reconciliation over after FailoverTimeout; Delegated always reconciles
+	// locally.
+	// +optional
+	// +kubebuilder:validation:Enum=ObserveOnly;Failover;Delegated
+	// +kubebuilder:default="Failover"
+	Autonomy AutonomyMode `json:"autonomy,omitempty"`
+
+	// FailoverTimeout is how long a satellite in Failover mode waits without
+	// control-plane contact before taking over reconciliation. Ignored in the
+	// other modes.
+	// +optional
+	// +kubebuilder:default="2m"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
+	FailoverTimeout string `json:"failoverTimeout,omitempty"`
+}
+
+// SatelliteResourceUsage is one resource dimension as the satellite measured
+// it. Used is only meaningful when UsedKnown is true: a cluster without
+// metrics.k8s.io reports requests and allocatable, and says so rather than
+// claiming zero usage.
+type SatelliteResourceUsage struct {
+	Used        int64 `json:"used,omitempty"`
+	Requested   int64 `json:"requested,omitempty"`
+	Allocatable int64 `json:"allocatable,omitempty"`
+	// UsedKnown reports whether the cluster served metrics.k8s.io. When false,
+	// Used is zero because nothing was measured, not because nothing is running.
+	UsedKnown bool `json:"usedKnown,omitempty"`
+}
+
+// SatelliteCapacity is the satellite's own resource accounting for its cluster.
+// It exists because a satellite is the only observer a control plane may have of
+// a cluster it cannot dial: without this, capacity meters for those clusters
+// would stay NOT_CONFIGURED forever.
+type SatelliteCapacity struct {
+	CPUMillicores SatelliteResourceUsage `json:"cpuMillicores,omitempty"`
+	MemoryBytes   SatelliteResourceUsage `json:"memoryBytes,omitempty"`
+	ObservedAt    *metav1.Time           `json:"observedAt,omitempty"`
 }
 
 // SatelliteApplication is an observation, not a desired-state Application.
@@ -101,6 +141,49 @@ type SatelliteStatus struct {
 	// +listMapKey=namespace
 	// +listMapKey=name
 	Applications []SatelliteApplication `json:"applications,omitempty"`
+
+	// OperatingState is what the satellite is doing right now. It follows
+	// spec.satellite.autonomy, but records which branch the satellite is in
+	// rather than what the operator asked for.
+	// +optional
+	// +kubebuilder:validation:Enum=Connecting;Connected;Autonomous;OverrideHeld;Disabled
+	OperatingState SatelliteOperatingState `json:"operatingState,omitempty"`
+
+	// EffectivePolicies is the ceiling the satellite is enforcing, with the
+	// wildcard expanded. An empty list grants nothing: the registration exists
+	// and Paprika neither reads from nor writes to the cluster.
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	EffectivePolicies []ManagementPolicy `json:"effectivePolicies,omitempty"`
+
+	// AutonomousSince records when the satellite last took over
+	// reconciliation. Cleared when the control plane resumes authority.
+	// +optional
+	AutonomousSince *metav1.Time `json:"autonomousSince,omitempty"`
+
+	// ActiveOverrides counts local actions taken during an outage that the
+	// control plane has not acknowledged. Non-zero puts the cluster in
+	// OverrideHeld so an operator sees it before the next push overwrites it.
+	// +optional
+	ActiveOverrides int32 `json:"activeOverrides,omitempty"`
+
+	// Capacity is the satellite's resource accounting. Nil until a report
+	// carries it, and never synthesized from the control plane's own cluster.
+	// +optional
+	Capacity *SatelliteCapacity `json:"capacity,omitempty"`
+
+	// ProviderType is the cloud provider the satellite detected from node
+	// providerID prefixes. Empty when detection found nothing.
+	// +optional
+	ProviderType string `json:"providerType,omitempty"`
+
+	// NodePools is the pool shape the satellite derived from node labels. It is
+	// present without any provider credential, which is what makes node pools
+	// visible for clusters the control plane cannot dial.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	NodePools []ClusterNodePool `json:"nodePools,omitempty"`
 }
 
 // ClusterProviderSpec selects and configures the cloud-provider integration
@@ -239,6 +322,15 @@ type ClusterSpec struct {
 	// Satellite configures outbound state reporting. Direct clusters may keep
 	// their kubeconfig deployment connection while reporting via a satellite.
 	Satellite *SatelliteSpec `json:"satellite,omitempty"`
+
+	// ManagementPolicies is this cluster's ceiling: the most any placement
+	// targeting it may do, whether the control plane dials it directly or drives
+	// it through a satellite. Unset means full management; an explicitly empty
+	// list makes the whole cluster read-only. A Stage's own policies are
+	// intersected with this ceiling, never added to it.
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	ManagementPolicies []ManagementPolicy `json:"managementPolicies,omitempty"`
 }
 
 // ClusterStatus defines the observed state of a Cluster.

@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	clusters "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/satellite"
 )
 
@@ -122,8 +123,57 @@ func retiredSessions(old *clusters.SatelliteStatus, r *satellite.Report) []strin
 	return retired
 }
 
+// reportedCapacity stamps the observation time the satellite did not send. The
+// satellite measures on every report, so the report's own arrival time is the
+// observation time; carrying it lets the console age the meter.
+func reportedCapacity(r *satellite.Report, observedAt metav1.Time) *clusters.SatelliteCapacity {
+	capacity := r.Capacity.DeepCopy()
+	capacity.ObservedAt = &observedAt
+	return capacity
+}
+
+// reportedNodePools copies the pool list so a status write cannot alias the
+// decoded report, which is reused by the retry loop on a conflict.
+func reportedNodePools(r *satellite.Report) []clusters.ClusterNodePool {
+	if len(r.NodePools) == 0 {
+		return nil
+	}
+	pools := make([]clusters.ClusterNodePool, len(r.NodePools))
+	for i := range r.NodePools {
+		pools[i] = *r.NodePools[i].DeepCopy()
+	}
+	return pools
+}
+
+// reportedPolicies records the ceiling the control plane will enforce. The
+// Cluster's spec wins because the control plane is the side that refuses a
+// write; the satellite's own claim is only used when the spec is silent, which
+// is what a registration created by auto-enrolment carries.
+func reportedPolicies(cluster *clusters.Cluster, r *satellite.Report) []clusters.ManagementPolicy {
+	if cluster.Spec.ManagementPolicies != nil {
+		return paprikav1.IntersectManagementPolicies(
+			cluster.Spec.ManagementPolicies, paprikav1.DefaultManagementPolicies())
+	}
+	return paprikav1.IntersectManagementPolicies(r.Policies, paprikav1.DefaultManagementPolicies())
+}
+
+// reportedOperatingState prefers what the satellite said. A disabled cluster is
+// the one state the control plane can assert on its own, because a disabled
+// registration stops accepting reports in the first place.
+func reportedOperatingState(cluster *clusters.Cluster, r *satellite.Report) clusters.SatelliteOperatingState {
+	if cluster.Spec.Disabled {
+		return clusters.SatelliteOperatingDisabled
+	}
+	return r.OperatingState
+}
+
 func applyReportStatus(cluster *clusters.Cluster, r *satellite.Report, state *clusters.SatelliteStatus) {
 	now := *state.LastSeen
+	state.Capacity = reportedCapacity(r, now)
+	state.NodePools = reportedNodePools(r)
+	state.ProviderType = r.ProviderType
+	state.EffectivePolicies = reportedPolicies(cluster, r)
+	state.OperatingState = reportedOperatingState(cluster, r)
 	cluster.Status.Satellite = state
 	cluster.Status.Inventory = r.Inventory.DeepCopy()
 	cluster.Status.Version = r.KubernetesVersion

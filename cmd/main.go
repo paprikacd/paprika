@@ -174,6 +174,8 @@ type cliConfig struct {
 	SatelliteCAFile               string        `mapstructure:"satellite-ca-file"`
 	SatelliteHeartbeatInterval    time.Duration `mapstructure:"satellite-heartbeat-interval"`
 	SatelliteBatchInterval        time.Duration `mapstructure:"satellite-batch-interval"`
+	SatelliteManagementPolicies   []string      `mapstructure:"satellite-management-policies"`
+	SatelliteAutonomy             string        `mapstructure:"satellite-autonomy"`
 	WebhookSecret                 string        `mapstructure:"webhook-secret"`
 	AuthRBACRules                 string        `mapstructure:"auth-rbac-rules"`
 	CacheBackend                  string        `mapstructure:"cache-backend"`

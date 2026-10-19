@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -16,6 +17,8 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clusterconfig"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/satellite"
@@ -31,6 +34,10 @@ func registerSatelliteFlags(fs *pflag.FlagSet) {
 	fs.String("satellite-ca-file", "", "Optional PEM CA bundle for the control plane.")
 	fs.Duration("satellite-heartbeat-interval", 30*time.Second, "Maximum interval between inventory reports.")
 	fs.Duration("satellite-batch-interval", 2*time.Second, "Interval for coalescing application state changes.")
+	fs.StringSlice("satellite-management-policies", []string{string(clustersv1alpha1.ManagementPolicyAll)},
+		"Management policies this satellite permits locally, comma-separated (Observe,Apply,Prune,Delete,SelfHeal,Rollout,*). Reported to the control plane; the Cluster's own ceiling is authoritative there.")
+	fs.String("satellite-autonomy", string(clustersv1alpha1.AutonomyFailover),
+		"Autonomy mode reported to the control plane: ObserveOnly, Failover or Delegated.")
 }
 
 func runSatelliteMode(ctx context.Context, cfg *cliConfig, logger logr.Logger) error {
@@ -47,11 +54,20 @@ func runSatelliteMode(ctx context.Context, cfg *cliConfig, logger logr.Logger) e
 	if err != nil {
 		return fmt.Errorf("create satellite dynamic client: %w", err)
 	}
+	autonomy, err := parseSatelliteAutonomy(cfg.SatelliteAutonomy)
+	if err != nil {
+		return err
+	}
+	policies, err := parseSatellitePolicies(cfg.SatelliteManagementPolicies)
+	if err != nil {
+		return err
+	}
 	collector, err := satellite.NewCollector(kubeClient, dynClient, satellite.Config{
 		ControlPlaneURL: cfg.SatelliteControlPlaneURL, ClusterName: cfg.SatelliteClusterName,
 		ClusterNamespace: cfg.SatelliteClusterNamespace, DisplayName: cfg.SatelliteDisplayName,
 		TokenFile: cfg.SatelliteTokenFile, CAFile: cfg.SatelliteCAFile,
 		HeartbeatInterval: cfg.SatelliteHeartbeatInterval, BatchInterval: cfg.SatelliteBatchInterval,
+		Autonomy: autonomy, ManagementPolicies: policies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure satellite: %w", err)
@@ -75,6 +91,44 @@ func runSatelliteMode(ctx context.Context, cfg *cliConfig, logger logr.Logger) e
 		return fmt.Errorf("run satellite: %w", err)
 	}
 	return nil
+}
+
+// parseSatelliteAutonomy rejects an unrecognised mode at startup rather than
+// reporting a value the control plane will refuse to store.
+func parseSatelliteAutonomy(raw string) (clustersv1alpha1.AutonomyMode, error) {
+	mode := clustersv1alpha1.AutonomyMode(strings.TrimSpace(raw))
+	if mode == "" {
+		return clustersv1alpha1.DefaultAutonomyMode(), nil
+	}
+	if !mode.Valid() {
+		return "", fmt.Errorf("satellite autonomy %q is not one of ObserveOnly, Failover or Delegated", raw)
+	}
+	return mode, nil
+}
+
+// parseSatellitePolicies validates the local policy claim. The satellite reports
+// it so the control plane can spot a registration whose two sides disagree; it
+// does not grant anything the Cluster ceiling withholds.
+func parseSatellitePolicies(raw []string) ([]clustersv1alpha1.ManagementPolicy, error) {
+	if len(raw) == 0 {
+		return paprikav1.DefaultManagementPolicies(), nil
+	}
+	policies := make([]clustersv1alpha1.ManagementPolicy, 0, len(raw))
+	for _, value := range raw {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		policy := clustersv1alpha1.ManagementPolicy(trimmed)
+		if !paprikav1.ValidManagementPolicy(policy) {
+			return nil, fmt.Errorf("satellite management policy %q is not one of Observe, Apply, Prune, Delete, SelfHeal, Rollout or *", trimmed)
+		}
+		policies = append(policies, policy)
+	}
+	if len(policies) == 0 {
+		return paprikav1.DefaultManagementPolicies(), nil
+	}
+	return policies, nil
 }
 
 // Use an uncached client for credential rotation and the report sequence fence.

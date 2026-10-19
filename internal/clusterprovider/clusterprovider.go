@@ -96,8 +96,18 @@ func ResolveType(spec *clustersv1alpha1.ClusterProviderSpec, nodes []corev1.Node
 // one cluster in exotic setups, and prefix order is stable for the prefixes
 // that matter.
 func Detect(nodes []corev1.Node) string {
+	ids := make([]string, 0, len(nodes))
 	for i := range nodes {
-		switch id := nodes[i].Spec.ProviderID; {
+		ids = append(ids, nodes[i].Spec.ProviderID)
+	}
+	return DetectProviderIDs(ids)
+}
+
+// DetectProviderIDs is Detect over providerID strings, for a caller that kept
+// only the IDs — a satellite report carries no Node objects.
+func DetectProviderIDs(providerIDs []string) string {
+	for _, id := range providerIDs {
+		switch {
 		case strings.HasPrefix(id, "vultr://"):
 			return ProviderVultr
 		case strings.HasPrefix(id, "gce://"), strings.HasPrefix(id, "gke://"):
@@ -111,6 +121,19 @@ func Detect(nodes []corev1.Node) string {
 	return ""
 }
 
+// NodePoolFacts is the per-node input pool derivation needs. It exists so a
+// caller that observed nodes through a compact transport — a satellite report
+// carries labels and allocatable, never a full Node object — derives pools with
+// the same code as a controller that lists nodes directly.
+type NodePoolFacts struct {
+	ProviderID  string
+	PoolName    string
+	MachineType string
+
+	AllocatableCPUMillis   int64
+	AllocatableMemoryBytes int64
+}
+
 // NodePoolsFromNodes derives pool membership from node labels, so a cluster
 // with no provider credential still shows a pool shape. The provider's own
 // label is preferred per integration; absent any of them, pools group by
@@ -118,12 +141,27 @@ func Detect(nodes []corev1.Node) string {
 // is still honest.
 func NodePoolsFromNodes(providerType string, nodes []corev1.Node) []clustersv1alpha1.ClusterNodePool {
 	labelKey := nodePoolLabel(providerType)
+	facts := make([]NodePoolFacts, 0, len(nodes))
+	for i := range nodes {
+		facts = append(facts, NodePoolFacts{
+			ProviderID:             nodes[i].Spec.ProviderID,
+			PoolName:               nodes[i].Labels[labelKey],
+			MachineType:            nodes[i].Labels["node.kubernetes.io/instance-type"],
+			AllocatableCPUMillis:   nodes[i].Status.Allocatable.Cpu().MilliValue(),
+			AllocatableMemoryBytes: nodes[i].Status.Allocatable.Memory().Value(),
+		})
+	}
+	return NodePoolsFromFacts(providerType, facts)
+}
+
+// NodePoolsFromFacts is NodePoolsFromNodes over already-extracted facts.
+func NodePoolsFromFacts(providerType string, facts []NodePoolFacts) []clustersv1alpha1.ClusterNodePool {
 	type poolKey struct{ name, machineType string }
 
 	pools := make(map[poolKey]*clustersv1alpha1.ClusterNodePool)
-	for i := range nodes {
-		name := nodes[i].Labels[labelKey]
-		machine := nodes[i].Labels["node.kubernetes.io/instance-type"]
+	for i := range facts {
+		name := facts[i].PoolName
+		machine := facts[i].MachineType
 		if name == "" {
 			// Unknown pool: group under the machine type rather than a literal
 			// "default", so a partial label rollout still reads sensibly.
@@ -139,8 +177,8 @@ func NodePoolsFromNodes(providerType string, nodes []corev1.Node) []clustersv1al
 			pools[key] = pool
 		}
 		pool.NodeCount++
-		pool.AllocatableCPUMillis += nodes[i].Status.Allocatable.Cpu().MilliValue()
-		pool.AllocatableMemoryBytes += nodes[i].Status.Allocatable.Memory().Value()
+		pool.AllocatableCPUMillis += facts[i].AllocatableCPUMillis
+		pool.AllocatableMemoryBytes += facts[i].AllocatableMemoryBytes
 	}
 
 	out := make([]clustersv1alpha1.ClusterNodePool, 0, len(pools))
@@ -150,6 +188,11 @@ func NodePoolsFromNodes(providerType string, nodes []corev1.Node) []clustersv1al
 	sortNodePools(out)
 	return out
 }
+
+// NodePoolLabel is the node label that names pool membership for a provider.
+// An empty key means the provider has no conventional label and pools fall back
+// to instance-type grouping.
+func NodePoolLabel(providerType string) string { return nodePoolLabel(providerType) }
 
 // nodePoolLabel is the node-pool membership label each managed provider
 // stamps. An empty key means the provider has no conventional label and

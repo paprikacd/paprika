@@ -133,6 +133,112 @@ deployment orchestration while retaining its satellite observations.
 The `in-cluster` registration continues to use the control plane's own service
 account for inventory.
 
+### Management Policies
+
+A `Cluster` declares the ceiling of what Paprika may do to it, following
+Crossplane's `managementPolicies` vocabulary. The field is on the Cluster, not
+on the satellite block, because the ceiling applies to every transport: a
+`direct` kubeconfig and a satellite report are two ways to reach the same
+cluster, and a read-only cluster is read-only either way.
+
+```yaml
+apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: edge-eu
+  namespace: paprika-system
+spec:
+  mode: agent
+  managementPolicies: [Observe]        # observations only; nothing is written
+  satellite:
+    tokenSecretRef:
+      name: edge-eu-satellite-token
+      key: token
+```
+
+| Policy | Permits |
+| --- | --- |
+| `Observe` | Reading inventory, drift, health and capacity. Never writes. |
+| `Apply` | Creating and updating managed resources, including sync hooks. |
+| `Prune` | Deleting managed resources dropped from the desired manifest set. |
+| `Delete` | Deleting managed resources when a Release is deleted. Without it, release cleanup orphans the workloads. |
+| `SelfHeal` | Re-applying drift and rolling back a degraded release without an operator asking. |
+| `Rollout` | Shifting traffic through canary, blue-green, A/B and mirror strategies. |
+| `*` | Every policy this build knows. |
+
+Three rules decide the effective set:
+
+- **Unset means full management.** A Cluster with no `managementPolicies` grants
+  everything, so every existing registration keeps working.
+- **An explicitly empty list grants nothing.** `managementPolicies: []` is the
+  way to say "registered, but manage nothing"; omitting the field is not.
+- **A Stage narrows, never widens.** `spec.stages[].managementPolicies` on an
+  `Application`, and `spec.managementPolicies` on a standalone `Stage`, are
+  intersected with the Cluster ceiling. A stage asking for `*` on an
+  `Observe`-only cluster gets `Observe`.
+
+Two failures are deliberate. A policy read that fails for any reason other than
+"no such registration" is reported rather than degraded to full management —
+assuming a ceiling away on an API blip is exactly the write an observe-only
+cluster is meant to prevent. And a withheld action parks the work instead of
+failing it: the Release stays in `Promoting` with a `PromotionPolicyWithheld`
+condition naming the refused action, and rechecks every five minutes. Widening
+the ceiling lets it proceed without a retry.
+
+`status.satellite.effectivePolicies` reports the resolved set with `*` expanded,
+so `kubectl get cluster` answers "what will Paprika actually do here" without
+re-deriving it from two specs.
+
+### Autonomy and Disconnection
+
+`spec.satellite.autonomy` records what the satellite is supposed to do while it
+cannot reach the control plane:
+
+| Mode | While connected | While disconnected |
+| --- | --- | --- |
+| `ObserveOnly` | Reports state; the control plane reconciles. | Reporting resumes when the link returns. |
+| `Failover` (default) | The control plane reconciles. | Intended: the satellite takes over after `failoverTimeout` (default `2m`). |
+| `Delegated` | Intended: the satellite always reconciles; the control plane supplies desired state. | Intended: nothing changes, because the satellite was already the reconciler. |
+
+**Current limitation.** The field, its validation, and its reporting are wired,
+but the satellite does not yet run the Application, Release or Rollout
+controllers itself. Until that lands, every mode behaves like `ObserveOnly` for
+reconciliation purposes: the control plane drives all writes, and an outage
+stops convergence. Setting `Failover` or `Delegated` today changes what the
+control plane records and displays, not what executes. Do not rely on either
+mode for outage survival yet.
+
+`status.satellite.operatingState` is where that handover will be reported.
+Today the control plane sets it to `Disabled` for a disabled registration and
+leaves it empty otherwise, because an unreported state is more honest than a
+state machine inferred from timestamps before the machine exists.
+
+### Capacity and Node Pools
+
+The satellite sums node `status.allocatable` and scheduled, non-terminal pod
+container requests on every report, and reads `metrics.k8s.io` when the cluster
+has it. The result lands in `status.satellite.capacity`; `usedKnown` says whether
+usage was actually measured, so a cluster without metrics-server reports
+requests and allocatable and marks usage unavailable rather than claiming idle.
+
+```sh
+kubectl -n paprika-system get cluster edge-eu -o json \
+  | jq '.status.satellite.capacity, .status.satellite.nodePools'
+```
+
+Node pools are derived from the provider's pool label (`vke.vultr.com/node-pool`,
+`cloud.google.com/gke-nodepool`, `eks.amazonaws.com/nodegroup`,
+`kubernetes.azure.com/agentpool`), falling back to
+`node.kubernetes.io/instance-type`. The provider type is detected from node
+`providerID` prefixes and copied into `status.provider.type`, so a cluster the
+control plane cannot dial still shows its pools. Provider-API enrichment —
+autoscaler bounds, plan sizes — still requires `spec.provider` credentials and a
+reachable API; `status.provider.state` stays `NotConfigured` until that happens.
+
+Capacity for an `agent`-mode cluster is served from the satellite report. A
+`direct` cluster keeps the live read even when it also reports through a
+satellite, because a live read is fresher than a heartbeat.
+
 ### State Transport and Reconnects
 
 One satellite Deployment runs per cluster. Shared Kubernetes watches maintain
