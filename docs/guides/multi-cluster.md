@@ -394,6 +394,16 @@ and pauses drift-triggered self-healing. It retains last-known resource status
 until the target becomes readable again; a missing remote resource is never
 inferred from the control plane's local cluster.
 
+The console follows the same rule. A resource tree, live manifest, event list
+or pod log is read from the cluster the application's active release deploys
+to, resolved through the release's stage to its `Cluster` registration. A
+`direct` cluster is read through one cached client per cluster. An `agent`
+cluster has no API the control plane may dial, so live children, node detail,
+logs and events are reported as unavailable rather than answered from the
+management cluster — the names usually exist on both, so reading the wrong one
+looks like success. The status-derived half of those views (managed resources,
+sync status, reported health) still renders.
+
 Release deletion keeps the cleanup finalizer when its Stage or target
 transport cannot be resolved. Preserve Stage and Cluster registrations and
 their credentials until Release deletion completes so cleanup can reach the
