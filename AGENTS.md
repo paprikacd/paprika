@@ -14,6 +14,12 @@ deploy changes safely, and keep the shared `paprika-e2e` namespace healthy.
 - GitHub Actions builds and pushes to `ghcr.io/paprikacd/paprika` (GHA
   `GITHUB_TOKEN` has `packages: write`). Local iteration pushes go to
   `ttl.sh/paprika-amd64:<tag>` (anonymous, TTL) as fallback.
+- CI's portable jobs move to a Cuttlefish self-hosted runner when the repo
+  variable `CUTTLEFISH_RUNS_ON` is set (JSON, e.g. `["self-hosted","cuttlefish"]`);
+  unset means `ubuntu-latest`. Fork PRs, fleet-scale, kind integration,
+  publish and deploy always stay GitHub-hosted. Keep new portable-job steps
+  runnable on macOS/arm64 (no `mapfile`, apt or hardcoded `linux_amd64`; no
+  setup-* cache on self-hosted). See `docs/guides/cuttlefish-ci.md`.
 - Images must be built for `linux/amd64` — VKE nodes are amd64 (x86_64), build
   host is Apple Silicon (arm64, QEMU emulated).
 - Vultr has no ARM plans globally; ARM VKE not feasible.

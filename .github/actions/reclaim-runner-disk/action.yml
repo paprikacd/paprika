@@ -1,0 +1,19 @@
+name: Reclaim self-hosted runner disk
+description: >-
+  Remove actions/runner diagnostics and npm logs that persist between jobs on a
+  reused self-hosted (Cuttlefish) host. A no-op on GitHub-hosted runners.
+runs:
+  using: composite
+  steps:
+    - name: Reclaim runner disk space
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -n "${RUNNER_TEMP:-}" ]]; then
+          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
+          if [[ -d "${runner_root}/_diag" ]]; then
+            find "${runner_root}/_diag" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+          fi
+        fi
+        rm -rf "${HOME}/.npm/_logs/"* 2>/dev/null || true
