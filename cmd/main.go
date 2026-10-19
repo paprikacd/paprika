@@ -386,13 +386,7 @@ func parseManagerConfig(args []string, stderr io.Writer) (*cliConfig, error) {
 }
 
 func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
-	if err := validateMode(cfg.Mode); err != nil {
-		return fmt.Errorf("validate mode: %w", err)
-	}
-	if err := validateCoordinatorConfig(cfg); err != nil {
-		return err
-	}
-	if err := validateControllerTuning(cfg); err != nil {
+	if err := validateDispatchConfig(cfg); err != nil {
 		return err
 	}
 
@@ -412,6 +406,18 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 	default:
 		return runOperatorMode(ctx, cfg, scheme, setupLog)
 	}
+}
+
+// validateDispatchConfig runs the checks every mode shares before
+// dispatchMode starts one.
+func validateDispatchConfig(cfg *cliConfig) error {
+	if err := validateMode(cfg.Mode); err != nil {
+		return fmt.Errorf("validate mode: %w", err)
+	}
+	if err := validateCoordinatorConfig(cfg); err != nil {
+		return err
+	}
+	return validateControllerTuning(cfg)
 }
 
 func (cfg *cliConfig) cacheConfig() cache.Config {

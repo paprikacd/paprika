@@ -168,7 +168,7 @@ feed:
 // onto the same closed sentence the validate endpoint reports. Backend
 // detail never reaches status — runProbe's finishQuery keeps the raw error
 // in the log, exactly as backend.Query does for tool calls.
-func (p *StatusProber) probeProvider(ctx context.Context, cr *observabilityv1alpha1.ObservabilityProvider) (connector.State, string) {
+func (p *StatusProber) probeProvider(ctx context.Context, cr *observabilityv1alpha1.ObservabilityProvider) (state connector.State, reason string) {
 	credentials, err := p.backend.resolveCredentials(ctx, cr)
 	if err != nil {
 		return connector.StateNotConfigured, reasonNotConfigured
@@ -210,7 +210,10 @@ func (p *StatusProber) writeStatus(ctx context.Context, cr *observabilityv1alpha
 		return nil
 	}
 	patch := client.MergeFrom(cr.DeepCopy())
-	return p.client.Status().Patch(ctx, updated, patch)
+	if err := p.client.Status().Patch(ctx, updated, patch); err != nil {
+		return fmt.Errorf("patch observability provider status: %w", err)
+	}
+	return nil
 }
 
 // runProbe executes the catalog entry's health probe for providerType
