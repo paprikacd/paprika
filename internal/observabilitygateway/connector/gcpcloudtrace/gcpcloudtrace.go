@@ -61,8 +61,8 @@ func (CloudTrace) ValidateConfig(config json.RawMessage) error {
 //
 //nolint:gocritic // QueryRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (CloudTrace) Query(ctx context.Context, req connector.QueryRequest) (*connector.QueryResult, error) {
-	if req.Signal != connector.SignalTraces {
-		return unsupported("gcp-cloudtrace connector supplies traces only")
+	if reason := queryShapeError(&req); reason != "" {
+		return unsupported(reason)
 	}
 	cfg, err := gcpcommon.ParseConfig(req.Config)
 	if err != nil {
@@ -79,6 +79,9 @@ func (CloudTrace) Query(ctx context.Context, req connector.QueryRequest) (*conne
 	}
 
 	path, params := requestShape(project, &req)
+	if req.PageToken != "" {
+		params.Set("pageToken", req.PageToken)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		gcpcommon.URL(cfg, defaultEndpoint, path, params), http.NoBody)
@@ -96,6 +99,19 @@ func (CloudTrace) Query(ctx context.Context, req connector.QueryRequest) (*conne
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
 }
 
+func queryShapeError(req *connector.QueryRequest) string {
+	if len(req.PageToken) > connector.MaxPageTokenBytes {
+		return "page token exceeds the maximum size"
+	}
+	if req.TraceID != "" && req.PageToken != "" {
+		return "a page token cannot be used when fetching one trace"
+	}
+	if req.Signal != connector.SignalTraces {
+		return "gcp-cloudtrace connector supplies traces only"
+	}
+	return ""
+}
+
 // requestShape picks the API path and query values for one request. TraceID
 // wins over Query — a direct fetch is the more precise interpretation of
 // what the caller asked for. An empty Query and no TraceID is the probe
@@ -106,19 +122,21 @@ func requestShape(project string, req *connector.QueryRequest) (string, url.Valu
 	}
 
 	path := tracesPath(project)
+	limit := httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit)
 	if req.Query == "" {
-		return path, url.Values{"pageSize": []string{strconv.Itoa(probeLimit)}}
+		limit = probeLimit
 	}
-
 	params := url.Values{
-		"filter":   []string{req.Query},
-		"pageSize": []string{strconv.Itoa(httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit))},
+		"pageSize": []string{strconv.Itoa(limit)},
+	}
+	if req.Query != "" {
+		params.Set("filter", req.Query)
 	}
 	if !req.Range.Start.IsZero() {
-		params.Set("startTime", req.Range.Start.Format(time.RFC3339))
+		params.Set("startTime", req.Range.Start.UTC().Format(time.RFC3339Nano))
 	}
 	if !req.Range.End.IsZero() {
-		params.Set("endTime", req.Range.End.Format(time.RFC3339))
+		params.Set("endTime", req.Range.End.UTC().Format(time.RFC3339Nano))
 	}
 	return path, params
 }

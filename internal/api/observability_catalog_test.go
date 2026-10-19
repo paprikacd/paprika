@@ -237,7 +237,7 @@ func TestValidateObservabilityProviderCarriesConnectorVerdict(t *testing.T) {
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, `"prometheus"`, string(body["type"]))
 		assert.JSONEq(t, `{"endpoint":"https://prom.example.test"}`, string(body["config"]))
-		assert.Equal(t, `"access-key-material"`, string(body["credentials"]))
+		assert.NotContains(t, body, "credentials", "offline validation must not forward credential material")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"state":  "Forbidden",
 			"reason": "the backend refused the credential",

@@ -322,7 +322,7 @@ func postForm(t *testing.T, h http.Handler, path string, form url.Values) *httpt
 func seedRefreshToken(t *testing.T, store *cache.Cache, subject, scope string) string {
 	t.Helper()
 	token := "refresh-" + subject
-	payload, err := json.Marshal(map[string]string{"sub": subject, "scope": scope})
+	payload, err := json.Marshal(refreshRecord{Audience: MCPTokenAudience, ClientID: "test", Subject: subject, Scope: scope})
 	require.NoError(t, err)
 	require.NoError(t, store.Set(context.Background(), "mcp:refresh:"+token, payload, time.Hour))
 	return token

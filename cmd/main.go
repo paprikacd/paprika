@@ -145,45 +145,46 @@ func newScheme() *runtime.Scheme {
 // the viper key, which is the flag name for flag-backed settings and a
 // kebab-case key for env-only settings.
 type cliConfig struct {
-	MetricsAddr                string        `mapstructure:"metrics-bind-address"`
-	MetricsCertPath            string        `mapstructure:"metrics-cert-path"`
-	MetricsCertName            string        `mapstructure:"metrics-cert-name"`
-	MetricsCertKey             string        `mapstructure:"metrics-cert-key"`
-	WebhookCertPath            string        `mapstructure:"webhook-cert-path"`
-	WebhookCertName            string        `mapstructure:"webhook-cert-name"`
-	WebhookCertKey             string        `mapstructure:"webhook-cert-key"`
-	ProbeAddr                  string        `mapstructure:"health-probe-bind-address"`
-	UIAddr                     string        `mapstructure:"ui-bind-address"`
-	WebhookAddr                string        `mapstructure:"webhook-bind-address"`
-	PprofAddr                  string        `mapstructure:"pprof-bind-address"`
-	OperatorNamespace          string        `mapstructure:"operator-namespace"`
-	Mode                       string        `mapstructure:"mode"`
-	K8sAPIServer               string        `mapstructure:"k8s-api-server"`
-	K8sTokenFile               string        `mapstructure:"k8s-token-file"`
-	RepoServerAddr             string        `mapstructure:"repo-server-addr"`
-	RepoWorkDir                string        `mapstructure:"repo-workdir"`
-	ObservabilityGatewayAddr   string        `mapstructure:"observability-gateway-addr"`
-	ObsProviderProbeInterval   time.Duration `mapstructure:"obs-provider-probe-interval"`
-	AgentClusterID             string        `mapstructure:"agent-cluster-id"`
-	SatelliteControlPlaneURL   string        `mapstructure:"satellite-control-plane-url"`
-	SatelliteClusterName       string        `mapstructure:"satellite-cluster-name"`
-	SatelliteClusterNamespace  string        `mapstructure:"satellite-cluster-namespace"`
-	SatelliteDisplayName       string        `mapstructure:"satellite-display-name"`
-	SatelliteTokenFile         string        `mapstructure:"satellite-token-file"`
-	SatelliteCAFile            string        `mapstructure:"satellite-ca-file"`
-	SatelliteHeartbeatInterval time.Duration `mapstructure:"satellite-heartbeat-interval"`
-	SatelliteBatchInterval     time.Duration `mapstructure:"satellite-batch-interval"`
-	WebhookSecret              string        `mapstructure:"webhook-secret"`
-	AuthRBACRules              string        `mapstructure:"auth-rbac-rules"`
-	CacheBackend               string        `mapstructure:"cache-backend"`
-	CacheRedisAddr             string        `mapstructure:"cache-redis-addr"`
-	CacheRedisPassword         string        `mapstructure:"cache-redis-password"`
-	CacheRedisDB               int           `mapstructure:"cache-redis-db"`
-	ShardID                    int           `mapstructure:"shard-id"`
-	ShardTotal                 int           `mapstructure:"shard-total"`
-	ShardIDSource              string        `mapstructure:"shard-id-source"`
-	APIMaxConns                int           `mapstructure:"api-max-conns"`
-	AuditLogEnabled            bool          `mapstructure:"audit-enabled"`
+	ObservabilityDiscoveryEnabled bool          `mapstructure:"observability-discovery-enabled"`
+	MetricsAddr                   string        `mapstructure:"metrics-bind-address"`
+	MetricsCertPath               string        `mapstructure:"metrics-cert-path"`
+	MetricsCertName               string        `mapstructure:"metrics-cert-name"`
+	MetricsCertKey                string        `mapstructure:"metrics-cert-key"`
+	WebhookCertPath               string        `mapstructure:"webhook-cert-path"`
+	WebhookCertName               string        `mapstructure:"webhook-cert-name"`
+	WebhookCertKey                string        `mapstructure:"webhook-cert-key"`
+	ProbeAddr                     string        `mapstructure:"health-probe-bind-address"`
+	UIAddr                        string        `mapstructure:"ui-bind-address"`
+	WebhookAddr                   string        `mapstructure:"webhook-bind-address"`
+	PprofAddr                     string        `mapstructure:"pprof-bind-address"`
+	OperatorNamespace             string        `mapstructure:"operator-namespace"`
+	Mode                          string        `mapstructure:"mode"`
+	K8sAPIServer                  string        `mapstructure:"k8s-api-server"`
+	K8sTokenFile                  string        `mapstructure:"k8s-token-file"`
+	RepoServerAddr                string        `mapstructure:"repo-server-addr"`
+	RepoWorkDir                   string        `mapstructure:"repo-workdir"`
+	ObservabilityGatewayAddr      string        `mapstructure:"observability-gateway-addr"`
+	ObsProviderProbeInterval      time.Duration `mapstructure:"obs-provider-probe-interval"`
+	AgentClusterID                string        `mapstructure:"agent-cluster-id"`
+	SatelliteControlPlaneURL      string        `mapstructure:"satellite-control-plane-url"`
+	SatelliteClusterName          string        `mapstructure:"satellite-cluster-name"`
+	SatelliteClusterNamespace     string        `mapstructure:"satellite-cluster-namespace"`
+	SatelliteDisplayName          string        `mapstructure:"satellite-display-name"`
+	SatelliteTokenFile            string        `mapstructure:"satellite-token-file"`
+	SatelliteCAFile               string        `mapstructure:"satellite-ca-file"`
+	SatelliteHeartbeatInterval    time.Duration `mapstructure:"satellite-heartbeat-interval"`
+	SatelliteBatchInterval        time.Duration `mapstructure:"satellite-batch-interval"`
+	WebhookSecret                 string        `mapstructure:"webhook-secret"`
+	AuthRBACRules                 string        `mapstructure:"auth-rbac-rules"`
+	CacheBackend                  string        `mapstructure:"cache-backend"`
+	CacheRedisAddr                string        `mapstructure:"cache-redis-addr"`
+	CacheRedisPassword            string        `mapstructure:"cache-redis-password"`
+	CacheRedisDB                  int           `mapstructure:"cache-redis-db"`
+	ShardID                       int           `mapstructure:"shard-id"`
+	ShardTotal                    int           `mapstructure:"shard-total"`
+	ShardIDSource                 string        `mapstructure:"shard-id-source"`
+	APIMaxConns                   int           `mapstructure:"api-max-conns"`
+	AuditLogEnabled               bool          `mapstructure:"audit-enabled"`
 
 	EnableLeaderElection bool `mapstructure:"leader-elect"`
 	SecureMetrics        bool `mapstructure:"metrics-secure"`
@@ -277,7 +278,7 @@ func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Co
 
 	root := &cobra.Command{
 		Use:           "manager",
-		Short:         "Paprika manager — operator, API, webhook, repo-server, agent and satellite modes",
+		Short:         "Paprika manager — operator, API, webhook, repo-server, agent, satellite and observability-gateway modes",
 		Version:       buildinfo.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -394,22 +395,16 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 	if err := validateControllerTuning(cfg); err != nil {
 		return err
 	}
-	return startMode(ctx, cfg, scheme, setupLog)
-}
 
-// startMode switches on the run mode and invokes its runner. Split from
-// dispatchMode so the validation guard chain and the (growing) mode table
-// each stay readable.
-func startMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
 	switch cfg.Mode {
 	case "satellite":
 		return runSatelliteMode(ctx, cfg, setupLog)
+	case "observability-gateway":
+		return runObservabilityGatewayMode(ctx, cfg, scheme, setupLog)
 	case "agent":
 		return runAgentMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.AgentClusterID, cfg.MetricsAddr, cfg.PprofAddr, setupLog)
 	case "repo-server":
 		return runRepoServerMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.RepoWorkDir, cfg.MetricsAddr, cfg.PprofAddr, scheme, setupLog, cfg.cacheConfig(), nil, nil)
-	case "observability-gateway":
-		return runObservabilityGatewayMode(ctx, cfg, scheme, setupLog)
 	case "api":
 		return runAPIMode(ctx, cfg, scheme, setupLog, nil)
 	case "webhook":
@@ -674,7 +669,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 			"connections wait in the kernel accept queue. 0 disables the limit.")
 	registerControllerTuningFlags(fs)
 	fs.String("mode", "operator",
-		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), 'agent' (apply agent), or 'satellite' (outbound state reporting). "+
+		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), 'agent' (apply agent), 'satellite' (outbound state reporting), or 'observability-gateway' (observability MCP). "+
 			"The mode subcommands are equivalent: 'manager api' == 'manager --mode=api'.")
 	fs.String("k8s-api-server", "",
 		"Kubernetes API server URL. Only used in 'api' mode.")
@@ -729,6 +724,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 // TLS/ingress); validateMCPConfig rejects --mcp-enabled=true when it is
 // unset.
 func registerMCPFlags(fs *pflag.FlagSet) {
+	fs.Bool("observability-discovery-enabled", true, "Discover annotated Services and create provider CRs; disable for a query-only least-privilege gateway")
 	fs.Bool("mcp-enabled", false,
 		"Enable the MCP (Model Context Protocol) server, exposing fleet tools to MCP clients. "+
 			"Off by default: this is the first surface that lets a language model mutate fleet state, "+

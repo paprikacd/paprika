@@ -278,7 +278,6 @@ function WizardBody({
         await client.validateObservabilityProvider({
           type: detail.type,
           configJson: new TextEncoder().encode(JSON.stringify(configObject())),
-          credentials: credential,
         }),
       )
     } catch (err) {
@@ -440,7 +439,7 @@ function WizardBody({
         ) : null}
       </div>
 
-      {/* Actions: optional probe, then commit. */}
+      {/* Offline config validation; connectivity requires an approved provider. */}
       <div className="px-3.5 py-4">
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -449,7 +448,7 @@ function WizardBody({
             onClick={() => void handleTest()}
             disabled={testing || creating || created}
           >
-            {testing ? "Testing connection..." : "Test connection"}
+            {testing ? "Validating configuration..." : "Validate configuration"}
           </Button>
           <Button type="submit" disabled={testing || creating || created}>
             {creating ? "Creating provider..." : "Create provider"}
@@ -461,7 +460,7 @@ function WizardBody({
             role="status"
             className="mt-3 text-reason text-muted-foreground"
           >
-            Testing connection.
+            Validating configuration.
           </p>
         ) : null}
 
@@ -470,13 +469,11 @@ function WizardBody({
             <div role="status" className="mt-3">
               <p className="text-reason text-neutral-800">
                 {verdict.unavailableReason ||
-                  "The observability gateway could not test this provider."}
+                  "The observability gateway could not validate this configuration."}
               </p>
             </div>
           ) : (
-            // Verdict-as-data: a reachable backend that refuses the
-            // credential still answers DATA_STATE_OK; the refusal travels
-            // in connector_state and reason.
+            // This verdict describes syntax only. No backend request is made.
             <div role="status" className="mt-3">
               <StatusPill
                 tone={connectorStateTone(verdict.connectorState)}

@@ -129,9 +129,8 @@ type catalogTypeProbeJSON struct {
 // gateway reads that as "not configured" and answers with the NotConfigured
 // verdict rather than a malformed-request error.
 type validateRequestJSON struct {
-	Type        string          `json:"type"`
-	Config      json.RawMessage `json:"config,omitempty"`
-	Credentials string          `json:"credentials,omitempty"`
+	Type   string          `json:"type"`
+	Config json.RawMessage `json:"config,omitempty"`
 }
 
 // validateResultJSON mirrors the gateway's validateResponse: the probe's
@@ -295,17 +294,9 @@ func providerTypeDetail(detail *catalogTypeJSON) *paprikav1.ProviderTypeDetail {
 	}
 }
 
-// ValidateObservabilityProvider runs the gateway's health preflight for a
-// config (and optional credential) document that has not been committed to a
-// CR yet: the cheapest read the connector accepts, proving reachability and
-// authorization before anything lands in the cluster.
-//
-// The verdict travels as data, mirroring the query tools: a reachable backend
-// that refuses the credential is DATA_STATE_OK with connector_state Forbidden
-// and the connector's fixed-sentence reason — never an error, and never a
-// DATA_STATE_FORBIDDEN, which would describe the caller's own authorization,
-// not the backend's. Only the gateway itself failing (unreachable, or a 404
-// for an unknown type) answers DATA_STATE_ERROR with the fixed sentence.
+// ValidateObservabilityProvider checks configuration syntax without backend I/O.
+// The legacy credential field is never forwarded. Connectivity and permission
+// validation require a query on an approved, namespace-authorized provider.
 func (s *PaprikaServer) ValidateObservabilityProvider(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ValidateObservabilityProviderRequest],
@@ -327,7 +318,7 @@ func (s *PaprikaServer) ValidateObservabilityProvider(
 		}), nil
 	}
 
-	body := validateRequestJSON{Type: req.Msg.Type, Credentials: req.Msg.Credentials}
+	body := validateRequestJSON{Type: req.Msg.Type}
 	if len(configJSON) > 0 {
 		body.Config = json.RawMessage(configJSON)
 	}

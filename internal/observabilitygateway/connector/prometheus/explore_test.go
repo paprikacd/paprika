@@ -55,6 +55,8 @@ func TestExploreMetricNames(t *testing.T) {
 	require.Equal(t, connector.StateOK, res.State)
 	require.JSONEq(t, `{"status":"success","data":["go_goroutines"]}`, string(res.Data))
 	require.Equal(t, "/api/v1/label/__name__/values", capture.path)
+	require.Equal(t, "1", capture.query.Get("limit"))
+	require.Equal(t, `{__name__=~".*go_.*"}`, capture.query.Get("match[]"))
 }
 
 func TestExploreMetricNamesNoFilterPassesBackendDataThrough(t *testing.T) {
@@ -88,11 +90,11 @@ func TestExploreLabelNamesGlobal(t *testing.T) {
 	require.Equal(t, "/api/v1/labels", capture.path)
 }
 
-func TestExploreLabelNamesConstrainedToMetricUnionsSeriesLabels(t *testing.T) {
+func TestExploreLabelNamesConstrainedToMetric(t *testing.T) {
 	t.Parallel()
 
 	server, capture := newExploreServer(t, map[string]string{
-		"/api/v1/series": `{"status":"success","data":[{"__name__":"up","job":"a","instance":"x"},{"__name__":"up","job":"b","instance":"y","extra":"z"}]}`,
+		"/api/v1/labels": `{"status":"success","data":["__name__","extra","instance","job"]}`,
 	})
 	res, err := Prometheus{}.Explore(context.Background(), connector.ExploreRequest{
 		Kind:   connector.ExploreLabelNames,
@@ -103,6 +105,7 @@ func TestExploreLabelNamesConstrainedToMetricUnionsSeriesLabels(t *testing.T) {
 	require.Equal(t, connector.StateOK, res.State)
 	require.JSONEq(t, `{"status":"success","data":["__name__","extra","instance","job"]}`, string(res.Data))
 	require.Equal(t, "up", capture.query.Get("match[]"))
+	require.Equal(t, "1000", capture.query.Get("limit"))
 }
 
 func TestExploreLabelValuesGlobal(t *testing.T) {
@@ -126,7 +129,7 @@ func TestExploreLabelValuesConstrainedToMetric(t *testing.T) {
 	t.Parallel()
 
 	server, capture := newExploreServer(t, map[string]string{
-		"/api/v1/series": `{"status":"success","data":[{"job":"api"},{"job":"worker"},{"job":"api"}]}`,
+		"/api/v1/label/job/values": `{"status":"success","data":["api","worker"]}`,
 	})
 	res, err := Prometheus{}.Explore(context.Background(), connector.ExploreRequest{
 		Kind:   connector.ExploreLabelValues,
@@ -138,6 +141,18 @@ func TestExploreLabelValuesConstrainedToMetric(t *testing.T) {
 	require.Equal(t, connector.StateOK, res.State)
 	require.JSONEq(t, `{"status":"success","data":["api","worker"]}`, string(res.Data))
 	require.Equal(t, "up", capture.query.Get("match[]"))
+}
+
+func TestDiscoveryLimitsPreserveBackendPartialWarnings(t *testing.T) {
+	t.Parallel()
+	server, capture := newExploreServer(t, map[string]string{
+		"/api/v1/label/job/values": `{"status":"success","data":["api","worker"],"warnings":["store unavailable"],"infos":["partial data"]}`,
+	})
+	res, err := Prometheus{}.Explore(context.Background(), connector.ExploreRequest{Kind: connector.ExploreLabelValues, Label: "job", Limit: 1, Config: endpointConfig(t, server.URL)})
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, res.State)
+	require.Equal(t, "1", capture.query.Get("limit"))
+	require.JSONEq(t, `{"status":"success","data":["api"],"warnings":["store unavailable"],"infos":["partial data"]}`, string(res.Data))
 }
 
 func TestExploreLabelValuesRequiresLabel(t *testing.T) {

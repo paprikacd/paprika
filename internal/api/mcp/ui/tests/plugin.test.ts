@@ -123,7 +123,7 @@ test("operational skill examples match the implemented tool schemas instead of o
 
 test("skills have matching names and optional setup keeps OAuth and deployed-source boundaries explicit", async () => {
   const skills = await readdir(new URL("skills/", plugin), { withFileTypes: true });
-  assert.deepEqual(skills.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(), ["paprika", "paprika-setup"]);
+  assert.deepEqual(skills.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(), ["paprika", "paprika-observe", "paprika-setup"]);
   for (const entry of skills) {
     assert.ok(!entry.isSymbolicLink(), "skills must be contained source directories");
     if (!entry.isDirectory()) continue;

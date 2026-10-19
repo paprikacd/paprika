@@ -16,8 +16,7 @@ import (
 )
 
 // validateBodyLimit caps the validate request body: the request carries a
-// config document and, optionally, a raw credential document, and a health
-// probe needs neither to be large.
+// config document; offline validation does not need a large payload.
 const validateBodyLimit = 64 << 10 // 64 KiB
 
 // Fixed sentences the catalog and validate endpoints report. They are
@@ -66,8 +65,8 @@ func CatalogTypeHandler() http.Handler {
 }
 
 // validateRequest is the POST <routePrefix>/api/validate body: the provider
-// type to probe, its connector config document, and an optional raw
-// credential document. Config stays raw so it can be re-marshaled into the
+// type and its connector config document. The legacy credentials field is
+// retained only to reject payloads explicitly. Config is re-marshaled into the
 // canonical connector document after the object check.
 type validateRequest struct {
 	Type        string          `json:"type"`
@@ -84,9 +83,9 @@ type validateResponse struct {
 	Reason string          `json:"reason,omitempty"`
 }
 
-// ValidateHandler serves POST <routePrefix>/api/validate: the health probe
-// the onboarding wizard runs before a provider is created, proving a config
-// (and credential) is reachable and authorized before it lands in a CR.
+// ValidateHandler serves POST <routePrefix>/api/validate: an offline
+// configuration shape check. It never establishes connectivity or accepts
+// credentials; active queries require an approved provider and caller RBAC.
 // Protection is RequireObserveScope, applied by the caller. The request
 // body and the credential document are never logged — at most the provider
 // type and the resulting state.
@@ -105,18 +104,18 @@ func ValidateHandler() http.Handler {
 				gatewayError{Error: "invalid_request", ErrorDescription: reasonValidateRequestInvalid})
 			return
 		}
+		if req.Credentials != "" {
+			writeGatewayJSON(w, http.StatusBadRequest,
+				gatewayError{Error: "invalid_request", ErrorDescription: "credential payloads are not accepted; use the secure administration flow"})
+			return
+		}
 		cfg, err := canonicalConfig(req.Config)
 		if err != nil {
 			writeGatewayJSON(w, http.StatusBadRequest,
 				gatewayError{Error: "invalid_request", ErrorDescription: reasonValidateRequestInvalid})
 			return
 		}
-		var credentials []byte
-		if req.Credentials != "" {
-			credentials = []byte(req.Credentials)
-		}
-
-		result, err := runProbe(r.Context(), req.Type, cfg, credentials)
+		result, err := validateProviderConfig(r.Context(), req.Type, cfg, nil)
 		if err != nil {
 			// A catalog miss and an unavailable connector carry different
 			// HTTP statuses but the same closed vocabulary: the caller
@@ -161,18 +160,14 @@ func canonicalConfig(raw json.RawMessage) (json.RawMessage, error) {
 	return cfg, nil
 }
 
-// runProbe executes the catalog entry's health probe for providerType
-// against a config (and optional credential) document that has not been
-// committed to a CR yet. The verdict travels as data — a probe is a
-// query, so backend refusals and failures come back inside the
-// QueryResult exactly as Query reports them. The error return is reserved
-// for caller bugs and deployment bugs: a type the catalog does not cover
-// (CodeNotFound) and a catalog-covered type this build has no connector
-// for (errProviderTypeUnavailable, answered 500 by the HTTP surface).
-func runProbe(ctx context.Context, providerType string, cfg json.RawMessage, credentials []byte) (*connector.QueryResult, error) {
+// validateProviderConfig deliberately performs no I/O. Observe-scoped callers
+// may describe prospective configuration, but cannot direct the gateway's
+// ambient cloud identity or network access to an arbitrary endpoint. Active
+// validation uses Query on an approved provider and its RBAC/Secret boundary.
+func validateProviderConfig(ctx context.Context, providerType string, cfg json.RawMessage, credentials []byte) (*connector.QueryResult, error) {
 	log := logr.FromContextOrDiscard(ctx)
 
-	entry, ok := catalog.Get(providerType)
+	_, ok := catalog.Get(providerType)
 	if !ok {
 		return nil, connect.NewError(connect.CodeNotFound,
 			fmt.Errorf("observability provider type %q is not in the catalog", providerType))
@@ -183,31 +178,11 @@ func runProbe(ctx context.Context, providerType string, cfg json.RawMessage, cre
 		return nil, errProviderTypeUnavailable
 	}
 
-	result, err := conn.Query(ctx, connector.QueryRequest{
-		Signal:      entry.Probe.Signal,
-		Query:       probeQuery(providerType),
-		Limit:       1,
-		Config:      cfg,
-		Credentials: credentials,
-	})
-	return finishQuery(log, providerType, providerType, result, err)
-}
-
-// probeQuery is the health probe's query expression for one provider type.
-// The Google Cloud and AWS connectors read an empty query as their
-// documented probe path; the HTTP-based open-source connectors (loki,
-// prometheus, tempo) reject an empty query as a caller bug, so the probe
-// carries the cheapest valid expression each backend accepts — an answer
-// of "no data" is still a reachability proof.
-func probeQuery(providerType string) string {
-	switch providerType {
-	case connector.ProviderPrometheus:
-		return "up"
-	case connector.ProviderLoki:
-		return `{app="paprika"}`
-	case connector.ProviderTempo:
-		return "{}"
-	default:
-		return ""
+	if len(credentials) != 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("credential payloads are not accepted; configure a provider through the secure administration flow"))
 	}
+	if err := conn.ValidateConfig(cfg); err != nil {
+		return &connector.QueryResult{State: sentinelState(err), Reason: reasonNotConfigured}, nil
+	}
+	return &connector.QueryResult{State: connector.StateOK, Reason: "configuration is valid; backend connectivity and credentials have not been tested"}, nil
 }

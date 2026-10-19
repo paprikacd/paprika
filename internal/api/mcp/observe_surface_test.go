@@ -93,7 +93,7 @@ func TestObservabilitySurfaceDiscoveryMetadata(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resource))
 	assert.Equal(t, "https://paprika.example/observe/mcp", resource.Resource)
-	assert.Equal(t, []string{"https://paprika.example"}, resource.AuthorizationServers)
+	assert.Equal(t, []string{"https://paprika.example/observe"}, resource.AuthorizationServers)
 	assert.Equal(t, []string{"paprika:observe"}, resource.ScopesSupported)
 
 	rec = httptest.NewRecorder()
@@ -110,7 +110,7 @@ func TestObservabilitySurfaceDiscoveryMetadata(t *testing.T) {
 		ScopesSupported       []string `json:"scopes_supported"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &server))
-	assert.Equal(t, "https://paprika.example", server.Issuer)
+	assert.Equal(t, "https://paprika.example/observe", server.Issuer)
 	assert.Equal(t, "https://paprika.example/observe/authorize", server.AuthorizationEndpoint)
 	assert.Equal(t, "https://paprika.example/observe/token", server.TokenEndpoint)
 	assert.Equal(t, "https://paprika.example/observe/register", server.RegistrationEndpoint)

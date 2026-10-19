@@ -1,7 +1,7 @@
 // Package tempo implements connector.Connector for Grafana Tempo's HTTP
 // API. Only the traces signal is served. A request carrying TraceID fetches
 // that one trace; otherwise a Query runs against the search endpoint with
-// start and end in Unix nanoseconds, as Tempo expects.
+// start and end in Unix seconds, as Tempo expects.
 package tempo
 
 import (

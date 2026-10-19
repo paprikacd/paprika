@@ -3,9 +3,12 @@ package observabilitygateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"sync"
 	"time"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
@@ -40,7 +43,8 @@ type toolUsage struct {
 type UsageToolSnapshot struct {
 	Name string `json:"name"`
 	// Calls is the total invocation count; Errors the subset that returned
-	// an error. Both monotonically increase for the process lifetime.
+	// an error or an MCP result with isError=true. Both monotonically increase
+	// for the process lifetime.
 	Calls      uint64    `json:"calls"`
 	Errors     uint64    `json:"errors"`
 	LastUsedAt time.Time `json:"last_used_at"`
@@ -117,7 +121,15 @@ func (t *UsageTracker) Snapshot() UsageSnapshot {
 func recordUsage(usage *UsageTracker, name string, invoke func(ctx context.Context, client v1connect.PaprikaServiceClient, args json.RawMessage) (any, error)) func(ctx context.Context, client v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
 	return func(ctx context.Context, client v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
 		result, err := invoke(ctx, client, args)
-		usage.Record(name, err)
+		outcome := err
+		if toolResult, ok := result.(*sdkmcp.CallToolResult); outcome == nil && ok && toolResult != nil && toolResult.IsError {
+			// Count the failure without copying the tool's content, provider
+			// payload or reason into telemetry or changing the returned error.
+			outcome = errProviderToolResult
+		}
+		usage.Record(name, outcome)
 		return result, err
 	}
 }
+
+var errProviderToolResult = errors.New("observability tool returned a failed provider outcome")

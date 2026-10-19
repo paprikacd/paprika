@@ -17,6 +17,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 
 	"github.com/benebsworth/paprika/internal/cache"
 )
@@ -499,11 +500,11 @@ func TestRefreshPreservesConsentedAccountAndScopes(t *testing.T) {
 	}
 }
 
-func TestLegacyRefreshRecordsKeepEmptyDisplayIdentity(t *testing.T) {
+func TestBoundRefreshRecordsKeepEmptyDisplayIdentity(t *testing.T) {
 	srv, store := newTestServerWithCache(t)
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
-	// This helper writes the old exact JSON shape: only sub and scope.
+	// Bound records may omit optional display fields without inventing them.
 	refresh := seedRefreshToken(t, store, "legacy-user", "paprika:read")
 	mcpAuth := mustAudienceAuthenticator(t, testSecret, MCPTokenAudience, testIssuer)
 	for range 2 {
@@ -654,6 +655,9 @@ func TestTokenEndpointRejectsShortCodeVerifier(t *testing.T) {
 // regardless.
 func seedAuthCode(t *testing.T, store *cache.Cache, rec authCodeRecord) string {
 	t.Helper()
+	if rec.Audience == "" {
+		rec.Audience = MCPTokenAudience
+	}
 	code := "code-" + rec.Subject
 	payload, err := json.Marshal(rec)
 	require.NoError(t, err)
@@ -1660,6 +1664,66 @@ func TestRegisterRejectsUnsafeRedirects(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rec.Code, "uris %v should be rejected", uris)
 	}
 	require.False(t, srv.clientIDAllowed("paprika-never"))
+}
+
+func TestRegisterCapacityPreservesEveryExistingClient(t *testing.T) {
+	srv := newTestServer(t)
+	const redirect = "http://127.0.0.1:8791/callback"
+	for n := range dynClientCap - 1 {
+		srv.dynClients[fmt.Sprintf("existing-%d", n)] = []string{redirect}
+	}
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+	request := registrationRequest{RedirectURIs: []string{redirect}, ClientName: "capacity-test"}
+	last := postJSON(t, mux, "/mcp/register", "", request)
+	require.Equal(t, http.StatusCreated, last.Code)
+	//nolint:tagliatelle // RFC 7591 registration response uses client_id on the wire.
+	var registered struct {
+		ClientID string `json:"client_id"`
+	}
+	require.NoError(t, json.Unmarshal(last.Body.Bytes(), &registered))
+	require.Len(t, srv.dynClients, dynClientCap)
+
+	overflow := postJSON(t, mux, "/mcp/register", "", request)
+	assert.Equal(t, http.StatusServiceUnavailable, overflow.Code)
+	assert.Equal(t, "60", overflow.Header().Get("Retry-After"))
+	var failure oauthError
+	require.NoError(t, json.Unmarshal(overflow.Body.Bytes(), &failure))
+	assert.Equal(t, "temporarily_unavailable", failure.Error)
+	assert.NotContains(t, overflow.Body.String(), "client_id")
+	require.Len(t, srv.dynClients, dynClientCap)
+	for n := range dynClientCap - 1 {
+		clientID := fmt.Sprintf("existing-%d", n)
+		require.True(t, srv.clientIDAllowed(clientID), "existing client %s must survive capacity exhaustion", clientID)
+		require.True(t, srv.isRegisteredRedirect(clientID, redirect))
+	}
+	assert.True(t, srv.clientIDAllowed(registered.ClientID))
+	assert.True(t, srv.isRegisteredRedirect(registered.ClientID, redirect))
+}
+
+func TestRegisterThrottlePreservesClientsAndCannotBeBypassedByForwardedIP(t *testing.T) {
+	srv := newTestServer(t)
+	srv.dynClients["existing-client"] = []string{"http://127.0.0.1/callback"}
+	// A zero refill rate keeps the exhausted bucket deterministic, without
+	// sleeps or timing assumptions on a busy CI runner.
+	srv.registrationLimit = rate.NewLimiter(0, 1)
+	require.True(t, srv.registrationLimit.Allow())
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+	for _, forwarded := range []string{"192.0.2.1", "192.0.2.2"} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mcp/register",
+			strings.NewReader(`{"redirect_uris":["http://127.0.0.1/callback"]}`))
+		req.Header.Set("X-Forwarded-For", forwarded)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusTooManyRequests, rec.Code)
+		assert.Equal(t, "1", rec.Header().Get("Retry-After"))
+		var failure oauthError
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &failure))
+		assert.Equal(t, "temporarily_unavailable", failure.Error)
+	}
+	assert.Len(t, srv.dynClients, 1)
+	assert.True(t, srv.clientIDAllowed("existing-client"))
 }
 
 func TestToolErrorResultMapsDomainErrors(t *testing.T) {

@@ -39,6 +39,7 @@ import (
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/gcpcommon"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
 )
 
 // exploreMaxPages bounds every metricDescriptors walk so one project with
@@ -124,21 +125,26 @@ func exploreShapeError(kind connector.ExploreKind, metric string) string {
 // `metric.type = starts_with("<prefix>")` when a prefix is set.
 func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, prefix string, limit int) *connector.ExploreResult {
 	set := map[string]struct{}{}
+	limited := false
 	filter := ""
 	if prefix != "" {
 		filter = fmt.Sprintf(`metric.type = starts_with(%q)`, prefix)
 	}
-	err := walkDescriptorPages(ctx, client, cfg, project, filter, func(page descriptorPage) bool {
+	err := walkDescriptorPages(ctx, client, cfg, project, filter, descriptorPageSize(limit), func(page descriptorPage) bool {
 		for _, raw := range page.Descriptors {
 			var head descriptorType
 			if err := json.Unmarshal(raw, &head); err == nil && head.Type != "" {
 				set[head.Type] = struct{}{}
 			}
 		}
+		limited = collectedNamesLimited(len(set), limit, page.NextToken)
 		return limit <= 0 || len(set) < limit
 	})
 	if err != nil {
 		return exploreError(err)
+	}
+	if limited {
+		return namesResult(sortedKeys(set, limit), "result limit reached; narrow the prefix to discover more names")
 	}
 	return namesResult(sortedKeys(set, limit))
 }
@@ -147,34 +153,51 @@ func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.
 // an exact metric type when Metric is set, else by the prefix.
 func exploreLabelNames(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, metric, prefix string, limit int) *connector.ExploreResult {
 	set := map[string]struct{}{}
+	limited := false
 	filter := ""
 	if metric != "" {
 		filter = fmt.Sprintf(`metric.type = %q`, metric)
 	} else if prefix != "" {
 		filter = fmt.Sprintf(`metric.type = starts_with(%q)`, prefix)
 	}
-	err := walkDescriptorPages(ctx, client, cfg, project, filter, func(page descriptorPage) bool {
-		for _, raw := range page.Descriptors {
-			var labels struct {
-				Labels []struct {
-					Key string `json:"key"`
-				} `json:"labels"`
-			}
-			if err := json.Unmarshal(raw, &labels); err != nil {
-				continue
-			}
-			for _, label := range labels.Labels {
-				if label.Key != "" {
-					set[label.Key] = struct{}{}
-				}
-			}
-		}
+	pageSize := descriptorPageSize(limit)
+	if metric != "" {
+		pageSize = 1
+	}
+	err := walkDescriptorPages(ctx, client, cfg, project, filter, pageSize, func(page descriptorPage) bool {
+		collectDescriptorLabelNames(set, &page)
+		limited = collectedNamesLimited(len(set), limit, page.NextToken)
 		return limit <= 0 || len(set) < limit
 	})
 	if err != nil {
 		return exploreError(err)
 	}
+	if limited {
+		return namesResult(sortedKeys(set, limit), "result limit reached; select a metric to discover more label names")
+	}
 	return namesResult(sortedKeys(set, limit))
+}
+
+func collectedNamesLimited(count, limit int, nextToken string) bool {
+	return limit > 0 && count >= limit && (count > limit || nextToken != "")
+}
+
+func collectDescriptorLabelNames(set map[string]struct{}, page *descriptorPage) {
+	for _, raw := range page.Descriptors {
+		var labels struct {
+			Labels []struct {
+				Key string `json:"key"`
+			} `json:"labels"`
+		}
+		if err := json.Unmarshal(raw, &labels); err != nil {
+			continue
+		}
+		for _, label := range labels.Labels {
+			if label.Key != "" {
+				set[label.Key] = struct{}{}
+			}
+		}
+	}
 }
 
 // exploreMetricMetadata returns the native descriptor JSON for one exact
@@ -182,7 +205,7 @@ func exploreLabelNames(ctx context.Context, client *http.Client, cfg gcpcommon.C
 func exploreMetricMetadata(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, metric string) *connector.ExploreResult {
 	filter := fmt.Sprintf(`metric.type = %q`, metric)
 	var match json.RawMessage
-	err := walkDescriptorPages(ctx, client, cfg, project, filter, func(page descriptorPage) bool {
+	err := walkDescriptorPages(ctx, client, cfg, project, filter, 1, func(page descriptorPage) bool {
 		for _, raw := range page.Descriptors {
 			var head descriptorType
 			if err := json.Unmarshal(raw, &head); err != nil {
@@ -211,12 +234,13 @@ func exploreMetricMetadata(ctx context.Context, client *http.Client, cfg gcpcomm
 // stopping early when visit returns false, when the token runs out, or after
 // exploreMaxPages pages. Backend and decode errors return wrapped for
 // exploreError to classify.
-func walkDescriptorPages(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, filter string, visit func(descriptorPage) bool) error {
-	params := url.Values{"pageSize": []string{strconv.Itoa(maxLimit)}}
-	if filter != "" {
-		params.Set("filter", filter)
+func walkDescriptorPages(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, filter string, pageSize int, visit func(descriptorPage) bool) error {
+	params := url.Values{
+		"pageSize": []string{strconv.Itoa(descriptorPageSize(pageSize))},
+		"filter":   []string{projectFilter(project, filter)},
 	}
 	token := ""
+	seenTokens := map[string]bool{}
 	for page := 0; page < exploreMaxPages; page++ {
 		if token != "" {
 			params.Set("pageToken", token)
@@ -246,8 +270,19 @@ func walkDescriptorPages(ctx context.Context, client *http.Client, cfg gcpcommon
 		if token == "" {
 			return nil
 		}
+		if seenTokens[token] {
+			return errors.New("schema discovery repeated a pagination token")
+		}
+		seenTokens[token] = true
 	}
-	return nil
+	return errors.New("schema discovery exceeded its pagination bound")
+}
+
+// Descriptor count is a server-side bound, distinct from the number of
+// label keys projected from each descriptor. Exact metric lookups use one;
+// broader discovery uses the caller's bounded requested result limit.
+func descriptorPageSize(limit int) int {
+	return httphelp.ClampLimit(limit, defaultLimit, maxLimit)
 }
 
 // sortedKeys returns the set's keys sorted, capped at limit when positive so
@@ -267,11 +302,12 @@ func sortedKeys(set map[string]struct{}, limit int) []string {
 // namesResult wraps a sorted string set in the {"status":"success",
 // "data":[...]} shape the reference connectors answer in, so every
 // exploration kind responds in one recognizable envelope.
-func namesResult(items []string) *connector.ExploreResult {
+func namesResult(items []string, warnings ...string) *connector.ExploreResult {
 	data, err := json.Marshal(struct {
-		Status string   `json:"status"`
-		Data   []string `json:"data"`
-	}{Status: "success", Data: items})
+		Status   string   `json:"status"`
+		Data     []string `json:"data"`
+		Warnings []string `json:"warnings,omitempty"`
+	}{Status: "success", Data: items, Warnings: warnings})
 	if err != nil {
 		return &connector.ExploreResult{State: connector.StateError, Reason: "encoding the exploration result failed"}
 	}

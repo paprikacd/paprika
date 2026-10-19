@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,16 +21,25 @@ import (
 // assumed.
 type fakeVultrAPI struct {
 	srv     *httptest.Server
+	mu      sync.Mutex
 	queries []string
 	auths   []string
+}
+
+func (f *fakeVultrAPI) recordedRequests() (queries, auths []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.queries), slices.Clone(f.auths)
 }
 
 func newFakeVultrAPI(t *testing.T, accountBandwidth, instances, instanceBandwidth string) *fakeVultrAPI {
 	t.Helper()
 	fake := &fakeVultrAPI{}
 	fake.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fake.mu.Lock()
 		fake.queries = append(fake.queries, r.URL.RequestURI())
 		fake.auths = append(fake.auths, r.Header.Get("Authorization"))
+		fake.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v2/account/bandwidth":
@@ -85,8 +96,9 @@ func TestQueryAccountBandwidth(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, connector.StateOK, res.State)
 	require.JSONEq(t, cannedAccountBandwidth, string(res.Data))
-	require.Equal(t, []string{"/v2/account/bandwidth"}, fake.queries)
-	require.Equal(t, "Bearer test-api-key", fake.auths[0])
+	queries, auths := fake.recordedRequests()
+	require.Equal(t, []string{"/v2/account/bandwidth"}, queries)
+	require.Equal(t, []string{"Bearer test-api-key"}, auths)
 }
 
 func TestQueryEmptyQueryIsProbe(t *testing.T) {
@@ -117,7 +129,7 @@ func TestQueryInstanceBandwidthFanout(t *testing.T) {
 	require.Equal(t, connector.StateOK, res.State)
 	var body struct {
 		Series []struct {
-			InstanceID string          `json:"instance_id"`
+			InstanceID string          `json:"instance_id"` //nolint:tagliatelle // Assert the existing connector wire field.
 			Label      string          `json:"label"`
 			Points     [][]interface{} `json:"points"`
 		} `json:"series"`
@@ -130,7 +142,9 @@ func TestQueryInstanceBandwidthFanout(t *testing.T) {
 	require.Equal(t, "abc-1", body.Series[0].InstanceID)
 	require.Equal(t, [][]interface{}{{"2026-10-14", float64(1000)}, {"2026-10-15", float64(3000)}}, body.Series[0].Points)
 	// One instances list read + one bandwidth read per instance.
-	require.Len(t, fake.queries, 3)
+	queries, auths := fake.recordedRequests()
+	require.Len(t, queries, 3)
+	require.Equal(t, []string{"Bearer test-api-key", "Bearer test-api-key", "Bearer test-api-key"}, auths)
 }
 
 func TestQueryUnknownMetricIsACallerBug(t *testing.T) {
@@ -160,7 +174,8 @@ func TestQueryMissingCredentialsReportsNotConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, connector.StateNotConfigured, res.State)
 	require.Equal(t, reasonCredentials, res.Reason)
-	require.Empty(t, fake.queries)
+	queries, _ := fake.recordedRequests()
+	require.Empty(t, queries)
 }
 
 func TestQueryBackendErrorsBecomeStates(t *testing.T) {
@@ -209,4 +224,40 @@ func TestExplorerInterfaceIsSatisfied(t *testing.T) {
 	t.Parallel()
 
 	var _ connector.Explorer = VultrMonitoring{}
+}
+
+func TestConfigRejectsInlineCredentialsAndUnsafeHeaders(t *testing.T) {
+	t.Parallel()
+	for name, config := range map[string]string{
+		"URL userinfo":                   `{"endpoint":"https://test-only-sentinel@api.vultr.com"}`,
+		"URL query":                      `{"endpoint":"https://api.vultr.com?token=test-only-sentinel"}`,
+		"URL fragment":                   `{"endpoint":"https://api.vultr.com#test-only-sentinel"}`,
+		"authorization":                  `{"headers":{"Authorization":"test-only-sentinel"}}`,
+		"cookie":                         `{"headers":{"Cookie":"test-only-sentinel"}}`,
+		"proxy authorization":            `{"headers":{"Proxy-Authorization":"test-only-sentinel"}}`,
+		"case insensitive authorization": `{"headers":{"aUtHoRiZaTiOn":"test-only-sentinel"}}`,
+		"invalid header":                 `{"headers":{"X-Test":"test-only-sentinel\r\nInjected: true"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := (VultrMonitoring{}).ValidateConfig(json.RawMessage(config))
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "test-only-sentinel", "configuration errors must never reproduce credential values")
+		})
+	}
+}
+
+func TestConfigPreservesVendorDefaultAndSharedOptions(t *testing.T) {
+	t.Parallel()
+	for _, config := range []string{"", "null", `{}`, `{"insecureSkipTLS":true}`, `{"headers":{"X-Scope-OrgID":"tenant-one"}}`} {
+		cfg, err := parseConfig(json.RawMessage(config))
+		require.NoError(t, err)
+		require.Equal(t, defaultEndpoint, cfg.Endpoint)
+	}
+	cfg, err := parseConfig(json.RawMessage(`{"endpoint":"https://vultr.internal.example/v2-proxy","insecureSkipTLS":true,"headers":{"X-Scope-OrgID":"tenant-one"}}`))
+	require.NoError(t, err)
+	require.Equal(t, "https://vultr.internal.example/v2-proxy", cfg.Endpoint)
+	require.True(t, cfg.InsecureSkipTLS)
+	require.Equal(t, "tenant-one", cfg.Headers["X-Scope-OrgID"])
+	// Region remains outside this account-wide connector's existing schema.
+	require.Error(t, (VultrMonitoring{}).ValidateConfig(json.RawMessage(`{"region":"lax"}`)))
 }

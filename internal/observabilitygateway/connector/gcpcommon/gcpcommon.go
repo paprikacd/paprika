@@ -48,7 +48,7 @@ import (
 var scopes = []string{
 	"https://www.googleapis.com/auth/logging.read",
 	"https://www.googleapis.com/auth/monitoring.read",
-	"https://www.googleapis.com/auth/trace.read",
+	"https://www.googleapis.com/auth/trace.readonly",
 }
 
 // Keys the strict connector configuration document may carry. Anything else
@@ -158,6 +158,9 @@ func decodeEndpoint(value json.RawMessage) (string, error) {
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", fmt.Errorf("config: key %q must be an absolute http(s) URL", configKeyEndpoint)
 	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("config: key %q must not contain userinfo, query or fragment", configKeyEndpoint)
+	}
 	return endpoint, nil
 }
 
@@ -208,19 +211,13 @@ var ErrNoAmbientCredentials = errors.New("no Google application-default credenti
 // surface as request errors from the returned client, classified by Do —
 // that is the honest report of what happened.
 //
-// InsecureSkipTLS opts the client into accepting self-signed backend
-// certificates; the insecure transport covers both the API calls and the
-// OAuth token exchange, since the token sources read their HTTP client from
-// the context (oauth2.HTTPClient is the library-sanctioned context key).
+// InsecureSkipTLS applies only to backend API calls. OAuth token exchanges
+// always verify certificates, including when the backend uses a local
+// self-signed certificate.
 func Client(ctx context.Context, credentials []byte, insecureSkipTLS bool) (*http.Client, error) {
-	if insecureSkipTLS {
-		// The credential constructors capture this context inside their
-		// token sources, so the insecure client — covering the JWT grant
-		// POST and the metadata server as well as the API calls it
-		// authorizes — must be injected before they run, not after.
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, insecureHTTPClient)
-	}
-
+	// Token exchanges must not follow redirects either: a 307/308 could
+	// otherwise replay a signed JWT or federated credential to another host.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, secureHTTPClient)
 	var tokenSource oauth2.TokenSource
 	if len(bytes.TrimSpace(credentials)) == 0 {
 		adc, err := findDefaultCredentials(ctx, scopes...)
@@ -239,19 +236,23 @@ func Client(ctx context.Context, credentials []byte, insecureSkipTLS bool) (*htt
 		case string(google.ServiceAccount), string(google.ExternalAccount),
 			string(google.ImpersonatedServiceAccount):
 		default:
-			return nil, fmt.Errorf(
-				"unsupported credential type %q; expected service_account, external_account or impersonated_service_account",
-				head.Type)
+			return nil, errors.New("unsupported credential type; expected service_account, external_account or impersonated_service_account")
 		}
 
 		creds, err := google.CredentialsFromJSONWithType(ctx, credentials, google.CredentialsType(head.Type), scopes...)
 		if err != nil {
-			return nil, fmt.Errorf("parsing credential document: %w", err)
+			// Credential loaders may quote a token URL or other fields.
+			return nil, errors.New("parsing credential document failed")
 		}
 		tokenSource = creds.TokenSource
 	}
 
-	return oauth2.NewClient(ctx, tokenSource), nil
+	client := oauth2.NewClient(ctx, tokenSource)
+	if insecureSkipTLS {
+		client.Transport = &oauth2.Transport{Source: tokenSource, Base: insecureTransport}
+	}
+	client.CheckRedirect = httphelp.RejectRedirect
+	return client, nil
 }
 
 // insecureTransport serves connectors whose config sets InsecureSkipTLS. It
@@ -270,11 +271,7 @@ var insecureTransport = &http.Transport{
 	TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 }
 
-// insecureHTTPClient serves connectors whose config sets InsecureSkipTLS.
-// It is injected into the credential-construction context too, so the OAuth
-// token exchange (JWT grant POST, metadata server) accepts the same
-// self-signed backend as the API calls it authorizes.
-var insecureHTTPClient = &http.Client{Transport: insecureTransport}
+var secureHTTPClient = &http.Client{CheckRedirect: httphelp.RejectRedirect}
 
 // URL joins the configured endpoint — or serviceDefault when the config
 // carries none — with path and the optional query values. The endpoint may
@@ -307,8 +304,7 @@ func URL(cfg Config, serviceDefault, path string, params url.Values) string {
 // There is no client-side timeout beyond req's context: the caller sets the
 // deadline.
 func Do(req *http.Request, client *http.Client) (json.RawMessage, error) {
-	//nolint:gosec // G704: the request URL is the operator-configured endpoint (validated as an absolute http(s) URL by ParseConfig) joined with a fixed connector path — not user-controlled input.
-	resp, err := client.Do(req)
+	resp, err := httphelp.DoReadRequest(req, client)
 	if err != nil {
 		return nil, fmt.Errorf("querying observability backend: %w", withoutSensitiveDetail(err))
 	}
@@ -368,11 +364,15 @@ func withoutSensitiveDetail(err error) error {
 	if errors.As(err, &retrieveErr) {
 		return errors.New("obtaining backend access token failed")
 	}
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		return urlErr.Err
+	for {
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) {
+			return err
+		}
+		// OAuth can nest the token endpoint's URL error inside the API
+		// request's URL error. Remove every URL-bearing wrapper.
+		err = urlErr.Err
 	}
-	return err
 }
 
 // ClassifyState maps an error returned by Do onto the connector state

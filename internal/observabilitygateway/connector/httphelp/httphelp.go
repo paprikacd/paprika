@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -99,12 +100,12 @@ var insecureTransport = func() *http.Transport {
 // InsecureSkipTLS. It deliberately sets no overall timeout: a query's
 // deadline belongs to the caller's context, so one slow backend cannot
 // force a process-wide latency budget on the rest.
-var sharedClient = &http.Client{Transport: sharedTransport}
+var sharedClient = &http.Client{Transport: sharedTransport, CheckRedirect: RejectRedirect}
 
 // insecureClient serves connectors whose config sets InsecureSkipTLS. It
 // has its own connection pool so verified and unverified TLS sessions
 // never share keepalive state.
-var insecureClient = &http.Client{Transport: insecureTransport}
+var insecureClient = &http.Client{Transport: insecureTransport, CheckRedirect: RejectRedirect}
 
 // ParseConfig decodes the strict connector configuration document — the
 // "endpoint" key holding an absolute http(s) URL, plus the optional
@@ -199,6 +200,9 @@ func decodeEndpoint(value json.RawMessage) (string, error) {
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", fmt.Errorf("config: key %q must be an absolute http(s) URL", configKeyEndpoint)
 	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("config: key %q must not contain userinfo, query or fragment", configKeyEndpoint)
+	}
 	return endpoint, nil
 }
 
@@ -220,6 +224,10 @@ func decodeHeaders(value json.RawMessage) (map[string]string, error) {
 	}
 	total := 0
 	for name, val := range headers {
+		switch strings.ToLower(name) {
+		case "authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "api-key", "x-auth-token", "x-access-token", "x-goog-api-key":
+			return nil, fmt.Errorf("config: key %q must not contain credential headers; use credentialsSecretRef", configKeyHeaders)
+		}
 		if !httpguts.ValidHeaderFieldName(name) {
 			return nil, fmt.Errorf("config: key %q names must be valid header field names", configKeyHeaders)
 		}
@@ -274,7 +282,7 @@ func Get(ctx context.Context, cfg Config, path string, params url.Values, creden
 	if cfg.InsecureSkipTLS {
 		client = insecureClient
 	}
-	resp, err := client.Do(req)
+	resp, err := DoReadRequest(req, client)
 	if err != nil {
 		// *url.Error quotes the full request URL — endpoint URLs can carry
 		// credential material — so the wrapper is stripped and only the
@@ -284,6 +292,136 @@ func Get(ctx context.Context, cfg Config, path string, params url.Values, creden
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort body close
 
 	return readResponse(resp)
+}
+
+// RejectRedirect keeps backend credentials and tenancy headers on the
+// configured endpoint. Even same-host redirects can switch schemes or
+// replay POST bodies; operators should configure the final API URL.
+func RejectRedirect(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
+// DoReadRequest executes an explicitly read-only backend request. GET APIs
+// and GCP's entries:list POST are safe to replay after transient statuses;
+// callers must never use this helper for mutations. It makes at most three
+// attempts with bounded, context-cancellable backoff, honoring Retry-After
+// only when it fits within the one-second retry budget. Transport errors
+// and credential denials are not retried.
+func DoReadRequest(req *http.Request, client *http.Client) (*http.Response, error) {
+	// Enforce this at the shared seam too, including clients supplied by
+	// OAuth and tests. A shallow client copy preserves connection pooling.
+	boundedClient := *client
+	boundedClient.CheckRedirect = RejectRedirect
+	for attempt := 0; ; attempt++ {
+		if err := req.Context().Err(); err != nil {
+			return nil, fmt.Errorf("backend read canceled: %w", err)
+		}
+		attemptReq, err := readAttemptRequest(req, attempt)
+		if err != nil {
+			return nil, err
+		}
+		//nolint:gosec // G704: connector callers construct this URL from a validated operator endpoint and fixed API path; redirects are refused above.
+		resp, err := boundedClient.Do(attemptReq)
+		if err != nil {
+			return nil, fmt.Errorf("performing backend read: %w", err)
+		}
+		delay, retry := retryDelay(resp, attempt)
+		if !retry || !canReplayRequest(req) {
+			return resp, nil
+		}
+		if err := closeRetryResponse(req.Context(), resp); err != nil {
+			return nil, err
+		}
+		if err := waitRetry(req.Context(), delay); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func canReplayRequest(req *http.Request) bool {
+	return req.Body == nil || req.Body == http.NoBody || req.GetBody != nil
+}
+
+func readAttemptRequest(req *http.Request, attempt int) (*http.Request, error) {
+	if attempt == 0 {
+		return req, nil
+	}
+	if !canReplayRequest(req) {
+		return nil, errors.New("backend request body cannot be replayed")
+	}
+	copyReq := req.Clone(req.Context())
+	if req.Body == nil || req.Body == http.NoBody {
+		return copyReq, nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, errors.New("recreating backend request body failed")
+	}
+	copyReq.Body = body
+	return copyReq, nil
+}
+
+func closeRetryResponse(ctx context.Context, resp *http.Response) error {
+	// A bounded drain permits keepalive reuse without consuming an arbitrary
+	// error body. Always close, and preserve context cancellation first.
+	_, drainErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 8<<10))
+	closeErr := resp.Body.Close()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("backend retry canceled: %w", err)
+	}
+	if drainErr != nil {
+		return fmt.Errorf("discarding backend retry response: %w", drainErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("closing backend retry response: %w", closeErr)
+	}
+	return nil
+}
+
+func waitRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("waiting to retry backend read: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
+}
+
+func retryDelay(resp *http.Response, attempt int) (time.Duration, bool) {
+	if attempt >= 2 {
+		return 0, false
+	}
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+	default:
+		return 0, false
+	}
+	delay := 100 * time.Millisecond * time.Duration(1<<attempt)
+	value := resp.Header.Get("Retry-After")
+	if value == "" {
+		return delay, true
+	}
+	return retryAfterDelay(value, delay)
+}
+
+func retryAfterDelay(value string, fallback time.Duration) (time.Duration, bool) {
+	if seconds, err := strconv.Atoi(value); err == nil {
+		if seconds < 0 || seconds > 1 {
+			return 0, false
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return fallback, true
+	}
+	delay := max(time.Until(when), 0)
+	if delay > time.Second {
+		return 0, false
+	}
+	return delay, true
 }
 
 // setAuth selects the Authorization header from the credential document:

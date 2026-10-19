@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
@@ -14,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	observabilityv1alpha1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
 
@@ -23,7 +25,7 @@ const defaultCredentialsKey = "credentials"
 
 // Fixed sentences a failed query reports as its Reason, chosen by sentinel
 // and never carrying backend output: endpoint URLs and response bodies can
-// hold credential material, so detail belongs in the gateway log, not in a
+// hold credential material, so raw detail is omitted from logs and any
 // result a status field or tool response renders. This is the same sanitize
 // discipline the connector package documents on QueryResult and the
 // clusterprovider package applies to its provider states.
@@ -73,7 +75,10 @@ type Backend interface {
 // no held connector state — connectors are built per call (they are
 // stateless structs; everything a query needs travels in the request).
 type k8sBackend struct {
-	client client.Client
+	client               client.Client
+	budget               *executionBudget
+	budgetOnce           sync.Once
+	credentialAuthorizer auth.Authorizer
 
 	// newConnector builds the Connector for a provider type. It exists so
 	// tests can substitute a stub at exactly the point where Query's result
@@ -82,11 +87,22 @@ type k8sBackend struct {
 	newConnector func(providerType string) (connector.Connector, error)
 }
 
-// NewBackend returns the Backend backed by client. Connector instances are
+// NewBackend returns a trusted internal Backend backed by client. Public
+// surfaces must use NewAuthorizedBackend to enforce the caller's RBAC rules.
+// Connector instances are
 // built from this package's own New per Query call — they are stateless, so
 // nothing is worth caching, and per-call state travels in QueryRequest.
 func NewBackend(client client.Client) Backend {
 	return &k8sBackend{client: client}
+}
+
+func (b *k8sBackend) executionBudget() *executionBudget {
+	b.budgetOnce.Do(func() {
+		if b.budget == nil {
+			b.budget = newExecutionBudget(maxConcurrentQuery, queryTimeout)
+		}
+	})
+	return b.budget
 }
 
 // NewConnectorRegistry registers the twelve built-in connectors. It is the
@@ -126,8 +142,16 @@ func NewConnectorRegistry() *connector.Registry {
 // ListProviders implements Backend. Status fields the CR does not carry stay
 // empty strings — this layer never invents a state.
 func (b *k8sBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
+	ctx, done, err := b.executionBudget().begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	var list observabilityv1alpha1.ObservabilityProviderList
 	if err := b.client.List(ctx, &list); err != nil {
+		if contextErr := contextError(ctx); contextErr != nil {
+			return nil, contextErr
+		}
 		return nil, fmt.Errorf("list observability providers: %w", err)
 	}
 	out := make([]ProviderInfo, 0, len(list.Items))
@@ -154,31 +178,25 @@ func (b *k8sBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) 
 //
 //nolint:gocritic // req travels by value because the Backend contract says so; QueryRequest holds only per-call state built fresh by each caller.
 func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.QueryRequest) (*connector.QueryResult, error) {
+	if err := boundQuery(&req); err != nil {
+		return nil, err
+	}
+	ctx, done, err := b.executionBudget().begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	log := logr.FromContextOrDiscard(ctx)
 
-	namespace, name, found := strings.Cut(provider, "/")
-	if !found || namespace == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("provider must be %q, got %q", "namespace/name", provider))
-	}
-
-	var cr observabilityv1alpha1.ObservabilityProvider
-	if err := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &cr); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, connect.NewError(connect.CodeNotFound,
-				fmt.Errorf("observability provider %s not found", provider))
-		}
-		return nil, fmt.Errorf("get observability provider %s: %w", provider, err)
-	}
-
-	conn, err := b.connectorFor(cr.Spec.Type)
+	cr, conn, err := b.resolveProvider(ctx, provider)
 	if err != nil {
-		// The webhook's validator is the first line against a bad type;
-		// this is defense in depth for CRs it never saw.
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, err
+	}
+	if req.PageToken != "" && !supportsQueryPageToken(cr.Spec.Type) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("this provider does not support query page tokens"))
 	}
 
-	credentials, err := b.resolveCredentials(ctx, &cr)
+	credentials, err := b.resolveCredentials(ctx, cr)
 	if err != nil {
 		return nil, err
 	}
@@ -189,9 +207,13 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 		TraceID:     req.TraceID,
 		Range:       req.Range,
 		Limit:       req.Limit,
+		PageToken:   req.PageToken,
 		Config:      cr.Spec.Config.Raw,
 		Credentials: credentials,
 	})
+	if contextErr := contextError(ctx); contextErr != nil {
+		return nil, contextErr
+	}
 	return finishQuery(log, provider, cr.Spec.Type, result, err)
 }
 
@@ -203,26 +225,19 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 //
 //nolint:gocritic // req travels by value because the Backend contract says so; ExploreRequest holds only per-call state built fresh by each caller.
 func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector.ExploreRequest) (*connector.ExploreResult, error) {
+	if err := boundExplore(&req); err != nil {
+		return nil, err
+	}
+	ctx, done, err := b.executionBudget().begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	log := logr.FromContextOrDiscard(ctx)
 
-	namespace, name, found := strings.Cut(provider, "/")
-	if !found || namespace == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("provider must be %q, got %q", "namespace/name", provider))
-	}
-
-	var cr observabilityv1alpha1.ObservabilityProvider
-	if err := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &cr); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, connect.NewError(connect.CodeNotFound,
-				fmt.Errorf("observability provider %s not found", provider))
-		}
-		return nil, fmt.Errorf("get observability provider %s: %w", provider, err)
-	}
-
-	conn, err := b.connectorFor(cr.Spec.Type)
+	cr, conn, err := b.resolveProvider(ctx, provider)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, err
 	}
 	explorer, ok := conn.(connector.Explorer)
 	if !ok {
@@ -232,7 +247,7 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 		}, nil
 	}
 
-	credentials, err := b.resolveCredentials(ctx, &cr)
+	credentials, err := b.resolveCredentials(ctx, cr)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +262,58 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 		Config:      cr.Spec.Config.Raw,
 		Credentials: credentials,
 	})
+	if contextErr := contextError(ctx); contextErr != nil {
+		return nil, contextErr
+	}
 	return finishExplore(log, provider, cr.Spec.Type, result, err)
+}
+
+// resolveProvider keeps query and discovery resolution consistent: callers
+// share reference validation, cancellation reporting and missing-provider codes.
+func (b *k8sBackend) resolveProvider(ctx context.Context, provider string) (*observabilityv1alpha1.ObservabilityProvider, connector.Connector, error) {
+	namespace, name, found := strings.Cut(provider, "/")
+	if !found || namespace == "" || name == "" || strings.Contains(name, "/") {
+		return nil, nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("provider must be %q, got %q", "namespace/name", provider))
+	}
+	var cr observabilityv1alpha1.ObservabilityProvider
+	readErr := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &cr)
+	if contextErr := contextError(ctx); contextErr != nil {
+		return nil, nil, contextErr
+	}
+	if apierrors.IsNotFound(readErr) {
+		return nil, nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("observability provider %s not found", provider))
+	}
+	if readErr != nil {
+		return nil, nil, fmt.Errorf("get observability provider %s: %w", provider, readErr)
+	}
+	conn, err := b.connectorFor(cr.Spec.Type)
+	if err != nil {
+		// Admission is the first defense; old CRs still fail closed here.
+		return nil, nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return &cr, conn, nil
+}
+
+func supportsQueryPageToken(providerType string) bool {
+	switch providerType {
+	case connector.ProviderGCPCloudLogging, connector.ProviderGCPCloudMonitoring, connector.ProviderGCPCloudTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+func boundExplore(req *connector.ExploreRequest) error {
+	limit, err := boundedLimit(req.Limit, 100)
+	if err != nil {
+		return err
+	}
+	req.Limit = limit
+	if len(req.Metric) > maxQueryBytes || len(req.Label) > maxQueryBytes || len(req.Prefix) > maxQueryBytes {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration filter exceeds its size limit"))
+	}
+	return nil
 }
 
 // finishExplore maps one Explorer outcome onto what Backend.Explore returns,
@@ -257,7 +323,7 @@ func finishExplore(log logr.Logger, provider, connectorType string, result *conn
 	if result != nil {
 		if err != nil {
 			log.Info("observability connector returned an exploration result alongside an error",
-				"provider", provider, "connector", connectorType, "error", err.Error())
+				"provider", provider, "connector", connectorType, "state", sentinelState(err))
 		}
 		return result, nil
 	}
@@ -266,21 +332,20 @@ func finishExplore(log logr.Logger, provider, connectorType string, result *conn
 			"provider", provider, "connector", connectorType)
 		return &connector.ExploreResult{State: connector.StateError, Reason: reasonQueryFailed}, nil
 	}
-	log.Info("observability backend exploration failed", "provider", provider, "connector", connectorType, "error", err.Error())
+	log.Info("observability backend exploration failed", "provider", provider, "connector", connectorType, "state", sentinelState(err))
 	return &connector.ExploreResult{State: sentinelState(err), Reason: sentinelReason(err)}, nil
 }
 
 // finishQuery maps one connector outcome onto what Backend.Query returns.
 // A result travels as-is (a dual result+error is the unsupported-shape
 // contract: log the error, hand back the result); an error alone is
-// classified onto a fixed-sentence state, with the raw text going to the log
-// only; neither is a connector contract violation and becomes a generic
+// classified onto a fixed-sentence state, with only its class logged; neither is a connector contract violation and becomes a generic
 // failure rather than a nil the caller would dereference.
 func finishQuery(log logr.Logger, provider, connectorType string, result *connector.QueryResult, err error) (*connector.QueryResult, error) {
 	if result != nil {
 		if err != nil {
 			log.Info("observability connector returned a result alongside an error",
-				"provider", provider, "connector", connectorType, "error", err.Error())
+				"provider", provider, "connector", connectorType, "state", sentinelState(err))
 		}
 		return result, nil
 	}
@@ -289,7 +354,7 @@ func finishQuery(log logr.Logger, provider, connectorType string, result *connec
 			"provider", provider, "connector", connectorType)
 		return &connector.QueryResult{State: connector.StateError, Reason: reasonQueryFailed}, nil
 	}
-	log.Info("observability backend query failed", "provider", provider, "connector", connectorType, "error", err.Error())
+	log.Info("observability backend query failed", "provider", provider, "connector", connectorType, "state", sentinelState(err))
 	return &connector.QueryResult{State: sentinelState(err), Reason: sentinelReason(err)}, nil
 }
 
@@ -317,12 +382,18 @@ func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1
 	if namespace == "" {
 		namespace = cr.Namespace
 	}
+	if err := b.authorizeCredentialNamespace(ctx, cr.Namespace, namespace); err != nil {
+		return nil, err
+	}
 	key := ref.Key
 	if key == "" {
 		key = defaultCredentialsKey
 	}
 	var secret corev1.Secret
 	err := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.Name}, &secret)
+	if contextErr := contextError(ctx); contextErr != nil {
+		return nil, contextErr
+	}
 	if apierrors.IsNotFound(err) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("credentials secret %s/%s not found", namespace, ref.Name))
@@ -330,7 +401,25 @@ func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1
 	if err != nil {
 		return nil, fmt.Errorf("get credentials secret %s/%s: %w", namespace, ref.Name, err)
 	}
-	return secret.Data[key], nil
+	credentials, present := secret.Data[key]
+	if !present || strings.TrimSpace(string(credentials)) == "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("configured credentials secret key is missing or empty"))
+	}
+	return credentials, nil
+}
+
+// A shared reference must not turn provider access in one namespace into
+// access to another tenant's Secret through the gateway service account.
+func (b *k8sBackend) authorizeCredentialNamespace(ctx context.Context, providerNamespace, secretNamespace string) error {
+	if secretNamespace == providerNamespace || b.credentialAuthorizer == nil {
+		return nil
+	}
+	principal := auth.PrincipalFromContext(ctx)
+	if principal == nil || b.credentialAuthorizer.Authorize(ctx, principal, auth.ActionRead, auth.ResourceObservabilityProviders, secretNamespace, "") != nil {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("observability credential namespace access is not authorized"))
+	}
+	return nil
 }
 
 // sentinelState maps an error a connector returned without a result onto the
@@ -352,8 +441,8 @@ func sentinelState(err error) connector.State {
 }
 
 // sentinelReason is the fixed sentence paired with sentinelState. The
-// sentences are deliberately closed and generic — the raw error text went to
-// the log at the call site, never into a reason.
+// sentences are deliberately closed and generic; raw error text is never
+// logged or included in a reason.
 func sentinelReason(err error) string {
 	switch {
 	case errors.Is(err, connector.ErrForbidden):

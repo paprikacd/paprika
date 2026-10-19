@@ -2,11 +2,9 @@
 // Logging's entries:list API. Only the logs signal is served, and queries
 // carry the Logging advanced logs filter.
 //
-// The advanced logs filter owns time: QueryRequest.Range is deliberately not
-// translated into filter constraints, because synthesizing `timestamp >= ...`
-// clauses would fight a filter the caller already wrote (duplicate
-// constraints are an API error), and an empty filter is the honest probe
-// path — the API reads it as "most recent entries".
+// QueryRequest.Range is intersected with the advanced filter using indexed
+// timestamp restrictions. Parentheses keep OR expressions inside the caller's
+// filter from bypassing the gateway's time bounds.
 package gcpcloudlogging
 
 import (
@@ -16,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/gcpcommon"
@@ -63,12 +63,14 @@ func (CloudLogging) ValidateConfig(config json.RawMessage) error {
 //
 //nolint:gocritic // QueryRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (CloudLogging) Query(ctx context.Context, req connector.QueryRequest) (*connector.QueryResult, error) {
-	if req.Signal != connector.SignalLogs {
-		return unsupported("gcp-cloudlogging connector supplies logs only")
+	if reason := queryShapeError(&req); reason != "" {
+		return unsupported(reason)
 	}
-	if req.TraceID != "" {
-		return unsupported("a trace ID cannot be fetched from cloud logging")
+	filter, err := gcpcommon.PrepareFilter(req.Query, true)
+	if err != nil {
+		return unsupported(err.Error())
 	}
+	req.Query = filter
 	cfg, err := gcpcommon.ParseConfig(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("gcp-cloudlogging: %w", err)
@@ -83,17 +85,16 @@ func (CloudLogging) Query(ctx context.Context, req connector.QueryRequest) (*con
 		return result, credErr
 	}
 
-	// The caller's filter owns time, so QueryRequest.Range is not translated
-	// into filter constraints; see the package doc.
 	limit := httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit)
 	if req.Query == "" {
 		limit = httphelp.ClampLimit(req.Limit, probeLimit, maxLimit)
 	}
 	body, err := json.Marshal(entriesListRequest{
 		ResourceNames: []string{"projects/" + project},
-		Filter:        req.Query,
+		Filter:        boundedFilter(req.Query, req.Range),
 		PageSize:      limit,
 		OrderBy:       "timestamp desc",
+		PageToken:     req.PageToken,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gcp-cloudlogging: building entries:list body: %w", err)
@@ -116,6 +117,36 @@ func (CloudLogging) Query(ctx context.Context, req connector.QueryRequest) (*con
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
 }
 
+func queryShapeError(req *connector.QueryRequest) string {
+	if len(req.PageToken) > connector.MaxPageTokenBytes {
+		return "page token exceeds the maximum size"
+	}
+	if req.Signal != connector.SignalLogs {
+		return "gcp-cloudlogging connector supplies logs only"
+	}
+	if req.TraceID != "" {
+		return "a trace ID cannot be fetched from cloud logging"
+	}
+	return ""
+}
+
+func boundedFilter(query string, window connector.TimeRange) string {
+	parts := make([]string, 0, 3)
+	if query != "" {
+		if window.Start.IsZero() && window.End.IsZero() {
+			return query
+		}
+		parts = append(parts, "("+query+")")
+	}
+	if !window.Start.IsZero() {
+		parts = append(parts, fmt.Sprintf("timestamp >= %q", window.Start.UTC().Format(time.RFC3339Nano)))
+	}
+	if !window.End.IsZero() {
+		parts = append(parts, fmt.Sprintf("timestamp <= %q", window.End.UTC().Format(time.RFC3339Nano)))
+	}
+	return strings.Join(parts, " AND ")
+}
+
 // entriesListRequest is the Cloud Logging entries:list request body. The
 // filter is omitted entirely when empty — the API reads an absent filter as
 // "all entries, most recent first".
@@ -124,6 +155,7 @@ type entriesListRequest struct {
 	Filter        string   `json:"filter,omitempty"`
 	PageSize      int      `json:"pageSize"`
 	OrderBy       string   `json:"orderBy"`
+	PageToken     string   `json:"pageToken,omitempty"`
 }
 
 // unsupported builds the result — and error — for a query shape the

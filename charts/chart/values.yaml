@@ -706,8 +706,9 @@ repoServer:
 ## Deployment in split mode and serves https://<mcp.publicURL>/observe/mcp with
 ## the paprika:observe scope and paprika-observability token audience — tokens
 ## minted for the console MCP surface at /mcp are not valid here and vice
-## versa. Requires mcp.enabled, auth.enabled, deploymentMode: split, and the
-## shared HMAC token secret via extraEnv/extraEnvFrom.
+## versa. Requires auth.enabled, deploymentMode: split, mcp.publicURL, and the
+## shared HMAC token secret via extraEnv/extraEnvFrom. mcp.enabled controls the
+## independent fleet surface and may remain false for a gateway-only install.
 ##
 observabilityGateway:
   enabled: false
@@ -717,6 +718,25 @@ observabilityGateway:
   ## reachability verdict (state, reason, Ready condition) onto each CR's
   ## status. 0 disables status writes.
   probeInterval: 5m
+
+  # The OAuth dynamic client registry is process-local. Prevent overlapping
+  # pods during upgrades; users must re-register after a process restart.
+  strategy:
+    type: Recreate
+
+  # Existing service account for a separately approved least-privilege identity.
+  # Empty retains the release service account; this chart grants no extra
+  # permissions to a custom identity.
+  serviceAccountName: ""
+
+  # Disable for manually approved providers and a query-only service account.
+  discovery:
+    enabled: true
+
+  # Additional NetworkPolicy egress rules for explicitly selected in-cluster
+  # providers (for example a Prometheus podSelector and TCP port 9090).
+  # Empty does not grant access to nonstandard backend ports.
+  additionalEgress: []
 
   image:
     repository: controller
@@ -979,10 +999,12 @@ mcp:
   refreshTokenTTL: "720h"
   oauth:
     # -- Statically registered OAuth client ID accepted by the MCP
-    # authorization server. Required when mcp.enabled=true.
+    # authorization server. Required for the fleet when mcp.enabled=true;
+    # the gateway permits both OAuth fields empty for dynamic registration only.
     clientId: ""
     # -- Exact-match allowlist of OAuth redirect URIs accepted by the MCP
-    # authorization server. Required (non-empty) when mcp.enabled=true.
+    # authorization server. Required (non-empty) for the fleet when
+    # mcp.enabled=true; the gateway requires both fields configured or both empty.
     redirectUris: []
   # -- Externally-reachable base URL of this API server, e.g.
   # "https://paprika.example.com". Embedded in RFC 9728/8414 discovery

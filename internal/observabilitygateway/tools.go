@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"connectrpc.com/connect"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
@@ -25,6 +27,18 @@ const defaultQueryWindow = 30 * time.Minute
 // result; the full payload always travels in structuredContent (see
 // mcp.PreviewToolResult).
 const textPreviewMaxBytes = 16 << 10
+
+// providerToolPreview preserves the provider's structured verdict and data,
+// while ensuring MCP clients also see a failed tool outcome for non-OK states.
+// Warnings accompanying an OK result describe partial data, not a failed call.
+func providerToolPreview(value any, state connector.State) (*sdkmcp.CallToolResult, error) {
+	result, err := mcp.PreviewToolResult(value, textPreviewMaxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("render observability provider result: %w", err)
+	}
+	result.IsError = state != connector.StateOK
+	return result, nil
+}
 
 // RegisterTools registers the observability gateway's thirteen MCP tools on
 // registry. Every tool is read-only and carries ScopeObserve: querying logs,
@@ -90,7 +104,41 @@ func decodeArgs(raw json.RawMessage) (toolArgs, error) {
 	if m == nil {
 		m = map[string]any{}
 	}
+	if err := validateToolLimit(toolArgs(m)); err != nil {
+		return nil, err
+	}
+	if err := validateToolPageToken(toolArgs(m)); err != nil {
+		return nil, err
+	}
+
 	return toolArgs(m), nil
+}
+
+func validateToolLimit(in toolArgs) error {
+	rawLimit, present := in["limit"]
+	if !present {
+		return nil
+	}
+	limit, ok := rawLimit.(float64)
+	if !ok || math.Trunc(limit) != limit || limit < 1 || limit > maxQueryResults {
+		return errors.New("limit must be an integer between 1 and 1000")
+	}
+	return nil
+}
+
+func validateToolPageToken(in toolArgs) error {
+	rawToken, present := in["page_token"]
+	if !present {
+		return nil
+	}
+	token, ok := rawToken.(string)
+	if !ok || len(token) > connector.MaxPageTokenBytes {
+		return errors.New("page_token must be a string of at most 4096 bytes")
+	}
+	if token != "" && (in.string("start") == "" || in.string("end") == "") {
+		return errors.New("page_token requires explicit start and end matching the original query")
+	}
+	return nil
 }
 
 func (a toolArgs) string(key string) string {
@@ -122,6 +170,11 @@ func requiredString(in toolArgs, tool, key string) (string, error) {
 
 // parseTimeArg reads one optional RFC3339 timestamp argument.
 func parseTimeArg(in toolArgs, key string) (time.Time, error) {
+	if value, present := in[key]; present {
+		if _, ok := value.(string); !ok {
+			return time.Time{}, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s must be an RFC3339 timestamp", key))
+		}
+	}
 	raw := in.string(key)
 	if raw == "" {
 		return time.Time{}, nil
@@ -151,7 +204,8 @@ func queryWindow(in toolArgs) (connector.TimeRange, error) {
 	if start.IsZero() {
 		start = end.Add(-defaultQueryWindow)
 	}
-	return connector.TimeRange{Start: start, End: end}, nil
+	window := connector.TimeRange{Start: start, End: end}
+	return window, validateWindow(window)
 }
 
 // limitArg reads an optional result limit, defaulting an absent or
@@ -278,55 +332,20 @@ func getObservabilityProviderTool(b Backend) mcp.Tool {
 }
 
 func queryMetricsTool(b Backend) mcp.Tool {
-	return mcp.Tool{
-		Name:        "query_metrics",
-		Description: "Run a PromQL query through a configured observability provider. Read-only; start and end default to the trailing thirty minutes.",
-		Scope:       mcp.ScopeObserve,
-		InputSchema: json.RawMessage(`{
-			"type":"object",
-			"properties":{
-				"provider":{"type":"string"},
-				"query":{"type":"string"},
-				"start":{"type":"string"},
-				"end":{"type":"string"}
-			},
-			"required":["provider","query"],
-			"additionalProperties":false
-		}`),
-		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
-			in, err := decodeArgs(args)
-			if err != nil {
-				return nil, connect.NewError(connect.CodeInvalidArgument, err)
-			}
-			provider, err := requiredString(in, "query_metrics", "provider")
-			if err != nil {
-				return nil, err
-			}
-			query, err := requiredString(in, "query_metrics", "query")
-			if err != nil {
-				return nil, err
-			}
-			window, err := queryWindow(in)
-			if err != nil {
-				return nil, err
-			}
-			result, err := b.Query(ctx, provider, connector.QueryRequest{
-				Signal: connector.SignalMetrics,
-				Query:  query,
-				Range:  window,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("query_metrics: %w", err)
-			}
-			return mcp.PreviewToolResult(queryToolResponse(provider, "metrics", result), textPreviewMaxBytes)
-		},
-	}
+	return nativeQueryTool(b, connector.SignalMetrics)
 }
 
 func queryLogsTool(b Backend) mcp.Tool {
+	return nativeQueryTool(b, connector.SignalLogs)
+}
+
+// Metrics and logs share the same bounded query contract; only the native
+// signal selects the connector's query language and response label.
+func nativeQueryTool(b Backend, signal connector.Signal) mcp.Tool {
+	name := "query_" + string(signal)
 	return mcp.Tool{
-		Name:        "query_logs",
-		Description: "Run a LogQL query through a configured observability provider. Read-only; start and end default to the trailing thirty minutes, limit defaults to 100.",
+		Name:        name,
+		Description: fmt.Sprintf("Run a %s query in the configured provider's native query language. Read-only; start and end default to the trailing thirty minutes, with a maximum window of 24 hours. Limit defaults to 100 (maximum 1000).", signal),
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{
 			"type":"object",
@@ -335,7 +354,8 @@ func queryLogsTool(b Backend) mcp.Tool {
 				"query":{"type":"string"},
 				"start":{"type":"string"},
 				"end":{"type":"string"},
-				"limit":{"type":"integer","default":100}
+				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100},
+				"page_token":{"type":"string","maxLength":4096,"description":"GCP continuation token; resend the original query, start, end and limit unchanged"}
 			},
 			"required":["provider","query"],
 			"additionalProperties":false
@@ -345,11 +365,11 @@ func queryLogsTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
-			provider, err := requiredString(in, "query_logs", "provider")
+			provider, err := requiredString(in, name, "provider")
 			if err != nil {
 				return nil, err
 			}
-			query, err := requiredString(in, "query_logs", "query")
+			query, err := requiredString(in, name, "query")
 			if err != nil {
 				return nil, err
 			}
@@ -358,15 +378,16 @@ func queryLogsTool(b Backend) mcp.Tool {
 				return nil, err
 			}
 			result, err := b.Query(ctx, provider, connector.QueryRequest{
-				Signal: connector.SignalLogs,
-				Query:  query,
-				Range:  window,
-				Limit:  limitArg(in, 100),
+				Signal:    signal,
+				Query:     query,
+				Range:     window,
+				Limit:     limitArg(in, 100),
+				PageToken: in.string("page_token"),
 			})
 			if err != nil {
-				return nil, fmt.Errorf("query_logs: %w", err)
+				return nil, fmt.Errorf("%s: %w", name, err)
 			}
-			return mcp.PreviewToolResult(queryToolResponse(provider, "logs", result), textPreviewMaxBytes)
+			return providerToolPreview(queryToolResponse(provider, string(signal), result), result.State)
 		},
 	}
 }
@@ -374,7 +395,7 @@ func queryLogsTool(b Backend) mcp.Tool {
 func queryTracesTool(b Backend) mcp.Tool {
 	return mcp.Tool{
 		Name:        "query_traces",
-		Description: "Query traces through a configured observability provider, either with a TraceQL query or by trace ID (at least one of query or trace_id is required). Read-only; start and end default to the trailing thirty minutes.",
+		Description: "Query traces in the configured provider's native query language or by trace ID (at least one of query or trace_id is required). Read-only; start and end default to the trailing thirty minutes, with a maximum window of 24 hours. Limit defaults to 100 (maximum 1000).",
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{
 			"type":"object",
@@ -384,7 +405,8 @@ func queryTracesTool(b Backend) mcp.Tool {
 				"trace_id":{"type":"string"},
 				"start":{"type":"string"},
 				"end":{"type":"string"},
-				"limit":{"type":"integer"}
+				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100},
+				"page_token":{"type":"string","maxLength":4096,"description":"GCP continuation token; resend the original query, start, end and limit unchanged"}
 			},
 			"required":["provider"],
 			"additionalProperties":false
@@ -409,16 +431,17 @@ func queryTracesTool(b Backend) mcp.Tool {
 				return nil, err
 			}
 			result, err := b.Query(ctx, provider, connector.QueryRequest{
-				Signal:  connector.SignalTraces,
-				Query:   query,
-				TraceID: traceID,
-				Range:   window,
-				Limit:   in.int("limit"),
+				Signal:    connector.SignalTraces,
+				Query:     query,
+				TraceID:   traceID,
+				Range:     window,
+				Limit:     limitArg(in, 100),
+				PageToken: in.string("page_token"),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("query_traces: %w", err)
 			}
-			return mcp.PreviewToolResult(queryToolResponse(provider, "traces", result), textPreviewMaxBytes)
+			return providerToolPreview(queryToolResponse(provider, "traces", result), result.State)
 		},
 	}
 }
@@ -450,7 +473,7 @@ func exploreToolResponse(provider string, kind connector.ExploreKind, result *co
 func listMetricNamesTool(b Backend) mcp.Tool {
 	return mcp.Tool{
 		Name:        "list_metric_names",
-		Description: "List the metric names a metrics observability provider exposes, so you can work out what to query before writing a query. Optional prefix filters to names containing the substring; limit defaults to the backend's full list. The optional namespace scopes AWS CloudWatch metrics enumeration to one namespace; other provider types ignore it.",
+		Description: "List metric names before writing a query. Optional prefix filters to names containing the substring; limit defaults to 100 (maximum 1000). The optional namespace scopes AWS CloudWatch metrics enumeration; other provider types ignore it.",
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{
 			"type":"object",
@@ -458,7 +481,7 @@ func listMetricNamesTool(b Backend) mcp.Tool {
 				"provider":{"type":"string"},
 				"prefix":{"type":"string"},
 				"namespace":{"type":"string"},
-				"limit":{"type":"integer"}
+				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
 			},
 			"required":["provider"],
 			"additionalProperties":false
@@ -475,13 +498,13 @@ func listMetricNamesTool(b Backend) mcp.Tool {
 			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
 				Kind:   connector.ExploreMetricNames,
 				Prefix: in.string("prefix"),
-				Limit:  in.int("limit"),
+				Limit:  limitArg(in, 100),
 				Params: exploreParams(in),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("list_metric_names: %w", err)
 			}
-			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreMetricNames, result), textPreviewMaxBytes)
+			return providerToolPreview(exploreToolResponse(provider, connector.ExploreMetricNames, result), result.State)
 		},
 	}
 }
@@ -506,7 +529,8 @@ func listLabelNamesTool(b Backend) mcp.Tool {
 			"properties":{
 				"provider":{"type":"string"},
 				"metric":{"type":"string"},
-				"namespace":{"type":"string"}
+				"namespace":{"type":"string"},
+				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
 			},
 			"required":["provider"],
 			"additionalProperties":false
@@ -522,13 +546,14 @@ func listLabelNamesTool(b Backend) mcp.Tool {
 			}
 			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
 				Kind:   connector.ExploreLabelNames,
+				Limit:  limitArg(in, 100),
 				Metric: in.string("metric"),
 				Params: exploreParams(in),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("list_label_names: %w", err)
 			}
-			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreLabelNames, result), textPreviewMaxBytes)
+			return providerToolPreview(exploreToolResponse(provider, connector.ExploreLabelNames, result), result.State)
 		},
 	}
 }
@@ -544,7 +569,8 @@ func listLabelValuesTool(b Backend) mcp.Tool {
 				"provider":{"type":"string"},
 				"label":{"type":"string"},
 				"metric":{"type":"string"},
-				"namespace":{"type":"string"}
+				"namespace":{"type":"string"},
+				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
 			},
 			"required":["provider","label"],
 			"additionalProperties":false
@@ -564,6 +590,7 @@ func listLabelValuesTool(b Backend) mcp.Tool {
 			}
 			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
 				Kind:   connector.ExploreLabelValues,
+				Limit:  limitArg(in, 100),
 				Label:  label,
 				Metric: in.string("metric"),
 				Params: exploreParams(in),
@@ -571,7 +598,7 @@ func listLabelValuesTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, fmt.Errorf("list_label_values: %w", err)
 			}
-			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreLabelValues, result), textPreviewMaxBytes)
+			return providerToolPreview(exploreToolResponse(provider, connector.ExploreLabelValues, result), result.State)
 		},
 	}
 }
@@ -585,7 +612,8 @@ func getMetricMetadataTool(b Backend) mcp.Tool {
 			"type":"object",
 			"properties":{
 				"provider":{"type":"string"},
-				"metric":{"type":"string"}
+				"metric":{"type":"string"},
+				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
 			},
 			"required":["provider","metric"],
 			"additionalProperties":false
@@ -605,12 +633,13 @@ func getMetricMetadataTool(b Backend) mcp.Tool {
 			}
 			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
 				Kind:   connector.ExploreMetricMetadata,
+				Limit:  limitArg(in, 100),
 				Metric: metric,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("get_metric_metadata: %w", err)
 			}
-			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreMetricMetadata, result), textPreviewMaxBytes)
+			return providerToolPreview(exploreToolResponse(provider, connector.ExploreMetricMetadata, result), result.State)
 		},
 	}
 }
@@ -623,7 +652,8 @@ func listTraceServicesTool(b Backend) mcp.Tool {
 		InputSchema: json.RawMessage(`{
 			"type":"object",
 			"properties":{
-				"provider":{"type":"string"}
+				"provider":{"type":"string"},
+				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
 			},
 			"required":["provider"],
 			"additionalProperties":false
@@ -638,12 +668,13 @@ func listTraceServicesTool(b Backend) mcp.Tool {
 				return nil, err
 			}
 			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
-				Kind: connector.ExploreTraceServices,
+				Kind:  connector.ExploreTraceServices,
+				Limit: limitArg(in, 100),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("list_trace_services: %w", err)
 			}
-			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreTraceServices, result), textPreviewMaxBytes)
+			return providerToolPreview(exploreToolResponse(provider, connector.ExploreTraceServices, result), result.State)
 		},
 	}
 }
@@ -712,20 +743,18 @@ type validateToolResult struct {
 	ObservedAt string          `json:"observedAt"`
 }
 
-// validateProviderTool is the validate_provider tool: the same health probe
-// the HTTP validate endpoint serves, for a config (and optional credential)
-// document that has not been committed to a CR yet.
+// validateProviderTool validates the shape of a prospective configuration.
+// It never contacts a backend or accepts credential material.
 func validateProviderTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "validate_provider",
-		Description: "Probe a prospective observability provider configuration before creating it: runs the provider type's cheapest health-check read against the given config and optional credential, and reports the verdict (OK, Forbidden, NotConfigured, NotAvailable or Error). Read-only; never creates or mutates a provider.",
+		Description: "Validate a prospective provider configuration locally without contacting any backend or accepting credentials. OK means the configuration shape is valid; it does not establish connectivity or credential access. Query an approved provider to test access.",
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{
 			"type":"object",
 			"properties":{
 				"type":{"type":"string"},
-				"config":{"type":"object"},
-				"credentials":{"type":"string"}
+				"config":{"type":"object"}
 			},
 			"required":["type"],
 			"additionalProperties":false
@@ -743,12 +772,11 @@ func validateProviderTool() mcp.Tool {
 			if err != nil {
 				return nil, err
 			}
-			var credentials []byte
-			if c := in.string("credentials"); c != "" {
-				credentials = []byte(c)
+			if _, present := in["credentials"]; present {
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("credential payloads are not accepted; configure a provider through the secure administration flow"))
 			}
 
-			result, err := runProbe(ctx, providerType, cfg, credentials)
+			result, err := validateProviderConfig(ctx, providerType, cfg, nil)
 			if err != nil {
 				return nil, fmt.Errorf("validate_provider: %w", err)
 			}

@@ -1,15 +1,22 @@
 {{- if .Values.observabilityGateway.enabled }}
+{{- if or (ne (int .Values.observabilityGateway.replicas) 1) .Values.observabilityGateway.hpa.enabled }}
+{{- fail "observabilityGateway requires one replica and hpa.enabled=false while OAuth dynamic client registrations are process-local" }}
+{{- end }}
+{{- if ne (default "Recreate" .Values.observabilityGateway.strategy.type) "Recreate" }}
+{{- fail "observabilityGateway.strategy.type must be Recreate while OAuth dynamic client registrations are process-local" }}
+{{- end }}
 {{- if ne .Values.deploymentMode "split" }}
 {{- fail "observabilityGateway.enabled=true requires deploymentMode: split. The gateway is its own microservice Deployment with its own MCP/OAuth surface; the monolith manager does not render it, which would otherwise be a silent no-op." }}
-{{- end }}
-{{- if not .Values.mcp.enabled }}
-{{- fail "observabilityGateway.enabled=true requires mcp.enabled: the gateway mints and verifies OAuth tokens with the deployment's MCP configuration (public URL, static client, TTLs) and refuses to start without it" }}
 {{- end }}
 {{- if not .Values.auth.enabled }}
 {{- fail "observabilityGateway.enabled=true requires auth.enabled: the gateway's authorize/consent surface authenticates console users; unauthenticated it would mint observability tokens for anyone" }}
 {{- end }}
 {{- $gwHasTokenSecret := false }}
+{{- $gwHasRBACRules := and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
 {{- range .Values.observabilityGateway.extraEnv }}
+{{- if and $gwHasRBACRules (eq .name "PAPRIKA_AUTH_RBAC_RULES") }}
+{{- fail "PAPRIKA_AUTH_RBAC_RULES must not be set in observabilityGateway.extraEnv when auth.rbac is configured" }}
+{{- end }}
 {{- if eq .name "PAPRIKA_AUTH_TOKEN_SECRET" }}
 {{- $gwHasTokenSecret = true }}
 {{- end }}
@@ -17,11 +24,8 @@
 {{- if and (not $gwHasTokenSecret) (eq (len .Values.observabilityGateway.extraEnvFrom) 0) }}
 {{- fail "observabilityGateway.enabled=true requires a non-empty auth token secret: set PAPRIKA_AUTH_TOKEN_SECRET via observabilityGateway.extraEnv or observabilityGateway.extraEnvFrom (the gateway signs and verifies paprika-observability tokens with the same HMAC secret the api-server's self-signed authenticator uses)" }}
 {{- end }}
-{{- if not .Values.mcp.oauth.clientId }}
-{{- fail "observabilityGateway.enabled=true requires mcp.oauth.clientId (shared with the api-server's MCP surface)" }}
-{{- end }}
-{{- if eq (len .Values.mcp.oauth.redirectUris) 0 }}
-{{- fail "observabilityGateway.enabled=true requires mcp.oauth.redirectUris (shared with the api-server's MCP surface)" }}
+{{- if ne (empty .Values.mcp.oauth.clientId) (empty .Values.mcp.oauth.redirectUris) }}
+{{- fail "observabilityGateway static OAuth clientId and redirectUris must both be configured or both omitted for dynamic registration only" }}
 {{- end }}
 {{- if not .Values.mcp.publicURL }}
 {{- fail "observabilityGateway.enabled=true requires mcp.publicURL: the gateway's discovery metadata, token issuer, and consent redirects are all derived from it" }}
@@ -98,6 +102,7 @@ spec:
       containers:
       - args:
         - --mode=observability-gateway
+        - --observability-discovery-enabled={{ .Values.observabilityGateway.discovery.enabled }}
         - --health-probe-bind-address=:8081
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- include "paprika.authArgs" . | nindent 8 }}
@@ -106,8 +111,10 @@ spec:
         # carry the paprika-observability audience, not paprika-mcp.
         - --mcp-access-token-ttl={{ .Values.mcp.accessTokenTTL }}
         - --mcp-refresh-token-ttl={{ .Values.mcp.refreshTokenTTL }}
+        {{- if .Values.mcp.oauth.clientId }}
         - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
         - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}
+        {{- end }}
         # The provider-status prober re-runs the catalog's per-type health
         # probe on this interval and patches the verdict onto each CR's
         # status (0 disables status writes).
@@ -172,6 +179,12 @@ spec:
         {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}
+        {{- if $gwHasRBACRules }}
+        # Rules are nonsecret configuration. Inline JSON keeps the standalone
+        # add-on independent of the main release's auth ConfigMap.
+        - name: PAPRIKA_AUTH_RBAC_RULES
+          value: {{ .Values.auth.rbac | toJson | quote }}
+        {{- end }}
         {{- if .Values.mtls.enabled }}
         - name: PAPRIKA_MTLS_ENABLED
           value: "true"
@@ -189,7 +202,7 @@ spec:
         envFrom:
         {{- include "paprika.extraEnvFrom" . | nindent 8 }}
         {{- end }}
-      serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      serviceAccountName: {{ .Values.observabilityGateway.serviceAccountName | default (include "paprika.serviceAccountName" .) }}
       {{- $pc := .Values.observabilityGateway.priorityClassName | default .Values.priorityClassName }}
       {{- if $pc }}
       priorityClassName: {{ $pc | quote }}

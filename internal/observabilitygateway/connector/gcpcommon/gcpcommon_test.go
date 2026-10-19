@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -128,10 +129,49 @@ func TestClientRejectsUnsupportedCredentialType(t *testing.T) {
 	t.Parallel()
 
 	_, err := Client(context.Background(), json.RawMessage(`{"type":"authorized_user"}`), false)
-	require.ErrorContains(t, err, `unsupported credential type "authorized_user"`)
+	require.ErrorContains(t, err, "unsupported credential type")
 
 	_, err = Client(context.Background(), json.RawMessage(`{`), false)
 	require.ErrorContains(t, err, "credential document is not valid JSON")
+}
+
+func TestCloudTraceUsesPublishedReadOnlyScope(t *testing.T) {
+	t.Parallel()
+	require.Contains(t, scopes, "https://www.googleapis.com/auth/trace.readonly")
+	require.NotContains(t, scopes, "https://www.googleapis.com/auth/trace.read")
+}
+
+func TestCredentialTypeAndEndpointErrorsNeverEchoValues(t *testing.T) {
+	t.Parallel()
+	_, err := Client(context.Background(), json.RawMessage(`{"type":"never-echo-secret"}`), false)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "never-echo-secret")
+	for _, endpoint := range []string{"https://user:never-echo-secret@example.com", "https://example.com?key=never-echo-secret", "https://example.com#never-echo-secret"} {
+		config, err := json.Marshal(map[string]string{"endpoint": endpoint})
+		require.NoError(t, err)
+		_, err = ParseConfig(config)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "never-echo-secret")
+	}
+}
+
+func TestDoRefusesRedirectWithOAuthTransport(t *testing.T) {
+	t.Parallel()
+	var followed atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		followed.Add(1)
+		fmt.Fprint(w, `{}`)
+	}))
+	t.Cleanup(target.Close)
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(source.Close)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, source.URL, http.NoBody)
+	require.NoError(t, err)
+	_, err = Do(req, staticClient())
+	require.ErrorContains(t, err, "backend returned status 307")
+	require.Zero(t, followed.Load())
 }
 
 // TestClientAmbientWithoutIdentityFailsClosed: when the ambient lookup finds

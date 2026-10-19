@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,6 +68,109 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestEndpointRejectsEmbeddedCredentialsAndURLSuffixes(t *testing.T) {
+	t.Parallel()
+	for _, endpoint := range []string{"https://user:never-echo@example.com", "https://example.com?key=never-echo", "https://example.com#never-echo"} {
+		config, err := json.Marshal(map[string]string{"endpoint": endpoint})
+		require.NoError(t, err)
+		_, err = ParseConfig(config)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "never-echo")
+	}
+}
+
+func TestConfigRejectsInlineCredentialHeaders(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"Authorization", "aUtHoRiZaTiOn", "Proxy-Authorization", "Cookie", "X-Api-Key", "X-Goog-Api-Key", "X-Auth-Token"} {
+		config, err := json.Marshal(map[string]any{"endpoint": "https://example.com", "headers": map[string]string{name: "never-echo-secret"}})
+		require.NoError(t, err)
+		_, err = ParseConfig(config)
+		require.ErrorContains(t, err, "credentialsSecretRef")
+		require.NotContains(t, err.Error(), "never-echo-secret")
+	}
+}
+
+func TestGetDoesNotForwardCredentialsOrTenantHeadersThroughRedirect(t *testing.T) {
+	t.Parallel()
+	var followed atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		followed.Add(1)
+		fmt.Fprint(w, `{}`)
+	}))
+	t.Cleanup(target.Close)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+	_, err := Get(context.Background(), Config{Endpoint: redirect.URL, Headers: map[string]string{"X-Scope-OrgID": "private-tenant"}}, "/query", nil, []byte("private-token"))
+	require.ErrorContains(t, err, "backend returned status 307")
+	require.Zero(t, followed.Load())
+}
+
+func TestReadRequestRetriesTransientStatusesAndReplaysReadPOST(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, "bounded", body["filter"])
+		if calls.Add(1) < 3 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprint(w, `{}`)
+	}))
+	t.Cleanup(server.Close)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, strings.NewReader(`{"filter":"bounded"}`))
+	require.NoError(t, err)
+	resp, err := DoReadRequest(req, server.Client())
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.EqualValues(t, 3, calls.Load())
+}
+
+func TestGetRetryBudgetAndCancellation(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			t.Parallel()
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if status == http.StatusTooManyRequests {
+					w.Header().Set("Retry-After", "120")
+				}
+				w.WriteHeader(status)
+			}))
+			t.Cleanup(server.Close)
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			_, err := Get(ctx, Config{Endpoint: server.URL}, "/query", nil, nil)
+			require.Error(t, err)
+			require.EqualValues(t, 1, calls.Load())
+			if status == http.StatusServiceUnavailable {
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+			}
+		})
+	}
+}
+
+func TestGetCapsTransientRetries(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(server.Close)
+	_, err := Get(context.Background(), Config{Endpoint: server.URL}, "/query", nil, nil)
+	require.ErrorContains(t, err, "backend returned status 502")
+	require.EqualValues(t, 3, calls.Load())
 }
 
 func TestParseConfigHeaders(t *testing.T) {

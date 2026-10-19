@@ -131,6 +131,13 @@ func (s *Server) RegisterOAuthRoutes(mux *http.ServeMux) {
 	// /observe) without their discovery documents colliding.
 	mux.HandleFunc(s.routePrefix+"/.well-known/oauth-protected-resource", s.handleProtectedResourceMetadata)
 	mux.HandleFunc(s.routePrefix+"/.well-known/oauth-authorization-server", s.handleAuthorizationServerMetadata)
+	// RFC 9728 inserts the well-known segment before the resource path;
+	// RFC 8414 does the same for a path-qualified authorization issuer.
+	// Keep the prefixed aliases above for existing clients and ingress rules.
+	mux.HandleFunc("/.well-known/oauth-protected-resource"+s.protocolPath, s.handleProtectedResourceMetadata)
+	if s.routePrefix != defaultRoutePrefix {
+		mux.HandleFunc("/.well-known/oauth-authorization-server"+s.routePrefix, s.handleAuthorizationServerMetadata)
+	}
 	// The default surface additionally serves the host-root well-knowns its
 	// challenges always have: clients that predate the prefix-derived
 	// resource_metadata URL resolve metadata from the resource origin's root.
@@ -152,6 +159,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "POST only")
 		return
 	}
+	if !s.registrationLimit.Allow() {
+		w.Header().Set("Retry-After", "1")
+		writeOAuthError(w, http.StatusTooManyRequests, "temporarily_unavailable", "client registration is temporarily rate limited")
+		return
+	}
 	var req registrationRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "malformed registration request")
@@ -171,11 +183,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	s.dynMu.Lock()
 	if len(s.dynClients) >= dynClientCap {
-		// Evict an arbitrary entry — registrations are free to retry.
-		for k := range s.dynClients {
-			delete(s.dynClients, k)
-			break
-		}
+		// Registration is public: replacing an existing entry would let an
+		// unauthenticated caller invalidate another client's active grants.
+		s.dynMu.Unlock()
+		w.Header().Set("Retry-After", "60")
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "client registration capacity is temporarily unavailable")
+		return
 	}
 	s.dynClients[clientID] = append([]string(nil), req.RedirectURIs...)
 	s.dynMu.Unlock()
@@ -223,6 +236,13 @@ func (r registrationRequest) validate() string {
 // unauthenticated, so the map cannot grow without limit.
 const dynClientCap = 4096
 
+// Public DCR requests share a bounded bucket; interactive clients register
+// infrequently, and no untrusted peer/header-derived map keys are retained.
+const (
+	registrationRatePerSecond = 5
+	registrationRateBurst     = 10
+)
+
 // redirectURIAllowedForRegistration restricts dynamically-registered
 // redirect URIs to loopback http(s) (any port — local clients bind
 // ephemeral listeners) or https:// on any host. Plain-HTTP off-box
@@ -261,9 +281,21 @@ type protectedResourceMetadata struct {
 func (s *Server) handleProtectedResourceMetadata(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, protectedResourceMetadata{
 		Resource:             s.publicURL + s.protocolPath,
-		AuthorizationServers: []string{s.publicURL},
+		AuthorizationServers: []string{s.authorizationIssuer()},
 		ScopesSupported:      s.scopesSupported(),
 	})
+}
+
+// authorizationIssuer keeps independent OAuth surfaces independently
+// discoverable. Advertising the host origin for /observe would send clients
+// to the fleet's root metadata, registration endpoint and token audience.
+// The existing fleet issuer remains unchanged for compatibility. The JWT
+// issuer remains the deployment origin; audience validation separates tokens.
+func (s *Server) authorizationIssuer() string {
+	if s.routePrefix == defaultRoutePrefix {
+		return s.publicURL
+	}
+	return s.publicURL + s.routePrefix
 }
 
 // scopesSupported is this authorization server's advertised scope set as
@@ -299,7 +331,7 @@ type authorizationServerMetadata struct {
 
 func (s *Server) handleAuthorizationServerMetadata(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, authorizationServerMetadata{
-		Issuer:                        s.publicURL,
+		Issuer:                        s.authorizationIssuer(),
 		AuthorizationEndpoint:         s.publicURL + s.routePrefix + "/authorize",
 		TokenEndpoint:                 s.publicURL + s.routePrefix + "/token",
 		RegistrationEndpoint:          s.publicURL + s.routePrefix + "/register",
@@ -321,6 +353,7 @@ func (s *Server) handleAuthorizationServerMetadata(w http.ResponseWriter, _ *htt
 //
 //nolint:tagliatelle // internal cache-only serialization; snake_case matches the OAuth field names it mirrors.
 type authCodeRecord struct {
+	Audience      string `json:"aud"`
 	Subject       string `json:"sub"`
 	Email         string `json:"email"`
 	Name          string `json:"name"`
@@ -594,6 +627,7 @@ func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
 	// zero value below), so nothing oversized ever reaches the cache.
 	if s.clientIDAllowed(q.Get("client_id")) &&
 		s.isRegisteredRedirect(q.Get("client_id"), q.Get("redirect_uri")) &&
+		s.validResource(q["resource"]) &&
 		len(q.Get("state")) <= maxAuthorizeStateLen &&
 		len(q.Get("scope")) <= maxAuthorizeScopeLen &&
 		len(q.Get("code_challenge")) <= maxAuthorizeChallengeLen &&
@@ -757,6 +791,10 @@ func (s *Server) lookupPendingAuthz(ctx context.Context, rid string) (pendingAut
 // back into the response body or a header, and a Location header is never
 // set on this path at all.
 func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (redirectURI, codeChallenge string, ok bool) {
+	if !s.validResource(q["resource"]) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource does not identify this MCP surface")
+		return "", "", false
+	}
 	if q.Get("response_type") != "code" {
 		writeOAuthError(w, http.StatusBadRequest, "unsupported_response_type", "only response_type=code is supported")
 		return "", "", false
@@ -1018,9 +1056,8 @@ func (s *Server) supportsScope(sc Scope) bool {
 }
 
 // clientIDAllowed reports whether clientID may use this authorization
-// server. NewServer requires ServerConfig.ClientID to be non-empty, so
-// s.clientID is always configured here — an empty or mismatched clientID
-// is always rejected; there is no "unconfigured, skip the check" case.
+// server. A DCR-only server has no static client: only IDs created through
+// registration pass. An empty ID is always rejected, regardless of mode.
 func (s *Server) clientIDAllowed(clientID string) bool {
 	if clientID == "" {
 		return false
@@ -1041,10 +1078,13 @@ func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
 	if candidate == "" {
 		return false
 	}
-	for _, registered := range s.redirectURIs {
-		if candidate == registered {
-			return true
+	if clientID == s.clientID {
+		for _, registered := range s.redirectURIs {
+			if candidate == registered {
+				return true
+			}
 		}
+		return false
 	}
 	s.dynMu.Lock()
 	defer s.dynMu.Unlock()
@@ -1054,6 +1094,33 @@ func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
 		}
 	}
 	return false
+}
+
+// A missing resource is accepted for existing first-party clients. When a
+// standards client supplies one or more, every indicator must identify this
+// surface. Native clients can repeat the same resource while combining their
+// protected-resource discovery and configured OAuth resource. Repetition must
+// not reject that one target or permit a second target before a grant is used.
+func (s *Server) validResource(resources []string) bool {
+	if len(resources) == 0 {
+		return true
+	}
+	want, err := url.Parse(s.publicURL + s.protocolPath)
+	if err != nil {
+		return false
+	}
+	for _, resource := range resources {
+		if !resourceMatchesTarget(resource, want) {
+			return false
+		}
+	}
+	return true
+}
+
+func resourceMatchesTarget(resource string, want *url.URL) bool {
+	got, err := url.Parse(resource)
+	return err == nil && got.User == nil && !strings.Contains(resource, "#") && got.RawQuery == "" && !got.ForceQuery &&
+		strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host) && got.EscapedPath() == want.EscapedPath()
 }
 
 // negotiateScope computes the scope an authorization code — and the access
@@ -1127,6 +1194,7 @@ func scopesToString(scopes []Scope) string {
 // for authCodeTTL, single-use (handleAuthorizationCodeGrant deletes it on
 // first exchange).
 func (s *Server) issueAuthCode(ctx context.Context, rec *authCodeRecord) (string, error) {
+	rec.Audience = s.audience
 	code, err := randomToken()
 	if err != nil {
 		return "", err
@@ -1147,13 +1215,17 @@ func authCodeKey(code string) string {
 
 // refreshRecord is what a refresh token resolves to in the cache, under
 // refreshKey. Display identity comes only from the original authenticated
-// grant and survives rotation. Records issued before these optional fields
-// existed remain valid and retain empty display identity.
+// grant and survives rotation. Display fields are optional; the client and
+// audience bindings are mandatory, so pre-upgrade unbound records fail closed.
+//
+//nolint:tagliatelle // Retain the established OAuth grant cache format and RFC 6749 client_id binding.
 type refreshRecord struct {
-	Subject string `json:"sub"`
-	Email   string `json:"email,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Scope   string `json:"scope"`
+	Audience string `json:"aud"`
+	ClientID string `json:"client_id"`
+	Subject  string `json:"sub"`
+	Email    string `json:"email,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Scope    string `json:"scope"`
 }
 
 func refreshKey(token string) string {
@@ -1191,6 +1263,10 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	// relates to credentials.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
+	if !s.validResource(r.PostForm["resource"]) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource does not identify this MCP surface")
+		return
+	}
 
 	if !s.clientIDAllowed(r.PostFormValue("client_id")) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "unknown client_id")
@@ -1234,6 +1310,10 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "unknown or expired code")
 		return
 	}
+	if rec.Audience != s.audience {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "code was not issued for this MCP surface")
+		return
+	}
 
 	// RFC 6749 section 4.1.3 requires the token endpoint to verify the code
 	// was issued to the client presenting it here — PKCE and exact
@@ -1252,7 +1332,7 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.issueTokenPair(r.Context(), w, rec.Subject, rec.Email, rec.Name, rec.Scope)
+	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope)
 }
 
 // consumeAuthCode atomically looks up and deletes code in a single cache
@@ -1300,8 +1380,12 @@ func (s *Server) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "unknown or expired refresh_token")
 		return
 	}
+	if rec.Audience != s.audience || rec.ClientID == "" || rec.ClientID != r.PostFormValue("client_id") {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh token was not issued to this client")
+		return
+	}
 
-	s.issueTokenPair(r.Context(), w, rec.Subject, rec.Email, rec.Name, rec.Scope)
+	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope)
 }
 
 // consumeRefreshToken atomically looks up and deletes token in a single
@@ -1342,7 +1426,7 @@ func (s *Server) consumeRefreshToken(ctx context.Context, token string) (refresh
 // RFC 6749 section 5.1 JSON response. It is the single place both grant
 // types converge, so every successful <prefix>/token response is built the same
 // way.
-func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, subject, email, name, scope string) {
+func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, clientID, subject, email, name, scope string) {
 	access, err := auth.IssueTokenWithOptions(auth.TokenOptions{
 		Subject:  subject,
 		Email:    email,
@@ -1363,7 +1447,7 @@ func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, subj
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	payload, err := json.Marshal(refreshRecord{Subject: subject, Email: email, Name: name, Scope: scope})
+	payload, err := json.Marshal(refreshRecord{Audience: s.audience, ClientID: clientID, Subject: subject, Email: email, Name: name, Scope: scope})
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

@@ -18,6 +18,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -60,6 +61,12 @@ type ServerConfig struct {
 	AccessTTL     time.Duration
 	RefreshTTL    time.Duration
 
+	// AllowDynamicRegistrationOnly permits omitting both static ClientID and
+	// RedirectURIs. It is an explicit opt-in for a DCR-only server; a partial
+	// static pair is always rejected. Unregistered/empty client IDs remain
+	// invalid, and dynamic clients still require consent and PKCE.
+	AllowDynamicRegistrationOnly bool
+
 	// RoutePrefix is the mount root of this server's OAuth surface: the
 	// authorize/consent/token/register endpoints and well-known metadata all
 	// live at RoutePrefix+"/…". Empty defaults to "/mcp". A second Paprika
@@ -100,6 +107,12 @@ type ServerConfig struct {
 	// that only make sense on the surface whose tools they invoke. Servers
 	// that only serve non-console tools (the observability gateway) set this.
 	DisableConsoleResources bool
+
+	// LinkRequestCancellation restores the HTTP carrier's cancellation and
+	// deadline for tool handlers on legacy protocols too. The SDK propagates
+	// those signals only for newer protocols. Enable this for the read-only
+	// observability surface; other surfaces retain their existing behavior.
+	LinkRequestCancellation bool
 
 	// GzipLevel sets the compression level the protocol handler applies to
 	// responses for clients that send Accept-Encoding: gzip. Zero selects
@@ -178,6 +191,7 @@ type Server struct {
 	audience                string
 	supportedScopes         []Scope
 	disableConsoleResources bool
+	linkRequestCancellation bool
 
 	// authorizeAuthenticator authenticates GET /mcp/authorize and POST
 	// /mcp/authorize/consent — see ServerConfig.ConsoleAuthenticator. The
@@ -188,6 +202,9 @@ type Server struct {
 
 	// rateLimit bounds /mcp protocol requests per authenticated subject.
 	rateLimit *principalRateLimiter
+	// Public registration has no authenticated subject. Use one fixed
+	// server-lifetime bucket, without trusting caller-supplied IP headers.
+	registrationLimit *rate.Limiter
 }
 
 // NewServer validates cfg and builds a Server. Registry, Authenticator,
@@ -196,31 +213,8 @@ type Server struct {
 //
 //nolint:gocritic // cfg is ServerConfig by value per the spec's literal constructor signature (Task 15's buildMCPHandlers constructs one inline); switching to a pointer would change the public API.
 func NewServer(cfg ServerConfig) (*Server, error) {
-	if cfg.Registry == nil {
-		return nil, errors.New("mcp: ServerConfig.Registry is required")
-	}
-	if cfg.Authenticator == nil {
-		return nil, errors.New("mcp: ServerConfig.Authenticator is required")
-	}
-	if cfg.Cache == nil {
-		return nil, errors.New("mcp: ServerConfig.Cache is required")
-	}
-	if len(cfg.Secret) == 0 {
-		return nil, errors.New("mcp: ServerConfig.Secret is required")
-	}
-	if err := validatePublicURL(cfg.PublicURL); err != nil {
+	if err := validateServerConfig(&cfg); err != nil {
 		return nil, err
-	}
-	// Static client registration is mandatory in the OAuth 2.1 spec this
-	// package implements. An unconfigured ClientID must fail construction
-	// loudly rather than let clientIDAllowed fail OPEN and accept every
-	// client_id — the same failure mode NewSelfSignedAuthenticatorForAudience
-	// already closes for an empty audience.
-	if cfg.ClientID == "" {
-		return nil, errors.New("mcp: ServerConfig.ClientID is required")
-	}
-	if len(cfg.RedirectURIs) == 0 {
-		return nil, errors.New("mcp: ServerConfig.RedirectURIs is required")
 	}
 	shape, err := resolveSurfaceShape(&cfg)
 	if err != nil {
@@ -245,12 +239,14 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		accessTTL:               defaultDuration(cfg.AccessTTL, defaultAccessTTL),
 		refreshTTL:              defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
 		rateLimit:               newPrincipalRateLimiter(),
+		registrationLimit:       rate.NewLimiter(registrationRatePerSecond, registrationRateBurst),
 		routePrefix:             shape.routePrefix,
 		protocolPath:            shape.protocolPath,
 		consentPath:             shape.consentPath,
 		audience:                shape.audience,
 		supportedScopes:         shape.supportedScopes,
 		disableConsoleResources: cfg.DisableConsoleResources,
+		linkRequestCancellation: cfg.LinkRequestCancellation,
 		gzipLevel:               cfg.GzipLevel,
 	}
 	// The Invoker is built unconditionally: surfaces without a Connect client
@@ -260,6 +256,41 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	s.invoker = NewInvoker(cfg.Registry, cfg.Client, cfg.Confirmer, cfg.Auditor)
 	s.streamable = newStreamableHandler(s, cfg.Registry)
 	return s, nil
+}
+
+// validateServerConfig checks dependencies before constructing a serving
+// instance. OAuth registration policy is validated separately from those
+// dependencies so DCR-only operation remains an explicit, closed choice.
+func validateServerConfig(cfg *ServerConfig) error {
+	if cfg.Registry == nil {
+		return errors.New("mcp: ServerConfig.Registry is required")
+	}
+	if cfg.Authenticator == nil {
+		return errors.New("mcp: ServerConfig.Authenticator is required")
+	}
+	if cfg.Cache == nil {
+		return errors.New("mcp: ServerConfig.Cache is required")
+	}
+	if len(cfg.Secret) == 0 {
+		return errors.New("mcp: ServerConfig.Secret is required")
+	}
+	if err := validatePublicURL(cfg.PublicURL); err != nil {
+		return err
+	}
+	return validateOAuthClientConfig(cfg)
+}
+
+func validateOAuthClientConfig(cfg *ServerConfig) error {
+	// Preserve the fleet's required static pair by default. A DCR-only
+	// surface may explicitly omit both, without installing a placeholder
+	// client or weakening the clientIDAllowed gate.
+	if cfg.ClientID == "" && (len(cfg.RedirectURIs) > 0 || !cfg.AllowDynamicRegistrationOnly) {
+		return errors.New("mcp: ServerConfig.ClientID is required")
+	}
+	if len(cfg.RedirectURIs) == 0 && (cfg.ClientID != "" || !cfg.AllowDynamicRegistrationOnly) {
+		return errors.New("mcp: ServerConfig.RedirectURIs is required")
+	}
+	return nil
 }
 
 // surfaceShape is everything resolveSurfaceShape defaulted and validated
@@ -377,15 +408,21 @@ func validatePublicURL(publicURL string) error {
 // matches this package's request/response tool-call model and lets a caller
 // invoke a tool without first running the initialize handshake.
 func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler {
+	description := "Application delivery, fleet health, drift, and deployment diagnostics."
+	instructions := "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
+	if s.disableConsoleResources {
+		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
+		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
+	}
 	sdkSrv := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:        implementationName,
 		Title:       "Paprika",
-		Description: "Application delivery, fleet health, drift, and deployment diagnostics.",
+		Description: description,
 		Version:     version.Version,
 		WebsiteURL:  s.publicURL,
 		Icons:       paprikaIcons(),
 	}, &sdkmcp.ServerOptions{
-		Instructions: "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow.",
+		Instructions: instructions,
 		SetCacheable: func(_ context.Context, _ sdkmcp.Request, c *sdkmcp.Cacheable) {
 			// All protocol requests are authenticated. Never let a host cache
 			// project-scoped resource contents across authenticated subjects.
@@ -428,7 +465,7 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 
 	return sdkmcp.NewStreamableHTTPHandler(
 		func(*http.Request) *sdkmcp.Server { return sdkSrv },
-		&sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true},
+		&sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true},
 	)
 }
 
@@ -508,6 +545,12 @@ func (s *Server) mintConsoleCredential(p *auth.Principal) (string, error) {
 // project scoping against. See ConfirmationRequiredError and the
 // package-level blocker note for the rest of the flow.
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	// Native MCP clients omit Origin. Browser requests must come from the
+	// configured deployment origin, never a caller-controlled Host header.
+	if !s.validOrigin(r.Header.Values("Origin")) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
 	ctx := auth.WithRequest(r.Context(), r)
 	principal, err := s.authenticator.Authenticate(ctx)
 	if err != nil {
@@ -521,6 +564,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx = auth.WithPrincipal(ctx, principal)
 
 	if !s.rateLimit.Allow(principal.Subject) {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "rate limited", http.StatusTooManyRequests)
 		return
 	}
@@ -531,7 +575,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// attached unconditionally: scope gates in resource and tool handlers read
 	// the principal from it regardless of whether a Connect client exists.
 	r = r.WithContext(ctx)
-	if s.invoker != nil {
+	if s.invoker != nil && s.invoker.client != nil {
 		credential, err := s.mintConsoleCredential(principal)
 		if err != nil {
 			log.FromContext(ctx).Error(err, "mcp: mint internal console credential failed")
@@ -546,7 +590,65 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// memory-DoS vector on an authenticated-but-untrusted surface.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	r = ensureStreamableAccept(r)
+	if s.linkRequestCancellation {
+		// Legacy SDK contexts detach Done and Deadline, but retain values. Keep
+		// the authenticated carrier available without replacing the SDK context
+		// (which also carries protocol cancellation and request identity).
+		carrier := r.Context()
+		ctx = context.WithValue(ctx, protocolRequestContextKey{}, carrier)
+		r = r.WithContext(ctx)
+	}
 	s.streamable.ServeHTTP(w, r)
+}
+
+type protocolRequestContextKey struct{}
+
+// linkProtocolRequestContext keeps SDK values and cancellation while restoring
+// the carrier's earlier deadline and disconnect signal. Each tool invocation
+// removes its callback and timer on completion, including error paths.
+func linkProtocolRequestContext(ctx context.Context) (toolContext context.Context, cleanup func()) {
+	carrier, ok := ctx.Value(protocolRequestContextKey{}).(context.Context)
+	if !ok {
+		return ctx, func() {}
+	}
+	linked, cancel := context.WithCancel(ctx)
+	deadline, hasDeadline := carrier.Deadline()
+	cancelDeadline := func() {}
+	if hasDeadline {
+		linked, cancelDeadline = context.WithDeadline(linked, deadline)
+	}
+	forwardCancellation := func() {
+		if hasDeadline && carrier.Err() == context.DeadlineExceeded {
+			// The copied deadline cancels the tool context with DeadlineExceeded.
+			// Calling cancel here could race that timer and report Canceled instead.
+			return
+		}
+		cancel()
+	}
+	stop := context.AfterFunc(carrier, forwardCancellation)
+	if carrier.Err() != nil {
+		forwardCancellation()
+	}
+	return linked, func() {
+		stop()
+		cancelDeadline()
+		cancel()
+	}
+}
+
+func (s *Server) validOrigin(origins []string) bool {
+	if len(origins) == 0 {
+		return true
+	}
+	if len(origins) != 1 {
+		return false
+	}
+	origin, err := url.Parse(origins[0])
+	if err != nil || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
+		return false
+	}
+	public, err := url.Parse(s.publicURL)
+	return err == nil && strings.EqualFold(origin.Scheme, public.Scheme) && strings.EqualFold(origin.Host, public.Host)
 }
 
 // ensureStreamableAccept widens r's Accept header, if needed, to what the
@@ -633,26 +735,23 @@ func (s *Server) writeUnauthenticated(w http.ResponseWriter) {
 // tool, so the mapping from name to behaviour has exactly one source of
 // truth: the registry itself.
 func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+	if s.linkRequestCancellation {
+		var cleanup func()
+		ctx, cleanup = linkProtocolRequestContext(ctx)
+		defer cleanup()
+	}
 	name := req.Params.Name
 	start := time.Now()
-	result, err := s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
-	outcome := "ok"
-	if err != nil {
-		var confirmErr *ConfirmationRequiredError
-		switch {
-		case errors.As(err, &confirmErr):
-			outcome = "confirmation_required"
-		case errors.Is(err, ErrScopeDenied):
-			outcome = "scope_denied"
-		case errors.Is(err, ErrToolNotFound):
-			outcome = "not_found"
-		default:
-			outcome = "error"
-		}
+	var result any
+	var err error
+	if s.linkRequestCancellation && ctx.Err() != nil {
+		err = ctx.Err()
+	} else {
+		result, err = s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
 	}
 	attrs := metric.WithAttributes(
 		attribute.String("tool", name),
-		attribute.String("outcome", outcome),
+		attribute.String("outcome", toolCallOutcome(result, err)),
 	)
 	paprikametrics.MCPToolCalls.Add(ctx, 1, attrs)
 	paprikametrics.MCPToolDuration.Record(ctx, time.Since(start).Milliseconds(), attrs)
@@ -670,6 +769,28 @@ func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sd
 		}
 	}
 	return res, err
+}
+
+// toolCallOutcome classifies the operation independently of its wire form:
+// a successful JSON-RPC exchange may still contain an MCP tool error.
+func toolCallOutcome(result any, err error) string {
+	if err == nil {
+		if sdkResult, ok := result.(*sdkmcp.CallToolResult); ok && sdkResult != nil && sdkResult.IsError {
+			return "error"
+		}
+		return "ok"
+	}
+	var confirmErr *ConfirmationRequiredError
+	switch {
+	case errors.As(err, &confirmErr):
+		return "confirmation_required"
+	case errors.Is(err, ErrScopeDenied):
+		return "scope_denied"
+	case errors.Is(err, ErrToolNotFound):
+		return "not_found"
+	default:
+		return "error"
+	}
 }
 
 // invoke feeds Invoker.Call the per-request connection info. (The invoker is

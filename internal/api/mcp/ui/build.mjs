@@ -20,9 +20,13 @@ if (!script) throw new Error("Console script was not generated");
 const css = await readFile("src/style.css", "utf8");
 const extensionCSS = await readFile("node_modules/@openai/mcp-extensions/styles.css", "utf8");
 await mkdir("dist", { recursive: true });
-await writeFile("dist/console.html", `<!doctype html>
+const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Paprika fleet</title><style>${extensionCSS}\n${css}</style></head><body>
 <div id="console"><p class="starting" role="status">Connecting to Paprika…</p></div>
-<script>${script.replaceAll("</script", "<\\/script")}</script></body></html>\n`);
+<script>${script.replaceAll("</script", "<\\/script")}</script></body></html>\n`;
+// esbuild preserves indentation on blank lines inside generated-code
+// template literals. Normalize those whitespace-only lines so rebuilding
+// the checked-in artifact also passes git diff --check.
+await writeFile("dist/console.html", html.replace(/^[\t ]+$/gm, ""));
 console.log("Built dist/console.html (self-contained, no remote runtime dependencies)");

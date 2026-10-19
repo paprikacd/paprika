@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -150,10 +151,48 @@ func TestQueryOKRoundTrip(t *testing.T) {
 	require.Equal(t, http.MethodGet, got.method)
 	require.Equal(t, "/v3/projects/test-proj/timeSeries", got.path)
 	require.Equal(t, "Bearer test-token", got.auth)
-	require.Equal(t, `metric.type="custom.googleapis.com/foo"`, got.query.Get("filter"))
+	require.Equal(t, `project = "test-proj" AND (metric.type="custom.googleapis.com/foo")`, got.query.Get("filter"))
 	require.Equal(t, start.Format(time.RFC3339), got.query.Get("interval.startTime"))
 	require.Equal(t, end.Format(time.RFC3339), got.query.Get("interval.endTime"))
 	require.Equal(t, "100", got.query.Get("pageSize"))
+}
+
+func TestContinuationPreservesProjectFilterAndWindow(t *testing.T) {
+	t.Parallel()
+	fake := newFakeGCP(t, false, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"timeSeries":[],"nextPageToken":"opaque+/=continuation"}`)
+	})
+	start := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
+	req := queryMetrics(testConfig(t, fake.server.URL), fakeServiceAccountCreds(t, fake.server.URL+"/token", "other-project"), func(req *connector.QueryRequest) {
+		req.Range = connector.TimeRange{Start: start, End: start.Add(time.Minute)}
+		req.Limit = 7
+	})
+	first, err := New().Query(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, first.State)
+	before := fake.last(t)
+	var page struct {
+		NextPageToken string `json:"nextPageToken"`
+	}
+	require.NoError(t, json.Unmarshal(first.Data, &page))
+	req.PageToken = page.NextPageToken
+	second, err := New().Query(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, second.State)
+	after := fake.last(t)
+	require.Equal(t, "/v3/projects/test-proj/timeSeries", after.path)
+	require.Equal(t, req.PageToken, after.query.Get("pageToken"))
+	after.query.Del("pageToken")
+	require.Equal(t, before.query, after.query)
+	require.Equal(t, `project = "test-proj" AND (metric.type="custom.googleapis.com/foo")`, after.query.Get("filter"))
+}
+
+func TestOversizePageTokenFailsBeforeCredentialsOrNetwork(t *testing.T) {
+	t.Parallel()
+	res, err := New().Query(context.Background(), connector.QueryRequest{Signal: connector.SignalMetrics, PageToken: strings.Repeat("private", 1000)})
+	require.ErrorIs(t, err, connector.ErrUnsupported)
+	require.Equal(t, connector.StateNotAvailable, res.State)
+	require.NotContains(t, err.Error(), "private")
 }
 
 func TestRangeDefaultsToTrailingHour(t *testing.T) {
@@ -197,7 +236,7 @@ func TestProbeEmptyQuery(t *testing.T) {
 	got := fake.last(t)
 	require.Equal(t, "/v3/projects/test-proj/metricDescriptors", got.path)
 	require.Equal(t, "1", got.query.Get("pageSize"))
-	require.Empty(t, got.query.Get("filter"))
+	require.Equal(t, `project = "test-proj"`, got.query.Get("filter"))
 }
 
 func TestLimitClamping(t *testing.T) {
@@ -324,7 +363,8 @@ func TestUnsupportedCredentialType(t *testing.T) {
 func TestInsecureSkipTLS(t *testing.T) {
 	t.Parallel()
 	fake := newFakeGCP(t, true, timeSeriesOK)
-	creds := fakeServiceAccountCreds(t, fake.server.URL+"/token", "test-proj")
+	tokenServer := newFakeGCP(t, false, timeSeriesOK)
+	creds := fakeServiceAccountCreds(t, tokenServer.server.URL+"/token", "test-proj")
 
 	// Default: the self-signed certificate must fail verification. The
 	// transport error converts to a StateError result per the connector
@@ -334,7 +374,7 @@ func TestInsecureSkipTLS(t *testing.T) {
 	require.Equal(t, connector.StateError, res.State)
 
 	// insecureSkipTLS opts this connector into accepting the self-signed
-	// certificate — for both the token exchange and the API call.
+	// backend certificate; OAuth token exchanges still verify certificates.
 	raw, err := json.Marshal(map[string]any{
 		"projectId":       "test-proj",
 		"endpoint":        fake.server.URL,

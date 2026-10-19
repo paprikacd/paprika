@@ -149,12 +149,12 @@ func TestCatalogTypeHandlerServesTypeInfo(t *testing.T) {
 	})
 }
 
-func TestValidateHandlerProbesLoki(t *testing.T) {
+func TestValidateHandlerValidatesConfigurationOffline(t *testing.T) {
 	t.Parallel()
 	mux, secret := newCatalogTestMux(t)
 	token := catalogTestToken(t, secret, string(mcp.ScopeObserve))
 
-	t.Run("reachable backend answers state OK", func(t *testing.T) {
+	t.Run("valid configuration is checked without backend contact", func(t *testing.T) {
 		var seen *http.Request
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			seen = r.Clone(r.Context())
@@ -170,37 +170,21 @@ func TestValidateHandlerProbesLoki(t *testing.T) {
 		var resp validateResponse
 		require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 		assert.Equal(t, connector.StateOK, resp.State)
-		assert.Empty(t, resp.Reason)
-
-		// The probe reached the backend through the real loki connector:
-		// the config was re-marshaled into the request and the probe query
-		// shape applied.
-		require.NotNil(t, seen)
-		assert.Equal(t, "/loki/api/v1/query_range", seen.URL.Path)
-		assert.Equal(t, `{app="paprika"}`, seen.URL.Query().Get("query"))
-		assert.Equal(t, "1", seen.URL.Query().Get("limit"))
+		assert.Contains(t, resp.Reason, "have not been tested")
+		require.Nil(t, seen, "validation must never contact a caller-selected endpoint")
 	})
 
-	t.Run("refused credential answers state Forbidden as data", func(t *testing.T) {
+	t.Run("credential payload is rejected before backend contact", func(t *testing.T) {
+		var contacted bool
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			fmt.Fprint(w, `{"error":"detail never surfaces"}`)
+			contacted = true
 		}))
 		t.Cleanup(server.Close)
-
-		body := fmt.Sprintf(`{"type":"loki","config":{"endpoint":%q},"credentials":"loki-token"}`, server.URL)
+		body := fmt.Sprintf(`{"type":"loki","config":{"endpoint":%q},"credentials":"test-only-sentinel"}`, server.URL)
 		rec := doCatalogRequest(t, mux, http.MethodPost, "/observe/api/validate", token, body)
-		require.Equal(t, http.StatusOK, rec.Code)
-
-		var resp validateResponse
-		require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
-		assert.Equal(t, connector.StateForbidden, resp.State)
-		require.NotEmpty(t, resp.Reason)
-		// The reason is a fixed sentence: backend output — which can carry
-		// credential material — never reaches it.
-		assert.NotContains(t, resp.Reason, server.URL)
-		assert.NotContains(t, resp.Reason, "detail never surfaces")
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.False(t, contacted)
+		assert.NotContains(t, rec.Body.String(), "test-only-sentinel")
 	})
 
 	t.Run("unknown type answers 404 with the fixed sentence", func(t *testing.T) {
@@ -227,7 +211,7 @@ func TestValidateHandlerProbesLoki(t *testing.T) {
 		requireAuthError(t, rec, "invalid_request", reasonValidateRequestInvalid)
 	})
 
-	t.Run("absent config probes as not configured", func(t *testing.T) {
+	t.Run("absent config is not configured", func(t *testing.T) {
 		rec := doCatalogRequest(t, mux, http.MethodPost, "/observe/api/validate", token, `{"type":"loki"}`)
 		require.Equal(t, http.StatusOK, rec.Code)
 

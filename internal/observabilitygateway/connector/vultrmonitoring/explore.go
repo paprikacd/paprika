@@ -46,18 +46,8 @@ var metadataCatalog = map[string]struct {
 //
 //nolint:gocritic // ExploreRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (VultrMonitoring) Explore(ctx context.Context, req connector.ExploreRequest) (*connector.ExploreResult, error) {
-	supported := req.Kind == connector.ExploreMetricNames ||
-		req.Kind == connector.ExploreLabelNames ||
-		req.Kind == connector.ExploreLabelValues ||
-		req.Kind == connector.ExploreMetricMetadata
-	if !supported {
-		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the vultr-monitoring connector", req.Kind))
-	}
-	if req.Kind == connector.ExploreLabelValues && req.Label == "" {
-		return exploreUnsupported("a label name is required")
-	}
-	if req.Kind == connector.ExploreMetricMetadata && req.Metric == "" {
-		return exploreUnsupported("a metric name is required")
+	if reason := invalidExploreRequest(&req); reason != "" {
+		return exploreUnsupported(reason)
 	}
 
 	cfg, err := parseConfig(req.Config)
@@ -73,28 +63,62 @@ func (VultrMonitoring) Explore(ctx context.Context, req connector.ExploreRequest
 		return stringListResult(instanceLabels, req.Prefix, req.Limit), nil
 
 	case connector.ExploreLabelValues:
-		if len(req.Credentials) == 0 {
-			return notConfiguredExplore(), nil
-		}
-		if !knownInstanceLabel(req.Label) {
-			return &connector.ExploreResult{State: connector.StateNotAvailable, Reason: reasonNotEnumerated}, nil
-		}
-		instances, err := listInstances(ctx, cfg, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
-		}
-		return stringListResult(instanceFieldValues(instances, req.Label), req.Prefix, req.Limit), nil
+		return exploreInstanceLabels(ctx, cfg, &req), nil
 
-	default: // ExploreMetricMetadata — requirement checked above.
-		entry, ok := metadataCatalog[req.Metric]
-		if !ok {
-			return &connector.ExploreResult{
-				State:  connector.StateNotAvailable,
-				Reason: fmt.Sprintf("metric %q is not served by the vultr-monitoring connector", req.Metric),
-			}, nil
-		}
-		return metadataResult(req.Metric, entry)
+	case connector.ExploreMetricMetadata:
+		return exploreMetricDescription(req.Metric)
+
+	case connector.ExploreTraceServices:
+		return exploreUnsupported("vultr-monitoring does not supply trace services")
+
+	default:
+		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the vultr-monitoring connector", req.Kind))
 	}
+}
+
+func invalidExploreRequest(req *connector.ExploreRequest) string {
+	switch req.Kind {
+	case connector.ExploreMetricNames, connector.ExploreLabelNames:
+		return ""
+	case connector.ExploreLabelValues:
+		if req.Label == "" {
+			return "a label name is required"
+		}
+	case connector.ExploreMetricMetadata:
+		if req.Metric == "" {
+			return "a metric name is required"
+		}
+	case connector.ExploreTraceServices:
+		return fmt.Sprintf("exploration kind %q is not served by the vultr-monitoring connector", req.Kind)
+	default:
+		return fmt.Sprintf("exploration kind %q is not served by the vultr-monitoring connector", req.Kind)
+	}
+	return ""
+}
+
+func exploreInstanceLabels(ctx context.Context, cfg httphelp.Config, req *connector.ExploreRequest) *connector.ExploreResult {
+	if len(req.Credentials) == 0 {
+		return notConfiguredExplore()
+	}
+	if !knownInstanceLabel(req.Label) {
+		return &connector.ExploreResult{State: connector.StateNotAvailable, Reason: reasonNotEnumerated}
+	}
+	instances, err := listInstances(ctx, cfg, req.Credentials)
+	if err != nil {
+		return exploreError(err)
+	}
+	return stringListResult(instanceFieldValues(instances, req.Label), req.Prefix, req.Limit)
+}
+
+func exploreMetricDescription(metric string) (*connector.ExploreResult, error) {
+	entry, ok := metadataCatalog[metric]
+	if !ok {
+		return &connector.ExploreResult{
+			State:  connector.StateNotAvailable,
+			Reason: fmt.Sprintf("metric %q is not served by the vultr-monitoring connector", metric),
+		}, nil
+	}
+	return metadataResult(metric, entry)
 }
 
 // knownInstanceLabel reports whether label is one of the instance fields
@@ -167,7 +191,7 @@ func metadataResult(metric string, entry struct {
 	unit string
 }) (*connector.ExploreResult, error) {
 	data, err := json.Marshal(struct {
-		Status string                       `json:"status"`
+		Status string                         `json:"status"`
 		Data   map[string][]map[string]string `json:"data"`
 	}{Status: "success", Data: map[string][]map[string]string{
 		metric: {{"type": entry.typ, "help": entry.help, "unit": entry.unit}},
@@ -197,4 +221,3 @@ func exploreError(err error) *connector.ExploreResult {
 	state := httphelp.ClassifyState(err)
 	return &connector.ExploreResult{State: state, Reason: httphelp.ReasonFor(state)}
 }
-

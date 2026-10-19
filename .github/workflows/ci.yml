@@ -213,6 +213,11 @@ jobs:
       - name: Verify satellite chart credential and RBAC boundaries
         run: bash hack/test-satellite-chart-rendering.sh
 
+      - name: Verify observability gateway boundaries
+        run: |
+          bash hack/test-observability-chart-rendering.sh
+          bash hack/test-observability-addon-rendering.sh
+
       - name: Lint chart
         run: helm lint charts/chart/
 

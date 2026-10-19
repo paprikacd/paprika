@@ -1,12 +1,19 @@
 {
   "name": "paprika",
   "description": "Paprika application health and deployment tools for Claude Code.",
-  "owner": { "name": "Paprika" },
+  "owner": {
+    "name": "Paprika"
+  },
   "plugins": [
     {
       "name": "paprika",
       "source": "./plugins/paprika",
       "description": "Paprika application health, deployment management, and debugging with OAuth sign-in."
+    },
+    {
+      "name": "paprika-observe",
+      "source": "./plugins/paprika-observe",
+      "description": "Discover and query authorized Paprika observability providers for bounded logs, metrics, and traces with independent OAuth access."
     }
   ]
 }

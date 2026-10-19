@@ -130,13 +130,17 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 	}
 	// +kubebuilder:scaffold:builder
 
+	return setupOperatorHealthChecks(mgr, fleetReadyChecker(deps.fleetReader))
+}
+
+func setupOperatorHealthChecks(mgr ctrl.Manager, fleetReady healthz.Checker) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("failed to set up health check: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("failed to set up ready check: %w", err)
 	}
-	if err := mgr.AddReadyzCheck("fleet-index", fleetReadyChecker(deps.fleetReader)); err != nil {
+	if err := mgr.AddReadyzCheck("fleet-index", fleetReady); err != nil {
 		return fmt.Errorf("failed to set up fleet index ready check: %w", err)
 	}
 	return nil

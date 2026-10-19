@@ -68,33 +68,47 @@ func (CloudLogging) Explore(ctx context.Context, req connector.ExploreRequest) (
 		result, credErr := exploreCredentialError(err)
 		return result, credErr
 	}
-	return exploreMetricNames(ctx, client, cfg, project, req.Limit), nil
+	return exploreMetricNames(ctx, client, cfg, project, req.Prefix, req.Limit), nil
 }
 
 // exploreMetricNames unions the short metric IDs of every page of
 // projects.logMetrics.list, limited after the union.
-func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project string, limit int) *connector.ExploreResult {
+func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, prefix string, limit int) *connector.ExploreResult {
 	names := map[string]struct{}{}
 	token := ""
+	seenTokens := map[string]bool{}
+	limited := false
 	for page := 0; page < exploreMaxPages; page++ {
 		decoded, err := fetchLogMetricsPage(ctx, client, cfg, project, token)
 		if err != nil {
 			return exploreError(err)
 		}
-		for _, metric := range decoded.Metrics {
-			if name := shortMetricName(metric.Name); name != "" {
-				names[name] = struct{}{}
-			}
-		}
+		collectMetricNames(names, &decoded, prefix)
 		token = decoded.NextToken
 		if limit > 0 && len(names) >= limit {
+			limited = token != "" || len(names) > limit
 			break
 		}
 		if token == "" {
 			break
 		}
+		if seenTokens[token] || page == exploreMaxPages-1 {
+			return &connector.ExploreResult{State: connector.StateError, Reason: "schema discovery exceeded its pagination bound; narrow the request"}
+		}
+		seenTokens[token] = true
+	}
+	if limited {
+		return namesResult(sortedKeys(names, limit), "result limit reached; narrow the prefix to discover more names")
 	}
 	return namesResult(sortedKeys(names, limit))
+}
+
+func collectMetricNames(names map[string]struct{}, page *logMetricsListPage, prefix string) {
+	for _, metric := range page.Metrics {
+		if name := shortMetricName(metric.Name); name != "" && strings.Contains(name, prefix) {
+			names[name] = struct{}{}
+		}
+	}
 }
 
 // fetchLogMetricsPage reads one projects.logMetrics.list page; token empty
@@ -128,11 +142,14 @@ func logMetricsPath(project string) string {
 	return "/v2/projects/" + project + "/metrics"
 }
 
-// shortMetricName reduces the API's resource name to the metric ID an
-// operator writes into a filter: the segment after the last "/".
+// LogMetric.name is a short ID and may itself contain slashes (for example
+// nginx/requests). Accept full resource names from compatible proxies too.
 func shortMetricName(resource string) string {
-	_, name, _ := strings.Cut(resource, "/metrics/")
-	return name
+	if strings.HasPrefix(resource, "projects/") {
+		_, name, _ := strings.Cut(resource, "/metrics/")
+		return name
+	}
+	return resource
 }
 
 // sortedKeys returns the set's keys sorted, capped at limit when positive.
@@ -151,11 +168,12 @@ func sortedKeys(set map[string]struct{}, limit int) []string {
 // namesResult wraps a sorted string set in the {"status":"success",
 // "data":[...]} shape the reference connectors answer in, so every
 // exploration kind responds in one recognizable envelope.
-func namesResult(items []string) *connector.ExploreResult {
+func namesResult(items []string, warnings ...string) *connector.ExploreResult {
 	data, err := json.Marshal(struct {
-		Status string   `json:"status"`
-		Data   []string `json:"data"`
-	}{Status: "success", Data: items})
+		Status   string   `json:"status"`
+		Data     []string `json:"data"`
+		Warnings []string `json:"warnings,omitempty"`
+	}{Status: "success", Data: items, Warnings: warnings})
 	if err != nil {
 		return &connector.ExploreResult{State: connector.StateError, Reason: "encoding the exploration result failed"}
 	}

@@ -223,6 +223,90 @@ PKCE, discovery, and dynamic client registration. Inspection requires
 The scopes are independent. The package contains no credentials or auth headers.
 The optional `paprika-setup` skill verifies access with `fleet_status` after login.
 
+## Observability gateway
+
+The optional [`paprika-observe`](../../plugins/paprika-observe/README.md) package
+connects the separate `/observe/mcp` endpoint and bundles an observability skill.
+Its portable manifest uses `streamable-http` and per-server OpenAI OAuth
+configuration with DCR and `paprika:observe`; its supported Codex and Claude
+compatibility manifests use `.mcp.json` with `type: "http"`. It advertises only
+Read capability. The existing fleet package still connects only `/mcp`.
+
+After the user explicitly approves configuring persistent access to the exact
+deployment, install `paprika-observe@paprika` from this repository marketplace
+using the same client commands as the fleet plugin, or use an endpoint-only
+connection. These commands configure client access and must not be run merely
+to validate package structure:
+
+```sh
+codex mcp add paprika_observe --url https://YOUR_VERIFIED_PAPRIKA_HOST/observe/mcp
+codex mcp login paprika_observe --scopes paprika:observe
+```
+
+For Claude Code:
+
+```sh
+claude mcp add --transport http paprika_observe https://YOUR_VERIFIED_PAPRIKA_HOST/observe/mcp
+```
+
+Then complete sign-in through `/mcp` in Claude Code. Use native OAuth consent;
+never supply copied fleet tokens or provider credentials. Each deployment and
+surface has its own OAuth connection. The packaged hosted origin is a default,
+not evidence that it is the intended GKE deployment.
+
+First discover actual tools, call `list_observability_providers`, describe a
+returned `namespace/name`, and discover its metrics, labels, or trace services.
+Use that provider's query syntax, a short explicit time range and a small limit.
+Inspect state, reason, truncation and continuation fields. Provider-specific
+limitations and empty results remain visible. `validate_provider` is an offline
+configuration check; only a real bounded provider query validates connectivity.
+
+The observe resource advertises the authorization-server issuer
+`https://HOST/observe`. RFC 8414 discovery therefore resolves
+`/.well-known/oauth-authorization-server/observe`, independently of the fleet's
+root metadata. RFC 9728 canonical resource metadata is available at
+`/.well-known/oauth-protected-resource/observe/mcp`; the explicit 401 challenge
+also retains `/observe/.well-known/oauth-protected-resource` for compatibility.
+Ingress must route both canonical observe metadata paths to the gateway.
+Its JWTs keep the deployment origin issuer and require the separate
+`paprika-observability` audience. Shared grant-cache records also bind audience,
+and refresh tokens bind client ID; pre-upgrade unbound refresh records require
+a fresh OAuth login.
+
+The pinned Go MCP SDK supports legacy 2025 clients and the 2026-07-28 protocol.
+For the modern protocol, HTTP cancellation propagates into the tool context;
+legacy stateless requests retain their backend timeout bound. Invalid Origin
+headers are rejected; native clients can omit Origin. Per-subject rate limits
+include `Retry-After`. Package tests and local protocol tests establish server
+contracts; they do not prove installed-client OAuth, deployed ingress, or live
+provider access.
+
+Two deployment limitations remain: DCR registrations are held in the server
+process, so a restart requires re-registration and replicas cannot share those
+registrations. Keep the gateway at one replica until registration storage is
+shared. Self-signed OAuth access tokens preserve subject/email/display name but
+currently reconstruct only the `users` group; group-based RBAC grants cannot
+rely on original OIDC group memberships. Use an already approved exact subject
+rule or implement group-claim preservation separately; do not broaden RBAC to
+work around a denied query.
+
+Validate without installation or new credentials:
+
+```sh
+claude plugin validate --strict plugins/paprika-observe
+node --experimental-strip-types --test internal/api/mcp/ui/tests/observe-plugin.test.ts
+go test ./internal/api/mcp -count=1
+```
+
+These layouts and commands follow [OpenAI plugin packaging](https://developers.openai.com/plugins/build/plugins),
+[Codex MCP](https://developers.openai.com/codex/mcp/),
+[Claude plugin manifests](https://code.claude.com/docs/en/plugins-reference),
+[Claude MCP](https://code.claude.com/docs/en/mcp), and the
+[MCP authorization discovery](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/authorization-server-discovery)
+and [Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)
+specifications. Do not substitute an HTTP+SSE URL or assume all host UI extensions
+are supported merely because ordinary tools work.
+
 ## Multiple Paprika deployments
 
 Use one Paprika product plugin with separate named connections and OAuth accounts

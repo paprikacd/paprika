@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -39,23 +40,23 @@ import (
 // is cursor-paginated; the caps keep one query bounded on accounts with
 // many instances.
 const (
-	defaultEndpoint = "https://api.vultr.com"
-	pathAccountBandwidth   = "/v2/account/bandwidth"
-	pathInstances          = "/v2/instances"
-	pathInstanceBandwidth  = "/v2/instances/%s/bandwidth" // one fmt slot: the instance ID
-	perPage                = 100
-	maxListPages           = 10
-	maxFanoutInstances     = 100
-	fanoutConcurrency      = 8
+	defaultEndpoint       = "https://api.vultr.com"
+	pathAccountBandwidth  = "/v2/account/bandwidth"
+	pathInstances         = "/v2/instances"
+	pathInstanceBandwidth = "/v2/instances/%s/bandwidth" // one fmt slot: the instance ID
+	perPage               = 100
+	maxListPages          = 10
+	maxFanoutInstances    = 100
+	fanoutConcurrency     = 8
 )
 
 // Metric names the connector serves, in Query argument form.
 const (
-	MetricAccountBandwidth          = "account_bandwidth"
-	MetricInstanceIncomingBytes     = "instance_bandwidth_incoming_bytes"
-	MetricInstanceOutgoingBytes     = "instance_bandwidth_outgoing_bytes"
-	directionIncoming               = "incoming_bytes"
-	directionOutgoing               = "outgoing_bytes"
+	MetricAccountBandwidth      = "account_bandwidth"
+	MetricInstanceIncomingBytes = "instance_bandwidth_incoming_bytes"
+	MetricInstanceOutgoingBytes = "instance_bandwidth_outgoing_bytes"
+	directionIncoming           = "incoming_bytes"
+	directionOutgoing           = "outgoing_bytes"
 )
 
 // VultrMonitoring is a connector for the Vultr monitoring API. It is a
@@ -107,7 +108,10 @@ func (v VultrMonitoring) Query(ctx context.Context, req connector.QueryRequest) 
 	default:
 		return unsupported(fmt.Sprintf("metric %q is not served by the vultr-monitoring connector", req.Query))
 	}
+	return queryInstanceBandwidth(ctx, &req, direction)
+}
 
+func queryInstanceBandwidth(ctx context.Context, req *connector.QueryRequest, direction string) (*connector.QueryResult, error) {
 	cfg, err := parseConfig(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("vultr-monitoring: %w", err)
@@ -196,13 +200,13 @@ func listInstances(ctx context.Context, cfg httphelp.Config, credentials []byte)
 	var out []instance
 	cursor := ""
 	for page := 0; page < maxListPages; page++ {
-		params := url.Values{"per_page": []string{fmt.Sprint(perPage)}}
+		params := url.Values{"per_page": []string{strconv.Itoa(perPage)}}
 		if cursor != "" {
 			params.Set("cursor", cursor)
 		}
 		data, err := httphelp.Get(ctx, cfg, pathInstances, params, credentials)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("list Vultr instances: %w", err)
 		}
 		var body listResponse
 		if err := json.Unmarshal(data, &body); err != nil {
@@ -222,6 +226,8 @@ func listInstances(ctx context.Context, cfg httphelp.Config, credentials []byte)
 
 // instanceSeries is one assembled series: the instance identity plus the
 // selected direction's daily points sorted ascending by date.
+//
+//nolint:tagliatelle // Preserve the existing connector wire format, including instance_id.
 type instanceSeries struct {
 	InstanceID string          `json:"instance_id"`
 	Label      string          `json:"label"`
@@ -229,6 +235,8 @@ type instanceSeries struct {
 }
 
 // bandwidthPoints maps one instance's daily bandwidth by date.
+//
+//nolint:tagliatelle // Vultr API bandwidth fields use snake_case.
 type bandwidthPoints map[string]struct {
 	IncomingBytes int64 `json:"incoming_bytes"`
 	OutgoingBytes int64 `json:"outgoing_bytes"`
@@ -239,7 +247,7 @@ type bandwidthPoints map[string]struct {
 func instanceBandwidth(ctx context.Context, cfg httphelp.Config, credentials []byte, id, direction string) ([][]interface{}, error) {
 	data, err := httphelp.Get(ctx, cfg, fmt.Sprintf(pathInstanceBandwidth, url.PathEscape(id)), nil, credentials)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get Vultr instance bandwidth: %w", err)
 	}
 	var body struct {
 		Bandwidth bandwidthPoints `json:"bandwidth"`
@@ -269,7 +277,7 @@ func instanceBandwidth(ctx context.Context, cfg httphelp.Config, credentials []b
 // instanceBandwidthSeries fans out across the instances bounded by
 // fanoutConcurrency, omitting instances whose read failed and counting them
 // under partial.
-func instanceBandwidthSeries(ctx context.Context, cfg httphelp.Config, credentials []byte, instances []instance, direction string) ([]instanceSeries, int) {
+func instanceBandwidthSeries(ctx context.Context, cfg httphelp.Config, credentials []byte, instances []instance, direction string) (results []instanceSeries, partialCount int) {
 	series := make([]instanceSeries, len(instances))
 	var partial atomicCounter
 	sem := make(chan struct{}, fanoutConcurrency)

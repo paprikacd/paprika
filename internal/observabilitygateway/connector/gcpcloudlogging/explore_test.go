@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -51,6 +52,40 @@ func TestExploreMetricNamesRoundTrip(t *testing.T) {
 	require.Equal(t, http.MethodGet, got.method)
 	require.Equal(t, "/v2/projects/test-proj/metrics", got.path)
 	require.Equal(t, "Bearer test-token", got.auth)
+}
+
+func TestExploreNativeMetricIDsPrefixAndPagination(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	fake := newFakeGCP(t, false, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Query().Get("pageToken") == "" {
+			fmt.Fprint(w, `{"metrics":[{"name":"error_count"}],"nextPageToken":"page-two"}`)
+			return
+		}
+		require.Equal(t, "page-two", r.URL.Query().Get("pageToken"))
+		fmt.Fprint(w, `{"metrics":[{"name":"nginx/requests"}]}`)
+	})
+	res, err := CloudLogging{}.Explore(context.Background(), connector.ExploreRequest{Kind: connector.ExploreMetricNames, Prefix: "nginx/", Limit: 1, Config: testConfig(t, fake.server.URL), Credentials: fakeServiceAccountCreds(t, fake.server.URL+"/token", "test-proj")})
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, res.State)
+	require.EqualValues(t, 2, calls.Load())
+	require.JSONEq(t, `{"status":"success","data":["nginx/requests"]}`, string(res.Data))
+}
+
+func TestExploreRepeatedTokenFailsInsteadOfClaimingComplete(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	fake := newFakeGCP(t, false, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		fmt.Fprint(w, `{"metrics":[],"nextPageToken":"same-private-token"}`)
+	})
+	res, err := CloudLogging{}.Explore(context.Background(), connector.ExploreRequest{Kind: connector.ExploreMetricNames, Config: testConfig(t, fake.server.URL), Credentials: fakeServiceAccountCreds(t, fake.server.URL+"/token", "test-proj")})
+	require.NoError(t, err)
+	require.Equal(t, connector.StateError, res.State)
+	require.EqualValues(t, 2, calls.Load())
+	require.NotContains(t, res.Reason, "private-token")
+	require.Nil(t, res.Data)
 }
 
 func TestExploreUnsupportedKind(t *testing.T) {

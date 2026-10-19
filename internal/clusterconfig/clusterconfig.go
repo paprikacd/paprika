@@ -59,10 +59,8 @@ func WithClientRateLimits(cfg *rest.Config) *rest.Config {
 	return WithRateLimits(cfg, clusterClientQPS, clusterClientBurst)
 }
 
-// WithRateLimits applies explicit client-side rate limits, for components
-// whose serving rate differs from the controller default — the
-// observability gateway fans every query into a Kubernetes read, so a
-// 50-QPS ceiling throttles it below its backend-serving capacity.
+// WithRateLimits applies an explicit client-side budget for a component's
+// Kubernetes reads while retaining the shared controller defaults above.
 func WithRateLimits(cfg *rest.Config, qps float32, burst int) *rest.Config {
 	cfg.QPS = qps
 	cfg.Burst = burst

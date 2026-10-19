@@ -24,36 +24,36 @@ const (
 //
 //nolint:gocritic // ExploreRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (Loki) Explore(ctx context.Context, req connector.ExploreRequest) (*connector.ExploreResult, error) {
-	if req.Kind == connector.ExploreLabelValues && req.Label == "" {
-		return exploreUnsupported("a label name is required")
+	path, reason := exploreRequestPath(&req)
+	if reason != "" {
+		return exploreUnsupported(reason)
 	}
-	if req.Kind != connector.ExploreLabelNames && req.Kind != connector.ExploreLabelValues {
-		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the loki connector", req.Kind))
-	}
-
 	cfg, err := httphelp.ParseConfig(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("loki: %w", err)
 	}
+	data, err := httphelp.Get(ctx, cfg, path, nil, req.Credentials)
+	if err != nil {
+		return exploreError(err), nil
+	}
+	return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
+}
 
+// exploreRequestPath validates the exploration shape before configuration or
+// network access, including explicit rejection of unsupported signal kinds.
+func exploreRequestPath(req *connector.ExploreRequest) (path, reason string) {
 	switch req.Kind {
 	case connector.ExploreLabelNames:
-		data, err := httphelp.Get(ctx, cfg, pathLabels, nil, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
-		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
-
+		return pathLabels, ""
 	case connector.ExploreLabelValues:
-		data, err := httphelp.Get(ctx, cfg, fmt.Sprintf(pathLabelValues, url.PathEscape(req.Label)), nil, req.Credentials)
-		if err != nil {
-			return exploreError(err), nil
+		if req.Label == "" {
+			return "", "a label name is required"
 		}
-		return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
-
-	default:
-		return exploreUnsupported(fmt.Sprintf("exploration kind %q is not served by the loki connector", req.Kind))
+		return fmt.Sprintf(pathLabelValues, url.PathEscape(req.Label)), ""
+	case connector.ExploreMetricNames, connector.ExploreMetricMetadata, connector.ExploreTraceServices:
+		// These known exploration kinds are unsupported.
 	}
+	return "", fmt.Sprintf("exploration kind %q is not served by the loki connector", req.Kind)
 }
 
 // exploreUnsupported builds the result — and error — for an exploration kind

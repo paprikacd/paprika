@@ -218,3 +218,16 @@ func findField(info TypeInfo, key string) (Field, bool) {
 	}
 	return Field{}, false
 }
+
+func TestGCPOnboardingUsesApprovedReadPermissionsWithoutKeyExport(t *testing.T) {
+	for _, providerType := range []string{connector.ProviderGCPCloudLogging, connector.ProviderGCPCloudMonitoring, connector.ProviderGCPCloudTrace} {
+		info, ok := Get(providerType)
+		require.True(t, ok)
+		raw, err := json.Marshal(info.Steps)
+		require.NoError(t, err)
+		require.NotContains(t, string(raw), "service-accounts keys create")
+		require.NotContains(t, string(raw), "--role=\"roles/cloudtrace.user")
+		require.Contains(t, string(raw), "approval")
+		require.Contains(t, string(raw), "credentialsSecretRef")
+	}
+}

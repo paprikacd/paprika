@@ -153,6 +153,10 @@ type QueryRequest struct {
 	// Limit caps the number of returned entries; interpretation and
 	// clamping are the connector's own.
 	Limit int
+	// PageToken continues a provider-native query page. It is opaque and
+	// must be used with the same provider, query, range and limit as the
+	// preceding request; tokens are never logged by the gateway.
+	PageToken string
 	// Config is the connector's provider-specific configuration as opaque
 	// JSON, validated ahead of use by ValidateConfig.
 	Config json.RawMessage
@@ -162,6 +166,10 @@ type QueryRequest struct {
 	// Authorization: Bearer token.
 	Credentials []byte
 }
+
+// MaxPageTokenBytes bounds opaque continuation data before it reaches a
+// provider. The token is never included in validation errors.
+const MaxPageTokenBytes = 4096
 
 // QueryResult is one query's outcome. Data is the backend's JSON response
 // passed through untouched, wrapped with the State and Reason a caller shows

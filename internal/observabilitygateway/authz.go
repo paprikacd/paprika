@@ -3,12 +3,99 @@ package observabilitygateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+
+	"connectrpc.com/connect"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
+
+// NewAuthorizedBackend is the production entry point. The gateway service
+// account's Kubernetes permissions are not the caller's permissions: every
+// query must pass the existing human RBAC rules before reading provider or
+// credential objects. NewBackend is reserved for trusted internal callers.
+func NewAuthorizedBackend(k8sClient client.Client, authorizer auth.Authorizer) Backend {
+	inner := &k8sBackend{client: k8sClient, credentialAuthorizer: authorizer}
+	return &authorizedBackend{backend: inner, authorizer: authorizer}
+}
+
+type authorizedBackend struct {
+	backend    Backend
+	authorizer auth.Authorizer
+}
+
+func (b *authorizedBackend) principal(ctx context.Context) (*auth.Principal, error) {
+	p := auth.PrincipalFromContext(ctx)
+	if p == nil || p.Subject == "" {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("an authenticated observability principal is required"))
+	}
+	if b.authorizer == nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("observability provider access is not authorized"))
+	}
+	return p, nil
+}
+
+func (b *authorizedBackend) authorize(ctx context.Context, provider string) error {
+	p, err := b.principal(ctx)
+	if err != nil {
+		return err
+	}
+	namespace, name, found := strings.Cut(provider, "/")
+	if !found || namespace == "" || name == "" || strings.Contains(name, "/") {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("provider must be namespace/name"))
+	}
+	if err := b.authorizer.Authorize(ctx, p, auth.ActionRead, auth.ResourceObservabilityProviders, namespace, ""); err != nil {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("observability provider access is not authorized"))
+	}
+	return nil
+}
+
+func (b *authorizedBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
+	if _, err := b.principal(ctx); err != nil {
+		return nil, err
+	}
+	providers, err := b.backend.ListProviders(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list authorized observability providers: %w", err)
+	}
+	visible := make([]ProviderInfo, 0, len(providers))
+	for _, provider := range providers {
+		if err := b.authorize(ctx, provider.Name); err == nil {
+			visible = append(visible, provider)
+		}
+	}
+	return visible, nil
+}
+
+//nolint:gocritic // QueryRequest travels by value to satisfy the shared Backend interface.
+func (b *authorizedBackend) Query(ctx context.Context, provider string, req connector.QueryRequest) (*connector.QueryResult, error) {
+	if err := b.authorize(ctx, provider); err != nil {
+		return nil, err
+	}
+	result, err := b.backend.Query(ctx, provider, req)
+	if err != nil {
+		return nil, fmt.Errorf("query authorized observability provider: %w", err)
+	}
+	return result, nil
+}
+
+//nolint:gocritic // ExploreRequest travels by value to satisfy the shared Backend interface.
+func (b *authorizedBackend) Explore(ctx context.Context, provider string, req connector.ExploreRequest) (*connector.ExploreResult, error) {
+	if err := b.authorize(ctx, provider); err != nil {
+		return nil, err
+	}
+	result, err := b.backend.Explore(ctx, provider, req)
+	if err != nil {
+		return nil, fmt.Errorf("explore authorized observability provider: %w", err)
+	}
+	return result, nil
+}
 
 // gatewayError is the RFC 6749-shaped error body every HTTP surface of this
 // gateway — the MCP protocol endpoints, the usage endpoint, the catalog

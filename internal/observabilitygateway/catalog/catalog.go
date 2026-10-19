@@ -469,45 +469,7 @@ spec:
 		Description:  "Reads entries from Google Cloud Logging — application, audit, and platform logs — using a Google service-account credential or GKE Workload Identity. The Query argument is the advanced logs filter, e.g. logName=\"projects/<p>/logs/cloudaudit.googleapis.com%2Factivity\". Admin Activity audit logs are readable with logging.viewer; Data Access requires logging.privateLogViewer.",
 		ConfigFields: gcpConfigFields("Only for private proxies or fakes — defaults to logging.googleapis.com."),
 		Credential:   gcpServiceAccountCredential,
-		Steps: []Step{
-			{
-				Title: "Create a service account",
-				Body:  "Create a dedicated service account so the gateway's access is independently auditable and revocable.",
-				Code:  "gcloud iam service-accounts create paprika-observe --display-name=\"Paprika observability\"",
-			},
-			{
-				Title: "Grant the viewer role",
-				Body:  "roles/logging.viewer covers reading log entries. Admin Activity audit logs are included; Data Access audit logs need logging.privateLogViewer instead.",
-				Code: "gcloud projects add-iam-policy-binding <PROJECT> \\\n" +
-					"  --member=\"serviceAccount:paprika-observe@<PROJECT>.iam.gserviceaccount.com\" \\\n" +
-					"  --role=\"roles/logging.viewer\"",
-			},
-			{
-				Title: "Export the key",
-				Body:  "Store the downloaded JSON as the credentials key of a Secret in the provider's namespace; credentialsSecretRef defaults to that key.",
-				Code: "gcloud iam service-accounts keys create observe-key.json \\\n" +
-					"  --iam-account=paprika-observe@<PROJECT>.iam.gserviceaccount.com",
-			},
-			{
-				Title: "On GKE, use Workload Identity instead",
-				Body:  "Bind the service account to the gateway's Kubernetes service account and create the provider with no credentialsSecretRef — no downloaded key exists to rotate.",
-				Code: "gcloud iam service-accounts add-iam-policy-binding \\\n" +
-					"  paprika-observe@<PROJECT>.iam.gserviceaccount.com \\\n" +
-					"  --role=\"roles/iam.workloadIdentityUser\" \\\n" +
-					"  --member=\"serviceAccount:<PROJECT>.svc.id.goog[<ns>/<gateway-serviceaccount>]\"",
-			},
-			applyStep(`apiVersion: observability.paprika.io/v1alpha1
-kind: ObservabilityProvider
-metadata:
-  name: cloud-logging
-  namespace: paprika-e2e
-spec:
-  type: gcp-cloudlogging
-  config:
-    projectId: my-project
-  credentialsSecretRef:
-    name: gcp-observe-credentials`),
-		},
+		Steps:        gcpReadOnlySteps("cloud-logging", connector.ProviderGCPCloudLogging, "logging.logEntries.list, logging.logMetrics.list"),
 		Probe: Probe{
 			Signal: connector.SignalLogs,
 			Note:   "An entries.list call with pageSize 1 against the configured project.",
@@ -523,45 +485,7 @@ spec:
 		Description:  "Reads time series from Google Cloud Monitoring using a Google service-account credential or GKE Workload Identity. The Query argument is the timeSeries filter, e.g. metric.type=\"custom.googleapis.com/...\".",
 		ConfigFields: gcpConfigFields("Only for private proxies or fakes — defaults to monitoring.googleapis.com."),
 		Credential:   gcpServiceAccountCredential,
-		Steps: []Step{
-			{
-				Title: "Create a service account",
-				Body:  "Create a dedicated service account so the gateway's access is independently auditable and revocable.",
-				Code:  "gcloud iam service-accounts create paprika-observe --display-name=\"Paprika observability\"",
-			},
-			{
-				Title: "Grant the viewer role",
-				Body:  "roles/monitoring.viewer covers reading time series and metric descriptors.",
-				Code: "gcloud projects add-iam-policy-binding <PROJECT> \\\n" +
-					"  --member=\"serviceAccount:paprika-observe@<PROJECT>.iam.gserviceaccount.com\" \\\n" +
-					"  --role=\"roles/monitoring.viewer\"",
-			},
-			{
-				Title: "Export the key",
-				Body:  "Store the downloaded JSON as the credentials key of a Secret in the provider's namespace; credentialsSecretRef defaults to that key.",
-				Code: "gcloud iam service-accounts keys create observe-key.json \\\n" +
-					"  --iam-account=paprika-observe@<PROJECT>.iam.gserviceaccount.com",
-			},
-			{
-				Title: "On GKE, use Workload Identity instead",
-				Body:  "Bind the service account to the gateway's Kubernetes service account and create the provider with no credentialsSecretRef — no downloaded key exists to rotate.",
-				Code: "gcloud iam service-accounts add-iam-policy-binding \\\n" +
-					"  paprika-observe@<PROJECT>.iam.gserviceaccount.com \\\n" +
-					"  --role=\"roles/iam.workloadIdentityUser\" \\\n" +
-					"  --member=\"serviceAccount:<PROJECT>.svc.id.goog[<ns>/<gateway-serviceaccount>]\"",
-			},
-			applyStep(`apiVersion: observability.paprika.io/v1alpha1
-kind: ObservabilityProvider
-metadata:
-  name: cloud-monitoring
-  namespace: paprika-e2e
-spec:
-  type: gcp-cloudmonitoring
-  config:
-    projectId: my-project
-  credentialsSecretRef:
-    name: gcp-observe-credentials`),
-		},
+		Steps:        gcpReadOnlySteps("cloud-monitoring", connector.ProviderGCPCloudMonitoring, "monitoring.metricDescriptors.list, monitoring.timeSeries.list"),
 		Probe: Probe{
 			Signal: connector.SignalMetrics,
 			Note:   "A metricDescriptors.list call with pageSize 1 for the configured project.",
@@ -577,45 +501,7 @@ spec:
 		Description:  "Reads traces from Google Cloud Trace using a Google service-account credential or GKE Workload Identity. The Query argument is the optional list filter; a trace ID instead fetches one trace.",
 		ConfigFields: gcpConfigFields("Only for private proxies or fakes — defaults to cloudtrace.googleapis.com."),
 		Credential:   gcpServiceAccountCredential,
-		Steps: []Step{
-			{
-				Title: "Create a service account",
-				Body:  "Create a dedicated service account so the gateway's access is independently auditable and revocable.",
-				Code:  "gcloud iam service-accounts create paprika-observe --display-name=\"Paprika observability\"",
-			},
-			{
-				Title: "Grant the viewer role",
-				Body:  "roles/cloudtrace.user covers listing and reading traces.",
-				Code: "gcloud projects add-iam-policy-binding <PROJECT> \\\n" +
-					"  --member=\"serviceAccount:paprika-observe@<PROJECT>.iam.gserviceaccount.com\" \\\n" +
-					"  --role=\"roles/cloudtrace.user\"",
-			},
-			{
-				Title: "Export the key",
-				Body:  "Store the downloaded JSON as the credentials key of a Secret in the provider's namespace; credentialsSecretRef defaults to that key.",
-				Code: "gcloud iam service-accounts keys create observe-key.json \\\n" +
-					"  --iam-account=paprika-observe@<PROJECT>.iam.gserviceaccount.com",
-			},
-			{
-				Title: "On GKE, use Workload Identity instead",
-				Body:  "Bind the service account to the gateway's Kubernetes service account and create the provider with no credentialsSecretRef — no downloaded key exists to rotate.",
-				Code: "gcloud iam service-accounts add-iam-policy-binding \\\n" +
-					"  paprika-observe@<PROJECT>.iam.gserviceaccount.com \\\n" +
-					"  --role=\"roles/iam.workloadIdentityUser\" \\\n" +
-					"  --member=\"serviceAccount:<PROJECT>.svc.id.goog[<ns>/<gateway-serviceaccount>]\"",
-			},
-			applyStep(`apiVersion: observability.paprika.io/v1alpha1
-kind: ObservabilityProvider
-metadata:
-  name: cloud-trace
-  namespace: paprika-e2e
-spec:
-  type: gcp-cloudtrace
-  config:
-    projectId: my-project
-  credentialsSecretRef:
-    name: gcp-observe-credentials`),
-		},
+		Steps:        gcpReadOnlySteps("cloud-trace", connector.ProviderGCPCloudTrace, "cloudtrace.traces.get, cloudtrace.traces.list"),
 		Probe: Probe{
 			Signal: connector.SignalTraces,
 			Note:   "A traces.list call with pageSize 1 for the configured project.",
@@ -774,13 +660,13 @@ spec:
 		},
 	},
 	{
-		Type:         connector.ProviderVultrMonitoring,
-		DisplayName:  "Vultr Monitoring",
-		Vendor:       vendorVultr,
-		Category:     categoryMetrics,
-		Signals:      []connector.Signal{connector.SignalMetrics},
-		Summary:      "Read Vultr account and per-instance bandwidth metrics through the v2 API.",
-		Description:  "Reads Vultr bandwidth metrics using a Vultr API key credential. The Query argument is a metric name: account_bandwidth returns account-level previous/current/projected period totals with overage; instance_bandwidth_incoming_bytes and instance_bandwidth_outgoing_bytes fan out across every cloud-compute instance and return one daily-point series per instance tagged by instance ID and label. The backend serves the current billing period — no time range is sent.",
+		Type:        connector.ProviderVultrMonitoring,
+		DisplayName: "Vultr Monitoring",
+		Vendor:      vendorVultr,
+		Category:    categoryMetrics,
+		Signals:     []connector.Signal{connector.SignalMetrics},
+		Summary:     "Read Vultr account and per-instance bandwidth metrics through the v2 API.",
+		Description: "Reads Vultr bandwidth metrics using a Vultr API key credential. The Query argument is a metric name: account_bandwidth returns account-level previous/current/projected period totals with overage; instance_bandwidth_incoming_bytes and instance_bandwidth_outgoing_bytes fan out across every cloud-compute instance and return one daily-point series per instance tagged by instance ID and label. The backend serves the current billing period — no time range is sent.",
 		ConfigFields: []Field{
 			{
 				Key:   "endpoint",
@@ -908,4 +794,16 @@ func Summaries() []TypeSummary {
 		})
 	}
 	return summaries
+}
+
+// gcpReadOnlySteps keeps onboarding free of key-export instructions and
+// overbroad viewer-role assumptions. Identity and permission changes remain
+// explicit operator decisions; these catalog reads never execute commands.
+func gcpReadOnlySteps(name, providerType, permissions string) []Step {
+	return []Step{
+		{Title: "Choose the workload identity", Body: "Use a dedicated Kubernetes ServiceAccount with direct Workload Identity Federation on GKE. Reuse an existing authorized identity where appropriate; create identities or grant access only after exact principal and project approval."},
+		{Title: "Approve read permissions", Body: "Request only these permissions in the configured data project: " + permissions + ". A custom reader role avoids unrelated writes. Cloud Trace User also grants task and scope mutations; it is broader than trace retrieval requires. Private audit logs and additional projects require separate approval."},
+		{Title: "Keep credentials out of clients", Body: "With workload identity, omit credentialsSecretRef. Never paste keys or tokens into MCP calls. Existing non-GKE credentials must use the administrator's secure Secret-reference workflow; this setup does not export keys."},
+		applyStep("apiVersion: observability.paprika.io/v1alpha1\nkind: ObservabilityProvider\nmetadata:\n  name: " + name + "\n  namespace: <approved-provider-namespace>\nspec:\n  type: " + providerType + "\n  config:\n    projectId: <approved-data-project>"),
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -151,9 +152,61 @@ func TestQueryListOKRoundTrip(t *testing.T) {
 	require.Equal(t, "/v1/projects/test-proj/traces", got.path)
 	require.Equal(t, "Bearer test-token", got.auth)
 	require.Equal(t, "+label:route", got.query.Get("filter"))
-	require.Equal(t, start.Format(time.RFC3339), got.query.Get("startTime"))
-	require.Equal(t, end.Format(time.RFC3339), got.query.Get("endTime"))
+	require.Equal(t, start.UTC().Format(time.RFC3339Nano), got.query.Get("startTime"))
+	require.Equal(t, end.UTC().Format(time.RFC3339Nano), got.query.Get("endTime"))
 	require.Equal(t, "100", got.query.Get("pageSize"))
+}
+
+func TestContinuationPreservesProjectFilterAndWindow(t *testing.T) {
+	t.Parallel()
+	fake := newFakeGCP(t, false, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"traces":[],"nextPageToken":"opaque+/=continuation"}`)
+	})
+	start := time.Date(2026, 10, 15, 10, 0, 0, 123456789, time.UTC)
+	req := queryTraces(testConfig(t, fake.server.URL), fakeServiceAccountCreds(t, fake.server.URL+"/token", "other-project"), func(req *connector.QueryRequest) {
+		req.Range = connector.TimeRange{Start: start, End: start.Add(time.Minute)}
+		req.Limit = 7
+	})
+	first, err := New().Query(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, first.State)
+	before := fake.last(t)
+	var page struct {
+		NextPageToken string `json:"nextPageToken"`
+	}
+	require.NoError(t, json.Unmarshal(first.Data, &page))
+	req.PageToken = page.NextPageToken
+	second, err := New().Query(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, second.State)
+	after := fake.last(t)
+	require.Equal(t, "/v1/projects/test-proj/traces", after.path)
+	require.Equal(t, req.PageToken, after.query.Get("pageToken"))
+	after.query.Del("pageToken")
+	require.Equal(t, before.query, after.query)
+	require.Equal(t, "2026-10-15T10:00:00.123456789Z", after.query.Get("startTime"))
+}
+
+func TestProbeRetainsTimeBounds(t *testing.T) {
+	t.Parallel()
+	start := time.Unix(1700000000, 0)
+	_, params := requestShape("test-proj", &connector.QueryRequest{Range: connector.TimeRange{Start: start, End: start.Add(time.Minute)}})
+	require.Equal(t, "1", params.Get("pageSize"))
+	require.Equal(t, start.UTC().Format(time.RFC3339Nano), params.Get("startTime"))
+	require.Equal(t, start.Add(time.Minute).UTC().Format(time.RFC3339Nano), params.Get("endTime"))
+}
+
+func TestInvalidPageTokenShapesFailBeforeCredentialsOrNetwork(t *testing.T) {
+	t.Parallel()
+	for _, req := range []connector.QueryRequest{
+		{Signal: connector.SignalTraces, PageToken: strings.Repeat("private", 1000)},
+		{Signal: connector.SignalTraces, TraceID: "trace-id", PageToken: "private"},
+	} {
+		res, err := New().Query(context.Background(), req)
+		require.ErrorIs(t, err, connector.ErrUnsupported)
+		require.Equal(t, connector.StateNotAvailable, res.State)
+		require.NotContains(t, err.Error(), "private")
+	}
 }
 
 func TestTraceIDFetchTakesPrecedence(t *testing.T) {
@@ -311,7 +364,8 @@ func TestUnsupportedCredentialType(t *testing.T) {
 func TestInsecureSkipTLS(t *testing.T) {
 	t.Parallel()
 	fake := newFakeGCP(t, true, tracesOK)
-	creds := fakeServiceAccountCreds(t, fake.server.URL+"/token", "test-proj")
+	tokenServer := newFakeGCP(t, false, tracesOK)
+	creds := fakeServiceAccountCreds(t, tokenServer.server.URL+"/token", "test-proj")
 
 	// Default: the self-signed certificate must fail verification. The
 	// transport error converts to a StateError result per the connector
@@ -321,7 +375,7 @@ func TestInsecureSkipTLS(t *testing.T) {
 	require.Equal(t, connector.StateError, res.State)
 
 	// insecureSkipTLS opts this connector into accepting the self-signed
-	// certificate — for both the token exchange and the API call.
+	// backend certificate; OAuth token exchanges still verify certificates.
 	raw, err := json.Marshal(map[string]any{
 		"projectId":       "test-proj",
 		"endpoint":        fake.server.URL,

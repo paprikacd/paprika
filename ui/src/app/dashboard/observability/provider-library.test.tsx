@@ -433,7 +433,7 @@ describe("ProviderLibrary", () => {
     fireEvent.change(screen.getByLabelText("Credential document"), {
       target: { value: CREDENTIAL_DOC },
     })
-    await user.click(screen.getByRole("button", { name: "Test connection" }))
+    await user.click(screen.getByRole("button", { name: "Validate configuration" }))
 
     // A refused credential is still DATA_STATE_OK on the wire; the refusal
     // travels in connectorState and reason.
@@ -447,7 +447,7 @@ describe("ProviderLibrary", () => {
 
     const req = fake.validateObservabilityProvider.mock.calls[0][0]
     expect(req.type).toBe("aws-cloudwatch-logs")
-    expect(req.credentials).toBe(CREDENTIAL_DOC)
+    expect(req.credentials).toBeUndefined()
     expect(JSON.parse(new TextDecoder().decode(req.configJson))).toEqual({
       region: "us-east-1",
       logGroup: "/aws/eks/production",

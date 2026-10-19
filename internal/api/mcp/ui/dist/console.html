@@ -1924,7 +1924,7 @@ container holding the app. Specify either width or maxWidth, and either height o
             })));
           }
         }
-        
+
         if (${L}.value === undefined) {
           if (${H} in input) {
             newResult[${H}] = undefined;
@@ -1932,7 +1932,7 @@ container holding the app. Specify either width or maxWidth, and either height o
         } else {
           newResult[${H}] = ${L}.value;
         }
-        
+
       `):we?m.write(`
         if (${L}.issues.length) {
           payload.issues = payload.issues.concat(${L}.issues.map(iss => ({
@@ -1940,7 +1940,7 @@ container holding the app. Specify either width or maxWidth, and either height o
             path: iss.path ? [${H}, ...iss.path] : [${H}]
           })));
         }
-        
+
         if (${L}.value === undefined) {
           if (${H} in input) {
             newResult[${H}] = undefined;
@@ -1948,7 +1948,7 @@ container holding the app. Specify either width or maxWidth, and either height o
         } else {
           newResult[${H}] = ${L}.value;
         }
-        
+
       `):m.write(`
         const ${L}_present = ${H} in input;
         if (${L}.issues.length) {

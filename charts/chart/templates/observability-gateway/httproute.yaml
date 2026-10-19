@@ -41,6 +41,9 @@ spec:
     kind: Gateway
     name: {{ $gw.gatewayRef.name }}
     namespace: {{ $gw.gatewayRef.namespace }}
+    {{- with $gw.gatewayRef.sectionName }}
+    sectionName: {{ . | quote }}
+    {{- end }}
   hostnames:
   - {{ $gw.hostname | quote }}
   rules:
@@ -48,6 +51,15 @@ spec:
     - path:
         type: PathPrefix
         value: /observe
+    # RFC 8414 and RFC 9728 place a path-qualified issuer/resource AFTER
+    # /.well-known. These routes must reach the observe server rather than
+    # the fleet API server's root metadata on the shared hostname.
+    - path:
+        type: Exact
+        value: /.well-known/oauth-authorization-server/observe
+    - path:
+        type: Exact
+        value: /.well-known/oauth-protected-resource/observe/mcp
     backendRefs:
     - name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" $) }}
       port: {{ $.Values.observabilityGateway.service.port }}

@@ -69,6 +69,28 @@ func TestQueryRange(t *testing.T) {
 	require.Equal(t, strconv.FormatInt(start.Unix(), 10), capture.query.Get("start"))
 	require.Equal(t, strconv.FormatInt(end.Unix(), 10), capture.query.Get("end"))
 	require.Equal(t, "20s", capture.query.Get("step"))
+	require.Equal(t, "100", capture.query.Get("limit"))
+}
+
+func TestQueryRangeRejectsExplosiveStepBeforeNetwork(t *testing.T) {
+	t.Parallel()
+	start := time.Unix(1700000000, 0)
+	res, err := New().Query(context.Background(), connector.QueryRequest{
+		Signal: connector.SignalMetrics, Query: "up",
+		Range:  connector.TimeRange{Start: start, End: start.Add(time.Hour)},
+		Config: stepConfig(t, "http://localhost:1", "1ns"),
+	})
+	require.ErrorIs(t, err, connector.ErrUnsupported)
+	require.Equal(t, connector.StateNotAvailable, res.State)
+	require.Contains(t, res.Reason, "11000 points")
+}
+
+func TestQueryLimitClampsBeforeProviderRequest(t *testing.T) {
+	t.Parallel()
+	server, capture := newTestServer(t, http.StatusOK, `{"data":[]}`)
+	_, err := New().Query(context.Background(), connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up", Limit: 9000, Config: endpointConfig(t, server.URL)})
+	require.NoError(t, err)
+	require.Equal(t, "1000", capture.query.Get("limit"))
 }
 
 func TestQueryInstant(t *testing.T) {

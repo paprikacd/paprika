@@ -15,6 +15,9 @@ the **`paprika:observe`** scope, so a token minted for the console or fleet MCP
 surface is not replayable here and vice versa — even though all surfaces share
 the deployment's HMAC token secret.
 
+For request budgets, scope boundaries, repeatable local checks, profiling and live
+acceptance, see [validation guidance](observability-validation.md).
+
 ## Architecture
 
 ```
@@ -66,7 +69,7 @@ Thirteen tools, all read-only, all requiring `paprika:observe`:
 | `list_trace_services` | Service names a tempo provider has spans for |
 | `list_provider_types` | The provider-type catalog (library view) |
 | `describe_provider_type` | One type's config schema + onboarding walkthrough |
-| `validate_provider` | Dry-run a prospective provider's config/credentials |
+| `validate_provider` | Offline syntax validation of prospective provider configuration |
 
 The five exploration tools answer in the backend's own JSON envelope
 (`{"status":"success","data":[...]}` for prometheus/loki, `{"tagNames":[...]}`
@@ -213,11 +216,10 @@ credential document and the config keys:
   (private proxies / fakes — replaces the `*.googleapis.com` base),
   `insecureSkipTLS`.
 
-Empty `query` on a cloud connector is its **health probe** (one cheap read:
-`entries:list` page 1, `metricDescriptors` page 1, `traces` page 1,
-`FilterLogEvents` limit 1, `ListMetrics`, `GetTraceSummaries` 10 min,
-`LookupEvents` 1) — the gateway's `validate_provider` tool and the console's
-"Test connection" button run exactly this probe without persisting anything.
+Empty connector queries are used internally for small health reads. Prospective
+`validate_provider` and the console's **Validate configuration** action only check
+syntax and never send credentials or make backend requests. Establish connectivity
+by querying an approved provider with explicit bounds.
 
 E2E coverage runs in kind: LocalStack serves CloudWatch Logs + Metrics
 (X-Ray and CloudTrail are license-gated there, so those two run against a
@@ -227,6 +229,12 @@ shapes with a runtime-generated service-account key — see
 
 ## Enabling the gateway
 
+Check the installed release and source chart versions before upgrading the main
+release. When the installed chart is newer, use the separate
+[gateway-only Helm add-on](observability-addon.md) to preserve its controllers
+and resources. Its render-only helper emits three resources and keeps public
+routing disabled unless explicitly requested and approved.
+
 ```sh
 helm upgrade paprika-e2e charts/chart/ \
   --namespace paprika-e2e --values deploy/test-values.yaml \
@@ -234,10 +242,16 @@ helm upgrade paprika-e2e charts/chart/ \
 ```
 
 Preconditions enforced at render time (`helm template` fails otherwise):
-`deploymentMode: split`, `mcp.enabled`, `auth.enabled`, a non-empty
+`deploymentMode: split`, `auth.enabled`, a non-empty
 `PAPRIKA_AUTH_TOKEN_SECRET` via `observabilityGateway.extraEnv(From)`, and
-`mcp.oauth.clientId` / `mcp.oauth.redirectUris` / `mcp.publicURL`. Public
-exposure reuses the api-server's Gateway/hostname:
+`mcp.publicURL`. A preconfigured OAuth client is optional for the gateway: leave
+both `mcp.oauth.clientId` and `mcp.oauth.redirectUris` empty for dynamic
+registration only, or provide both for an approved static client. Partial
+configuration is rejected. Rendering and DCR-only startup configure no persistent
+client; native OAuth sign-in and client-access approval are separate actions.
+The shared `mcp` configuration fields do not require `mcp.enabled`: that switch
+controls the independent fleet MCP surface and may remain disabled.
+Public exposure reuses the api-server's Gateway/hostname:
 
 ```yaml
 observabilityGateway:
@@ -249,9 +263,9 @@ observabilityGateway:
 Verify:
 
 ```sh
-curl -s https://paprika.benebsworth.com/observe/.well-known/oauth-protected-resource | jq .
+curl -s https://paprika.benebsworth.com/.well-known/oauth-protected-resource/observe/mcp | jq .
 # { "resource": "https://paprika.benebsworth.com/observe/mcp",
-#   "authorization_servers": ["https://paprika.benebsworth.com"],
+#   "authorization_servers": ["https://paprika.benebsworth.com/observe"],
 #   "scopes_supported": ["paprika:observe"] }
 ```
 
@@ -343,16 +357,13 @@ under *Sources* in the sidebar) renders three boards:
   not deployed the board renders the canonical "not configured" sentence
   instead of zeros.
 
-Selecting **Set up** on a library card opens the onboarding wizard: the
-type's guided steps (with copyable CLI/IAM snippets from the catalog), its
-config form, the credential document, then **Test connection**
-(`ValidateObservabilityProvider` — runs the connector's health probe via
-the gateway, verdict as data: a Forbidden credential shows as data, not an
-error) and **Create provider** (`CreateObservabilityProvider` — creates the
-`<name>-credentials` Secret plus the CR; the admission webhook validates
-type/config and rejects inline credentials, and a rejected CR cleans its
-secret up). Creation is authorized with the console's `write` action on the
-`observabilityproviders` resource in the target namespace.
+Selecting **Set up** on a library card opens the onboarding wizard. Its
+**Validate configuration** action calls `ValidateObservabilityProvider` for offline
+syntax checks and does not establish backend access. **Create provider** is a
+separate administrative operation that creates the provider CR and, when explicitly
+supplied through the secure administration flow, its credential Secret. Creation
+requires the console's `write` action on `observabilityproviders` in the target
+namespace. Workload identity avoids a static credential document.
 
 The same data is available programmatically:
 `PaprikaService.ListObservabilityProviderTypes`,

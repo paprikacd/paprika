@@ -116,7 +116,13 @@ func (s *stubConnector) Query(ctx context.Context, req connector.QueryRequest) (
 func newStubBackend(t *testing.T, objects ...runtime.Object) (*k8sBackend, *stubConnector) {
 	t.Helper()
 	stub := &stubConnector{result: &connector.QueryResult{State: connector.StateOK, Data: json.RawMessage(`{"ok":true}`)}}
-	cl := fake.NewClientBuilder().WithScheme(newBackendScheme(t)).WithRuntimeObjects(objects...).Build()
+	// The fake tracker sets ResourceVersion on its input objects. Give each
+	// backend private fixtures so parallel cases can safely reuse templates.
+	fixtures := make([]runtime.Object, len(objects))
+	for i, object := range objects {
+		fixtures[i] = object.DeepCopyObject()
+	}
+	cl := fake.NewClientBuilder().WithScheme(newBackendScheme(t)).WithRuntimeObjects(fixtures...).Build()
 	return &k8sBackend{
 		client: cl,
 		newConnector: func(providerType string) (connector.Connector, error) {
@@ -130,7 +136,7 @@ func TestQueryHappyPathAgainstTestServer(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/v1/query", r.URL.Path)
+		require.Equal(t, "/api/v1/query_range", r.URL.Path)
 		require.Equal(t, "up", r.URL.Query().Get("query"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))

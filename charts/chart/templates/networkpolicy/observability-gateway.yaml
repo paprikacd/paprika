@@ -79,4 +79,9 @@ spec:
         - protocol: TCP
           port: 6379
     {{- end }}
+    {{- with .Values.observabilityGateway.additionalEgress }}
+    # Explicit operator-approved peers/ports for in-cluster backends and
+    # environment-specific DNS. Never open all backend ports by default.
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

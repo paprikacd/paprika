@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -40,7 +41,6 @@ import (
 	"github.com/benebsworth/paprika/internal/clusterconfig"
 	observecontroller "github.com/benebsworth/paprika/internal/controller/observe"
 	"github.com/benebsworth/paprika/internal/httpx"
-	"github.com/benebsworth/paprika/internal/mtls"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
@@ -108,22 +108,11 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	// listener is disabled because the gateway's own metrics server owns
 	// that port, and an async exit cancels the gateway: discovery silently
 	// gone while queries still serve is the failure mode this avoids.
-	discoveryMgr, err := ctrl.NewManager(clusterconfig.WithRateLimits(negotiateProtobuf(restCfg), 50, 100), ctrl.Options{
-		Scheme:  scheme,
-		Metrics: metricsserver.Options{BindAddress: "0"},
-	})
-	if err != nil {
-		return fmt.Errorf("create provider-discovery manager: %w", err)
-	}
-	if err := (&observecontroller.ProviderDiscoveryReconciler{}).SetupWithManager(discoveryMgr); err != nil {
-		return fmt.Errorf("setup provider-discovery controller: %w", err)
-	}
-	go func() {
-		if mgrErr := discoveryMgr.Start(gwCtx); mgrErr != nil {
-			setupLog.Error(mgrErr, "Provider-discovery manager exited with error")
-			cancel()
+	if cfg.ObservabilityDiscoveryEnabled {
+		if err := startObservabilityProviderDiscovery(gwCtx, cancel, restCfg, scheme); err != nil {
+			return err
 		}
-	}()
+	}
 
 	// The status prober is the writer behind the provider board's STATE
 	// column: it re-runs the catalog's per-type health probe against every
@@ -149,10 +138,29 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	return serveGatewayHTTP(gwCtx, cfg, mux)
 }
 
+func startObservabilityProviderDiscovery(ctx context.Context, cancel context.CancelFunc, restCfg *rest.Config, scheme *runtime.Scheme) error {
+	discoveryMgr, err := ctrl.NewManager(clusterconfig.WithRateLimits(negotiateProtobuf(restCfg), 50, 100), ctrl.Options{
+		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"},
+	})
+	if err != nil {
+		return fmt.Errorf("create provider-discovery manager: %w", err)
+	}
+	if err := (&observecontroller.ProviderDiscoveryReconciler{}).SetupWithManager(discoveryMgr); err != nil {
+		return fmt.Errorf("setup provider-discovery controller: %w", err)
+	}
+	go func() {
+		if mgrErr := discoveryMgr.Start(ctx); mgrErr != nil {
+			log.FromContext(ctx).Error(mgrErr, "Provider-discovery manager exited with error")
+			cancel()
+		}
+	}()
+	return nil
+}
+
 // validateObservabilityGatewayConfig fails fast, with the same loudness the
 // api-server's MCP config validation uses, on the flags the gateway cannot
-// start without: every MCP surface flag is required here too (a gateway that
-// starts without issuer metadata mints tokens no client can discover), and
+// start without: public issuer metadata and authentication remain required.
+// Static OAuth configuration may be fully absent for DCR-only operation, and
 // auth must be enabled because the authorize/consent surface authenticates
 // console users — the alternative would be minting observability tokens for
 // anyone.
@@ -160,10 +168,10 @@ func validateObservabilityGatewayConfig(cfg *cliConfig) error {
 	if cfg.MCPPublicURL == "" {
 		return errors.New("observability-gateway: --mcp-public-url is required; it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's issuer")
 	}
-	if cfg.MCPOAuthClientID == "" {
+	if cfg.MCPOAuthClientID == "" && len(cfg.MCPOAuthRedirectURIs) > 0 {
 		return errors.New("observability-gateway: --mcp-oauth-client-id is required")
 	}
-	if len(cfg.MCPOAuthRedirectURIs) == 0 {
+	if len(cfg.MCPOAuthRedirectURIs) == 0 && cfg.MCPOAuthClientID != "" {
 		return errors.New("observability-gateway: --mcp-oauth-redirect-uris is required")
 	}
 	if !cfg.AuthEnabled {
@@ -194,29 +202,39 @@ func startGatewaySupportServers(gwCtx, ctx context.Context, cfg *cliConfig, setu
 func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handler) error {
 	httpSrv := httpx.WithH2C(&http.Server{
 		Addr:              cfg.UIAddr,
-		Handler:           handler,
+		Handler:           limitObservabilityProtocolRequests(handler),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      45 * time.Second,
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	})
 	log.FromContext(gwCtx).Info("Starting observability gateway", "addr", cfg.UIAddr, "publicURL", cfg.MCPPublicURL, "routePrefix", observabilityGatewayRoutePrefix)
-	go func() {
-		<-gwCtx.Done()
-		if closeErr := httpSrv.Close(); closeErr != nil {
-			log.FromContext(gwCtx).Error(closeErr, "Failed to close observability gateway server")
+	// Use the shared listener so the gateway honors --api-max-conns and
+	// drains accepted requests during shutdown, just like the API server.
+	return runHTTPServer(gwCtx, httpSrv, "observability gateway", log.FromContext(gwCtx), nil, true, cfg.APIMaxConns)
+}
+
+// Keep the request slot through serialization and the final response write.
+// The backend's I/O budget alone releases too early to bound large responses
+// retained by slow clients. Metadata and health remain available under load.
+func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
+	active := make(chan struct{}, 4)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != observabilityGatewayRoutePrefix+"/mcp" {
+			next.ServeHTTP(w, r)
+			return
 		}
-	}()
-	if cert, key, ok := mtls.ServingConfig(); ok {
-		log.FromContext(gwCtx).Info("Starting observability gateway with TLS", "addr", cfg.UIAddr, "cert", cert, "key", key)
-		if err := httpSrv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
-			return fmt.Errorf("observability gateway error: %w", err)
+		select {
+		case active <- struct{}{}:
+			defer func() { <-active }()
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Retry-After", "1")
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
 		}
-		return nil
-	}
-	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("observability gateway error: %w", err)
-	}
-	return nil
+	})
 }
 
 // buildObservabilityServer assembles the MCP server and its collaborators:
@@ -231,7 +249,12 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	if len(authCfg.TokenSecret) == 0 {
 		return nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
 	}
-	backend := observabilitygateway.NewBackend(k8sClient)
+	// Provider CRs select a cloud project and may reference credentials. OAuth
+	// scope alone must never grant every principal the gateway service account's
+	// Kubernetes/cloud visibility. Namespace access follows explicit RBAC;
+	// an empty rule set denies access rather than the project compatibility
+	// authorizer's empty-project allowance.
+	backend := observabilitygateway.NewAuthorizedBackend(k8sClient, auth.NewRBACAuthorizer(authCfg.RBACRules))
 	registry := mcp.NewRegistry()
 	usage := observabilitygateway.NewUsageTracker()
 	if err := observabilitygateway.RegisterTools(registry, backend, usage); err != nil {
@@ -250,23 +273,25 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		auditor = audit.NewLogAuditor()
 	}
 	srv, err := mcp.NewServer(mcp.ServerConfig{
-		Registry:                registry,
-		Authenticator:           authenticator,
-		ConsoleAuthenticator:    consoleAuthenticator,
-		Confirmer:               mcp.NewConfirmer(cacheClient, mcpConfirmationTTL),
-		Auditor:                 auditor,
-		Cache:                   cacheClient,
-		Secret:                  authCfg.TokenSecret,
-		PublicURL:               cfg.MCPPublicURL,
-		ClientID:                cfg.MCPOAuthClientID,
-		RedirectURIs:            cfg.MCPOAuthRedirectURIs,
-		AccessTTL:               cfg.MCPAccessTokenTTL,
-		RefreshTTL:              cfg.MCPRefreshTokenTTL,
-		RoutePrefix:             observabilityGatewayRoutePrefix,
-		ProtocolPath:            observabilityGatewayRoutePrefix + "/mcp",
-		Audience:                mcp.ObservabilityTokenAudience,
-		SupportedScopes:         []mcp.Scope{mcp.ScopeObserve},
-		DisableConsoleResources: true,
+		Registry:                     registry,
+		Authenticator:                authenticator,
+		ConsoleAuthenticator:         consoleAuthenticator,
+		Confirmer:                    mcp.NewConfirmer(cacheClient, mcpConfirmationTTL),
+		Auditor:                      auditor,
+		Cache:                        cacheClient,
+		Secret:                       authCfg.TokenSecret,
+		PublicURL:                    cfg.MCPPublicURL,
+		ClientID:                     cfg.MCPOAuthClientID,
+		RedirectURIs:                 cfg.MCPOAuthRedirectURIs,
+		AllowDynamicRegistrationOnly: cfg.MCPOAuthClientID == "" && len(cfg.MCPOAuthRedirectURIs) == 0,
+		AccessTTL:                    cfg.MCPAccessTokenTTL,
+		RefreshTTL:                   cfg.MCPRefreshTokenTTL,
+		RoutePrefix:                  observabilityGatewayRoutePrefix,
+		ProtocolPath:                 observabilityGatewayRoutePrefix + "/mcp",
+		Audience:                     mcp.ObservabilityTokenAudience,
+		SupportedScopes:              []mcp.Scope{mcp.ScopeObserve},
+		DisableConsoleResources:      true,
+		LinkRequestCancellation:      true,
 		// Query tool results are large, highly repetitive JSON; level 3 keeps
 		// most of the ratio while cutting the flate CPU several-fold at the
 		// gateway's fan-out rates.

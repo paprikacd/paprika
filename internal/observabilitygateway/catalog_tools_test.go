@@ -66,8 +66,10 @@ func TestValidateProviderTool(t *testing.T) {
 
 	reg := newRegisteredTools(t, &fakeBackend{})
 
-	t.Run("reachable backend answers state OK", func(t *testing.T) {
+	t.Run("configuration validation never contacts backend", func(t *testing.T) {
+		var contacted bool
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			contacted = true
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"status":"success","data":{"result":[]}}`)
 		}))
@@ -80,7 +82,8 @@ func TestValidateProviderTool(t *testing.T) {
 		require.True(t, ok, "response is a validateToolResult, got %T", out)
 		assert.Equal(t, connector.ProviderLoki, res.Type)
 		assert.Equal(t, connector.StateOK, res.State)
-		assert.Empty(t, res.Reason)
+		assert.Contains(t, res.Reason, "have not been tested")
+		assert.False(t, contacted)
 		require.NotEmpty(t, res.ObservedAt)
 	})
 
@@ -92,6 +95,12 @@ func TestValidateProviderTool(t *testing.T) {
 	t.Run("config that is not an object becomes InvalidArgument", func(t *testing.T) {
 		_, err := invokeTool(t, reg, "validate_provider", `{"type":"loki","config":"endpoint"}`)
 		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	})
+
+	t.Run("credential payload is rejected", func(t *testing.T) {
+		_, err := invokeTool(t, reg, "validate_provider", `{"type":"loki","credentials":"test-only-sentinel"}`)
+		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+		assert.NotContains(t, err.Error(), "test-only-sentinel")
 	})
 
 	t.Run("missing type argument", func(t *testing.T) {

@@ -2,10 +2,12 @@ package observabilitygateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -13,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	observabilityv1alpha1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/catalog"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
 
@@ -208,4 +211,54 @@ func (p *StatusProber) writeStatus(ctx context.Context, cr *observabilityv1alpha
 	}
 	patch := client.MergeFrom(cr.DeepCopy())
 	return p.client.Status().Patch(ctx, updated, patch)
+}
+
+// runProbe executes the catalog entry's health probe for providerType
+// against a provider CR's config and resolved credentials. The verdict
+// travels as data — a probe is a query, so backend refusals and failures
+// come back inside the QueryResult exactly as Query reports them. The error
+// return is reserved for caller bugs and deployment bugs: a type the catalog
+// does not cover (CodeNotFound) and a catalog-covered type this build has no
+// connector for (errProviderTypeUnavailable).
+func runProbe(ctx context.Context, providerType string, cfg json.RawMessage, credentials []byte) (*connector.QueryResult, error) {
+	log := logr.FromContextOrDiscard(ctx)
+
+	entry, ok := catalog.Get(providerType)
+	if !ok {
+		return nil, connect.NewError(connect.CodeNotFound,
+			fmt.Errorf("observability provider type %q is not in the catalog", providerType))
+	}
+	conn, err := New(providerType)
+	if err != nil {
+		log.Error(err, "observability provider type is in the catalog but has no connector in this build", "type", providerType)
+		return nil, errProviderTypeUnavailable
+	}
+
+	result, err := conn.Query(ctx, connector.QueryRequest{
+		Signal:      entry.Probe.Signal,
+		Query:       probeQuery(providerType),
+		Limit:       1,
+		Config:      cfg,
+		Credentials: credentials,
+	})
+	return finishQuery(log, providerType, providerType, result, err)
+}
+
+// probeQuery is the health probe's query expression for one provider type.
+// The Google Cloud and AWS connectors read an empty query as their documented
+// probe path; the HTTP-based open-source connectors (loki, prometheus, tempo)
+// reject an empty query as a caller bug, so the probe carries the cheapest
+// valid expression each backend accepts — an answer of "no data" is still a
+// reachability proof.
+func probeQuery(providerType string) string {
+	switch providerType {
+	case connector.ProviderPrometheus:
+		return "up"
+	case connector.ProviderLoki:
+		return `{app="paprika"}`
+	case connector.ProviderTempo:
+		return "{}"
+	default:
+		return ""
+	}
 }

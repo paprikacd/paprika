@@ -67,12 +67,14 @@ func (CloudMonitoring) ValidateConfig(config json.RawMessage) error {
 //
 //nolint:gocritic // QueryRequest travels by value by design — per-call state belongs in the request, not the connector (clusterprovider contract).
 func (CloudMonitoring) Query(ctx context.Context, req connector.QueryRequest) (*connector.QueryResult, error) {
-	if req.Signal != connector.SignalMetrics {
-		return unsupported("gcp-cloudmonitoring connector supplies metrics only")
+	if reason := queryShapeError(&req); reason != "" {
+		return unsupported(reason)
 	}
-	if req.TraceID != "" {
-		return unsupported("a trace ID cannot be fetched from cloud monitoring")
+	filter, err := gcpcommon.PrepareFilter(req.Query, false)
+	if err != nil {
+		return unsupported(err.Error())
 	}
+	req.Query = filter
 	cfg, err := gcpcommon.ParseConfig(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("gcp-cloudmonitoring: %w", err)
@@ -88,6 +90,9 @@ func (CloudMonitoring) Query(ctx context.Context, req connector.QueryRequest) (*
 	}
 
 	path, params := requestShape(project, &req)
+	if req.PageToken != "" {
+		params.Set("pageToken", req.PageToken)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		gcpcommon.URL(cfg, defaultEndpoint, path, params), http.NoBody)
@@ -105,12 +110,31 @@ func (CloudMonitoring) Query(ctx context.Context, req connector.QueryRequest) (*
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
 }
 
+func queryShapeError(req *connector.QueryRequest) string {
+	if len(req.PageToken) > connector.MaxPageTokenBytes {
+		return "page token exceeds the maximum size"
+	}
+	if req.Signal != connector.SignalMetrics {
+		return "gcp-cloudmonitoring connector supplies metrics only"
+	}
+	if req.TraceID != "" {
+		return "a trace ID cannot be fetched from cloud monitoring"
+	}
+	if hasProjectSelector(req.Query) {
+		return "the provider fixes the Monitoring project; omit a project selector"
+	}
+	return ""
+}
+
 // requestShape picks the API path and query values for one request: a
 // timeSeries query with the interval defaulted to a trailing-hour window,
 // or the probe's single metricDescriptors page when the filter is empty.
 func requestShape(project string, req *connector.QueryRequest) (string, url.Values) {
 	if req.Query == "" {
-		return metricDescriptorsPath(project), url.Values{"pageSize": []string{strconv.Itoa(probeLimit)}}
+		return metricDescriptorsPath(project), url.Values{
+			"pageSize": []string{strconv.Itoa(probeLimit)},
+			"filter":   []string{projectFilter(project, "")},
+		}
 	}
 
 	// The timeSeries API requires an interval: a zero bound defaults to a
@@ -125,11 +149,66 @@ func requestShape(project string, req *connector.QueryRequest) (string, url.Valu
 		start = end.Add(-defaultWindow)
 	}
 	return timeSeriesPath(project), url.Values{
-		"filter":             []string{req.Query},
+		"filter":             []string{projectFilter(project, req.Query)},
 		"interval.startTime": []string{start.Format(time.RFC3339)},
 		"interval.endTime":   []string{end.Format(time.RFC3339)},
 		"pageSize":           []string{strconv.Itoa(httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit))},
+		"view":               []string{"FULL"},
 	}
+}
+
+// A projects/<id> path selects a metrics scope, which can include linked
+// projects. Pin the data's own project as a separate selector too, including
+// descriptor discovery and health probes. Parentheses keep caller ORs inside
+// that project boundary. See https://cloud.google.com/monitoring/api/v3/filters.
+func projectFilter(project, filter string) string {
+	selector := fmt.Sprintf("project = %q", project)
+	if filter == "" {
+		return selector
+	}
+	return selector + " AND (" + filter + ")"
+}
+
+// Monitoring's grammar groups project comparisons into one selector using
+// OR. Reject caller project selectors rather than intermingling two project
+// selectors with AND or letting callers replace the provider's boundary.
+// Values inside strings and resource/metric label paths are not selectors.
+func hasProjectSelector(filter string) bool {
+	for i := 0; i < len(filter); {
+		ch := filter[i]
+		if ch == '"' {
+			i = skipQuotedValue(filter, i+1)
+			continue
+		}
+		if isIdentifierByte(ch) {
+			start := i
+			for i < len(filter) && isIdentifierByte(filter[i]) {
+				i++
+			}
+			if filter[start:i] == "project" {
+				return true
+			}
+			continue
+		}
+		i++
+	}
+	return false
+}
+
+func skipQuotedValue(filter string, start int) int {
+	for i := start; i < len(filter); i++ {
+		switch filter[i] {
+		case '\\':
+			i++ // Escaped quotes and backslashes stay inside the value.
+		case '"':
+			return i + 1
+		}
+	}
+	return len(filter)
+}
+
+func isIdentifierByte(ch byte) bool {
+	return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '_' || ch == '.'
 }
 
 // timeSeriesPath and metricDescriptorsPath are the per-project Monitoring

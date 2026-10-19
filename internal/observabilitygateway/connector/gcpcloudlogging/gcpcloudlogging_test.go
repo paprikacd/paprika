@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -128,6 +130,63 @@ type entriesBody struct {
 	Filter        string   `json:"filter"`
 	PageSize      int      `json:"pageSize"`
 	OrderBy       string   `json:"orderBy"`
+	PageToken     string   `json:"pageToken"`
+}
+
+func TestQueryContinuationPreservesProjectFilterAndWindow(t *testing.T) {
+	t.Parallel()
+	fake := newFakeGCP(t, false, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"entries":[],"nextPageToken":"opaque+/=continuation"}`)
+	})
+	creds := fakeServiceAccountCreds(t, fake.server.URL+"/token", "other-project")
+	start := time.Date(2026, 10, 15, 10, 0, 0, 123456789, time.UTC)
+	req := queryLogs(testConfig(t, fake.server.URL), creds, func(req *connector.QueryRequest) {
+		req.Query = `severity=ERROR OR severity=WARNING`
+		req.Range = connector.TimeRange{Start: start, End: start.Add(time.Minute)}
+		req.Limit = 7
+	})
+	first, err := New().Query(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, first.State)
+	var firstBody entriesBody
+	require.NoError(t, json.Unmarshal(fake.last(t).body, &firstBody))
+	require.Equal(t, []string{"projects/test-proj"}, firstBody.ResourceNames)
+	require.Equal(t, `(severity=ERROR OR severity=WARNING) AND timestamp >= "2026-10-15T10:00:00.123456789Z" AND timestamp <= "2026-10-15T10:01:00.123456789Z"`, firstBody.Filter)
+	var page struct {
+		NextPageToken string `json:"nextPageToken"`
+	}
+	require.NoError(t, json.Unmarshal(first.Data, &page))
+	req.PageToken = page.NextPageToken
+	second, err := New().Query(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, second.State)
+	var secondBody entriesBody
+	require.NoError(t, json.Unmarshal(fake.last(t).body, &secondBody))
+	require.Equal(t, req.PageToken, secondBody.PageToken)
+	secondBody.PageToken = ""
+	require.Equal(t, firstBody, secondBody)
+}
+
+func TestOversizePageTokenFailsBeforeCredentialsOrNetwork(t *testing.T) {
+	t.Parallel()
+	res, err := New().Query(context.Background(), connector.QueryRequest{Signal: connector.SignalLogs, PageToken: strings.Repeat("private", 1000)})
+	require.ErrorIs(t, err, connector.ErrUnsupported)
+	require.Equal(t, connector.StateNotAvailable, res.State)
+	require.NotContains(t, err.Error(), "private")
+}
+
+func TestInsecureBackendDoesNotDisableTokenTLSVerification(t *testing.T) {
+	t.Parallel()
+	tokenServer := newFakeGCP(t, true, entriesOK)
+	backend := newFakeGCP(t, false, entriesOK)
+	config, err := json.Marshal(map[string]any{"projectId": "test-proj", "endpoint": backend.server.URL, "insecureSkipTLS": true})
+	require.NoError(t, err)
+	res, err := New().Query(context.Background(), queryLogs(config, fakeServiceAccountCreds(t, tokenServer.server.URL+"/token", "test-proj"), nil))
+	require.NoError(t, err)
+	require.Equal(t, connector.StateError, res.State)
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	require.Empty(t, backend.reqs)
 }
 
 func entriesOK(w http.ResponseWriter, _ *http.Request) {
@@ -349,7 +408,8 @@ func TestUnsupportedCredentialType(t *testing.T) {
 func TestInsecureSkipTLS(t *testing.T) {
 	t.Parallel()
 	fake := newFakeGCP(t, true, entriesOK)
-	creds := fakeServiceAccountCreds(t, fake.server.URL+"/token", "test-proj")
+	tokenServer := newFakeGCP(t, false, entriesOK)
+	creds := fakeServiceAccountCreds(t, tokenServer.server.URL+"/token", "test-proj")
 
 	// Default: the self-signed certificate must fail verification. The
 	// transport error converts to a StateError result per the connector
@@ -359,7 +419,7 @@ func TestInsecureSkipTLS(t *testing.T) {
 	require.Equal(t, connector.StateError, res.State)
 
 	// insecureSkipTLS opts this connector into accepting the self-signed
-	// certificate — for both the token exchange and the API call.
+	// backend certificate; OAuth token exchanges still verify certificates.
 	raw, err := json.Marshal(map[string]any{
 		"projectId":       "test-proj",
 		"endpoint":        fake.server.URL,
