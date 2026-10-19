@@ -740,14 +740,17 @@ func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, ap
 		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching application for status update: %w", err)
 		}
-		// Preserve fields that may be set concurrently by other actors (e.g.
-		// ApplyBundle setting ReleaseRef, the Release controller's
-		// syncApplicationGateStatus setting Gates) when the current reconcile did not
-		// populate them.
-		if preserveReleaseRef && desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
+		// External publishers own the release reference of non-promotion inline apps.
+		// A health reconcile may still carry the previous nonempty reference
+		// after a publisher selects its replacement. Preserve that fresh choice
+		// on every retry, while retaining controller-owned adoption and the
+		// explicit release-clear path.
+		publisherOwnsReleaseRef := r.isInlineSource(&fresh) && !promotionTriggered(&fresh)
+		if preserveReleaseRef && fresh.Status.ReleaseRef != "" && (desiredStatus.ReleaseRef == "" || publisherOwnsReleaseRef) {
 			desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
 			app.Status.ReleaseRef = fresh.Status.ReleaseRef
 		}
+		// The Release controller can populate gates during this reconcile.
 		if len(desiredStatus.Gates) == 0 && len(fresh.Status.Gates) > 0 {
 			desiredStatus.Gates = fresh.Status.Gates
 			app.Status.Gates = fresh.Status.Gates
