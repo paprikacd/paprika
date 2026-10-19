@@ -195,7 +195,7 @@ func testCanonicalCICuttlefishRouting(t *testing.T) {
 		nodeCache        = `runner.environment == 'github-hosted' && 'npm' || ''`
 	)
 	workflow := loadWorkflow(t, "ci.yml")
-	portable := []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke"}
+	portable := []string{"go-test", "go-lint", "ui", "mcp-console", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke"}
 	for _, jobID := range portable {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		if got := normalizeExpression(scalarString(job["runs-on"])); got != cuttlefishRunsOn {

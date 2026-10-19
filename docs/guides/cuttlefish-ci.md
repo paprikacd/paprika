@@ -15,7 +15,7 @@ value:
 
 | Job | Runs on |
 |-----|---------|
-| Go race tests, Go lint, UI, Generated code drift, Helm chart, CLI release contract, Distribution entrypoint contracts, Fleet console browser smoke | `CUTTLEFISH_RUNS_ON` |
+| Go race tests, Go lint, UI, MCP console and plugin, Generated code drift, Helm chart, CLI release contract, Distribution entrypoint contracts, Fleet console browser smoke | `CUTTLEFISH_RUNS_ON` |
 | Controlled fleet scale gate | `ubuntu-latest`: needs a `linux/amd64` Docker server |
 | Kind and Helm integration | `ubuntu-latest`: installs `kind-linux-amd64` with `sudo` and builds the full image |
 | Publish image | `ubuntu-latest`: pushes a `linux/amd64` image with `packages: write` |
@@ -109,7 +109,7 @@ Expect `status: online` and labels that include `self-hosted` and `cuttlefish`.
 
 ## Throughput
 
-One runner runs one job at a time. The eight portable jobs therefore run one
+One runner runs one job at a time. The nine portable jobs therefore run one
 after another on a single runner, where GitHub-hosted runners run them in
 parallel. `cuttle agent github-runner register` keeps one runner per repository
 on a host, so register on more rigs, or add managed runners in the Cuttlefish
