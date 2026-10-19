@@ -62,6 +62,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("canonical CI protects running master and keeps only the latest pending run", testCanonicalCIConcurrency)
 	t.Run("canonical CI pins third-party actions", testCanonicalCIActionPins)
 	t.Run("canonical CI bounds job runtime", testCanonicalCIJobTimeouts)
+	t.Run("canonical CI routes only portable unprivileged jobs to Cuttlefish", testCanonicalCICuttlefishRouting)
 	t.Run("canonical CI validates the CLI release contract", testCLIReleaseContractJob)
 	t.Run("canonical CI validates distribution entrypoints", testDistributionContractsJob)
 	t.Run("generated drift detects stale and untracked output", testGeneratedDriftDetection)
@@ -184,6 +185,69 @@ func testCanonicalCIJobTimeouts(t *testing.T) {
 	fleetScale := requireMappingValue(t, workflow.jobs, "fleet-scale", "ci.yml jobs")
 	if timeout, ok := fleetScale["timeout-minutes"].(int); !ok || timeout != 90 {
 		t.Errorf("ci.yml job %q timeout-minutes = %v, want exactly 90", "fleet-scale", fleetScale["timeout-minutes"])
+	}
+}
+
+func testCanonicalCICuttlefishRouting(t *testing.T) {
+	const (
+		cuttlefishRunsOn = `fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"')`
+		goCache          = `runner.environment == 'github-hosted'`
+		nodeCache        = `runner.environment == 'github-hosted' && 'npm' || ''`
+	)
+	workflow := loadWorkflow(t, "ci.yml")
+	portable := []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke"}
+	for _, jobID := range portable {
+		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
+		if got := normalizeExpression(scalarString(job["runs-on"])); got != cuttlefishRunsOn {
+			t.Errorf("ci.yml job %q runs-on = %q, want the fork-guarded Cuttlefish expression", jobID, got)
+		}
+		requireUsesStep(t, job, "./.github/actions/reclaim-runner-disk", "ci.yml "+jobID+" job")
+		for _, value := range anyList(job["steps"]) {
+			step, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			uses := scalarString(step["uses"])
+			with := optionalMappingValue(t, step, "with")
+			switch {
+			case strings.HasPrefix(uses, "actions/setup-go@"):
+				if got := normalizeExpression(scalarString(with["cache"])); got != goCache {
+					t.Errorf("ci.yml job %q setup-go cache = %q, want caching on GitHub-hosted runners only", jobID, got)
+				}
+			case strings.HasPrefix(uses, "actions/setup-node@"):
+				if got := normalizeExpression(scalarString(with["cache"])); got != nodeCache {
+					t.Errorf("ci.yml job %q setup-node cache = %q, want caching on GitHub-hosted runners only", jobID, got)
+				}
+			}
+		}
+	}
+	for _, jobID := range []string{"fleet-scale", "cluster-integration", "publish"} {
+		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
+		if got := scalarString(job["runs-on"]); got != "ubuntu-latest" {
+			t.Errorf("ci.yml job %q runs-on = %q, want ubuntu-latest", jobID, got)
+		}
+	}
+	// A self-hosted host is shared and reused: nothing routed there may hold
+	// secrets or write permissions.
+	for jobID, value := range workflow.jobs {
+		job, ok := value.(map[string]any)
+		if !ok || !strings.Contains(scalarString(job["runs-on"]), "CUTTLEFISH_RUNS_ON") {
+			continue
+		}
+		if !contains(portable, jobID) {
+			t.Errorf("ci.yml job %q is routed to Cuttlefish but is not an allowlisted portable job", jobID)
+		}
+		for _, text := range allStrings(job) {
+			if strings.Contains(text, "secrets.") {
+				t.Errorf("ci.yml job %q is routed to Cuttlefish and references secrets", jobID)
+				break
+			}
+		}
+		for _, scope := range []string{"contents", "packages", "id-token", "deployments", "pull-requests", "checks", "statuses", "actions"} {
+			if permission(workflow, job, scope) == "write" {
+				t.Errorf("ci.yml job %q is routed to Cuttlefish and holds %s: write", jobID, scope)
+			}
+		}
 	}
 }
 

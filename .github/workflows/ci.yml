@@ -12,10 +12,16 @@ concurrency:
 permissions:
   contents: read
 
+# Portable jobs run on a Cuttlefish self-hosted runner when the repository
+# variable CUTTLEFISH_RUNS_ON holds a JSON runs-on value (for example
+# ["self-hosted","cuttlefish"]); unset, they stay on ubuntu-latest. Fork pull
+# requests always use GitHub-hosted runners. Jobs that need linux/amd64,
+# kind or registry/cluster credentials stay hosted. See
+# docs/guides/cuttlefish-ci.md.
 jobs:
   go-test:
     name: Go race tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 20
     env:
       GOTOOLCHAIN: auto
@@ -25,11 +31,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Run race tests
         run: make test-race
@@ -42,7 +51,7 @@ jobs:
 
   go-lint:
     name: Go lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 15
     env:
       GOTOOLCHAIN: auto
@@ -52,11 +61,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Verify linter configuration
         run: make lint-config
@@ -66,7 +78,7 @@ jobs:
 
   ui:
     name: UI
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -74,11 +86,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: npm
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: ui/package-lock.json
 
       - name: Install dependencies
@@ -135,7 +150,7 @@ jobs:
 
   generated:
     name: Generated code drift
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 15
     env:
       GOTOOLCHAIN: auto
@@ -145,17 +160,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: npm
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: ui/package-lock.json
 
       - name: Install UI protobuf plugins
@@ -188,13 +206,16 @@ jobs:
 
   chart:
     name: Helm chart
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
 
       - name: Set up Helm
         uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
@@ -233,15 +254,15 @@ jobs:
         run: |
           if helm template paprika charts/chart/ \
             --set auth.oidc.enabled=true --set auth.oidc.clientID= \
-            2> /tmp/oidc-render-err.txt; then
+            2> "${RUNNER_TEMP}/oidc-render-err.txt"; then
             echo "expected render failure for oidc.enabled without clientID" >&2
             exit 1
           fi
-          grep -q "auth.oidc.clientID is required" /tmp/oidc-render-err.txt
+          grep -q "auth.oidc.clientID is required" "${RUNNER_TEMP}/oidc-render-err.txt"
 
   release-contract:
     name: CLI release contract
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 20
     env:
       GOTOOLCHAIN: auto
@@ -251,11 +272,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
@@ -269,24 +293,29 @@ jobs:
           bash hack/test-find-github-release.sh
           bash hack/test-verify-release-archives.sh
 
-      - name: Build and exercise linux amd64 CLI
+      # Exercises the artifact for the runner's own platform (linux/amd64 on
+      # ubuntu-latest). Avoids mapfile: macOS ships bash 3.2.
+      - name: Build and exercise host-platform CLI
         shell: bash
         run: |
           set -euo pipefail
           goreleaser build --snapshot --clean --id cli
-          mapfile -t cli_paths < <(
-            jq -r '.[] | select(
+          goos="$(go env GOOS)"
+          goarch="$(go env GOARCH)"
+          cli_paths="$(
+            jq -r --arg goos "$goos" --arg goarch "$goarch" '.[] | select(
               .type == "Binary" and
               .name == "paprika" and
-              .goos == "linux" and
-              .goarch == "amd64"
+              .goos == $goos and
+              .goarch == $goarch
             ) | .path' .goreleaser-dist/artifacts.json
-          )
-          if [[ ${#cli_paths[@]} -ne 1 || -z "${cli_paths[0]}" ]]; then
-            printf 'expected exactly one linux/amd64 CLI artifact, found %s\n' "${#cli_paths[@]}" >&2
+          )"
+          cli_count="$(grep -c . <<<"$cli_paths" || true)"
+          if [[ "$cli_count" -ne 1 ]]; then
+            printf 'expected exactly one %s/%s CLI artifact, found %s\n' "$goos" "$goarch" "$cli_count" >&2
             exit 1
           fi
-          cli="${cli_paths[0]}"
+          cli="$cli_paths"
           test -x "$cli"
           "$cli" version
           "$cli" login --help
@@ -299,13 +328,16 @@ jobs:
 
   distribution-contracts:
     name: Distribution entrypoint contracts
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
 
       - name: Install Task
         uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
@@ -320,7 +352,7 @@ jobs:
 
   fleet-ui-smoke:
     name: Fleet console browser smoke
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 30
     env:
       GOTOOLCHAIN: auto
@@ -330,17 +362,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: npm
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: ui/package-lock.json
 
       - name: Install UI dependencies
@@ -355,7 +390,14 @@ jobs:
         run: go build -o bin/fleet-console-fixture ./test/fleetconsole
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          # --with-deps installs system packages through apt (Linux only).
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install chromium
+          fi
         working-directory: ui
 
       - name: Run real fleet console smoke
@@ -375,6 +417,7 @@ jobs:
 
   fleet-scale:
     name: Controlled fleet scale gate
+    # Hosted: the gate requires a linux/amd64 Docker server.
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -397,6 +440,7 @@ jobs:
 
   cluster-integration:
     name: Kind and Helm integration
+    # Hosted: installs kind-linux-amd64 with sudo and builds the full image.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -475,6 +519,7 @@ jobs:
 
   publish:
     name: Publish image
+    # Hosted: pushes a linux/amd64 image with packages: write.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
