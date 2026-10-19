@@ -729,7 +729,7 @@ func testVKEComponentImageReferences(t *testing.T) {
 	deploy := vkeDeployJob(t)
 	step := requireNamedStep(t, deploy, "Deploy Paprika chart", "deploy-vke.yml deploy job")
 	run := scalarString(step["run"])
-	for _, component := range []string{"manager", "apiServer", "repoServer", "webhookReceiver"} {
+	for _, component := range []string{"manager", "apiServer", "repoServer", "webhookReceiver", "observabilityGateway"} {
 		want := `--set-string ` + component + `.image.repository="${IMAGE_REFERENCE}" \`
 		if !containsActiveShellLine(run, want) {
 			t.Errorf("deploy-vke.yml must deploy %s using only the quoted immutable IMAGE_REFERENCE repository", component)
