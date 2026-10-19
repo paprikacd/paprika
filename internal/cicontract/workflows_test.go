@@ -32,7 +32,7 @@ type workflowRunStep struct {
 }
 
 var pinnedActionRevisions = map[string]string{
-	"actions/checkout":                   "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+	"actions/checkout":                   "3d3c42e5aac5ba805825da76410c181273ba90b1",
 	"anchore/sbom-action/download-syft":  "a930d0ac434e3182448fe678398ba5713717112a",
 	"actions/upload-artifact":            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
 	"actions/setup-go":                   "4a3601121dd01d1626a1e23e37211e3254c1c06c",
@@ -736,7 +736,7 @@ func testDownstreamActionPins(t *testing.T) {
 	}
 
 	const (
-		checkoutRevision    = "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+		checkoutRevision    = "3d3c42e5aac5ba805825da76410c181273ba90b1"
 		setupGoRevision     = "4a3601121dd01d1626a1e23e37211e3254c1c06c"
 		setupHelmRevision   = "59b1c81c6280f5abebb1fb1bc585696daa7dfb42"
 		setupBuildxRevision = "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c"
