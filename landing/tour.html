@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Paprika console tour — From applications to log evidence</title>
+  <meta name="description" content="Explore the real Paprika console through a guided, synthetic walkthrough: applications, target health, application detail, resources and logs." />
+  <link rel="canonical" href="https://paprikacd.github.io/paprika/tour.html" />
+  <meta name="theme-color" content="#1d2d3d" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://paprikacd.github.io/paprika/tour.html" />
+  <meta property="og:title" content="Follow the evidence — Paprika console tour" />
+  <meta property="og:description" content="A guided walkthrough of the actual console, captured with local synthetic fleet data." />
+  <meta property="og:image" content="https://paprikacd.github.io/paprika/tour/applications.webp" />
+  <meta property="og:image:alt" content="Paprika application inventory connected to a synthetic fleet" />
+  <link rel="icon" type="image/png" href="./paprika-mark.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./site.css?v=gamma-story-1" />
+  <link rel="stylesheet" href="./gamma-ui.css?v=gamma-story-1" />
+  <link rel="stylesheet" href="./tour.css?v=tour-2" />
+  <script src="./gamma-ui.js?v=gamma-story-1" defer></script>
+  <script src="./tour.js?v=tour-1" defer></script>
+</head>
+<body class="tour-page">
+  <a class="skip-link" href="#tour-content">Skip to walkthrough</a>
+  <header class="tour-header">
+    <a class="wordmark" href="./" aria-label="Paprika home"><img src="./paprika-mark.png" width="35" height="35" alt="" /><span>Paprika</span></a>
+    <span class="tour-header-label">Inside the console</span>
+    <a href="./#get-started" class="tour-header-action">Start self-hosting <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main id="tour-content" class="tour-shell" data-tour tabindex="-1">
+    <div class="tour-intro">
+      <div><p class="eyeline">Five views. One evidence trail.</p><h1>Get closer to<br /><span>what happened.</span></h1></div>
+      <div class="tour-intro-copy"><p>Start with an Application. Find its target, inspect its resources, then follow the logs back to the event.</p><p class="tour-disclosure"><span class="capture-glyph" aria-hidden="true">▣</span> Actual console captures · local synthetic data</p></div>
+    </div>
+
+    <div class="tour-workspace">
+      <aside class="tour-rail">
+        <div class="tour-rail-heading"><span>Guided walkthrough</span><b data-step-counter class="tour-interactive">01 / 05</b></div>
+        <nav class="tour-steps tour-interactive" aria-label="Walkthrough steps">
+          <button type="button" data-tour-step="applications" aria-current="step"><span class="step-number">01</span><span><strong>Applications</strong><small>Find the delivery record</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" data-tour-step="heatmap"><span class="step-number">02</span><span><strong>Target heatmap</strong><small>Read the wider picture</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" data-tour-step="application"><span class="step-number">03</span><span><strong>Application detail</strong><small>Keep the context attached</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" data-tour-step="resources"><span class="step-number">04</span><span><strong>Resources</strong><small>Inspect the workload</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+          <button type="button" data-tour-step="logs"><span class="step-number">05</span><span><strong>Logs</strong><small>Read failure and recovery</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+        </nav>
+        <div class="tour-case"><span class="tour-kicker">The example</span><strong>checkout-service</strong><p><code>team-00</code><br />payments · production</p><span class="tour-current-state"><span aria-hidden="true">✓</span> Healthy &amp; Synced now</span><p class="tour-case-note">We’re investigating an earlier dependency failure that recovered.</p></div>
+        <p class="tour-keyboard tour-interactive"><span aria-hidden="true">← →</span> Move between steps<br /><kbd>Home</kbd> first · <kbd>End</kbd> last</p>
+        <noscript><p class="tour-no-script">JavaScript is off. The complete walkthrough follows below.</p></noscript>
+      </aside>
+
+      <div class="tour-main">
+        <div class="tour-view-notice"><span class="tour-mode"><span aria-hidden="true">◈</span> Captured-console walkthrough</span><span>Highlighted targets advance the tour. Controls inside captures aren’t live.</span></div>
+        <div class="tour-stage-list">
+          <article class="tour-stage" id="applications" data-tour-panel aria-labelledby="applications-title">
+            <div class="tour-narrative"><div><p class="tour-kicker">01 / Application inventory</p><h2 id="applications-title" tabindex="-1">Start with the Application.</h2><p>Find <strong>checkout-service</strong> in the payments project. Its target, health and sync state sit together, so you can check what is running before opening the details.</p></div><div class="tour-reading"><span class="tour-reading-icon" aria-hidden="true">◎</span><p><b>Two separate signals.</b> Healthy describes the observed workload. Synced describes its match with desired resources.</p></div></div>
+            <figure class="tour-capture"><div class="tour-capture-toolbar"><span><span aria-hidden="true">▦</span> Applications <span class="tour-breadcrumb">/ payments</span></span><button type="button" class="tour-zoom tour-interactive" data-tour-zoom aria-label="Enlarge application inventory capture"><span aria-hidden="true">⤢</span> Enlarge</button></div><div class="tour-image-wrap"><img src="./tour/applications.webp" width="1440" height="900" alt="Actual Paprika application inventory with synthetic checkout-service in team-00, its production target, and separate Healthy and Synced states." fetchpriority="high" /><button type="button" class="tour-hotspot tour-interactive" data-tour-next style="--target-x:.3%;--target-y:10.5%;--target-w:13.7%;--target-h:3.3%" aria-label="Continue to the target heatmap"><span class="hotspot-pin" aria-hidden="true">1</span><span class="hotspot-label">View target health <span aria-hidden="true">→</span></span></button></div><figcaption>Actual console · fixed synthetic example · no connection to a live fleet</figcaption></figure>
+            <div class="tour-stage-action tour-interactive"><span>Next, locate the Application in its fleet context.</span><button type="button" class="tour-primary" data-tour-next>View target heatmap <span aria-hidden="true">→</span></button></div>
+          </article>
+
+          <article class="tour-stage" id="heatmap" data-tour-panel aria-labelledby="heatmap-title">
+            <div class="tour-narrative"><div><p class="tour-kicker">02 / Target health</p><h2 id="heatmap-title" tabindex="-1">See where it belongs.</h2><p>The Overview heatmap brings target health into one view. Locate <strong>checkout-service</strong> in production, then open its Application record to keep investigating.</p></div><div class="tour-reading"><span class="tour-reading-icon" aria-hidden="true">▦</span><p><b>One tile, one target.</b> A single Application can have multiple targets. Color and labels describe their observed health.</p></div></div>
+            <figure class="tour-capture"><div class="tour-capture-toolbar"><span>Overview <span class="tour-breadcrumb">/ target health / production</span></span><button type="button" class="tour-zoom tour-interactive" data-tour-zoom aria-label="Enlarge target health heatmap capture"><span aria-hidden="true">⤢</span> Enlarge</button></div><div class="tour-image-wrap"><img src="./tour/heatmap.webp" width="1440" height="900" alt="Actual Paprika Overview target health heatmap with synthetic production targets and checkout-service identified for inspection." loading="lazy" /><button type="button" class="tour-hotspot tour-interactive" data-tour-next style="--target-x:41.32%;--target-y:65.82%;--target-w:7.78%;--target-h:6.22%" aria-label="Open the checkout-service Application detail step"><span class="hotspot-pin" aria-hidden="true">2</span><span class="hotspot-label">Open Application <span aria-hidden="true">→</span></span></button></div><figcaption>Actual console · target health comes from the synthetic fixture</figcaption></figure>
+            <div class="tour-stage-action tour-interactive"><span>Carry the selected Application into its delivery record.</span><button type="button" class="tour-primary" data-tour-next>Open checkout-service <span aria-hidden="true">→</span></button></div>
+          </article>
+
+          <article class="tour-stage" id="application" data-tour-panel aria-labelledby="application-title">
+            <div class="tour-narrative"><div><p class="tour-kicker">03 / Application detail</p><h2 id="application-title" tabindex="-1">Keep the context attached.</h2><p>The Application record connects its source, current Release and deployment target. <strong>checkout-service is healthy now.</strong> To understand its earlier dependency issue, follow the resource evidence.</p></div><div class="tour-reading"><span class="tour-reading-icon" aria-hidden="true">↳</span><p><b>Present state, past event.</b> A healthy current state doesn’t erase the history recorded in workload logs.</p></div></div>
+            <figure class="tour-capture"><div class="tour-capture-toolbar"><span>Applications <span class="tour-breadcrumb">/ team-00 / checkout-service</span></span><button type="button" class="tour-zoom tour-interactive" data-tour-zoom aria-label="Enlarge checkout-service Application detail capture"><span aria-hidden="true">⤢</span> Enlarge</button></div><div class="tour-image-wrap"><img src="./tour/application.webp" width="1440" height="900" alt="Actual Paprika detail view for synthetic team-00 checkout-service showing its source, release, production target and current healthy state." loading="lazy" /><button type="button" class="tour-hotspot tour-interactive" data-tour-next style="--target-x:21.04%;--target-y:16.94%;--target-w:5.8%;--target-h:3.2%" aria-label="Continue to the checkout-service resource hierarchy"><span class="hotspot-pin" aria-hidden="true">3</span><span class="hotspot-label">Inspect resources <span aria-hidden="true">→</span></span></button></div><figcaption>Actual console · the same Application and target throughout</figcaption></figure>
+            <div class="tour-stage-action tour-interactive"><span>Move from the Application record to its Kubernetes workload.</span><button type="button" class="tour-primary" data-tour-next>Inspect resources <span aria-hidden="true">→</span></button></div>
+          </article>
+
+          <article class="tour-stage" id="resources" data-tour-panel aria-labelledby="resources-title">
+            <div class="tour-narrative"><div><p class="tour-kicker">04 / Resource hierarchy</p><h2 id="resources-title" tabindex="-1">Follow the workload.</h2><p>Read the resources belonging to <strong>checkout-service</strong>, including the Deployment and its generated children. Open the workload resource to reach its inspector and log evidence.</p></div><div class="tour-reading"><span class="tour-reading-icon" aria-hidden="true">⌘</span><p><b>Evidence at resource level.</b> The inspector keeps Diff, Live, Desired, Events and Logs beside the resource identity.</p></div></div>
+            <figure class="tour-capture"><div class="tour-capture-toolbar"><span>checkout-service <span class="tour-breadcrumb">/ resources</span></span><button type="button" class="tour-zoom tour-interactive" data-tour-zoom aria-label="Enlarge checkout-service resource hierarchy capture"><span aria-hidden="true">⤢</span> Enlarge</button></div><div class="tour-image-wrap"><img src="./tour/resources.webp" width="1440" height="900" alt="Actual Paprika resource hierarchy for synthetic checkout-service, showing workload resources with separate health and sync information." loading="lazy" /><button type="button" class="tour-hotspot tour-interactive" data-tour-next style="--target-x:77.74%;--target-y:21.48%;--target-w:3.58%;--target-h:4.54%" aria-label="Continue to resource log evidence"><span class="hotspot-pin" aria-hidden="true">4</span><span class="hotspot-label">Read resource logs <span aria-hidden="true">→</span></span></button></div><figcaption>Actual console · resource identity stays attached to the inspection</figcaption></figure>
+            <div class="tour-stage-action tour-interactive"><span>Finish with the records of the failure and recovery.</span><button type="button" class="tour-primary" data-tour-next>Read the logs <span aria-hidden="true">→</span></button></div>
+          </article>
+
+          <article class="tour-stage tour-stage-logs" id="logs" data-tour-panel aria-labelledby="logs-title">
+            <div class="tour-narrative"><div><p class="tour-kicker">05 / Resource logs</p><h2 id="logs-title" tabindex="-1">Read what happened.</h2><p>The captured logs include an earlier dependency failure followed by recovery. Together with the current <strong>Healthy · Synced</strong> state, they explain why an error in history doesn’t mean an incident is still active.</p></div><div class="tour-reading tour-reading-recovered"><span class="tour-reading-icon" aria-hidden="true">✓</span><p><b>Recovery has evidence.</b> Read the sequence and the current state together. This walkthrough performs no remediation.</p></div></div>
+            <figure class="tour-capture"><div class="tour-capture-toolbar"><span>checkout-service <span class="tour-breadcrumb">/ resource inspector / logs</span></span><button type="button" class="tour-zoom tour-interactive" data-tour-zoom aria-label="Enlarge checkout-service resource log capture"><span aria-hidden="true">⤢</span> Enlarge</button></div><div class="tour-image-wrap"><img src="./tour/logs.webp" width="1440" height="900" alt="Actual Paprika resource Logs inspector with synthetic checkout-service records containing a prior dependency error and subsequent recovery." loading="lazy" /></div><figcaption>Actual console · captured synthetic log records · this is not a live stream</figcaption></figure>
+            <details class="tour-evidence"><summary><span><span aria-hidden="true">✓</span> The evidence trail</span><span class="evidence-plus" aria-hidden="true">+</span></summary><div><p><strong>Application → target → resource → logs.</strong> The inventory and heatmap locate the workload. The Application and resource views retain its identity. The logs provide the earlier failure and recovery sequence.</p><p><strong>Replay evidence:</strong> <code>database_app state=unavailable</code> → <code>GET /deepcheck status=503 readiness=false</code> → retry → <code>database_app state=ok</code> → <code>GET /deepcheck status=200 readiness=true</code> → <code>ready_replicas=3/3 health=Healthy</code>.</p><p>Current health and sync describe current observations. Historical log lines describe events. Read both before deciding what needs action.</p></div></details>
+            <div class="tour-stage-action"><span>You’ve followed the evidence from the fleet to the workload.</span><a class="tour-primary" href="./#get-started">Try Paprika on your cluster <span aria-hidden="true">↗</span></a></div>
+          </article>
+        </div>
+
+        <div class="tour-controls tour-interactive" aria-label="Walkthrough controls"><button type="button" class="tour-control" data-tour-previous disabled><span aria-hidden="true">←</span> Previous</button><div class="tour-progress" aria-hidden="true"><i data-progress-step="0"></i><i data-progress-step="1"></i><i data-progress-step="2"></i><i data-progress-step="3"></i><i data-progress-step="4"></i></div><button type="button" class="tour-control tour-control-next" data-tour-forward>Next step <span aria-hidden="true">→</span></button><button type="button" class="tour-replay" data-tour-replay><span aria-hidden="true">↺</span> Replay</button></div>
+        <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-tour-announcement></p>
+      </div>
+    </div>
+    <footer class="tour-footer"><p>A guided tour of captured UI, with local synthetic fleet data. No cluster access or account required.</p><div><a href="./">Back to Paprika</a><a href="https://github.com/paprikacd/paprika">Explore the source <span aria-hidden="true">↗</span></a></div></footer>
+  </main>
+
+  <dialog class="tour-zoom-dialog" aria-labelledby="zoom-title" data-tour-dialog><div class="zoom-dialog-header"><div><p class="tour-kicker">Actual console · synthetic data</p><h2 id="zoom-title">Console capture</h2></div><button type="button" data-close-zoom aria-label="Close enlarged capture">Close <span aria-hidden="true">×</span></button></div><p class="zoom-instruction">Scroll the image to inspect details. Controls within this capture are not interactive.</p><div class="zoom-image-scroll" tabindex="0" aria-label="Enlarged console capture; scroll horizontally to inspect"><img data-zoom-image alt="" /></div></dialog>
+</body>
+</html>
