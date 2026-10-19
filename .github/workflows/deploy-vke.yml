@@ -170,6 +170,23 @@ jobs:
               ;;
           esac
 
+          # Every component that signs or verifies Paprika tokens reads this
+          # Secret through deploy/omega-values.yaml; without it they would
+          # fall back to test-values' committed dev secret.
+          token_secret_result="$(
+            printf '%s' "${VKE_AUTH_TOKEN_SECRET}" | \
+              kubectl -n "${VKE_NAMESPACE}" create secret generic paprika-auth-token \
+              --from-file=token-secret=/dev/stdin \
+              --dry-run=client -o yaml | kubectl apply -f -
+          )"
+          case "${token_secret_result}" in
+            "secret/paprika-auth-token created"|"secret/paprika-auth-token configured"|"secret/paprika-auth-token unchanged") ;;
+            *)
+              echo "::error::failed to create or configure the paprika-auth-token Secret"
+              exit 1
+              ;;
+          esac
+
           helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART}" \
             --namespace "${VKE_NAMESPACE}" \
             --values "${TEST_VALUES}" \
@@ -182,7 +199,6 @@ jobs:
             --set-string auth.oidc.clientID="${VKE_OIDC_CLIENT_ID}" \
             --set-string auth.oidc.existingSecretName=paprika-oidc \
             --set-string auth.oidc.existingSecretKey=client-secret \
-            --set-string auth.tokenSecret="${VKE_AUTH_TOKEN_SECRET}" \
             --set-string auth.basic.passwordHash="${VKE_BASIC_PASSWORD_HASH}" \
             --wait \
             --timeout 5m \

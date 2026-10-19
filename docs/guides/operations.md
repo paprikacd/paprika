@@ -164,6 +164,7 @@ For production deploys, use Helm so `helm rollback` works:
 source .env && helm upgrade paprika-e2e charts/chart/ \
   --namespace paprika-e2e \
   --values deploy/test-values.yaml \
+  --values deploy/omega-values.yaml \
   --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" \
   --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET" \
   --set "manager.image.repository=ghcr.io/paprikacd/paprika" \
@@ -177,6 +178,7 @@ For digest-pinned deploys (immutable, no tag mutation risk):
 helm upgrade paprika-e2e charts/chart/ \
   --namespace paprika-e2e \
   --values deploy/test-values.yaml \
+  --values deploy/omega-values.yaml \
   --set "manager.image.repository=ghcr.io/paprikacd/paprika@sha256:<digest>" \
   --wait --timeout 5m
 ```

@@ -74,6 +74,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("VKE checks out the trusted caller commit and selects an image digest", testVKEProvenance)
 	t.Run("VKE validates the immutable image reference before privileged operations", testVKEImageValidation)
 	t.Run("VKE deploy applies one immutable reference to every component", testVKEComponentImageReferences)
+	t.Run("VKE replaces the committed dev token secret on every component", testVKETokenSecretReplacesDevSecret)
 	t.Run("VKE post-deploy validation uses the race-free pod checker", testVKEPodConditionValidation)
 	t.Run("downstream workflows pin third-party actions", testDownstreamActionPins)
 	t.Run("downstream jobs bound their runtime", testDownstreamJobTimeouts)
@@ -745,7 +746,6 @@ func testVKEComponentImageReferences(t *testing.T) {
 	// #nosec G101 -- These are GitHub expression names asserted by the contract, not credential values.
 	secretValues := map[string]string{
 		"VKE_OIDC_CLIENT_ID":      "secrets.VKE_OIDC_CLIENT_ID",
-		"VKE_AUTH_TOKEN_SECRET":   "secrets.VKE_AUTH_TOKEN_SECRET",
 		"VKE_BASIC_PASSWORD_HASH": "secrets.VKE_BASIC_PASSWORD_HASH",
 	}
 	for environmentName, expression := range secretValues {
@@ -770,6 +770,109 @@ func testVKEComponentImageReferences(t *testing.T) {
 	if strings.Contains(activeShellText(run), "latest") {
 		t.Error("deploy-vke.yml deployment must not consume latest")
 	}
+}
+
+// testVKETokenSecretReplacesDevSecret pins the omega token secret wiring.
+// The chart reads no auth.tokenSecret value: each component takes
+// PAPRIKA_AUTH_TOKEN_SECRET from its extraEnv, which test-values fills with a
+// committed dev secret for kind. On the public omega deployment that secret
+// would let anyone mint console, MCP and observability tokens, so every
+// component test-values gives it must be overridden by omega-values with a
+// reference to the Secret deploy-vke.yml materializes from
+// VKE_AUTH_TOKEN_SECRET.
+func testVKETokenSecretReplacesDevSecret(t *testing.T) {
+	// #nosec G101 -- These are environment variable and Secret names asserted by the contract, not credential values.
+	const (
+		tokenEnv    = "PAPRIKA_AUTH_TOKEN_SECRET"
+		secretName  = "paprika-auth-token"
+		secretKey   = "token-secret"
+		testValues  = "deploy/test-values.yaml"
+		omegaValues = "deploy/omega-values.yaml"
+	)
+
+	deploy := vkeDeployJob(t)
+	step := requireNamedStep(t, deploy, "Deploy Paprika chart", "deploy-vke.yml deploy job")
+	run := scalarString(step["run"])
+	stepEnv := requireMappingValue(t, step, "env", "deploy-vke.yml Deploy Paprika chart step")
+	if got := normalizeExpression(scalarString(stepEnv["VKE_AUTH_TOKEN_SECRET"])); got != "secrets.VKE_AUTH_TOKEN_SECRET" {
+		t.Errorf("deploy-vke.yml Deploy Paprika chart env.VKE_AUTH_TOKEN_SECRET = %q after normalization, want %q", got, "secrets.VKE_AUTH_TOKEN_SECRET")
+	}
+	for _, fragment := range []string{
+		`printf '%s' "${VKE_AUTH_TOKEN_SECRET}"`,
+		"create secret generic " + secretName,
+		"--from-file=" + secretKey + "=/dev/stdin",
+	} {
+		if !containsActiveShellFragment(run, fragment) {
+			t.Errorf("deploy-vke.yml must materialize VKE_AUTH_TOKEN_SECRET as the %s Secret through stdin (missing %q)", secretName, fragment)
+		}
+	}
+	activeRun := activeShellText(run)
+	secretPosition := strings.Index(activeRun, "create secret generic "+secretName)
+	helmPosition := strings.Index(activeRun, "helm upgrade --install")
+	if secretPosition < 0 || helmPosition < 0 || secretPosition >= helmPosition {
+		t.Errorf("deploy-vke.yml must create the %s Secret before running Helm", secretName)
+	}
+	if strings.Contains(activeRun, "auth.tokenSecret") {
+		t.Error("deploy-vke.yml must not pass auth.tokenSecret: the chart ignores it, so it looks wired while every component keeps test-values' dev secret")
+	}
+
+	root := repositoryRoot(t)
+	base := loadYAMLDocument(t, filepath.Join(root, filepath.FromSlash(testValues)))
+	overrides := loadYAMLDocument(t, filepath.Join(root, filepath.FromSlash(omegaValues)))
+	overridden := 0
+	for _, component := range sortedKeys(base) {
+		section, ok := base[component].(map[string]any)
+		if !ok || extraEnvEntry(t, section, tokenEnv, testValues+" "+component) == nil {
+			continue
+		}
+		overridden++
+		context := omegaValues + " " + component
+		override, ok := overrides[component].(map[string]any)
+		if !ok {
+			t.Errorf("%s gives %s.extraEnv a literal %s, so %s must override %s.extraEnv", testValues, component, tokenEnv, omegaValues, component)
+			continue
+		}
+		entry := extraEnvEntry(t, override, tokenEnv, context)
+		if entry == nil {
+			t.Errorf("%s.extraEnv must set %s, or the list replacement drops it", context, tokenEnv)
+			continue
+		}
+		if _, literal := entry["value"]; literal {
+			t.Errorf("%s.extraEnv %s must not carry a literal value", context, tokenEnv)
+		}
+		valueFrom := requireMappingValue(t, entry, "valueFrom", context+" "+tokenEnv)
+		reference := requireMappingValue(t, valueFrom, "secretKeyRef", context+" "+tokenEnv+".valueFrom")
+		if got := scalarString(reference["name"]); got != secretName {
+			t.Errorf("%s %s secretKeyRef.name = %q, want %q", context, tokenEnv, got, secretName)
+		}
+		if got := scalarString(reference["key"]); got != secretKey {
+			t.Errorf("%s %s secretKeyRef.key = %q, want %q", context, tokenEnv, got, secretKey)
+		}
+	}
+	if overridden == 0 {
+		t.Fatalf("%s sets %s on no component; update this contract if the dev secret moved", testValues, tokenEnv)
+	}
+}
+
+// extraEnvEntry returns the extraEnv item named name from a values section,
+// or nil when the section sets no such variable.
+func extraEnvEntry(t *testing.T, section map[string]any, name, context string) map[string]any {
+	t.Helper()
+	raw, ok := section["extraEnv"]
+	if !ok {
+		return nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		t.Fatalf("%s.extraEnv must be a list, got %T", context, raw)
+	}
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if ok && scalarString(entry["name"]) == name {
+			return entry
+		}
+	}
+	return nil
 }
 
 func testVKEPodConditionValidation(t *testing.T) {
