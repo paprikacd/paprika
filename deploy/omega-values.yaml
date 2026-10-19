@@ -14,3 +14,35 @@
 auth:
   basic:
     enabled: false
+
+# The same reasoning applies to the HMAC secret that signs and verifies
+# console, MCP and observability tokens: test-values commits a dev secret for
+# kind, and anyone who reads this repository could mint tokens with it. On
+# omega every component that signs or verifies tokens reads the secret from
+# the paprika-auth-token Secret, which deploy-vke.yml creates from
+# VKE_AUTH_TOKEN_SECRET before each upgrade. These lists replace test-values'
+# extraEnv wholesale, so the dev value never renders here. A manual upgrade
+# needs that Secret to exist in paprika-e2e first.
+manager:
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: paprika-auth-token
+          key: token-secret
+
+apiServer:
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: paprika-auth-token
+          key: token-secret
+
+observabilityGateway:
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: paprika-auth-token
+          key: token-secret

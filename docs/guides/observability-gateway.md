@@ -261,6 +261,7 @@ routing disabled unless explicitly requested and approved.
 ```sh
 helm upgrade paprika-e2e charts/chart/ \
   --namespace paprika-e2e --values deploy/test-values.yaml \
+  --values deploy/omega-values.yaml \
   --set observabilityGateway.enabled=true --wait --timeout 5m
 ```
 
