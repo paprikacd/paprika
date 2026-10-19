@@ -3396,6 +3396,17 @@ func (r *ReleaseReconciler) cleanupTargetClients(ctx context.Context, release *p
 		if err := r.client.Get(ctx, types.NamespacedName{Namespace: release.Namespace, Name: name}, &stage); err != nil {
 			return nil, fmt.Errorf("get stage %s/%s for resource cleanup: %w", release.Namespace, name, err)
 		}
+		if agentTargetedStage(ctx, r.client, &stage.Spec.Cluster, release.Namespace) {
+			// The agent apply transport has no delete path, so there is nothing to
+			// collect and no client to collect it with. Refusing here blocks the
+			// finalizer forever and makes the release impossible to delete, which is
+			// strictly worse than leaving the workloads behind: the stage owns them
+			// natively, and the next apply converges them.
+			logf.FromContext(ctx).Info("Release cleanup left resources in place: the stage's apply transport has no delete path",
+				"release", release.Name, "namespace", release.Namespace, "stage", name,
+				"cluster", stage.Spec.Cluster.Name)
+			continue
+		}
 		cluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
 		if err != nil {
 			return nil, fmt.Errorf("resolve stage %s cleanup cluster: %w", name, err)
@@ -3417,6 +3428,28 @@ func (r *ReleaseReconciler) cleanupTargetClients(ctx context.Context, release *p
 		result = append(result, target)
 	}
 	return result, nil
+}
+
+// agentTargetedStage reports whether a stage deploys through a transport with
+// no resource-deletion path: an explicit agent address, an agent-mode ref, or a
+// registration whose mode is agent. A lookup failure reports false so the
+// normal resolution path raises the real error instead of masking it.
+func agentTargetedStage(ctx context.Context, reader client.Reader, ref *paprikav1.ClusterRef, defaultNs string) bool {
+	if ref.AgentAddress != "" || ref.Mode == paprikav1.ClusterModeAgent {
+		return true
+	}
+	if ref.Name == "" {
+		return false
+	}
+	ns := ref.Namespace
+	if ns == "" {
+		ns = defaultNs
+	}
+	var cluster clustersv1alpha1.Cluster
+	if err := reader.Get(ctx, types.NamespacedName{Namespace: ns, Name: ref.Name}, &cluster); err != nil {
+		return false
+	}
+	return cluster.Spec.Mode == clustersv1alpha1.ClusterModeAgent
 }
 
 func propagationPolicy(opts *paprikav1.SyncOptions) *metav1.DeletionPropagation {

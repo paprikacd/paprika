@@ -286,6 +286,12 @@ the inbound agent endpoint. And the link accepts only reports and applies — th
 resource-tree, log and live-diff reads that need a command channel are not wired
 to it yet.
 
+A third limit is a consequence of the second: the agent transport has no delete
+path, so deleting a Release that targeted one leaves its workloads running. The
+release object still deletes and logs which stage kept its resources. Blocking
+the finalizer instead would make such a release impossible to remove, and the
+workloads belong to the cluster either way.
+
 ### State Transport and Reconnects
 
 One satellite Deployment runs per cluster. Shared Kubernetes watches maintain
