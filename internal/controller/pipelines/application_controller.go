@@ -419,18 +419,8 @@ func (r *ApplicationReconciler) isInlineSource(app *paprikav1.Application) bool 
 }
 
 func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
-	projectName := app.Spec.Project
-	if projectName == "" {
-		projectName = defaultProjectName
-	}
-	preparation, err := r.prepareApplicationDeployment(ctx, app)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if preparation != nil {
-		return *preparation, nil
-	}
-	if result, err := r.prepareTriggeredSource(ctx, app); result != nil || err != nil {
+	projectName := applicationProjectName(app)
+	if result, err := r.prepareReconcile(ctx, app); result != nil || err != nil {
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -459,6 +449,22 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 	}
 
 	return r.reconcileAppAfterStages(ctx, app, projectName)
+}
+
+func applicationProjectName(app *paprikav1.Application) string {
+	if app.Spec.Project == "" {
+		return defaultProjectName
+	}
+	return app.Spec.Project
+}
+
+// prepareReconcile runs the deployment preparation and then the triggered
+// source step; a non-nil result or error from either ends the reconcile.
+func (r *ApplicationReconciler) prepareReconcile(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
+	if result, err := r.prepareApplicationDeployment(ctx, app); result != nil || err != nil {
+		return result, err
+	}
+	return r.prepareTriggeredSource(ctx, app)
 }
 
 // Select and admit the candidate before converging shared deployment children.
@@ -740,21 +746,7 @@ func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, ap
 		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching application for status update: %w", err)
 		}
-		// External publishers own the release reference of non-promotion inline apps.
-		// A health reconcile may still carry the previous nonempty reference
-		// after a publisher selects its replacement. Preserve that fresh choice
-		// on every retry, while retaining controller-owned adoption and the
-		// explicit release-clear path.
-		publisherOwnsReleaseRef := r.isInlineSource(&fresh) && !promotionTriggered(&fresh)
-		if preserveReleaseRef && fresh.Status.ReleaseRef != "" && (desiredStatus.ReleaseRef == "" || publisherOwnsReleaseRef) {
-			desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
-			app.Status.ReleaseRef = fresh.Status.ReleaseRef
-		}
-		// The Release controller can populate gates during this reconcile.
-		if len(desiredStatus.Gates) == 0 && len(fresh.Status.Gates) > 0 {
-			desiredStatus.Gates = fresh.Status.Gates
-			app.Status.Gates = fresh.Status.Gates
-		}
+		r.adoptConcurrentStatus(app, desiredStatus, &fresh, preserveReleaseRef)
 		desiredStatus.ObservedGeneration = fresh.Generation
 		if equality.Semantic.DeepEqual(fresh.Status, *desiredStatus) {
 			return nil
@@ -768,6 +760,26 @@ func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, ap
 		return fmt.Errorf("patching application status: %w", err)
 	}
 	return nil
+}
+
+// adoptConcurrentStatus carries into desired, and into app, the status fields
+// another writer may have set since this reconcile read the Application.
+func (r *ApplicationReconciler) adoptConcurrentStatus(app *paprikav1.Application, desired *paprikav1.ApplicationStatus, fresh *paprikav1.Application, preserveReleaseRef bool) {
+	// External publishers own the release reference of non-promotion inline apps.
+	// A health reconcile may still carry the previous nonempty reference
+	// after a publisher selects its replacement. Preserve that fresh choice
+	// on every retry, while retaining controller-owned adoption and the
+	// explicit release-clear path.
+	publisherOwnsReleaseRef := r.isInlineSource(fresh) && !promotionTriggered(fresh)
+	if preserveReleaseRef && fresh.Status.ReleaseRef != "" && (desired.ReleaseRef == "" || publisherOwnsReleaseRef) {
+		desired.ReleaseRef = fresh.Status.ReleaseRef
+		app.Status.ReleaseRef = fresh.Status.ReleaseRef
+	}
+	// The Release controller can populate gates during this reconcile.
+	if len(desired.Gates) == 0 && len(fresh.Status.Gates) > 0 {
+		desired.Gates = fresh.Status.Gates
+		app.Status.Gates = fresh.Status.Gates
+	}
 }
 
 func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
@@ -1811,9 +1823,6 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	}
 	if !usable {
 		return false, nil
-	}
-	if promotionTriggered(app) && newRevision != app.Status.SourceRevision {
-		return false, fmt.Errorf("promoted source resolved revision %q instead of accepted revision %q", newRevision, app.Status.SourceRevision)
 	}
 
 	oldHash := app.Status.SourceHash
