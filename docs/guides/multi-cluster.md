@@ -697,7 +697,30 @@ spec:
 
 Add these stages to the Application's source and delivery configuration.
 Paprika creates Stage resources named `payments-dev`, `payments-prod-eu`,
-and `payments-prod-au` in `production`. The dev stage defaults to the
+and `payments-prod-au` in `production`.
+
+Only one ring deploys at a time, in ascending `ring` order, with declaration
+order breaking ties so a ring can hold parallel stages. `status.currentStage`
+records what is live now. When that stage's release completes and nothing it
+deployed is degraded, a stage with `autoPromote: true` starts the next ring as
+a new Release; the final ring simply rests. `autoPromote` is read from the ring
+being left, so a verified ring decides whether the next one may start without
+an operator.
+
+The next ring deploys the bundle the previous ring verified. For an inline
+application the manifest source lives on the Release rather than on the
+Application, so the promoted Release inherits it from the completed one instead
+of rebuilding from the Application, which has no manifests of its own to
+rebuild from.
+
+A new source revision restarts at the first ring: a commit made while the fleet
+sits on production still passes through the rings that verify it. A manual sync
+retries the ring an operator is looking at rather than restarting the pipeline.
+Multi-ring releases are named per stage (`payments-release-<hash>`), so each
+ring is its own Release object; single-ring applications keep their existing
+release name.
+
+The dev stage defaults to the
 control plane's in-cluster target; the two production stages resolve their
 respective registrations. Register `edge-eu` and `edge-au` with direct
 credentials to run the full deployment lifecycle on both clusters.

@@ -705,6 +705,23 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
   every Secret in the cluster for what is a keyed GET). Keep the warmed
   set + DisableFor list in sync with what request paths actually read.
 
+- **Multi-ring progression**: `Application.spec.stages` deploys one ring at a
+  time in `ring` order (declaration order breaks ties, so a ring can hold
+  parallel stages). `status.currentStage` records what is live; a completed,
+  non-degraded ring with `autoPromote: true` starts the next ring as its own
+  Release, and the next ring inherits the completed Release's manifest source
+  so it deploys the bundle the previous ring verified. A new source revision
+  restarts at ring 1; a manual sync retries the current ring. Multi-ring
+  Release names are stage-qualified; single-ring names are unchanged.
+  `status.releaseRef` advances through a compare-and-set so an inline
+  publisher's newer reference is never clobbered.
+- **Satellite metrics**: `paprika.satellite.reports{transport,outcome}` covers
+  both transports (the link previously exported nothing), plus
+  `link.events{event}`, `tasks{action,outcome}`, `task.duration`, and the
+  scrape-time gauges `link.up{cluster}`, `report.age{cluster}` and
+  `applications{cluster}`. Report age is the alert signal for a satellite that
+  went quiet; the link gauge is absent rather than zero when no link exists.
+
 ### In Progress
 
 - (none)

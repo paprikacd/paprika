@@ -1250,7 +1250,7 @@ func sameStageApplicationOwnerIdentity(left, right metav1.OwnerReference) bool {
 	return leftHasVersion && rightHasVersion && leftGroup == rightGroup
 }
 
-//nolint:cyclop // stage/release branching is inherent to the reconcile flow.
+//nolint:cyclop,gocyclo // stage/release branching is inherent to the reconcile flow.
 func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	manualOverride := app.Annotations[manualSyncAnnotation] != ""
 	defer func() {
@@ -1274,7 +1274,10 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 	}
 
 	deployment := effectiveDeploymentApp(app)
-	targetStage := &deployment.Spec.Stages[0]
+	targetStage := currentStageIn(deployment)
+	if targetStage == nil {
+		return ctrl.Result{}, nil
+	}
 	currentReleasePhase := r.getCurrentReleasePhase(ctx, app)
 
 	if currentReleasePhase != "" {
@@ -1515,6 +1518,9 @@ func applicationReleaseName(app *paprikav1.Application, targetStage *paprikav1.A
 	base := stableApplicationReleaseName(app.Name)
 	identity := releaseIdentity(app, targetStage, base)
 	if identity == "" {
+		identity = multiRingIdentity(app, targetStage)
+	}
+	if identity == "" {
 		return base
 	}
 	sum := sha256.Sum256([]byte(identity))
@@ -1522,10 +1528,24 @@ func applicationReleaseName(app *paprikav1.Application, targetStage *paprikav1.A
 	return addNameSuffix(base, suffix)
 }
 
+// multiRingIdentity keeps a multi-ring application's releases distinct even
+// when it has no pollable source identity. Without it every ring resolves to
+// the same release name, so the next ring would find the completed release
+// already there, adopt it, and never deploy. Single-ring applications are
+// untouched: their release names must not change under an upgrade.
+func multiRingIdentity(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage) string {
+	if targetStage == nil || len(app.Spec.Stages) < 2 {
+		return ""
+	}
+	return "ring=" + targetStage.Name
+}
+
 func releaseIdentity(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, stableReleaseName string) string {
 	deployment := effectiveDeploymentApp(app)
-	if deployment != app && len(deployment.Spec.Stages) > 0 {
-		targetStage = &deployment.Spec.Stages[0]
+	if deployment != app {
+		if current := currentStageIn(deployment); current != nil {
+			targetStage = current
+		}
 	}
 	app = deployment
 	if !hasReleaseIdentityInput(app, targetStage) {
@@ -1579,8 +1599,10 @@ func writeReleaseParametersIdentity(b *strings.Builder, params map[string]string
 
 func releaseParameters(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, stableReleaseName string) map[string]string {
 	deployment := effectiveDeploymentApp(app)
-	if deployment != app && len(deployment.Spec.Stages) > 0 {
-		targetStage = &deployment.Spec.Stages[0]
+	if deployment != app {
+		if current := currentStageIn(deployment); current != nil {
+			targetStage = current
+		}
 	}
 	app = deployment
 	params := make(map[string]string, len(app.Spec.Parameters))
@@ -1608,7 +1630,11 @@ func releaseIdentityChanged(app *paprikav1.Application) (changed bool, desiredRe
 	if app.Status.ReleaseRef == "" || len(app.Spec.Stages) == 0 {
 		return false, ""
 	}
-	desiredRelease = applicationReleaseName(app, &app.Spec.Stages[0])
+	current := currentStageIn(app)
+	if current == nil {
+		return false, ""
+	}
+	desiredRelease = applicationReleaseName(app, current)
 	return desiredRelease != "" && app.Status.ReleaseRef != desiredRelease, desiredRelease
 }
 
@@ -2444,10 +2470,177 @@ func sortReleasesByTimestamp(releases []paprikav1.Release) {
 }
 
 func (r *ApplicationReconciler) getTargetStage(app *paprikav1.Application) string {
-	if len(app.Spec.Stages) == 0 {
+	stage := currentStageIn(app)
+	if stage == nil {
 		return ""
 	}
-	return app.Spec.Stages[0].Name
+	return stage.Name
+}
+
+// stageOrder returns the stages in ring order, with declaration order breaking
+// ties so one ring can hold parallel stages.
+func stageOrder(app *paprikav1.Application) []paprikav1.ApplicationPromotionStage {
+	stages := make([]paprikav1.ApplicationPromotionStage, len(app.Spec.Stages))
+	copy(stages, app.Spec.Stages)
+	sort.SliceStable(stages, func(i, j int) bool { return stages[i].Ring < stages[j].Ring })
+	return stages
+}
+
+// currentStageIn returns the stage the application deploys to now.
+//
+// status.currentStage records where a multi-ring flow has reached; without it
+// the application starts at the lowest ring. Everything that resolves "the
+// stage" — release naming, release creation, sync windows, self-heal — goes
+// through here, so a ring advance moves one value rather than a dozen call
+// sites still pointing at Stages[0].
+func currentStageIn(app *paprikav1.Application) *paprikav1.ApplicationPromotionStage {
+	if len(app.Spec.Stages) == 0 {
+		return nil
+	}
+	if app.Status.CurrentStage != "" {
+		for i := range app.Spec.Stages {
+			if app.Spec.Stages[i].Name == app.Status.CurrentStage {
+				return &app.Spec.Stages[i]
+			}
+		}
+	}
+	first := 0
+	for i := range app.Spec.Stages {
+		if app.Spec.Stages[i].Ring < app.Spec.Stages[first].Ring {
+			first = i
+		}
+	}
+	return &app.Spec.Stages[first]
+}
+
+// currentStageIndex is currentStageIn's position in ring order, or -1.
+func currentStageIndex(app *paprikav1.Application) int {
+	stage := currentStageIn(app)
+	if stage == nil {
+		return -1
+	}
+	ordered := stageOrder(app)
+	for i := range ordered {
+		if ordered[i].Name == stage.Name {
+			return i
+		}
+	}
+	return -1
+}
+
+// promoteToNextRing advances a multi-ring application once the current ring's
+// release completed and nothing in it is degraded.
+//
+// autoPromote is read from the ring being left, not the one being entered: the
+// question is whether the ring just verified may release the next one without
+// an operator. The last stage has nothing to release, so a completed final ring
+// rests.
+func (r *ApplicationReconciler) promoteToNextRing(ctx context.Context, app *paprikav1.Application, active *paprikav1.Release) (bool, error) {
+	stages := stageOrder(app)
+	index := currentStageIndex(app)
+	if index < 0 || index+1 >= len(stages) {
+		return false, nil
+	}
+	if !stages[index].AutoPromote || !ringPromotable(app) {
+		return false, nil
+	}
+
+	next := stages[index+1]
+	release := r.buildRelease(app, &next)
+	inheritVerifiedRing(release, active)
+	if err := ctrl.SetControllerReference(app, release, r.Scheme); err != nil {
+		return false, fmt.Errorf("set controller reference on ring release: %w", err)
+	}
+	if err := r.client.Create(ctx, release); err != nil && !apierrors.IsAlreadyExists(err) {
+		return false, fmt.Errorf("create release for ring %d: %w", next.Ring, err)
+	}
+
+	previous := stages[index].Name
+	completedRelease := app.Status.ReleaseRef
+	app.Status.CurrentStage = next.Name
+	app.Status.ReleaseRef = release.Name
+	r.updatePhase(ctx, app, paprikav1.ApplicationPromoting, "RingPromoted",
+		fmt.Sprintf("ring %s complete; promoting to %s", previous, next.Name))
+	// updatePhase persists only when the phase changes, and the ring has to be
+	// recorded either way.
+	if err := r.persistRingAdvance(ctx, app, completedRelease, next.Name, release.Name); err != nil {
+		return false, err
+	}
+	app.Status.CurrentStage = next.Name
+	app.Status.ReleaseRef = release.Name
+	log.FromContext(ctx).Info("Promoted application to the next ring",
+		"from", previous, "to", next.Name, "ring", next.Ring, "release", release.Name)
+	return true, nil
+}
+
+// persistRingAdvance records the ring the controller just started.
+//
+// It is a compare-and-set on the completed release reference rather than a
+// plain status write. An inline application's release reference belongs to
+// whoever publishes its bundle, and every status write preserves that external
+// choice, so a promotion writing the ref directly would be reverted. Comparing
+// instead means a publisher that selected a replacement while this ring
+// completed keeps it, and the advance is recomputed against the new release.
+func (r *ApplicationReconciler) persistRingAdvance(ctx context.Context, app *paprikav1.Application, completedRef, stage, release string) error {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Application
+		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetching application for ring advance: %w", err)
+		}
+		if fresh.Status.ReleaseRef != completedRef {
+			log.FromContext(ctx).Info("Ring advance left a newer release reference in place",
+				"completed", completedRef, "current", fresh.Status.ReleaseRef)
+			return nil
+		}
+		fresh.Status.CurrentStage = stage
+		fresh.Status.ReleaseRef = release
+		if err := r.client.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("recording ring advance: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("persist ring advance: %w", err)
+	}
+	return nil
+}
+
+// inheritVerifiedRing points the next ring at what the previous ring verified.
+//
+// For an inline application the manifest source lives on the release, not on the
+// application: the publisher writes it when it creates the release, and an
+// application with only a ConfigMap reference cannot reconstruct it. Rebuilding
+// the source from the application would either ship a different bundle or, as
+// inline bundles did, render nothing at all.
+func inheritVerifiedRing(next, verified *paprikav1.Release) {
+	if verified == nil {
+		return
+	}
+	if next.Spec.ManifestSource == nil && verified.Spec.ManifestSource != nil {
+		next.Spec.ManifestSource = verified.Spec.ManifestSource.DeepCopy()
+	}
+	for _, key := range []string{sourceHashAnnotation, sourceRevisionAnnotation} {
+		if next.Annotations[key] == "" {
+			next.Annotations[key] = verified.Annotations[key]
+		}
+	}
+}
+
+// ringPromotable reports whether a completed ring is safe to leave behind.
+//
+// Missing health checks are no opinion, not a failure: an application without
+// checks promotes when its release completed and nothing it deployed is
+// degraded. Unknown health is also not a reason to stop, or a ring deployed to
+// a target with no readable drift would never advance.
+func ringPromotable(app *paprikav1.Application) bool {
+	if app.Status.Health == paprikav1.HealthDegraded {
+		return false
+	}
+	for i := range app.Status.ResourceHealth {
+		if app.Status.ResourceHealth[i].Health == string(paprikav1.HealthDegraded) {
+			return false
+		}
+	}
+	return true
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -2502,8 +2695,35 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		log.Info("Release identity changed, triggering re-sync", "app", app.Name, "currentRelease", app.Status.ReleaseRef, "desiredRelease", desiredRelease)
 		return r.startNewReleaseFlow(ctx, app, false, "ReleaseSpecChanged", "release parameters changed, creating a new release")
 	}
+	if release := r.getCurrentRelease(ctx, app); release != nil && release.Status.Phase == paprikav1.ReleaseComplete {
+		return r.finishCompletedRing(ctx, app, release, pollInterval)
+	}
 
 	return r.evaluateHealthyApplication(ctx, app, pollInterval)
+}
+
+// finishCompletedRing evaluates a ring whose release completed and starts the
+// next ring when it is healthy and the ring allowed it.
+//
+// Health is evaluated before the promotion decision: a ring releases the next
+// one only after its own release completed and nothing in it is degraded.
+func (r *ApplicationReconciler) finishCompletedRing(ctx context.Context, app *paprikav1.Application, release *paprikav1.Release, pollInterval time.Duration) (ctrl.Result, error) {
+	app.Status.Revision = release.Annotations[sourceRevisionAnnotation]
+	if app.Status.Phase != paprikav1.ApplicationHealthy {
+		r.updatePhase(ctx, app, paprikav1.ApplicationHealthy, "ReleaseComplete", "active release completed")
+	}
+	result, err := r.evaluateHealthyApplication(ctx, app, pollInterval)
+	if err != nil {
+		return result, err
+	}
+	promoted, promoteErr := r.promoteToNextRing(ctx, app, release)
+	if promoteErr != nil {
+		return ctrl.Result{}, promoteErr
+	}
+	if promoted {
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+	}
+	return result, nil
 }
 
 func (r *ApplicationReconciler) handleTriggeredHealthyPhase(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
@@ -2516,16 +2736,16 @@ func (r *ApplicationReconciler) handleTriggeredHealthyPhase(ctx context.Context,
 	}
 	updatePromotionReleasePhase(app, release)
 	if phase == paprikav1.ReleaseComplete {
-		app.Status.Revision = release.Annotations[sourceRevisionAnnotation]
-		if app.Status.Phase != paprikav1.ApplicationHealthy {
-			r.updatePhase(ctx, app, paprikav1.ApplicationHealthy, "ReleaseComplete", "active release completed")
-		}
-		return r.evaluateHealthyApplication(ctx, app, r.transientRequeue())
+		return r.finishCompletedRing(ctx, app, release, r.transientRequeue())
 	}
 	if phase == "" || len(app.Spec.Stages) == 0 {
 		return r.evaluateHealthyApplication(ctx, app, r.transientRequeue())
 	}
-	result, err := r.handleActiveRelease(ctx, app, &app.Spec.Stages[0], phase)
+	stage := currentStageIn(app)
+	if stage == nil {
+		return r.evaluateHealthyApplication(ctx, app, r.transientRequeue())
+	}
+	result, err := r.handleActiveRelease(ctx, app, stage, phase)
 	if err != nil || result.RequeueAfter > 0 {
 		if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
 			return ctrl.Result{}, patchErr
@@ -2647,6 +2867,12 @@ func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *pa
 
 	r.setSyncWindowCondition(app, metav1.ConditionTrue, "Allowed", "Source change within sync window")
 	clearReleaseRetriesExhaustedCondition(app)
+	if !manual {
+		// A new source revision goes through every ring again. Without this reset
+		// a commit made while the fleet sat on the last ring would deploy straight
+		// to production and skip the rings that verify it.
+		app.Status.CurrentStage = ""
+	}
 	if err := r.supersedeCurrentRelease(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("supersede current release: %w", err)
 	}
