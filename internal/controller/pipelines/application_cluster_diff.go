@@ -18,6 +18,13 @@ import (
 
 const diffUnavailableCondition = "DiffUnavailable"
 
+// errDriftReadsUnsupported marks a deployment target that exists and can be
+// applied to but exposes no live read. It is a capability gap the
+// DiffUnavailable condition reports, not a reconcile failure: logging it at
+// error level once per poll turns a known limitation of every satellite
+// registration into a log flood.
+var errDriftReadsUnsupported = errors.New("agent observation transport does not expose desired-resource drift reads; configure a direct cluster kubeconfigSecretRef")
+
 // applicationDiffEngine selects the same registered target used by release
 // apply. A remote target gets its own engine and discovery resolver; replacing
 // the shared engine would race applications on other clusters.
@@ -27,7 +34,7 @@ func (r *ApplicationReconciler) applicationDiffEngine(ctx context.Context, app *
 		return nil, nil, true, err
 	}
 	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
-		return nil, nil, true, errors.New("agent observation transport does not expose desired-resource drift reads; configure a direct cluster kubeconfigSecretRef")
+		return nil, nil, true, errDriftReadsUnsupported
 	}
 	if cluster.KubeconfigSecret == "" {
 		return r.DiffEngine, func() {}, false, nil
@@ -107,13 +114,13 @@ func (r *ApplicationReconciler) applicationDiffCluster(ctx context.Context, app 
 		if err := r.client.Get(ctx, types.NamespacedName{Namespace: app.Namespace, Name: stageName}, &stage); err != nil {
 			return paprikav1.ClusterRef{}, fmt.Errorf("get application diff stage %s: %w", stageName, err)
 		}
-		return resolver.resolveClusterRef(ctx, &stage.Spec.Cluster, app.Namespace)
+		return resolver.resolveClusterRefForRead(ctx, &stage.Spec.Cluster, app.Namespace)
 	}
 	if len(app.Spec.Stages) == 1 {
-		return resolver.resolveClusterRef(ctx, &app.Spec.Stages[0].Cluster, app.Namespace)
+		return resolver.resolveClusterRefForRead(ctx, &app.Spec.Stages[0].Cluster, app.Namespace)
 	}
 	for i := range app.Spec.Stages {
-		cluster, err := resolver.resolveClusterRef(ctx, &app.Spec.Stages[i].Cluster, app.Namespace)
+		cluster, err := resolver.resolveClusterRefForRead(ctx, &app.Spec.Stages[i].Cluster, app.Namespace)
 		if err != nil {
 			return paprikav1.ClusterRef{}, err
 		}

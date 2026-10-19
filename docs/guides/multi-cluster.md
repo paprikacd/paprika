@@ -414,7 +414,16 @@ When the current deployment target cannot supply live resource reads, the
 Application records `DiffUnavailable`, marks health unknown and sync incomplete,
 and pauses drift-triggered self-healing. It retains last-known resource status
 until the target becomes readable again; a missing remote resource is never
-inferred from the control plane's local cluster.
+inferred from the control plane's local cluster. This is a property of the
+transport, not a reconcile failure: a satellite target logs the reason at debug
+level and reports it through the condition, so a fleet of satellite
+applications does not fill the log with a limitation that will not change until
+the target is registered as `direct`.
+
+Read and apply resolve separately for the same reason. Drift resolution asks for
+a read transport; apply resolution asks whether an apply can reach the target
+right now, including over a live satellite link. Answering the apply question
+first makes a briefly absent link look like a drift failure.
 
 The console follows the same rule. A resource tree, live manifest, event list
 or pod log is read from the cluster the application's active release deploys

@@ -1541,10 +1541,39 @@ func (r *ReleaseReconciler) resolveDynamicClient(ctx context.Context, kubeconfig
 	return dynClient, nil
 }
 
+// resolveClusterRef resolves a stage's cluster reference and asserts that the
+// target can accept an apply.
 func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav1.ClusterRef, defaultNs string) (paprikav1.ClusterRef, error) {
+	out, cluster, err := r.lookupClusterRef(ctx, ref, defaultNs)
+	if err != nil {
+		return out, err
+	}
+	// A satellite-only cluster has no inbound endpoint, but a live link can
+	// carry an apply down it. Whether one is attached decides if this target is
+	// deployable, so resolution has to ask the dispatcher rather than the spec.
+	hasLiveLink := cluster != nil && r.SatelliteTasks != nil && r.SatelliteTasks.Connected(
+		types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name})
+	return validatedClusterRef(&out, cluster, hasLiveLink)
+}
+
+// resolveClusterRefForRead resolves the same reference without asserting an
+// apply transport.
+//
+// Reads and applies have different capabilities: a diff needs a live read
+// transport, which a satellite does not expose, and whether an apply is
+// currently possible says nothing about that. Asking the apply question first
+// makes a missing link look like a diff failure.
+func (r *ReleaseReconciler) resolveClusterRefForRead(ctx context.Context, ref *paprikav1.ClusterRef, defaultNs string) (paprikav1.ClusterRef, error) {
+	out, _, err := r.lookupClusterRef(ctx, ref, defaultNs)
+	return out, err
+}
+
+// lookupClusterRef fills a stage's cluster reference from the registration
+// without judging any transport.
+func (r *ReleaseReconciler) lookupClusterRef(ctx context.Context, ref *paprikav1.ClusterRef, defaultNs string) (paprikav1.ClusterRef, *clustersv1alpha1.Cluster, error) {
 	if ref.Name == "" {
 		out := *ref
-		return validatedClusterRef(&out, nil, false)
+		return out, nil, nil
 	}
 	ns := ref.Namespace
 	if ns == "" {
@@ -1554,32 +1583,26 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 	var cluster clustersv1alpha1.Cluster
 	if err := r.client.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ns}, &cluster); err != nil {
 		if client.IgnoreNotFound(err) != nil {
-			return *ref, fmt.Errorf("getting cluster %s/%s: %w", ns, ref.Name, err)
+			return *ref, nil, fmt.Errorf("getting cluster %s/%s: %w", ns, ref.Name, err)
 		}
 		if ref.KubeconfigSecret == "" && ref.AgentAddress == "" && ref.Mode != paprikav1.ClusterModeInCluster {
-			return *ref, fmt.Errorf("cluster %s/%s is not registered and has no explicit deployment transport", ns, ref.Name)
+			return *ref, nil, fmt.Errorf("cluster %s/%s is not registered and has no explicit deployment transport", ns, ref.Name)
 		}
-		out := *ref
-		return validatedClusterRef(&out, nil, false)
+		return *ref, nil, nil
 	}
 
 	out := *ref
 	if cluster.Spec.Disabled || cluster.Status.Phase == clustersv1alpha1.ClusterPhaseDisabled {
-		return out, fmt.Errorf("cluster %s/%s is disabled", ns, ref.Name)
+		return out, nil, fmt.Errorf("cluster %s/%s is disabled", ns, ref.Name)
 	}
-	// A satellite-only cluster has no inbound endpoint, but a live link can
-	// carry an apply down it. Whether one is attached decides if this target is
-	// deployable, so resolution has to ask the dispatcher rather than the spec.
-	hasLiveLink := r.SatelliteTasks != nil && r.SatelliteTasks.Connected(
-		types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name})
 	if ref.Mode != "" && ref.Mode != cluster.Spec.Mode {
-		return out, fmt.Errorf("cluster ref mode %q does not match registered cluster %s/%s mode %q", ref.Mode, ns, ref.Name, cluster.Spec.Mode)
+		return out, nil, fmt.Errorf("cluster ref mode %q does not match registered cluster %s/%s mode %q", ref.Mode, ns, ref.Name, cluster.Spec.Mode)
 	}
 	out.Mode = cluster.Spec.Mode
 	out.Namespace = ns
 	if cluster.Spec.KubeconfigSecretRef != nil {
 		if key := cluster.Spec.KubeconfigSecretRef.Key; key != "" && key != "kubeconfig" {
-			return out, fmt.Errorf("cluster %s/%s deployment transport requires kubeconfigSecretRef.key to be kubeconfig", ns, ref.Name)
+			return out, nil, fmt.Errorf("cluster %s/%s deployment transport requires kubeconfigSecretRef.key to be kubeconfig", ns, ref.Name)
 		}
 		out.KubeconfigSecret = cluster.Spec.KubeconfigSecretRef.Name
 		if cluster.Spec.KubeconfigSecretRef.Namespace != "" {
@@ -1592,7 +1615,7 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 	if cluster.Spec.ServiceAccount != "" {
 		out.ServiceAccount = cluster.Spec.ServiceAccount
 	}
-	return validatedClusterRef(&out, &cluster, hasLiveLink)
+	return out, &cluster, nil
 }
 
 func validatedClusterRef(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster, hasLiveLink bool) (paprikav1.ClusterRef, error) {

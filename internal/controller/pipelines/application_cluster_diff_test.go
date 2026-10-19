@@ -214,3 +214,58 @@ func (m *applicationDiffClusterManager) GetRestConfig(_ context.Context, secret,
 	m.secret, m.namespace = secret, namespace
 	return m.config, m.configErr
 }
+
+// TestDiffTargetResolutionDoesNotAskTheApplyTransport pins the split between
+// read and apply resolution.
+//
+// A satellite cluster can be a live deployment target while exposing no drift
+// reads. Resolving the diff through the apply check made a connected satellite
+// look broken whenever the link was briefly absent, and hid the real reason the
+// diff is unavailable.
+func TestDiffTargetResolutionDoesNotAskTheApplyTransport(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clustersv1alpha1.AddToScheme(scheme))
+	require.NoError(t, paprikav1.AddToScheme(scheme))
+
+	edge := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "edge", Namespace: "paprika-system"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeAgent, Satellite: &clustersv1alpha1.SatelliteSpec{}},
+	}
+	stage := &paprikav1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "web-sat", Namespace: "checkout"},
+		Spec: paprikav1.StageSpec{Cluster: paprikav1.ClusterRef{
+			Name: "edge", Namespace: "paprika-system",
+		}},
+	}
+	app := &paprikav1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "checkout"},
+		Spec:       paprikav1.ApplicationSpec{Stages: []paprikav1.ApplicationPromotionStage{{Name: "sat", Cluster: paprikav1.ClusterRef{Name: "edge", Namespace: "paprika-system"}}}},
+		Status:     paprikav1.ApplicationStatus{ReleaseRef: "web-1"},
+	}
+	release := &paprikav1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "web-1", Namespace: "checkout"},
+		Spec:       paprikav1.ReleaseSpec{Target: "web-sat"},
+	}
+
+	r := &ApplicationReconciler{client: fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(edge, stage, release).Build()}
+
+	resolved, err := r.applicationDiffCluster(context.Background(), app)
+	require.NoError(t, err, "the read path must resolve a satellite target without a link")
+	require.Equal(t, paprikav1.ClusterModeAgent, resolved.Mode)
+
+	// The engine reports the capability gap with a sentinel so the reconciler can
+	// log a known limitation without treating it as a failure.
+	_, _, remote, err := r.applicationDiffEngine(context.Background(), app)
+	require.True(t, remote)
+	require.ErrorIs(t, err, errDriftReadsUnsupported)
+
+	// The same reference through the apply path still refuses, because no link is
+	// attached and there is no inbound endpoint to fall back to.
+	applier := &ReleaseReconciler{client: r.client}
+	_, err = applier.resolveClusterRef(context.Background(), &stage.Spec.Cluster, app.Namespace)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "without a live link")
+}

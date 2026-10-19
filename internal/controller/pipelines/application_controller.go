@@ -2075,7 +2075,11 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 
 	diffEngine, stop, remote, err := r.applicationDiffEngine(ctx, app)
 	if err != nil {
-		log.Error(err, "Failed to resolve application diff target")
+		if errors.Is(err, errDriftReadsUnsupported) {
+			log.V(1).Info("Diff unavailable for this target", "reason", err.Error())
+		} else {
+			log.Error(err, "Failed to resolve application diff target")
+		}
 		markApplicationDiffUnavailable(app)
 		return nil
 	}
