@@ -38,13 +38,21 @@ var (
 // confirmation token stops a crafted instruction in that content from
 // authorising a write it never saw approved.
 type Confirmer struct {
-	cache *cache.Cache
+	cache confirmStore
 	ttl   time.Duration
+}
+
+// confirmStore is the part of the cache a Confirmer uses. GetDel retires a
+// live record atomically, so two concurrent consumers can never both read it.
+type confirmStore interface {
+	cache.Getter
+	cache.Setter
+	cache.GetDeleter
 }
 
 // NewConfirmer builds a Confirmer backed by c. Tokens live for ttl, which is
 // the cache's own expiry — there is no separate expiry clock.
-func NewConfirmer(c *cache.Cache, ttl time.Duration) *Confirmer {
+func NewConfirmer(c confirmStore, ttl time.Duration) *Confirmer {
 	return &Confirmer{cache: c, ttl: ttl}
 }
 
@@ -129,24 +137,23 @@ func (c *Confirmer) checkNotUsed(ctx context.Context, token string) error {
 	return nil
 }
 
-// burn looks up the live record for token and, if found, retires it —
-// deleting the record and writing a tombstone — before returning it, so the
-// token cannot be consumed or probed again regardless of what the caller
-// does with the returned record.
+// burn takes the live record for token and retires it — removing the record
+// in the same atomic step that reads it, then writing a tombstone — before
+// returning it, so the token cannot be consumed or probed again regardless of
+// what the caller does with the returned record. Of two concurrent consumers
+// that both passed checkNotUsed, exactly one gets the record; the other finds
+// it gone and gets ErrConfirmInvalid.
 func (c *Confirmer) burn(ctx context.Context, token string) (confirmRecord, error) {
 	var rec confirmRecord
 
-	payload, err := c.cache.Get(ctx, c.recordKey(token))
+	payload, err := c.cache.GetDel(ctx, c.recordKey(token))
 	if err != nil {
-		return rec, fmt.Errorf("check confirmation token: %w", err)
+		return rec, fmt.Errorf("retire confirmation token: %w", err)
 	}
 	if len(payload) == 0 {
 		return rec, ErrConfirmInvalid
 	}
 
-	if err := c.cache.Delete(ctx, c.recordKey(token)); err != nil {
-		return rec, fmt.Errorf("retire confirmation token: %w", err)
-	}
 	if err := c.cache.Set(ctx, c.usedKey(token), []byte("1"), c.ttl); err != nil {
 		return rec, fmt.Errorf("tombstone confirmation token: %w", err)
 	}

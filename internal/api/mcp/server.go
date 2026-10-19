@@ -16,8 +16,11 @@ import (
 	"github.com/NYTimes/gziphandler"
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -730,17 +733,34 @@ func (s *Server) writeUnauthenticated(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusUnauthorized)
 }
 
+// mcpTracerName names the tracer for MCP tool-call spans.
+const mcpTracerName = "paprika/mcp"
+
 // callTool is the ToolHandler installed for every tool in the registry. It
 // dispatches by name through Invoker.Call rather than closing over any one
 // tool, so the mapping from name to behaviour has exactly one source of
 // truth: the registry itself.
+//
+// Each call gets one span, parent of the Connect and backend work it causes.
+// The SDK rejects unregistered names before this handler runs, so the tool
+// name is bounded by the registry. Like the metrics, the span carries only
+// the bounded outcome, never error text, which can name resources or carry
+// provider data.
 func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+	name := req.Params.Name
+	ctx, span := otel.Tracer(mcpTracerName).Start(ctx, "tools/call "+name,
+		trace.WithAttributes(
+			attribute.String("mcp.method.name", "tools/call"),
+			attribute.String("gen_ai.operation.name", "execute_tool"),
+			attribute.String("gen_ai.tool.name", name),
+		),
+	)
+	defer span.End()
 	if s.linkRequestCancellation {
 		var cleanup func()
 		ctx, cleanup = linkProtocolRequestContext(ctx)
 		defer cleanup()
 	}
-	name := req.Params.Name
 	start := time.Now()
 	var result any
 	var err error
@@ -749,12 +769,17 @@ func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sd
 	} else {
 		result, err = s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
 	}
+	outcome := toolCallOutcome(result, err)
 	attrs := metric.WithAttributes(
 		attribute.String("tool", name),
-		attribute.String("outcome", toolCallOutcome(result, err)),
+		attribute.String("outcome", outcome),
 	)
 	paprikametrics.MCPToolCalls.Add(ctx, 1, attrs)
 	paprikametrics.MCPToolDuration.Record(ctx, time.Since(start).Milliseconds(), attrs)
+	span.SetAttributes(attribute.String("outcome", outcome))
+	if outcome == "error" {
+		span.SetStatus(codes.Error, outcome)
+	}
 
 	var res *sdkmcp.CallToolResult
 	if err != nil {
@@ -766,6 +791,7 @@ func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sd
 		if raw, ok := res.StructuredContent.(json.RawMessage); ok && len(raw) > 0 {
 			paprikametrics.MCPToolResponseBytes.Record(ctx, int64(len(raw)),
 				metric.WithAttributes(attribute.String("tool", name)))
+			span.SetAttributes(attribute.Int("mcp.tool.response_bytes", len(raw)))
 		}
 	}
 	return res, err
