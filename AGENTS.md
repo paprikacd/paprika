@@ -251,8 +251,14 @@ helm upgrade paprika-e2e charts/chart/ \
   reachability verdict (`status.state`, fixed-sentence `status.reason`,
   `observedGeneration`, `Ready` condition) onto every provider CR, so
   `kubectl get observabilityproviders` and the console provider board show
-  backend health without anyone running a query. See
-  `docs/guides/observability-gateway.md`.
+  backend health without anyone running a query. The gateway reads only
+  credential Secrets labelled `observability.paprika.io/credentials=true`
+  (`CreateObservabilityProvider` labels its own), resolves a cross-namespace
+  `credentialsSecretRef` only for an authorized caller (never in the prober),
+  sends ambient GCP identity only to `https` `*.googleapis.com` with TLS
+  verification on, and pins federated GCP credential URLs to googleapis.com —
+  a provider writer picks both the Secret and the endpoint, so none of these
+  may be relaxed. See `docs/guides/observability-gateway.md`.
 - `/mcp` is ENABLED on VKE at https://paprika.benebsworth.com/mcp (RFC
   8414/9728 discovery + OAuth 2.1/PKCE). Real connectors (Claude, Codex)
   self-register via POST /mcp/register (RFC 7591 DCR, `paprika-<rand>` ids

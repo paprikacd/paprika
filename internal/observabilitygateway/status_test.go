@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -149,6 +151,58 @@ func TestStatusProberMissingCredentialsSecret(t *testing.T) {
 	cond := meta.FindStatusCondition(status.Conditions, "Ready")
 	require.NotNil(t, cond)
 	require.Equal(t, metav1.ConditionFalse, cond.Status)
+}
+
+func TestStatusProberSendsOnlyLabelledSameNamespaceCredentials(t *testing.T) {
+	t.Parallel()
+
+	// One backend stands in for an attacker-chosen endpoint: every
+	// Authorization header the prober sends lands here.
+	var mu sync.Mutex
+	var received []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		received = append(received, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	secret := func(namespace, name, value string, labels map[string]string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, Labels: labels},
+			Data:       map[string][]byte{"credentials": []byte(value)},
+		}
+	}
+	provider := func(name string, ref observabilityv1alpha1.CredentialsSecretRef) *observabilityv1alpha1.ObservabilityProvider {
+		return providerCR("obs", name, connector.ProviderPrometheus, func(cr *observabilityv1alpha1.ObservabilityProvider) {
+			cr.Generation = 1
+			cr.Spec.Config = runtime.RawExtension{Raw: []byte(fmt.Sprintf(`{"endpoint":%q}`, srv.URL))}
+			cr.Spec.CredentialsSecretRef = &ref
+		})
+	}
+	cl := newProberClient(t, nil,
+		secret("obs", "app-db-password", "unlabelled-key", nil),
+		secret("other-team", "creds", "foreign-key", credentialsLabel()),
+		secret("obs", "prom-creds", "control-key", credentialsLabel()),
+		provider("unlabelled", observabilityv1alpha1.CredentialsSecretRef{Name: "app-db-password"}),
+		provider("foreign", observabilityv1alpha1.CredentialsSecretRef{Namespace: "other-team", Name: "creds"}),
+		provider("control", observabilityv1alpha1.CredentialsSecretRef{Name: "prom-creds"}),
+	)
+
+	require.NoError(t, NewStatusProber(cl).runOnce(context.Background()))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"Bearer control-key"}, received,
+		"only the labelled, same-namespace credential may leave the gateway")
+	for _, name := range []string{"unlabelled", "foreign"} {
+		status := getProviderStatus(t, cl, "obs", name)
+		require.Equal(t, string(connector.StateNotConfigured), status.State, name)
+		require.Equal(t, reasonNotConfigured, status.Reason, name)
+	}
+	require.Equal(t, string(connector.StateOK), getProviderStatus(t, cl, "obs", "control").State)
 }
 
 func TestStatusProberUnknownProviderType(t *testing.T) {

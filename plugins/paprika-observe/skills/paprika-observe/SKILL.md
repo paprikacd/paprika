@@ -124,7 +124,10 @@ provider is required to establish connectivity.
 Provider creation writes an `ObservabilityProvider` CR plus a
 `<name>-credentials` Secret: credentials go in the Secret via
 `spec.credentialsSecretRef`, never inline in `spec.config` — admission rejects
-literal token or password keys. In-cluster backends can self-register by
+literal token or password keys. The gateway reads only Secrets labelled
+`observability.paprika.io/credentials=true` (`CreateObservabilityProvider`
+labels its own), and the status prober never reads a Secret from another
+namespace; either case reports `NotConfigured`. In-cluster backends can self-register by
 annotating their Service `observability.paprika.io/discover: "true"`;
 discovered CRs carry the `observability.paprika.io/discovered` label and no
 credentials — add `credentialsSecretRef` and the endpoint still converges.

@@ -21,18 +21,28 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// CredentialsSecretLabel marks a Secret as an observability provider
+// credential. The gateway reads only Secrets carrying it with the value
+// "true", so a provider can never point the gateway's service account at an
+// unrelated Secret — whoever labels a Secret opts it in.
+const CredentialsSecretLabel = "observability.paprika.io/credentials" //nolint:gosec // G101: a label key, not a credential.
+
 // CredentialsSecretRef references a Secret holding the credential the
 // connector uses to reach its backend. The referenced key contains a
 // type-specific document (an API key, a basic-auth pair, a client
 // credentials JSON — the connector for spec.type defines which).
 // A nil ref means the provider carries no credentials, which is not an
 // error: backends that accept ambient or anonymous access need none.
+// The Secret must carry the label observability.paprika.io/credentials=true;
+// the gateway refuses any other Secret.
 type CredentialsSecretRef struct {
 	// Name of the Secret.
 	Name string `json:"name"`
 
 	// Namespace of the Secret. Defaults to the provider's own namespace
-	// when empty.
+	// when empty. A Secret in another namespace is read only for a caller
+	// authorized for providers in that namespace; the status prober, which
+	// acts for no caller, reports such a provider NotConfigured.
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
 
@@ -61,7 +71,9 @@ type ObservabilityProviderSpec struct {
 	// CredentialsSecretRef references the Secret holding the credential
 	// used to authenticate against the backend. Nil means no credentials,
 	// which is not an error — connectors that reach anonymous or ambient-
-	// identity backends work without one.
+	// identity backends work without one. The Secret must carry the label
+	// observability.paprika.io/credentials=true; the gateway refuses any
+	// other Secret.
 	// +optional
 	CredentialsSecretRef *CredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
 }

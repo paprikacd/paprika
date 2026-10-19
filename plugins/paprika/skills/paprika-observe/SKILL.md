@@ -127,7 +127,10 @@ Creating the provider itself writes an `ObservabilityProvider` CR plus a
 `<name>-credentials` Secret (console, `CreateObservabilityProvider`, or
 kubectl): credentials go in the Secret via `spec.credentialsSecretRef`,
 never inline in `spec.config` — admission rejects literal token or password
-keys. In-cluster backends can self-register by annotating their Service
+keys. The gateway reads only Secrets labelled
+`observability.paprika.io/credentials=true` (the console and
+`CreateObservabilityProvider` label theirs), and the status prober never reads
+a Secret from another namespace; either case reports `NotConfigured`. In-cluster backends can self-register by annotating their Service
 `observability.paprika.io/discover: "true"`; discovered CRs carry the
 `observability.paprika.io/discovered` label and no credentials — edit the CR
 to add `credentialsSecretRef` and it still converges endpoint drift.

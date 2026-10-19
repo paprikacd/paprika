@@ -372,7 +372,10 @@ func (b *k8sBackend) connectorFor(providerType string) (connector.Connector, err
 // falls back to the CR's own, key falls back to "credentials"). A nil ref is
 // not an error: backends that accept ambient or anonymous access need none.
 // A missing Secret is a FailedPrecondition — the reference names something
-// that does not exist, so the caller should fix the CR, not retry.
+// that does not exist, so the caller should fix the CR, not retry. So is a
+// Secret without the credentials label: anyone who can write a provider can
+// name any Secret, and the gateway's service account can read far more than
+// provider credentials, so only Secrets opted in by label are ever sent.
 func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1alpha1.ObservabilityProvider) ([]byte, error) {
 	ref := cr.Spec.CredentialsSecretRef
 	if ref == nil {
@@ -401,6 +404,16 @@ func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1
 	if err != nil {
 		return nil, fmt.Errorf("get credentials secret %s/%s: %w", namespace, ref.Name, err)
 	}
+	return credentialFromSecret(&secret, key)
+}
+
+// credentialFromSecret returns the credential document under key, provided
+// the Secret is opted in with the credentials label.
+func credentialFromSecret(secret *corev1.Secret, key string) ([]byte, error) {
+	if secret.Labels[observabilityv1alpha1.CredentialsSecretLabel] != "true" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("credentials secret %s/%s is not labelled %s=true", secret.Namespace, secret.Name, observabilityv1alpha1.CredentialsSecretLabel))
+	}
 	credentials, present := secret.Data[key]
 	if !present || strings.TrimSpace(string(credentials)) == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
@@ -411,9 +424,14 @@ func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1
 
 // A shared reference must not turn provider access in one namespace into
 // access to another tenant's Secret through the gateway service account.
+// Without an authorizer (the status prober acts for no caller) nobody can be
+// shown to hold that access, so a cross-namespace reference is refused.
 func (b *k8sBackend) authorizeCredentialNamespace(ctx context.Context, providerNamespace, secretNamespace string) error {
-	if secretNamespace == providerNamespace || b.credentialAuthorizer == nil {
+	if secretNamespace == providerNamespace {
 		return nil
+	}
+	if b.credentialAuthorizer == nil {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("observability credential namespace access is not authorized"))
 	}
 	principal := auth.PrincipalFromContext(ctx)
 	if principal == nil || b.credentialAuthorizer.Authorize(ctx, principal, auth.ActionRead, auth.ResourceObservabilityProviders, secretNamespace, "") != nil {

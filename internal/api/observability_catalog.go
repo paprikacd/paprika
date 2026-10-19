@@ -485,6 +485,8 @@ func (s *PaprikaServer) createObservabilityCredentialSecret(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			// The gateway reads only Secrets opted in with this label.
+			Labels: map[string]string{observabilityv1alpha1.CredentialsSecretLabel: "true"},
 		},
 		Type:       corev1.SecretTypeOpaque,
 		StringData: map[string]string{observabilityCredentialSecretKey: document},

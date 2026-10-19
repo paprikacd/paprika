@@ -79,7 +79,7 @@ func (CloudLogging) Query(ctx context.Context, req connector.QueryRequest) (*con
 	if err != nil {
 		return queryError(err), nil
 	}
-	client, err := gcpcommon.Client(ctx, req.Credentials, cfg.InsecureSkipTLS)
+	client, err := gcpcommon.Client(ctx, cfg, req.Credentials)
 	if err != nil {
 		result, credErr := credentialError(err)
 		return result, credErr

@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	observabilityv1alpha1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
 
@@ -195,20 +196,21 @@ func TestQueryCredentialsResolution(t *testing.T) {
 	t.Parallel()
 
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "obs", Name: "creds"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "obs", Name: "creds", Labels: credentialsLabel()},
 		Data: map[string][]byte{
 			"credentials": []byte("default-key"),
 			"other":       []byte("other-key"),
 		},
 	}
 	crossNSSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "creds-ns", Name: "creds"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "creds-ns", Name: "creds", Labels: credentialsLabel()},
 		Data:       map[string][]byte{"token": []byte("cross-ns-key")},
 	}
 
 	tests := []struct {
 		name      string
 		mutate    func(*observabilityv1alpha1.ObservabilityProvider)
+		authorize bool
 		wantCreds []byte
 	}{
 		{
@@ -232,6 +234,7 @@ func TestQueryCredentialsResolution(t *testing.T) {
 					Key:       "token",
 				}
 			},
+			authorize: true,
 			wantCreds: []byte("cross-ns-key"),
 		},
 	}
@@ -240,7 +243,12 @@ func TestQueryCredentialsResolution(t *testing.T) {
 			t.Parallel()
 			b, stub := newStubBackend(t, secret, crossNSSecret,
 				providerCR("obs", "prom", connector.ProviderPrometheus, tt.mutate))
-			result, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{
+			ctx := context.Background()
+			if tt.authorize {
+				b.credentialAuthorizer = &auth.AllowAllAuthorizer{}
+				ctx = auth.WithPrincipal(ctx, &auth.Principal{Subject: "reader"})
+			}
+			result, err := b.Query(ctx, "obs/prom", connector.QueryRequest{
 				Signal: connector.SignalMetrics,
 				Query:  "up",
 			})
@@ -250,6 +258,50 @@ func TestQueryCredentialsResolution(t *testing.T) {
 			require.Equal(t, tt.wantCreds, stub.gotReq.Credentials)
 		})
 	}
+}
+
+func credentialsLabel() map[string]string {
+	return map[string]string{observabilityv1alpha1.CredentialsSecretLabel: "true"}
+}
+
+func TestQueryRefusesUnlabelledCredentialsSecret(t *testing.T) {
+	t.Parallel()
+
+	for name, labels := range map[string]map[string]string{
+		"no label":    nil,
+		"wrong value": {observabilityv1alpha1.CredentialsSecretLabel: "false"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "obs", Name: "app-token", Labels: labels},
+				Data:       map[string][]byte{"credentials": []byte("never-send-this")},
+			}
+			b, stub := newStubBackend(t, secret, providerCR("obs", "prom", connector.ProviderPrometheus, func(cr *observabilityv1alpha1.ObservabilityProvider) {
+				cr.Spec.CredentialsSecretRef = &observabilityv1alpha1.CredentialsSecretRef{Name: "app-token"}
+			}))
+			_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up"})
+			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+			require.Contains(t, err.Error(), "obs/app-token is not labelled "+observabilityv1alpha1.CredentialsSecretLabel+"=true")
+			require.NotContains(t, err.Error(), "never-send-this")
+			require.Nil(t, stub.gotCtx, "an unlabelled Secret must never reach a connector")
+		})
+	}
+}
+
+func TestQueryRefusesCrossNamespaceCredentialsWithoutAuthorizer(t *testing.T) {
+	t.Parallel()
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "other-team", Name: "creds", Labels: credentialsLabel()},
+		Data:       map[string][]byte{"credentials": []byte("other-team-key")},
+	}
+	b, stub := newStubBackend(t, secret, providerCR("obs", "prom", connector.ProviderPrometheus, func(cr *observabilityv1alpha1.ObservabilityProvider) {
+		cr.Spec.CredentialsSecretRef = &observabilityv1alpha1.CredentialsSecretRef{Namespace: "other-team", Name: "creds"}
+	}))
+	_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up"})
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	require.Nil(t, stub.gotCtx, "no caller can be authorized for another namespace's Secret")
 }
 
 func TestQueryCredentialsSecretNotFound(t *testing.T) {

@@ -139,6 +139,18 @@ spec:
 - `spec.credentialsSecretRef` document: nil = no auth; otherwise the secret
   `data[key]` is sent as `Authorization: Bearer <value>`, or HTTP Basic when it
   contains `user:password`.
+- The referenced Secret must be labelled
+  `observability.paprika.io/credentials=true`. The gateway's service account
+  can read far more than provider credentials, and whoever writes a provider
+  chooses both the Secret and the endpoint it is sent to, so only Secrets
+  opted in by label are ever read; any other reference reports
+  `NotConfigured`. `CreateObservabilityProvider` labels the Secret it creates;
+  label Secrets you create yourself:
+  `kubectl label secret <name> -n <ns> observability.paprika.io/credentials=true`.
+- A Secret in another namespace (`credentialsSecretRef.namespace`) is read only
+  for a caller authorized for providers in that namespace. The status prober
+  acts for no caller, so such a provider reports `NotConfigured` in status
+  while authorized queries still work.
 - `endpoint` (absolute http(s) URL) is the one universal config key; unknown
   keys fail validation (typo fail-fast). Optional keys:
   - `headers` — map of extra request headers (≤16 entries, ≤4 KiB combined):
@@ -190,7 +202,7 @@ spec:
   config:
     endpoint: https://prometheus-prod-01-us-west1.grafana.net/api/prom
   credentialsSecretRef:
-    name: grafana-cloud
+    name: grafana-cloud   # Secret labelled observability.paprika.io/credentials=true
 ```
 
 ### Cloud connectors (GCP and AWS)
@@ -215,6 +227,17 @@ credential document and the config keys:
   `projectId` (defaults to the credential's project), optional `endpoint`
   (private proxies / fakes — replaces the `*.googleapis.com` base),
   `insecureSkipTLS`.
+  - Ambient identity is the gateway's own, so it is sent only to an `https`
+    `*.googleapis.com` endpoint with TLS verification on. A provider with no
+    credential Secret and any other `endpoint`, or `insecureSkipTLS`, reports
+    `NotConfigured` and sends nothing; give such a provider its own
+    credential Secret.
+  - In `external_account` and `impersonated_service_account` documents,
+    `token_url`, `token_info_url` and `service_account_impersonation_url` must
+    be `https` `*.googleapis.com` URLs, `universe_domain` must be empty or
+    `googleapis.com`, and `credential_source.executable` is refused. These
+    fields decide where x/oauth2 posts subject and access tokens; it does not
+    validate them itself.
 
 Empty connector queries are used internally for small health reads. Prospective
 `validate_provider` and the console's **Validate configuration** action only check
@@ -311,8 +334,8 @@ Ownership rules keep the CR-as-system-of-record invariant:
   provider hands it to the operator permanently, and an operator-written CR
   of the same name is never deleted or modified.
 - Discovered providers have no credentials (in-cluster backends are usually
-  unauthenticated); edit the CR to add `credentialsSecretRef` and it still
-  converges endpoint changes around your edit.
+  unauthenticated); edit the CR to add `credentialsSecretRef` (to a labelled
+  Secret) and it still converges endpoint changes around your edit.
 
 Example — everything kube-prometheus-stack + loki + tempo need:
 
