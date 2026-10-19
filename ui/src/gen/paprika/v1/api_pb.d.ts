@@ -7815,6 +7815,23 @@ export declare class Cluster extends Message<Cluster> {
    */
   provider?: ClusterProvider;
 
+  /**
+   * Management policies the control plane enforces here, with "*" expanded to
+   * the concrete list. Empty means the registration grants nothing, which is a
+   * deliberate state rather than a missing one.
+   *
+   * @generated from field: repeated string management_policies = 24;
+   */
+  managementPolicies: string[];
+
+  /**
+   * Satellite reporting state. Null when this cluster has no satellite; the
+   * message says what was reported, never what was inferred from a timestamp.
+   *
+   * @generated from field: optional paprika.v1.ClusterSatellite satellite = 25;
+   */
+  satellite?: ClusterSatellite;
+
   constructor(data?: PartialMessage<Cluster>);
 
   static readonly runtime: typeof proto3;
@@ -7828,6 +7845,62 @@ export declare class Cluster extends Message<Cluster> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Cluster;
 
   static equals(a: Cluster | PlainMessage<Cluster> | undefined, b: Cluster | PlainMessage<Cluster> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ClusterSatellite
+ */
+export declare class ClusterSatellite extends Message<ClusterSatellite> {
+  /**
+   * ObserveOnly, Connected, Autonomous, OverrideHeld or Disabled. Empty when
+   * the satellite has not reported a state.
+   *
+   * @generated from field: string operating_state = 1;
+   */
+  operatingState: string;
+
+  /**
+   * What the satellite was configured to do without the control plane.
+   *
+   * @generated from field: string autonomy = 2;
+   */
+  autonomy: string;
+
+  /**
+   * Ceiling the satellite is enforcing, with "*" expanded.
+   *
+   * @generated from field: repeated string effective_policies = 3;
+   */
+  effectivePolicies: string[];
+
+  /**
+   * @generated from field: int64 last_seen_unix_ms = 4;
+   */
+  lastSeenUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 autonomous_since_unix_ms = 5;
+   */
+  autonomousSinceUnixMs: bigint;
+
+  /**
+   * @generated from field: uint32 active_overrides = 6;
+   */
+  activeOverrides: number;
+
+  constructor(data?: PartialMessage<ClusterSatellite>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ClusterSatellite";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ClusterSatellite;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ClusterSatellite;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ClusterSatellite;
+
+  static equals(a: ClusterSatellite | PlainMessage<ClusterSatellite> | undefined, b: ClusterSatellite | PlainMessage<ClusterSatellite> | undefined): boolean;
 }
 
 /**

@@ -1397,6 +1397,26 @@ message Cluster {
   // cluster; the message's own state distinguishes detected-only from
   // API-enriched.
   optional ClusterProvider provider = 23;
+  // Management policies the control plane enforces here, with "*" expanded to
+  // the concrete list. Empty means the registration grants nothing, which is a
+  // deliberate state rather than a missing one.
+  repeated string management_policies = 24;
+  // Satellite reporting state. Null when this cluster has no satellite; the
+  // message says what was reported, never what was inferred from a timestamp.
+  optional ClusterSatellite satellite = 25;
+}
+
+message ClusterSatellite {
+  // ObserveOnly, Connected, Autonomous, OverrideHeld or Disabled. Empty when
+  // the satellite has not reported a state.
+  string operating_state = 1;
+  // What the satellite was configured to do without the control plane.
+  string autonomy = 2;
+  // Ceiling the satellite is enforcing, with "*" expanded.
+  repeated string effective_policies = 3;
+  int64 last_seen_unix_ms = 4;
+  int64 autonomous_since_unix_ms = 5;
+  uint32 active_overrides = 6;
 }
 
 message ListClustersRequest {

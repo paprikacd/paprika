@@ -2597,6 +2597,23 @@ export const Cluster = /*@__PURE__*/ proto3.makeMessageType(
     { no: 21, name: "health_check_interval", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 22, name: "health_check_timeout", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 23, name: "provider", kind: "message", T: ClusterProvider, opt: true },
+    { no: 24, name: "management_policies", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 25, name: "satellite", kind: "message", T: ClusterSatellite, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ClusterSatellite
+ */
+export const ClusterSatellite = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ClusterSatellite",
+  () => [
+    { no: 1, name: "operating_state", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "autonomy", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "effective_policies", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 4, name: "last_seen_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "autonomous_since_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 6, name: "active_overrides", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
   ],
 );
 

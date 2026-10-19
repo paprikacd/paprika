@@ -1,6 +1,6 @@
 "use client"
 
-import type { PromiseClient } from "@connectrpc/connect"
+import { Code, ConnectError, type PromiseClient } from "@connectrpc/connect"
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
@@ -13,6 +13,7 @@ import {
 } from "@/app/dashboard/clusters/data-sources"
 import { FleetStateNotice } from "@/components/fleet/fleet-states"
 import { usePublishConsoleScope } from "@/components/layout/console-header"
+import { CapacityMeter } from "@/components/overview/capacity-meter"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { StatusPill } from "@/components/ui/status-chip"
 import type { PaprikaService } from "@/gen/paprika/v1/api_connect"
@@ -23,7 +24,11 @@ import {
   DataClass,
   DataState,
   FleetConnectionState,
+  ListClustersRequest,
+  type ClusterNodePool,
+  type ClusterSatellite,
 } from "@/gen/paprika/v1/api_pb"
+import { numbersAreReal } from "@/lib/data-state"
 import { getFleetClient } from "@/lib/fleet-client"
 import {
   mergeFleetQuery,
@@ -42,17 +47,15 @@ import { useFleetData } from "@/lib/use-fleet-data"
  * Two very different things are called "the cluster list" and this page keeps
  * them apart on purpose.
  *
- * The first is the set of clusters the fleet index has applications in. That
- * is derived from the same facet buckets the scope bar uses, it is fleet-wide
- * and exact, and it is available today.
+ * The first is the set of clusters the fleet index has applications in. It is
+ * derived from the same facet buckets the scope bar uses, it is fleet-wide and
+ * exact, and it is available today.
  *
- * The second is cluster *inventory* — nodes, pods, namespaces, versions,
- * regions — which comes from a collector that is not configured here. Its
- * `DataClass` reports `NOT_CONFIGURED`, so under the degraded-mode contract
- * that surface must be absent rather than zeroed: a table of clusters with
- * `0 nodes` in every row is a lie with a table around it. The board is
- * replaced by the server's own sentence about why, which doubles as the
- * instruction for making it appear.
+ * The second is the registered `Cluster` objects themselves: mode, phase,
+ * connection, management policies, node and pod counts, capacity meters, and
+ * what a satellite last reported. `ListClusters` serves those for real, so the
+ * board draws them — but each figure is gated on its own data class, because a
+ * cluster whose node RBAC is denied still has a name and a policy set.
  */
 
 export type ClustersClient = Pick<
@@ -110,18 +113,10 @@ export function ClustersView({ client }: ClustersViewProps) {
 
   const probe = useDataSources(resolved)
   const inventory = probe.reading(DataClass.CLUSTER_INVENTORY)
-  const inventoryHasData = hasData(inventory?.state)
 
   const clusters = useQuery({
     queryKey: ["console", "clusters"],
-    queryFn: async ({ signal }) => {
-      const response = await resolved.listClusters({}, { signal })
-      return response.clusters
-    },
-    // The probe decides whether this RPC is worth making at all. Asking for a
-    // list the server has already said it cannot populate would only produce
-    // an empty page to misread.
-    enabled: inventoryHasData,
+    queryFn: ({ signal }) => listClusters(resolved, signal),
   })
 
   return (
@@ -216,31 +211,71 @@ export function ClustersView({ client }: ClustersViewProps) {
       ) : null}
 
       <div className="mt-4">
-        <ClusterInventoryBoard
+        <RegistrationsBoard
           reading={inventory}
           isProbing={probe.isLoading}
-          probeFailed={probe.isError}
-          clusters={clusters.data}
+          clusters={clusters.data?.clusters}
+          includesUnreferenced={clusters.data?.includesUnreferenced ?? false}
+          failed={clusters.isError}
         />
       </div>
     </div>
   )
 }
 
+interface ClusterPage {
+  clusters: Cluster[]
+  includesUnreferenced: boolean
+}
+
 /**
- * The inventory board exists only when the data behind it does. Every other
- * `DataState` resolves to a sentence, never to a number.
+ * `ListClusters` is asked for capacity and for unreferenced registrations.
+ * Unreferenced is an admin read — an inventory of clusters nobody the caller
+ * can see deploys to is a fact about the install, not about their workloads —
+ * so a refusal downgrades the request instead of failing the page.
  */
-function ClusterInventoryBoard({
+async function listClusters(
+  client: ClustersClient,
+  signal: AbortSignal
+): Promise<ClusterPage> {
+  const full = new ListClustersRequest({
+    includeCapacity: true,
+    includeUnreferenced: true,
+  })
+  try {
+    const response = await client.listClusters(full, { signal })
+    return { clusters: response.clusters, includesUnreferenced: true }
+  } catch (error) {
+    if (error instanceof ConnectError && error.code === Code.PermissionDenied) {
+      const response = await client.listClusters(
+        new ListClustersRequest({ includeCapacity: true }),
+        { signal }
+      )
+      return { clusters: response.clusters, includesUnreferenced: false }
+    }
+    throw error
+  }
+}
+
+/**
+ * The registrations board. Every figure is gated on its own source: node and
+ * pod counts come from the inventory collector, the meters from capacity, the
+ * policy chips from the Cluster spec. A cluster whose inventory is unavailable
+ * still shows its policies and its connection — it just does not claim to know
+ * how many nodes it has.
+ */
+function RegistrationsBoard({
   reading,
   isProbing,
-  probeFailed,
   clusters,
+  includesUnreferenced,
+  failed,
 }: {
   reading: DataSourceReading | undefined
   isProbing: boolean
-  probeFailed: boolean
   clusters: Cluster[] | undefined
+  includesUnreferenced: boolean
+  failed: boolean
 }) {
   if (isProbing) {
     return (
@@ -250,134 +285,243 @@ function ClusterInventoryBoard({
     )
   }
 
-  if (probeFailed) {
+  if (failed) {
     return (
       <Blueprint>
-        <BoardHeader index="02" title="Cluster inventory" />
+        <BoardHeader index="02" title="Registered clusters" />
         <p role="alert" className="px-3.5 py-5 text-reason text-muted-foreground">
-          Paprika could not read its data source capabilities, so this board is
-          not shown. Nothing here is missing; it is unknown.
+          Paprika could not read its cluster registrations, so this board is not
+          shown. Nothing here is missing; it is unknown.
         </p>
-      </Blueprint>
-    )
-  }
-
-  // FORBIDDEN hides without implying the data is absent, and an unspecified
-  // state is not an assertion about anything.
-  if (
-    reading === undefined ||
-    reading.state === DataState.FORBIDDEN ||
-    reading.state === DataState.UNSPECIFIED
-  ) {
-    return null
-  }
-
-  if (!hasData(reading.state)) {
-    return (
-      <Blueprint>
-        <BoardHeader index="02" title="Cluster inventory" />
-        <div role="status" className="px-3.5 py-5">
-          <p className="text-reason text-neutral-800">
-            {reading.unavailableReason ||
-              "Cluster inventory is not available on this server."}
-          </p>
-          <p className="mt-2 font-mono text-meta text-muted-foreground">
-            Node, pod and namespace counts are omitted rather than reported as
-            zero.
-          </p>
-        </div>
       </Blueprint>
     )
   }
 
   const rows = clusters ?? []
+  if (rows.length === 0) {
+    return (
+      <Blueprint>
+        <BoardHeader index="02" title="Registered clusters" />
+        <p role="status" className="px-3.5 py-5 text-reason text-muted-foreground">
+          {includesUnreferenced
+            ? "No cluster is registered on this control plane."
+            : "No cluster registered in this scope has an application targeting it."}
+        </p>
+      </Blueprint>
+    )
+  }
+
+  const stale = reading?.state === DataState.STALE
   return (
     <Blueprint>
       <BoardHeader
         index="02"
-        title="Cluster inventory"
-        meta={reading.provider || undefined}
+        title="Registered clusters"
+        meta={`${counter.format(rows.length)} registered`}
         actions={
-          reading.state === DataState.STALE ? (
-            <StatusPill tone="degraded" label={`stale · ${age(reading.observedAtUnixMs)} old`} />
+          stale && reading ? (
+            <StatusPill
+              tone="degraded"
+              label={`inventory stale · ${age(reading.observedAtUnixMs)} old`}
+            />
           ) : undefined
         }
       />
-      {rows.length === 0 ? (
-        <p role="status" className="px-3.5 py-5 text-reason text-muted-foreground">
-          The inventory source reports no clusters.
+      <ul className="grid list-none grid-cols-1 gap-px bg-rule md:grid-cols-2 xl:grid-cols-3">
+        {rows.map((cluster) => (
+          <ClusterCard
+            key={clusterKey(cluster)}
+            cluster={cluster}
+            inventoryReason={reading?.unavailableReason}
+          />
+        ))}
+      </ul>
+      {!includesUnreferenced ? (
+        <p className="border-t border-rule px-3.5 py-2 text-note text-muted-foreground">
+          Only clusters an application you can read deploys to are listed.
+          Listing the whole registry requires admin.
         </p>
-      ) : (
-        <table
-          aria-label="Cluster inventory"
-          className="w-full border-collapse text-left"
-        >
-          <thead>
-            <tr className="bg-inset">
-              {["Cluster", "Mode", "Connection", "Version", "Applications"].map(
-                (heading, index) => (
-                  <th
-                    key={heading}
-                    scope="col"
-                    className={cellHeadClass(index > 3)}
-                  >
-                    {heading}
-                  </th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((cluster) => {
-              const identity = cluster.identity
-              const name = cluster.displayName || identity?.name || "unknown"
-              return (
-                <tr
-                  key={`${identity?.namespace ?? ""}/${identity?.name ?? name}`}
-                  className="border-b border-rule-soft last:border-b-0"
-                >
-                  <th scope="row" className="px-3.5 py-2 font-normal">
-                    <span className="block font-cond text-name font-semibold tracking-[0.02em]">
-                      {name}
-                    </span>
-                    {identity?.namespace ? (
-                      <span className="block font-mono text-meta text-muted-foreground">
-                        {identity.namespace}
-                      </span>
-                    ) : null}
-                  </th>
-                  <td className="px-3.5 py-2 font-mono text-note text-muted-foreground">
-                    {clusterModeLabel(cluster.mode)}
-                  </td>
-                  <td className="px-3.5 py-2">
-                    <StatusPill
-                      tone={connectionTone(cluster.connection, cluster.phase)}
-                      label={connectionLabel(cluster.connection)}
-                    />
-                  </td>
-                  <td className="px-3.5 py-2 font-mono text-note text-muted-foreground">
-                    {cluster.kubernetesVersion || "not reported"}
-                  </td>
-                  <td className="px-3.5 py-2 text-right font-mono text-console tabular-nums">
-                    {counter.format(cluster.applicationCount)}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      )}
+      ) : null}
     </Blueprint>
   )
 }
 
-function cellHeadClass(alignRight: boolean): string {
-  return [
-    "border-b border-rule-strong px-3.5 py-1.5 font-mono text-kicker font-normal tracking-[0.14em] text-muted-foreground uppercase",
-    alignRight ? "text-right" : "",
-  ]
-    .filter(Boolean)
-    .join(" ")
+function ClusterCard({
+  cluster,
+  inventoryReason,
+}: {
+  cluster: Cluster
+  inventoryReason: string | undefined
+}) {
+  const identity = cluster.identity
+  const name = cluster.displayName || identity?.name || "unknown"
+  const inventory = cluster.inventory
+  const inventoryReal = numbersAreReal(inventory?.state)
+  const satellite = cluster.satellite
+
+  return (
+    <li className="bg-card px-3.5 py-3">
+      <div className="flex items-start justify-between gap-2.5">
+        <div>
+          <Link
+            href={clusterDetailHref(cluster)}
+            className="font-cond text-card font-semibold tracking-[0.03em] text-foreground"
+          >
+            {name}
+          </Link>
+          {identity?.namespace ? (
+            <span className="block font-mono text-meta text-neutral-600">
+              {identity.namespace}
+            </span>
+          ) : null}
+        </div>
+        <StatusPill
+          tone={connectionTone(cluster.connection, cluster.phase)}
+          label={connectionLabel(cluster.connection)}
+        />
+      </div>
+
+      <p className="mt-0.5 font-mono text-meta text-neutral-600">
+        {[
+          clusterModeLabel(cluster.mode),
+          cluster.kubernetesVersion || "version not reported",
+        ].join(" · ")}
+      </p>
+
+      <div className="mt-2 flex flex-wrap gap-x-3.5 gap-y-1 text-note text-muted-foreground">
+        <Stat value={counter.format(cluster.applicationCount)} tail="apps" />
+        <Stat value={counter.format(cluster.targetCount)} tail="targets" />
+        {inventoryReal && inventory ? (
+          <>
+            <Stat
+              value={`${counter.format(inventory.readyNodeCount)}/${counter.format(inventory.nodeCount)}`}
+              tail="nodes ready"
+            />
+            <Stat
+              value={`${counter.format(inventory.runningPodCount)}/${counter.format(inventory.podCount)}`}
+              tail="pods running"
+            />
+          </>
+        ) : null}
+      </div>
+
+      <PolicyChips policies={cluster.managementPolicies} />
+
+      {satellite ? <SatelliteLine satellite={satellite} /> : null}
+
+      {!inventoryReal && inventoryReason ? (
+        <p className="mt-1.5 text-meta text-muted-foreground">
+          Node and pod counts are unavailable: {inventoryReason}
+        </p>
+      ) : null}
+
+      {cluster.capacity?.cpu || cluster.capacity?.memory ? (
+        <div className="mt-3 flex flex-col gap-2.5 border-t border-rule-soft pt-2.5">
+          {cluster.capacity.cpu ? (
+            <CapacityMeter label="CPU" meter={cluster.capacity.cpu} />
+          ) : null}
+          {cluster.capacity.memory ? (
+            <CapacityMeter label="MEMORY" meter={cluster.capacity.memory} />
+          ) : null}
+        </div>
+      ) : null}
+
+      <NodePools
+        pools={cluster.provider?.nodePools}
+        providerType={cluster.provider?.type}
+      />
+    </li>
+  )
+}
+
+/**
+ * Policies are shown as chips because the set answers "what will Paprika do
+ * here". Empty is rendered explicitly: a cluster that grants nothing is a
+ * deliberate configuration, and a blank row would read as missing data.
+ */
+function PolicyChips({ policies }: { policies: readonly string[] }) {
+  if (policies.length === 0) {
+    return (
+      <p className="mt-2 font-mono text-meta text-degraded">
+        policies: none — Paprika will not read or write this cluster
+      </p>
+    )
+  }
+  return (
+    <ul
+      className="mt-2 flex list-none flex-wrap gap-1"
+      aria-label="Management policies"
+    >
+      {policies.map((policy) => (
+        <li
+          key={policy}
+          className="border border-rule px-1.5 py-0.5 font-mono text-meta text-neutral-700"
+        >
+          {policy}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * What the satellite last said it was doing. An empty `operatingState` means it
+ * never reported one, and that is shown as "not reported" rather than inferred
+ * from the age of `lastSeen`.
+ */
+function SatelliteLine({ satellite }: { satellite: ClusterSatellite }) {
+  const parts = [
+    satellite.autonomy ? `autonomy ${satellite.autonomy}` : "",
+    satellite.operatingState || "state not reported",
+    satellite.lastSeenUnixMs > BigInt(0)
+      ? `seen ${age(satellite.lastSeenUnixMs)} ago`
+      : "never reported",
+  ].filter(Boolean)
+
+  return (
+    <p className="mt-1 font-mono text-meta text-neutral-600">
+      satellite · {parts.join(" · ")}
+    </p>
+  )
+}
+
+function NodePools({
+  pools,
+  providerType,
+}: {
+  pools: readonly ClusterNodePool[] | undefined
+  providerType: string | undefined
+}) {
+  if (!pools || pools.length === 0) {
+    return null
+  }
+  return (
+    <div className="mt-2 border-t border-rule-soft pt-2">
+      <p className="font-mono text-kicker tracking-[0.14em] text-neutral-600 uppercase">
+        {providerType ? `${providerType} node pools` : "node pools"}
+      </p>
+      <ul className="mt-1 list-none">
+        {pools.map((pool) => (
+          <li key={pool.name} className="font-mono text-meta text-neutral-700">
+            {pool.name} · {counter.format(pool.nodeCount)} nodes
+            {pool.machineType ? ` · ${pool.machineType}` : ""}
+            {pool.autoScaled ? " · autoscaled" : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function Stat({ value, tail }: { value: string; tail: string }) {
+  return (
+    <span className="whitespace-nowrap">
+      <span className="font-cond text-name font-semibold text-foreground tabular-nums">
+        {value}
+      </span>
+      {tail ? ` ${tail}` : ""}
+    </span>
+  )
 }
 
 /**
@@ -398,6 +542,24 @@ function clusterHref(
   return `/dashboard/applications/?${params.toString()}`
 }
 
+/** The detail page is scoped by the cluster's own identity. */
+function clusterDetailHref(cluster: Cluster): string {
+  const identity = cluster.identity
+  if (!identity) {
+    return "/dashboard/clusters/"
+  }
+  const params = new URLSearchParams({
+    namespace: identity.namespace,
+    name: identity.name,
+  })
+  return `/dashboard/clusters/detail/?${params.toString()}`
+}
+
+function clusterKey(cluster: Cluster): string {
+  const identity = cluster.identity
+  return identity ? `${identity.namespace}/${identity.name}` : cluster.server
+}
+
 function clusterModeLabel(mode: ClusterMode): string {
   switch (mode) {
     case ClusterMode.IN_CLUSTER:
@@ -407,7 +569,7 @@ function clusterModeLabel(mode: ClusterMode): string {
     case ClusterMode.AGENT:
       return "agent"
     default:
-      return "unknown"
+      return "mode unknown"
   }
 }
 
@@ -443,7 +605,10 @@ function connectionTone(
 }
 
 function age(observedAtUnixMs: bigint): string {
-  const seconds = Math.max(0, Math.round((Date.now() - Number(observedAtUnixMs)) / 1000))
+  const seconds = Math.max(
+    0,
+    Math.round((Date.now() - Number(observedAtUnixMs)) / 1000)
+  )
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m`

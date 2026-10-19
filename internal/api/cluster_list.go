@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/clusterprovider"
@@ -187,8 +188,51 @@ func clusterMessage(
 		message.Inventory.UnavailableReason = "satellite inventory is unavailable until reporting resumes"
 	}
 	message.Provider = clusterProviderMessage(cluster.Status.Provider)
+	message.ManagementPolicies = managementPolicyStrings(cluster)
+	message.Satellite = satelliteStatusMessage(cluster.Status.Satellite)
 
 	return message
+}
+
+// managementPolicyStrings reports the ceiling the control plane will enforce,
+// with "*" expanded so a client never has to interpret the wildcard itself.
+func managementPolicyStrings(cluster *clustersv1alpha1.Cluster) []string {
+	effective := pipelinesv1alpha1.IntersectManagementPolicies(
+		cluster.Spec.ManagementPolicies, pipelinesv1alpha1.DefaultManagementPolicies())
+	policies := make([]string, 0, len(effective))
+	for _, policy := range effective {
+		policies = append(policies, string(policy))
+	}
+	return policies
+}
+
+// satelliteStatusMessage projects the satellite block. Nil means the cluster
+// has no satellite at all, which differs from a satellite that has never
+// reported: that is a message with empty state, not an absent one.
+func satelliteStatusMessage(state *clustersv1alpha1.SatelliteStatus) *paprikav1.ClusterSatellite {
+	if state == nil {
+		return nil
+	}
+	message := &paprikav1.ClusterSatellite{
+		OperatingState:    string(state.OperatingState),
+		ActiveOverrides:   uint32(max(state.ActiveOverrides, 0)),
+		EffectivePolicies: managementPolicyNames(state.EffectivePolicies),
+	}
+	if state.LastSeen != nil {
+		message.LastSeenUnixMs = state.LastSeen.UnixMilli()
+	}
+	if state.AutonomousSince != nil {
+		message.AutonomousSinceUnixMs = state.AutonomousSince.UnixMilli()
+	}
+	return message
+}
+
+func managementPolicyNames(policies []pipelinesv1alpha1.ManagementPolicy) []string {
+	names := make([]string, 0, len(policies))
+	for _, policy := range policies {
+		names = append(names, string(policy))
+	}
+	return names
 }
 
 // clusterInventoryMessage projects the controller-gathered inventory onto the

@@ -788,7 +788,7 @@ func TestConsoleDescriptor(t *testing.T) {
 		require.Equalf(t, wantValues, enumValueNumbers(enum), "enum %s changed", enumName)
 	}
 
-	require.Len(t, consoleMessageDescriptorContracts, 92, "snapshot must cover every console message")
+	require.Len(t, consoleMessageDescriptorContracts, 93, "snapshot must cover every console message")
 	assertMessageDescriptorContracts(t, file.Messages(), consoleMessageDescriptorContracts)
 
 	service := file.Services().ByName("PaprikaService")
@@ -1142,9 +1142,23 @@ var consoleMessageDescriptorContracts = map[string]map[string]fleetFieldDescript
 			explicitPresence: true,
 			referencedType:   "paprika.v1.ClusterProvider",
 		},
+		"management_policies": {number: 24, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"satellite": {
+			number: 25, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+			referencedType:   "paprika.v1.ClusterSatellite",
+		},
 		"server":          {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 		"service_account": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 		"target_count":    {number: 16, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"ClusterSatellite": {
+		"active_overrides":         {number: 6, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"autonomous_since_unix_ms": {number: 5, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"autonomy":                 {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"effective_policies":       {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"last_seen_unix_ms":        {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"operating_state":          {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 	},
 	"ClusterNodePool": {
 		"allocatable_cpu_millis":   {number: 7, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
