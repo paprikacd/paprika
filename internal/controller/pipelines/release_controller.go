@@ -496,13 +496,18 @@ func (r *ReleaseReconciler) shouldRollback(release *paprikav1.Release) bool {
 		release.Spec.OnFailure.Action == "rollback"
 }
 
+// concurrentReleaseRequeue is how often a release parked behind another release
+// re-checks. Nothing notifies a release when the one ahead of it finishes, so
+// without a requeue it waits for an unrelated event.
+const concurrentReleaseRequeue = 10 * time.Second
+
 func (r *ReleaseReconciler) handlePendingPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
 	hasActiveConcurrent, err := r.hasActiveConcurrentRelease(ctx, release)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("checking active concurrent release: %w", err)
 	}
 	if hasActiveConcurrent {
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: concurrentReleaseRequeue}, nil
 	}
 	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleasePromoting
@@ -1539,7 +1544,7 @@ func (r *ReleaseReconciler) resolveDynamicClient(ctx context.Context, kubeconfig
 func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav1.ClusterRef, defaultNs string) (paprikav1.ClusterRef, error) {
 	if ref.Name == "" {
 		out := *ref
-		return validatedClusterRef(&out, nil)
+		return validatedClusterRef(&out, nil, false)
 	}
 	ns := ref.Namespace
 	if ns == "" {
@@ -1555,13 +1560,18 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 			return *ref, fmt.Errorf("cluster %s/%s is not registered and has no explicit deployment transport", ns, ref.Name)
 		}
 		out := *ref
-		return validatedClusterRef(&out, nil)
+		return validatedClusterRef(&out, nil, false)
 	}
 
 	out := *ref
 	if cluster.Spec.Disabled || cluster.Status.Phase == clustersv1alpha1.ClusterPhaseDisabled {
 		return out, fmt.Errorf("cluster %s/%s is disabled", ns, ref.Name)
 	}
+	// A satellite-only cluster has no inbound endpoint, but a live link can
+	// carry an apply down it. Whether one is attached decides if this target is
+	// deployable, so resolution has to ask the dispatcher rather than the spec.
+	hasLiveLink := r.SatelliteTasks != nil && r.SatelliteTasks.Connected(
+		types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name})
 	if ref.Mode != "" && ref.Mode != cluster.Spec.Mode {
 		return out, fmt.Errorf("cluster ref mode %q does not match registered cluster %s/%s mode %q", ref.Mode, ns, ref.Name, cluster.Spec.Mode)
 	}
@@ -1582,11 +1592,11 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 	if cluster.Spec.ServiceAccount != "" {
 		out.ServiceAccount = cluster.Spec.ServiceAccount
 	}
-	return validatedClusterRef(&out, &cluster)
+	return validatedClusterRef(&out, &cluster, hasLiveLink)
 }
 
-func validatedClusterRef(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster) (paprikav1.ClusterRef, error) {
-	err := validateClusterApplyTransport(ref, registered)
+func validatedClusterRef(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster, hasLiveLink bool) (paprikav1.ClusterRef, error) {
+	err := validateClusterApplyTransport(ref, registered, hasLiveLink)
 	return *ref, err
 }
 
@@ -1597,7 +1607,7 @@ func clusterCredentialNamespace(cluster *paprikav1.ClusterRef, defaultNamespace 
 	return defaultNamespace
 }
 
-func validateClusterApplyTransport(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster) error {
+func validateClusterApplyTransport(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster, hasLiveLink bool) error {
 	if ref.KubeconfigSecret != "" && ref.AgentAddress != "" {
 		return errors.New("cluster cannot combine kubeconfigSecret and agentAddress deployment transports")
 	}
@@ -1624,7 +1634,7 @@ func validateClusterApplyTransport(ref *paprikav1.ClusterRef, registered *cluste
 	case paprikav1.ClusterModeDirect:
 		return validateDirectClusterTransport(ref, registered)
 	case paprikav1.ClusterModeAgent:
-		return validateAgentClusterTransport(ref, registered)
+		return validateAgentClusterTransport(ref, registered, hasLiveLink)
 	default:
 		return fmt.Errorf("cluster deployment mode %q is unsupported", ref.Mode)
 	}
@@ -1641,14 +1651,26 @@ func validateDirectClusterTransport(ref *paprikav1.ClusterRef, registered *clust
 	return nil
 }
 
-func validateAgentClusterTransport(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster) error {
+func validateAgentClusterTransport(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster, hasLiveLink bool) error {
 	if ref.KubeconfigSecret != "" {
 		return errors.New("agent cluster mode cannot use kubeconfigSecret")
 	}
-	if ref.AgentAddress == "" && (registered == nil || registered.Spec.Satellite != nil) {
-		return errors.New("satellite observation transport cannot apply manifests; configure an explicit agentAddress or a direct cluster kubeconfigSecretRef")
+	if ref.AgentAddress != "" {
+		return nil
 	}
-	return nil
+	switch {
+	case registered != nil && registered.Spec.Satellite == nil:
+		// A classic agent registration with no satellite block is reached through
+		// the agent Service the chart deploys beside it, as it always was.
+		return nil
+	case registered != nil && hasLiveLink:
+		// A satellite-only cluster has no inbound endpoint, but its outbound link
+		// can carry the apply. Dispatch is what makes the target deployable, so the
+		// check is against a live link rather than the spec.
+		return nil
+	default:
+		return errors.New("satellite observation transport cannot apply manifests without a live link; connect the satellite, or configure an explicit agentAddress or a direct cluster kubeconfigSecretRef")
+	}
 }
 
 func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) (int, error) {
@@ -2186,6 +2208,14 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 		if gvr, err := r.gvrFromKind(u.GetKind(), group, version); err == nil {
 			gvrSet[gvr] = struct{}{}
 		}
+	}
+	// A kind that disappears from the bundle entirely still has live objects to
+	// collect. Deriving the candidates from the desired set alone means removing
+	// the last Service of an application prunes nothing, which is the case prune
+	// exists for. The managed-kind table is the same floor release cleanup uses
+	// when a snapshot is unavailable.
+	for _, gvr := range managedGVRs {
+		gvrSet[gvr] = struct{}{}
 	}
 
 	selector := labels.Set{

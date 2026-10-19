@@ -93,6 +93,12 @@ A resource is pruned only if ALL of these are true:
 5. It is **namespaced** (cluster-scoped resources are only pruned if
    explicitly allowed)
 
+The candidate set is the union of the kinds in the new manifest set and the
+managed-kind table that release cleanup already uses. Without that second half,
+an application that stops rendering its last Service never lists Services, so
+the Service it left behind survives every later prune. The extra lists are what
+collect a kind that has left the bundle entirely.
+
 ### What Never Gets Pruned
 
 - Resources with `ownerReferences` (controller-generated children)

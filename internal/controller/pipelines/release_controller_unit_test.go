@@ -1355,6 +1355,9 @@ func TestReleaseReconciler_pruneStaleResources(t *testing.T) {
 	}
 	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
 	registerUnstructured(schema.GroupVersionKind{Group: "serving.knative.dev", Version: "v1", Kind: "Service"})
+	// Prune also lists the managed-kind table, so the fake client must know how
+	// to list each of those kinds.
+	registerManagedPruneKinds(registerUnstructured)
 
 	paprikaLabels := map[string]interface{}{
 		"app.paprika.io/managed-by": "paprika",
@@ -1435,6 +1438,77 @@ data:
 	}
 }
 
+// TestReleaseReconciler_pruneRemovesAKindThatLeftTheBundle covers the case prune
+// exists for: an application stops rendering a Service, so the Service's kind is
+// absent from the new manifest set entirely. Deriving candidates from the
+// desired set alone would leave it running forever.
+func TestReleaseReconciler_pruneRemovesAKindThatLeftTheBundle(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	registerUnstructured := func(gvk schema.GroupVersionKind) {
+		scheme.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
+		scheme.AddKnownTypeWithName(schema.GroupVersionKind{
+			Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List",
+		}, &unstructured.UnstructuredList{})
+	}
+	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	registerManagedPruneKinds(registerUnstructured)
+
+	labels := map[string]interface{}{
+		"app.paprika.io/managed-by": "paprika",
+		"app.paprika.io/name":       "test-app",
+	}
+	orphanService := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Service",
+		"metadata": map[string]interface{}{
+			"name": "leftover", "namespace": "default", "labels": labels,
+		},
+		"spec": map[string]interface{}{"ports": []interface{}{map[string]interface{}{"port": int64(80)}}},
+	}}
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme, orphanService)
+
+	// The new bundle no longer renders any Service.
+	docs := [][]byte{[]byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: only-config
+  namespace: default
+`)}
+
+	r := &ReleaseReconciler{}
+	pruned, err := r.pruneStaleResources(context.Background(), logr.Discard(), dynClient, docs, "default", "test-app", nil)
+	if err != nil {
+		t.Fatalf("pruneStaleResources returned error: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("expected the orphaned Service to be pruned, pruned=%d", pruned)
+	}
+	if _, err := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "services"}).
+		Namespace("default").Get(context.Background(), "leftover", metav1.GetOptions{}); err == nil {
+		t.Error("leftover Service should have been pruned")
+	}
+}
+
+// registerManagedPruneKinds makes the fake dynamic client able to list every
+// kind prune may consider, not only the kinds a single test applies.
+func registerManagedPruneKinds(register func(schema.GroupVersionKind)) {
+	kinds := map[schema.GroupVersionKind]bool{
+		{Group: "apps", Version: "v1", Kind: "Deployment"}:                     true,
+		{Group: "apps", Version: "v1", Kind: "StatefulSet"}:                    true,
+		{Group: "batch", Version: "v1", Kind: "CronJob"}:                       true,
+		{Group: "", Version: "v1", Kind: "Service"}:                            true,
+		{Group: "", Version: "v1", Kind: "ServiceAccount"}:                     true,
+		{Group: "", Version: "v1", Kind: "PersistentVolumeClaim"}:              true,
+		{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"}: true,
+		{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}:           true,
+	}
+	for gvk := range kinds {
+		register(gvk)
+	}
+}
+
 func TestReleaseReconciler_pruneStaleResources_KnativeChildServiceNotPruned(t *testing.T) {
 	t.Parallel()
 
@@ -1449,6 +1523,9 @@ func TestReleaseReconciler_pruneStaleResources_KnativeChildServiceNotPruned(t *t
 	}
 	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "Service"})
 	registerUnstructured(schema.GroupVersionKind{Group: "serving.knative.dev", Version: "v1", Kind: "Service"})
+	// Prune considers the managed-kind table as well as the desired set, so every
+	// one of those kinds has to be listable by the fake client.
+	registerManagedPruneKinds(registerUnstructured)
 
 	paprikaLabels := map[string]interface{}{
 		"app.paprika.io/managed-by": "paprika",

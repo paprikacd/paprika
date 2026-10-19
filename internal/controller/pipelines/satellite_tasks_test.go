@@ -6,8 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/stretchr/testify/require"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	paprikav1proto "github.com/benebsworth/paprika/internal/api/paprika/v1"
 )
@@ -152,5 +158,47 @@ func TestApplyViaSatelliteLinkWithoutADispatcher(t *testing.T) {
 		&paprikav1.ClusterRef{Name: "edge", Namespace: "paprika-system"}, "checkout", "api", nil)
 	if err != nil || handled {
 		t.Fatalf("handled = %v, err = %v; split mode leaves the dispatcher nil", handled, err)
+	}
+}
+
+// TestSatelliteApplyTransportRequiresALiveLink pins the rule that decides
+// whether a satellite-only cluster is deployable: its outbound link either
+// carries the apply or it does not, and the spec alone cannot answer that.
+func TestSatelliteApplyTransportRequiresALiveLink(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clustersv1alpha1.AddToScheme(scheme))
+	require.NoError(t, paprikav1.AddToScheme(scheme))
+	cluster := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "edge", Namespace: "paprika-system"},
+		Spec: clustersv1alpha1.ClusterSpec{
+			Mode:      clustersv1alpha1.ClusterModeAgent,
+			Satellite: &clustersv1alpha1.SatelliteSpec{},
+		},
+	}
+	key := types.NamespacedName{Namespace: "paprika-system", Name: "edge"}
+
+	withoutLink := &ReleaseReconciler{
+		client:         fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).Build(),
+		SatelliteTasks: &fakeDispatcher{connected: map[types.NamespacedName]bool{}},
+	}
+	_, err := withoutLink.resolveClusterRef(context.Background(),
+		&paprikav1.ClusterRef{Name: "edge", Namespace: "paprika-system"}, "checkout")
+	if err == nil || !strings.Contains(err.Error(), "without a live link") {
+		t.Fatalf("err = %v, want a refusal that names the missing link", err)
+	}
+
+	withLink := &ReleaseReconciler{
+		client:         fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).Build(),
+		SatelliteTasks: &fakeDispatcher{connected: map[types.NamespacedName]bool{key: true}},
+	}
+	resolved, err := withLink.resolveClusterRef(context.Background(),
+		&paprikav1.ClusterRef{Name: "edge", Namespace: "paprika-system"}, "checkout")
+	if err != nil {
+		t.Fatalf("a connected satellite must be deployable: %v", err)
+	}
+	if resolved.Mode != paprikav1.ClusterModeAgent {
+		t.Fatalf("mode = %q, want agent", resolved.Mode)
 	}
 }
