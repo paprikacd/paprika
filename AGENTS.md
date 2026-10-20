@@ -715,6 +715,15 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
   Release names are stage-qualified; single-ring names are unchanged.
   `status.releaseRef` advances through a compare-and-set so an inline
   publisher's newer reference is never clobbered.
+- **Split-mode satellite dispatch**: links live in the API server pod, so the
+  controller asks it over an in-cluster listener
+  (`/internal/satellite/{links,dispatch}`, `--internal-bind-address` /
+  `--satellite-dispatch-addr`, chart `satellite.internalDispatch.enabled`).
+  Both halves share a bearer token, the listener refuses every request without
+  one, and an address without a token fails startup. Link snapshots cache for
+  2s because target resolution asks on every apply. Without the value, split
+  mode behaves as before: agent apply falls back to the inbound agent endpoint,
+  which a satellite-only cluster does not have.
 - **Satellite metrics**: `paprika.satellite.reports{transport,outcome}` covers
   both transports (the link previously exported nothing), plus
   `link.events{event}`, `tasks{action,outcome}`, `task.duration`, and the
