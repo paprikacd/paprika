@@ -911,6 +911,38 @@ Generator parameters feed the Application name, so changing them (adding a
 generator parameter, moving a set to a selector) renames the generated
 Applications and replaces them. That is a real rollout, not a no-op.
 
+## Fleet Scale Characteristics
+
+The satellite fleet view is rebuilt by merging every registration's observations
+into the local snapshot. Two measurements bound what that costs, taken from
+`internal/fleet` benchmarks (`go test ./internal/fleet -bench MergeSatellite`):
+
+| Fleet shape | Merge cost |
+| --- | --- |
+| 10 clusters x 20 apps, one shared app | 0.4 ms |
+| 100 clusters x 20 apps, one shared app | 3.2 ms |
+| 500 clusters x 20 apps, distinct apps | 64 ms, 80 MB allocated |
+
+The merge runs on the query path: the first fleet query after any report that
+changes observations pays it, and every query after that is cached until the
+next change. On a live stack with 50 registrations x 20 applications, a
+`QueryFleetMap` at rest measured p50 5 ms / p95 7 ms, and a query immediately
+after a status change measured p50 18 ms / p95 66 ms.
+
+That is the scale limit to watch: a few hundred continuously-reporting
+satellites turn the merge into tens of full rebuilds per second, each landing on
+whichever query arrives first. The fix belongs in the satellite source rather
+than the reader — coalesce observation changes into at most one published
+generation per short window (the source already injects a clock), so queries see
+a slightly older generation while the accumulated changes merge once. Do not
+coalesce in the reader: its contract is that a changed generation is visible on
+the next call, and tests (and callers) rely on it.
+
+`ListClusters` with `includeCapacity` has a different cost profile: capacity is
+gathered per registration, so a fleet where many registrations cannot be dialled
+pays that fan-out. With 50 unreachable test registrations it measured p50 23 ms
+/ p95 232 ms, against 5 ms for the map query over the same fleet.
+
 ## Cluster Health
 
 The cluster controller periodically health-checks registered clusters. Check status with:
