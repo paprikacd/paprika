@@ -841,6 +841,11 @@ cluster. An `agent` cluster is refused: a rollout reads and writes workloads it
 cannot reach through an outbound link, and running it against the control plane
 instead would report success while the real workload never moved.
 
+Progression for a remote rollout comes from its own requeues, not from watch
+events: the controller's `Owns` watches are on the control plane, so a
+ReplicaSet becoming ready in the remote cluster does not wake it early. The
+default requeue interval is the latency floor.
+
 ## Fanning Out with an ApplicationSet
 
 An `ApplicationSet` with a `clusters` generator produces one Application per

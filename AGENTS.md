@@ -715,6 +715,13 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
   Release names are stage-qualified; single-ring names are unchanged.
   `status.releaseRef` advances through a compare-and-set so an inline
   publisher's newer reference is never clobbered.
+- **Remote rollouts**: `Rollout.spec.cluster` runs a rollout against a
+  registered cluster. Reconcile resolves the cluster once, copies the
+  reconciler with its clients, and the workload helpers read the copy; the
+  Rollout object, finalizer and status stay on the control plane. Agent
+  clusters are refused (no live read/write path). Progression for a remote
+  rollout comes from requeues, not watch events, because `Owns` watches the
+  control plane.
 - **Satellite autonomy**: the satellite remembers every bundle it applies
   (ConfigMap `paprika-satellite-bundles` in its *own* namespace, not the
   registration namespace) and reconciles those bundles on an interval.
