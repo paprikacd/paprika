@@ -715,6 +715,15 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
   Release names are stage-qualified; single-ring names are unchanged.
   `status.releaseRef` advances through a compare-and-set so an inline
   publisher's newer reference is never clobbered.
+- **Satellite autonomy**: the satellite remembers every bundle it applies
+  (ConfigMap `paprika-satellite-bundles` in its *own* namespace, not the
+  registration namespace) and reconciles those bundles on an interval.
+  `Failover` takes over after `failoverTimeout` of failed deliveries and
+  reports `OverrideHeld` for two minutes after reconnecting; `Delegated`
+  reconciles continuously; `ObserveOnly` never reconciles. The reconcile unit
+  is the last applied bundle, not release history. The chart's ServiceAccount
+  stays read-only; `rbac.extraClusterRoleRules` is where an operator grants
+  what their applications deploy, and a namespaced Role covers the store.
 - **Split-mode satellite dispatch**: links live in the API server pod, so the
   controller asks it over an in-cluster listener
   (`/internal/satellite/{links,dispatch}`, `--internal-bind-address` /
