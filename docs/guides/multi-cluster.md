@@ -925,11 +925,11 @@ into the local snapshot. Two measurements bound what that costs, taken from
 
 The merge runs on the query path: the first fleet query after any report that
 changes observations pays it, and every query after that is cached until the
-next change. On a live stack with 50 registrations x 20 applications, a
-`QueryFleetMap` at rest measured p50 5 ms / p95 7 ms, and a query immediately
-after a status change measured p50 18 ms / p95 66 ms (measured before the
-coalescing window existed; a burst of changes now costs one merge, not one per
-report).
+next change. On a live stack with 50 registrations x 20 applications, a `QueryFleetMap` at
+rest measured p50 5 ms / p95 7 ms, and a query immediately after a single status
+change measured p50 18 ms / p95 66 ms before the window existed. With coalescing
+in place, the same query under a 150-patch burst (50 registrations, three rounds
+applied in parallel) measured p50 5 ms / p95 23 ms / max 36 ms.
 
 Observation changes are coalesced at the satellite source into at most one
 published generation per 250 ms window, so the merge is bounded at roughly four
