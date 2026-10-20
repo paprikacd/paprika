@@ -19,9 +19,11 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +61,7 @@ import (
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/bootstrap"
+	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/coordinator"
 	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/fleet"
@@ -89,6 +92,10 @@ type operatorDependencies struct {
 	repoServerAddr string
 	coordinator    *coordinator.Coordinator
 	fleetReader    fleet.Reader
+	// satelliteTasks is what the release controller dispatches through: the
+	// local hub in a single-process deployment, or a dispatcher pointed at the
+	// API server's internal listener when the links live in another pod.
+	satelliteTasks controller.SatelliteTaskDispatcher
 	// satelliteHub tracks live satellite links. It is created in operator mode
 	// because the same process both serves the link and dispatches work down it;
 	// split mode has the link but no dispatcher in the API pod.
@@ -179,6 +186,41 @@ type operatorGovernance struct {
 	capacityProviders *dataprovider.Registry
 }
 
+// newSatelliteTaskDispatcher picks where satellite work is dispatched from.
+//
+// In a single-process deployment the hub is here, and dispatching through it is
+// a channel send. Split mode puts the links in the API server's pod, so this
+// process asks that pod instead; the local hub it still creates is empty by
+// construction, and leaving the reconciler pointed at it would make every agent
+// apply fall back to an inbound endpoint a satellite-only cluster does not have.
+func newSatelliteTaskDispatcher(cfg *cliConfig, hub *satellitecontrol.Hub) (controller.SatelliteTaskDispatcher, error) {
+	if cfg.SatelliteDispatchAddr == "" {
+		return hub, nil
+	}
+	token, err := readComponentToken(cfg.SatelliteDispatchTokenFile)
+	if err != nil {
+		return nil, err
+	}
+	if token == "" {
+		return nil, errors.New("--satellite-dispatch-addr requires --satellite-dispatch-token-file")
+	}
+	return satellitecontrol.NewRemoteDispatcher(cfg.SatelliteDispatchAddr, token), nil
+}
+
+// readComponentToken reads a bearer token a component shares with another.
+// An empty path yields an empty token; callers decide whether that is allowed.
+func readComponentToken(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- the path comes from this process's own flag.
+	if err != nil {
+		return "", fmt.Errorf("read component token %s: %w", path, err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+//nolint:cyclop // startup branches on deployment shape, not on business logic.
 func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
 	opCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -209,6 +251,11 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	}
 
 	deps.satelliteHub = newInstrumentedHub()
+	satelliteTasks, err := newSatelliteTaskDispatcher(cfg, deps.satelliteHub)
+	if err != nil {
+		return err
+	}
+	deps.satelliteTasks = satelliteTasks
 
 	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.OperatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.tuning(), cfg.EnableWebhooks, gov.capacityProviders); err != nil {
 		return fmt.Errorf("setup operator controllers: %w", err)
@@ -216,6 +263,12 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 
 	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.AuditLogEnabled, gov.capacityProviders, deps.satelliteHub, setupLog); err != nil {
 		return fmt.Errorf("start UI server: %w", err)
+	}
+	// The internal listener follows the hub, not the mode: a single-process
+	// deployment that is asked to serve component-to-component routes serves
+	// them, and split mode's API server does the same from api mode.
+	if err := startInternalDispatchServer(opCtx, cfg, deps.satelliteHub, setupLog); err != nil {
+		return err
 	}
 
 	if err := startInlineWebhookServer(opCtx, mgr.GetClient(), cfg.WebhookSecret, setupLog); err != nil {

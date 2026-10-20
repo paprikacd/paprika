@@ -92,6 +92,7 @@ import (
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/reposerver"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
+	"github.com/benebsworth/paprika/internal/satellitecontrol"
 	"github.com/benebsworth/paprika/internal/sharding"
 	buildinfo "github.com/benebsworth/paprika/internal/version"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
@@ -162,6 +163,10 @@ type cliConfig struct {
 	K8sAPIServer                  string        `mapstructure:"k8s-api-server"`
 	K8sTokenFile                  string        `mapstructure:"k8s-token-file"`
 	RepoServerAddr                string        `mapstructure:"repo-server-addr"`
+	InternalBindAddr              string        `mapstructure:"internal-bind-address"`
+	InternalTokenFile             string        `mapstructure:"internal-token-file"`
+	SatelliteDispatchAddr         string        `mapstructure:"satellite-dispatch-addr"`
+	SatelliteDispatchTokenFile    string        `mapstructure:"satellite-dispatch-token-file"`
 	RepoWorkDir                   string        `mapstructure:"repo-workdir"`
 	ObservabilityGatewayAddr      string        `mapstructure:"observability-gateway-addr"`
 	ObsProviderProbeInterval      time.Duration `mapstructure:"obs-provider-probe-interval"`
@@ -683,6 +688,14 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
 	fs.String("ui-bind-address", ":3000",
 		"The address the UI dashboard server binds to.")
+	fs.String("internal-bind-address", "",
+		"The address the API server's internal listener binds to, serving component-to-component routes. Empty disables it. Only used in 'api' mode.")
+	fs.String("internal-token-file", "",
+		"Path to the bearer token the internal listener requires. An internal listener with no token refuses every request.")
+	fs.String("satellite-dispatch-addr", "",
+		"Address of the API server's internal listener, used in split mode so the controller can dispatch satellite tasks. Empty uses the in-process hub.")
+	fs.String("satellite-dispatch-token-file", "",
+		"Path to the bearer token for --satellite-dispatch-addr.")
 	fs.Int("api-max-conns", 128,
 		"Maximum number of concurrent TCP connections the UI/API server accepts. "+
 			"Bounds connection and in-flight request memory on small pods; excess "+
@@ -915,7 +928,11 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		return err
 	}
 
-	extraMuxHandlers, mcpCache, err := buildAPIExtraMuxHandlers(apiCtx, cfg, connectHandler, clients, setupLog)
+	// The hub lives here in split mode: satellites connect to the API server's
+	// public route, so this process is the only one that can answer "is this
+	// cluster's link up".
+	hub := newInstrumentedHub()
+	extraMuxHandlers, mcpCache, err := buildAPIExtraMuxHandlers(apiCtx, cfg, connectHandler, clients, setupLog, hub)
 	defer closeMCPCacheIfPresent(mcpCache, setupLog)
 	if err != nil {
 		return err
@@ -938,6 +955,9 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 
 	startMetricsServer(apiCtx, cfg.MetricsAddr, setupLog)
 	startPprofServer(apiCtx, cfg.PprofAddr, setupLog)
+	if err := startInternalDispatchServer(apiCtx, cfg, hub, setupLog); err != nil {
+		return err
+	}
 
 	if clients.cacheBundle == nil {
 		return startAPIServer(apiCtx, wrappedHandler, cfg.UIAddr, cfg.APIMaxConns, setupLog)
@@ -952,6 +972,34 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 			return startAPIServer(ctx, wrappedHandler, cfg.UIAddr, cfg.APIMaxConns, setupLog)
 		},
 	)
+}
+
+// startInternalDispatchServer serves the component-to-component routes when the
+// operator asked for them. An address without a token is refused at startup: a
+// listener that came up without one would be reachable by anything in the
+// cluster and would push manifests into satellites.
+func startInternalDispatchServer(ctx context.Context, cfg *cliConfig, hub *satellitecontrol.Hub, setupLog logr.Logger) error {
+	if cfg.InternalBindAddr == "" {
+		return nil
+	}
+	token, err := readComponentToken(cfg.InternalTokenFile)
+	if err != nil {
+		return err
+	}
+	if token == "" {
+		return errors.New("--internal-bind-address requires --internal-token-file")
+	}
+	srv := &http.Server{
+		Addr:              cfg.InternalBindAddr,
+		Handler:           satellitecontrol.NewInternalHandler(hub, token),
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+	}
+	go func() {
+		if srvErr := runHTTPServer(ctx, srv, "internal dispatch server", setupLog, nil, false, 0); srvErr != nil {
+			setupLog.Error(srvErr, "Internal dispatch server exited with error")
+		}
+	}()
+	return nil
 }
 
 // buildAPIExtraMuxHandlers assembles the registrars mounted onto the shared
@@ -969,6 +1017,7 @@ func buildAPIExtraMuxHandlers(
 	connectHandler http.Handler,
 	clients *apiClients,
 	setupLog logr.Logger,
+	hub *satellitecontrol.Hub,
 ) ([]func(*http.ServeMux), *cache.Cache, error) {
 	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg)
 	if err != nil {
@@ -979,7 +1028,7 @@ func buildAPIExtraMuxHandlers(
 		return nil, nil, err
 	}
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
-	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme(), nil)
+	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme(), hub)
 	if err != nil {
 		return nil, nil, err
 	}

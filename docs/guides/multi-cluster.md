@@ -279,14 +279,23 @@ report rather than encoded bytes, because the two transports frame differently:
 the POST path sends gzip with `Content-Encoding`, the link puts the JSON
 document inside a protobuf message.
 
-Two limits apply today. Task dispatch needs the link and the dispatcher in one
-process, which is `deploymentMode: monolith`; in split mode the API server holds
-the links and the controller has no route to them, so agent clusters fall back to
-the inbound agent endpoint. And the link accepts only reports and applies — the
+In split mode the links live in the API server's pod and the reconciler runs in
+another, so the control plane needs a way to bridge them. Enable
+`satellite.internalDispatch.enabled` on the chart: it creates a shared token,
+has the API server serve `/internal/satellite/{links,dispatch}` on an in-cluster
+port, and points the controller at that address. The listener is a separate
+address rather than a path on the public API mux, because an apply endpoint
+reachable from the internet would let anyone holding the port push manifests
+into satellites. It refuses every request when no token is configured, and the
+controller fails at startup if it is given an address without one. Leaving the
+value off keeps split mode working exactly as before: agent clusters fall back
+to the inbound agent endpoint, which a satellite-only cluster does not have.
+
+One limit still applies: the link accepts only reports and applies. The
 resource-tree, log and live-diff reads that need a command channel are not wired
 to it yet.
 
-A third limit is a consequence of the second: the agent transport has no delete
+That limit has a consequence for deletion: the agent transport has no delete
 path, so deleting a Release that targeted one leaves its workloads running. The
 release object still deletes and logs which stage kept its resources. Blocking
 the finalizer instead would make such a release impossible to remove, and the

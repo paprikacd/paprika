@@ -58,7 +58,6 @@ import (
 	"github.com/benebsworth/paprika/internal/observabilitygateway"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
-	"github.com/benebsworth/paprika/internal/satellitecontrol"
 	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/internal/syncwindow"
 	"github.com/benebsworth/paprika/internal/traffic"
@@ -182,7 +181,7 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		{"stage", func() error { return setupStageController(mgr, deps.shardFilter, tuning.stageMaxConcurrent) }},
 		{"conftestpolicy", func() error { return setupConftestPolicyController(mgr) }},
 		{"release", func() error {
-			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.repoServerAddr, tuning.releaseMaxConcurrent, deps.satelliteHub)
+			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.repoServerAddr, tuning.releaseMaxConcurrent, deps.satelliteTasks)
 		}},
 		{"rollout", func() error {
 			return setupRolloutController(mgr, k8sClient, operatorNamespace, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker)
@@ -302,7 +301,7 @@ func clientsetFromInterface(k8sClient kubernetes.Interface) (*kubernetes.Clients
 	return cs, nil
 }
 
-func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker, repoServerAddr string, maxConcurrent int, satelliteHub *satellitecontrol.Hub) error {
+func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker, repoServerAddr string, maxConcurrent int, satelliteTasks controller.SatelliteTaskDispatcher) error {
 	dynamicClient, err := newDynamicClientForManager(mgr)
 	if err != nil {
 		return fmt.Errorf("create dynamic client for release controller: %w", err)
@@ -320,10 +319,10 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 		releaseRec.Resolver = engine.NewCachedGVRResolver(disc)
 	}
 	releaseRec.ClusterMgr = clusterMgr
-	if satelliteHub != nil {
-		// A typed-nil hub in the interface would answer Connected and then panic
-		// on Dispatch, so the field stays unset when there is no hub.
-		releaseRec.SatelliteTasks = satelliteHub
+	if satelliteTasks != nil {
+		// A typed-nil dispatcher in the interface would answer Connected and then
+		// panic on Dispatch, so the field stays unset when there is none.
+		releaseRec.SatelliteTasks = satelliteTasks
 	}
 	releaseRec.Clock = clock.Real{}
 	releaseRec.GateExecutor = gates.NewExecutor(http.DefaultClient)

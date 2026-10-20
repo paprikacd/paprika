@@ -123,6 +123,10 @@ spec:
         {{- include "paprika.authArgs" . | nindent 8 }}
         {{- end }}
         {{- include "paprika.reconcileArgs" . | nindent 8 }}
+        {{- if and (eq .Values.deploymentMode "split") .Values.satellite.internalDispatch.enabled }}
+        - --satellite-dispatch-addr=http://{{ include "paprika.resourceName" (dict "suffix" "api-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.satellite.internalDispatch.port }}
+        - --satellite-dispatch-token-file={{ .Values.satellite.internalDispatch.tokenFile }}
+        {{- end }}
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}
@@ -180,6 +184,11 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
+          {{- if and (eq .Values.deploymentMode "split") .Values.satellite.internalDispatch.enabled }}
+          - name: satellite-internal
+            mountPath: {{ .Values.satellite.internalDispatch.mountPath }}
+            readOnly: true
+          {{- end }}
           {{- if .Values.certManager.enable }}
           - name: webhook-cert
             mountPath: /tmp/k8s-webhook-server/serving-certs
@@ -245,6 +254,11 @@ spec:
       {{- end }}
       volumes:
         {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
+        {{- if and (eq .Values.deploymentMode "split") .Values.satellite.internalDispatch.enabled }}
+        - name: satellite-internal
+          secret:
+            secretName: {{ include "paprika.resourceName" (dict "suffix" "satellite-internal" "context" $) }}
+        {{- end }}
         {{- if .Values.certManager.enable }}
         - name: webhook-cert
           secret:

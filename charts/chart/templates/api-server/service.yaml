@@ -36,6 +36,14 @@ spec:
     port: 8080
     targetPort: 8080
     protocol: TCP
+  {{- if .Values.satellite.internalDispatch.enabled }}
+  # Component-to-component only: the ingress and HTTPRoute route the api port,
+  # never this one.
+  - name: internal
+    port: {{ .Values.satellite.internalDispatch.port }}
+    targetPort: {{ .Values.satellite.internalDispatch.port }}
+    protocol: TCP
+  {{- end }}
   selector:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     app.kubernetes.io/component: api-server

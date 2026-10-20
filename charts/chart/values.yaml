@@ -1089,6 +1089,23 @@ serviceAccount:
 
 ## Custom Resource Definitions
 ##
+satellite:
+  internalDispatch:
+    # -- Enable the API server's internal listener and point the controller at
+    # it. Required in split mode for releases that target a satellite-only
+    # cluster: the links live in the API server pod, and without this the
+    # controller cannot dispatch an apply through them. Ignored in monolith
+    # mode, where the reconciler holds the hub directly.
+    enabled: false
+    # -- Port the internal listener binds inside the API server pod.
+    port: 8082
+    # -- Bind address inside the API server pod.
+    bindAddress: ":8082"
+    # -- Token file path, identical in both pods.
+    tokenFile: /etc/paprika-satellite-internal/token
+    # -- Directory the token Secret mounts at.
+    mountPath: /etc/paprika-satellite-internal
+
 crd:
   # Install CRDs with the chart
   enable: true
