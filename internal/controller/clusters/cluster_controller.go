@@ -482,9 +482,21 @@ func (r *ClusterReconciler) updatePhase(ctx context.Context, cluster *clustersv1
 		if err := r.client.Get(ctx, types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching cluster for status update: %w", err)
 		}
-		fresh.Status = *desiredStatus
+		base := fresh.DeepCopy()
+		// Own only the fields the health check produces. The satellite reporter
+		// writes status.satellite from another process on its own schedule, and
+		// replacing the whole status rolled those observations back to whatever
+		// this reconcile read at the start — which then forced the reporter into a
+		// conflict retry whose backoff is measured in seconds once a registration
+		// carries a large application list.
+		fresh.Status.Phase = desiredStatus.Phase
 		fresh.Status.ObservedGeneration = fresh.Generation
-		if err := r.client.Status().Update(ctx, &fresh); err != nil {
+		fresh.Status.LastHealthCheckTime = desiredStatus.LastHealthCheckTime
+		fresh.Status.Conditions = desiredStatus.Conditions
+		fresh.Status.Inventory = desiredStatus.Inventory
+		fresh.Status.Provider = desiredStatus.Provider
+		fresh.Status.Version = desiredStatus.Version
+		if err := r.client.Status().Patch(ctx, &fresh, client.MergeFrom(base)); err != nil {
 			return fmt.Errorf("updating cluster status: %w", err)
 		}
 		return nil

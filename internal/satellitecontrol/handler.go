@@ -226,8 +226,14 @@ func (h *Handler) acceptOnce(ctx context.Context, report *satellite.Report, toke
 	if err != nil {
 		return err
 	}
+	// Patch only the fields this handler owns rather than replacing the whole
+	// status. The cluster controller writes inventory and health on its own
+	// schedule, and a full update makes every overlap a conflict: the loser
+	// retries with backoff, which is where the multi-second report latencies
+	// come from once a registration carries a large application list.
+	base := cluster.DeepCopy()
 	applyReportStatus(cluster, report, state)
-	if err := h.client.Status().Update(ctx, cluster); err != nil {
+	if err := h.client.Status().Patch(ctx, cluster, client.MergeFrom(base)); err != nil {
 		return fmt.Errorf("persist satellite state: %w", err)
 	}
 	return nil
