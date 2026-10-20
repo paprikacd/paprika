@@ -754,3 +754,29 @@ tasks:
           --set metrics.port=99999
 
         exit $rc
+
+  # ---------------------------------------------------------------------------
+  # Multi-cluster fleet rig (task fleet:*). Three kind clusters: a management
+  # cluster running Paprika, two `direct` registrations, and one `agent`
+  # registration served by a satellite. See hack/fleet-rig.sh for the topology
+  # and the test-only choices it makes.
+  # ---------------------------------------------------------------------------
+  fleet:up:
+    desc: Bring up the three-cluster fleet rig (management, two direct remotes, one satellite).
+    cmds:
+      - ./hack/fleet-rig.sh up
+
+  fleet:status:
+    desc: Show fleet registrations, satellite link state, applications, rollouts and the bundle store.
+    cmds:
+      - ./hack/fleet-rig.sh status
+
+  fleet:seed:
+    desc: Dispatch a sample bundle through the satellite link via the internal listener.
+    cmds:
+      - ./hack/fleet-rig.sh seed
+
+  fleet:down:
+    desc: Delete the fleet rig's kind clusters (perf and e2e clusters are never touched).
+    cmds:
+      - ./hack/fleet-rig.sh down

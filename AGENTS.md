@@ -445,6 +445,23 @@ feature lands on master the next `helm upgrade` imports them instead of
 failing with existing-resource conflict — no delete-first dance. The
 manager-role rule converges to chart-managed automatically.
 
+### Multi-Cluster Fleet Rig (kind)
+
+```sh
+task fleet:up       # mgmt + two direct remotes + one satellite (builds/loads the image)
+task fleet:status   # registrations, link state, applications, rollouts, bundle store
+task fleet:seed     # dispatch a sample bundle through the satellite link
+task fleet:down     # delete only the fleet-* clusters; perf/e2e are untouched
+```
+
+The rig is `hack/fleet-rig.sh`: management cluster in monolith mode, `fleet-eu`
+/`fleet-us` registered `direct` over the shared kind network, and an `agent`
+registration served by a satellite in the management cluster using hostNetwork
++ a NodePort on the public API listener (loopback is the one cleartext link
+endpoint). Test-only choices: the satellite ServiceAccount is cluster-admin
+(it applies arbitrary bundles) and the internal dispatch listener runs with a
+fixed token so `fleet:seed` can exercise the split-mode route.
+
 ### Local E2E & Perf (kind)
 
 ```sh
