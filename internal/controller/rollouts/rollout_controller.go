@@ -29,8 +29,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -40,6 +42,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
@@ -85,10 +88,24 @@ type mirrorRouter interface {
 }
 
 // RolloutReconciler reconciles Rollout resources.
+// ClusterClientManager resolves a registered cluster's connection. It is the
+// same pool the release controller uses, narrowed to the two calls a rollout
+// needs.
+type ClusterClientManager interface {
+	GetRestConfig(ctx context.Context, secretName, namespace string) (*rest.Config, error)
+}
+
 type RolloutReconciler struct {
 	Client        client.Client
 	Scheme        *runtime.Scheme
 	DynamicClient dynamic.Interface
+	// ClusterMgr resolves registered clusters for rollouts that name one.
+	ClusterMgr ClusterClientManager
+	// TargetClient and TargetDynamic are the per-reconcile copies pointing at
+	// the rollout's own cluster. They stay unset on the shared reconciler so two
+	// concurrent rollouts cannot see each other's connections.
+	TargetClient  client.Client
+	TargetDynamic dynamic.Interface
 	Analyzer      *analysis.CELAnalyzer
 	EventRecorder record.EventRecorder
 	EventBroker   *events.Broker
@@ -148,6 +165,25 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 	if err := r.Client.Get(ctx, req.NamespacedName, &ro); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	// Everything below acts on the cluster the workload lives in. Resolving it
+	// here keeps the rest of the controller unchanged: the scoped copy carries
+	// the target clients, and the workload helpers read them.
+	scoped, err := r.forTarget(ctx, &ro)
+	if err != nil {
+		// Acting on the control plane's cluster instead would report a rollout
+		// that succeeded while the real workload never moved.
+		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
+		ro.Status.Message = err.Error()
+		r.patchStatusOrLog(ctx, &ro, log)
+		return ctrl.Result{}, nil
+	}
+	return scoped.reconcileLoaded(ctx, &ro)
+}
+
+func (r *RolloutReconciler) reconcileLoaded(ctx context.Context, loaded *rolloutsv1alpha1.Rollout) (_ ctrl.Result, spanErr error) {
+	log := logf.FromContext(ctx)
+	ro := *loaded
 
 	if !controllerutil.ContainsFinalizer(&ro, rolloutFinalizer) {
 		controllerutil.AddFinalizer(&ro, rolloutFinalizer)
@@ -244,6 +280,70 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 	return ctrl.Result{Requeue: true}, nil
 }
 
+// workload returns the client the rollout's own workloads are read and written
+// through.
+func (r *RolloutReconciler) workload() client.Client {
+	if r.TargetClient != nil {
+		return r.TargetClient
+	}
+	return r.Client
+}
+
+// workloadDynamic returns the dynamic client for the rollout's cluster, used by
+// the traffic router.
+func (r *RolloutReconciler) workloadDynamic() dynamic.Interface {
+	if r.TargetDynamic != nil {
+		return r.TargetDynamic
+	}
+	return r.DynamicClient
+}
+
+// forTarget returns a copy of the reconciler whose workload clients point at the
+// cluster the rollout names. A rollout with no cluster resolves to the control
+// plane's own cluster, which is what every existing Rollout does.
+func (r *RolloutReconciler) forTarget(ctx context.Context, ro *rolloutsv1alpha1.Rollout) (*RolloutReconciler, error) {
+	scoped := *r
+	scoped.TargetClient = r.Client
+	scoped.TargetDynamic = r.DynamicClient
+	ref := ro.Spec.Cluster
+	if ref == nil || ref.Name == "" {
+		return &scoped, nil
+	}
+	if r.ClusterMgr == nil {
+		return nil, fmt.Errorf("rollout names cluster %q but this controller has no cluster manager", ref.Name)
+	}
+	namespace := ref.Namespace
+	if namespace == "" {
+		namespace = ro.Namespace
+	}
+	var cluster clustersv1alpha1.Cluster
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.Name}, &cluster); err != nil {
+		return nil, fmt.Errorf("resolve rollout cluster %s/%s: %w", namespace, ref.Name, err)
+	}
+	if cluster.Spec.KubeconfigSecretRef == nil || cluster.Spec.Mode == clustersv1alpha1.ClusterModeAgent {
+		return nil, fmt.Errorf("rollout cluster %s/%s needs a direct kubeconfig; a rollout reads and writes workloads it cannot reach through an agent", namespace, ref.Name)
+	}
+	credentialNamespace := cluster.Spec.KubeconfigSecretRef.Namespace
+	if credentialNamespace == "" {
+		credentialNamespace = namespace
+	}
+	config, err := r.ClusterMgr.GetRestConfig(ctx, cluster.Spec.KubeconfigSecretRef.Name, credentialNamespace)
+	if err != nil {
+		return nil, fmt.Errorf("resolve rollout cluster %s/%s credential: %w", namespace, ref.Name, err)
+	}
+	targetClient, err := client.New(config, client.Options{Scheme: r.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("create rollout client for %s/%s: %w", namespace, ref.Name, err)
+	}
+	targetDynamic, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("create rollout dynamic client for %s/%s: %w", namespace, ref.Name, err)
+	}
+	scoped.TargetClient = targetClient
+	scoped.TargetDynamic = targetDynamic
+	return &scoped, nil
+}
+
 // latchAbort durably records abort state from the annotation onto status, and
 // clears it only when both the annotation is gone AND the pod template has
 // moved past the template under which we aborted (status.CurrentPodHash
@@ -276,7 +376,7 @@ func (r *RolloutReconciler) handleDeletion(ctx context.Context, ro *rolloutsv1al
 	if !controllerutil.ContainsFinalizer(ro, rolloutFinalizer) {
 		return ctrl.Result{}, nil
 	}
-	if r.DynamicClient != nil && ro.Spec.TrafficRouter != nil {
+	if r.workloadDynamic() != nil && ro.Spec.TrafficRouter != nil {
 		if router, err := r.buildRouter(ro); err == nil && router != nil {
 			if err := router.RemoveCanary(ctx); err != nil {
 				logf.FromContext(ctx).Error(err, "Failed to remove canary route")
@@ -379,7 +479,7 @@ func (r *RolloutReconciler) resolveTarget(ctx context.Context, ro *rolloutsv1alp
 		return nil
 	}
 	var deploy appsv1.Deployment
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Spec.Target.Name}, &deploy); err != nil {
+	if err := r.workload().Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Spec.Target.Name}, &deploy); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -396,7 +496,7 @@ func (r *RolloutReconciler) resolveTarget(ctx context.Context, ro *rolloutsv1alp
 func (r *RolloutReconciler) observeReadyReplicas(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
 	if ro.Status.StableRS != "" {
 		var stable appsv1.ReplicaSet
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.StableRS}, &stable); err != nil {
+		if err := r.workload().Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.StableRS}, &stable); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("observing stable RS: %w", err)
 			}
@@ -407,7 +507,7 @@ func (r *RolloutReconciler) observeReadyReplicas(ctx context.Context, ro *rollou
 	}
 	if ro.Status.CanaryRS != "" {
 		var canary appsv1.ReplicaSet
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.CanaryRS}, &canary); err != nil {
+		if err := r.workload().Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.CanaryRS}, &canary); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("observing canary RS: %w", err)
 			}
@@ -441,7 +541,7 @@ func (r *RolloutReconciler) observeReadyReplicas(ctx context.Context, ro *rollou
 	// readiness observation recorded above.
 	if ro.Status.PreviousActiveRS != "" {
 		var prev appsv1.ReplicaSet
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.PreviousActiveRS}, &prev); err != nil {
+		if err := r.workload().Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.PreviousActiveRS}, &prev); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("observing previous active RS: %w", err)
 			}
@@ -459,7 +559,7 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 
 	for _, action := range actions {
 		var rs appsv1.ReplicaSet
-		err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: action.Name}, &rs)
+		err := r.workload().Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: action.Name}, &rs)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("getting ReplicaSet %s: %w", action.Name, err)
 		}
@@ -510,7 +610,7 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 		}
 
 		if err != nil && apierrors.IsNotFound(err) {
-			if err := r.Client.Create(ctx, desired); err != nil {
+			if err := r.workload().Create(ctx, desired); err != nil {
 				return fmt.Errorf("creating ReplicaSet %s: %w", action.Name, err)
 			}
 			log.Info("Created ReplicaSet", "name", desired.Name)
@@ -522,7 +622,7 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 		if action.Template != nil {
 			rs.Spec.Template = desired.Spec.Template
 		}
-		if err := r.Client.Update(ctx, &rs); err != nil {
+		if err := r.workload().Update(ctx, &rs); err != nil {
 			return fmt.Errorf("updating ReplicaSet %s: %w", action.Name, err)
 		}
 		log.Info("Updated ReplicaSet", "name", rs.Name, "replicas", action.Replicas)
@@ -542,7 +642,7 @@ func (r *RolloutReconciler) pruneReplicaSets(ctx context.Context, ro *rolloutsv1
 	limit := int(*ro.Spec.RevisionHistoryLimit)
 
 	list := &appsv1.ReplicaSetList{}
-	if err := r.Client.List(ctx, list, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}); err != nil {
+	if err := r.workload().List(ctx, list, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}); err != nil {
 		return fmt.Errorf("listing owned ReplicaSets: %w", err)
 	}
 
@@ -582,7 +682,7 @@ func (r *RolloutReconciler) pruneReplicaSets(ctx context.Context, ro *rolloutsv1
 	})
 
 	for _, c := range cands[limit:] {
-		if err := r.Client.Delete(ctx, &c.rs); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.workload().Delete(ctx, &c.rs); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("pruning ReplicaSet %s: %w", c.rs.Name, err)
 		}
 		log.Info("Pruned ReplicaSet", "name", c.rs.Name)
@@ -645,7 +745,7 @@ func (r *RolloutReconciler) serviceNames(ro *rolloutsv1alpha1.Rollout) map[strin
 
 func (r *RolloutReconciler) ensureService(ctx context.Context, ro *rolloutsv1alpha1.Rollout, name, role string) error {
 	var svc corev1.Service
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: name}, &svc)
+	err := r.workload().Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: name}, &svc)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("getting service %s: %w", name, err)
 	}
@@ -681,12 +781,12 @@ func (r *RolloutReconciler) ensureService(ctx context.Context, ro *rolloutsv1alp
 	}
 
 	if err != nil && apierrors.IsNotFound(err) {
-		return r.Client.Create(ctx, desired)
+		return r.workload().Create(ctx, desired)
 	}
 	svc.Spec.Selector = selector
 	svc.Spec.Ports = desired.Spec.Ports
 	svc.OwnerReferences = desired.OwnerReferences
-	return r.Client.Update(ctx, &svc)
+	return r.workload().Update(ctx, &svc)
 }
 
 func intstrFromInt(i int32) intstr.IntOrString {
@@ -782,12 +882,12 @@ func (r *RolloutReconciler) configureMirrorTraffic(ctx context.Context, ro *roll
 }
 
 func (r *RolloutReconciler) buildRouter(ro *rolloutsv1alpha1.Rollout) (TrafficRouter, error) {
-	if r.DynamicClient == nil {
+	if r.workloadDynamic() == nil {
 		return nil, nil
 	}
 	stableSvc, canarySvc := r.routerServiceNames(ro)
 	cfg := r.convertTrafficRouter(ro.Spec.TrafficRouter)
-	return traffic.NewRouter(cfg, r.DynamicClient, stableSvc, canarySvc, ro.Namespace)
+	return traffic.NewRouter(cfg, r.workloadDynamic(), stableSvc, canarySvc, ro.Namespace)
 }
 
 func (r *RolloutReconciler) routerServiceNames(ro *rolloutsv1alpha1.Rollout) (string, string) {

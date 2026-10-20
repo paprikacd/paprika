@@ -51,6 +51,16 @@ spec:
           spec:
             description: RolloutSpec defines the desired state of a Rollout.
             properties:
+              cluster:
+                description: |-
+                  Cluster is where the target workload lives and where the rollout acts.
+                  Empty means the control plane's own cluster.
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                type: object
               paused:
                 type: boolean
               replicas:

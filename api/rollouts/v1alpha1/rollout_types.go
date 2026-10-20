@@ -270,6 +270,22 @@ type RolloutSpec struct {
 	Paused               bool            `json:"paused,omitempty"`
 	RollbackPolicy       *RollbackPolicy `json:"rollbackPolicy,omitempty"`
 	TrafficRouter        *TrafficRouter  `json:"trafficRouter,omitempty"`
+	// Cluster is where the target workload lives and where the rollout acts.
+	// Empty means the control plane's own cluster.
+	// +optional
+	Cluster *RolloutClusterRef `json:"cluster,omitempty"`
+}
+
+// RolloutClusterRef names a registered Cluster to run a rollout against.
+//
+// It mirrors a stage's cluster reference: the name is the Cluster resource and
+// the namespace is where the registration lives, which is usually the control
+// plane's namespace rather than the rollout's.
+type RolloutClusterRef struct {
+	// +optional
+	Name string `json:"name,omitempty"`
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // RolloutStatus defines the observed state of a Rollout.

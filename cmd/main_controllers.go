@@ -184,7 +184,7 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.repoServerAddr, tuning.releaseMaxConcurrent, deps.satelliteTasks)
 		}},
 		{"rollout", func() error {
-			return setupRolloutController(mgr, k8sClient, operatorNamespace, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker)
+			return setupRolloutController(ctx, mgr, k8sClient, operatorNamespace, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker)
 		}},
 		{"template", func() error { return setupTemplateController(mgr, deps.shardFilter) }},
 		{"applicationset", func() error { return setupApplicationSetController(mgr, deps.shardFilter) }},
@@ -344,14 +344,17 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	return nil
 }
 
-func setupRolloutController(mgr ctrl.Manager, k8sClient kubernetes.Interface, _ string, shardFilter *sharding.Filter, _ *ratelimit.ControllerRateLimit, _ *governance.ProjectValidator, _ *governance.PolicyEvaluator, broker *events.Broker) error {
+func setupRolloutController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, _ string, shardFilter *sharding.Filter, _ *ratelimit.ControllerRateLimit, _ *governance.ProjectValidator, _ *governance.PolicyEvaluator, broker *events.Broker) error {
 	_ = shardFilter // rollouts inherit the namespace of their parent Release; sharding is applied there.
 	dynamicClient, err := newDynamicClientForManager(mgr)
 	if err != nil {
 		return fmt.Errorf("create dynamic client for rollout controller: %w", err)
 	}
+	clusterMgr := controller.NewClusterConnectionPoolWithContext(ctx, mgr.GetClient(), mgr.GetConfig())
+	clusterMgr.Clock = clock.Real{}
 	if err := (&rolloutscontroller.RolloutReconciler{
 		Scheme:        mgr.GetScheme(),
+		ClusterMgr:    clusterMgr,
 		DynamicClient: dynamicClient,
 		Analyzer:      analysis.NewCELAnalyzer(k8sClient, "paprika-system", mgr.GetConfig(), http.DefaultClient),
 		EventRecorder: newLegacyEventRecorder(mgr.GetEventRecorder("rollout-controller")),

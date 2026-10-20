@@ -812,6 +812,35 @@ spec:
         namespace: paprika-system
 ```
 
+## Rollouts on a Remote Cluster
+
+A `Rollout` runs advanced strategies against one workload. By default that
+workload is on the control plane's own cluster; `spec.cluster` points the
+rollout at a registered cluster instead:
+
+```yaml
+apiVersion: rollouts.paprika.io/v1alpha1
+kind: Rollout
+metadata:
+  name: checkout
+  namespace: checkout
+spec:
+  cluster:
+    name: edge-eu
+    namespace: paprika-system
+  target:
+    kind: Deployment
+    name: checkout
+  strategy:
+    type: Rolling
+```
+
+The Rollout object stays on the control plane; the Deployment, ReplicaSets,
+Services and traffic routes it manages are read and written in the named
+cluster. An `agent` cluster is refused: a rollout reads and writes workloads it
+cannot reach through an outbound link, and running it against the control plane
+instead would report success while the real workload never moved.
+
 ## Fanning Out with an ApplicationSet
 
 An `ApplicationSet` with a `clusters` generator produces one Application per
