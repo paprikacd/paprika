@@ -6,8 +6,12 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 )
@@ -264,3 +268,73 @@ func TestConfigMapBundleStoreRoundTrip(t *testing.T) {
 type errTestApply struct{}
 
 func (errTestApply) Error() string { return "apply failed" }
+
+// TestBundleStoreRetriesAConcurrentWrite covers two applies landing together.
+//
+// The store is one shared ConfigMap, so a read-modify-write conflicts. Without
+// a retry the losing application is silently dropped from what the satellite
+// enforces during the next outage — the apply still succeeds, so nothing
+// surfaces it.
+func TestBundleStoreRetriesAConcurrentWrite(t *testing.T) {
+	t.Parallel()
+
+	client := fake.NewSimpleClientset(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "bundles", Namespace: "paprika-satellite"},
+	})
+	conflicted := false
+	client.PrependReactor("update", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if conflicted {
+			return false, nil, nil
+		}
+		conflicted = true
+		return true, nil, apierrors.NewConflict(
+			schema.GroupResource{Resource: "configmaps"}, "bundles", errTestApply{})
+	})
+
+	store := NewConfigMapBundleStore(client, "paprika-satellite", "bundles")
+	if err := store.Put(context.Background(), &Bundle{Namespace: "checkout", Application: "web", Manifests: []byte("kind: ConfigMap")}); err != nil {
+		t.Fatalf("Put must retry a conflict: %v", err)
+	}
+	if !conflicted {
+		t.Fatal("the fixture never produced a conflict")
+	}
+	bundles, err := store.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(bundles) != 1 || bundles[0].Application != "web" {
+		t.Fatalf("bundles = %+v, want the written one", bundles)
+	}
+}
+
+// TestFailoverDoesNotTakeOverOnStartup is the boot case: a fresh process has no
+// delivery history, and treating that as "an outage longer than the timeout"
+// makes every restart take over, reconcile and report an override while the
+// control plane was reachable the whole time.
+func TestFailoverDoesNotTakeOverOnStartup(t *testing.T) {
+	t.Parallel()
+
+	executor := &fakeExecutor{}
+	c := &clock{now: time.Unix(1800000000, 0)}
+	autonomy := c.newAutonomy(t, AutonomyConfig{
+		Mode:            clustersv1alpha1.AutonomyFailover,
+		FailoverTimeout: time.Minute,
+		Store:           seededStore(t),
+		Executor:        executor,
+		Connected:       func() bool { return false },
+	})
+
+	autonomy.Tick(context.Background())
+	if got := autonomy.State(); got != clustersv1alpha1.SatelliteOperatingConnected {
+		t.Fatalf("state = %q on the first tick, want Connected (still inside the grace window)", got)
+	}
+	if len(executor.applied) != 0 {
+		t.Fatalf("applied on startup: %v", executor.applied)
+	}
+
+	c.advance(61 * time.Second)
+	autonomy.Tick(context.Background())
+	if got := autonomy.State(); got != clustersv1alpha1.SatelliteOperatingAutonomous {
+		t.Fatalf("state = %q after the timeout, want Autonomous", got)
+	}
+}

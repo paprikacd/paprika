@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -121,7 +122,15 @@ func (s *Server) Apply(ctx context.Context, req *ApplyRequest) (*ApplyResponse, 
 		return resp, nil
 	}
 
-	docs := splitYAMLDocuments(req.Manifests)
+	docs, err := splitYAMLDocuments(req.Manifests)
+	if err != nil {
+		// A bundle that cannot be parsed applied nothing. Reporting success here
+		// would let the control plane mark a release complete over an unchanged
+		// cluster, and a satellite remember a broken bundle as the state to
+		// enforce through an outage.
+		resp.Errors = append(resp.Errors, err.Error())
+		return resp, nil
+	}
 	for _, doc := range docs {
 		if err := s.applyDocument(ctx, doc, req.Namespace, req.AppName); err != nil {
 			resp.Errors = append(resp.Errors, err.Error())
@@ -595,20 +604,29 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	return nil
 }
 
-func splitYAMLDocuments(data []byte) [][]byte {
+// splitYAMLDocuments separates a bundle into documents.
+//
+// A decode failure is returned rather than truncated: stopping at the first bad
+// document and applying the ones before it would make a partially broken bundle
+// look like a smaller successful one.
+func splitYAMLDocuments(data []byte) ([][]byte, error) {
 	var docs [][]byte
 	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
 	for {
 		var raw json.RawMessage
-		if err := decoder.Decode(&raw); err != nil {
+		err := decoder.Decode(&raw)
+		if errors.Is(err, io.EOF) {
 			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("parse bundle: %w", err)
 		}
 		if len(raw) == 0 {
 			continue
 		}
 		docs = append(docs, raw)
 	}
-	return docs
+	return docs, nil
 }
 
 // ListPipelines is not implemented by the agent.
