@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -41,11 +42,18 @@ func registerSatelliteFlags(fs *pflag.FlagSet) {
 	fs.StringSlice("satellite-management-policies", []string{string(clustersv1alpha1.ManagementPolicyAll)},
 		"Management policies this satellite permits locally, comma-separated (Observe,Apply,Prune,Delete,SelfHeal,Rollout,*). Reported to the control plane; the Cluster's own ceiling is authoritative there.")
 	fs.String("satellite-autonomy", string(clustersv1alpha1.AutonomyFailover),
-		"Autonomy mode reported to the control plane: ObserveOnly, Failover or Delegated.")
+		"Autonomy mode: ObserveOnly reports and never reconciles locally, Failover reconciles after a control-plane outage, Delegated always reconciles.")
+	fs.String("satellite-state-namespace", "",
+		"Namespace this satellite keeps its own state in. Defaults to the pod's namespace; it is not the registration namespace.")
+	fs.Duration("satellite-failover-timeout", satellite.DefaultFailoverTimeout,
+		"How long Failover waits without control-plane contact before reconciling locally.")
+	fs.Duration("satellite-autonomy-interval", satellite.DefaultAutonomyInterval,
+		"How often the autonomy loop checks connectivity and re-applies remembered bundles.")
 	fs.Bool("satellite-stream-enabled", false,
 		"Keep one bidirectional link to the control plane instead of one POST per report. Enables tasks sent by the control plane, such as applying a rendered manifest bundle.")
 }
 
+//nolint:cyclop // satellite startup assembles collector, executor, store and loop.
 func runSatelliteMode(ctx context.Context, cfg *cliConfig, logger logr.Logger) error {
 	kubeConfig, err := rest.InClusterConfig()
 	if err != nil {
@@ -68,20 +76,48 @@ func runSatelliteMode(ctx context.Context, cfg *cliConfig, logger logr.Logger) e
 	if err != nil {
 		return err
 	}
-	executor, err := buildSatelliteExecutor(cfg, kubeConfig)
+	executor, err := buildSatelliteExecutor(cfg, kubeConfig, cfg.SatelliteStreamEnabled || autonomy.ReconcilesLocally())
 	if err != nil {
 		return err
 	}
+	// The bundle store belongs to the satellite's own namespace, not to the
+	// registration namespace: it is local state, and the satellite's namespaced
+	// Role is scoped to where it runs.
+	store := satellite.NewConfigMapBundleStore(kubeClient, satelliteStateNamespace(cfg), satelliteBundleStoreName)
+	var taskExecutor satellite.TaskExecutor
+	if executor != nil {
+		taskExecutor = &satellite.RecordingExecutor{Inner: executor, Store: store}
+	}
+	var collectorRef *satellite.Collector
+	var autonomyLoop *satellite.Autonomy
+	if autonomy.ReconcilesLocally() {
+		autonomyLoop, err = satellite.NewAutonomy(&satellite.AutonomyConfig{
+			Mode:            autonomy,
+			FailoverTimeout: cfg.SatelliteFailoverTimeout,
+			Interval:        cfg.SatelliteAutonomyInterval,
+			Store:           store,
+			Executor:        taskExecutor,
+			Connected:       func() bool { return collectorRef != nil && collectorRef.Connected() },
+		})
+		if err != nil {
+			return fmt.Errorf("configure satellite autonomy: %w", err)
+		}
+	}
+	operatingState := func() clustersv1alpha1.SatelliteOperatingState { return autonomyLoop.State() }
 	collector, err := satellite.NewCollector(kubeClient, dynClient, satellite.Config{
 		ControlPlaneURL: cfg.SatelliteControlPlaneURL, ClusterName: cfg.SatelliteClusterName,
 		ClusterNamespace: cfg.SatelliteClusterNamespace, DisplayName: cfg.SatelliteDisplayName,
 		TokenFile: cfg.SatelliteTokenFile, CAFile: cfg.SatelliteCAFile,
 		HeartbeatInterval: cfg.SatelliteHeartbeatInterval, BatchInterval: cfg.SatelliteBatchInterval,
 		Autonomy: autonomy, ManagementPolicies: policies,
-		Stream: cfg.SatelliteStreamEnabled, Executor: executor,
+		Stream: cfg.SatelliteStreamEnabled, Executor: taskExecutor,
 	})
 	if err != nil {
 		return fmt.Errorf("configure satellite: %w", err)
+	}
+	collectorRef = collector
+	if autonomyLoop != nil {
+		collector.SetOperatingState(operatingState)
 	}
 	telemetry := observability.NewTelemetry(ctx, observability.ConfigFromEnv())
 	defer func() { _ = telemetry.Shutdown(ctx) }() //nolint:errcheck // telemetry shutdown is best-effort.
@@ -96,6 +132,9 @@ func runSatelliteMode(ctx context.Context, cfg *cliConfig, logger logr.Logger) e
 		return runHTTPServer(runCtx, healthServer, "satellite health probes", logger, nil, false, 0)
 	})
 	group.Go(func() error { return collector.Run(runCtx) })
+	if autonomyLoop != nil {
+		group.Go(func() error { return autonomyLoop.Run(runCtx) })
+	}
 	startMetricsServer(runCtx, cfg.MetricsAddr, logger)
 	startPprofServer(runCtx, cfg.PprofAddr, logger)
 	if err := group.Wait(); err != nil {
@@ -146,6 +185,28 @@ func parseSatellitePolicies(raw []string) ([]clustersv1alpha1.ManagementPolicy, 
 // link, through the same agent server the inbound transport uses. Sharing that
 // path is what makes the two transports equivalent: a bundle applied over the
 // link and one applied over the agent endpoint produce the same result.
+// satelliteBundleStoreName is the ConfigMap the satellite keeps its remembered
+// bundles in, inside its own namespace.
+const satelliteBundleStoreName = "paprika-satellite-bundles"
+
+// satelliteStateNamespace resolves where this satellite keeps local state. The
+// registration namespace names the Cluster on the control plane and is a
+// different thing entirely.
+func satelliteStateNamespace(cfg *cliConfig) string {
+	if cfg.SatelliteStateNamespace != "" {
+		return cfg.SatelliteStateNamespace
+	}
+	if data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+		if namespace := strings.TrimSpace(string(data)); namespace != "" {
+			return namespace
+		}
+	}
+	if namespace := strings.TrimSpace(os.Getenv("PAPRIKA_NAMESPACE")); namespace != "" {
+		return namespace
+	}
+	return cfg.SatelliteClusterNamespace
+}
+
 type satelliteApplyExecutor struct {
 	server *agentserver.Server
 }
@@ -168,8 +229,8 @@ func (e satelliteApplyExecutor) Apply(
 
 // buildSatelliteExecutor returns nil when the link is disabled: a satellite that
 // only reports declines work rather than building an applier it will never use.
-func buildSatelliteExecutor(cfg *cliConfig, kubeConfig *rest.Config) (executor satellite.TaskExecutor, err error) {
-	if !cfg.SatelliteStreamEnabled {
+func buildSatelliteExecutor(cfg *cliConfig, kubeConfig *rest.Config, enabled bool) (executor satellite.TaskExecutor, err error) {
+	if !enabled {
 		return nil, nil
 	}
 	server, err := agentserver.NewServer(cfg.SatelliteClusterName, kubeConfig)

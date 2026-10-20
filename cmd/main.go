@@ -178,6 +178,9 @@ type cliConfig struct {
 	SatelliteTokenFile            string        `mapstructure:"satellite-token-file"`
 	SatelliteCAFile               string        `mapstructure:"satellite-ca-file"`
 	SatelliteHeartbeatInterval    time.Duration `mapstructure:"satellite-heartbeat-interval"`
+	SatelliteStateNamespace       string        `mapstructure:"satellite-state-namespace"`
+	SatelliteFailoverTimeout      time.Duration `mapstructure:"satellite-failover-timeout"`
+	SatelliteAutonomyInterval     time.Duration `mapstructure:"satellite-autonomy-interval"`
 	SatelliteBatchInterval        time.Duration `mapstructure:"satellite-batch-interval"`
 	SatelliteManagementPolicies   []string      `mapstructure:"satellite-management-policies"`
 	SatelliteAutonomy             string        `mapstructure:"satellite-autonomy"`

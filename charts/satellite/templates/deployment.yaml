@@ -53,6 +53,10 @@ spec:
             - {{ printf "--satellite-heartbeat-interval=%s" .Values.heartbeatInterval | quote }}
             - {{ printf "--satellite-batch-interval=%s" .Values.batchInterval | quote }}
             - {{ printf "--satellite-autonomy=%s" .Values.autonomy | quote }}
+            - {{ printf "--satellite-failover-timeout=%s" .Values.failoverTimeout | quote }}
+            {{- if .Values.autonomyInterval }}
+            - {{ printf "--satellite-autonomy-interval=%s" .Values.autonomyInterval | quote }}
+            {{- end }}
             - {{ printf "--satellite-management-policies=%s" (join "," .Values.managementPolicies) | quote }}
             {{- if .Values.stream.enabled }}
             - --satellite-stream-enabled=true

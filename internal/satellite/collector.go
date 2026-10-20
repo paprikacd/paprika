@@ -54,6 +54,10 @@ type Collector struct {
 	// transport drops the acknowledgement when the link or POST fails, so a
 	// report built before the first success says Connecting.
 	delivered atomic.Bool
+	// lastDelivery is when a report was last acknowledged. The autonomy loop
+	// reads it as "is the control plane reachable right now"; delivery is the
+	// only signal that answers that without a second probe.
+	lastDelivery atomic.Int64
 }
 
 // NewCollector prepares a satellite without making Kubernetes API requests.
@@ -471,6 +475,7 @@ func (c *Collector) publish(ctx context.Context) error {
 			continue
 		}
 		c.delivered.Store(true)
+		c.lastDelivery.Store(time.Now().UnixNano())
 		state.acknowledge(pending)
 		waitForTick = true
 	}
@@ -530,10 +535,40 @@ func (c *Collector) buildPublication(state *publicationState) (*publication, err
 // claiming them from a connectivity guess would tell the control plane it can
 // stand down when nothing is enforcing the application.
 func (c *Collector) operatingState() clustersv1alpha1.SatelliteOperatingState {
+	if c.config.OperatingState != nil {
+		return c.config.OperatingState()
+	}
 	if c.delivered.Load() {
 		return clustersv1alpha1.SatelliteOperatingConnected
 	}
 	return clustersv1alpha1.SatelliteOperatingConnecting
+}
+
+// SetOperatingState installs the operating-state source after construction.
+//
+// The autonomy loop needs the collector's connectivity and the collector needs
+// the loop's state, so one of the two is wired after both exist. Reports are
+// built only once Run starts, which happens after this call.
+func (c *Collector) SetOperatingState(source func() clustersv1alpha1.SatelliteOperatingState) {
+	c.config.OperatingState = source
+}
+
+// Connected reports whether the control plane has acknowledged a report
+// recently enough to be considered reachable.
+//
+// The window is one heartbeat plus slack: a satellite sends a heartbeat when
+// nothing changes, so a longer silence than that means delivery is failing, not
+// that the cluster is quiet.
+func (c *Collector) Connected() bool {
+	last := c.lastDelivery.Load()
+	if last == 0 {
+		return false
+	}
+	window := c.config.HeartbeatInterval + 15*time.Second
+	if c.config.HeartbeatInterval <= 0 {
+		window = 45 * time.Second
+	}
+	return time.Since(time.Unix(0, last)) < window
 }
 
 // reportPending is the aggregate state a report carries. It exists so

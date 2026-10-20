@@ -108,4 +108,9 @@ type Config struct {
 	// satellite reports state and declines work, which is a coherent
 	// configuration for an observe-only cluster.
 	Executor TaskExecutor
+	// OperatingState, when set, is what the satellite reports as its operating
+	// state. The autonomy loop owns that value once local reconciliation is in
+	// play: connectivity alone cannot say whether a Failover satellite has taken
+	// over, held an override, or handed back.
+	OperatingState func() clustersv1alpha1.SatelliteOperatingState
 }

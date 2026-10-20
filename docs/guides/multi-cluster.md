@@ -196,22 +196,33 @@ cannot reach the control plane:
 
 | Mode | While connected | While disconnected |
 | --- | --- | --- |
-| `ObserveOnly` | Reports state; the control plane reconciles. | Reporting resumes when the link returns. |
-| `Failover` (default) | The control plane reconciles. | Intended: the satellite takes over after `failoverTimeout` (default `2m`). |
-| `Delegated` | Intended: the satellite always reconciles; the control plane supplies desired state. | Intended: nothing changes, because the satellite was already the reconciler. |
+| `ObserveOnly` | Reports state; the control plane reconciles. | Nothing converges until the link returns. |
+| `Failover` (default) | The control plane reconciles. | The satellite takes over after `failoverTimeout` (default `2m`). |
+| `Delegated` | The satellite reconciles; the control plane supplies desired state and observes. | Nothing changes, because the satellite was already the reconciler. |
 
-**Current limitation.** The field, its validation, and its reporting are wired,
-but the satellite does not yet run the Application, Release or Rollout
-controllers itself. Until that lands, every mode behaves like `ObserveOnly` for
-reconciliation purposes: the control plane drives all writes, and an outage
-stops convergence. Setting `Failover` or `Delegated` today changes what the
-control plane records and displays, not what executes. Do not rely on either
-mode for outage survival yet.
+A satellite reconciles what it was *told to apply*. Every bundle the control
+plane pushes down the link is applied and then remembered in a ConfigMap
+(`paprika-satellite-bundles`) in the satellite's own namespace, and the autonomy
+loop re-applies those bundles on an interval (`--satellite-autonomy-interval`,
+default `30s`). That is deliberately narrower than the control plane's release
+machinery: a satellite enforcing the last known-good bundle through an outage is
+useful, while a satellite reconciling a release history it cannot see would not
+be.
 
-`status.satellite.operatingState` is where that handover will be reported.
-Today the control plane sets it to `Disabled` for a disabled registration and
-leaves it empty otherwise, because an unreported state is more honest than a
-state machine inferred from timestamps before the machine exists.
+The handover is one-directional and time-gated. `Failover` waits for
+`failoverTimeout` of failed deliveries before reconciling, so a control-plane
+restart does not produce two reconcilers at once. After local work, a reconnect
+reports `OverrideHeld` for two minutes before returning to `Connected`: the
+control plane needs to see that the cluster changed underneath it before the
+satellite claims to be a quiet follower again. `Delegated` is not an override
+case; a satellite acting there is the arrangement.
+
+`status.satellite.operatingState` carries the result: `Connecting`, `Connected`,
+`Autonomous`, `OverrideHeld`, or `Disabled` for a disabled registration.
+
+The satellite's ServiceAccount needs write verbs for whatever its applications
+deploy. The chart grants reads plus the bundle store and nothing else, so an
+apply is refused until `rbac.extraClusterRoleRules` grants your kinds.
 
 ### Capacity and Node Pools
 

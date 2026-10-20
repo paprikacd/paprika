@@ -34,12 +34,34 @@ batchInterval: 2s
 autonomy: Failover
 failoverTimeout: 2m
 
+# autonomyInterval bounds how often the satellite checks connectivity and
+# re-applies the bundles it remembers. Only used when autonomy reconciles
+# locally (Failover or Delegated).
+autonomyInterval: 30s
+
 # managementPolicies is the set of actions this satellite claims it permits:
 # Observe, Apply, Prune, Delete, SelfHeal, Rollout, or "*". It is a claim, not a
 # grant: the Cluster's spec.managementPolicies is what the control plane
 # enforces, and a disagreement is visible in status.effectivePolicies.
 managementPolicies:
   - "*"
+
+rbac:
+  # create installs the read-only ClusterRole the reporter needs plus the Role
+  # that lets the satellite keep its bundle store.
+  create: true
+  # extraClusterRoleRules is what the satellite may *write* when it applies a
+  # bundle. The chart cannot know your applications' kinds, so the default is
+  # empty and an apply is refused until you grant them here. For example:
+  #
+  #   extraClusterRoleRules:
+  #     - apiGroups: ["apps"]
+  #       resources: [deployments]
+  #       verbs: [get, create, update, patch]
+  #     - apiGroups: [""]
+  #       resources: [services, configmaps]
+  #       verbs: [get, create, update, patch]
+  extraClusterRoleRules: []
 
 # stream keeps one bidirectional link to the control plane instead of posting
 # each report. It is what lets the control plane dispatch work — an apply —
