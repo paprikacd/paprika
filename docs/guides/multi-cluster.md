@@ -927,16 +927,17 @@ The merge runs on the query path: the first fleet query after any report that
 changes observations pays it, and every query after that is cached until the
 next change. On a live stack with 50 registrations x 20 applications, a
 `QueryFleetMap` at rest measured p50 5 ms / p95 7 ms, and a query immediately
-after a status change measured p50 18 ms / p95 66 ms.
+after a status change measured p50 18 ms / p95 66 ms (measured before the
+coalescing window existed; a burst of changes now costs one merge, not one per
+report).
 
-That is the scale limit to watch: a few hundred continuously-reporting
-satellites turn the merge into tens of full rebuilds per second, each landing on
-whichever query arrives first. The fix belongs in the satellite source rather
-than the reader — coalesce observation changes into at most one published
-generation per short window (the source already injects a clock), so queries see
-a slightly older generation while the accumulated changes merge once. Do not
-coalesce in the reader: its contract is that a changed generation is visible on
-the next call, and tests (and callers) rely on it.
+Observation changes are coalesced at the satellite source into at most one
+published generation per 250 ms window, so the merge is bounded at roughly four
+per second regardless of how fast the fleet reports. The cost is that a reader
+can see a view up to 250 ms old, which is invisible in a dashboard and far
+cheaper than one rebuild per report. The window lives in the source rather than
+the reader on purpose: the reader's contract is that a changed generation is
+visible on the next call, and callers rely on it.
 
 `ListClusters` with `includeCapacity` has a different cost profile: capacity is
 gathered per registration, so a fleet where many registrations cannot be dialled

@@ -257,6 +257,10 @@ func TestClusterSatelliteSourceInitialProjectionStalenessReconnectAndDeletion(t 
 	require.Equal(t, fleetID("shop", "checkout"), snapshots[0].Applications[0].Identity)
 	require.Equal(t, fleetID("shop", "default"), snapshots[0].Applications[0].Project)
 	require.Equal(t, SyncStateUnknown, snapshots[0].Applications[0].Sync)
+	// Observation changes are coalesced into one published generation per
+	// window, so a test that expects the next read to see an update advances the
+	// clock past that window first.
+	clock = clock.Add(minGenerationInterval)
 	cluster.Status.Satellite.Applications[0].SyncKnown = true
 	cluster.Spec.Mode = clustersv1alpha1.ClusterModeDirect
 	informer.update(nil, cluster)
@@ -280,15 +284,18 @@ func TestClusterSatelliteSourceInitialProjectionStalenessReconnectAndDeletion(t 
 	require.Equal(t, ConnectionStateUnhealthy, snapshots[0].Cluster.Connection)
 	unchangedGeneration, _ := source.FleetSnapshots()
 	require.Equal(t, staleGeneration, unchangedGeneration)
+	clock = clock.Add(minGenerationInterval)
 	cluster.Status.Satellite.LastSeen = &metav1.Time{Time: clock}
 	informer.update(nil, cluster)
 	freshGeneration, snapshots := source.FleetSnapshots()
 	require.Greater(t, freshGeneration, staleGeneration)
 	require.Equal(t, ConnectionStateHealthy, snapshots[0].Cluster.Connection)
+	clock = clock.Add(minGenerationInterval)
 	cluster.Spec.Disabled = true
 	informer.update(nil, cluster)
 	_, snapshots = source.FleetSnapshots()
 	require.Equal(t, ConnectionStateDisabled, snapshots[0].Cluster.Connection)
+	clock = clock.Add(minGenerationInterval)
 	informer.remove(cache.DeletedFinalStateUnknown{Key: "clusters/east", Obj: cluster})
 	_, snapshots = source.FleetSnapshots()
 	require.Empty(t, snapshots)
@@ -387,4 +394,51 @@ func satelliteAppFixture(namespace, name string, health Health, resources uint32
 		Identity: fleetID(namespace, name), Project: fleetID(namespace, "default"),
 		Health: health, Sync: SyncStateSynced, ResourceCount: resources,
 	}
+}
+
+// TestClusterSatelliteSourceCoalescesRapidUpdates pins the window: a fleet
+// reporting continuously must not publish one generation per report.
+//
+// Every published generation makes the fleet reader merge the whole fleet
+// (measured at 64ms for 500 clusters with distinct applications), so coalescing
+// is what keeps that work bounded instead of proportional to report rate.
+func TestClusterSatelliteSourceCoalescesRapidUpdates(t *testing.T) {
+	t.Parallel()
+
+	informers := newFakeRuntimeInformerSource()
+	source, err := NewClusterSatelliteSource(context.Background(), informers)
+	require.NoError(t, err)
+	clock := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	source.now = func() time.Time { return clock }
+	cluster := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "east"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeAgent, Satellite: &clustersv1alpha1.SatelliteSpec{}},
+		Status: clustersv1alpha1.ClusterStatus{Satellite: &clustersv1alpha1.SatelliteStatus{
+			LastSeen: &metav1.Time{Time: clock},
+		}},
+	}
+	informer := informers.informerFor(cluster)
+	informer.update(nil, cluster)
+	first, _ := source.FleetSnapshots()
+
+	// Three reports inside the window: one published generation between them.
+	for count := uint32(1); count <= 3; count++ {
+		cluster.Status.Satellite.Applications = []clustersv1alpha1.SatelliteApplication{
+			{Namespace: "shop", Name: "web", Health: "Healthy", ResourceCount: count},
+		}
+		informer.update(nil, cluster)
+		generation, snapshots := source.FleetSnapshots()
+		require.Equal(t, first, generation, "changes inside the window must not publish a new generation")
+		require.Len(t, snapshots, 1)
+	}
+
+	// Once the window passes, the accumulated state is published once.
+	clock = clock.Add(minGenerationInterval)
+	generation, snapshots := source.FleetSnapshots()
+	require.Greater(t, generation, first)
+	require.Equal(t, uint32(3), snapshots[0].Applications[0].ResourceCount)
+
+	// And the window restarts: the next read is cached again.
+	cachedGeneration, _ := source.FleetSnapshots()
+	require.Equal(t, generation, cachedGeneration)
 }
