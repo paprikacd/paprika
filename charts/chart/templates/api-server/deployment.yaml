@@ -103,6 +103,7 @@ spec:
         - --operator-namespace={{ .Release.Namespace }}
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- include "paprika.observationStoreArgs" . | nindent 8 }}
         {{- if .Values.satellite.internalDispatch.enabled }}
         - --internal-bind-address={{ .Values.satellite.internalDispatch.bindAddress }}
         - --internal-token-file={{ .Values.satellite.internalDispatch.tokenFile }}
@@ -165,6 +166,7 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.apiServer.extraVolumeMounts | nindent 10 }}
+          {{- include "paprika.observationStoreVolumeMount" . | nindent 10 }}
           {{- if .Values.satellite.internalDispatch.enabled }}
           - name: satellite-internal
             mountPath: {{ .Values.satellite.internalDispatch.mountPath }}
@@ -227,6 +229,7 @@ spec:
       {{- end }}
       volumes:
         {{- toYaml .Values.apiServer.extraVolumes | nindent 8 }}
+        {{- include "paprika.observationStoreVolume" . | nindent 8 }}
         {{- if .Values.satellite.internalDispatch.enabled }}
         - name: satellite-internal
           secret:

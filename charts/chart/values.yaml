@@ -1090,6 +1090,23 @@ serviceAccount:
 ## Custom Resource Definitions
 ##
 satellite:
+  # observationStore moves satellite observations out of Cluster.status.
+  # kubernetes (the default) keeps today's behaviour; redis writes them to a
+  # shared store so a registration's application list is no longer rewritten
+  # into the Cluster object on every report.
+  observationStore:
+    # -- Provider: kubernetes, memory or redis.
+    provider: kubernetes
+    redis:
+      # -- host:port of the Redis used when provider=redis.
+      addr: ""
+      # -- Existing Secret holding the Redis password (optional).
+      existingSecret: ""
+      # -- Key inside that Secret.
+      existingSecretKey: password
+      # -- Redis database index.
+      db: 0
+
   internalDispatch:
     # -- Enable the API server's internal listener and point the controller at
     # it. Required in split mode for releases that target a satellite-only

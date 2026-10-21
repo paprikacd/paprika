@@ -382,3 +382,41 @@ OIDC client secret environment variable shared by authenticated API workloads.
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+Satellite observation store arguments. The report handler runs in the api-server
+in split mode and in the manager in monolith mode, so both include this.
+*/}}
+{{- define "paprika.observationStoreArgs" -}}
+{{- if .Values.satellite.observationStore.provider }}
+- --satellite-observation-store={{ .Values.satellite.observationStore.provider }}
+{{- if eq .Values.satellite.observationStore.provider "redis" }}
+{{- if not .Values.satellite.observationStore.redis.addr }}
+{{- fail "satellite.observationStore.provider=redis requires satellite.observationStore.redis.addr" }}
+{{- end }}
+- --satellite-redis-addr={{ .Values.satellite.observationStore.redis.addr }}
+- --satellite-redis-db={{ .Values.satellite.observationStore.redis.db }}
+{{- if .Values.satellite.observationStore.redis.existingSecret }}
+- --satellite-redis-password-file=/etc/paprika-observation-store/password
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/* Volume mount for the Redis password, when a Secret is configured. */}}
+{{- define "paprika.observationStoreVolumeMount" -}}
+{{- if and (eq .Values.satellite.observationStore.provider "redis") .Values.satellite.observationStore.redis.existingSecret }}
+- name: observation-store
+  mountPath: /etc/paprika-observation-store
+  readOnly: true
+{{- end }}
+{{- end }}
+
+{{/* Volume for the Redis password, when a Secret is configured. */}}
+{{- define "paprika.observationStoreVolume" -}}
+{{- if and (eq .Values.satellite.observationStore.provider "redis") .Values.satellite.observationStore.redis.existingSecret }}
+- name: observation-store
+  secret:
+    secretName: {{ .Values.satellite.observationStore.redis.existingSecret }}
+{{- end }}
+{{- end }}

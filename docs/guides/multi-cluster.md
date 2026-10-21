@@ -957,6 +957,21 @@ Kubernetes API:
 | `memory` | Observations go to an in-process store; useful for tests. |
 | `redis` | Observations go to Redis (`--satellite-redis-addr`, optional `--satellite-redis-password-file`, `--satellite-redis-db`). |
 
+The chart exposes the same choice:
+
+```yaml
+satellite:
+  observationStore:
+    provider: redis
+    redis:
+      addr: redis:6379
+      existingSecret: redis-auth   # optional; key `password`
+      db: 0
+```
+
+Selecting `redis` without an address fails the render rather than starting a
+control plane whose store can never connect.
+
 One Redis key per cluster plus an index set, so a report rewrites only its own
 cluster's observation rather than contending on one shared value. Writes are
 best effort: the report is already durable in status, and failing the report
@@ -966,12 +981,14 @@ The store records the report exactly as the satellite sent it, not a projected
 view. Projection rules change with the fleet model, and a store holding
 yesterday's projection would turn a rules rollout into a data migration.
 
-**Current scope.** This is the write path. `Cluster.status` is still written and
-the fleet view still reads it, so enabling Redis today populates the store
-without changing what the console shows or relieving the status write. The next
-step is the read cutover: a fleet source that builds snapshots from the store and
-a status object reduced to a summary (count, digest, last seen). Until that
-lands, `kubernetes` remains the only provider that affects behaviour.
+With a provider selected, the report baseline — the list a delta merges onto —
+is read from the store, the merged list is written back as a full observation,
+and `status.satellite` keeps only the summary fields plus session/sequence
+fencing. A store that cannot be read fails the report rather than merging
+against an unknown baseline.
+
+The sequence fence still reads status deliberately: session and sequence are
+small, so concurrency control never depends on the store being reachable.
 
 ## Cluster Health
 
