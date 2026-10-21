@@ -221,6 +221,7 @@ func (h *Handler) accept(ctx context.Context, report *satellite.Report, token, d
 	return nil
 }
 
+//nolint:cyclop // the accept path sequences baseline selection, merge, status and store writes.
 func (h *Handler) acceptOnce(ctx context.Context, report *satellite.Report, token, digest string) error {
 	cluster, err := h.authorizedCluster(ctx, report, token)
 	if err != nil {
@@ -230,10 +231,32 @@ func (h *Handler) acceptOnce(ctx context.Context, report *satellite.Report, toke
 	if err != nil || duplicate {
 		return err
 	}
-	state, err := buildBaseline(cluster.Status.Satellite, report, digest)
+	// The application list lives either in status or in the backing store. When
+	// a store is configured it is the baseline for deltas, and status keeps only
+	// a summary, so a report no longer rewrites hundreds of kilobytes.
+	baseline := cluster.Status.Satellite
+	if h.Store != nil {
+		previous, prevErr := h.storedApplications(ctx, cluster.Namespace, cluster.Name)
+		if prevErr != nil {
+			return prevErr
+		}
+		base := &clusters.SatelliteStatus{}
+		if baseline != nil {
+			base = baseline.DeepCopy()
+		}
+		base.Applications = previous
+		baseline = base
+	}
+
+	state, err := buildBaseline(baseline, report, digest)
 	if err != nil {
 		return err
 	}
+	merged := state.Applications
+	if h.Store != nil {
+		state.Applications = nil
+	}
+
 	// Patch only the fields this handler owns rather than replacing the whole
 	// status. The cluster controller writes inventory and health on its own
 	// schedule, and a full update makes every overlap a conflict: the loser
@@ -245,17 +268,58 @@ func (h *Handler) acceptOnce(ctx context.Context, report *satellite.Report, toke
 		return fmt.Errorf("persist satellite state: %w", err)
 	}
 	if h.Store != nil {
-		// Best effort: the report is already durable in status, so failing the
-		// report here would make a store outage look like a satellite outage.
-		observation := obsstore.Observation{
+		// The stored observation carries the merged list, not this report's delta:
+		// a reader must see the whole fleet view, and the next report merges
+		// against what is written here.
+		if err := h.Store.Put(ctx, obsstore.Observation{
 			Cluster:   types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name},
-			Report:    report,
+			Report:    observationReport(report, merged),
 			UpdatedAt: time.Now().UTC(),
-		}
-		if err := h.Store.Put(ctx, observation); err != nil {
+		}); err != nil {
+			// The summary in status already acknowledged the sequence, so failing
+			// here would make the satellite re-send a report this handler would
+			// reject as a duplicate. Log and keep serving.
 			log.FromContext(ctx).Error(err, "Could not record the observation in the backing store",
 				"cluster", cluster.Name, "store", h.Store.Name())
 		}
 	}
 	return nil
+}
+
+// storedApplications returns the application list from a cluster's stored
+// observation, or nil when it has none yet.
+func (h *Handler) storedApplications(ctx context.Context, namespace, name string) ([]clusters.SatelliteApplication, error) {
+	observations, err := h.Store.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read observation store: %w", err)
+	}
+	for i := range observations {
+		if observations[i].Cluster.Namespace != namespace || observations[i].Cluster.Name != name || observations[i].Report == nil {
+			continue
+		}
+		applications := make([]clusters.SatelliteApplication, 0, len(observations[i].Report.Applications))
+		for j := range observations[i].Report.Applications {
+			applications = append(applications, statusApplication(&observations[i].Report.Applications[j]))
+		}
+		return applications, nil
+	}
+	return nil, nil
+}
+
+// observationReport turns the merged baseline into the report a reader should
+// see: a complete snapshot rather than the delta that arrived.
+func observationReport(report *satellite.Report, applications []clusters.SatelliteApplication) *satellite.Report {
+	stored := *report
+	stored.Snapshot = true
+	stored.DeletedApplications = nil
+	stored.Applications = make([]satellite.Application, 0, len(applications))
+	for i := range applications {
+		a := &applications[i]
+		stored.Applications = append(stored.Applications, satellite.Application{
+			Namespace: a.Namespace, Name: a.Name, Identity: a.Identity, Project: a.Project,
+			Health: a.Health, Phase: a.Phase, OutOfSync: a.OutOfSync, SyncKnown: a.SyncKnown,
+			ResourceCount: a.ResourceCount, SourceRevision: a.SourceRevision,
+		})
+	}
+	return &stored
 }

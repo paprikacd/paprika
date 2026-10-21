@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	clusters "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	"github.com/benebsworth/paprika/internal/obsstore"
 	"github.com/benebsworth/paprika/internal/satellite"
 )
 
@@ -273,5 +274,50 @@ func TestSatelliteDirectTransportAndMountedTokenNewline(t *testing.T) {
 	cluster = loadCluster(t, c)
 	if cluster.Spec.Mode != clusters.ClusterModeDirect || cluster.Spec.KubeconfigSecretRef.Name != "remote-kubeconfig" {
 		t.Fatal("report changed deployment transport")
+	}
+}
+
+// TestHandlerMovesTheApplicationListToTheStore covers the read/write cutover:
+// with a store configured, status keeps a summary and the store carries the
+// merged application list, including the baseline a delta merges onto.
+func TestHandlerMovesTheApplicationListToTheStore(t *testing.T) {
+	t.Parallel()
+
+	c, h := testRegistry(t)
+	store := obsstore.NewMemory()
+	h.Store = store
+	ctx := context.Background()
+
+	if got := send(t, h, baseline(), testToken); got != 204 {
+		t.Fatalf("onboard: %d", got)
+	}
+	cluster := loadCluster(t, c)
+	if len(cluster.Status.Satellite.Applications) != 0 {
+		t.Fatalf("status must carry a summary, not %d applications", len(cluster.Status.Satellite.Applications))
+	}
+	observations, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("read store: %v", err)
+	}
+	if len(observations) != 1 || len(observations[0].Report.Applications) != 2 {
+		t.Fatalf("store must hold the merged list, got %+v", observations)
+	}
+
+	delta := baseline()
+	delta.Snapshot = false
+	delta.Sequence = 2
+	delta.Applications = []satellite.Application{{Namespace: "shop", Name: "web", Health: "Healthy", ResourceCount: 1}}
+	if got := send(t, h, delta, testToken); got != 204 {
+		t.Fatalf("delta: %d", got)
+	}
+	observations, err = store.List(ctx)
+	if err != nil {
+		t.Fatalf("read store: %v", err)
+	}
+	if len(observations) != 1 || len(observations[0].Report.Applications) != 3 {
+		t.Fatalf("the delta must merge onto the stored baseline, got %+v", observations[0].Report.Applications)
+	}
+	if cluster = loadCluster(t, c); len(cluster.Status.Satellite.Applications) != 0 {
+		t.Fatalf("status still carries %d applications", len(cluster.Status.Satellite.Applications))
 	}
 }
