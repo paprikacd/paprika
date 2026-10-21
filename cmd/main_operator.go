@@ -634,7 +634,11 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	if err != nil {
 		return nil, fmt.Errorf("build UI handler: %w", err)
 	}
-	satelliteRegistrar, err := satelliteMuxRegistrar(mgr.GetConfig(), mgr.GetScheme(), satelliteHub)
+	observationStore, err := newObservationStore(cfg)
+	if err != nil {
+		return nil, err
+	}
+	satelliteRegistrar, err := satelliteMuxRegistrar(mgr.GetConfig(), mgr.GetScheme(), satelliteHub, observationStore)
 	if err != nil {
 		return nil, err
 	}

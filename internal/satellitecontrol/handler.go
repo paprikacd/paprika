@@ -19,19 +19,27 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	clusters "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/obsstore"
 	"github.com/benebsworth/paprika/internal/satellite"
 )
 
 // #nosec G101 -- this is a Kubernetes label key, not a credential.
 const CredentialLabel = "paprika.io/satellite-cluster"
 
-type Handler struct{ client client.Client }
+type Handler struct {
+	client client.Client
+	// Store, when set, receives each accepted observation so the fleet view can
+	// read it without touching Cluster.status. Nil keeps the Kubernetes-only
+	// path, where status is the store.
+	Store obsstore.Store
+}
 
 func NewHandler(c client.Client) *Handler { return &Handler{client: c} }
 
@@ -235,6 +243,19 @@ func (h *Handler) acceptOnce(ctx context.Context, report *satellite.Report, toke
 	applyReportStatus(cluster, report, state)
 	if err := h.client.Status().Patch(ctx, cluster, client.MergeFrom(base)); err != nil {
 		return fmt.Errorf("persist satellite state: %w", err)
+	}
+	if h.Store != nil {
+		// Best effort: the report is already durable in status, so failing the
+		// report here would make a store outage look like a satellite outage.
+		observation := obsstore.Observation{
+			Cluster:   types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name},
+			Report:    report,
+			UpdatedAt: time.Now().UTC(),
+		}
+		if err := h.Store.Put(ctx, observation); err != nil {
+			log.FromContext(ctx).Error(err, "Could not record the observation in the backing store",
+				"cluster", cluster.Name, "store", h.Store.Name())
+		}
 	}
 	return nil
 }

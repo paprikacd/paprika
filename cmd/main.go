@@ -179,6 +179,10 @@ type cliConfig struct {
 	SatelliteCAFile               string        `mapstructure:"satellite-ca-file"`
 	SatelliteHeartbeatInterval    time.Duration `mapstructure:"satellite-heartbeat-interval"`
 	SatelliteStateNamespace       string        `mapstructure:"satellite-state-namespace"`
+	SatelliteObservationStore     string        `mapstructure:"satellite-observation-store"`
+	SatelliteRedisAddr            string        `mapstructure:"satellite-redis-addr"`
+	SatelliteRedisPasswordFile    string        `mapstructure:"satellite-redis-password-file"`
+	SatelliteRedisDB              int           `mapstructure:"satellite-redis-db"`
 	SatelliteFailoverTimeout      time.Duration `mapstructure:"satellite-failover-timeout"`
 	SatelliteAutonomyInterval     time.Duration `mapstructure:"satellite-autonomy-interval"`
 	SatelliteBatchInterval        time.Duration `mapstructure:"satellite-batch-interval"`
@@ -1031,7 +1035,11 @@ func buildAPIExtraMuxHandlers(
 		return nil, nil, err
 	}
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
-	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme(), hub)
+	observationStore, err := newObservationStore(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme(), hub, observationStore)
 	if err != nil {
 		return nil, nil, err
 	}

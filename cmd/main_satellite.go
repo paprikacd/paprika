@@ -37,6 +37,11 @@ func registerSatelliteFlags(fs *pflag.FlagSet) {
 		"Management policies this satellite permits locally, comma-separated (Observe,Apply,Prune,Delete,SelfHeal,Rollout,*). Reported to the control plane; the Cluster's own ceiling is authoritative there.")
 	fs.String("satellite-autonomy", string(clustersv1alpha1.AutonomyFailover),
 		"Autonomy mode: ObserveOnly reports and never reconciles locally, Failover reconciles after a control-plane outage, Delegated always reconciles.")
+	fs.String("satellite-observation-store", "kubernetes",
+		"Where accepted satellite observations are recorded: kubernetes (Cluster.status, the default), memory, or redis.")
+	fs.String("satellite-redis-addr", "", "host:port of the Redis used by --satellite-observation-store=redis.")
+	fs.String("satellite-redis-password-file", "", "Path to the Redis password, if the server requires one.")
+	fs.Int("satellite-redis-db", 0, "Redis database index for the observation store.")
 	fs.String("satellite-state-namespace", "",
 		"Namespace this satellite keeps its own state in. Defaults to the pod's namespace; it is not the registration namespace.")
 	fs.Duration("satellite-failover-timeout", satellite.DefaultFailoverTimeout,

@@ -5,17 +5,20 @@ package main
 // itself lives in main_satellite.go and shares none of this state.
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
-
+	"github.com/redis/go-redis/v9"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/obsstore"
 	"github.com/benebsworth/paprika/internal/satellite"
 	"github.com/benebsworth/paprika/internal/satellitecontrol"
 )
@@ -42,7 +45,7 @@ func newInstrumentedHub() *satellitecontrol.Hub {
 	return hub
 }
 
-func satelliteMuxRegistrar(cfg *rest.Config, scheme *runtime.Scheme, hub *satellitecontrol.Hub) (func(*http.ServeMux), error) {
+func satelliteMuxRegistrar(cfg *rest.Config, scheme *runtime.Scheme, hub *satellitecontrol.Hub, store obsstore.Store) (func(*http.ServeMux), error) {
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("create satellite registry client: %w", err)
@@ -54,6 +57,7 @@ func satelliteMuxRegistrar(cfg *rest.Config, scheme *runtime.Scheme, hub *satell
 		hub = newInstrumentedHub()
 	}
 	handler := satellitecontrol.NewHandler(c)
+	handler.Store = store
 	_, linkHandler := v1connect.NewSatelliteLinkHandler(
 		satellitecontrol.NewLinkServer(handler, hub),
 		connect.WithReadMaxBytes(satellite.MaxReportBytes),
@@ -62,4 +66,33 @@ func satelliteMuxRegistrar(cfg *rest.Config, scheme *runtime.Scheme, hub *satell
 		mux.Handle(satellite.ReportPath, handler)
 		mux.Handle(satellitecontrol.LinkPrefix, linkHandler)
 	}, nil
+}
+
+// newObservationStore builds the configured observation provider.
+//
+// "kubernetes" (the default) returns nil: Cluster.status is the store, and the
+// handler keeps writing only there. The Redis provider is the shared backing
+// store that takes the observation list out of the status object once the fleet
+// view reads from it.
+func newObservationStore(cfg *cliConfig) (obsstore.Store, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.SatelliteObservationStore)) {
+	case "", "kubernetes":
+		return nil, nil
+	case "memory":
+		return obsstore.NewMemory(), nil
+	case obsstore.RedisStoreName:
+		if cfg.SatelliteRedisAddr == "" {
+			return nil, errors.New("--satellite-observation-store=redis requires --satellite-redis-addr")
+		}
+		password, err := readComponentToken(cfg.SatelliteRedisPasswordFile)
+		if err != nil {
+			return nil, err
+		}
+		client := redis.NewClient(&redis.Options{
+			Addr: cfg.SatelliteRedisAddr, Password: password, DB: cfg.SatelliteRedisDB,
+		})
+		return obsstore.NewRedis(client, "paprika:satellite"), nil
+	default:
+		return nil, fmt.Errorf("unknown --satellite-observation-store %q (want kubernetes, memory or redis)", cfg.SatelliteObservationStore)
+	}
 }

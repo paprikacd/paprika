@@ -944,6 +944,35 @@ gathered per registration, so a fleet where many registrations cannot be dialled
 pays that fan-out. With 50 unreachable test registrations it measured p50 23 ms
 / p95 232 ms, against 5 ms for the map query over the same fleet.
 
+### Observation Store
+
+The bottleneck at a thousand applications is the status object: every report
+rewrites `Cluster.status.satellite.applications`, which is ~300 KB at that size.
+`internal/obsstore` is the provider seam for moving those observations out of the
+Kubernetes API:
+
+| `--satellite-observation-store` | Behaviour |
+| --- | --- |
+| `kubernetes` (default) | `Cluster.status` is the store. Nothing changes. |
+| `memory` | Observations go to an in-process store; useful for tests. |
+| `redis` | Observations go to Redis (`--satellite-redis-addr`, optional `--satellite-redis-password-file`, `--satellite-redis-db`). |
+
+One Redis key per cluster plus an index set, so a report rewrites only its own
+cluster's observation rather than contending on one shared value. Writes are
+best effort: the report is already durable in status, and failing the report
+when the store is down would make a store outage look like a satellite outage.
+
+The store records the report exactly as the satellite sent it, not a projected
+view. Projection rules change with the fleet model, and a store holding
+yesterday's projection would turn a rules rollout into a data migration.
+
+**Current scope.** This is the write path. `Cluster.status` is still written and
+the fleet view still reads it, so enabling Redis today populates the store
+without changing what the console shows or relieving the status write. The next
+step is the read cutover: a fleet source that builds snapshots from the store and
+a status object reduced to a summary (count, digest, last seen). Until that
+lands, `kubernetes` remains the only provider that affects behaviour.
+
 ## Cluster Health
 
 The cluster controller periodically health-checks registered clusters. Check status with:
