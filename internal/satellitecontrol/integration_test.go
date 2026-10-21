@@ -271,7 +271,9 @@ func awaitIntegrationFleet(ctx context.Context, t *testing.T, source *fleet.Clus
 		readyError = source.CheckReady()
 		if readyError == nil {
 			var generation uint64
-			generation, observations = source.FleetSnapshots()
+			// SatelliteSource has no context parameter; the source uses the one it
+			// was constructed with.
+			generation, observations = source.FleetSnapshots() //nolint:contextcheck
 			merged, err := fleet.MergeSatelliteSnapshots(fleet.NewSnapshot(0), observations, generation)
 			require.NoError(t, err)
 			if match(merged) {

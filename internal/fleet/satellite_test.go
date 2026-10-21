@@ -10,10 +10,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/obsstore"
+	"github.com/benebsworth/paprika/internal/satellite"
 )
 
 func TestSatelliteMergeGroupsPlacementsWithoutNamespaceOrProjectCollisions(t *testing.T) {
@@ -441,4 +444,50 @@ func TestClusterSatelliteSourceCoalescesRapidUpdates(t *testing.T) {
 	// And the window restarts: the next read is cached again.
 	cachedGeneration, _ := source.FleetSnapshots()
 	require.Equal(t, generation, cachedGeneration)
+}
+
+// TestClusterSatelliteSourcePrefersStoredObservations pins the read cutover:
+// when a backing store is configured, applications come from the stored report
+// while identity and connection state keep coming from the registration.
+func TestClusterSatelliteSourcePrefersStoredObservations(t *testing.T) {
+	t.Parallel()
+
+	informers := newFakeRuntimeInformerSource()
+	source, err := NewClusterSatelliteSource(context.Background(), informers)
+	require.NoError(t, err)
+	clock := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)
+	source.now = func() time.Time { return clock }
+	cluster := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "east"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeAgent, Satellite: &clustersv1alpha1.SatelliteSpec{}},
+		Status: clustersv1alpha1.ClusterStatus{Satellite: &clustersv1alpha1.SatelliteStatus{
+			LastSeen:     &metav1.Time{Time: clock},
+			Applications: []clustersv1alpha1.SatelliteApplication{{Namespace: "shop", Name: "from-status", Health: "Healthy", ResourceCount: 1}},
+		}},
+	}
+	informers.informerFor(cluster).update(nil, cluster)
+
+	store := obsstore.NewMemory()
+	require.NoError(t, store.Put(context.Background(), obsstore.Observation{
+		Cluster: types.NamespacedName{Namespace: "clusters", Name: "east"},
+		Report: &satellite.Report{
+			ClusterNamespace: "clusters", ClusterName: "east", SessionID: "s", Sequence: 2,
+			Applications: []satellite.Application{{Namespace: "shop", Name: "from-store", Health: "Healthy", ResourceCount: 4}},
+		},
+		UpdatedAt: clock,
+	}))
+	source.SetObservationReader(store)
+
+	generation, snapshots := source.FleetSnapshots()
+	require.Len(t, snapshots, 1)
+	require.Len(t, snapshots[0].Applications, 1)
+	require.Equal(t, "from-store", snapshots[0].Applications[0].Identity.Name,
+		"the stored report replaces the status projection")
+	require.Equal(t, fleetID("clusters", "east"), snapshots[0].Cluster.Identity,
+		"identity still comes from the registration")
+
+	// The store is polled, not read per query: a second call inside the window
+	// returns the cached generation.
+	sameGeneration, _ := source.FleetSnapshots()
+	require.Equal(t, generation, sameGeneration)
 }

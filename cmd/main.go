@@ -90,6 +90,7 @@ import (
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/mtls"
 	"github.com/benebsworth/paprika/internal/observability"
+	"github.com/benebsworth/paprika/internal/obsstore"
 	"github.com/benebsworth/paprika/internal/reposerver"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/satellitecontrol"
@@ -908,6 +909,7 @@ func runLifecycleComponent(
 	return nil
 }
 
+//nolint:cyclop // API startup assembles the fleet runtime, handler and listeners.
 func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger, probeAddrCh chan<- string) error {
 	apiCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -919,7 +921,14 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	if err != nil {
 		return err
 	}
-	fleetRuntime, err := prepareStandaloneFleetRuntime(apiCtx, clients, scheme)
+	// One store instance serves both sides: the report handler writes observations
+	// and the fleet source reads them. "kubernetes" is nil here, which keeps the
+	// status-only path unchanged.
+	observationStore, err := newObservationStore(cfg)
+	if err != nil {
+		return err
+	}
+	fleetRuntime, err := prepareStandaloneFleetRuntime(apiCtx, clients, scheme, observationStore)
 	if err != nil {
 		return err
 	}
@@ -939,7 +948,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	// public route, so this process is the only one that can answer "is this
 	// cluster's link up".
 	hub := newInstrumentedHub()
-	extraMuxHandlers, mcpCache, err := buildAPIExtraMuxHandlers(apiCtx, cfg, connectHandler, clients, setupLog, hub)
+	extraMuxHandlers, mcpCache, err := buildAPIExtraMuxHandlers(apiCtx, cfg, connectHandler, clients, setupLog, hub, observationStore)
 	defer closeMCPCacheIfPresent(mcpCache, setupLog)
 	if err != nil {
 		return err
@@ -1025,6 +1034,7 @@ func buildAPIExtraMuxHandlers(
 	clients *apiClients,
 	setupLog logr.Logger,
 	hub *satellitecontrol.Hub,
+	observationStore obsstore.Store,
 ) ([]func(*http.ServeMux), *cache.Cache, error) {
 	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg)
 	if err != nil {
@@ -1035,10 +1045,6 @@ func buildAPIExtraMuxHandlers(
 		return nil, nil, err
 	}
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
-	observationStore, err := newObservationStore(cfg)
-	if err != nil {
-		return nil, nil, err
-	}
 	satelliteRegistrar, err := satelliteMuxRegistrar(clients.restConfig, clients.client.Scheme(), hub, observationStore)
 	if err != nil {
 		return nil, nil, err
@@ -1078,6 +1084,7 @@ func prepareStandaloneFleetRuntime(
 	ctx context.Context,
 	clients *apiClients,
 	scheme *runtime.Scheme,
+	observationStore obsstore.Store,
 ) (*fleet.Runtime, error) {
 	if clients.cacheBundle == nil {
 		return nil, nil
@@ -1094,6 +1101,11 @@ func prepareStandaloneFleetRuntime(
 	satelliteSource, err := fleet.NewClusterSatelliteSource(ctx, clients.cacheBundle.Cache)
 	if err != nil {
 		return nil, fmt.Errorf("build satellite fleet source: %w", err)
+	}
+	if observationStore != nil {
+		// Applications come from the store; identity and connection state still
+		// come from the registration.
+		satelliteSource.SetObservationReader(observationStore)
 	}
 	clients.fleetReader, err = fleet.NewSatelliteReader(fleetRuntime.Reader(), satelliteSource)
 	if err != nil {

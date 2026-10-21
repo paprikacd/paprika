@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/obsstore"
+	"github.com/benebsworth/paprika/internal/satellite"
 )
 
 type clusterSatelliteObservation struct {
@@ -50,9 +53,36 @@ type ClusterSatelliteSource struct {
 	// lastBump and pendingBump implement the coalescing window: changes inside
 	// it are published on the first read after it, not one generation per
 	// report.
-	lastBump     time.Time
-	pendingBump  bool
-	registration cache.ResourceEventHandlerRegistration
+	lastBump    time.Time
+	pendingBump bool
+	// observations, when set, supplies each registration's latest report from a
+	// backing store. The store is polled on a short interval and a digest of its
+	// contents drives the same generation counter the informer uses, so a stored
+	// report is published exactly like a status update.
+	ctx           context.Context
+	observations  ObservationReader
+	storePoll     time.Duration
+	lastStorePoll time.Time
+	storeDigest   string
+	stored        []obsstore.Observation
+	registration  cache.ResourceEventHandlerRegistration
+}
+
+// ObservationReader supplies reports written to a backing store.
+type ObservationReader interface {
+	List(ctx context.Context) ([]obsstore.Observation, error)
+}
+
+// SetObservationReader makes the source read applications from a store instead
+// of Cluster.status. Identity and connection state still come from the
+// registration, which the informer already tracks.
+func (s *ClusterSatelliteSource) SetObservationReader(reader ObservationReader) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.observations = reader
+	if s.storePoll <= 0 {
+		s.storePoll = time.Second
+	}
 }
 
 // bump advances the published generation, coalescing changes that land inside
@@ -90,7 +120,7 @@ func NewClusterSatelliteSource(ctx context.Context, source InformerSource) (*Clu
 		return nil, fmt.Errorf("get satellite cluster informer: %w", err)
 	}
 	satellites := &ClusterSatelliteSource{
-		clusters: make(map[ClusterKey]clusterSatelliteObservation), now: time.Now,
+		clusters: make(map[ClusterKey]clusterSatelliteObservation), now: time.Now, ctx: ctx,
 	}
 	satellites.registration, err = informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    satellites.observe,
@@ -199,6 +229,7 @@ func (s *ClusterSatelliteSource) FleetSnapshots() (uint64, []SatelliteSnapshot) 
 	defer s.mu.Unlock()
 	now := s.now()
 	s.publishPending(now)
+	s.pollObservations(now)
 	if s.cacheVersion == s.generation && (s.nextExpiry.IsZero() || !now.After(s.nextExpiry)) {
 		return s.generation, s.cached
 	}
@@ -223,6 +254,7 @@ func (s *ClusterSatelliteSource) FleetSnapshots() (uint64, []SatelliteSnapshot) 
 	if changed {
 		s.generation++
 	}
+	s.applyStoredApplications(result)
 	sort.Slice(result, func(i, j int) bool {
 		return compareObjectKeys(result[i].Cluster.Identity, result[j].Cluster.Identity) < 0
 	})
@@ -264,4 +296,82 @@ func projectSatelliteStatusApplication(app *clustersv1alpha1.SatelliteApplicatio
 		summary.AttentionSeverity = attentionSeverityCounts
 	}
 	return summary
+}
+
+// pollObservations refreshes the store-backed reports and advances the
+// generation when their contents changed.
+//
+// The interval bounds work on the query path: Redis answers a fleet-wide read in
+// about a millisecond, but doing it on every query would put the store in the
+// path of idle traffic.
+func (s *ClusterSatelliteSource) pollObservations(now time.Time) {
+	if s.observations == nil {
+		return
+	}
+	if s.storePoll <= 0 {
+		s.storePoll = time.Second
+	}
+	if !s.lastStorePoll.IsZero() && now.Sub(s.lastStorePoll) < s.storePoll {
+		return
+	}
+	s.lastStorePoll = now
+	storeCtx := s.ctx
+	if storeCtx == nil {
+		storeCtx = context.Background()
+	}
+	stored, err := s.observations.List(storeCtx)
+	if err != nil {
+		// Keep serving the previous view; a store outage must not empty the fleet.
+		return
+	}
+	digest := observationsDigest(stored)
+	if digest == s.storeDigest && s.storeDigest != "" {
+		return
+	}
+	s.storeDigest = digest
+	s.stored = stored
+	s.bump(now)
+}
+
+// applyStoredApplications replaces each registration's applications with the
+// ones its latest stored report carries. A registration with no stored report
+// keeps what its status projection produced, so a partially populated store
+// degrades to the old behaviour instead of hiding clusters.
+func (s *ClusterSatelliteSource) applyStoredApplications(result []SatelliteSnapshot) {
+	if s.observations == nil || len(s.stored) == 0 {
+		return
+	}
+	byCluster := make(map[ClusterKey]*satellite.Report, len(s.stored))
+	for i := range s.stored {
+		byCluster[ClusterKey{Namespace: s.stored[i].Cluster.Namespace, Name: s.stored[i].Cluster.Name}] = s.stored[i].Report
+	}
+	for i := range result {
+		report := byCluster[result[i].Cluster.Identity]
+		if report == nil {
+			continue
+		}
+		applications := make([]ApplicationSummary, 0, len(report.Applications))
+		for j := range report.Applications {
+			observed := report.Applications[j]
+			applications = append(applications, projectSatelliteStatusApplication(&clustersv1alpha1.SatelliteApplication{
+				Namespace: observed.Namespace, Name: observed.Name, Identity: observed.Identity,
+				Project: observed.Project, Health: observed.Health, Phase: observed.Phase,
+				OutOfSync: observed.OutOfSync, SyncKnown: observed.SyncKnown,
+				ResourceCount: observed.ResourceCount, SourceRevision: observed.SourceRevision,
+			}, result[i].Cluster))
+		}
+		result[i].Applications = applications
+	}
+}
+
+// observationsDigest is a cheap change signal over the stored reports: cluster
+// identity plus the sequence each report carries. Sequence is monotonic per
+// session, so a new report always changes it.
+func observationsDigest(stored []obsstore.Observation) string {
+	parts := make([]string, 0, len(stored))
+	for i := range stored {
+		parts = append(parts, fmt.Sprintf("%s/%s:%d:%s", stored[i].Cluster.Namespace, stored[i].Cluster.Name, stored[i].Report.Sequence, stored[i].Report.SessionID))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "|")
 }
