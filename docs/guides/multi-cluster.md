@@ -970,7 +970,11 @@ satellite:
 ```
 
 Selecting `redis` without an address fails the render rather than starting a
-control plane whose store can never connect.
+control plane whose store can never connect. Selecting any provider other than
+`kubernetes` also requires `deploymentMode=split`: the fleet source is wired to
+the store in the split API server only, and enabling it in monolith mode would
+write observations to a store nothing reads, emptying the satellite view. The
+chart refuses that combination instead of producing it.
 
 One Redis key per cluster plus an index set, so a report rewrites only its own
 cluster's observation rather than contending on one shared value. Writes are

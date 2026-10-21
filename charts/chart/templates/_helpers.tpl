@@ -388,6 +388,9 @@ Satellite observation store arguments. The report handler runs in the api-server
 in split mode and in the manager in monolith mode, so both include this.
 */}}
 {{- define "paprika.observationStoreArgs" -}}
+{{- if and (ne .Values.satellite.observationStore.provider "kubernetes") (ne .Values.deploymentMode "split") }}
+{{- fail "satellite.observationStore.provider requires deploymentMode=split: monolith mode does not yet read observations from the store, so enabling it there would empty the satellite fleet view" }}
+{{- end }}
 {{- if .Values.satellite.observationStore.provider }}
 - --satellite-observation-store={{ .Values.satellite.observationStore.provider }}
 {{- if eq .Values.satellite.observationStore.provider "redis" }}
