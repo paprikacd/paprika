@@ -2376,36 +2376,77 @@ func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *pa
 		return nil
 	}
 
+	protected, err := r.promotionReferencedReleases(ctx, app)
+	if err != nil {
+		return fmt.Errorf("resolve promotion-referenced releases: %w", err)
+	}
+
+	// Every terminal release other than the active one is history. Releases
+	// written by an external publisher are never marked Superseded, so
+	// limiting the candidates to Superseded left old Complete releases
+	// occupying history slots forever.
 	activeRelease := app.Status.ReleaseRef
-	var superseded []paprikav1.Release
+	var candidates []paprikav1.Release
 	for i := range list.Items {
 		rel := &list.Items[i]
-		if rel.Name == activeRelease {
+		if rel.Name == activeRelease || !rel.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if rel.Status.Phase == paprikav1.ReleaseSuperseded {
-			superseded = append(superseded, *rel)
+		if _, ok := protected[rel.Name]; ok {
+			continue
+		}
+		if releasePhasePrunable(rel.Status.Phase) {
+			candidates = append(candidates, *rel)
 		}
 	}
 
-	sortReleasesByTimestamp(superseded)
+	sortReleasesByTimestamp(candidates)
 	toDelete := len(list.Items) - maxReleaseHistory
-	if toDelete > len(superseded) {
-		toDelete = len(superseded)
+	if toDelete > len(candidates) {
+		toDelete = len(candidates)
 	}
 
 	for i := 0; i < toDelete; i++ {
-		rel := &superseded[i]
-		if rel.Name == activeRelease {
-			continue
-		}
+		rel := &candidates[i]
 		if err := r.client.Delete(ctx, rel); client.IgnoreNotFound(err) != nil {
 			log.Error(err, "Failed to prune old release", "release", rel.Name)
 			continue
 		}
-		log.Info("Pruned old superseded release", "release", rel.Name)
+		log.Info("Pruned old release", "release", rel.Name, "phase", rel.Status.Phase)
 	}
 	return nil
+}
+
+// releasePhasePrunable reports whether a release in the phase is finished and
+// therefore safe to drop from history once it is no longer active.
+func releasePhasePrunable(phase paprikav1.ReleasePhase) bool {
+	return phase == paprikav1.ReleaseSuperseded ||
+		phase == paprikav1.ReleaseComplete ||
+		phase == paprikav1.ReleaseFailed ||
+		phase == paprikav1.ReleaseRolledBack
+}
+
+// promotionReferencedReleases returns the names of releases of app that a
+// downstream Application still references as its promotion source. Pruning one
+// of them would break an in-flight or just-finished promotion that identifies
+// its candidate by release name and UID.
+func (r *ApplicationReconciler) promotionReferencedReleases(ctx context.Context, app *paprikav1.Application) (map[string]struct{}, error) {
+	var apps paprikav1.ApplicationList
+	if err := r.client.List(ctx, &apps); err != nil {
+		return nil, fmt.Errorf("list applications: %w", err)
+	}
+	out := map[string]struct{}{}
+	for i := range apps.Items {
+		p := apps.Items[i].Status.Promotion
+		if p == nil || p.SourceRelease == "" {
+			continue
+		}
+		if p.SourceApplication.Name != app.Name || p.SourceApplication.Namespace != app.Namespace {
+			continue
+		}
+		out[p.SourceRelease] = struct{}{}
+	}
+	return out, nil
 }
 
 func sortReleasesByTimestamp(releases []paprikav1.Release) {
@@ -2796,6 +2837,13 @@ func (r *ApplicationReconciler) pruneOldReleases(ctx context.Context, app *papri
 	}
 
 	keep := r.selectReleasesToKeep(all, app.Status.ReleaseRef)
+	protected, err := r.promotionReferencedReleases(ctx, app)
+	if err != nil {
+		return fmt.Errorf("resolve promotion-referenced releases: %w", err)
+	}
+	for name := range protected {
+		keep[name] = struct{}{}
+	}
 	deleted, err := r.deleteReleases(ctx, all, keep, app)
 	if err != nil {
 		return fmt.Errorf("delete releases: %w", err)
