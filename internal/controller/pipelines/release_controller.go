@@ -3118,7 +3118,13 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 	// Delete the manifest snapshot last — cleanupManagedResources reads it to
 	// scope deletion to the GVRs this release actually applied.
 	cmName := release.Status.RenderedManifestSnapshot
-	if cmName != "" {
+	shared, err := r.snapshotReferencedElsewhere(ctx, release, cmName)
+	if err != nil {
+		return err
+	}
+	if shared {
+		log.Info("Keeping manifest snapshot ConfigMap referenced by another object", "configmap", cmName)
+	} else if cmName != "" {
 		cm := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      cmName,
@@ -3134,44 +3140,102 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 	return nil
 }
 
+// snapshotReferencedElsewhere reports whether a ConfigMap snapshot is still
+// used by an Application (inline source) or by another Release. Externally
+// published bundles can be shared by several Releases, so the first Release to
+// be deleted must not remove the bundle under the others. A Release that is
+// itself being deleted counts as a user only when its name sorts after this
+// one, so exactly one of several concurrent deletions removes the snapshot.
+func (r *ReleaseReconciler) snapshotReferencedElsewhere(ctx context.Context, release *paprikav1.Release, name string) (bool, error) {
+	if name == "" {
+		return false, nil
+	}
+	var releases paprikav1.ReleaseList
+	if err := r.client.List(ctx, &releases, client.InNamespace(release.Namespace)); err != nil {
+		return false, fmt.Errorf("list releases for snapshot references: %w", err)
+	}
+	for i := range releases.Items {
+		other := &releases.Items[i]
+		if other.Name == release.Name {
+			continue
+		}
+		if other.DeletionTimestamp != nil && other.Name < release.Name {
+			continue
+		}
+		if other.Status.RenderedManifestSnapshot == name ||
+			(other.Spec.ManifestSource != nil && other.Spec.ManifestSource.ConfigMapRef == name) {
+			return true, nil
+		}
+	}
+	var apps paprikav1.ApplicationList
+	if err := r.client.List(ctx, &apps, client.InNamespace(release.Namespace)); err != nil {
+		return false, fmt.Errorf("list applications for snapshot references: %w", err)
+	}
+	for i := range apps.Items {
+		if inline := apps.Items[i].Spec.Source.Inline; inline != nil && inline.ConfigMapRef == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release *paprikav1.Release) error {
-	log := logf.FromContext(ctx)
 	labelSelector := labels.Set{engine.ReleaseNameLabelKey: release.Name}.String()
 	targets, err := r.cleanupTargetClients(ctx, release)
 	if err != nil {
 		return fmt.Errorf("resolve release cleanup targets: %w", err)
 	}
 
-	gvrs, err := r.gvrsFromSnapshot(ctx, release)
+	scopes, fromSnapshot, err := r.cleanupScopesFromSnapshot(ctx, release)
 	if err != nil {
-		return fmt.Errorf("resolve GVRs from snapshot: %w", err)
+		return fmt.Errorf("resolve cleanup scope from snapshot: %w", err)
 	}
-	if len(gvrs) == 0 {
-		gvrs = append(gvrs, managedGVRs...)
+	if !fromSnapshot {
+		// No snapshot to read: fall back to the common kinds in the release
+		// namespace. This is a guess, not a record of what was applied.
+		for _, gvr := range managedGVRs {
+			scopes = append(scopes, cleanupScope{gvr: gvr, namespaces: []string{release.Namespace}})
+		}
 	}
 
 	deleteOpts := metav1.DeleteOptions{PropagationPolicy: propagationPolicy(release.Spec.SyncOptions)}
 	for _, target := range targets {
-		for _, gvr := range gvrs {
-			items, err := target.Resource(gvr).Namespace(release.Namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: labelSelector,
-			})
-			if err != nil {
-				// The API may not be installed on this cluster (e.g. httproutes
-				// without Gateway API, or a CRD removed after apply) — nothing to
-				// clean up for it.
-				if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-					continue
+		for _, scope := range scopes {
+			for _, ns := range scope.namespaces {
+				if err := r.deleteLabelledIn(ctx, target, scope.gvr, ns, labelSelector, deleteOpts, !fromSnapshot); err != nil {
+					return err
 				}
-				return fmt.Errorf("listing %s: %w", gvr.Resource, err)
-			}
-			for _, item := range items.Items {
-				if err := target.Resource(gvr).Namespace(release.Namespace).Delete(ctx, item.GetName(), deleteOpts); err != nil && !apierrors.IsNotFound(err) {
-					return fmt.Errorf("deleting %s/%s: %w", gvr.Resource, item.GetName(), err)
-				}
-				log.Info("Deleted managed resource", "resource", gvr.Resource, "name", item.GetName())
 			}
 		}
+	}
+	return nil
+}
+
+// deleteLabelledIn deletes the objects of one resource in one namespace that
+// carry this release's label. When guessed is true the namespace and resource
+// were not recorded by the release, so a Forbidden list is skipped instead of
+// failing the cleanup.
+func (r *ReleaseReconciler) deleteLabelledIn(ctx context.Context, target dynamic.Interface, gvr schema.GroupVersionResource, namespace, labelSelector string, deleteOpts metav1.DeleteOptions, guessed bool) error {
+	log := logf.FromContext(ctx)
+	items, err := target.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		// The API may not be installed on this cluster (e.g. httproutes
+		// without Gateway API, or a CRD removed after apply) — nothing to
+		// clean up for it.
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return nil
+		}
+		if guessed && apierrors.IsForbidden(err) {
+			log.Info("Skipping cleanup of a resource the controller cannot list", "resource", gvr.Resource, "namespace", namespace)
+			return nil
+		}
+		return fmt.Errorf("listing %s in %s: %w", gvr.Resource, namespace, err)
+	}
+	for _, item := range items.Items {
+		if err := target.Resource(gvr).Namespace(namespace).Delete(ctx, item.GetName(), deleteOpts); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting %s/%s: %w", gvr.Resource, item.GetName(), err)
+		}
+		log.Info("Deleted managed resource", "resource", gvr.Resource, "namespace", namespace, "name", item.GetName())
 	}
 	return nil
 }
@@ -3256,21 +3320,38 @@ func propagationPolicy(opts *paprikav1.SyncOptions) *metav1.DeletionPropagation 
 	return nil
 }
 
-func (r *ReleaseReconciler) gvrsFromSnapshot(ctx context.Context, release *paprikav1.Release) ([]schema.GroupVersionResource, error) {
+// cleanupScope names one resource type and the namespaces the release applied
+// objects of that type to.
+type cleanupScope struct {
+	gvr        schema.GroupVersionResource
+	namespaces []string
+}
+
+// cleanupScopesFromSnapshot reads the rendered manifests the release applied
+// and returns, for each namespaced resource type, the namespaces it was applied
+// to. An object without metadata.namespace was applied to the release
+// namespace. The bool is false when no snapshot exists, so the caller can fall
+// back. Any other read error is returned: cleaning up from a guess after a
+// transient error would leave applied objects behind.
+func (r *ReleaseReconciler) cleanupScopesFromSnapshot(ctx context.Context, release *paprikav1.Release) ([]cleanupScope, bool, error) {
 	cmName := release.Status.RenderedManifestSnapshot
 	if cmName == "" {
-		return nil, nil
+		return nil, false, nil
 	}
 	var cm corev1.ConfigMap
 	if err := r.client.Get(ctx, types.NamespacedName{Name: cmName, Namespace: release.Namespace}, &cm); err != nil {
-		return nil, nil
+		if apierrors.IsNotFound(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("get manifest snapshot %s/%s: %w", release.Namespace, cmName, err)
 	}
 	manifests, ok := cm.Data["manifests.yaml"]
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
 
-	seen := map[schema.GroupVersionResource]struct{}{}
+	seen := map[schema.GroupVersionResource]map[string]struct{}{}
+	var order []schema.GroupVersionResource
 	for _, doc := range engine.SplitYAMLDocuments([]byte(manifests)) {
 		obj, ok := r.parseManifest(doc)
 		if !ok {
@@ -3278,25 +3359,47 @@ func (r *ReleaseReconciler) gvrsFromSnapshot(ctx context.Context, release *papri
 		}
 		kind, ok := obj["kind"].(string)
 		if !ok {
-			return nil, errors.New("manifest kind is not a string")
+			return nil, false, errors.New("manifest kind is not a string")
 		}
 		apiVersion, ok := obj["apiVersion"].(string)
 		if !ok {
-			return nil, errors.New("manifest apiVersion is not a string")
+			return nil, false, errors.New("manifest apiVersion is not a string")
+		}
+		if isClusterScopedKind(kind) {
+			// Cluster-scoped objects are never listed in a namespace.
+			continue
 		}
 		group, version := parseAPIVersion(apiVersion)
 		gvr, err := r.gvrFromKind(kind, group, version)
 		if err != nil {
 			continue
 		}
-		seen[gvr] = struct{}{}
+		ns := release.Namespace
+		if md, ok := obj["metadata"].(map[string]interface{}); ok {
+			if n, ok := md["namespace"].(string); ok && n != "" {
+				ns = n
+			}
+		}
+		if seen[gvr] == nil {
+			seen[gvr] = map[string]struct{}{}
+			order = append(order, gvr)
+		}
+		seen[gvr][ns] = struct{}{}
 	}
 
-	out := make([]schema.GroupVersionResource, 0, len(seen))
-	for gvr := range seen {
-		out = append(out, gvr)
+	out := make([]cleanupScope, 0, len(order))
+	for _, gvr := range order {
+		namespaces := make([]string, 0, len(seen[gvr]))
+		for ns := range seen[gvr] {
+			namespaces = append(namespaces, ns)
+		}
+		sort.Strings(namespaces)
+		out = append(out, cleanupScope{gvr: gvr, namespaces: namespaces})
 	}
-	return out, nil
+	if len(out) == 0 {
+		return nil, false, nil
+	}
+	return out, true, nil
 }
 
 func (r *ReleaseReconciler) applyTrafficWeight(ctx context.Context, stage *paprikav1.Stage, release *paprikav1.Release, weight int, log logr.Logger, result *string) error {
