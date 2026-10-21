@@ -97,6 +97,7 @@ For production deploys (not iteration), use Helm so `helm rollback` works:
 helm upgrade paprika-e2e charts/chart/ \
   --namespace paprika-e2e \
   --values deploy/test-values.yaml \
+  --values deploy/omega-values.yaml \
   --set manager.image.repository=ghcr.io/paprikacd/paprika \
   --set manager.image.tag=<tag> \
   --wait --timeout 5m
@@ -356,6 +357,7 @@ kubectl -n paprika-e2e rollout status deployment/paprika-e2e-controller-manager 
 source .env && helm upgrade paprika-e2e charts/chart/ \
   --namespace paprika-e2e \
   --values deploy/test-values.yaml \
+  --values deploy/omega-values.yaml \
   --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" \
   --wait --timeout 5m
 ```
@@ -425,6 +427,13 @@ response key is camelCase `redirectTo` (guarded by a contract assertion in
 `consent_test.go`). DCR clients live in pod memory — re-register after a
 gateway restart. Cloudflare 1010-blocks python-urllib's user-agent: use
 curl for scripted calls against the public URL.
+
+**Token secret:** on omega, the manager, api-server and gateway read
+`PAPRIKA_AUTH_TOKEN_SECRET` from the `paprika-auth-token` Secret (key
+`token-secret`), which deploy-vke.yml creates from `VKE_AUTH_TOKEN_SECRET`.
+`deploy/omega-values.yaml` replaces test-values' committed dev secret with
+that reference, so an omega upgrade without it signs tokens anyone can mint.
+The chart reads no `auth.tokenSecret` value.
 
 **Auth posture (2026-10-13):** basic auth is DISABLED on omega — the only
 interactive login is OIDC (Google) and the only machine path is OAuth 2.1
