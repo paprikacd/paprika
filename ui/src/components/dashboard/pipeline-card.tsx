@@ -55,7 +55,7 @@ export function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
       : null
 
   return (
-    <Card className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5">
+    <Card className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-dropdown hover:shadow-primary/5">
       <CardContent className="space-y-3 pt-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">

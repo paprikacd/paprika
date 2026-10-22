@@ -74,7 +74,7 @@ export function StatusBadge({ status }: { status?: string }) {
   const config = statusConfig[status]
   if (!config) {
     return (
-      <Badge className="bg-muted text-muted-foreground border-border/50">
+      <Badge className="bg-muted text-muted-foreground border-rule-faint">
         {status}
       </Badge>
     )

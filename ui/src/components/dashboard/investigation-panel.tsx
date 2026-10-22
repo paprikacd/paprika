@@ -155,7 +155,7 @@ export function InvestigationPanel({
               onClick={onClose}
               aria-label="Close investigation"
               data-testid="investigation-close"
-              className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
+              className="rounded-[2px] p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
             >
               <X className="size-4" />
             </button>
@@ -168,7 +168,7 @@ export function InvestigationPanel({
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : error ? (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div className="rounded-[2px] border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           ) : sorted.length === 0 ? (

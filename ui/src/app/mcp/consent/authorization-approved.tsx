@@ -53,7 +53,7 @@ export function AuthorizationApproved({
   return (
     <section
       aria-labelledby="approval-heading"
-      className="w-full max-w-md rounded-2xl border border-border/60 bg-card px-6 py-9 text-center sm:px-9 sm:py-10"
+      className="w-full max-w-md rounded-[2px] border border-border/60 bg-card px-6 py-9 text-center sm:px-9 sm:py-10"
     >
       <div role="status" className="mb-7 inline-flex items-center gap-2 text-sm font-medium text-status-healthy-text">
         <Check aria-hidden="true" className="size-4" />

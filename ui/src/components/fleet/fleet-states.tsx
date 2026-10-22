@@ -72,11 +72,11 @@ export function FleetStateNotice({ status }: FleetStateNoticeProps) {
       aria-atomic="true"
       className={
         compact
-          ? "flex items-start gap-3 border-b border-border bg-muted/50 px-4 py-3 sm:px-6"
-          : "mx-4 my-8 flex min-h-44 items-center gap-4 border border-border bg-card px-5 py-6 sm:mx-6 sm:px-7"
+          ? "flex items-start gap-3 border-b border-rule bg-inset px-4 py-3 sm:px-6"
+          : "mx-4 my-8 flex min-h-44 items-center gap-4 border border-rule bg-card px-5 py-6 sm:mx-6 sm:px-7"
       }
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-[2px] border border-rule bg-background text-muted-foreground">
         <Icon
           aria-hidden="true"
           className={status === "loading" ? "size-5 animate-spin motion-reduce:animate-none" : "size-5"}

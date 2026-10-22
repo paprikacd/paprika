@@ -39,7 +39,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function CantShowRequest({ missing }: { missing: string[] }) {
   return (
     <ConsentShell>
-      <div className="w-full max-w-sm space-y-4 rounded-2xl bg-card p-8 text-center ring-1 ring-foreground/10">
+      <div className="w-full max-w-sm space-y-4 rounded-[2px] bg-card p-8 text-center ring-1 ring-foreground/10">
         <CapsicumMark />
         <h1 className="text-lg font-semibold text-destructive text-balance">
           Can&apos;t show this request
@@ -247,7 +247,7 @@ function ConsentHandler() {
 
   return (
     <ConsentShell>
-      <div className="w-full max-w-md space-y-5 rounded-2xl border border-border/50 bg-card p-8 shadow-lg">
+      <div className="w-full max-w-md space-y-5 rounded-[2px] border border-border/50 bg-card p-8 shadow-lg">
         <div className="space-y-3 text-center">
           <CapsicumMark />
           <h1 className="text-lg font-semibold tracking-tight text-balance">
@@ -263,7 +263,7 @@ function ConsentHandler() {
           </p>
         </div>
 
-        <div className="space-y-2 rounded-lg bg-muted/50 p-3">
+        <div className="space-y-2 rounded-[2px] bg-muted/50 p-3">
           <InfoRow label="Application" value={clientId} />
           <InfoRow label="Will redirect to" value={redirectUri} />
         </div>
@@ -285,7 +285,7 @@ function ConsentHandler() {
             a choice, so it's rendered as a plain grant — a check glyph plus
             a "Granted" label — with nothing that looks clickable.
           */}
-          <div className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-muted/30 p-3">
+          <div className="flex items-start gap-2.5 rounded-[2px] border border-border/60 bg-muted/30 p-3">
             <Check
               aria-hidden="true"
               className="mt-0.5 size-4 shrink-0 text-primary"
@@ -306,7 +306,7 @@ function ConsentHandler() {
           </div>
 
           {writeOffered && (
-            <div className="space-y-2 rounded-lg border border-border/60 p-3">
+            <div className="space-y-2 rounded-[2px] border border-border/60 p-3">
               <label className="flex items-start gap-2.5">
                 <Checkbox
                   checked={grantWrite}
@@ -327,7 +327,7 @@ function ConsentHandler() {
               </label>
 
               {grantWrite && (
-                <p className="rounded-md bg-warning/10 px-2.5 py-2 text-xs text-warning">
+                <p className="rounded-[2px] bg-warning/10 px-2.5 py-2 text-xs text-warning">
                   This lets {clientId} sync applications, approve or reject
                   deployment gates, roll back releases, and control
                   pipelines and rollouts — promoting, aborting, cancelling,
@@ -340,7 +340,7 @@ function ConsentHandler() {
         </div>
 
         {submitError && (
-          <p className="rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive">
+          <p className="rounded-[2px] bg-destructive/10 px-2.5 py-2 text-xs text-destructive">
             {submitError}
           </p>
         )}

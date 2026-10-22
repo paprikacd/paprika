@@ -87,7 +87,7 @@ function CallbackHandler() {
   if (error) {
     return (
       <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 rounded-2xl bg-card p-8 text-center ring-1 ring-foreground/10">
+        <div className="w-full max-w-sm space-y-4 rounded-[2px] bg-card p-8 text-center ring-1 ring-foreground/10">
           <h1 className="text-xl font-bold text-destructive text-balance">Authentication failed</h1>
           <p className="text-sm text-muted-foreground text-pretty">{error}</p>
         </div>

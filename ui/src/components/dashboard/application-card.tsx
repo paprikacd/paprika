@@ -48,7 +48,7 @@ function SyncWindowBadge({ conditions }: { conditions?: Application["conditions"
   const cond = conditions.find((c) => c.type === "SyncWindow")
   if (!cond || cond.status !== "False") return null
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500 border border-amber-500/20">
+    <span className="inline-flex items-center gap-1 rounded-[2px] bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500 border border-amber-500/20">
       <Clock className="size-3" />
       Window blocked
     </span>
@@ -114,7 +114,7 @@ function SourceInfo({ source }: { source?: Application["source"] }) {
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2.5 py-2">
         <SourceIcon type={type} />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
@@ -146,7 +146,7 @@ function SourceInfo({ source }: { source?: Application["source"] }) {
 function SourceHashInfo({ application }: { application: Application }) {
   if (!application.sourceHash && !application.sourceRevision) return null
   return (
-    <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5">
+    <div className="flex items-center gap-2 rounded-[2px] bg-inset px-2 py-1.5">
       <CheckCircle2 className="size-3 shrink-0 text-emerald-500" />
       <div className="min-w-0 flex-1">
         {application.sourceHash && (
@@ -205,7 +205,7 @@ function HealthChecksList({ checks }: { checks: Application["healthChecks"] }) {
         const Icon = statusIcon[check.status] ?? AlertCircle
         const color = statusColor[check.status] ?? "text-muted-foreground"
         return (
-          <div key={check.name} className="flex items-start gap-1.5 rounded-md bg-muted/30 px-2 py-1.5">
+          <div key={check.name} className="flex items-start gap-1.5 rounded-[2px] bg-inset px-2 py-1.5">
             <Icon className={`mt-0.5 size-3 shrink-0 ${color}`} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-1">
@@ -259,7 +259,7 @@ function ResourceSyncList({ resources }: { resources: Application["resources"] }
         const Icon = statusIcon[r.status] ?? AlertCircle
         const color = statusColor[r.status] ?? "text-muted-foreground"
         return (
-          <div key={`${r.kind}/${r.name}`} className="flex items-center gap-1.5 rounded-md bg-muted/30 px-2 py-1">
+          <div key={`${r.kind}/${r.name}`} className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2 py-1">
             <Icon className={`size-3 shrink-0 ${color}`} />
             <span className="text-[10px] font-mono text-muted-foreground">{r.kind}</span>
             <span className="text-[10px] font-medium">{r.name}</span>
@@ -299,7 +299,7 @@ function ResourceHealthList({ healths }: { healths: Application["resourceHealth"
         const Icon = healthIcon[h.health] ?? AlertCircle
         const color = healthColor[h.health] ?? "text-muted-foreground"
         return (
-          <div key={`${h.kind}/${h.name}`} className="flex items-center gap-1.5 rounded-md bg-muted/30 px-2 py-1">
+          <div key={`${h.kind}/${h.name}`} className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2 py-1">
             <Icon className={`size-3 shrink-0 ${color}`} />
             <span className="text-[10px] font-mono text-muted-foreground">{h.kind}</span>
             <span className="text-[10px] font-medium">{h.name}</span>
@@ -335,7 +335,7 @@ function SyncButton({ application, onSynced }: { application: Application; onSyn
       <button
         onClick={handleSync}
         disabled={syncing}
-        className="flex items-center gap-1.5 rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-[background-color,box-shadow] hover:bg-accent hover:text-accent-foreground active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-[2px] border border-rule-faint bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-[background-color,box-shadow] hover:bg-accent hover:text-accent-foreground active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
       >
         {syncing ? (
           <Loader2 className="size-3 animate-spin" />
@@ -360,7 +360,7 @@ function StagePill({ stage }: { stage: Application["stages"][number] }) {
   }
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${phaseColor[stage.phase] ?? "bg-muted text-muted-foreground border-border/50"}`}
+      className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${phaseColor[stage.phase] ?? "bg-muted text-muted-foreground border-rule-faint"}`}
     >
       <span className="flex size-4 items-center justify-center rounded-full bg-background text-[10px] font-semibold ring-1 ring-inset ring-border">
         {stage.ring}
@@ -400,7 +400,7 @@ function ApprovalGateButton({ application, onApproved }: { application: Applicat
           <button
             onClick={() => handleApprove(gate.name)}
             disabled={approving}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary/90 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-[2px] bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary/90 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
           >
             {approving ? <Loader2 className="size-3 animate-spin" /> : <CheckCircle2 className="size-3" />}
             {approving ? "Approving..." : `Approve ${gate.name}`}
@@ -461,7 +461,7 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
   const detailHref = `/dashboard/application?namespace=${encodeURIComponent(application.namespace)}&name=${encodeURIComponent(application.name)}`
 
   return (
-    <Card className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5">
+    <Card className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-dropdown hover:shadow-primary/5">
       <CardContent className="space-y-3 pt-4">
         <div className="flex items-start justify-between gap-2">
           <Link href={detailHref} className="min-w-0 flex-1">
@@ -478,7 +478,7 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
             {onSynced && <SyncButton application={application} onSynced={onSynced} />}
             <Link
               href={detailHref}
-              className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-background px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="inline-flex items-center gap-1 rounded-[2px] border border-rule-faint bg-background px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               View
               <ArrowRight className="size-3" />
@@ -493,7 +493,7 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
 
         <div className="grid grid-cols-2 gap-2">
           {application.currentStage && (
-            <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+            <div className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2.5 py-2">
               <Package className="size-3.5 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] text-muted-foreground">Stage</p>
@@ -503,7 +503,7 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
               </div>
             </div>
           )}
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+          <div className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2.5 py-2">
             <ExternalLink className="size-3.5 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <p className="text-[11px] text-muted-foreground">Strategy</p>
@@ -515,7 +515,7 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
         </div>
 
         {application.releaseRef && (
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+          <div className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2.5 py-2">
             <Target className="size-3.5 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <p className="text-[11px] text-muted-foreground">Release</p>
@@ -533,7 +533,7 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
 
         {application.revision && (
           <div className="flex items-center gap-1.5">
-            <code className="rounded bg-muted/50 px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground">
+            <code className="rounded bg-inset px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground">
               @{application.revision.slice(0, 7)}
             </code>
             <span className="text-[10px] text-muted-foreground">

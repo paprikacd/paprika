@@ -261,7 +261,7 @@ export function FleetTreemap({
       aria-label="Fleet map"
       className="px-4 py-6 sm:px-6"
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-rule pb-4">
         <div>
           <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-primary">
             Impact topology

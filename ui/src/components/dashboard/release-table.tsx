@@ -39,7 +39,7 @@ function ReleaseCard({ release }: { release: Release }) {
   const totalHooks = release.hookStatuses.length
 
   return (
-    <Card className="transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5">
+    <Card className="transition-all duration-200 hover:ring-primary/30 hover:shadow-dropdown hover:shadow-primary/5">
       <CardContent className="space-y-3 pt-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -54,7 +54,7 @@ function ReleaseCard({ release }: { release: Release }) {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+          <div className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2.5 py-2">
             <GitBranch className="size-3.5 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <p className="text-[11px] text-muted-foreground">Pipeline</p>
@@ -63,7 +63,7 @@ function ReleaseCard({ release }: { release: Release }) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+          <div className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2.5 py-2">
             <Target className="size-3.5 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <p className="text-[11px] text-muted-foreground">Target stage</p>
@@ -75,7 +75,7 @@ function ReleaseCard({ release }: { release: Release }) {
         </div>
 
         {release.currentStage && (
-          <div className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2">
+          <div className="flex items-center gap-1.5 rounded-[2px] border border-rule-faint px-3 py-2">
             <Layers className="size-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">Current stage:</span>
             <span className="font-mono text-xs font-medium">{release.currentStage}</span>
@@ -85,14 +85,14 @@ function ReleaseCard({ release }: { release: Release }) {
         {(release.rolloutRef || release.canaryWeight > 0 || totalHooks > 0 || release.renderedManifestSnapshot) && (
           <div className="grid gap-2">
             {release.rolloutRef && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2">
+              <div className="flex items-center gap-1.5 rounded-[2px] border border-rule-faint px-3 py-2">
                 <Boxes className="size-3.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Rollout</span>
                 <span className="truncate font-mono text-xs font-medium">{release.rolloutRef}</span>
               </div>
             )}
             {release.canaryWeight > 0 && (
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 rounded-[2px] border border-rule-faint px-3 py-2">
                 <div className="flex items-center gap-1.5">
                   <Workflow className="size-3.5 text-muted-foreground" />
                   <span className="text-xs font-medium">Canary {release.canaryWeight}%</span>
@@ -101,14 +101,14 @@ function ReleaseCard({ release }: { release: Release }) {
               </div>
             )}
             {release.renderedManifestSnapshot && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2">
+              <div className="flex items-center gap-1.5 rounded-[2px] border border-rule-faint px-3 py-2">
                 <FileText className="size-3.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Snapshot</span>
                 <span className="truncate font-mono text-xs font-medium">{release.renderedManifestSnapshot}</span>
               </div>
             )}
             {totalHooks > 0 && (
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 rounded-[2px] border border-rule-faint px-3 py-2">
                 <span className="text-xs text-muted-foreground">Hooks</span>
                 <span className="font-mono text-xs font-medium tabular-nums">
                   {completedHooks}/{totalHooks}
@@ -123,7 +123,7 @@ function ReleaseCard({ release }: { release: Release }) {
         )}
 
         {release.rolledBackTo && (
-          <div className="flex items-center gap-1.5 rounded-lg border border-orange-500/20 bg-orange-500/10 px-3 py-2">
+          <div className="flex items-center gap-1.5 rounded-[2px] border border-orange-500/20 bg-orange-500/10 px-3 py-2">
             <RotateCcw className="size-3.5 text-orange-400" />
             <span className="text-xs text-orange-400">
               Rolled back to <span className="font-mono font-medium">{release.rolledBackTo}</span>

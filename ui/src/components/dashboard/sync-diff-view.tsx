@@ -42,7 +42,7 @@ const filterLabels: Record<DiffFilter, string> = {
 /** Three columns: desired line number, live line number, the text itself. */
 const diffGrid = "grid grid-cols-[3.25rem_3.25rem_minmax(0,1fr)]"
 
-export function summarizeUnifiedDiff(diff: string): DiffSummary {
+export function summarizeUnifiedDiff(diff: string | undefined): DiffSummary {
   return parseUnifiedDiff(diff).reduce<DiffSummary>(
     (summary, line) => {
       if (line.kind === "add") summary.additions += 1
@@ -55,8 +55,10 @@ export function summarizeUnifiedDiff(diff: string): DiffSummary {
   )
 }
 
-export function parseUnifiedDiff(diff: string): ParsedDiffLine[] {
-  if (!diff.trim()) return []
+export function parseUnifiedDiff(diff: string | undefined): ParsedDiffLine[] {
+  // A resource without a diff is not an error: the server simply had nothing
+  // to compare, and the view says so rather than failing to render.
+  if (!diff || !diff.trim()) return []
   let oldLine = 0
   let newLine = 0
 

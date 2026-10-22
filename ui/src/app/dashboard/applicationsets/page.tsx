@@ -32,7 +32,7 @@ function SkeletonCard() {
             <div className="h-4 w-32 rounded bg-muted animate-pulse" />
             <div className="h-3 w-24 rounded bg-muted animate-pulse" />
           </div>
-          <div className="h-5 w-20 rounded-full bg-muted animate-pulse" />
+          <div className="h-5 w-20 rounded-[2px] bg-muted animate-pulse" />
         </div>
       </CardContent>
     </Card>
@@ -91,7 +91,7 @@ function ApplicationSetList() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-[2px] border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -105,7 +105,7 @@ function ApplicationSetList() {
       ) : sets.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+            <div className="flex size-12 items-center justify-center rounded-[2px] bg-muted">
               <FolderTree className="size-5 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium">No application sets yet</p>
@@ -121,7 +121,7 @@ function ApplicationSetList() {
             return (
               <Card
                 key={`${set.namespace}/${set.name}`}
-                className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5"
+                className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-dropdown hover:shadow-primary/5"
               >
                 <CardContent className="space-y-4 pt-4">
                   <div className="flex items-start justify-between gap-2">
@@ -136,7 +136,7 @@ function ApplicationSetList() {
                     <StatusBadge status={set.phase} />
                   </div>
 
-                  <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+                  <div className="flex items-center gap-1.5 rounded-[2px] bg-inset px-2.5 py-2">
                     <Rocket className="size-3.5 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] text-muted-foreground">Applications</p>
@@ -148,7 +148,7 @@ function ApplicationSetList() {
 
                   <Link
                     href={detailHref}
-                    className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    className="inline-flex w-full items-center justify-center gap-1 rounded-[2px] border border-rule-faint bg-background px-2 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                   >
                     View
                     <ArrowRight className="size-3" />

@@ -27,6 +27,18 @@ const sampleDiff = [
 ].join("\n")
 
 describe("unified diff parsing", () => {
+  it("treats a missing diff as no differences rather than a failure", () => {
+    // The resource inspector hands over whatever the server returned; a
+    // resource without a diff has no diff field at all.
+    expect(parseUnifiedDiff(undefined)).toEqual([])
+    expect(summarizeUnifiedDiff(undefined)).toEqual({
+      additions: 0,
+      deletions: 0,
+      hunks: 0,
+      context: 0,
+    })
+  })
+
   it("summarizes additions, deletions, hunks, and context lines", () => {
     expect(summarizeUnifiedDiff(sampleDiff)).toEqual({
       additions: 2,

@@ -105,7 +105,7 @@ export function NotificationCenter() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="relative rounded-[2px] p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         aria-label="Notifications"
       >
         <Bell className="size-5" />
@@ -117,7 +117,7 @@ export function NotificationCenter() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border bg-background p-3 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-[2px] border bg-background p-3 shadow-dropdown">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-medium">Notifications</p>
             <div className="flex items-center gap-1">
@@ -147,7 +147,7 @@ export function NotificationCenter() {
                 <div
                   key={n.id}
                   onClick={() => setReadIds((prev) => new Set([...prev, n.id]))}
-                  className={`cursor-pointer rounded-md border p-2 text-left transition-colors hover:bg-muted ${
+                  className={`cursor-pointer rounded-[2px] border p-2 text-left transition-colors hover:bg-muted ${
                     isUnread ? "border-l-4 border-l-primary bg-primary/5" : ""
                   }`}
                 >

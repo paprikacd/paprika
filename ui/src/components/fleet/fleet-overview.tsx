@@ -67,7 +67,7 @@ export function FleetOverview({
 
   return (
     <section aria-labelledby="fleet-overview-title" className="space-y-4">
-      <div className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-rule pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.18em] text-primary">
             Authorized fleet
@@ -78,7 +78,7 @@ export function FleetOverview({
         </div>
         <Link
           href={inventoryHref}
-          className="inline-flex min-h-11 items-center justify-center border border-border bg-card px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+          className="inline-flex min-h-11 items-center justify-center border border-rule bg-card px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
         >
           Open application inventory
         </Link>
@@ -86,9 +86,9 @@ export function FleetOverview({
 
       <section
         aria-labelledby="fleet-health-title"
-        className="border border-border bg-card"
+        className="border border-rule bg-card"
       >
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-rule px-4 py-3 sm:px-5">
           <h3 id="fleet-health-title" className="text-sm font-semibold text-foreground">
             Fleet health posture
           </h3>
@@ -111,8 +111,8 @@ export function FleetOverview({
       </section>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <section aria-labelledby="active-change-title" className="border border-border bg-card">
-          <div className="border-b border-border px-4 py-3 sm:px-5">
+        <section aria-labelledby="active-change-title" className="border border-rule bg-card">
+          <div className="border-b border-rule px-4 py-3 sm:px-5">
             <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Change surface
             </p>
@@ -125,13 +125,13 @@ export function FleetOverview({
             <OverviewCount label="Active rollouts" value={summary.activeRollouts} />
             <OverviewCount label="Blocked gates" value={BigInt(summary.blockedGates)} />
           </div>
-          <p className="border-t border-border px-4 py-2 text-[0.6875rem] leading-5 text-muted-foreground sm:px-5">
+          <p className="border-t border-rule px-4 py-2 text-[0.6875rem] leading-5 text-muted-foreground sm:px-5">
             {applications.length} highest-impact applications loaded; blocked-gate count reflects this window.
           </p>
         </section>
 
-        <section aria-labelledby="connection-failures-title" className="border border-border bg-card">
-          <div className="border-b border-border px-4 py-3 sm:px-5">
+        <section aria-labelledby="connection-failures-title" className="border border-rule bg-card">
+          <div className="border-b border-rule px-4 py-3 sm:px-5">
             <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Dependency posture
             </p>
@@ -144,15 +144,15 @@ export function FleetOverview({
             <OverviewCount label="Cluster failures" value={BigInt(summary.clusterFailures)} />
             <OverviewCount label="Observability failures" value={BigInt(summary.observabilityFailures)} />
           </div>
-          <p className="border-t border-border px-4 py-2 text-[0.6875rem] leading-5 text-muted-foreground sm:px-5">
+          <p className="border-t border-rule px-4 py-2 text-[0.6875rem] leading-5 text-muted-foreground sm:px-5">
             {applications.length} highest-impact applications loaded; connection counts reflect this window.{" "}
             Observability sources that are not configured are absent, not failed.
           </p>
         </section>
       </div>
 
-      <section aria-labelledby="attention-title" className="border border-border bg-card">
-        <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border px-4 py-3 sm:px-5">
+      <section aria-labelledby="attention-title" className="border border-rule bg-card">
+        <div className="flex flex-wrap items-end justify-between gap-2 border-b border-rule px-4 py-3 sm:px-5">
           <div>
             <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-primary">
               Server-ranked impact
@@ -180,7 +180,7 @@ export function FleetOverview({
                 <li key={`${identity.namespace}/${identity.name}`}>
                   <Link
                     href={`/dashboard/application?${query.toString()}`}
-                    className="grid min-h-16 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 sm:px-5"
+                    className="grid min-h-16 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-inset sm:px-5"
                   >
                     <span aria-hidden="true" className="font-mono text-sm font-semibold tabular-nums text-primary">
                       {String(index + 1).padStart(2, "0")}

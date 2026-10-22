@@ -36,7 +36,7 @@ export function ToastStack() {
       {toasts.map((t) => {
         const Icon = icons[t.phase] || Info
         return (
-          <div key={t.id} className="flex w-80 items-start gap-3 rounded-lg border bg-background p-3 shadow-lg">
+          <div key={t.id} className="flex w-80 items-start gap-3 rounded-[2px] border bg-background p-3 shadow-dropdown">
             <Icon className="mt-0.5 size-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">{t.title}</p>

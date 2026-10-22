@@ -32,7 +32,7 @@ function SkeletonCard() {
             <div className="h-4 w-32 rounded bg-muted animate-pulse" />
             <div className="h-3 w-24 rounded bg-muted animate-pulse" />
           </div>
-          <div className="h-5 w-20 rounded-full bg-muted animate-pulse" />
+          <div className="h-5 w-20 rounded-[2px] bg-muted animate-pulse" />
         </div>
       </CardContent>
     </Card>
@@ -104,7 +104,7 @@ function ApplicationSetDetail() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-[2px] border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}

@@ -68,6 +68,21 @@ navigates, that ⌘K opens it and Escape closes it, that the tooltip stays
 inside the viewport, and that the detail rail's divider states its ratio,
 moves with both the keyboard and a pointer drag, and survives a reload.
 
+### One vocabulary for the console
+
+The console speaks in square corners, hairline rules and recessed surfaces:
+`rounded-[2px]` for anything that holds content, `border-rule` for a
+hairline, `bg-inset` for a recessed panel, and `shadow-dropdown` for
+something that genuinely floats. A batch of surfaces carried over from the
+component library's defaults — rounded cards, pill badges, `border-border`,
+`bg-muted` — was brought onto that vocabulary so the console reads as one
+thing. The values behind those names are the same ones the console already
+used; only the naming changed, plus the corners, which were the difference
+the eye could actually see.
+
+Dots, progress bars and skeletons keep their circles. A circle there is a
+shape, not a container.
+
 ### Console canvas typography
 
 The fleet treemap draws to a canvas, so it cannot inherit Tailwind tokens. Its

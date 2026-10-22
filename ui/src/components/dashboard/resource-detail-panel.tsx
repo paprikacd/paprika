@@ -270,7 +270,7 @@ function ManifestView({ manifest, label }: { manifest: string; label: string }) 
   )
 }
 
-function DiffView({ diff }: { diff: string }) {
+function DiffView({ diff }: { diff?: string }) {
   const lines = useMemo(() => parseUnifiedDiff(diff), [diff])
   const summary = useMemo(() => summarizeUnifiedDiff(diff), [diff])
   const changed = summary.additions + summary.deletions
