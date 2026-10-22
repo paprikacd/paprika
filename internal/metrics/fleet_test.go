@@ -144,8 +144,8 @@ func TestFleetMetricInstancesKeepGaugeStateIsolated(t *testing.T) {
 	first.recordIndexState(41, 9)
 	requireFleetGaugePair(t, collectFleetMetrics(t, firstReader), 41, 9,
 		"the first meter must expose its installed snapshot")
-	requireFleetGaugePair(t, collectFleetMetrics(t, secondReader), 0, 0,
-		"a separately constructed meter must not inherit process-global gauge state")
+	require.Empty(t, collectFleetMetrics(t, secondReader),
+		"a separately constructed meter must not expose fleet gauges before it installs a snapshot")
 
 	second.recordIndexState(7, 2)
 	requireFleetGaugePair(t, collectFleetMetrics(t, firstReader), 41, 9,

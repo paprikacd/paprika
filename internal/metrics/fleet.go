@@ -66,10 +66,12 @@ type fleetInstruments struct {
 	registration        metric.Registration
 	state               atomic.Pointer[fleetIndexMetricState]
 	degraded            atomic.Int64
+	stateSet            atomic.Bool
 }
 
 var defaultFleetInstruments = mustNewFleetInstruments(meter)
 
+//nolint:cyclop // flat list of instrument constructions; splitting would only scatter error handling.
 func newFleetInstruments(m metric.Meter) (*fleetInstruments, error) {
 	indexBuildDuration, err := m.Float64Histogram(
 		"paprika.fleet.index.build.duration",
@@ -152,6 +154,11 @@ func newFleetInstruments(m metric.Meter) (*fleetInstruments, error) {
 	}
 	instruments.state.Store(&fleetIndexMetricState{})
 	registration, err := m.RegisterCallback(func(_ context.Context, observer metric.Observer) error {
+		if !instruments.stateSet.Load() {
+			// A component without a fleet index must not report zero items or
+			// a not-degraded index; omit the series instead.
+			return nil
+		}
 		state := instruments.state.Load()
 		observer.ObserveInt64(instruments.indexItems, state.itemCount)
 		observer.ObserveInt64(instruments.indexGeneration, state.generation)
@@ -229,10 +236,12 @@ func RecordFleetIndexDegraded(degraded bool) {
 	if degraded {
 		value = 1
 	}
+	defaultFleetInstruments.stateSet.Store(true)
 	defaultFleetInstruments.degraded.Store(value)
 }
 
 func (f *fleetInstruments) recordIndexState(itemCount, generation int64) {
+	f.stateSet.Store(true)
 	next := &fleetIndexMetricState{
 		itemCount:  max(itemCount, 0),
 		generation: max(generation, 0),
