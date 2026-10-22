@@ -248,13 +248,15 @@ type cliConfig struct {
 	ReconcileAppRate                float64       `mapstructure:"reconcile-app-rate"`
 	ReconcileAppBurst               int           `mapstructure:"reconcile-app-burst"`
 
-	MCPEnabled           bool          `mapstructure:"mcp-enabled"`
-	MCPBindAddress       string        `mapstructure:"mcp-bind-address"`
-	MCPAccessTokenTTL    time.Duration `mapstructure:"mcp-access-token-ttl"`
-	MCPRefreshTokenTTL   time.Duration `mapstructure:"mcp-refresh-token-ttl"`
-	MCPOAuthClientID     string        `mapstructure:"mcp-oauth-client-id"`
-	MCPOAuthRedirectURIs []string      `mapstructure:"mcp-oauth-redirect-uris"`
-	MCPPublicURL         string        `mapstructure:"mcp-public-url"`
+	MCPEnabled                 bool          `mapstructure:"mcp-enabled"`
+	MCPBindAddress             string        `mapstructure:"mcp-bind-address"`
+	MCPAccessTokenTTL          time.Duration `mapstructure:"mcp-access-token-ttl"`
+	MCPRefreshTokenTTL         time.Duration `mapstructure:"mcp-refresh-token-ttl"`
+	MCPOAuthClientID           string        `mapstructure:"mcp-oauth-client-id"`
+	MCPOAuthRedirectURIs       []string      `mapstructure:"mcp-oauth-redirect-uris"`
+	MCPPublicURL               string        `mapstructure:"mcp-public-url"`
+	MCPClientRegistryConfigMap string        `mapstructure:"mcp-client-registry-configmap"`
+	MCPClientRegistryNamespace string        `mapstructure:"mcp-client-registry-namespace"`
 
 	// ZapOptions is bound directly by the zap flag set, not through viper.
 	ZapOptions zap.Options `mapstructure:"-"`
@@ -784,6 +786,8 @@ func registerMCPFlags(fs *pflag.FlagSet) {
 	fs.StringSlice("mcp-oauth-redirect-uris", nil,
 		"Comma-separated exact-match allowlist of OAuth redirect URIs accepted by the MCP "+
 			"authorization server. Required when --mcp-enabled=true.")
+	fs.String("mcp-client-registry-configmap", "", "Pre-created ConfigMap retaining public dynamic OAuth client registrations across restarts.")
+	fs.String("mcp-client-registry-namespace", "", "Namespace of the persistent MCP client registry ConfigMap.")
 }
 
 func registerRepoServerFlags(fs *pflag.FlagSet) {
@@ -1058,7 +1062,14 @@ func buildAPIExtraMuxHandlers(
 			return nil, nil, fmt.Errorf("create MCP cache: %w", err)
 		}
 	}
-	mcpHandlers, err := buildMCPHandlers(apiCtx, cfg, connectHandler, clients.authCfg, mcpCache)
+	var clientRegistry mcp.DynamicClientRegistry
+	if cfg.MCPEnabled {
+		clientRegistry, err = newMCPClientRegistry(apiCtx, cfg, clients.client, "/mcp")
+		if err != nil {
+			return nil, mcpCache, err
+		}
+	}
+	mcpHandlers, err := buildMCPHandlers(apiCtx, cfg, connectHandler, clients.authCfg, mcpCache, clientRegistry)
 	if err != nil {
 		return nil, mcpCache, err
 	}
@@ -1367,6 +1378,7 @@ func buildMCPHandlers(
 	connectHandler http.Handler,
 	authCfg auth.Config,
 	mcpCache *cache.Cache,
+	clientRegistry mcp.DynamicClientRegistry,
 ) ([]func(*http.ServeMux), error) {
 	if !cfg.MCPEnabled {
 		return nil, nil
@@ -1420,19 +1432,20 @@ func buildMCPHandlers(
 	}
 
 	srv, err := mcp.NewServer(mcp.ServerConfig{
-		Registry:             registry,
-		Authenticator:        authenticator,
-		ConsoleAuthenticator: consoleAuthenticator,
-		Confirmer:            mcp.NewConfirmer(mcpCache, mcpConfirmationTTL),
-		Auditor:              auditor,
-		Cache:                mcpCache,
-		Secret:               authCfg.TokenSecret,
-		PublicURL:            cfg.MCPPublicURL,
-		ClientID:             cfg.MCPOAuthClientID,
-		RedirectURIs:         cfg.MCPOAuthRedirectURIs,
-		AccessTTL:            cfg.MCPAccessTokenTTL,
-		RefreshTTL:           cfg.MCPRefreshTokenTTL,
-		Client:               mcpClient,
+		Registry:              registry,
+		Authenticator:         authenticator,
+		ConsoleAuthenticator:  consoleAuthenticator,
+		Confirmer:             mcp.NewConfirmer(mcpCache, mcpConfirmationTTL),
+		Auditor:               auditor,
+		Cache:                 mcpCache,
+		Secret:                authCfg.TokenSecret,
+		PublicURL:             cfg.MCPPublicURL,
+		ClientID:              cfg.MCPOAuthClientID,
+		RedirectURIs:          cfg.MCPOAuthRedirectURIs,
+		AccessTTL:             cfg.MCPAccessTokenTTL,
+		RefreshTTL:            cfg.MCPRefreshTokenTTL,
+		DynamicClientRegistry: clientRegistry,
+		Client:                mcpClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: build server: %w", err)

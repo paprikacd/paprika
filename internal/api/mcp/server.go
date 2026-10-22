@@ -63,6 +63,9 @@ type ServerConfig struct {
 	RedirectURIs  []string
 	AccessTTL     time.Duration
 	RefreshTTL    time.Duration
+	// DynamicClientRegistry persists public registrations across component
+	// replacement. Nil retains the in-memory local/test implementation.
+	DynamicClientRegistry DynamicClientRegistry
 
 	// AllowDynamicRegistrationOnly permits omitting both static ClientID and
 	// RedirectURIs. It is an explicit opt-in for a DCR-only server; a partial
@@ -174,8 +177,9 @@ type Server struct {
 	// dynamic registration). Real connectors (Claude, Codex) each register
 	// their own client_id + redirect URIs at connect time; the static
 	// clientID/redirectURIs pair remains for first-party clients.
-	dynMu      sync.Mutex
-	dynClients map[string][]string
+	dynMu          sync.Mutex
+	dynClients     map[string][]string
+	clientRegistry DynamicClientRegistry
 
 	secret     []byte
 	accessTTL  time.Duration
@@ -238,6 +242,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		clientID:                cfg.ClientID,
 		redirectURIs:            cfg.RedirectURIs,
 		dynClients:              map[string][]string{},
+		clientRegistry:          cfg.DynamicClientRegistry,
 		secret:                  cfg.Secret,
 		accessTTL:               defaultDuration(cfg.AccessTTL, defaultAccessTTL),
 		refreshTTL:              defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),

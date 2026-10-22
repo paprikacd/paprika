@@ -272,6 +272,10 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	if cfg.AuditLogEnabled {
 		auditor = audit.NewLogAuditor()
 	}
+	clientRegistry, err := newMCPClientRegistry(ctx, cfg, k8sClient, observabilityGatewayRoutePrefix+"/mcp")
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	srv, err := mcp.NewServer(mcp.ServerConfig{
 		Registry:                     registry,
 		Authenticator:                authenticator,
@@ -286,6 +290,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		AllowDynamicRegistrationOnly: cfg.MCPOAuthClientID == "" && len(cfg.MCPOAuthRedirectURIs) == 0,
 		AccessTTL:                    cfg.MCPAccessTokenTTL,
 		RefreshTTL:                   cfg.MCPRefreshTokenTTL,
+		DynamicClientRegistry:        clientRegistry,
 		RoutePrefix:                  observabilityGatewayRoutePrefix,
 		ProtocolPath:                 observabilityGatewayRoutePrefix + "/mcp",
 		Audience:                     mcp.ObservabilityTokenAudience,

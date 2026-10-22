@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -46,7 +47,7 @@ func TestDCROnlyRequiresExplicitOptInAndCompleteStaticPair(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.False(t, srv.clientIDAllowed(""))
+			assert.False(t, srv.clientIDAllowed(context.Background(), ""))
 			assert.Empty(t, srv.dynClients, "startup must not register any client")
 		})
 	}
@@ -66,9 +67,9 @@ func TestDCROnlyObserveRegistrationStillRequiresConsentAndPKCE(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(registration.Body.Bytes(), &client))
 	require.NotEmpty(t, client.ClientID)
-	assert.True(t, srv.clientIDAllowed(client.ClientID))
-	assert.False(t, srv.clientIDAllowed(""))
-	assert.False(t, srv.clientIDAllowed("unregistered"))
+	assert.True(t, srv.clientIDAllowed(context.Background(), client.ClientID))
+	assert.False(t, srv.clientIDAllowed(context.Background(), ""))
+	assert.False(t, srv.clientIDAllowed(context.Background(), "unregistered"))
 	assert.Len(t, srv.dynClients, 1)
 
 	consent := consentRequest{ClientID: client.ClientID, RedirectURI: redirect, Scopes: []string{"paprika:observe"}, Decision: decisionApprove}

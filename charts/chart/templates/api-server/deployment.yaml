@@ -115,6 +115,10 @@ spec:
         - --mcp-refresh-token-ttl={{ .Values.mcp.refreshTokenTTL }}
         - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
         - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}
+        {{- if .Values.mcp.oauth.persistClients }}
+        - --mcp-client-registry-configmap={{ include "paprika.resourceName" (dict "suffix" "mcp-clients" "context" $) }}
+        - --mcp-client-registry-namespace={{ .Release.Namespace }}
+        {{- end }}
         {{- end }}
         {{- range .Values.apiServer.args }}
         - {{ . }}

@@ -49,7 +49,7 @@ func TestBuildMCPHandlersIsolatesDeploymentIssuers(t *testing.T) {
 				MCPOAuthClientID:     "instance-test-client",
 				MCPOAuthRedirectURIs: []string{"http://localhost:8791/callback"},
 				MCPPublicURL:         publicURL,
-			}, http.NewServeMux(), auth.Config{Enabled: true, TokenSecret: secret}, store)
+			}, http.NewServeMux(), auth.Config{Enabled: true, TokenSecret: secret}, store, nil)
 			require.NoError(t, err)
 			mux := http.NewServeMux()
 			for _, register := range handlers {
