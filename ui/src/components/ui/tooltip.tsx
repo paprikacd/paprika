@@ -72,10 +72,10 @@ export function Tooltip({
 
   const close = useCallback(() => {
     clearTimers()
-    setOpen((wasOpen) => {
-      if (wasOpen) closedAt.current = Date.now()
-      return false
-    })
+    // The warm handoff is measured from the moment the bubble left, so the
+    // next trigger nearby opens without waiting again.
+    closedAt.current = Date.now()
+    setOpen(false)
   }, [clearTimers])
 
   const show = useCallback(() => {
