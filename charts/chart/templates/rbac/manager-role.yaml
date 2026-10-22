@@ -169,6 +169,22 @@ rules:
   - get
   - list
   - watch
+# The diff engine compares cluster-scoped configuration objects by name — a
+# PriorityClass or a GKE ComputeClass rendered by an Application — without a
+# cluster-wide LIST/WATCH informer. Each read is a direct GET of a desired
+# name, so only get is granted.
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get
+- apiGroups:
+  - cloud.google.com
+  resources:
+  - computeclasses
+  verbs:
+  - get
 # The api-server's CreateObservabilityProvider RPC stores the wizard-supplied
 # credential document as a new Secret (stringData, the credentials key) and
 # deletes it best-effort when the admission webhook then rejects the CR — it

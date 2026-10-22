@@ -105,6 +105,12 @@ rules:
   - update
   - watch
 - apiGroups:
+  - cloud.google.com
+  resources:
+  - computeclasses
+  verbs:
+  - get
+- apiGroups:
   - clusters.paprika.io
   resources:
   - clusters
@@ -388,3 +394,9 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get

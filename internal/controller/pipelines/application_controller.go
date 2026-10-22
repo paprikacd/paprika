@@ -337,6 +337,10 @@ func NewApplicationReconciler(c client.Client) *ApplicationReconciler {
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
+// The diff engine compares these cluster-scoped configuration objects by name
+// (named reads, no LIST/WATCH informer), so only get on the desired names.
+// +kubebuilder:rbac:groups=scheduling.k8s.io,resources=priorityclasses,verbs=get
+// +kubebuilder:rbac:groups=cloud.google.com,resources=computeclasses,verbs=get
 
 // Reconcile handles Application reconciliation.
 func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
