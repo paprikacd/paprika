@@ -512,7 +512,7 @@ func (r *Rebuilder) failRebuild() {
 }
 
 func (r *Rebuilder) storeDegradedHealth() {
-	r.index.health.Store(&HealthState{Degraded: true, Reason: rebuildFailureReason})
+	r.index.setHealth(HealthState{Degraded: true, Reason: rebuildFailureReason})
 }
 
 //nolint:cyclop // required typed cache lists each have an explicit sanitized failure path.

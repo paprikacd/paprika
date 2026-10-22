@@ -2296,6 +2296,97 @@ export const GetSystemStatusResponse = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.GetSystemHealthRequest
+ */
+export const GetSystemHealthRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetSystemHealthRequest",
+  () => [
+    { no: 1, name: "stuck_release_seconds", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SystemHealthCheck
+ */
+export const SystemHealthCheck = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SystemHealthCheck",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.StaleApplication
+ */
+export const StaleApplication = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.StaleApplication",
+  () => [
+    { no: 1, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "observed_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 4, name: "lag_generations", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.StuckRelease
+ */
+export const StuckRelease = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.StuckRelease",
+  () => [
+    { no: 1, name: "release", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "age_seconds", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ControllerHealth
+ */
+export const ControllerHealth = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ControllerHealth",
+  () => [
+    { no: 1, name: "present", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "desired_replicas", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 3, name: "ready_replicas", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "available_replicas", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "restart_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "ready", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetSystemHealthResponse
+ */
+export const GetSystemHealthResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetSystemHealthResponse",
+  () => [
+    { no: 1, name: "status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "server_version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "server_git_commit", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "server_build_date", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "applications_total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 6, name: "applications_healthy", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 7, name: "applications_progressing", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 8, name: "applications_degraded", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 9, name: "applications_failed", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 10, name: "applications_unknown", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 11, name: "applications_stale", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 12, name: "applications_release_retries_exhausted", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 13, name: "releases_stuck", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 14, name: "stale_applications", kind: "message", T: StaleApplication, repeated: true },
+    { no: 15, name: "stuck_releases", kind: "message", T: StuckRelease, repeated: true },
+    { no: 16, name: "controller", kind: "message", T: ControllerHealth },
+    { no: 17, name: "checks", kind: "message", T: SystemHealthCheck, repeated: true },
+    { no: 18, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 19, name: "fleet_index_degraded", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 20, name: "fleet_index_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.QueryApplicationsRequest
  */
 export const QueryApplicationsRequest = /*@__PURE__*/ proto3.makeMessageType(

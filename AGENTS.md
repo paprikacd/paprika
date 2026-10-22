@@ -202,6 +202,17 @@ helm upgrade paprika-e2e charts/chart/ \
 - DeepHost is Healthy with outOfSync=0, all resources Synced.
 - The controller-manager runs an immutable GHCR digest.
 - Metrics live at `:8443/metrics` (HTTP, `--metrics-secure=false`).
+- Post-deployment control-plane health is `paprika health --fail-on-degraded`
+  (MCP `get_system_health`, RPC `GetSystemHealth`). It combines
+  controller-manager readiness/restarts, application state, reconcile lag
+  (`generation` vs `observedGeneration`), exhausted release retries, active
+  non-terminal releases older than 30m (`AwaitingApproval` excluded), and
+  fleet-index readiness. The raw series are
+  `paprika_controller_last_reconcile_timestamp_seconds`,
+  `paprika_application_last_reconcile_timestamp_seconds`,
+  `paprika_application_reconcile_lag`, `paprika_applications_stale`,
+  `paprika_applications_release_retries_exhausted`, `paprika_releases_stuck`,
+  and `paprika_fleet_index_degraded`.
 - api-server e2e resources are pinned to 100m/192Mi via
   `deploy/test-values.yaml` (chart defaults are 1000m/256Mi) — the 0.1-core
   cap makes bcrypt basic auth ~1s/request and amplifies GC pressure, so
@@ -310,6 +321,14 @@ helm upgrade paprika-e2e charts/chart/ \
 - `paprika_application_phase_total{application, namespace, phase}` — phase
   transitions (counter).
 - `paprika_reconcile_total{controller, result}` — reconciliation count.
+- `paprika_application_reconcile_lag{application, namespace}` /
+  `paprika_applications_stale` — spec generations behind the controller's
+  observed generation.
+- `paprika_controller_last_reconcile_timestamp_seconds{controller, result}` /
+  `paprika_application_last_reconcile_timestamp_seconds{application, namespace}`
+  — last reconcile attempt, for detecting a wedged controller.
+- `paprika_applications_release_retries_exhausted`, `paprika_releases_stuck`,
+  `paprika_fleet_index_degraded` — control-plane health signals.
 
 ## Commands
 

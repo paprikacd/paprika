@@ -61,9 +61,11 @@ type fleetInstruments struct {
 	queryResults        metric.Int64Histogram
 	indexItems          metric.Int64ObservableGauge
 	indexGeneration     metric.Int64ObservableGauge
+	indexDegraded       metric.Int64ObservableGauge
 	rebuildFailures     metric.Int64Counter
 	registration        metric.Registration
 	state               atomic.Pointer[fleetIndexMetricState]
+	degraded            atomic.Int64
 }
 
 var defaultFleetInstruments = mustNewFleetInstruments(meter)
@@ -121,6 +123,14 @@ func newFleetInstruments(m metric.Meter) (*fleetInstruments, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create fleet index generation: %w", err)
 	}
+	indexDegraded, err := m.Int64ObservableGauge(
+		"paprika.fleet.index.degraded",
+		metric.WithDescription("Whether the installed fleet index health is degraded"),
+		metric.WithUnit("{state}"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create fleet index degraded: %w", err)
+	}
 	rebuildFailures, err := m.Int64Counter(
 		"paprika.fleet.index.rebuild.failures",
 		metric.WithDescription("Number of failed fleet index rebuilds"),
@@ -137,6 +147,7 @@ func newFleetInstruments(m metric.Meter) (*fleetInstruments, error) {
 		queryResults:        queryResults,
 		indexItems:          indexItems,
 		indexGeneration:     indexGeneration,
+		indexDegraded:       indexDegraded,
 		rebuildFailures:     rebuildFailures,
 	}
 	instruments.state.Store(&fleetIndexMetricState{})
@@ -144,8 +155,9 @@ func newFleetInstruments(m metric.Meter) (*fleetInstruments, error) {
 		state := instruments.state.Load()
 		observer.ObserveInt64(instruments.indexItems, state.itemCount)
 		observer.ObserveInt64(instruments.indexGeneration, state.generation)
+		observer.ObserveInt64(instruments.indexDegraded, instruments.degraded.Load())
 		return nil
-	}, instruments.indexItems, instruments.indexGeneration)
+	}, instruments.indexItems, instruments.indexGeneration, instruments.indexDegraded)
 	if err != nil {
 		return nil, fmt.Errorf("register fleet index metric callback: %w", err)
 	}
@@ -208,6 +220,16 @@ func (f *fleetInstruments) recordIndexUpdate(ctx context.Context, duration time.
 // observable generation continues to describe the queryable snapshot.
 func RecordFleetIndexState(itemCount, generation int64) {
 	defaultFleetInstruments.recordIndexState(itemCount, generation)
+}
+
+// RecordFleetIndexDegraded publishes the current health verdict. Degraded
+// health does not discard the serving snapshot.
+func RecordFleetIndexDegraded(degraded bool) {
+	value := int64(0)
+	if degraded {
+		value = 1
+	}
+	defaultFleetInstruments.degraded.Store(value)
 }
 
 func (f *fleetInstruments) recordIndexState(itemCount, generation int64) {

@@ -48,8 +48,7 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("template", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("template").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("template", result, metrics.Since(r.Clock, start))
 	}()
 
 	log := logf.FromContext(ctx)

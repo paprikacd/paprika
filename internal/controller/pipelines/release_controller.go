@@ -242,8 +242,7 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("release", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("release").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("release", result, metrics.Since(r.Clock, start))
 	}()
 
 	logger := logf.FromContext(ctx)

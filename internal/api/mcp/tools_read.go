@@ -32,6 +32,7 @@ var readToolRPCs = map[string][]string{
 	"open_fleet":             {"GetSystemStatus", "QueryApplications"},
 	"search_mentions":        {"QueryApplications"},
 	"fleet_status":           {"GetSystemStatus"},
+	"get_system_health":      {"GetSystemHealth"},
 	"list_clusters":          {"ListClusters"},
 	"fleet_map":              {"QueryFleetMap"},
 	"list_applications":      {"QueryApplications"},
@@ -107,6 +108,7 @@ func RegisterReadTools(r *Registry) error {
 		readOpenFleetTool(),
 		readSearchMentionsTool(),
 		readFleetStatusTool(),
+		readSystemHealthTool(),
 		readListClustersTool(),
 		readFleetMapTool(),
 		readListApplicationsTool(),
@@ -369,6 +371,43 @@ func readFleetStatusTool() Tool {
 			resp, err := c.GetSystemStatus(ctx, connect.NewRequest(&v1.GetSystemStatusRequest{}))
 			if err != nil {
 				return nil, fmt.Errorf("fleet_status: %w", err)
+			}
+			return resp.Msg, nil
+		},
+	}
+}
+
+func readSystemHealthTool() Tool {
+	return Tool{
+		Name:        "get_system_health",
+		Title:       "System health",
+		Description: "Post-deployment control-plane health: server build, controller readiness, application state, reconcile lag, release retry exhaustion, and stuck releases. Use after a rollout to decide whether Paprika itself is healthy and keeping up.",
+		Scope:       ScopeRead,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"stuck_release_seconds":{"type":"integer","minimum":60,"maximum":86400,"default":1800}
+			},
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, c v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, err
+			}
+			var stuckReleaseSeconds uint32
+			if raw, ok := in["stuck_release_seconds"]; ok {
+				seconds, isNumber := raw.(float64)
+				if !isNumber || seconds < 60 || seconds > 86400 {
+					return nil, fmt.Errorf("get_system_health: stuck_release_seconds must be a number between 60 and 86400")
+				}
+				stuckReleaseSeconds = uint32(seconds)
+			}
+			resp, err := c.GetSystemHealth(ctx, connect.NewRequest(&v1.GetSystemHealthRequest{
+				StuckReleaseSeconds: stuckReleaseSeconds,
+			}))
+			if err != nil {
+				return nil, fmt.Errorf("get_system_health: %w", err)
 			}
 			return resp.Msg, nil
 		},

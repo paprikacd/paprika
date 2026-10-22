@@ -1,5 +1,7 @@
 package fleet
 
+import paprikametrics "github.com/benebsworth/paprika/internal/metrics"
+
 const (
 	initialUnavailableReason   = "fleet snapshot has not been installed"
 	readyWithoutSnapshotReason = "fleet index cannot be ready before a snapshot is installed"
@@ -33,8 +35,15 @@ func (i *Index) SetHealth(state HealthState) error {
 	if state.Ready && i.snapshot.Load() == nil {
 		return &ErrUnavailable{Reason: readyWithoutSnapshotReason}
 	}
-	i.health.Store(&state)
+	i.setHealth(state)
 	return nil
+}
+
+// setHealth is the single write path for health state so the exported
+// degraded gauge can never disagree with CheckReady.
+func (i *Index) setHealth(state HealthState) {
+	i.health.Store(&state)
+	paprikametrics.RecordFleetIndexDegraded(state.Degraded)
 }
 
 // CheckReady reads health only. Snapshot serving availability is checked by

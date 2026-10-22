@@ -54,7 +54,11 @@ func (r *FeatureFlagReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileDuration.WithLabelValues("featureflag").Observe(metrics.Since(r.Clock, start))
+		result := "success"
+		if spanErr != nil {
+			result = "error"
+		}
+		metrics.RecordControllerReconcile("featureflag", result, metrics.Since(r.Clock, start))
 	}()
 
 	log := log.FromContext(ctx)

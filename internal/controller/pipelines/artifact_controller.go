@@ -69,8 +69,7 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("artifact", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("artifact").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("artifact", result, metrics.Since(r.Clock, start))
 	}()
 
 	log := log.FromContext(ctx)

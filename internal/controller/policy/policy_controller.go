@@ -59,8 +59,7 @@ func (r *PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ c
 	result := policyResultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("policy", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("policy").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("policy", result, metrics.Since(r.Clock, start))
 	}()
 
 	log := log.FromContext(ctx)

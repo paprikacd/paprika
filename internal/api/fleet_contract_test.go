@@ -799,15 +799,23 @@ func TestConsoleDescriptor(t *testing.T) {
 	// appended after the fleet query RPCs. Asserting by index, and asserting the
 	// total, is what makes an inserted or reordered RPC — a wire-breaking change
 	// for every generated client — fail here instead of in the field.
-	const systemStatusMethodCount = 1
+	const (
+		systemStatusMethodCount = 1
+		systemHealthMethodCount = 1
+	)
 	firstConsoleMethod := len(legacyFleetServiceMethods) + len(fleetQueryServiceMethods) + systemStatusMethodCount
-	require.Equal(t, firstConsoleMethod+len(consoleServiceMethods), service.Methods().Len(),
+	require.Equal(t, firstConsoleMethod+len(consoleServiceMethods)+systemHealthMethodCount, service.Methods().Len(),
 		"console RPCs must be appended, never inserted")
 	for i, wantMethod := range consoleServiceMethods {
 		method := service.Methods().Get(firstConsoleMethod + i)
 		require.NotNilf(t, method, "missing RPC %s", wantMethod.name)
 		assertFleetMethodDescriptor(t, method, wantMethod)
 	}
+	healthMethod := service.Methods().Get(service.Methods().Len() - 1)
+	require.NotNil(t, healthMethod)
+	assertFleetMethodDescriptor(t, healthMethod, fleetMethodDescriptorContract{
+		name: "GetSystemHealth", input: "paprika.v1.GetSystemHealthRequest", output: "paprika.v1.GetSystemHealthResponse",
+	})
 }
 
 func enumValueNumbers(enum protoreflect.EnumDescriptor) map[string]int32 {

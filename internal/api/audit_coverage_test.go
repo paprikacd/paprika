@@ -20,7 +20,7 @@ var knownReadOnlyRPCs = map[string]bool{
 	"GetPipelineRun": true, "GetResource": true, "GetResourceLogs": true,
 	"GetResourceTree": true, "GetResourceTreeDetailed": true, "GetRevisionInfo": true,
 	"GetRollout": true, "GetRolloutHold": true, "GetStepLogs": true,
-	"GetSystemStatus": true, "Investigate": true, "ListAnalysisRuns": true,
+	"GetSystemStatus": true, "GetSystemHealth": true, "Investigate": true, "ListAnalysisRuns": true,
 	"ListApplications": true, "ListApplicationSets": true, "ListArtifacts": true,
 	"ListClusters": true, "ListDriftDetails": true, "ListGateStatus": true,
 	"ListInvestigatorPlugins": true, "ListNotificationConfigs": true, "ListObservabilityProviders": true, "ListObservabilityProviderTypes": true, "ListPipelines": true,

@@ -84,7 +84,7 @@ func (r *SatelliteReader) LoadSnapshot() (*Snapshot, error) {
 		return nil, fmt.Errorf("load local fleet snapshot: %w", err)
 	}
 	version, satellites := r.source.FleetSnapshots()
-	r.queries.health.Store(&HealthState{Degraded: r.local.CheckReady() != nil})
+	r.queries.setHealth(HealthState{Degraded: r.local.CheckReady() != nil})
 	if r.combined != nil && r.localSnapshot == local && r.satelliteGeneration == version {
 		return r.combined, nil
 	}

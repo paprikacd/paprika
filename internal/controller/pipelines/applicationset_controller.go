@@ -63,8 +63,7 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("applicationset", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("applicationset").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("applicationset", result, metrics.Since(r.Clock, start))
 	}()
 
 	log := log.FromContext(ctx)

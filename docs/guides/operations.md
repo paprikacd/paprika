@@ -386,6 +386,27 @@ rejected rather than tolerated.
 
 ## Verifying
 
+### Control-Plane Health
+
+After a rollout, run the control-plane health gate:
+
+```sh
+paprika health --fail-on-degraded
+# machine-readable:
+paprika health -o json
+```
+
+The same report is available over MCP as `get_system_health` and over Connect as
+`PaprikaService.GetSystemHealth`. It reports the server build, controller-manager
+readiness and restarts, authorized application state, reconcile lag
+(`metadata.generation` vs `status.observedGeneration`), exhausted release
+retries, active releases older than the threshold (default 30 minutes;
+`AwaitingApproval` is excluded), and fleet-index readiness.
+
+Exit status is non-zero for `failed`, or for `degraded` with
+`--fail-on-degraded`. The raw series behind the report are documented in the
+[metrics guide](metrics.md#control-plane-health).
+
 ### Application Health
 
 ```sh

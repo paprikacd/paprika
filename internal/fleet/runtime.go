@@ -341,7 +341,7 @@ func (r *Runtime) stop(workerDone <-chan error) {
 	cleanupErr := r.removeRegistrationsLocked()
 	r.mu.Unlock()
 	if cleanupErr != nil {
-		r.index.health.Store(&HealthState{Degraded: true, Reason: "fleet informer cleanup failed"})
+		r.index.setHealth(HealthState{Degraded: true, Reason: "fleet informer cleanup failed"})
 	}
 	r.queue.ShutDownWithDrain()
 	if workerDone != nil {

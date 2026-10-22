@@ -114,8 +114,7 @@ func (r *ProviderDiscoveryReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	result := "success"
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("providerdiscovery", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("providerdiscovery").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("providerdiscovery", result, metrics.Since(r.Clock, start))
 	}()
 
 	logger := log.FromContext(ctx)

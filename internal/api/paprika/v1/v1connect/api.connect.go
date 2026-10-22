@@ -231,6 +231,9 @@ const (
 	// PaprikaServiceCreateObservabilityProviderProcedure is the fully-qualified name of the
 	// PaprikaService's CreateObservabilityProvider RPC.
 	PaprikaServiceCreateObservabilityProviderProcedure = "/paprika.v1.PaprikaService/CreateObservabilityProvider"
+	// PaprikaServiceGetSystemHealthProcedure is the fully-qualified name of the PaprikaService's
+	// GetSystemHealth RPC.
+	PaprikaServiceGetSystemHealthProcedure = "/paprika.v1.PaprikaService/GetSystemHealth"
 	// SatelliteLinkConnectProcedure is the fully-qualified name of the SatelliteLink's Connect RPC.
 	SatelliteLinkConnectProcedure = "/paprika.v1.SatelliteLink/Connect"
 )
@@ -303,6 +306,7 @@ type PaprikaServiceClient interface {
 	GetObservabilityProviderType(context.Context, *connect.Request[v1.GetObservabilityProviderTypeRequest]) (*connect.Response[v1.GetObservabilityProviderTypeResponse], error)
 	ValidateObservabilityProvider(context.Context, *connect.Request[v1.ValidateObservabilityProviderRequest]) (*connect.Response[v1.ValidateObservabilityProviderResponse], error)
 	CreateObservabilityProvider(context.Context, *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error)
+	GetSystemHealth(context.Context, *connect.Request[v1.GetSystemHealthRequest]) (*connect.Response[v1.GetSystemHealthResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -712,6 +716,12 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("CreateObservabilityProvider")),
 			connect.WithClientOptions(opts...),
 		),
+		getSystemHealth: connect.NewClient[v1.GetSystemHealthRequest, v1.GetSystemHealthResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetSystemHealthProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetSystemHealth")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -783,6 +793,7 @@ type paprikaServiceClient struct {
 	getObservabilityProviderType   *connect.Client[v1.GetObservabilityProviderTypeRequest, v1.GetObservabilityProviderTypeResponse]
 	validateObservabilityProvider  *connect.Client[v1.ValidateObservabilityProviderRequest, v1.ValidateObservabilityProviderResponse]
 	createObservabilityProvider    *connect.Client[v1.CreateObservabilityProviderRequest, v1.CreateObservabilityProviderResponse]
+	getSystemHealth                *connect.Client[v1.GetSystemHealthRequest, v1.GetSystemHealthResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -1115,6 +1126,11 @@ func (c *paprikaServiceClient) CreateObservabilityProvider(ctx context.Context, 
 	return c.createObservabilityProvider.CallUnary(ctx, req)
 }
 
+// GetSystemHealth calls paprika.v1.PaprikaService.GetSystemHealth.
+func (c *paprikaServiceClient) GetSystemHealth(ctx context.Context, req *connect.Request[v1.GetSystemHealthRequest]) (*connect.Response[v1.GetSystemHealthResponse], error) {
+	return c.getSystemHealth.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -1183,6 +1199,7 @@ type PaprikaServiceHandler interface {
 	GetObservabilityProviderType(context.Context, *connect.Request[v1.GetObservabilityProviderTypeRequest]) (*connect.Response[v1.GetObservabilityProviderTypeResponse], error)
 	ValidateObservabilityProvider(context.Context, *connect.Request[v1.ValidateObservabilityProviderRequest]) (*connect.Response[v1.ValidateObservabilityProviderResponse], error)
 	CreateObservabilityProvider(context.Context, *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error)
+	GetSystemHealth(context.Context, *connect.Request[v1.GetSystemHealthRequest]) (*connect.Response[v1.GetSystemHealthResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1588,6 +1605,12 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("CreateObservabilityProvider")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceGetSystemHealthHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetSystemHealthProcedure,
+		svc.GetSystemHealth,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetSystemHealth")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -1722,6 +1745,8 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceValidateObservabilityProviderHandler.ServeHTTP(w, r)
 		case PaprikaServiceCreateObservabilityProviderProcedure:
 			paprikaServiceCreateObservabilityProviderHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetSystemHealthProcedure:
+			paprikaServiceGetSystemHealthHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1993,6 +2018,10 @@ func (UnimplementedPaprikaServiceHandler) ValidateObservabilityProvider(context.
 
 func (UnimplementedPaprikaServiceHandler) CreateObservabilityProvider(context.Context, *connect.Request[v1.CreateObservabilityProviderRequest]) (*connect.Response[v1.CreateObservabilityProviderResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.CreateObservabilityProvider is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetSystemHealth(context.Context, *connect.Request[v1.GetSystemHealthRequest]) (*connect.Response[v1.GetSystemHealthResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetSystemHealth is not implemented"))
 }
 
 // SatelliteLinkClient is a client for the paprika.v1.SatelliteLink service.

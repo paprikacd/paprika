@@ -31,6 +31,12 @@ const (
 	ApplicationRolledBack ApplicationPhase = "RolledBack"
 )
 
+// ConditionReleaseRetriesExhausted is the Application condition type set when
+// the automatic retry budget for the active release is used up. It is a latch,
+// not a phase: it clears when a new release flow starts or the Application
+// becomes Healthy.
+const ConditionReleaseRetriesExhausted = "ReleaseRetriesExhausted"
+
 // SyncPolicy defines how the application syncs.
 // SyncPolicy defines how the application syncs.
 type SyncPolicy string

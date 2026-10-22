@@ -144,6 +144,25 @@ var (
 		"Number of releases by phase")
 )
 
+// Control-plane health gauges. These turn "is Paprika keeping up?" into a
+// direct series instead of a multi-step PromQL query: reconcile lag is the
+// difference between the object's generation and the controller's observed
+// generation, and the aggregate counters make the failure modes alertable
+// without a join.
+var (
+	ApplicationReconcileLag = mustGauge(meter, "paprika.application.reconcile.lag", "{generation}",
+		"Number of spec generations an application is behind its observed generation")
+
+	ApplicationsStale = mustGauge(meter, "paprika.applications.stale", "{application}",
+		"Number of applications whose observed generation is behind their spec generation")
+
+	ApplicationsReleaseRetriesExhausted = mustGauge(meter, "paprika.applications.release_retries_exhausted", "{application}",
+		"Number of applications holding the ReleaseRetriesExhausted condition")
+
+	ReleasesStuck = mustGauge(meter, "paprika.releases.stuck", "{release}",
+		"Number of active releases older than the stuck-release threshold")
+)
+
 var defBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60}
 var msBuckets = []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}
 var itemBuckets = []float64{0, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000}

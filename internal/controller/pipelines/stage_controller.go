@@ -48,8 +48,7 @@ func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ct
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("stage", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("stage").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("stage", result, metrics.Since(r.Clock, start))
 	}()
 
 	log := log.FromContext(ctx)

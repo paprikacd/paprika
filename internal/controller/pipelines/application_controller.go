@@ -81,7 +81,7 @@ const (
 
 	// releaseRetriesExhaustedCondition is the Application condition type set
 	// when the automatic retry budget for the active release is used up.
-	releaseRetriesExhaustedCondition = "ReleaseRetriesExhausted"
+	releaseRetriesExhaustedCondition = paprikav1.ConditionReleaseRetriesExhausted
 )
 
 // applicationPhaseConditionTypes is every ApplicationPhase value written as a
@@ -351,9 +351,9 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("application", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("application").Observe(metrics.Since(r.Clock, start))
-		metrics.ApplicationReconcileDuration.WithLabelValues(app.Name, app.Namespace).Observe(metrics.Since(r.Clock, start))
+		duration := metrics.Since(r.Clock, start)
+		metrics.RecordControllerReconcile("application", result, duration)
+		metrics.RecordApplicationReconcile(app.Name, app.Namespace, duration)
 	}()
 
 	log := log.FromContext(ctx)

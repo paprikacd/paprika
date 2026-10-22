@@ -67,8 +67,7 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
-		metrics.ReconcileTotal.WithLabelValues("pipeline", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("pipeline").Observe(metrics.Since(r.Clock, start))
+		metrics.RecordControllerReconcile("pipeline", result, metrics.Since(r.Clock, start))
 	}()
 
 	reader := r.APIReader

@@ -78,7 +78,7 @@ func NewSnapshot(generation uint64) *Snapshot {
 // NewIndex returns an index with no serving snapshot and unavailable health.
 func NewIndex() *Index {
 	index := &Index{}
-	index.health.Store(&HealthState{Reason: initialUnavailableReason})
+	index.setHealth(HealthState{Reason: initialUnavailableReason})
 	return index
 }
 

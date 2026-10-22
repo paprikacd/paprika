@@ -6753,6 +6753,312 @@ export declare class GetSystemStatusResponse extends Message<GetSystemStatusResp
 }
 
 /**
+ * @generated from message paprika.v1.GetSystemHealthRequest
+ */
+export declare class GetSystemHealthRequest extends Message<GetSystemHealthRequest> {
+  /**
+   * Age after which a non-terminal release that is not waiting for approval is
+   * considered stuck. 0 uses the server default (1800 seconds).
+   *
+   * @generated from field: uint32 stuck_release_seconds = 1;
+   */
+  stuckReleaseSeconds: number;
+
+  constructor(data?: PartialMessage<GetSystemHealthRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetSystemHealthRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetSystemHealthRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetSystemHealthRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetSystemHealthRequest;
+
+  static equals(a: GetSystemHealthRequest | PlainMessage<GetSystemHealthRequest> | undefined, b: GetSystemHealthRequest | PlainMessage<GetSystemHealthRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SystemHealthCheck
+ */
+export declare class SystemHealthCheck extends Message<SystemHealthCheck> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * pass, warn, or fail.
+   *
+   * @generated from field: string status = 2;
+   */
+  status: string;
+
+  /**
+   * @generated from field: string message = 3;
+   */
+  message: string;
+
+  constructor(data?: PartialMessage<SystemHealthCheck>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SystemHealthCheck";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SystemHealthCheck;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SystemHealthCheck;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SystemHealthCheck;
+
+  static equals(a: SystemHealthCheck | PlainMessage<SystemHealthCheck> | undefined, b: SystemHealthCheck | PlainMessage<SystemHealthCheck> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.StaleApplication
+ */
+export declare class StaleApplication extends Message<StaleApplication> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 1;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: uint64 observed_generation = 3;
+   */
+  observedGeneration: bigint;
+
+  /**
+   * @generated from field: uint64 lag_generations = 4;
+   */
+  lagGenerations: bigint;
+
+  constructor(data?: PartialMessage<StaleApplication>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.StaleApplication";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): StaleApplication;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): StaleApplication;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): StaleApplication;
+
+  static equals(a: StaleApplication | PlainMessage<StaleApplication> | undefined, b: StaleApplication | PlainMessage<StaleApplication> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.StuckRelease
+ */
+export declare class StuckRelease extends Message<StuckRelease> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey release = 1;
+   */
+  release?: FleetObjectKey;
+
+  /**
+   * @generated from field: string phase = 2;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: uint64 age_seconds = 3;
+   */
+  ageSeconds: bigint;
+
+  constructor(data?: PartialMessage<StuckRelease>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.StuckRelease";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): StuckRelease;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): StuckRelease;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): StuckRelease;
+
+  static equals(a: StuckRelease | PlainMessage<StuckRelease> | undefined, b: StuckRelease | PlainMessage<StuckRelease> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ControllerHealth
+ */
+export declare class ControllerHealth extends Message<ControllerHealth> {
+  /**
+   * @generated from field: bool present = 1;
+   */
+  present: boolean;
+
+  /**
+   * @generated from field: uint32 desired_replicas = 2;
+   */
+  desiredReplicas: number;
+
+  /**
+   * @generated from field: uint32 ready_replicas = 3;
+   */
+  readyReplicas: number;
+
+  /**
+   * @generated from field: uint32 available_replicas = 4;
+   */
+  availableReplicas: number;
+
+  /**
+   * @generated from field: uint32 restart_count = 5;
+   */
+  restartCount: number;
+
+  /**
+   * @generated from field: bool ready = 6;
+   */
+  ready: boolean;
+
+  constructor(data?: PartialMessage<ControllerHealth>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ControllerHealth";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ControllerHealth;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ControllerHealth;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ControllerHealth;
+
+  static equals(a: ControllerHealth | PlainMessage<ControllerHealth> | undefined, b: ControllerHealth | PlainMessage<ControllerHealth> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetSystemHealthResponse
+ */
+export declare class GetSystemHealthResponse extends Message<GetSystemHealthResponse> {
+  /**
+   * healthy, degraded, or failed.
+   *
+   * @generated from field: string status = 1;
+   */
+  status: string;
+
+  /**
+   * @generated from field: string server_version = 2;
+   */
+  serverVersion: string;
+
+  /**
+   * @generated from field: string server_git_commit = 3;
+   */
+  serverGitCommit: string;
+
+  /**
+   * @generated from field: string server_build_date = 4;
+   */
+  serverBuildDate: string;
+
+  /**
+   * @generated from field: uint64 applications_total = 5;
+   */
+  applicationsTotal: bigint;
+
+  /**
+   * @generated from field: uint64 applications_healthy = 6;
+   */
+  applicationsHealthy: bigint;
+
+  /**
+   * @generated from field: uint64 applications_progressing = 7;
+   */
+  applicationsProgressing: bigint;
+
+  /**
+   * @generated from field: uint64 applications_degraded = 8;
+   */
+  applicationsDegraded: bigint;
+
+  /**
+   * @generated from field: uint64 applications_failed = 9;
+   */
+  applicationsFailed: bigint;
+
+  /**
+   * @generated from field: uint64 applications_unknown = 10;
+   */
+  applicationsUnknown: bigint;
+
+  /**
+   * @generated from field: uint64 applications_stale = 11;
+   */
+  applicationsStale: bigint;
+
+  /**
+   * @generated from field: uint64 applications_release_retries_exhausted = 12;
+   */
+  applicationsReleaseRetriesExhausted: bigint;
+
+  /**
+   * @generated from field: uint64 releases_stuck = 13;
+   */
+  releasesStuck: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.StaleApplication stale_applications = 14;
+   */
+  staleApplications: StaleApplication[];
+
+  /**
+   * @generated from field: repeated paprika.v1.StuckRelease stuck_releases = 15;
+   */
+  stuckReleases: StuckRelease[];
+
+  /**
+   * @generated from field: paprika.v1.ControllerHealth controller = 16;
+   */
+  controller?: ControllerHealth;
+
+  /**
+   * @generated from field: repeated paprika.v1.SystemHealthCheck checks = 17;
+   */
+  checks: SystemHealthCheck[];
+
+  /**
+   * @generated from field: uint64 index_generation = 18;
+   */
+  indexGeneration: bigint;
+
+  /**
+   * @generated from field: bool fleet_index_degraded = 19;
+   */
+  fleetIndexDegraded: boolean;
+
+  /**
+   * @generated from field: string fleet_index_reason = 20;
+   */
+  fleetIndexReason: string;
+
+  constructor(data?: PartialMessage<GetSystemHealthResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetSystemHealthResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetSystemHealthResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetSystemHealthResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetSystemHealthResponse;
+
+  static equals(a: GetSystemHealthResponse | PlainMessage<GetSystemHealthResponse> | undefined, b: GetSystemHealthResponse | PlainMessage<GetSystemHealthResponse> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.QueryApplicationsRequest
  */
 export declare class QueryApplicationsRequest extends Message<QueryApplicationsRequest> {

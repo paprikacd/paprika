@@ -21,7 +21,7 @@ func TestRegisterReadToolsRegistersAllTools(t *testing.T) {
 
 	want := []string{
 		"open_fleet", "search_mentions", "get_application_health", "get_connection",
-		"fleet_status", "list_clusters", "fleet_map", "list_applications",
+		"fleet_status", "get_system_health", "list_clusters", "fleet_map", "list_applications",
 		"get_application", "investigate", "get_resource_tree", "get_logs",
 		"list_pipelines", "get_pipeline_run", "list_releases", "list_rollouts",
 		"get_rollout", "query_cost",

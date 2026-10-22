@@ -56,6 +56,47 @@ time.
 | `paprika_sync_duration_seconds` | Histogram | `app` | Manifest apply duration |
 | `paprika_sync_errors_total` | Counter | `app` | Manifest apply errors |
 
+### Control-Plane Health
+
+These OTel instruments answer "is Paprika itself healthy and keeping up?".
+They are exported by the controller-manager and are the raw data behind the
+`paprika health` CLI, the `get_system_health` MCP tool, and
+`PaprikaService.GetSystemHealth`.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `paprika_controller_last_reconcile_timestamp_seconds` | Gauge | `controller`, `result` | Unix timestamp of the last reconcile attempt |
+| `paprika_application_last_reconcile_timestamp_seconds` | Gauge | `application`, `namespace` | Unix timestamp of the last Application reconcile attempt |
+| `paprika_application_reconcile_lag` | Gauge | `application`, `namespace` | Spec generations behind the controller's observed generation |
+| `paprika_applications_stale` | Gauge | — | Applications whose observed generation is behind their spec generation |
+| `paprika_applications_release_retries_exhausted` | Gauge | — | Applications holding the `ReleaseRetriesExhausted` condition |
+| `paprika_releases_stuck` | Gauge | — | Non-terminal, non-gated releases older than 30 minutes |
+| `paprika_fleet_index_degraded` | Gauge | — | 1 when the fleet index health is degraded |
+
+Useful queries:
+
+```promql
+# Controllers that have not completed a reconcile in five minutes.
+time() - max by (controller) (
+  paprika_controller_last_reconcile_timestamp_seconds{result="success"}
+) > 300
+
+# Applications with unreconciled spec changes.
+max by (application, namespace) (paprika_application_reconcile_lag) > 0
+
+# Workqueue backlog and oldest unfinished work (controller-runtime).
+max by (controller) (workqueue_depth) > 0
+max by (controller) (workqueue_unfinished_work_seconds) > 60
+max by (controller) (workqueue_longest_running_processor_seconds) > 60
+
+# Releases that have not reached a terminal phase.
+paprika_releases_stuck > 0
+```
+
+`workqueue_*` and `controller_runtime_reconcile_*` are supplied by
+controller-runtime; the Paprika-specific gauges above add the per-application
+lag and release-liveness view that those generic metrics cannot express.
+
 ### OTel Instruments
 
 These use the OTel API (`otel.Meter("paprika")`) and appear with the

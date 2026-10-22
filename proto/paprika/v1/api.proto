@@ -1139,6 +1139,65 @@ message GetSystemStatusResponse {
   string server_build_date = 10;
 }
 
+message GetSystemHealthRequest {
+  // Age after which a non-terminal release that is not waiting for approval is
+  // considered stuck. 0 uses the server default (1800 seconds).
+  uint32 stuck_release_seconds = 1;
+}
+
+message SystemHealthCheck {
+  string name = 1;
+  // pass, warn, or fail.
+  string status = 2;
+  string message = 3;
+}
+
+message StaleApplication {
+  FleetObjectKey application = 1;
+  uint64 generation = 2;
+  uint64 observed_generation = 3;
+  uint64 lag_generations = 4;
+}
+
+message StuckRelease {
+  FleetObjectKey release = 1;
+  string phase = 2;
+  uint64 age_seconds = 3;
+}
+
+message ControllerHealth {
+  bool present = 1;
+  uint32 desired_replicas = 2;
+  uint32 ready_replicas = 3;
+  uint32 available_replicas = 4;
+  uint32 restart_count = 5;
+  bool ready = 6;
+}
+
+message GetSystemHealthResponse {
+  // healthy, degraded, or failed.
+  string status = 1;
+  string server_version = 2;
+  string server_git_commit = 3;
+  string server_build_date = 4;
+  uint64 applications_total = 5;
+  uint64 applications_healthy = 6;
+  uint64 applications_progressing = 7;
+  uint64 applications_degraded = 8;
+  uint64 applications_failed = 9;
+  uint64 applications_unknown = 10;
+  uint64 applications_stale = 11;
+  uint64 applications_release_retries_exhausted = 12;
+  uint64 releases_stuck = 13;
+  repeated StaleApplication stale_applications = 14;
+  repeated StuckRelease stuck_releases = 15;
+  ControllerHealth controller = 16;
+  repeated SystemHealthCheck checks = 17;
+  uint64 index_generation = 18;
+  bool fleet_index_degraded = 19;
+  string fleet_index_reason = 20;
+}
+
 message QueryApplicationsRequest {
   FleetFilter filter = 1;
   string search = 2;
@@ -2414,6 +2473,7 @@ service PaprikaService {
   rpc GetObservabilityProviderType(GetObservabilityProviderTypeRequest) returns (GetObservabilityProviderTypeResponse);
   rpc ValidateObservabilityProvider(ValidateObservabilityProviderRequest) returns (ValidateObservabilityProviderResponse);
   rpc CreateObservabilityProvider(CreateObservabilityProviderRequest) returns (CreateObservabilityProviderResponse);
+  rpc GetSystemHealth(GetSystemHealthRequest) returns (GetSystemHealthResponse);
 }
 
 // Configuration only. Per-check execution results are not retained by the controller.

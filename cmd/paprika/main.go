@@ -103,6 +103,7 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newLoginCmd(ctx))
 	root.AddCommand(newStatusCmd(ctx, clientFn, nsFn, &globalOutput))
+	root.AddCommand(newHealthCmd(ctx, clientFn, &globalOutput))
 	root.AddCommand(newVersionCmd(ctx, clientFn))
 	root.AddCommand(newAppsCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newPipelinesCmd(ctx, clientFn, nsFn, &globalOutput))
