@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 
 import { ApplicationReleaseHistory } from "@/components/dashboard/application-release-history"
 import { ApplicationPlacements, ObservedApplicationDetail } from "@/components/dashboard/application-placements"
@@ -48,6 +48,10 @@ import { ApplicationHealth } from "@/components/dashboard/application-health"
 import { ApplicationSLOs } from "@/components/dashboard/application-slos"
 import { OperationalLinkIcon } from "@/components/dashboard/operational-link-icon"
 import { OperationalMetadata, safeOperationalLink } from "@/components/dashboard/application-operations"
+import { BreadcrumbTrail } from "@/components/ui/breadcrumb-trail"
+import { CopyField } from "@/components/ui/copy-field"
+import { DisclosureStack } from "@/components/ui/disclosure-stack"
+import { MorphTabList, MorphTabPanel, type MorphTabDirection } from "@/components/ui/morph-tabs"
 import { cn } from "@/lib/utils"
 
 
@@ -251,7 +255,7 @@ function ApplicationDetail() {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [selected, setSelected] = useState<InspectedResource | null>(null)
   const { reportRequestOutcome } = useConnection()
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const [tabDirection, setTabDirection] = useState<MorphTabDirection>("right")
 
   const queries = useApplicationData(namespace, name, ["overview", "resources", "health"].includes(tab))
   const application = queries.application.data?.application ?? null
@@ -385,17 +389,11 @@ function ApplicationDetail() {
     [fetchData]
   )
 
-  const onTabKeyDown = (event: React.KeyboardEvent, index: number) => {
-    const last = SUB_TABS.length - 1
-    let next = -1
-    if (event.key === "ArrowRight") next = index === last ? 0 : index + 1
-    else if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1
-    else if (event.key === "Home") next = 0
-    else if (event.key === "End") next = last
-    if (next === -1) return
-    event.preventDefault()
-    setTab(SUB_TABS[next].id)
-    tabRefs.current[next]?.focus()
+  const changeTab = (next: SubTab) => {
+    const currentIndex = SUB_TABS.findIndex((item) => item.id === tab)
+    const nextIndex = SUB_TABS.findIndex((item) => item.id === next)
+    setTabDirection(nextIndex >= currentIndex ? "right" : "left")
+    setTab(next)
   }
 
   if (!namespace || !name) {
@@ -434,6 +432,9 @@ function ApplicationDetail() {
     : syncIsClean ? "In sync" : `${observation?.driftCount ?? driftedCount} out of sync`
   const syncTone = observation?.sync === "unknown" || observation?.sync === "unspecified"
     ? "unknown" : syncIsClean ? "healthy" : "degraded"
+  const projectScope = application.project.includes("/")
+    ? application.project
+    : `${application.namespace}/${application.project}`
 
   return (
     <div className="bg-background">
@@ -441,19 +442,20 @@ function ApplicationDetail() {
       <div className="border-b border-rule bg-card px-5 pt-4">
         <div className="flex items-start justify-between gap-5">
           <div className="min-w-0">
-            <nav aria-label="Breadcrumb" className="font-mono text-meta text-neutral-600">
-              <Link href="/dashboard/applications/" className="text-steel-700">
-                Applications
-              </Link>
-              <span aria-hidden> / </span>
-              {application.project ? (
-                <>
-                  <span>{application.project}</span>
-                  <span aria-hidden> / </span>
-                </>
-              ) : null}
-              <span>{application.name}</span>
-            </nav>
+            <BreadcrumbTrail
+              items={[
+                { label: "Applications", href: "/dashboard/applications/" },
+                ...(application.project
+                  ? [
+                      {
+                        label: application.project,
+                        href: `/dashboard/applications/?project=${encodeURIComponent(projectScope)}`,
+                      },
+                    ]
+                  : []),
+                { label: application.name },
+              ]}
+            />
 
             <div className="mt-1.5 flex flex-wrap items-center gap-3">
               <h1 className="font-cond text-title leading-none font-semibold tracking-[0.01em]">
@@ -529,32 +531,15 @@ function ApplicationDetail() {
           </div>
         </div>
 
-        <div role="tablist" aria-label="Application sections" className="mt-3.5 flex">
-          {SUB_TABS.map((t, index) => (
-            <button
-              key={t.id}
-              ref={(el) => {
-                tabRefs.current[index] = el
-              }}
-              type="button"
-              role="tab"
-              id={`app-tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls="app-tabpanel"
-              tabIndex={tab === t.id ? 0 : -1}
-              onClick={() => setTab(t.id)}
-              onKeyDown={(event) => onTabKeyDown(event, index)}
-              className={cn(
-                "border-b-2 px-3 pb-2 text-chip focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-                tab === t.id
-                  ? "border-primary font-semibold text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <MorphTabList
+          tabs={SUB_TABS}
+          value={tab}
+          onValueChange={changeTab}
+          label="Application sections"
+          idPrefix="app-tab"
+          panelId="app-tabpanel"
+          className="mt-3.5"
+        />
       </div>
 
       {notice ? (
@@ -578,12 +563,12 @@ function ApplicationDetail() {
       ) : null}
       {queries.releases.isError ? <p role="status" className="px-5 py-2 text-note">Release details could not be refreshed.</p> : null}
 
-      <div
+      <MorphTabPanel
+        key={tab}
         id="app-tabpanel"
-        role="tabpanel"
-        aria-labelledby={`app-tab-${tab}`}
-        tabIndex={0}
-        className="flex flex-col gap-4 px-5 pt-4.5 pb-8 outline-none"
+        labelledBy={`app-tab-${tab}`}
+        direction={tabDirection}
+        className="flex flex-col gap-4 px-5 pt-4.5 pb-8"
       >
         {tab === "overview" ? (
           <>
@@ -610,7 +595,7 @@ function ApplicationDetail() {
               <div className="flex flex-col gap-3.5">
                 <DrilldownRail gate={ownershipGate} ownership={ownership} />
                 <OperationalMetadata metadata={application.operationalMetadata ?? {}} />
-                <ApplicationSLOs application={application} compact onOpenHealth={() => setTab("health")} />
+                <ApplicationSLOs application={application} compact onOpenHealth={() => changeTab("health")} />
                 <GatesBoard
                   application={application}
                   policyResults={currentRelease?.policyResults ?? []}
@@ -695,7 +680,7 @@ function ApplicationDetail() {
         ) : null}
 
         {tab === "manifest" ? <ManifestBoard application={application} /> : null}
-      </div>
+      </MorphTabPanel>
 
       {selected ? (
         <ResourceDetailPanel
@@ -1079,81 +1064,115 @@ function GatesBoard({
     return null
   }
 
+  // Pending gates are the ones holding a release, so they start open; the
+  // settled ones collapse to a summary row that still carries their state.
+  const pendingGates = gates
+    .filter((gate) => gate.status === "Pending")
+    .map((gate) => gate.name)
+
   return (
     <Blueprint>
       <RailHeader title="Gates & analysis" />
-      <ul className="list-none">
-        {gates.map((gate) => {
-          const tone = phaseTone(gate.status)
-          const pending = gate.status === "Pending"
-          return (
-            <li
-              key={gate.name}
-              className="flex items-center gap-2 border-b border-rule-soft px-3 py-2"
-            >
-              <StatusGlyph tone={tone} label={`${gate.name}: ${gate.status}`} />
-              <span className="min-w-0 flex-1">
-                <span className="block text-chip font-semibold">{gate.name}</span>
-                <span className="block text-note text-muted-foreground">
-                  {[gate.stage, gate.type, gate.message].filter(Boolean).join(" · ")}
+      {gates.length > 0 ? (
+        <DisclosureStack
+          mode="multiple"
+          defaultOpen={pendingGates}
+          items={gates.map((gate) => {
+            const tone = phaseTone(gate.status)
+            const pending = gate.status === "Pending"
+            const detail = [gate.stage, gate.type, gate.message]
+              .filter(Boolean)
+              .join(" · ")
+            return {
+              id: gate.name,
+              title: gate.name,
+              meta: (
+                <StatusPill
+                  tone={tone}
+                  label={gate.status}
+                  className="px-1.5 text-meta"
+                />
+              ),
+              content: (
+                <div className="px-3 pt-0.5 pb-2.5">
+                  <p className="text-note leading-[1.5] text-muted-foreground">
+                    {detail || "This gate reported no detail."}
+                  </p>
+                  {pending ? (
+                    <div className="mt-2 flex gap-1">
+                      <MicroButton onClick={() => onGateAction(gate.name, "approve")}>
+                        {busyAction === `gate:${gate.name}` ? "…" : "Approve"}
+                      </MicroButton>
+                      <MicroButton onClick={() => onGateAction(gate.name, "reject")}>
+                        Reject
+                      </MicroButton>
+                    </div>
+                  ) : null}
+                </div>
+              ),
+            }
+          })}
+        />
+      ) : null}
+      {analysis.length > 0 || policyResults.length > 0 ? (
+        <ul
+          className={cn(
+            "list-none",
+            gates.length > 0 && "border-t border-rule-soft"
+          )}
+        >
+          {analysis.map((result, index) => {
+            const tone = result.passed ? "healthy" : phaseTone(result.phase)
+            return (
+              <li
+                key={`analysis-${result.name}-${index}`}
+                className="flex items-center gap-2 border-b border-rule-soft px-3 py-2"
+              >
+                <StatusGlyph
+                  tone={tone}
+                  label={`${result.name}: ${result.passed ? "passed" : result.phase || "failed"}`}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-chip font-semibold">
+                    analysis: {result.name}
+                  </span>
+                  <span className="block text-note text-muted-foreground">
+                    {result.message || result.phase}
+                  </span>
                 </span>
-              </span>
-              {pending ? (
-                <span className="flex flex-none gap-1">
-                  <MicroButton onClick={() => onGateAction(gate.name, "approve")}>
-                    {busyAction === `gate:${gate.name}` ? "…" : "Approve"}
-                  </MicroButton>
-                  <MicroButton onClick={() => onGateAction(gate.name, "reject")}>
-                    Reject
-                  </MicroButton>
-                </span>
-              ) : null}
-            </li>
-          )
-        })}
-        {analysis.map((result, index) => {
-          const tone = result.passed ? "healthy" : phaseTone(result.phase)
-          return (
+              </li>
+            )
+          })}
+          {policyResults.map((result, index) => (
             <li
-              key={`analysis-${result.name}-${index}`}
-              className="flex items-center gap-2 border-b border-rule-soft px-3 py-2"
+              key={`policy-${result.name}-${index}`}
+              className="flex items-center gap-2 border-b border-rule-soft px-3 py-2 last:border-b-0"
             >
               <StatusGlyph
-                tone={tone}
-                label={`${result.name}: ${result.passed ? "passed" : result.phase || "failed"}`}
+                tone={result.passed ? "healthy" : "failed"}
+                label={`${result.name}: ${result.passed ? "passed" : "failed"}`}
               />
               <span className="min-w-0 flex-1">
-                <span className="block text-chip font-semibold">
-                  analysis: {result.name}
-                </span>
+                <span className="block text-chip font-semibold">{result.name}</span>
                 <span className="block text-note text-muted-foreground">
-                  {result.message || result.phase}
+                  {[result.severity, result.message].filter(Boolean).join(" · ")}
                 </span>
               </span>
             </li>
-          )
-        })}
-        {policyResults.map((result, index) => (
-          <li
-            key={`policy-${result.name}-${index}`}
-            className="flex items-center gap-2 border-b border-rule-soft px-3 py-2"
-          >
-            <StatusGlyph
-              tone={result.passed ? "healthy" : "failed"}
-              label={`${result.name}: ${result.passed ? "passed" : "failed"}`}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block text-chip font-semibold">{result.name}</span>
-              <span className="block text-note text-muted-foreground">
-                {[result.severity, result.message].filter(Boolean).join(" · ")}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
+          ))}
+        </ul>
+      ) : null}
     </Blueprint>
   )
 }
+
+const COPYABLE_SOURCE_ROWS = new Set([
+  "Repository",
+  "Bucket",
+  "Path",
+  "Revision",
+  "Template",
+])
 
 function SourceBoard({
   application,
@@ -1185,11 +1204,15 @@ function SourceBoard({
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 px-3 pt-1 pb-2.5">
         {rows.map(([key, value]) => (
           <div key={key} className="contents">
-            <dt className="border-b border-rule-faint py-1.5 text-note text-muted-foreground">
+            <dt className="border-b border-rule-faint py-1 text-note text-muted-foreground">
               {key}
             </dt>
-            <dd className="truncate border-b border-rule-faint py-1.5 text-right font-mono text-note">
-              {value}
+            <dd className="flex min-w-0 items-center justify-end border-b border-rule-faint py-1 text-right">
+              {COPYABLE_SOURCE_ROWS.has(key) ? (
+                <CopyField value={value} label={key} className="w-full" />
+              ) : (
+                <span className="truncate font-mono text-note">{value}</span>
+              )}
             </dd>
           </div>
         ))}

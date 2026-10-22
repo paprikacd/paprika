@@ -188,7 +188,11 @@ describe("RolloutDetailView", () => {
   it("orders the rollout log newest first", async () => {
     render(<RolloutDetailView client={makeClient()} />, { wrapper })
 
-    const entries = await screen.findAllByRole("listitem")
+    // The breadcrumb is a list too, so wait for the log's own copy before
+    // collecting list items; findAllByRole would otherwise resolve on the
+    // breadcrumb while the rollout query is still pending.
+    await screen.findByText("Weight advanced 10% to 25%")
+    const entries = screen.getAllByRole("listitem")
     const log = entries.filter((entry) =>
       entry.textContent?.includes("Progressing"),
     )
@@ -207,7 +211,10 @@ describe("RolloutDetailView", () => {
     })
     render(<RolloutDetailView client={client} />, { wrapper })
 
-    await userEvent.click(await screen.findByRole("button", { name: /Resume/ }))
+    await userEvent.click(
+      await screen.findByRole("button", { name: "More rollout actions" }),
+    )
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Resume/ }))
 
     const status = await screen.findByRole("status")
     expect(status).toHaveTextContent(/not available on this control plane yet/i)

@@ -369,7 +369,8 @@ function drawTreemap(
     )
 
     const labelY = rectangle.y + (isGroup ? 14 : 18)
-    if (rectangle.width >= 52 && rectangle.height >= 18) {
+    const showLabel = isGroup ? rectangle.width >= 52 : rectangle.width >= 76
+    if (showLabel && rectangle.height >= 18) {
       context.save()
       context.beginPath()
       context.rect(rectangle.x + 2, rectangle.y + 2, Math.max(0, rectangle.width - 4), Math.max(0, rectangle.height - 4))
@@ -377,18 +378,23 @@ function drawTreemap(
       context.fillStyle = "#1d1f20"
       context.font = isGroup
         ? "600 10px ui-monospace, SFMono-Regular, monospace"
-        : "600 12px Instrument Sans, ui-sans-serif, sans-serif"
+        : "600 12px Barlow, ui-sans-serif, sans-serif"
       context.textBaseline = "alphabetic"
+      const labelWidth = Math.max(0, rectangle.width - 16)
+      const label = isGroup
+        ? `▦ ${rectangle.node.label}`
+        : `${style.glyph} ${rectangle.node.label}`
       context.fillText(
-        isGroup ? `▦ ${rectangle.node.label}` : `${style.glyph} ${rectangle.node.label}`,
+        fitCanvasText(context, label, labelWidth),
         rectangle.x + 8,
         labelY,
       )
       if (!isGroup && rectangle.width >= 110 && rectangle.height >= 38) {
         context.fillStyle = "#5d5d60"
         context.font = "10px ui-monospace, SFMono-Regular, monospace"
+        const targetLabel = `${style.label} · ${rectangle.node.targetCount.toString()} target${rectangle.node.targetCount === BigInt(1) ? "" : "s"}`
         context.fillText(
-          `${style.label} · ${rectangle.node.targetCount.toString()} target${rectangle.node.targetCount === BigInt(1) ? "" : "s"}`,
+          fitCanvasText(context, targetLabel, labelWidth),
           rectangle.x + 8,
           labelY + 16,
         )
@@ -396,6 +402,30 @@ function drawTreemap(
       context.restore()
     }
   }
+}
+
+/**
+ * Canvas has no `text-overflow`. Measure, then trim at the last whole
+ * character that still fits with an ellipsis so a long application name ends
+ * visibly instead of being sliced by the tile border.
+ */
+export function fitCanvasText(
+  context: Pick<CanvasRenderingContext2D, "measureText">,
+  text: string,
+  maxWidth: number,
+): string {
+  if (maxWidth <= 0) return ""
+  if (context.measureText(text).width <= maxWidth) return text
+  const ellipsis = "…"
+  let left = 0
+  let right = text.length
+  while (left < right) {
+    const middle = Math.ceil((left + right) / 2)
+    const candidate = `${text.slice(0, middle)}${ellipsis}`
+    if (context.measureText(candidate).width <= maxWidth) left = middle
+    else right = middle - 1
+  }
+  return left > 0 ? `${text.slice(0, left)}${ellipsis}` : ellipsis
 }
 
 function dominantHealth(rectangle: TreemapRectangle): FleetHealthStatus {

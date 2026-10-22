@@ -367,3 +367,32 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ── MorphTabs panel reveal ─────────────────────────────────────────
+   Directional, 10px, expo-out. The tab underline is the authored
+   moment; this only tells the eye which way the panel moved. The
+   global reduced-motion block makes it instant. */
+@keyframes morph-tab-in-right {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes morph-tab-in-left {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes menu-panel-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes panel-reveal-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@layer components {
+  .morph-tab-panel[data-direction="right"] {
+    animation: morph-tab-in-right 180ms var(--ease-out-quart);
+  }
+  .morph-tab-panel[data-direction="left"] {
+    animation: morph-tab-in-left 180ms var(--ease-out-quart);
+  }
+}

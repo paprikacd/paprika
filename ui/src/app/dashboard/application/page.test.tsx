@@ -149,6 +149,52 @@ describe("ApplicationDetailPage", () => {
     expect(screen.getByText("3 out of sync")).toBeInTheDocument()
   })
 
+  it("keeps a pending gate's decision behind a disclosure that starts open", async () => {
+    mockClient.getApplication.mockResolvedValue({
+      application: {
+        ...APPLICATION,
+        gates: [
+          {
+            name: "manual-approval",
+            status: "Pending",
+            stage: "prod-eu-1",
+            type: "Manual",
+            message: "Waiting for the release manager",
+          },
+          {
+            name: "policy-scan",
+            status: "Approved",
+            stage: "prod-eu-1",
+            type: "Policy",
+            message: "All checks passed",
+          },
+        ],
+      },
+    })
+    render(<ApplicationDetailPage />)
+    await screen.findByRole("heading", { level: 1, name: "checkout-api" })
+
+    const pending = screen.getByRole("button", { name: /manual-approval/ })
+    const settled = screen.getByRole("button", { name: /policy-scan/ })
+    expect(pending).toHaveAttribute("aria-expanded", "true")
+    expect(settled).toHaveAttribute("aria-expanded", "false")
+
+    await userEvent.click(settled)
+    expect(settled).toHaveAttribute("aria-expanded", "true")
+
+    const panel = document.getElementById(
+      pending.getAttribute("aria-controls")!
+    ) as HTMLElement
+    await userEvent.click(within(panel).getByRole("button", { name: "Approve" }))
+    await waitFor(() =>
+      expect(mockClient.approveGate).toHaveBeenCalledWith({
+        namespace: "payments",
+        name: "checkout-api",
+        gate: "manual-approval",
+      })
+    )
+  })
+
   it("opens satellite-only applications as read-only observations with cluster placement health", async () => {
     mockClient.getApplication.mockRejectedValue({code: 5})
     mockClient.queryApplications.mockResolvedValue(observedResponse())

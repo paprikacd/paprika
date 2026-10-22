@@ -1,11 +1,11 @@
 "use client"
 
-import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
 
 import { RolloutDebugPanel } from "@/components/dashboard/rollout-debug-panel"
 import { usePublishConsoleScope } from "@/components/layout/console-header"
+import { BreadcrumbTrail } from "@/components/ui/breadcrumb-trail"
 import { StatusPill } from "@/components/ui/status-chip"
 import { rolloutLabel } from "@/lib/status-tone"
 import { FOCUSED_REFRESH_INTERVAL_MS } from "@/lib/fleet-refresh"
@@ -79,11 +79,20 @@ export function RolloutDetailView({
   }, [rollout, analysisRuns.data])
 
   const breadcrumb = (
-    <>
-      <Link href="/dashboard/rollouts/">Rollouts</Link>
-      {namespace ? ` / ${namespace}` : ""}
-      {name ? ` / ${name}` : ""}
-    </>
+    <BreadcrumbTrail
+      items={[
+        { label: "Rollouts", href: "/dashboard/rollouts/" },
+        ...(namespace
+          ? [
+              {
+                label: namespace,
+                href: `/dashboard/rollouts/?namespace=${encodeURIComponent(namespace)}`,
+              },
+            ]
+          : []),
+        ...(name ? [{ label: name }] : []),
+      ]}
+    />
   )
 
   if (detail.isPending) {

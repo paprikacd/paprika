@@ -340,16 +340,23 @@ describe("console header", () => {
 
 describe("root navigation", () => {
   beforeEach(() => {
-    navigation.pathname = "/login"
+    navigation.pathname = "/mcp/consent"
     authState.user = null
     authState.isLoading = false
   })
 
-  it("keeps the minimal brand header on public and authentication routes", () => {
+  it("keeps the minimal brand header on public routes", () => {
     render(<Nav />)
 
     expect(screen.getByRole("banner")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Paprika" })).toHaveAttribute("href", "/")
+  })
+
+  it("yields the login page to its dedicated identity frame", () => {
+    navigation.pathname = "/login"
+    render(<Nav />)
+
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument()
   })
 
   it("yields dashboard navigation to the unified shell", () => {

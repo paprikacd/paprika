@@ -4,9 +4,9 @@ import { Code, ConnectError } from "@connectrpc/connect"
 import { useCallback, useId, useState } from "react"
 
 import type { Rollout } from "@/gen/paprika/v1/api_pb"
+import { SplitButton } from "@/components/ui/split-button"
 import { cn } from "@/lib/utils"
 
-import { ConsoleButton } from "./rollout-chrome"
 import { nextStepWeight } from "./rollout-model"
 import type { RolloutConsoleClient } from "./rollout-queries"
 
@@ -109,7 +109,10 @@ export function ActionStatus({
  * Promote and Abort are implemented. Hold and Resume are not — the control
  * plane answers `Unimplemented`. The controls still exist, because hiding them
  * would misrepresent the product's shape, but activating one says plainly that
- * nothing happened, and the button then carries that fact permanently.
+ * nothing happened, and the item then carries that fact permanently.
+ *
+ * Promote is the primary path, so it stays outside the menu; Hold and Abort are
+ * related but secondary, so they live behind the fused toggle.
  */
 export function RolloutActions({
   client,
@@ -130,47 +133,52 @@ export function RolloutActions({
     nextWeight === undefined ? "Promote" : `Promote to ${nextWeight}%`
   const holdKey = rollout.paused ? "resume" : "hold"
   const holdLabel = rollout.paused ? "Resume" : "Hold"
+  const holdUnavailable = unsupported[holdKey] === true
 
   return (
     <>
-      <ConsoleButton
-        tone="destructive"
+      <SplitButton
+        label={promoteLabel}
+        menuLabel="More rollout actions"
         disabled={pending !== null || settled}
-        aria-describedby={report ? statusId : undefined}
-        onClick={() =>
-          run("abort", "Abort & roll back", () => client.abortRollout(target))
-        }
-      >
-        Abort &amp; roll back
-      </ConsoleButton>
-      <ConsoleButton
-        disabled={pending !== null}
-        aria-describedby={unsupported[holdKey] || report ? statusId : undefined}
-        onClick={() =>
-          run(holdKey, holdLabel, () =>
-            rollout.paused
-              ? client.resumeRollout(target)
-              : client.holdRollout(target),
-          )
-        }
-      >
-        {holdLabel}
-        {unsupported[holdKey] ? (
-          <span className="font-mono text-meta tracking-[0.06em] text-neutral-600">
-            UNAVAILABLE
-          </span>
-        ) : null}
-      </ConsoleButton>
-      <ConsoleButton
-        tone="primary"
-        disabled={pending !== null || settled}
-        aria-describedby={report ? statusId : undefined}
-        onClick={() =>
+        describedBy={report ? statusId : undefined}
+        onPrimary={() =>
           run("promote", promoteLabel, () => client.promoteRollout(target))
         }
-      >
-        {promoteLabel}
-      </ConsoleButton>
+        onSelect={(id) => {
+          if (id === holdKey) {
+            void run(holdKey, holdLabel, () =>
+              rollout.paused
+                ? client.resumeRollout(target)
+                : client.holdRollout(target),
+            )
+            return
+          }
+          if (id === "abort") {
+            void run("abort", "Abort & roll back", () =>
+              client.abortRollout(target),
+            )
+          }
+        }}
+        items={[
+          {
+            id: holdKey,
+            label: holdLabel,
+            shortcut: "H",
+            description: holdUnavailable
+              ? "Not available on this control plane yet."
+              : undefined,
+            disabled: holdUnavailable,
+          },
+          {
+            id: "abort",
+            label: "Abort & roll back",
+            shortcut: "A",
+            description: "Stops the rollout and restores the previous revision.",
+            danger: true,
+          },
+        ]}
+      />
       <ActionStatus id={statusId} report={report} className="w-full" />
     </>
   )

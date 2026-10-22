@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { FleetTreemap } from "@/components/fleet/fleet-treemap"
+import { fitCanvasText, FleetTreemap } from "@/components/fleet/fleet-treemap"
 import type { FleetMapNode, FleetMapResult } from "@/lib/fleet-client"
 
 describe("FleetTreemap", () => {
@@ -196,13 +196,27 @@ function group(stableId: string, children: FleetMapNode[]): FleetMapNode {
   }
 }
 
+describe("fitCanvasText", () => {
+  it("keeps a label that fits and trims a long one with an ellipsis", () => {
+    const context = {
+      measureText: (text: string) => ({ width: text.length * 6 }),
+    } as unknown as CanvasRenderingContext2D
+
+    expect(fitCanvasText(context, "checkout", 60)).toBe("checkout")
+    const trimmed = fitCanvasText(context, "application-00036", 60)
+    expect(trimmed.endsWith("…")).toBe(true)
+    expect(context.measureText(trimmed).width).toBeLessThanOrEqual(60)
+    expect(trimmed.length).toBeLessThan("application-00036".length)
+  })
+})
+
 function canvasContext() {
   return {
     clearRect: vi.fn(),
     fillRect: vi.fn(),
     strokeRect: vi.fn(),
     fillText: vi.fn(),
-    measureText: vi.fn(() => ({ width: 60 })),
+    measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
     save: vi.fn(),
     restore: vi.fn(),
     scale: vi.fn(),

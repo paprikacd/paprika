@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { applicationQueryKey } from "@/lib/use-application-data"
 import { createPromiseClient } from "@connectrpc/connect"
+import { GitCompare } from "lucide-react"
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react"
 
 import { InvestigationPanel } from "@/components/dashboard/investigation-panel"
@@ -12,7 +13,9 @@ import {
   resourceSyncTone,
 } from "@/components/dashboard/resource-list-table"
 import { parseUnifiedDiff, summarizeUnifiedDiff } from "@/components/dashboard/sync-diff-view"
+import { EmptyState } from "@/components/ui/empty-state"
 import { StatusGlyph } from "@/components/ui/status-chip"
+import { MorphTabList, MorphTabPanel, type MorphTabDirection } from "@/components/ui/morph-tabs"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type {
   KubernetesEvent,
@@ -78,7 +81,7 @@ export function ResourceDetailPanel({
   const [investigationOpen, setInvestigationOpen] = useState(false)
   const titleId = useId()
   const drawerRef = useRef<HTMLElement | null>(null)
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const [tabDirection, setTabDirection] = useState<MorphTabDirection>("right")
 
   useEffect(() => {
     drawerRef.current?.focus()
@@ -97,17 +100,11 @@ export function ResourceDetailPanel({
       .map(([key, value]) => `${key}=${value}`),
   ].filter(Boolean)
 
-  const onTabKeyDown = (event: React.KeyboardEvent, index: number) => {
-    const last = TABS.length - 1
-    let next = -1
-    if (event.key === "ArrowRight") next = index === last ? 0 : index + 1
-    else if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1
-    else if (event.key === "Home") next = 0
-    else if (event.key === "End") next = last
-    if (next === -1) return
-    event.preventDefault()
-    setTab(TABS[next].id)
-    tabRefs.current[next]?.focus()
+  const changeTab = (next: Tab) => {
+    const currentIndex = TABS.findIndex((item) => item.id === tab)
+    const nextIndex = TABS.findIndex((item) => item.id === next)
+    setTabDirection(nextIndex >= currentIndex ? "right" : "left")
+    setTab(next)
   }
 
   return (
@@ -193,42 +190,21 @@ export function ResourceDetailPanel({
           </div>
         </div>
 
-        <div
-          role="tablist"
-          aria-label="Resource inspector views"
-          className="flex border-b border-rule bg-card px-4"
-        >
-          {TABS.map((t, index) => (
-            <button
-              key={t.id}
-              ref={(el) => {
-                tabRefs.current[index] = el
-              }}
-              type="button"
-              role="tab"
-              id={`inspector-tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls="inspector-panel"
-              tabIndex={tab === t.id ? 0 : -1}
-              onClick={() => setTab(t.id)}
-              onKeyDown={(event) => onTabKeyDown(event, index)}
-              className={cn(
-                "border-b-2 px-3 py-2.5 text-chip focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-                tab === t.id
-                  ? "border-primary font-semibold text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <MorphTabList
+          tabs={TABS}
+          value={tab}
+          onValueChange={changeTab}
+          label="Resource inspector views"
+          idPrefix="inspector-tab"
+          panelId="inspector-panel"
+          className="px-1"
+        />
 
-        <div
+        <MorphTabPanel
+          key={tab}
           id="inspector-panel"
-          role="tabpanel"
-          aria-labelledby={`inspector-tab-${tab}`}
-          tabIndex={0}
+          labelledBy={`inspector-tab-${tab}`}
+          direction={tabDirection}
           className="flex-1 overflow-auto px-4 py-3.5"
         >
           {tab === "logs" ? (
@@ -262,7 +238,7 @@ export function ResourceDetailPanel({
           ) : (
             <EventsView events={data.events} />
           )}
-        </div>
+        </MorphTabPanel>
       </aside>
       {investigationOpen ? (
         <InvestigationPanel
@@ -301,9 +277,12 @@ function DiffView({ diff }: { diff: string }) {
 
   if (lines.length === 0) {
     return (
-      <p className="py-12 text-center text-chip text-muted-foreground">
-        No differences — live matches desired.
-      </p>
+      <EmptyState
+        compact
+        icon={GitCompare}
+        title="No differences"
+        description="Live state matches the desired manifest."
+      />
     )
   }
 

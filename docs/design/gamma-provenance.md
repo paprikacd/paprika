@@ -1,6 +1,6 @@
 # Gamma component adaptations
 
-Paprika's static landing page uses small vanilla JavaScript and CSS adaptations of maintained Gamma components. The source was retrieved from the Gamma MCP on 17 October 2026 with `gamma_get_component` and its corresponding `gamma_get_catalogue_entry` record. No React runtime, animation package, remote component script, shader, or external reference-site asset is shipped.
+Paprika's static landing page and console use small adaptations of maintained Gamma components. The landing page adapts them in vanilla JavaScript and CSS; the console uses native React primitives. The source was retrieved from the Gamma MCP on 17 and 22 October 2026 with `gamma_list_component_briefs`, `gamma_get_component_brief`, and `gamma_get_component`, with each component's corresponding `gamma_get_catalogue_entry` record. No React runtime, animation package, remote component script, shader, or external reference-site asset is shipped.
 
 | Gamma component | Maintained source returned by MCP | Catalogue record | Paprika use |
 | --- | --- | --- | --- |
@@ -10,9 +10,52 @@ Paprika's static landing page uses small vanilla JavaScript and CSS adaptations 
 | DisclosureStack | `src/components/DisclosureStack.tsx` and component CSS | `gamma://explore/component/disclosure-stack` | Capability disclosures adapted to native `details`/`summary` |
 | ProgressStack | `src/components/ProgressStack.tsx` and component CSS | `gamma://explore/component/progress-stack` | Layered process-card composition for clearly labelled illustrative states |
 
-The implementation is in [`landing/gamma-ui.js`](../../landing/gamma-ui.js) and [`landing/gamma-ui.css`](../../landing/gamma-ui.css). Paprika's Barlow typefaces, square corners, paper/navy surfaces, and steel accents replace Gamma's default tokens. The Gamma component bundles returned no third-party copyright or license notice. The SpotlightSurface catalogue explicitly describes its behavior, markup, and token styles as original Gamma work with no external component source or assets imported. This adaptation preserves that provenance; it does not claim that external reference material grants a source-code license.
+The landing implementation is in [`landing/gamma-ui.js`](../../landing/gamma-ui.js) and [`landing/gamma-ui.css`](../../landing/gamma-ui.css). Paprika's Barlow typefaces, square corners, paper/navy surfaces, and steel accents replace Gamma's default tokens. The Gamma component bundles returned no third-party copyright or license notice. The SpotlightSurface catalogue explicitly describes its behavior, markup, and token styles as original Gamma work with no external component source or assets imported. This adaptation preserves that provenance; it does not claim that external reference material grants a source-code license.
 
 Gamma lists [Morph UI](https://morph-ui.anmol16.workers.dev/tabs) as MorphTabs' visual reference and [Forge UI](https://forgeui.in/components/onboard-card) as ProgressStack's layered-card reference. Those links are study references. No code or assets were fetched from them or copied into Paprika. SpotlightSurface's references to [Pointer Events](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events) and [reduced motion](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion) describe platform semantics.
+
+## Console React adaptations
+
+The console's adaptations are independent React implementations informed by
+the Gamma catalogue contracts. They use Paprika tokens and native elements;
+no Gamma source, build output, font, icon, or asset is imported.
+
+| Gamma component | Paprika implementation | Console use |
+| --- | --- | --- |
+| MorphTabs | [`ui/src/components/ui/morph-tabs.tsx`](../../ui/src/components/ui/morph-tabs.tsx) | Application detail and resource-inspector tabs: measured moving underline, roving tabindex, Arrow/Home/End selection, directional 180ms panel reveal |
+| CopyField | [`ui/src/components/ui/copy-field.tsx`](../../ui/src/components/ui/copy-field.tsx) | Source identifiers: read-only value, 22px copy control, success check, retryable failure, polite live announcement |
+| EmptyState | [`ui/src/components/ui/empty-state.tsx`](../../ui/src/components/ui/empty-state.tsx) | Sync & diff workbench and resource-inspector no-diff state: context sentence plus one action, never invented data |
+| BreadcrumbTrail | [`ui/src/components/ui/breadcrumb-trail.tsx`](../../ui/src/components/ui/breadcrumb-trail.tsx) | Application, pipeline, and rollout detail ancestry: wrapping crumbs, linked scope, `aria-current="page"` on the current record |
+| ActionMenu | [`ui/src/components/ui/action-menu.tsx`](../../ui/src/components/ui/action-menu.tsx) | Rollouts table row actions: one visible trigger per row, grouped entries, danger state, arrow/Home/End walking that skips disabled entries |
+| SplitButton | [`ui/src/components/ui/split-button.tsx`](../../ui/src/components/ui/split-button.tsx) | Rollout detail actions: `Promote to X%` stays one click away, Hold/Resume and Abort & roll back live behind the fused toggle, viewport-clamped panel |
+| SearchField | [`ui/src/components/ui/search-field.tsx`](../../ui/src/components/ui/search-field.tsx) | Console header fleet search: labelled native search input, clear action that returns focus to the field, optional explicit search on Enter |
+| DisclosureStack | [`ui/src/components/ui/disclosure-stack.tsx`](../../ui/src/components/ui/disclosure-stack.tsx) | Application detail gates: pending gates start open, settled ones collapse to a summary row, panels stay in the DOM so `aria-controls` always resolves |
+
+The MorphTabs panel transition is disabled by the console's global
+`prefers-reduced-motion` rule; the underline is a measured transform, not a
+per-tab border. CopyField keeps the full value in the `title` and accessible
+name when the dense rail truncates it. The diff and inspector empty states
+carry the same rule as the boards: a missing source is hidden or explained, not
+filled with a plausible zero.
+
+ActionMenu and SplitButton share one keyboard contract
+([`ui/src/components/ui/menu-behaviour.ts`](../../ui/src/components/ui/menu-behaviour.ts)):
+the trigger owns the panel, Enter/Space/ArrowDown opens and focuses the first
+enabled entry, ArrowUp/ArrowDown walk it, Home/End jump, Escape and Tab close
+and return focus to the trigger, a pointer landing outside closes without
+stealing focus, and a printable key selects the entry whose hint it matches.
+That last rule is why a shortcut hint is only rendered where it actually
+works. Neither menu is a home for a single action or an object's primary
+decision: Promote stays a visible control in both rollout surfaces, and only
+secondary or destructive work moves behind the toggle or the row trigger.
+
+### Console canvas typography
+
+The fleet treemap draws to a canvas, so it cannot inherit Tailwind tokens. Its
+application labels use the same Barlow stack as the DOM and are trimmed with a
+measured ellipsis; narrow tiles draw only their health glyph rather than a
+meaningless fragment of the application name. This is a local rendering fix,
+not a new Gamma component.
 
 ## Markup contracts
 

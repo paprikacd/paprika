@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation"
 import { useId, useMemo, useState } from "react"
 
 import { usePublishConsoleScope } from "@/components/layout/console-header"
+import { ActionMenu } from "@/components/ui/action-menu"
+import { BreadcrumbTrail } from "@/components/ui/breadcrumb-trail"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { Seg, type SegOption } from "@/components/ui/seg"
 import { StatusPill } from "@/components/ui/status-chip"
@@ -19,7 +21,6 @@ import {
   useRolloutAction,
 } from "./rollout-actions"
 import {
-  ConsoleButton,
   EmptyNote,
   PageBand,
   PageBody,
@@ -29,6 +30,7 @@ import { RolloutHistoryBoard } from "./rollout-history-board"
 import {
   findDataSource,
   gateFor,
+  nextStepWeight,
   rolloutPhaseState,
   rolloutPhaseTone,
 } from "./rollout-model"
@@ -113,7 +115,11 @@ export function RolloutsView({
   return (
     <>
       <PageBand
-        breadcrumb="Delivery / Rollouts"
+        breadcrumb={
+          <BreadcrumbTrail
+            items={[{ label: "Delivery" }, { label: "Rollouts" }]}
+          />
+        }
         title="Rollouts"
         subline={
           namespace
@@ -217,6 +223,7 @@ function InFlightTable({
             const key = `${rollout.namespace}/${rollout.name}`
             const steps = rollout.canarySteps.length
             const settled = SETTLED_PHASES.has(rollout.phase)
+            const nextWeight = nextStepWeight(rollout)
             return (
               <tr key={key} className="border-b border-rule-soft">
                 <td className="w-full max-w-0 px-3.5 py-2">
@@ -259,39 +266,59 @@ function InFlightTable({
                   />
                 </td>
                 <td className="px-3.5 py-2 text-right whitespace-nowrap">
-                  <span className="inline-flex gap-1.5">
-                    <ConsoleButton
-                      disabled={pending !== null || settled}
-                      aria-describedby={statusId}
-                      aria-label={`Promote ${rollout.name}`}
-                      onClick={() =>
-                        run(`${key}:promote`, `Promote ${rollout.name}`, () =>
+                  <ActionMenu
+                    label={`Actions for ${rollout.name}`}
+                    align="end"
+                    describedBy={statusId}
+                    disabled={pending !== null || settled}
+                    onSelect={(item) => {
+                      if (item.id === "promote") {
+                        void run(`${key}:promote`, `Promote ${rollout.name}`, () =>
                           client.promoteRollout({
                             namespace: rollout.namespace,
                             name: rollout.name,
                           }),
                         )
+                        return
                       }
-                    >
-                      Promote
-                    </ConsoleButton>
-                    <ConsoleButton
-                      tone="destructive"
-                      disabled={pending !== null || settled}
-                      aria-describedby={statusId}
-                      aria-label={`Abort ${rollout.name}`}
-                      onClick={() =>
-                        run(`${key}:abort`, `Abort ${rollout.name}`, () =>
+                      if (item.id === "abort") {
+                        void run(`${key}:abort`, `Abort ${rollout.name}`, () =>
                           client.abortRollout({
                             namespace: rollout.namespace,
                             name: rollout.name,
                           }),
                         )
                       }
-                    >
-                      Abort
-                    </ConsoleButton>
-                  </span>
+                    }}
+                    groups={[
+                      {
+                        id: "delivery",
+                        label: "Delivery",
+                        items: [
+                          {
+                            id: "promote",
+                            label: nextWeight === undefined
+                              ? "Promote"
+                              : `Promote to ${nextWeight}%`,
+                            description: "Moves the rollout to its next canary step.",
+                            shortcut: "P",
+                          },
+                        ],
+                      },
+                      {
+                        id: "danger",
+                        items: [
+                          {
+                            id: "abort",
+                            label: "Abort & roll back",
+                            description: "Stops the rollout and restores the previous revision.",
+                            shortcut: "A",
+                            danger: true,
+                          },
+                        ],
+                      },
+                    ]}
+                  />
                 </td>
               </tr>
             )

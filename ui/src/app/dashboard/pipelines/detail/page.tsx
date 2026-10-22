@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { Loader2 } from "lucide-react"
@@ -15,6 +14,7 @@ import {
 import { ArtifactCard } from "@/components/dashboard/artifact-card"
 import { PipelineDAG } from "@/components/dashboard/pipeline-dag"
 import { StepDetailPanel } from "@/components/dashboard/step-detail-panel"
+import { BreadcrumbTrail } from "@/components/ui/breadcrumb-trail"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { Button } from "@/components/ui/button"
 import { StatusPill } from "@/components/ui/status-chip"
@@ -329,12 +329,16 @@ function PipelineDetail() {
       <div className="border-b border-rule bg-card px-[22px] py-4">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="min-w-0">
-            <p className="font-mono text-meta text-neutral-600">
-              <Link href="/dashboard/pipelines/" className="hover:underline">
-                Pipelines
-              </Link>{" "}
-              / {pipeline.namespace} / {pipeline.name}
-            </p>
+            <BreadcrumbTrail
+              items={[
+                { label: "Pipelines", href: "/dashboard/pipelines/" },
+                {
+                  label: pipeline.namespace,
+                  href: `/dashboard/pipelines/?namespace=${encodeURIComponent(pipeline.namespace)}`,
+                },
+                { label: pipeline.name },
+              ]}
+            />
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <h1 className="font-cond text-title leading-none font-semibold tracking-[0.01em]">
                 {pipeline.name}

@@ -521,8 +521,9 @@ describe("SyncDiffWorkbench application scope", () => {
     currentSearch = ""
     renderWorkbench(makeClient())
 
+    expect(await screen.findByText("Choose an application")).toBeInTheDocument()
     expect(
-      await screen.findByText("Choose an application to load its drift queue."),
+      screen.getByText("The drift queue is scoped to one application."),
     ).toBeInTheDocument()
     expect(screen.getByRole("combobox", { name: "Application" })).toBeInTheDocument()
   })

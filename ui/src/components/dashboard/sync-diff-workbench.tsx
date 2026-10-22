@@ -2,6 +2,8 @@
 
 import { Code, ConnectError } from "@connectrpc/connect"
 import { useQuery } from "@tanstack/react-query"
+import { GitCompare, Search } from "lucide-react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useId, useMemo, useState } from "react"
 
@@ -16,6 +18,7 @@ import {
   type JsonPatchOperation,
 } from "@/components/dashboard/sync-diff-view"
 import { usePublishConsoleScope } from "@/components/layout/console-header"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Seg, type SegOption } from "@/components/ui/seg"
 import { StatusGlyph, StatusPill } from "@/components/ui/status-chip"
 import {
@@ -690,15 +693,19 @@ export function SyncDiffWorkbench({
         ) : null}
       </div>
 
-      <div className="grid min-w-0 items-stretch lg:grid-cols-[22rem_minmax(0,1fr)]">
+      <div className="grid min-h-[26rem] min-w-0 items-stretch lg:grid-cols-[22rem_minmax(0,1fr)]">
         <section
           aria-label="Drift queue"
           className="min-w-0 border-b border-rule lg:border-r lg:border-b-0"
         >
           {applicationKey === "" ? (
-            <p className="px-3.5 py-6 text-note text-neutral-700">
-              Choose an application to load its drift queue.
-            </p>
+            <EmptyState
+              compact
+              icon={Search}
+              title="Choose an application"
+              description="The drift queue is scoped to one application."
+              className="px-3.5"
+            />
           ) : application.isLoading ? (
             <p role="status" className="px-3.5 py-6 text-note text-neutral-700">
               Loading the drift queue…
@@ -800,9 +807,28 @@ function ResourceDiffPane({
   const headingId = useId()
 
   if (!selected) {
+    const noApplication = emptyMessage.startsWith("No application")
     return (
       <section aria-label="Resource diff" className="min-w-0 bg-background">
-        <p className="px-5 py-6 text-note text-neutral-700">{emptyMessage}</p>
+        <EmptyState
+          icon={GitCompare}
+          title={emptyMessage}
+          description={
+            noApplication
+              ? "Choose an application in the toolbar to load its drift queue and compare live and desired state."
+              : "Select an object in the drift queue to inspect what the rendered manifest declares against what is live."
+          }
+          action={
+            noApplication ? (
+              <Link
+                href="/dashboard/applications/"
+                className="inline-flex h-8 items-center border border-primary bg-primary px-3 font-cond text-label font-semibold text-primary-foreground no-underline hover:no-underline"
+              >
+                Open applications
+              </Link>
+            ) : undefined
+          }
+        />
       </section>
     )
   }

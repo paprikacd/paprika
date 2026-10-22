@@ -1,7 +1,7 @@
 "use client"
 
 import { Select } from "@base-ui/react/select"
-import { ChevronDown, Search } from "lucide-react"
+import { ChevronDown } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   createContext,
@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from "react"
 
+import { SearchField } from "@/components/ui/search-field"
 import type {
   FleetFacetBucket,
   FleetFacetDimension,
@@ -157,21 +158,15 @@ export function ConsoleHeader() {
           </button>
         ) : null}
 
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-3.5">
-          <Search
-            className="size-3.5 shrink-0 text-neutral-600"
-            strokeWidth={1.5}
-            aria-hidden="true"
-          />
-          <input
-            type="search"
-            defaultValue={state.q}
-            onChange={(event) => applySearch(event.target.value)}
-            aria-label="Search applications, resources, revisions and runs"
-            placeholder="Search apps, resources, revisions, runs…"
-            className="min-w-0 flex-1 border-0 bg-transparent text-console outline-none placeholder:text-neutral-500"
-          />
-        </div>
+        <SearchField
+          variant="bar"
+          hideLabel
+          label="Search applications, resources, revisions and runs"
+          defaultValue={state.q}
+          onChange={applySearch}
+          placeholder="Search apps, resources, revisions, runs…"
+          className="flex min-w-0 flex-1 items-stretch px-3.5"
+        />
       </div>
 
       <FreshnessIndicator signals={signals} />

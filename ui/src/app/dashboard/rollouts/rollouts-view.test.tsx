@@ -138,7 +138,10 @@ describe("RolloutsView", () => {
     render(<RolloutsView client={client} />, { wrapper })
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Promote checkout-api" }),
+      await screen.findByRole("button", { name: "Actions for checkout-api" }),
+    )
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Promote/ }),
     )
 
     expect(client.promoteRollout).toHaveBeenCalledWith({
