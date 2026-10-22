@@ -56,36 +56,7 @@ Exit status is non-zero when the report is failed, or when it is degraded and
 --fail-on-degraded is set.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := validateStatusOutput(*output); err != nil {
-				return err
-			}
-			if stuckReleaseSeconds != 0 && (stuckReleaseSeconds < 60 || stuckReleaseSeconds > 86400) {
-				return fmt.Errorf("stuck-release-seconds must be between 60 and 86400")
-			}
-			client, err := clientFn()
-			if err != nil {
-				return fmt.Errorf("create client: %w", err)
-			}
-			requestCtx, cancel := context.WithTimeout(ctx, healthRequestTimeout)
-			defer cancel()
-			response, err := client.GetSystemHealth(requestCtx, connect.NewRequest(&paprikav1.GetSystemHealthRequest{
-				StuckReleaseSeconds: stuckReleaseSeconds,
-			}))
-			if err != nil {
-				return healthRPCError(err)
-			}
-			if err := writeSystemHealth(cmd.OutOrStdout(), *output, response.Msg); err != nil {
-				return err
-			}
-			switch response.Msg.GetStatus() {
-			case "failed":
-				return errors.New("system health is failed")
-			case "degraded":
-				if failOnDegraded {
-					return errors.New("system health is degraded")
-				}
-			}
-			return nil
+			return runHealth(ctx, cmd.OutOrStdout(), clientFn, *output, failOnDegraded, stuckReleaseSeconds)
 		},
 	}
 	cmd.Flags().BoolVar(&failOnDegraded, "fail-on-degraded", false,
@@ -93,6 +64,69 @@ Exit status is non-zero when the report is failed, or when it is degraded and
 	cmd.Flags().Uint32Var(&stuckReleaseSeconds, "stuck-release-seconds", 1800,
 		"Age after which a non-terminal release is considered stuck (60-86400; 0 uses the server default)")
 	return cmd
+}
+
+func runHealth(
+	ctx context.Context,
+	w io.Writer,
+	clientFn func() (v1connect.PaprikaServiceClient, error),
+	output string,
+	failOnDegraded bool,
+	stuckReleaseSeconds uint32,
+) error {
+	if err := validateHealthRequest(output, stuckReleaseSeconds); err != nil {
+		return err
+	}
+	health, err := fetchSystemHealth(ctx, clientFn, stuckReleaseSeconds)
+	if err != nil {
+		return err
+	}
+	if err := writeSystemHealth(w, output, health); err != nil {
+		return err
+	}
+	return healthExitError(health.GetStatus(), failOnDegraded)
+}
+
+func validateHealthRequest(output string, stuckReleaseSeconds uint32) error {
+	if err := validateStatusOutput(output); err != nil {
+		return err
+	}
+	if stuckReleaseSeconds != 0 && (stuckReleaseSeconds < 60 || stuckReleaseSeconds > 86400) {
+		return errors.New("stuck-release-seconds must be between 60 and 86400")
+	}
+	return nil
+}
+
+func fetchSystemHealth(
+	ctx context.Context,
+	clientFn func() (v1connect.PaprikaServiceClient, error),
+	stuckReleaseSeconds uint32,
+) (*paprikav1.GetSystemHealthResponse, error) {
+	client, err := clientFn()
+	if err != nil {
+		return nil, fmt.Errorf("create client: %w", err)
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, healthRequestTimeout)
+	defer cancel()
+	response, err := client.GetSystemHealth(requestCtx, connect.NewRequest(&paprikav1.GetSystemHealthRequest{
+		StuckReleaseSeconds: stuckReleaseSeconds,
+	}))
+	if err != nil {
+		return nil, healthRPCError(err)
+	}
+	return response.Msg, nil
+}
+
+func healthExitError(status string, failOnDegraded bool) error {
+	switch status {
+	case "failed":
+		return errors.New("system health is failed")
+	case "degraded":
+		if failOnDegraded {
+			return errors.New("system health is degraded")
+		}
+	}
+	return nil
 }
 
 func healthRPCError(err error) error {
@@ -120,14 +154,33 @@ func writeSystemHealth(w io.Writer, output string, health *paprikav1.GetSystemHe
 
 func writeSystemHealthTable(w io.Writer, health *paprikav1.GetSystemHealthResponse) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintf(tw, "STATUS\t%s\n", strings.ToUpper(health.GetStatus())); err != nil {
+	if err := writeHealthSummary(tw, health); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(tw, "SERVER\t%s (%s, %s)\n",
+	if err := writeHealthChecks(tw, health.GetChecks()); err != nil {
+		return err
+	}
+	if err := writeHealthStale(tw, health.GetStaleApplications()); err != nil {
+		return err
+	}
+	if err := writeHealthStuck(tw, health.GetStuckReleases()); err != nil {
+		return err
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("flush health report: %w", err)
+	}
+	return nil
+}
+
+func writeHealthSummary(tw *tabwriter.Writer, health *paprikav1.GetSystemHealthResponse) error {
+	if err := writeHealthRow(tw, "STATUS\t%s\n", strings.ToUpper(health.GetStatus())); err != nil {
+		return err
+	}
+	if err := writeHealthRow(tw, "SERVER\t%s (%s, %s)\n",
 		health.GetServerVersion(), shortCommit(health.GetServerGitCommit()), health.GetServerBuildDate()); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(tw, "APPLICATIONS\t%d total\t%d healthy\t%d progressing\t%d degraded\t%d failed\t%d stale\n",
+	if err := writeHealthRow(tw, "APPLICATIONS\t%d total\t%d healthy\t%d progressing\t%d degraded\t%d failed\t%d stale\n",
 		health.GetApplicationsTotal(),
 		health.GetApplicationsHealthy(),
 		health.GetApplicationsProgressing(),
@@ -137,44 +190,75 @@ func writeSystemHealthTable(w io.Writer, health *paprikav1.GetSystemHealthRespon
 	); err != nil {
 		return err
 	}
-	if controller := health.GetController(); controller != nil {
-		if _, err := fmt.Fprintf(tw, "CONTROLLER\t%d/%d ready\t%d restarts\n",
-			controller.GetReadyReplicas(), controller.GetDesiredReplicas(), controller.GetRestartCount()); err != nil {
-			return err
-		}
+	controller := health.GetController()
+	if controller == nil {
+		return nil
 	}
-	if _, err := fmt.Fprintln(tw, "CHECKS"); err != nil {
+	return writeHealthRow(tw, "CONTROLLER\t%d/%d ready\t%d restarts\n",
+		controller.GetReadyReplicas(), controller.GetDesiredReplicas(), controller.GetRestartCount())
+}
+
+func writeHealthChecks(tw *tabwriter.Writer, checks []*paprikav1.SystemHealthCheck) error {
+	if err := writeHealthLine(tw, "CHECKS"); err != nil {
 		return err
 	}
-	for _, check := range health.GetChecks() {
-		if _, err := fmt.Fprintf(tw, "  %s\t%s\t%s\n",
+	for _, check := range checks {
+		if err := writeHealthRow(tw, "  %s\t%s\t%s\n",
 			strings.ToUpper(check.GetStatus()), check.GetName(), check.GetMessage()); err != nil {
 			return err
 		}
 	}
-	if len(health.GetStaleApplications()) > 0 {
-		if _, err := fmt.Fprintln(tw, "STALE APPLICATIONS"); err != nil {
+	return nil
+}
+
+func writeHealthStale(tw *tabwriter.Writer, stale []*paprikav1.StaleApplication) error {
+	if len(stale) == 0 {
+		return nil
+	}
+	if err := writeHealthLine(tw, "STALE APPLICATIONS"); err != nil {
+		return err
+	}
+	for _, app := range stale {
+		if err := writeHealthRow(tw, "  %s/%s\tgeneration=%d observed=%d lag=%d\n",
+			app.GetApplication().GetNamespace(), app.GetApplication().GetName(),
+			app.GetGeneration(), app.GetObservedGeneration(), app.GetLagGenerations()); err != nil {
 			return err
 		}
-		for _, app := range health.GetStaleApplications() {
-			if _, err := fmt.Fprintf(tw, "  %s/%s\tgeneration=%d observed=%d lag=%d\n",
-				app.GetApplication().GetNamespace(), app.GetApplication().GetName(),
-				app.GetGeneration(), app.GetObservedGeneration(), app.GetLagGenerations()); err != nil {
-				return err
-			}
-		}
 	}
-	if len(health.GetStuckReleases()) > 0 {
-		if _, err := fmt.Fprintln(tw, "STUCK RELEASES"); err != nil {
+	return nil
+}
+
+func writeHealthStuck(tw *tabwriter.Writer, stuck []*paprikav1.StuckRelease) error {
+	if len(stuck) == 0 {
+		return nil
+	}
+	if err := writeHealthLine(tw, "STUCK RELEASES"); err != nil {
+		return err
+	}
+	for _, release := range stuck {
+		if err := writeHealthRow(tw, "  %s/%s\tphase=%s age=%s\n",
+			release.GetRelease().GetNamespace(), release.GetRelease().GetName(),
+			release.GetPhase(), healthAge(release.GetAgeSeconds())); err != nil {
 			return err
 		}
-		for _, release := range health.GetStuckReleases() {
-			if _, err := fmt.Fprintf(tw, "  %s/%s\tphase=%s age=%s\n",
-				release.GetRelease().GetNamespace(), release.GetRelease().GetName(),
-				release.GetPhase(), time.Duration(release.GetAgeSeconds())*time.Second); err != nil {
-				return err
-			}
-		}
 	}
-	return tw.Flush()
+	return nil
+}
+
+func writeHealthRow(tw *tabwriter.Writer, format string, args ...any) error {
+	if _, err := fmt.Fprintf(tw, format, args...); err != nil {
+		return fmt.Errorf("write health report: %w", err)
+	}
+	return nil
+}
+
+func writeHealthLine(tw *tabwriter.Writer, line string) error {
+	if _, err := fmt.Fprintln(tw, line); err != nil {
+		return fmt.Errorf("write health report: %w", err)
+	}
+	return nil
+}
+
+func healthAge(seconds uint64) time.Duration {
+	return time.Duration(seconds) * time.Second //nolint:gosec // server-reported age, bounded by the health report
 }

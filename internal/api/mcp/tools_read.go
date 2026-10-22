@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -399,7 +400,7 @@ func readSystemHealthTool() Tool {
 			if raw, ok := in["stuck_release_seconds"]; ok {
 				seconds, isNumber := raw.(float64)
 				if !isNumber || seconds < 60 || seconds > 86400 {
-					return nil, fmt.Errorf("get_system_health: stuck_release_seconds must be a number between 60 and 86400")
+					return nil, errors.New("get_system_health: stuck_release_seconds must be a number between 60 and 86400")
 				}
 				stuckReleaseSeconds = uint32(seconds)
 			}

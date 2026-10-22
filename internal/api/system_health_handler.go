@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,6 +34,12 @@ const (
 	healthCheckWarn = "warn"
 	healthCheckFail = "fail"
 )
+
+type systemHealthApplications struct {
+	stale            []*paprikav1.StaleApplication
+	authorized       map[types.NamespacedName]struct{}
+	retriesExhausted uint64
+}
 
 // GetSystemHealth answers the post-deployment question the fleet status alone
 // cannot: is the control plane itself healthy and keeping up? It combines the
@@ -69,86 +76,17 @@ func (s *PaprikaServer) GetSystemHealth(
 		return nil, mapFleetError(err)
 	}
 
-	var apps pipelinesv1alpha1.ApplicationList
-	if err := s.client.List(ctx, &apps); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("list applications for system health"))
+	applications, err := s.systemHealthApplications(ctx, scope)
+	if err != nil {
+		return nil, err
 	}
-	var releases pipelinesv1alpha1.ReleaseList
-	if err := s.client.List(ctx, &releases); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("list releases for system health"))
-	}
-
-	authorizedApps := make(map[types.NamespacedName]struct{}, len(apps.Items))
-	stale := make([]*paprikav1.StaleApplication, 0)
-	retriesExhausted := uint64(0)
-	for i := range apps.Items {
-		app := &apps.Items[i]
-		project := strings.TrimSpace(app.Spec.Project)
-		if project == "" {
-			project = "default"
-		}
-		if _, authorized := scope.Projects[fleet.ProjectKey{Namespace: app.Namespace, Name: project}]; !authorized {
-			continue
-		}
-		authorizedApps[types.NamespacedName{Namespace: app.Namespace, Name: app.Name}] = struct{}{}
-
-		lag := app.Generation - app.Status.ObservedGeneration
-		if lag > 0 {
-			stale = append(stale, &paprikav1.StaleApplication{
-				Application:        &paprikav1.FleetObjectKey{Namespace: app.Namespace, Name: app.Name},
-				Generation:         uint64(app.Generation),
-				ObservedGeneration: uint64(app.Status.ObservedGeneration),
-				LagGenerations:     uint64(lag),
-			})
-		}
-		if meta.IsStatusConditionTrue(app.Status.Conditions, pipelinesv1alpha1.ConditionReleaseRetriesExhausted) {
-			retriesExhausted++
-		}
-	}
-	sort.Slice(stale, func(i, j int) bool {
-		if stale[i].Application.Namespace != stale[j].Application.Namespace {
-			return stale[i].Application.Namespace < stale[j].Application.Namespace
-		}
-		return stale[i].Application.Name < stale[j].Application.Name
-	})
-
-	stuck := make([]*paprikav1.StuckRelease, 0)
-	now := time.Now()
 	threshold := time.Duration(stuckAfter) * time.Second
-	for i := range releases.Items {
-		release := &releases.Items[i]
-		owner := metav1.GetControllerOf(release)
-		if owner == nil || owner.Kind != "Application" {
-			continue
-		}
-		if _, authorized := authorizedApps[types.NamespacedName{Namespace: release.Namespace, Name: owner.Name}]; !authorized {
-			continue
-		}
-		phase := release.Status.Phase
-		if systemHealthReleaseTerminal(phase) || phase == pipelinesv1alpha1.ReleaseAwaitingApproval {
-			continue
-		}
-		age := now.Sub(release.CreationTimestamp.Time)
-		if age <= threshold {
-			continue
-		}
-		if age < 0 {
-			age = 0
-		}
-		stuck = append(stuck, &paprikav1.StuckRelease{
-			Release:    &paprikav1.FleetObjectKey{Namespace: release.Namespace, Name: release.Name},
-			Phase:      string(phase),
-			AgeSeconds: uint64(age.Seconds()),
-		})
+	stuck, err := s.systemHealthStuckReleases(ctx, applications.authorized, threshold, time.Now())
+	if err != nil {
+		return nil, err
 	}
-	sort.Slice(stuck, func(i, j int) bool {
-		if stuck[i].Release.Namespace != stuck[j].Release.Namespace {
-			return stuck[i].Release.Namespace < stuck[j].Release.Namespace
-		}
-		return stuck[i].Release.Name < stuck[j].Release.Name
-	})
-
 	controller := s.controllerHealth(ctx)
+
 	fleetIndexDegraded := false
 	fleetIndexReason := ""
 	if readyErr := reader.CheckReady(); readyErr != nil {
@@ -167,17 +105,136 @@ func (s *PaprikaServer) GetSystemHealth(
 		ApplicationsDegraded:                status.Health[fleet.HealthDegraded],
 		ApplicationsFailed:                  status.Health[fleet.HealthFailed],
 		ApplicationsUnknown:                 status.Health[fleet.HealthUnknown] + status.Health[fleet.HealthMissing] + status.Health[fleet.HealthUnspecified],
-		ApplicationsStale:                   uint64(len(stale)),
-		ApplicationsReleaseRetriesExhausted: retriesExhausted,
+		ApplicationsStale:                   uint64(len(applications.stale)),
+		ApplicationsReleaseRetriesExhausted: applications.retriesExhausted,
 		ReleasesStuck:                       uint64(len(stuck)),
-		StaleApplications:                   stale,
+		StaleApplications:                   applications.stale,
 		StuckReleases:                       stuck,
 		Controller:                          controller,
 		IndexGeneration:                     status.Generation,
 		FleetIndexDegraded:                  fleetIndexDegraded,
 		FleetIndexReason:                    fleetIndexReason,
 	}
+	appendSystemHealthChecks(response, controller, fleetIndexDegraded, fleetIndexReason, threshold)
+	return connect.NewResponse(response), nil
+}
 
+func (s *PaprikaServer) systemHealthApplications(
+	ctx context.Context,
+	scope fleet.QueryScope,
+) (systemHealthApplications, error) {
+	var apps pipelinesv1alpha1.ApplicationList
+	if err := s.client.List(ctx, &apps); err != nil {
+		return systemHealthApplications{}, connect.NewError(
+			connect.CodeInternal, errors.New("list applications for system health"),
+		)
+	}
+
+	result := systemHealthApplications{
+		authorized: make(map[types.NamespacedName]struct{}, len(apps.Items)),
+	}
+	for i := range apps.Items {
+		app := &apps.Items[i]
+		project := strings.TrimSpace(app.Spec.Project)
+		if project == "" {
+			project = "default"
+		}
+		if _, authorized := scope.Projects[fleet.ProjectKey{Namespace: app.Namespace, Name: project}]; !authorized {
+			continue
+		}
+		result.authorized[types.NamespacedName{Namespace: app.Namespace, Name: app.Name}] = struct{}{}
+
+		lag := app.Generation - app.Status.ObservedGeneration
+		if lag > 0 {
+			result.stale = append(result.stale, &paprikav1.StaleApplication{
+				Application:        &paprikav1.FleetObjectKey{Namespace: app.Namespace, Name: app.Name},
+				Generation:         nonNegativeUint64(app.Generation),
+				ObservedGeneration: nonNegativeUint64(app.Status.ObservedGeneration),
+				LagGenerations:     nonNegativeUint64(lag),
+			})
+		}
+		if meta.IsStatusConditionTrue(app.Status.Conditions, pipelinesv1alpha1.ConditionReleaseRetriesExhausted) {
+			result.retriesExhausted++
+		}
+	}
+	sort.Slice(result.stale, func(i, j int) bool {
+		if result.stale[i].Application.Namespace != result.stale[j].Application.Namespace {
+			return result.stale[i].Application.Namespace < result.stale[j].Application.Namespace
+		}
+		return result.stale[i].Application.Name < result.stale[j].Application.Name
+	})
+	return result, nil
+}
+
+func (s *PaprikaServer) systemHealthStuckReleases(
+	ctx context.Context,
+	authorized map[types.NamespacedName]struct{},
+	threshold time.Duration,
+	now time.Time,
+) ([]*paprikav1.StuckRelease, error) {
+	var releases pipelinesv1alpha1.ReleaseList
+	if err := s.client.List(ctx, &releases); err != nil {
+		return nil, connect.NewError(
+			connect.CodeInternal, errors.New("list releases for system health"),
+		)
+	}
+
+	stuck := make([]*paprikav1.StuckRelease, 0)
+	for i := range releases.Items {
+		release := &releases.Items[i]
+		age, isStuck := systemHealthStuckAge(release, authorized, threshold, now)
+		if !isStuck {
+			continue
+		}
+		stuck = append(stuck, &paprikav1.StuckRelease{
+			Release:    &paprikav1.FleetObjectKey{Namespace: release.Namespace, Name: release.Name},
+			Phase:      string(release.Status.Phase),
+			AgeSeconds: uint64(age.Seconds()),
+		})
+	}
+	sort.Slice(stuck, func(i, j int) bool {
+		if stuck[i].Release.Namespace != stuck[j].Release.Namespace {
+			return stuck[i].Release.Namespace < stuck[j].Release.Namespace
+		}
+		return stuck[i].Release.Name < stuck[j].Release.Name
+	})
+	return stuck, nil
+}
+
+func systemHealthStuckAge(
+	release *pipelinesv1alpha1.Release,
+	authorized map[types.NamespacedName]struct{},
+	threshold time.Duration,
+	now time.Time,
+) (time.Duration, bool) {
+	owner := metav1.GetControllerOf(release)
+	if owner == nil || owner.Kind != "Application" {
+		return 0, false
+	}
+	if _, ok := authorized[types.NamespacedName{Namespace: release.Namespace, Name: owner.Name}]; !ok {
+		return 0, false
+	}
+	phase := release.Status.Phase
+	if systemHealthReleaseTerminal(phase) || phase == pipelinesv1alpha1.ReleaseAwaitingApproval {
+		return 0, false
+	}
+	age := now.Sub(release.CreationTimestamp.Time)
+	if age <= threshold {
+		return 0, false
+	}
+	if age < 0 {
+		age = 0
+	}
+	return age, true
+}
+
+func appendSystemHealthChecks(
+	response *paprikav1.GetSystemHealthResponse,
+	controller *paprikav1.ControllerHealth,
+	fleetIndexDegraded bool,
+	fleetIndexReason string,
+	threshold time.Duration,
+) {
 	addSystemHealthCheck(response, "server", healthCheckPass,
 		fmt.Sprintf("%s (%s)", version.Version, version.Commit))
 
@@ -185,28 +242,14 @@ func (s *PaprikaServer) GetSystemHealth(
 		addSystemHealthCheck(response, "fleet_index", healthCheckFail, fleetIndexReason)
 	} else {
 		addSystemHealthCheck(response, "fleet_index", healthCheckPass,
-			fmt.Sprintf("generation %d ready", status.Generation))
+			fmt.Sprintf("generation %d ready", response.GetIndexGeneration()))
 	}
 
-	switch {
-	case controller == nil || !controller.GetPresent():
-		addSystemHealthCheck(response, "controller_manager", healthCheckWarn,
-			"controller-manager deployment not found in the control-plane namespace")
-	case !controller.GetReady():
-		addSystemHealthCheck(response, "controller_manager", healthCheckFail,
-			fmt.Sprintf("%d/%d replicas ready", controller.GetReadyReplicas(), controller.GetDesiredReplicas()))
-	case controller.GetRestartCount() > 0:
-		addSystemHealthCheck(response, "controller_manager", healthCheckWarn,
-			fmt.Sprintf("%d/%d replicas ready, %d container restarts",
-				controller.GetReadyReplicas(), controller.GetDesiredReplicas(), controller.GetRestartCount()))
-	default:
-		addSystemHealthCheck(response, "controller_manager", healthCheckPass,
-			fmt.Sprintf("%d/%d replicas ready, no restarts",
-				controller.GetReadyReplicas(), controller.GetDesiredReplicas()))
-	}
+	controllerStatus, controllerMessage := controllerHealthCheck(controller)
+	addSystemHealthCheck(response, "controller_manager", controllerStatus, controllerMessage)
 
 	addSystemHealthCheck(response, "applications", healthCheckPass,
-		fmt.Sprintf("%d authorized applications", status.Total))
+		fmt.Sprintf("%d authorized applications", response.GetApplicationsTotal()))
 
 	if unhealthy := response.GetApplicationsDegraded() + response.GetApplicationsFailed(); unhealthy > 0 {
 		addSystemHealthCheck(response, "application_health", healthCheckWarn,
@@ -240,8 +283,22 @@ func (s *PaprikaServer) GetSystemHealth(
 		addSystemHealthCheck(response, "releases_stuck", healthCheckPass,
 			fmt.Sprintf("no active release older than %s", threshold))
 	}
+}
 
-	return connect.NewResponse(response), nil
+func controllerHealthCheck(controller *paprikav1.ControllerHealth) (status, message string) {
+	switch {
+	case controller == nil || !controller.GetPresent():
+		return healthCheckWarn, "controller-manager deployment not found in the control-plane namespace"
+	case !controller.GetReady():
+		return healthCheckFail, fmt.Sprintf("%d/%d replicas ready",
+			controller.GetReadyReplicas(), controller.GetDesiredReplicas())
+	case controller.GetRestartCount() > 0:
+		return healthCheckWarn, fmt.Sprintf("%d/%d replicas ready, %d container restarts",
+			controller.GetReadyReplicas(), controller.GetDesiredReplicas(), controller.GetRestartCount())
+	default:
+		return healthCheckPass, fmt.Sprintf("%d/%d replicas ready, no restarts",
+			controller.GetReadyReplicas(), controller.GetDesiredReplicas())
+	}
 }
 
 func validateSystemHealthRequest(
@@ -286,9 +343,14 @@ func systemHealthReleaseTerminal(phase pipelinesv1alpha1.ReleasePhase) bool {
 		pipelinesv1alpha1.ReleaseRolledBack,
 		pipelinesv1alpha1.ReleaseSuperseded:
 		return true
-	default:
+	case pipelinesv1alpha1.ReleasePending,
+		pipelinesv1alpha1.ReleasePromoting,
+		pipelinesv1alpha1.ReleaseCanarying,
+		pipelinesv1alpha1.ReleaseVerifying,
+		pipelinesv1alpha1.ReleaseAwaitingApproval:
 		return false
 	}
+	return false
 }
 
 // controllerHealth reads the controller-manager Deployment and its pods. It is
@@ -299,46 +361,73 @@ func (s *PaprikaServer) controllerHealth(ctx context.Context) *paprikav1.Control
 	if s == nil || s.k8sClient == nil || s.controlPlaneNamespace == "" {
 		return health
 	}
+	deployment, found := s.controllerDeployment(ctx)
+	if !found {
+		return health
+	}
+	health.Present = true
+	health.DesiredReplicas = controllerDesiredReplicas(deployment)
+	health.ReadyReplicas = nonNegativeUint32(deployment.Status.ReadyReplicas)
+	health.AvailableReplicas = nonNegativeUint32(deployment.Status.AvailableReplicas)
+	health.Ready = health.DesiredReplicas > 0 && health.ReadyReplicas >= health.DesiredReplicas
+	health.RestartCount = s.controllerRestartCount(ctx, deployment)
+	return health
+}
+
+func (s *PaprikaServer) controllerDeployment(ctx context.Context) (*appsv1.Deployment, bool) {
 	deployments, err := s.k8sClient.AppsV1().Deployments(s.controlPlaneNamespace).List(
 		ctx, metav1.ListOptions{LabelSelector: "control-plane=controller-manager"},
 	)
 	if err != nil || len(deployments.Items) == 0 {
-		return health
+		return nil, false
 	}
 	sort.Slice(deployments.Items, func(i, j int) bool {
 		return deployments.Items[i].Name < deployments.Items[j].Name
 	})
-	deployment := &deployments.Items[0]
+	return &deployments.Items[0], true
+}
 
-	desired := uint32(1)
-	if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas >= 0 {
-		desired = uint32(*deployment.Spec.Replicas)
+func controllerDesiredReplicas(deployment *appsv1.Deployment) uint32 {
+	if deployment.Spec.Replicas == nil {
+		return 1
 	}
-	health.Present = true
-	health.DesiredReplicas = desired
-	health.ReadyReplicas = uint32(deployment.Status.ReadyReplicas)
-	health.AvailableReplicas = uint32(deployment.Status.AvailableReplicas)
-	health.Ready = desired > 0 && deployment.Status.ReadyReplicas >= int32(desired)
+	return nonNegativeUint32(*deployment.Spec.Replicas)
+}
 
+func (s *PaprikaServer) controllerRestartCount(ctx context.Context, deployment *appsv1.Deployment) uint32 {
 	if deployment.Spec.Selector == nil {
-		return health
+		return 0
 	}
 	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
 	if err != nil {
-		return health
+		return 0
 	}
 	pods, err := s.k8sClient.CoreV1().Pods(s.controlPlaneNamespace).List(
 		ctx, metav1.ListOptions{LabelSelector: selector.String()},
 	)
 	if err != nil {
-		return health
+		return 0
 	}
 	var restarts uint32
 	for i := range pods.Items {
-		for _, status := range pods.Items[i].Status.ContainerStatuses {
-			restarts += uint32(status.RestartCount)
+		statuses := pods.Items[i].Status.ContainerStatuses
+		for j := range statuses {
+			restarts += nonNegativeUint32(statuses[j].RestartCount)
 		}
 	}
-	health.RestartCount = restarts
-	return health
+	return restarts
+}
+
+func nonNegativeUint64(value int64) uint64 {
+	if value <= 0 {
+		return 0
+	}
+	return uint64(value)
+}
+
+func nonNegativeUint32(value int32) uint32 {
+	if value <= 0 {
+		return 0
+	}
+	return uint32(value)
 }
