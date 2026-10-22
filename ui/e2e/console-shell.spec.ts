@@ -57,3 +57,58 @@ test("the freshness tooltip explains the polling cadence", async ({ page }) => {
   expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
   expect(box.y).toBeGreaterThanOrEqual(0)
 })
+
+/**
+ * The application detail's split: the divider states the split, the keyboard
+ * and the pointer can both move it, and the operator's width survives a
+ * reload.
+ */
+test("the detail rail divider states and changes the split", async ({ page }) => {
+  await page.goto("/dashboard/")
+  const attention = page.getByRole("region", { name: "03 Needs attention" })
+  const href = await attention
+    .getByRole("listitem")
+    .first()
+    .getByRole("link")
+    .first()
+    .getAttribute("href")
+  await page.goto(href!)
+
+  const separator = page.getByRole("separator", {
+    name: "Resize the application detail rail",
+  })
+  await expect(separator).toBeVisible()
+  await expect(separator).toHaveAttribute("aria-orientation", "vertical")
+
+  const before = Number(await separator.getAttribute("aria-valuenow"))
+  await separator.focus()
+  await page.keyboard.press("ArrowRight")
+  const after = Number(await separator.getAttribute("aria-valuenow"))
+  expect(after).toBeGreaterThan(before)
+
+  // The rail really is wider afterwards.
+  const rail = page.locator('[data-slot="resizable-panes"] > div').last()
+  const railBox = (await rail.boundingBox())!
+  expect(railBox.width).toBeGreaterThan(240)
+
+  // A pointer drag moves it as well.
+  const separatorBox = (await separator.boundingBox())!
+  const group = page.locator('[data-slot="resizable-panes"]')
+  const groupBox = (await group.boundingBox())!
+  await page.mouse.move(
+    separatorBox.x + separatorBox.width / 2,
+    separatorBox.y + separatorBox.height / 2,
+  )
+  await page.mouse.down()
+  await page.mouse.move(groupBox.x + groupBox.width * 0.55, separatorBox.y + 40)
+  await page.mouse.up()
+  const dragged = Number(await separator.getAttribute("aria-valuenow"))
+  expect(dragged).toBeLessThan(after)
+  expect(dragged).toBeGreaterThanOrEqual(55)
+
+  // And the split survives a reload.
+  await page.reload()
+  await expect(
+    page.getByRole("separator", { name: "Resize the application detail rail" }),
+  ).toHaveAttribute("aria-valuenow", String(dragged))
+})

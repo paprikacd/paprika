@@ -52,6 +52,7 @@ import { BreadcrumbTrail } from "@/components/ui/breadcrumb-trail"
 import { CopyField } from "@/components/ui/copy-field"
 import { DisclosureStack } from "@/components/ui/disclosure-stack"
 import { MorphTabList, MorphTabPanel, type MorphTabDirection } from "@/components/ui/morph-tabs"
+import { ResizablePanes } from "@/components/ui/resizable-panes"
 import { cn } from "@/lib/utils"
 
 
@@ -580,40 +581,49 @@ function ApplicationDetail() {
               release={application.releaseRef}
               observedAtMs={Number(queries.lifecycle.data?.lifecycle?.observedAtUnixMs ?? 0)}
             />
-            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-              <ResourceBoard
-                view={resourceView}
-                onViewChange={setResourceView}
-                nodes={treeNodes}
-                graphNodes={graphNodes}
-                collapsed={collapsed}
-                onCollapsedChange={setCollapsed}
-                onSelect={setSelected}
-                selectedId={selectedId}
-                driftedCount={driftedCount}
-              />
-              <div className="flex flex-col gap-3.5">
-                <DrilldownRail gate={ownershipGate} ownership={ownership} />
-                <OperationalMetadata metadata={application.operationalMetadata ?? {}} />
-                <ApplicationSLOs application={application} compact onOpenHealth={() => changeTab("health")} />
-                <GatesBoard
-                  application={application}
-                  policyResults={currentRelease?.policyResults ?? []}
-                  busyAction={busyAction}
-                  onGateAction={(gate, action) =>
-                    runAction(
-                      `gate:${gate}`,
-                      action === "approve" ? "Approval" : "Rejection",
-                      () =>
-                        action === "approve"
-                          ? client.approveGate({ namespace, name, gate })
-                          : client.rejectGate({ namespace, name, gate })
-                    )
-                  }
+            <ResizablePanes
+              label="Resize the application detail rail"
+              defaultRatio={72}
+              minRatio={55}
+              maxRatio={84}
+              storageKey="paprika-application-rail-ratio"
+              left={
+                <ResourceBoard
+                  view={resourceView}
+                  onViewChange={setResourceView}
+                  nodes={treeNodes}
+                  graphNodes={graphNodes}
+                  collapsed={collapsed}
+                  onCollapsedChange={setCollapsed}
+                  onSelect={setSelected}
+                  selectedId={selectedId}
+                  driftedCount={driftedCount}
                 />
-                <SourceBoard application={application} commit={commit} />
-              </div>
-            </div>
+              }
+              right={
+                <div className="flex flex-col gap-3.5">
+                  <DrilldownRail gate={ownershipGate} ownership={ownership} />
+                  <OperationalMetadata metadata={application.operationalMetadata ?? {}} />
+                  <ApplicationSLOs application={application} compact onOpenHealth={() => changeTab("health")} />
+                  <GatesBoard
+                    application={application}
+                    policyResults={currentRelease?.policyResults ?? []}
+                    busyAction={busyAction}
+                    onGateAction={(gate, action) =>
+                      runAction(
+                        `gate:${gate}`,
+                        action === "approve" ? "Approval" : "Rejection",
+                        () =>
+                          action === "approve"
+                            ? client.approveGate({ namespace, name, gate })
+                            : client.rejectGate({ namespace, name, gate })
+                      )
+                    }
+                  />
+                  <SourceBoard application={application} commit={commit} />
+                </div>
+              }
+            />
             <PromotionStages application={application} />
           </>
         ) : null}

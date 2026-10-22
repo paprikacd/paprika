@@ -32,6 +32,7 @@ no Gamma source, build output, font, icon, or asset is imported.
 | DisclosureStack | [`ui/src/components/ui/disclosure-stack.tsx`](../../ui/src/components/ui/disclosure-stack.tsx) | Application detail gates: pending gates start open, settled ones collapse to a summary row, panels stay in the DOM so `aria-controls` always resolves |
 | Tooltip | [`ui/src/components/ui/tooltip.tsx`](../../ui/src/components/ui/tooltip.tsx) | Truncated values that need their full text: the observability provider endpoint, the console's polling cadence. Hover opens after a delay, focus opens at once, Escape closes it without moving focus |
 | QuickCommand | [`ui/src/components/ui/quick-command.tsx`](../../ui/src/components/ui/quick-command.tsx) | The console's command palette: one search field, grouped results, a roving selection, and ⌘/Ctrl K from anywhere. The fleet index answers the application half; the console's own pages are always offered |
+| ResizablePanes | [`ui/src/components/ui/resizable-panes.tsx`](../../ui/src/components/ui/resizable-panes.tsx) | The application detail split: a focusable separator that states the ratio, moves with the arrow keys or a pointer drag, clamps between bounds, and remembers the operator's rail width |
 
 The MorphTabs panel transition is disabled by the console's global
 `prefers-reduced-motion` rule; the underline is a measured transform, not a
@@ -62,9 +63,10 @@ than a local list, because that search is typo-tolerant and server-counted;
 the console's own pages are filtered locally and are always available.
 
 [`ui/e2e/console-shell.spec.ts`](../../ui/e2e/console-shell.spec.ts) covers the
-two surfaces a unit test cannot see: that the palette opens, filters and
-navigates, that ⌘K opens it and Escape closes it, and that the tooltip stays
-inside the viewport.
+surfaces a unit test cannot see: that the palette opens, filters and
+navigates, that ⌘K opens it and Escape closes it, that the tooltip stays
+inside the viewport, and that the detail rail's divider states its ratio,
+moves with both the keyboard and a pointer drag, and survives a reload.
 
 ### Console canvas typography
 
