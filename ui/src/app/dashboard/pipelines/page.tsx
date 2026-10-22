@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { Workflow } from "lucide-react"
 import { Suspense, useCallback, useMemo, useState } from "react"
 
 import {
@@ -10,6 +11,8 @@ import {
   type PipelineRunSummary,
 } from "@/gen/paprika/v1/api_pb"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
+import { ConsoleButton } from "@/components/ui/console-button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { StatusGlyph, StatusPill } from "@/components/ui/status-chip"
 import { usePublishConsoleScope } from "@/components/layout/console-header"
 import { useConnection } from "@/lib/connection-context"
@@ -58,9 +61,20 @@ function PipelinesSkeleton() {
 
 function PipelinesList() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const raw = searchParams.toString()
   const query = useMemo(() => parseFleetQuery(raw).state, [raw])
   const { reportRequestOutcome } = useConnection()
+
+  // The scope bar owns the namespace filter, but the list is the one place
+  // that says "nothing matched" — so it offers the way out.
+  const clearScope = useCallback(() => {
+    const params = new URLSearchParams(raw)
+    params.delete("namespace")
+    const next = params.toString()
+    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false })
+  }, [pathname, raw, router])
 
   const [pipelines, setPipelines] = useState<Pipeline[] | null>(null)
   const [runs, setRuns] = useState<readonly PipelineRunSummary[]>([])
@@ -180,9 +194,21 @@ function PipelinesList() {
               meta={`${matched.length} of ${pipelines.length} in scope`}
             />
             {rows.length === 0 ? (
-              <p className="px-3.5 py-8 text-center text-console text-muted-foreground">
-                No pipelines match this scope.
-              </p>
+              <EmptyState
+                compact
+                icon={Workflow}
+                title="No pipelines match this scope"
+                description={
+                  query.namespaces.length > 0
+                    ? "Nothing in the selected namespaces has a pipeline."
+                    : "No pipeline has been registered in this control plane yet."
+                }
+                action={
+                  query.namespaces.length > 0 ? (
+                    <ConsoleButton onClick={clearScope}>Clear the namespace scope</ConsoleButton>
+                  ) : undefined
+                }
+              />
             ) : (
               <table className="w-full border-collapse text-console">
                 <caption className="sr-only">

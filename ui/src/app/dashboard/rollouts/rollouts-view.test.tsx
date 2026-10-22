@@ -133,6 +133,22 @@ describe("RolloutsView", () => {
     expect(screen.getByRole("table")).toBeInTheDocument()
   })
 
+  it("says what an empty flight is and offers the recent window instead", async () => {
+    const client = makeClient({
+      listRollouts: vi.fn(async () => new ListRolloutsResponse({ rollouts: [] })),
+    })
+    render(<RolloutsView client={client} />, { wrapper })
+
+    expect(
+      await screen.findByText("No rollouts in flight"),
+    ).toBeInTheDocument()
+
+    const action = screen.getByRole("button", { name: "Show recent rollouts" })
+    await userEvent.click(action)
+
+    expect(await screen.findByRole("table")).toBeInTheDocument()
+  })
+
   it("promotes a rollout and reports that the control plane accepted it", async () => {
     const client = makeClient()
     render(<RolloutsView client={client} />, { wrapper })

@@ -16,7 +16,7 @@ export function OperationalLinkIcon({ url, label, kind }: { url: string; label: 
   const Icon = ({ [DrilldownKind.UNSPECIFIED]: Link2, [DrilldownKind.CUSTOM]: Link2, [DrilldownKind.DASHBOARD]: ChartNoAxesCombined, [DrilldownKind.LOGS]: ScrollText,
     [DrilldownKind.TRACES]: Waypoints, [DrilldownKind.RUNBOOK]: BookOpen,
     [DrilldownKind.REPOSITORY]: GitBranch, [DrilldownKind.COST]: CircleDollarSign })[kind] ?? Link2
-  return <span className="flex size-7 shrink-0 items-center justify-center rounded border border-rule-soft bg-white text-neutral-700" aria-hidden="true">
+  return <span className="flex size-7 shrink-0 items-center justify-center rounded-[2px] border border-rule-soft bg-card text-neutral-700" aria-hidden="true">
     {brand ? (
       // Local vector assets need neither an image optimizer nor a third-party favicon service.
       // eslint-disable-next-line @next/next/no-img-element

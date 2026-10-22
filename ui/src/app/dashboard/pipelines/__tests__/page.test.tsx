@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 
 import {
   DataClass,
@@ -18,9 +19,12 @@ const mockClient = vi.hoisted(() => ({
   getDataSources: vi.fn(),
 }))
 
+const mockSearch = vi.hoisted(() => ({ value: "" }))
+const mockRouter = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(""),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(mockSearch.value),
+  useRouter: () => mockRouter,
   usePathname: () => "/dashboard/pipelines/",
 }))
 
@@ -63,6 +67,7 @@ const pipelines = [
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockSearch.value = ""
   resetDataSourcesCache()
   mockClient.listPipelines.mockResolvedValue({ pipelines })
   mockClient.getDataSources.mockResolvedValue({ sources: dataSources(DataState.NOT_CONFIGURED) })
@@ -90,6 +95,24 @@ describe("PipelinesPage", () => {
       /^\/dashboard\/pipelines\/detail\/?\?namespace=payments&name=checkout-api-build$/
     )
     expect(screen.getByText("payments")).toBeInTheDocument()
+  })
+
+  it("explains an empty pipeline list and offers to clear the namespace scope", async () => {
+    mockClient.listPipelines.mockResolvedValue({ pipelines: [] })
+    mockSearch.value = "namespace=payments"
+
+    render(<PipelinesPage />)
+
+    expect(
+      await screen.findByText("No pipelines match this scope"),
+    ).toBeInTheDocument()
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Clear the namespace scope" }),
+    )
+    expect(mockRouter.replace).toHaveBeenCalledWith("/dashboard/pipelines/", {
+      scroll: false,
+    })
   })
 
   it("states the phase in words and shows real step progress", async () => {

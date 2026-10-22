@@ -106,39 +106,6 @@ export function PageBody({
   )
 }
 
-type ConsoleButtonTone = "primary" | "secondary" | "destructive"
-
-/**
- * The design's `.btn`: square, hairline, condensed. It is a separate control
- * from the shadcn `Button` because that one is rounded, `text-sm` and sans —
- * three properties this drawing does not have.
- */
-export function ConsoleButton({
-  tone = "secondary",
-  className,
-  ...props
-}: { tone?: ConsoleButtonTone } & React.ComponentProps<"button">) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "inline-flex h-[30px] cursor-pointer items-center justify-center gap-1.5 border px-3.5",
-        "font-cond text-label leading-[1.2] font-medium whitespace-nowrap",
-        "pointer-coarse:h-11 pointer-coarse:px-4",
-        "disabled:cursor-not-allowed disabled:opacity-45",
-        tone === "primary" &&
-          "border-primary bg-primary text-primary-foreground hover:bg-steel-700",
-        tone === "secondary" &&
-          "border-rule bg-card text-foreground hover:bg-inset",
-        tone === "destructive" &&
-          "border-status-failed-line bg-card text-status-failed-text hover:bg-status-failed-fill",
-        className,
-      )}
-      {...props}
-    />
-  )
-}
-
 /**
  * `STALE` is the one non-OK state that still carries real numerics, so the
  * numbers stay and the badge says how old they are. Without the age this would

@@ -2,12 +2,15 @@
 
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+import { Rocket } from "lucide-react"
 import { useId, useMemo, useState } from "react"
 
 import { usePublishConsoleScope } from "@/components/layout/console-header"
 import { ActionMenu } from "@/components/ui/action-menu"
 import { BreadcrumbTrail } from "@/components/ui/breadcrumb-trail"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
+import { ConsoleButton } from "@/components/ui/console-button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Seg, type SegOption } from "@/components/ui/seg"
 import { StatusPill } from "@/components/ui/status-chip"
 import { DataClass, type Rollout } from "@/gen/paprika/v1/api_pb"
@@ -21,7 +24,6 @@ import {
   useRolloutAction,
 } from "./rollout-actions"
 import {
-  EmptyNote,
   PageBand,
   PageBody,
   useNow,
@@ -162,10 +164,23 @@ export function RolloutsView({
               meta={`${rollouts.length} ${rollouts.length === 1 ? "rollout" : "rollouts"}`}
             />
             {rollouts.length === 0 ? (
-              <EmptyNote>
-                No rollouts are in flight
-                {namespace ? ` in ${namespace}` : ""}.
-              </EmptyNote>
+              <EmptyState
+                compact
+                icon={Rocket}
+                title="No rollouts in flight"
+                description={
+                  namespace
+                    ? `Nothing is promoting in ${namespace} right now.`
+                    : "Nothing is promoting anywhere right now."
+                }
+                action={
+                  historyOffered ? (
+                    <ConsoleButton onClick={() => setTab("recent")}>
+                      Show recent rollouts
+                    </ConsoleButton>
+                  ) : undefined
+                }
+              />
             ) : (
               <InFlightTable
                 rollouts={rollouts.slice(0, MAX_ROWS)}
