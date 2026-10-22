@@ -998,6 +998,10 @@ mcp:
   accessTokenTTL: "24h"
   refreshTokenTTL: "720h"
   oauth:
+    # -- Retain public dynamic client IDs/redirect allowlists in chart-managed
+    # ConfigMaps across pod replacement. This does not store OAuth tokens or
+    # make the remaining in-memory authorization/refresh cache durable.
+    persistClients: true
     # -- Statically registered OAuth client ID accepted by the MCP
     # authorization server. Required for the fleet when mcp.enabled=true;
     # the gateway permits both OAuth fields empty for dynamic registration only.

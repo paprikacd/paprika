@@ -1,0 +1,62 @@
+{{/* Public client metadata only: credentials, codes and grants are never here. */}}
+{{- define "paprika.mcpClientRegistry" -}}
+{{- $ctx := .context -}}
+{{- $name := include "paprika.resourceName" (dict "suffix" .suffix "context" $ctx) -}}
+{{- $resource := printf "%s%s" (trimSuffix "/" $ctx.Values.mcp.publicURL) .path -}}
+{{- $existing := lookup "v1" "ConfigMap" $ctx.Release.Namespace $name -}}
+{{- if and $existing (ne (get ($existing.data | default dict) "resource") $resource) -}}
+{{- fail "An existing MCP client registry belongs to a different resource; review the issuer/resource migration instead of inheriting its registrations" -}}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ctx.Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app.kubernetes.io/managed-by: {{ $ctx.Release.Service }}
+    app.kubernetes.io/instance: {{ $ctx.Release.Name }}
+    app.kubernetes.io/component: mcp-client-registry
+data:
+  resource: {{ $resource | quote }}
+  {{- if $existing }}
+  {{- range $key, $value := $existing.data }}
+  {{- if hasPrefix "client." $key }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ctx.Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [{{ $name | quote }}]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ctx.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .serviceAccount }}
+    namespace: {{ $ctx.Release.Namespace }}
+{{- end -}}
+{{- if and .Values.mcp.oauth.persistClients .Values.mcp.enabled }}
+{{ include "paprika.mcpClientRegistry" (dict "context" . "suffix" "mcp-clients" "path" "/mcp" "serviceAccount" (include "paprika.serviceAccountName" .)) }}
+{{- end }}
+{{- if and .Values.mcp.oauth.persistClients .Values.observabilityGateway.enabled }}
+---
+{{ include "paprika.mcpClientRegistry" (dict "context" . "suffix" "observe-mcp-clients" "path" "/observe/mcp" "serviceAccount" (.Values.observabilityGateway.serviceAccountName | default (include "paprika.serviceAccountName" .))) }}
+{{- end }}

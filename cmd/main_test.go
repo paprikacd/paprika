@@ -669,7 +669,7 @@ func TestRunHTTPServerMaxConns(t *testing.T) {
 
 func TestBuildMCPHandlersReturnsNothingWhenDisabled(t *testing.T) {
 	handlers, err := buildMCPHandlers(context.Background(),
-		&cliConfig{MCPEnabled: false}, nil, auth.Config{}, nil)
+		&cliConfig{MCPEnabled: false}, nil, auth.Config{}, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, handlers)
 }
@@ -677,7 +677,7 @@ func TestBuildMCPHandlersReturnsNothingWhenDisabled(t *testing.T) {
 func TestBuildMCPHandlersRequiresAuthEnabled(t *testing.T) {
 	_, err := buildMCPHandlers(context.Background(),
 		&cliConfig{MCPEnabled: true}, http.NewServeMux(),
-		auth.Config{Enabled: false}, nil)
+		auth.Config{Enabled: false}, nil, nil)
 	require.Error(t, err,
 		"MCP must refuse to start without authentication")
 }
@@ -698,6 +698,7 @@ func TestBuildMCPHandlersRequiresTokenSecret(t *testing.T) {
 		},
 		http.NewServeMux(),
 		auth.Config{Enabled: true, TokenSecret: nil},
+		nil,
 		nil,
 	)
 	require.Error(t, err,
@@ -742,6 +743,7 @@ func TestBuildMCPHandlersRequiresPublicURL(t *testing.T) {
 		http.NewServeMux(),
 		auth.Config{Enabled: true, TokenSecret: secret},
 		&cache.Cache{},
+		nil,
 	)
 	require.Error(t, err,
 		"MCP must refuse to start without an explicitly configured public URL")
@@ -781,6 +783,7 @@ func TestBuildMCPHandlersWiresRealClient(t *testing.T) {
 		handler,
 		auth.Config{Enabled: true, TokenSecret: secret},
 		store,
+		nil,
 	)
 	require.NoError(t, err)
 	require.Len(t, handlers, 2, "buildMCPHandlers must register /mcp plus the OAuth routes")
@@ -843,6 +846,7 @@ func TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken(t *testing.T) {
 		handler,
 		auth.Config{Enabled: true, TokenSecret: secret},
 		store,
+		nil,
 	)
 	require.NoError(t, err)
 

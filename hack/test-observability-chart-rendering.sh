@@ -41,7 +41,42 @@ networkPolicy:
   enabled: true
 YAML
 render() { helm template paprika "$root/charts/chart" -n paprika-system -f "$work/values.yaml" "$@"; }
+render --show-only templates/mcp-client-registries.yaml > "$work/client-registries.yaml"
+python3 - "$work/client-registries.yaml" <<'PY'
+import pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+documents = [doc for doc in text.split('\n---') if 'kind:' in doc]
+assert len(documents) == 6, 'fleet and observe need separate ConfigMap/Role/RoleBinding triples'
+registries = {}
+for doc in documents:
+    kind = re.search(r'^kind: (\S+)$', doc, re.M).group(1)
+    name = re.search(r'^  name: (\S+)$', doc, re.M).group(1)
+    assert '  namespace: paprika-system' in doc
+    registries.setdefault(kind, []).append(name)
+    if kind == 'ConfigMap':
+        assert 'helm.sh/resource-policy: keep' in doc
+        resource = re.search(r'^  resource: "([^"]+)"$', doc, re.M).group(1)
+        assert resource == 'https://paprika.example.test' + ('/observe/mcp' if 'observe' in name else '/mcp')
+    elif kind == 'Role':
+        assert 'resources: [configmaps]' in doc
+        assert f'resourceNames: ["{name}"]' in doc
+        assert 'verbs: [get, update]' in doc
+        assert '*' not in doc and 'secrets' not in doc
+    elif kind == 'RoleBinding' and 'observe' in name:
+        assert 'name: preapproved-observe-reader' in doc
+assert sorted(registries['ConfigMap']) == sorted(registries['Role']) == sorted(registries['RoleBinding'])
+assert len(set(registries['ConfigMap'])) == 2
+PY
+render --set mcp.oauth.persistClients=false > "$work/ephemeral-clients.yaml"
+if grep -Eq -- '--mcp-client-registry-|component: mcp-client-registry' "$work/ephemeral-clients.yaml"; then
+  echo 'Explicit process-local client registration unexpectedly installed durable storage' >&2; exit 1
+fi
 render --show-only templates/observability-gateway/deployment.yaml > "$work/deployment.yaml"
+grep -Eq -- '--mcp-client-registry-configmap=paprika-observe-mcp-clients$' "$work/deployment.yaml"
+grep -Eq -- '--mcp-client-registry-namespace=paprika-system$' "$work/deployment.yaml"
+render --show-only templates/api-server/deployment.yaml > "$work/fleet-deployment.yaml"
+grep -Eq -- '--mcp-client-registry-configmap=paprika-mcp-clients$' "$work/fleet-deployment.yaml"
+grep -Eq -- '--mcp-client-registry-namespace=paprika-system$' "$work/fleet-deployment.yaml"
 grep -Eq -- '--observability-discovery-enabled=false' "$work/deployment.yaml"
 grep -Eq 'serviceAccountName: preapproved-observe-reader$' "$work/deployment.yaml"
 grep -Eq 'image: "ghcr.io/paprikacd/paprika@sha256:a{64}"$' "$work/deployment.yaml"

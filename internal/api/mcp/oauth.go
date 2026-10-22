@@ -181,17 +181,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	clientID := "paprika-" + base64.RawURLEncoding.EncodeToString(raw)
 
-	s.dynMu.Lock()
-	if len(s.dynClients) >= dynClientCap {
-		// Registration is public: replacing an existing entry would let an
-		// unauthenticated caller invalidate another client's active grants.
-		s.dynMu.Unlock()
+	if err := s.registerDynamicClient(r.Context(), clientID, req.RedirectURIs); err != nil {
 		w.Header().Set("Retry-After", "60")
-		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "client registration capacity is temporarily unavailable")
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "client registration storage is temporarily unavailable")
 		return
 	}
-	s.dynClients[clientID] = append([]string(nil), req.RedirectURIs...)
-	s.dynMu.Unlock()
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"client_id":                  clientID,
@@ -426,7 +420,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	redirectURI, codeChallenge, ok := s.validateAuthorizeRequest(w, q)
+	redirectURI, codeChallenge, ok := s.validateAuthorizeRequest(r.Context(), w, q)
 	if !ok {
 		return
 	}
@@ -625,8 +619,7 @@ func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
 	// new bit of information. Folding it into "invalid" also means an
 	// over-length value never gets copied into rec at all (rec stays the
 	// zero value below), so nothing oversized ever reaches the cache.
-	if s.clientIDAllowed(q.Get("client_id")) &&
-		s.isRegisteredRedirect(q.Get("client_id"), q.Get("redirect_uri")) &&
+	if s.isRegisteredRedirect(r.Context(), q.Get("client_id"), q.Get("redirect_uri")) &&
 		s.validResource(q["resource"]) &&
 		len(q.Get("state")) <= maxAuthorizeStateLen &&
 		len(q.Get("scope")) <= maxAuthorizeScopeLen &&
@@ -790,7 +783,7 @@ func (s *Server) lookupPendingAuthz(ctx context.Context, rid string) (pendingAut
 // Neither error ever echoes the caller-supplied client_id or redirect_uri
 // back into the response body or a header, and a Location header is never
 // set on this path at all.
-func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (redirectURI, codeChallenge string, ok bool) {
+func (s *Server) validateAuthorizeRequest(ctx context.Context, w http.ResponseWriter, q url.Values) (redirectURI, codeChallenge string, ok bool) {
 	if !s.validResource(q["resource"]) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource does not identify this MCP surface")
 		return "", "", false
@@ -801,7 +794,7 @@ func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (
 	}
 
 	redirectURI = q.Get("redirect_uri")
-	if !s.validateClientAndRedirect(w, q.Get("client_id"), redirectURI) {
+	if !s.validateClientAndRedirect(ctx, w, q.Get("client_id"), redirectURI) {
 		return "", "", false
 	}
 
@@ -819,8 +812,8 @@ func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (
 // comment (CF5) for why client_id and redirect_uri are deliberately
 // collapsed into one generic "invalid_request" response rather than two
 // distinguishable ones.
-func (s *Server) validateClientAndRedirect(w http.ResponseWriter, clientID, redirectURI string) bool {
-	if !s.clientIDAllowed(clientID) || !s.isRegisteredRedirect(clientID, redirectURI) {
+func (s *Server) validateClientAndRedirect(ctx context.Context, w http.ResponseWriter, clientID, redirectURI string) bool {
+	if !s.isRegisteredRedirect(ctx, clientID, redirectURI) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id or redirect_uri is not registered")
 		return false
 	}
@@ -942,7 +935,7 @@ func (s *Server) handleAuthorizeConsent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !s.validateClientAndRedirect(w, req.ClientID, req.RedirectURI) {
+	if !s.validateClientAndRedirect(ctx, w, req.ClientID, req.RedirectURI) {
 		return
 	}
 
@@ -1055,26 +1048,52 @@ func (s *Server) supportsScope(sc Scope) bool {
 	return false
 }
 
-// clientIDAllowed reports whether clientID may use this authorization
-// server. A DCR-only server has no static client: only IDs created through
-// registration pass. An empty ID is always rejected, regardless of mode.
-func (s *Server) clientIDAllowed(clientID string) bool {
+func (s *Server) registerDynamicClient(ctx context.Context, id string, redirects []string) error {
+	if s.clientRegistry != nil {
+		if err := s.clientRegistry.Register(ctx, id, redirects); err != nil {
+			return fmt.Errorf("register dynamic MCP client: %w", err)
+		}
+		return nil
+	}
+	s.dynMu.Lock()
+	defer s.dynMu.Unlock()
+	if len(s.dynClients) >= dynClientCap {
+		return errClientRegistryFull
+	}
+	s.dynClients[id] = append([]string(nil), redirects...)
+	return nil
+}
+
+func (s *Server) dynamicClientRedirects(ctx context.Context, id string) ([]string, error) {
+	if s.clientRegistry != nil {
+		redirects, err := s.clientRegistry.RedirectURIs(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("resolve dynamic MCP client: %w", err)
+		}
+		return redirects, nil
+	}
+	s.dynMu.Lock()
+	defer s.dynMu.Unlock()
+	return append([]string(nil), s.dynClients[id]...), nil
+}
+
+// clientIDAllowed reports whether clientID may use this authorization server.
+// Registration alone grants no access, and an empty ID is always rejected.
+func (s *Server) clientIDAllowed(ctx context.Context, clientID string) bool {
 	if clientID == "" {
 		return false
 	}
 	if clientID == s.clientID {
 		return true
 	}
-	s.dynMu.Lock()
-	defer s.dynMu.Unlock()
-	_, ok := s.dynClients[clientID]
-	return ok
+	redirects, err := s.dynamicClientRedirects(ctx, clientID)
+	return err == nil && len(redirects) > 0
 }
 
 // isRegisteredRedirect reports whether candidate is EXACTLY one of the
 // URIs registered for clientID — the static allowlist for the first-party
 // client, or the set the client supplied at dynamic registration.
-func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
+func (s *Server) isRegisteredRedirect(ctx context.Context, clientID, candidate string) bool {
 	if candidate == "" {
 		return false
 	}
@@ -1086,9 +1105,11 @@ func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
 		}
 		return false
 	}
-	s.dynMu.Lock()
-	defer s.dynMu.Unlock()
-	for _, registered := range s.dynClients[clientID] {
+	redirects, err := s.dynamicClientRedirects(ctx, clientID)
+	if err != nil {
+		return false
+	}
+	for _, registered := range redirects {
 		if candidate == registered {
 			return true
 		}
@@ -1268,7 +1289,7 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.clientIDAllowed(r.PostFormValue("client_id")) {
+	if !s.clientIDAllowed(r.Context(), r.PostFormValue("client_id")) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "unknown client_id")
 		return
 	}

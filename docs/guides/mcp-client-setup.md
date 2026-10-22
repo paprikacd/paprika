@@ -102,6 +102,43 @@ their own validated redirect URIs. They do not need to reuse the static
 first-party client ID. Registration accepts HTTPS redirects or loopback redirects
 for local clients.
 
+### Registration survives a server replacement
+
+The Helm chart defaults `mcp.oauth.persistClients` to `true`. Each enabled MCP
+surface gets a separate, retained ConfigMap containing **public client IDs and
+their exact redirect allowlists**, bound to that surface's resource URL. The API
+server and observability gateway receive only `get`/`update` access to their
+named registry. Missing, inaccessible or differently bound storage fails startup;
+it never silently switches to an empty in-memory registry. Chart upgrades retain
+registered clients. Keep these ConfigMaps when restoring the installation, and
+review an issuer/resource migration explicitly rather than reusing registrations
+for a different origin or surface.
+
+Client registration does not grant account access. Console authentication,
+consent, scopes and PKCE remain required. Authorization codes, pending consent,
+refresh tokens and confirmations are **not** persisted in these ConfigMaps. A
+replacement that loses the transient OAuth cache still requires a fresh native
+authorization flow; this setting does not make that cache multi-replica safe.
+Existing replica restrictions remain in force.
+
+For local/test installations, leaving both `--mcp-client-registry-configmap` and
+`--mcp-client-registry-namespace` unset retains process-local registration. Setting
+only one is invalid. In Helm, `mcp.oauth.persistClients: false` explicitly opts
+into that transient behavior.
+
+If a connector was registered before persistence was enabled and its metadata
+has already been lost, persistence cannot reconstruct it. Use the client's
+supported registration/reconnect flow to obtain a new registration. Do not
+whitelist an unknown client, broaden its redirect URI, disable PKCE or copy an
+access token into chat. A consent request rejected after successful Google
+sign-in may indicate a lost client registration rather than a failed login.
+Check the native connector and server diagnostics separately before retrying.
+
+The registry accepts at most 4,096 clients and a bounded data size below the
+ConfigMap limit. Exhaustion rejects new registrations without evicting existing
+clients. Investigate registration churn and review stale public metadata before
+any cleanup; do not delete the registry to clear a connection error.
+
 Review the [chart settings](../../charts/chart/values.yaml#L859),
 [chart validation](../../charts/chart/templates/api-server/deployment.yaml),
 [runtime validation](../../cmd/main.go#L1200) and

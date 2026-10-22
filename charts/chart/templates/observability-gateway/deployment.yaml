@@ -111,6 +111,10 @@ spec:
         # carry the paprika-observability audience, not paprika-mcp.
         - --mcp-access-token-ttl={{ .Values.mcp.accessTokenTTL }}
         - --mcp-refresh-token-ttl={{ .Values.mcp.refreshTokenTTL }}
+        {{- if .Values.mcp.oauth.persistClients }}
+        - --mcp-client-registry-configmap={{ include "paprika.resourceName" (dict "suffix" "observe-mcp-clients" "context" $) }}
+        - --mcp-client-registry-namespace={{ .Release.Namespace }}
+        {{- end }}
         {{- if .Values.mcp.oauth.clientId }}
         - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
         - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}

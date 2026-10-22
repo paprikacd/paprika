@@ -56,10 +56,10 @@ func TestObserveOAuthDiscoveryFollowsIssuerWithoutSelectingFleet(t *testing.T) {
 func TestDynamicClientCannotBorrowStaticRedirects(t *testing.T) {
 	srv := newObservabilityTestServer(t, nil, []string{"http://127.0.0.1:8791/static"})
 	srv.dynClients["dynamic"] = []string{"http://127.0.0.1:8792/dynamic"}
-	assert.True(t, srv.isRegisteredRedirect("test", "http://127.0.0.1:8791/static"))
-	assert.True(t, srv.isRegisteredRedirect("dynamic", "http://127.0.0.1:8792/dynamic"))
-	assert.False(t, srv.isRegisteredRedirect("dynamic", "http://127.0.0.1:8791/static"))
-	assert.False(t, srv.isRegisteredRedirect("unknown", "http://127.0.0.1:8791/static"))
+	assert.True(t, srv.isRegisteredRedirect(context.Background(), "test", "http://127.0.0.1:8791/static"))
+	assert.True(t, srv.isRegisteredRedirect(context.Background(), "dynamic", "http://127.0.0.1:8792/dynamic"))
+	assert.False(t, srv.isRegisteredRedirect(context.Background(), "dynamic", "http://127.0.0.1:8791/static"))
+	assert.False(t, srv.isRegisteredRedirect(context.Background(), "unknown", "http://127.0.0.1:8791/static"))
 }
 
 func TestObserveGrantRecordsRejectForeignSurfaceAndClient(t *testing.T) {
