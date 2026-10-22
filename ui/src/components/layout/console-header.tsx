@@ -13,7 +13,9 @@ import {
   type ReactNode,
 } from "react"
 
+import { ConsoleCommand } from "@/components/layout/console-command"
 import { SearchField } from "@/components/ui/search-field"
+import { Tooltip } from "@/components/ui/tooltip"
 import type {
   FleetFacetBucket,
   FleetFacetDimension,
@@ -167,6 +169,10 @@ export function ConsoleHeader() {
           placeholder="Search apps, resources, revisions, runs…"
           className="flex min-w-0 flex-1 items-stretch px-3.5"
         />
+
+        <div className="flex flex-none items-center border-l border-rule px-2">
+          <ConsoleCommand />
+        </div>
       </div>
 
       <FreshnessIndicator signals={signals} />
@@ -191,6 +197,18 @@ function FreshnessIndicator({ signals }: { signals: ConsoleScopeSignals }) {
   const age = refreshedAt ? Math.max(0, Math.round((now - refreshedAt) / 1000)) : null
   const cadence = intervalMs ? `${Math.round(intervalMs / 1000)}s` : null
 
+  const detail = [
+    cadence ? `The console polls every ${cadence}.` : "The console polls on demand.",
+    age === null
+      ? "No refresh has completed yet."
+      : `Last successful refresh ${formatAge(age)} ago.`,
+    indexGeneration !== undefined
+      ? `Index generation ${indexGeneration.toString()}.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ")
+
   return (
     <div className="flex items-center gap-3 border-l border-rule px-3.5">
       <span className="inline-flex items-center gap-1.5">
@@ -201,15 +219,20 @@ function FreshnessIndicator({ signals }: { signals: ConsoleScopeSignals }) {
           )}
           aria-hidden="true"
         />
-        <span className="font-mono text-meta text-muted-foreground">
-          {isRefreshing
-            ? "refreshing"
-            : age === null
-              ? cadence
-                ? `polling · ${cadence}`
-                : "polling"
-              : `polled ${formatAge(age)} ago`}
-        </span>
+        <Tooltip content={detail}>
+          <span
+            tabIndex={0}
+            className="font-mono text-meta text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            {isRefreshing
+              ? "refreshing"
+              : age === null
+                ? cadence
+                  ? `polling · ${cadence}`
+                  : "polling"
+                : `polled ${formatAge(age)} ago`}
+          </span>
+        </Tooltip>
       </span>
       {indexGeneration !== undefined ? (
         <span className="font-mono text-meta text-neutral-600">

@@ -30,6 +30,8 @@ no Gamma source, build output, font, icon, or asset is imported.
 | SplitButton | [`ui/src/components/ui/split-button.tsx`](../../ui/src/components/ui/split-button.tsx) | Rollout detail actions: `Promote to X%` stays one click away, Hold/Resume and Abort & roll back live behind the fused toggle, viewport-clamped panel |
 | SearchField | [`ui/src/components/ui/search-field.tsx`](../../ui/src/components/ui/search-field.tsx) | Console header fleet search: labelled native search input, clear action that returns focus to the field, optional explicit search on Enter |
 | DisclosureStack | [`ui/src/components/ui/disclosure-stack.tsx`](../../ui/src/components/ui/disclosure-stack.tsx) | Application detail gates: pending gates start open, settled ones collapse to a summary row, panels stay in the DOM so `aria-controls` always resolves |
+| Tooltip | [`ui/src/components/ui/tooltip.tsx`](../../ui/src/components/ui/tooltip.tsx) | Truncated values that need their full text: the observability provider endpoint, the console's polling cadence. Hover opens after a delay, focus opens at once, Escape closes it without moving focus |
+| QuickCommand | [`ui/src/components/ui/quick-command.tsx`](../../ui/src/components/ui/quick-command.tsx) | The console's command palette: one search field, grouped results, a roving selection, and ⌘/Ctrl K from anywhere. The fleet index answers the application half; the console's own pages are always offered |
 
 The MorphTabs panel transition is disabled by the console's global
 `prefers-reduced-motion` rule; the underline is a measured transform, not a
@@ -48,6 +50,21 @@ That last rule is why a shortcut hint is only rendered where it actually
 works. Neither menu is a home for a single action or an object's primary
 decision: Promote stays a visible control in both rollout surfaces, and only
 secondary or destructive work moves behind the toggle or the row trigger.
+
+The Tooltip is an annotation, not a panel: it names a truncated value or a
+piece of console vocabulary, opens on hover after a delay and at once on
+focus, closes on Escape without moving focus, and is placed against the
+viewport so a scrolling ancestor cannot clip it. The QuickCommand palette is
+keyboard-first — the search field keeps focus while the selection moves with
+`aria-activedescendant`, and Escape closes the dialog and returns focus to
+whatever opened it. Its application results come from the fleet index rather
+than a local list, because that search is typo-tolerant and server-counted;
+the console's own pages are filtered locally and are always available.
+
+[`ui/e2e/console-shell.spec.ts`](../../ui/e2e/console-shell.spec.ts) covers the
+two surfaces a unit test cannot see: that the palette opens, filters and
+navigates, that ⌘K opens it and Escape closes it, and that the tooltip stays
+inside the viewport.
 
 ### Console canvas typography
 

@@ -388,6 +388,10 @@
   from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes tooltip-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
 @layer components {
   .morph-tab-panel[data-direction="right"] {
     animation: morph-tab-in-right 180ms var(--ease-out-quart);

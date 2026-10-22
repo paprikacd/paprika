@@ -7,6 +7,7 @@ import { useMemo, useSyncExternalStore } from "react"
 import { ProviderLibrary } from "@/app/dashboard/observability/provider-library"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { StatusPill } from "@/components/ui/status-chip"
+import { Tooltip } from "@/components/ui/tooltip"
 import type { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import { DataState } from "@/gen/paprika/v1/api_pb"
 import { getFleetClient } from "@/lib/fleet-client"
@@ -175,12 +176,17 @@ export function ObservabilityView({ client }: ObservabilityViewProps) {
                       )}
                     </td>
                     <td className="px-3.5 py-2">
-                      <span
-                        className="block max-w-56 truncate font-mono text-meta text-muted-foreground"
-                        title={item.endpoint || undefined}
-                      >
-                        {item.endpoint || "not reported"}
-                      </span>
+                      {item.endpoint ? (
+                        <Tooltip content={item.endpoint}>
+                          <span className="block max-w-56 truncate font-mono text-meta text-muted-foreground">
+                            {item.endpoint}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        <span className="block max-w-56 truncate font-mono text-meta text-muted-foreground">
+                          not reported
+                        </span>
+                      )}
                     </td>
                     <td className="px-3.5 py-2">
                       <StatusPill
