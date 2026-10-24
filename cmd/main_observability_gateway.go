@@ -62,9 +62,6 @@ const observabilityGatewayRoutePrefix = "/observe"
 // paprika-observability audience so console or fleet-MCP tokens can never be
 // replayed against this surface.
 func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
-	if err := validateAPINamespace(cfg.APINamespace); err != nil {
-		return err
-	}
 	if err := validateObservabilityGatewayConfig(cfg); err != nil {
 		return err
 	}
@@ -171,6 +168,9 @@ func startObservabilityProviderDiscovery(ctx context.Context, cancel context.Can
 // console users — the alternative would be minting observability tokens for
 // anyone.
 func validateObservabilityGatewayConfig(cfg *cliConfig) error {
+	if err := validateAPINamespace(cfg.APINamespace); err != nil {
+		return err
+	}
 	if cfg.MCPPublicURL == "" {
 		return errors.New("observability-gateway: --mcp-public-url is required; it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's issuer")
 	}

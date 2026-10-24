@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -13,7 +14,7 @@ import (
 
 func validateAPINamespace(namespace string) error {
 	if namespace != "" && len(validation.IsDNS1123Label(namespace)) != 0 {
-		return fmt.Errorf("--api-namespace must be one valid Kubernetes namespace")
+		return errors.New("--api-namespace must be one valid Kubernetes namespace")
 	}
 	return nil
 }
@@ -44,16 +45,22 @@ func (c *namespaceListClient) List(ctx context.Context, list client.ObjectList, 
 	options := &client.ListOptions{}
 	options.ApplyOptions(opts)
 	if options.Namespace != "" && options.Namespace != c.namespace {
-		return apierrors.NewForbidden(schema.GroupResource{}, "", fmt.Errorf("requested namespace is outside this API instance"))
+		return apierrors.NewForbidden(schema.GroupResource{}, "", errors.New("requested namespace is outside this API instance"))
 	}
-	return c.Client.List(ctx, list, opts...)
+	if err := c.Client.List(ctx, list, opts...); err != nil {
+		return fmt.Errorf("list namespace-scoped resources: %w", err)
+	}
+	return nil
 }
 
 func (c *namespaceListClient) DeleteAllOf(ctx context.Context, object client.Object, opts ...client.DeleteAllOfOption) error {
 	options := &client.DeleteAllOfOptions{}
 	options.ApplyOptions(opts)
 	if options.Namespace != "" && options.Namespace != c.namespace {
-		return apierrors.NewForbidden(schema.GroupResource{}, "", fmt.Errorf("requested namespace is outside this API instance"))
+		return apierrors.NewForbidden(schema.GroupResource{}, "", errors.New("requested namespace is outside this API instance"))
 	}
-	return c.Client.DeleteAllOf(ctx, object, opts...)
+	if err := c.Client.DeleteAllOf(ctx, object, opts...); err != nil {
+		return fmt.Errorf("delete namespace-scoped resources: %w", err)
+	}
+	return nil
 }
