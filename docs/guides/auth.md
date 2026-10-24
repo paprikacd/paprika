@@ -220,3 +220,26 @@ the same authorization policy to the resulting principal.
 
 For direct Connect requests, see the [API reference](../api.md). For command
 output and flags, see the [CLI guide](../cli.md).
+
+## Isolated read-only instances
+
+A dedicated demo or tenant instance can set `apiServer.namespaceScope` to its
+sample namespace. This passes `--api-namespace` to both the standalone API and
+observability gateway. Their controller-runtime reads default to that namespace,
+explicit foreign-namespace reads fail, and the API informer cache and gateway
+provider discovery are restricted to it. Empty retains the existing scope.
+
+This is additional isolation, not a replacement for Kubernetes RBAC. Use a
+separate namespace-restricted service account, signing secret, and ordinary
+service account login. The controller-manager and typed Kubernetes clients are
+not scoped by this setting; disable the manager for a fixture-only read instance
+and deny cluster-wide/foreign-namespace access in Kubernetes. Grant the reviewer
+only normal read permissions in the sample namespace and request only
+`paprika:read` or `paprika:observe` in native consent. Never reuse the production
+OIDC client, signing key, cloud credentials, provider secrets or fleet data.
+
+A query-only observability instance should disable automatic provider discovery
+and provider status probing, registering only a synthetic mock provider. Use a
+durable MCP client registry in the sample namespace for both MCP surfaces.
+Validate real login, discovery, a sample read and denied foreign-namespace access
+through each exposed endpoint before supplying its credentials for review.

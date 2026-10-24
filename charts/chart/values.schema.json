@@ -29,6 +29,17 @@
       "type": "string",
       "enum": ["operator", "api", "webhook", "repo-server", "agent"]
     },
+    "apiServer": {
+      "type": "object",
+      "properties": {
+        "namespaceScope": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "description": "Optional standalone API and observability namespace bound; Kubernetes RBAC remains required."
+        }
+      }
+    },
     "metrics": {
       "type": "object",
       "properties": {
