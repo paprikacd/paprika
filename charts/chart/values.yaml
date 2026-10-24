@@ -269,6 +269,11 @@ apiServer:
   enabled: true
   replicas: 2
 
+  # Restrict the standalone API and observability gateway to one namespace.
+  # Empty preserves cluster-wide reads. Pair with namespace-restricted service
+  # accounts; this does not scope the controller-manager or typed clients.
+  namespaceScope: ""
+
   image:
     repository: controller
     ## Image tag (defaults to Chart.appVersion if not set)
