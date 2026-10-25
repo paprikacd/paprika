@@ -88,8 +88,8 @@ func TestScopedResourceReadAuthorization(t *testing.T) {
 	before := service.calls.Load()
 	req := connect.NewRequest(&v1.SyncApplicationRequest{Namespace: "review", Name: "sample"})
 	req.Header().Set("Authorization", authorization)
-	_, err = client.SyncApplication(t.Context(), req)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	_, syncErr := client.SyncApplication(t.Context(), req)
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(syncErr))
 	require.Equal(t, before, service.calls.Load())
 }
 
