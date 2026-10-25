@@ -89,8 +89,16 @@ func resolveLogsPod(ctx context.Context, typed kubernetes.Interface, kind, name,
 		}
 		return pod, nil
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet", "Job":
+		selector, err := logsWorkloadSelector(ctx, typed, kind, name, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("reading selector for %s/%s: %w", kind, name, err)
+		}
+		labels, err := logsPodSelectorString(selector, kind, name)
+		if err != nil {
+			return nil, err
+		}
 		pods, err := typed.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=" + name,
+			LabelSelector: labels,
 			Limit:         1,
 		})
 		if err != nil {
@@ -102,5 +110,60 @@ func resolveLogsPod(ctx context.Context, typed kubernetes.Interface, kind, name,
 		return &pods.Items[0], nil
 	default:
 		return nil, errors.New("logs only available for Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, or Job")
+	}
+}
+
+// Workload names do not determine pod labels. Read the controller's selector,
+// including match expressions, rather than guessing an app label convention.
+func logsPodSelectorString(selector *metav1.LabelSelector, kind, name string) (string, error) {
+	if selector == nil || len(selector.MatchLabels)+len(selector.MatchExpressions) == 0 {
+		return "", fmt.Errorf("no pod selector configured for %s/%s", kind, name)
+	}
+	labels, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return "", fmt.Errorf("invalid pod selector for %s/%s: %w", kind, name, err)
+	}
+	return labels.String(), nil
+}
+
+func logsWorkloadSelector(ctx context.Context, typed kubernetes.Interface, kind, name, namespace string) (*metav1.LabelSelector, error) {
+	if kind == "Job" {
+		obj, err := typed.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("get job: %w", err)
+		}
+		return obj.Spec.Selector, nil
+	}
+	return logsAppsWorkloadSelector(ctx, typed, kind, name, namespace)
+}
+
+func logsAppsWorkloadSelector(ctx context.Context, typed kubernetes.Interface, kind, name, namespace string) (*metav1.LabelSelector, error) {
+	switch kind {
+	case "Deployment":
+		obj, err := typed.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("get deployment: %w", err)
+		}
+		return obj.Spec.Selector, nil
+	case "ReplicaSet":
+		obj, err := typed.AppsV1().ReplicaSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("get replicaset: %w", err)
+		}
+		return obj.Spec.Selector, nil
+	case "StatefulSet":
+		obj, err := typed.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("get statefulset: %w", err)
+		}
+		return obj.Spec.Selector, nil
+	case "DaemonSet":
+		obj, err := typed.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("get daemonset: %w", err)
+		}
+		return obj.Spec.Selector, nil
+	default:
+		return nil, fmt.Errorf("unsupported workload kind %q", kind)
 	}
 }
