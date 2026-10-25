@@ -1711,13 +1711,22 @@ func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runt
 		&pipelinesv1alpha1.NotificationConfig{},
 		&pipelinesv1alpha1.AnalysisRun{},
 		&pipelinesv1alpha1.Artifact{},
-		&policyv1alpha1.Policy{},
 		&rolloutsv1alpha1.Rollout{},
 		&corev1alpha1.AppProject{},
 		&corev1alpha1.Repository{},
 		&clustersv1alpha1.Cluster{},
 		&featureflagsv1alpha1.FeatureFlag{},
 		&featureflagsv1alpha1.FeatureFlagBinding{},
+	}
+	directReadObjects := []client.Object{&corev1.Secret{}, &corev1.ConfigMap{}}
+	if namespace == "" {
+		warmObjects = append(warmObjects, &policyv1alpha1.Policy{})
+	} else {
+		// Policy is cluster-scoped: DefaultNamespaces cannot restrict its
+		// informer. A namespace-only identity must not need that watch to
+		// start serving. Explicit policy reads still reach Kubernetes and
+		// fail closed under its real RBAC instead of inventing an empty set.
+		directReadObjects = append(directReadObjects, &policyv1alpha1.Policy{})
 	}
 	for _, obj := range warmObjects {
 		if _, informerErr := apiCache.GetInformer(ctx, obj); informerErr != nil {
@@ -1734,10 +1743,7 @@ func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runt
 			// caches every Secret in the cluster for what is a keyed GET of a
 			// kubeconfig ref, and a ConfigMap informer does the same for the
 			// occasional artifact lookup. Route both straight to the API.
-			DisableFor: []client.Object{
-				&corev1.Secret{},
-				&corev1.ConfigMap{},
-			},
+			DisableFor: directReadObjects,
 		},
 	})
 	if err != nil {
