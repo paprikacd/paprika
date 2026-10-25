@@ -229,6 +229,13 @@ observability gateway. Their controller-runtime reads default to that namespace,
 explicit foreign-namespace reads fail, and the API informer cache and gateway
 provider discovery are restricted to it. Empty retains the existing scope.
 
+The namespace-only API does not warm the cluster-scoped `Policy` informer.
+An explicit Policy read still reaches Kubernetes and preserves its real RBAC
+denial; an unavailable policy set is never treated as an empty successful
+result. The default cluster-wide API continues caching Policies normally.
+Check the main API listener as well as the separate probe port: a healthy
+probe alone does not establish that initial informer synchronization finished.
+
 This is additional isolation, not a replacement for Kubernetes RBAC. Use a
 separate namespace-restricted service account, signing secret, and ordinary
 service account login. The controller-manager and typed Kubernetes clients are
