@@ -315,8 +315,7 @@ func classify(procedure string) (Action, Resource) {
 }
 
 func namespaceFromRequest(req connect.AnyRequest) string {
-	// Try to extract namespace from common request message fields.
-	// This uses reflection to find Namespace string fields.
+	// Resolve the owning object's namespace, not a subordinate resource's.
 	msg := req.Any()
 	if ns, ok := extractNamespace(msg); ok {
 		return ns
@@ -334,6 +333,18 @@ func extractNamespace(msg interface{}) (string, bool) {
 	}
 	if g, ok := msg.(namespaceGetter); ok {
 		return g.GetNamespace(), true
+	}
+	type applicationNamespaceGetter interface {
+		GetApplicationNamespace() string
+	}
+	if g, ok := msg.(applicationNamespaceGetter); ok {
+		return g.GetApplicationNamespace(), true
+	}
+	type pipelineNamespaceGetter interface {
+		GetPipelineNamespace() string
+	}
+	if g, ok := msg.(pipelineNamespaceGetter); ok {
+		return g.GetPipelineNamespace(), true
 	}
 	return "", false
 }
