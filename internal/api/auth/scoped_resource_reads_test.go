@@ -62,6 +62,15 @@ func TestScopedResourceReadAuthorization(t *testing.T) {
 			_, err := client.GetStepLogs(t.Context(), req)
 			return err
 		}},
+		{"investigation", func(namespace string) error {
+			req := connect.NewRequest(&v1.InvestigateRequest{
+				ApplicationNamespace: namespace, ApplicationName: "sample",
+				ResourceNamespace: "review", ResourceKind: "Deployment", ResourceName: "sample",
+			})
+			req.Header().Set("Authorization", authorization)
+			_, err := client.Investigate(t.Context(), req)
+			return err
+		}},
 	}
 	for _, tc := range calls {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,6 +84,13 @@ func TestScopedResourceReadAuthorization(t *testing.T) {
 			}
 		})
 	}
+	// The investigation exception must not grant actual delivery writes.
+	before := service.calls.Load()
+	req := connect.NewRequest(&v1.SyncApplicationRequest{Namespace: "review", Name: "sample"})
+	req.Header().Set("Authorization", authorization)
+	_, err = client.SyncApplication(t.Context(), req)
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	require.Equal(t, before, service.calls.Load())
 }
 
 type scopedResourceReadService struct {
@@ -95,4 +111,14 @@ func (s *scopedResourceReadService) GetResourceLogs(context.Context, *connect.Re
 func (s *scopedResourceReadService) GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error) {
 	s.calls.Add(1)
 	return connect.NewResponse(&v1.GetStepLogsResponse{}), nil
+}
+
+func (s *scopedResourceReadService) Investigate(context.Context, *connect.Request[v1.InvestigateRequest]) (*connect.Response[v1.InvestigateResponse], error) {
+	s.calls.Add(1)
+	return connect.NewResponse(&v1.InvestigateResponse{}), nil
+}
+
+func (s *scopedResourceReadService) SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error) {
+	s.calls.Add(1)
+	return connect.NewResponse(&v1.SyncApplicationResponse{}), nil
 }
