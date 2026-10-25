@@ -296,6 +296,11 @@ var resourceKeywords = map[string]Resource{
 }
 
 func classify(procedure string) (Action, Resource) {
+	// Investigation collects existing application evidence. Unlike Get/List
+	// RPCs, its name does not identify it as a read to the fallback below.
+	if procedure == v1connect.PaprikaServiceInvestigateProcedure {
+		return ActionRead, ResourceApplications
+	}
 	lower := strings.ToLower(procedure)
 
 	resource := ResourceApplications

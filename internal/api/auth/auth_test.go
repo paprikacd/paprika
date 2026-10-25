@@ -758,6 +758,13 @@ func TestClassify(t *testing.T) {
 	action, resource = classify(v1connect.PaprikaServiceGetSystemStatusProcedure)
 	assert.Equal(t, ActionRead, action)
 	assert.Equal(t, ResourceApplications, resource)
+
+	action, resource = classify(v1connect.PaprikaServiceInvestigateProcedure)
+	assert.Equal(t, ActionRead, action)
+	assert.Equal(t, ResourceApplications, resource)
+
+	action, _ = classify("/paprika.v1.PaprikaService/InvestigateAndSyncApplication")
+	assert.Equal(t, ActionWrite, action, "unknown RPCs must not inherit the exact read exception")
 }
 
 func TestNamespaceFromRequest(t *testing.T) {
