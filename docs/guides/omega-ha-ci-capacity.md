@@ -44,7 +44,11 @@ VKE worker nodes use their
 
 ## Provider 2.31.2 limitations
 
-Keep the checked-in provider lock unchanged. Review against the pinned
+Keep the locked provider versions and existing checksums unchanged. The lock
+includes official Darwin ARM64 and Linux AMD64 package hashes, generated with
+`terraform providers lock -platform=darwin_arm64 -platform=linux_amd64` without
+an upgrade. This lets both local validation and Linux CI use a read-only lock.
+Review against the pinned
 [node-pool schema](https://raw.githubusercontent.com/vultr/terraform-provider-vultr/v2.31.2/vultr/vke.go)
 and [create/update implementation](https://raw.githubusercontent.com/vultr/terraform-provider-vultr/v2.31.2/vultr/resource_vultr_kubernetes_nodepools.go).
 

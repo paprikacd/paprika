@@ -70,9 +70,12 @@ as CI artifacts. This is local recovery, not a migration to a remote backend.
 
 The canonical directory must contain the matching recovered `main.tf` from this
 change. Its description/homepage and scoped-token wiring are required for the
-recorded no-change result. The existing `omega_ha.tf` and provider lock remain
-unchanged. Do not revert the canonical source while retaining new credential
-inputs and expect the old source to produce the same result.
+recorded no-change result. The existing `omega_ha.tf` and locked provider
+versions remain unchanged. Official Linux AMD64 package hashes were added to
+the provider lock alongside the existing Darwin ARM64 hashes for read-only CI
+initialization; all prior checksums are retained. Do not revert the canonical
+source while retaining new credential inputs and expect the old source to
+produce the same result.
 
 Run from the canonical directory, with no ambient Terraform argument/variable
 overrides. Unset unrelated inherited Cloudflare credentials, since the pinned
@@ -94,9 +97,16 @@ recover a no-change result or hide it with `ignore_changes`.
 
 | Plan | Result | Saved-plan SHA-256 |
 | --- | --- | --- |
-| Canonical recovered baseline | Exit 0; eight resources and every output no-op | `9ca22de940654b890d03e498216b311320e72b90f623e52a939beec214fbd333` |
-| Optional CI source, disabled | Exit 0; same no-op result | `cfef1447f253fee40d6cd7e3e987c910b3feaf0081b5ef4540eabe3fedf0e150` |
-| Optional CI source, enabled | Exit 2; exactly one pool create, all existing resources/outputs no-op | `c4746295cd8e037d95f2118851761b722594f792e802f991f9c8cbf1e49620c4` |
+| Canonical recovered baseline | Exit 0; eight resources and every output no-op | `ed55cf56f58d05c58939d058ecf1a427d1e85a6b747f22e4ce5b115b1451a14c` |
+| Optional CI source, disabled | Exit 0; same no-op result | `2c0b17d3577eb07dda3331d2eeb88c3f4a127b613333d3f1aa42cd7c1b877df7` |
+| Optional CI source, enabled | Exit 2; exactly one pool create, all existing resources/outputs no-op | `946425c9804757999a9c6f08a209a5c73a082a0eb3edb9cd06980ed34c0e7b21` |
+
+These final plans were regenerated after adding the official Linux AMD64
+checksums required by CI. They bind provider lock SHA-256
+`89d2e9cf3421245ce404d4c393e7aefc0b4a147e1177e9ab23b0b9ba35f6fcfe`.
+Only five `h1` entries were added; every provider version, constraint and
+previous checksum was retained. The initial Linux validation failure and the
+earlier successful Mac-only plan evidence remain in the private recovery log.
 
 The enabled plan is **unapplied**. It uses the recovered canonical state and the
 review worktree's optional source with `vke_ci_enabled=true`; it is not a second
