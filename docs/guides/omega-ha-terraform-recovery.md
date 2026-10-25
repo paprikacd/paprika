@@ -5,6 +5,11 @@ The canonical local state and variables were missing from
 from that directory returned exit code **0**, with all eight resources and all
 outputs unchanged. No remote infrastructure operation was applied.
 
+The user has explicitly ruled out new nodes. This change is limited to state
+recovery, credential inputs, preserved repository metadata and regression tests.
+Larger Cuttlefish jobs must use existing omega-ha capacity. No new pool, node
+quantity increase, instance resize or autoscaler-bound increase is included.
+
 ## Recovered ownership
 
 The verified pre-teardown backup had serial 80 and lineage
@@ -97,22 +102,48 @@ recover a no-change result or hide it with `ignore_changes`.
 
 | Plan | Result | Saved-plan SHA-256 |
 | --- | --- | --- |
+| Existing-only source after withdrawal | Exit 0; eight resources and every output no-op; state unchanged | `a41808b690008d818a4528338490a13918cd1ebdb592bc0117732345426aa250` |
 | Canonical recovered baseline | Exit 0; eight resources and every output no-op | `ed55cf56f58d05c58939d058ecf1a427d1e85a6b747f22e4ce5b115b1451a14c` |
-| Optional CI source, disabled | Exit 0; same no-op result | `2c0b17d3577eb07dda3331d2eeb88c3f4a127b613333d3f1aa42cd7c1b877df7` |
-| Optional CI source, enabled | Exit 2; exactly one pool create, all existing resources/outputs no-op | `946425c9804757999a9c6f08a209a5c73a082a0eb3edb9cd06980ed34c0e7b21` |
+| Withdrawn CI proposal, disabled | Historical exit 0; same no-op result | `2c0b17d3577eb07dda3331d2eeb88c3f4a127b613333d3f1aa42cd7c1b877df7` |
+| Withdrawn CI proposal, enabled | Historical exit 2; one pool create; **not approved and never applied** | `946425c9804757999a9c6f08a209a5c73a082a0eb3edb9cd06980ed34c0e7b21` |
 
-These final plans were regenerated after adding the official Linux AMD64
+These historical plans were regenerated after adding the official Linux AMD64
 checksums required by CI. They bind provider lock SHA-256
 `89d2e9cf3421245ce404d4c393e7aefc0b4a147e1177e9ab23b0b9ba35f6fcfe`.
 Only five `h1` entries were added; every provider version, constraint and
 previous checksum was retained. The initial Linux validation failure and the
 earlier successful Mac-only plan evidence remain in the private recovery log.
 
-The enabled plan is **unapplied**. It uses the recovered canonical state and the
-review worktree's optional source with `vke_ci_enabled=true`; it is not a second
-state owner. Its working directory, source/input hashes and state serial are
-bound in the private evidence. Revalidate current state and inputs before use;
-do not apply from a different directory or copy of state.
+The create plan is **withdrawn, not approved and must not be applied**. Its hashes
+remain here only to identify historical evidence. The proposed CI resource,
+enable flag, provisioning tests and capacity runbook have been removed. No CI
+node or pool was created, and this proposal owns no separate state. Both saved
+create-plan variants have been moved out of their active paths into the private
+`withdrawn-new-node-plans/` archive, preserving their bytes and hashes with a
+withdrawal receipt. The private planning helper now rejects both former capacity
+modes and accepts only canonical or existing-only plans, requiring zero changes.
 
-See [the capacity runbook](omega-ha-ci-capacity.md) for exact cost, provider
-limitations and the required node/resource checks before a larger-job canary.
+## Offline recovery regression tests
+
+Run the same helper used by CI's **Terraform offline plans** job:
+
+```sh
+bash hack/test-terraform.sh
+```
+
+The helper copies only `main.tf`, `omega_ha.tf`, the provider lock and
+`tests/provider_inputs.tftest.hcl` into its own temporary directory. It checks
+formatting, initializes public locked providers with the backend disabled,
+validates configuration and runs four plan-only tests with all five providers
+mocked. It excludes state, tfvars, kubeconfigs and inherited cloud credentials
+or Terraform argument overrides, and removes only its own directory on exit.
+CI pins Terraform 1.14.6 and disables the setup action's executable wrapper.
+
+The tests cover default/scoped-token/legacy-key inputs, preserved GitHub metadata
+and DNS destinations, and the existing Sydney HA topology: four core nodes,
+two core-large nodes and one search node, unchanged plans/autoscaler bounds and
+the search pool's exact taint. These are configuration regressions, not evidence
+of live node fit or a live no-change plan. Mocks do not verify authentication;
+the real Cloudflare provider owns credential validation. Database/UI tests do
+not apply to this Terraform recovery; the full normal plan verifies its live
+infrastructure boundary.

@@ -18,8 +18,8 @@ mkdir -p "$terraform_test_dir/module/tests" "$terraform_test_dir/home" "$terrafo
 
 # Never copy the whole module directory: it may contain live state, tfvars,
 # kubeconfigs, provider caches or CLI configuration from an operator's checkout.
-for source_file in main.tf omega_ha.tf omega_ha_ci.tf .terraform.lock.hcl \
-  tests/omega_ha_ci.tftest.hcl tests/provider_inputs.tftest.hcl; do
+for source_file in main.tf omega_ha.tf .terraform.lock.hcl \
+  tests/provider_inputs.tftest.hcl; do
   cp "$repo_dir/terraform/$source_file" "$terraform_test_dir/module/$source_file"
 done
 printf 'disable_checkpoint = true\n' >"$terraform_test_dir/terraform.rc"
@@ -36,8 +36,7 @@ run_terraform() {
 }
 
 cd "$terraform_test_dir/module"
-run_terraform fmt -check -diff main.tf omega_ha.tf omega_ha_ci.tf \
-  tests/omega_ha_ci.tftest.hcl tests/provider_inputs.tftest.hcl
+run_terraform fmt -check -diff main.tf omega_ha.tf tests/provider_inputs.tftest.hcl
 run_terraform init -backend=false -lockfile=readonly -input=false -no-color
 run_terraform validate -no-color
 run_terraform test -no-color

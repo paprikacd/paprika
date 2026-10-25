@@ -35,11 +35,6 @@ run "credentials_default_to_null_and_repo_metadata_is_preserved" {
     )
     error_message = "The recovered repository description and homepage must not be cleared."
   }
-
-  assert {
-    condition     = length(vultr_kubernetes_node_pools.omega_ha_ci) == 0
-    error_message = "Auth/metadata reconciliation must not enable new capacity."
-  }
 }
 
 run "scoped_token_input_does_not_require_global_key" {
@@ -72,9 +67,52 @@ run "legacy_key_input_remains_supported" {
     condition     = var.cloudflare_api_key != null && var.cloudflare_api_token == null && var.cloudflare_email == "test@example.invalid"
     error_message = "The explicit legacy key/email mode must leave the scoped token unset."
   }
+}
+
+run "existing_pool_topology_and_capacity_are_preserved" {
+  command = plan
 
   assert {
-    condition     = length(vultr_kubernetes_node_pools.omega_ha_ci) == 0
-    error_message = "Legacy auth compatibility must not enable new capacity."
+    condition = (
+      vultr_kubernetes.omega_ha.region == "syd" &&
+      vultr_kubernetes.omega_ha.label == "omega-ha" &&
+      vultr_kubernetes.omega_ha.ha_controlplanes &&
+      vultr_kubernetes_node_pools.omega_ha_core_large.cluster_id == vultr_kubernetes.omega_ha.id &&
+      vultr_kubernetes_node_pools.omega_ha_search.cluster_id == vultr_kubernetes.omega_ha.id
+    )
+    error_message = "Recovery must preserve the Sydney HA cluster and both existing standalone pool bindings."
+  }
+
+  assert {
+    condition = (
+      length(vultr_kubernetes.omega_ha.node_pools) == 1 &&
+      one(vultr_kubernetes.omega_ha.node_pools).label == "core" &&
+      one(vultr_kubernetes.omega_ha.node_pools).plan == "vc2-2c-4gb" &&
+      one(vultr_kubernetes.omega_ha.node_pools).node_quantity == 4 &&
+      one(vultr_kubernetes.omega_ha.node_pools).auto_scaler &&
+      one(vultr_kubernetes.omega_ha.node_pools).min_nodes == 4 &&
+      one(vultr_kubernetes.omega_ha.node_pools).max_nodes == 4 &&
+      vultr_kubernetes_node_pools.omega_ha_core_large.label == "core-large" &&
+      vultr_kubernetes_node_pools.omega_ha_core_large.plan == "vc2-4c-8gb" &&
+      vultr_kubernetes_node_pools.omega_ha_core_large.node_quantity == 2 &&
+      vultr_kubernetes_node_pools.omega_ha_core_large.min_nodes == 2 &&
+      vultr_kubernetes_node_pools.omega_ha_core_large.max_nodes == 2 &&
+      vultr_kubernetes_node_pools.omega_ha_search.label == "greenveil-search" &&
+      vultr_kubernetes_node_pools.omega_ha_search.plan == "vc2-6c-16gb" &&
+      vultr_kubernetes_node_pools.omega_ha_search.node_quantity == 1 &&
+      vultr_kubernetes_node_pools.omega_ha_search.min_nodes == 1 &&
+      vultr_kubernetes_node_pools.omega_ha_search.max_nodes == 1
+    )
+    error_message = "Recovery must preserve existing pool sizes, node quantities and autoscaler bounds: core=4, core-large=2, search=1."
+  }
+
+  assert {
+    condition = (
+      length(vultr_kubernetes_node_pools.omega_ha_search.taints) == 1 &&
+      one(vultr_kubernetes_node_pools.omega_ha_search.taints).key == "dedicated" &&
+      one(vultr_kubernetes_node_pools.omega_ha_search.taints).value == "search" &&
+      one(vultr_kubernetes_node_pools.omega_ha_search.taints).effect == "NoSchedule"
+    )
+    error_message = "Recovery must not loosen the existing search pool's scheduling taint."
   }
 }
