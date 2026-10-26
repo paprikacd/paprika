@@ -3,7 +3,6 @@ name: Build Insights preview
 on:
   push:
     branches: [issue/observability-dashboard-integration]
-  workflow_dispatch:
 
 concurrency:
   group: insights-preview-${{ github.ref }}

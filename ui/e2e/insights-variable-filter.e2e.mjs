@@ -16,7 +16,7 @@ const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const output = join(repository, "artifacts/insights/variable-filter")
 const temporary = await mkdtemp(join(tmpdir(), "paprika-variable-filter-"))
 const binary = join(temporary, "insights")
-const reports = [], requests = [], pending = [], pageErrors = [], queryResponses = []
+const reports = [], requests = [], pending = [], pageErrors = [], queryResponses = [], browserFailures = []
 const services = ["api-gateway", "release-controller", "repo-server", "worker-east", "worker-west", "auth-service", 'quoted"service\\west{{service}}', "slow-service"]
 const readings = [101.2345, 202.3456, 303.4567, 404.5678, 0, 606.789, 707.8912, 999.1234]
 const fixedRange = { from: "2026-10-20T12:00:00.000Z", to: "2026-10-20T13:00:00.000Z" }
@@ -28,7 +28,7 @@ const dashboard = {
   widgets: [{ id: "selected-service", title: "Selected service request rate", type: "stat", providerId: "metrics", query: "dormant_query_must_not_run", queryRef: { id: savedQuery.id, bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, unit: "req/s", options: { decimals: 2, showSparkline: true }, layout: { x: 0, y: 0, w: 6, h: 3 } }],
 }
 const elsewhere = { ...dashboard, id: "another-board", title: "Another dashboard", widgets: [], variables: [] }
-let browser, context, page, service, serviceURL, gatewayURL, serviceOutput = ""
+let browser, context, page, service, serviceURL, gatewayURL, failure, serviceOutput = ""
 function json(response, status, body) { response.writeHead(status, { "content-type": "application/json" }); response.end(JSON.stringify(body)) }
 function exactQuery(value) { return queryTemplate.replace("{{service}}", JSON.stringify(value)) }
 function history(value) {
@@ -58,6 +58,26 @@ const gateway = createServer((request, response) => {
   request.once("aborted", () => forward.destroy())
   response.once("close", () => { if (!response.writableEnded) forward.destroy() })
   request.pipe(forward)
+})
+// Next's development debug channel uses WebSockets to complete hydration.
+// Preserve that channel when the shared runner starts a dev server for this fixture.
+gateway.on("upgrade", (request, socket, head) => {
+  const target = new URL(request.url, baseURL)
+  const forward = httpRequest(target, { headers: { ...request.headers, host: target.host } })
+  forward.on("upgrade", (response, upstreamSocket, upstreamHead) => {
+    const headers = response.rawHeaders.reduce((text, value, index, all) => index % 2 ? text : `${text}${value}: ${all[index + 1]}\r\n`, "")
+    socket.write(`HTTP/1.1 ${response.statusCode} ${response.statusMessage}\r\n${headers}\r\n`)
+    if (head.length) upstreamSocket.write(head)
+    if (upstreamHead.length) socket.write(upstreamHead)
+    socket.on("error", () => upstreamSocket.destroy())
+    upstreamSocket.on("error", () => socket.destroy())
+    socket.on("close", () => upstreamSocket.destroy())
+    upstreamSocket.on("close", () => socket.destroy())
+    socket.pipe(upstreamSocket).pipe(socket)
+  })
+  forward.on("response", () => socket.destroy())
+  forward.on("error", () => socket.destroy())
+  forward.end()
 })
 async function listen(server) { server.listen(0, "127.0.0.1"); await once(server, "listening"); return server.address().port }
 async function until(predicate, message, timeout = 10000) {
@@ -124,6 +144,8 @@ async function open(width) {
   context = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 1000 }, reducedMotion: "reduce", colorScheme: "light", timezoneId: "UTC", ...(width < 600 ? { isMobile: true, hasTouch: true } : {}) })
   page = await context.newPage(); page.setDefaultTimeout(12000)
   page.on("pageerror", error => pageErrors.push(error.message))
+  page.on("requestfailed", request => browserFailures.push({ url: request.url(), error: request.failure()?.errorText }))
+  page.on("response", response => { if (response.status() >= 400) browserFailures.push({ url: response.url(), status: response.status() }) })
   page.on("response", response => { if (/\/api\/insights\/query(?:\?|$)/.test(response.url())) void response.text().then(body => queryResponses.push({ status: response.status(), request: response.request().postData(), body })).catch(() => {}) })
   page.on("dialog", dialog => { pageErrors.push(`Unexpected native dialog: ${dialog.message()}`); void dialog.dismiss() })
   await page.goto(`${gatewayURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" })
@@ -135,7 +157,7 @@ try {
   await mkdir(output, { recursive: true })
   const providerPort = await listen(upstream), reservation = createServer(), servicePort = await listen(reservation)
   await new Promise(resolve => reservation.close(resolve)); serviceURL = `http://127.0.0.1:${servicePort}`
-  const build = spawn("rtk", ["proxy", "go", "build", "-o", binary, "./cmd/paprika-insights"], { cwd: repository, stdio: "inherit" })
+  const build = spawn("go", ["build", "-o", binary, "./cmd/paprika-insights"], { cwd: repository, stdio: "inherit" })
   assert.equal((await once(build, "exit"))[0], 0)
   await writeFile(join(temporary, "providers.json"), JSON.stringify({ providers: [{ id: "metrics", name: "Prometheus fixture", type: "prometheus", url: `http://127.0.0.1:${providerPort}` }] }))
   service = spawn(binary, ["--dev", `--listen=127.0.0.1:${servicePort}`, `--data-dir=${join(temporary, "data")}`, `--providers=${join(temporary, "providers.json")}`], { cwd: repository, env: { ...process.env, OTEL_EXPORTER_OTLP_ENDPOINT: "" }, stdio: ["ignore", "pipe", "pipe"] })
@@ -232,9 +254,13 @@ try {
   assert.equal(requests.some(entry => entry.query?.includes("dormant_query_must_not_run")), false)
   assert.deepEqual(pageErrors, [])
   console.log(`${reports.length} real-service variable filter scenarios passed.`)
-} catch (error) { console.error(error); process.exitCode = 1 }
+} catch (error) {
+  failure = { error: error.stack ?? error.message, url: page?.url(), visible: (await page?.locator("body").innerText().catch(() => ""))?.slice(0, 2000) }
+  await page?.screenshot({ path: join(output, "failure.png"), fullPage: false }).catch(() => {})
+  console.error(error, failure.visible?.slice(0, 2000), browserFailures); process.exitCode = 1
+}
 finally {
-  await writeFile(join(output, "report.json"), JSON.stringify({ baseURL, reports, pageErrors, requests, queryResponses }, null, 2))
+  await writeFile(join(output, "report.json"), JSON.stringify({ baseURL, reports, pageErrors, requests, queryResponses, browserFailures, failure }, null, 2))
   await browser?.close()
   for (const item of pending) item.response.destroy()
   await stopService()

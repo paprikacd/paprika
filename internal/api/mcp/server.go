@@ -480,7 +480,8 @@ func serverDescriptionAndInstructions(disableConsoleResources bool, supportedSco
 		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
 		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
 		if slices.Contains(supportedScopes, ScopeInsightsWrite) {
-			description = "Observability discovery and bounded queries, with authorized saved-query and dashboard authoring."
+			description = "Observability discovery, compact dashboard query bundles, and authorized saved-query and dashboard authoring."
+			instructions = "Prefer query_dashboard when a saved dashboard covers the question. Discover its ID with list_dashboards, inspect its variables with get_dashboard when needed, and pass a variables map to query_dashboard for shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing/error/truncation states and document versions; text is a compact synopsis. This read requires paprika:observe and existing Insights/provider read permission, not authoring consent. For standalone provider queries: " + instructions
 			instructions += " Saved-query and dashboard creation or updates additionally require explicit paprika:insights:write consent and Insights write permission. Discover Insights providers and read current documents first. Create with a new ID; update using the exact ETag just read. Changes appear in the Insights UI. This scope grants no provider configuration or fleet delivery writes."
 		}
 	}

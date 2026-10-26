@@ -76,7 +76,7 @@ async function showService(service) {
 
 try {
   await mkdir(output, { recursive: true })
-  const build = spawn("rtk", ["proxy", "go", "build", "-o", binary, "./hack/insights-observe-e2e"], { cwd: repository, stdio: "inherit" })
+  const build = spawn("go", ["build", "-o", binary, "./hack/insights-observe-e2e"], { cwd: repository, stdio: "inherit" })
   assert.equal((await once(build, "exit"))[0], 0)
   child = spawn(binary, [`--ready-file=${ready}`, `--ui-dir=${join(repository, "ui/out")}`, `--data-dir=${join(temporary, "data")}`, ...(process.env.INSIGHTS_E2E_URL ? [`--ui-url=${process.env.INSIGHTS_E2E_URL}`] : [])], { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
   child.stdout.on("data", data => { fixtureLog += data })

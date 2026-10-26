@@ -157,7 +157,7 @@ async function discardDialog() {
 
 try {
   await mkdir(output, { recursive: true })
-  const build = spawn("rtk", ["proxy", "go", "build", "-o", binary, "./hack/insights-observe-e2e"], { cwd: repository, stdio: "inherit" })
+  const build = spawn("go", ["build", "-o", binary, "./hack/insights-observe-e2e"], { cwd: repository, stdio: "inherit" })
   assert.equal((await once(build, "exit"))[0], 0, "Authoring integration fixture must build")
   await startFixture()
   browser = await chromium.launch({ headless: true })

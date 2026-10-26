@@ -48,6 +48,7 @@ test("serves the compiled shell with exact links that all resolve", async ({ pag
     ["Overview", "/dashboard/"],
     ["Applications", "/dashboard/applications/"],
     ["Fleet map", "/dashboard/map/"],
+    ["Insights", "/dashboard/insights/"],
     ["Pipelines", "/dashboard/pipelines/"],
     ["Rollouts", "/dashboard/rollouts/"],
     ["Sync & diff", "/dashboard/diff/"],
@@ -57,7 +58,7 @@ test("serves the compiled shell with exact links that all resolve", async ({ pag
     ["Observability", "/dashboard/observability/"],
   ] as const
 
-  // The rail carries these ten destinations, in this order, and nothing else:
+  // The rail carries these destinations, in this order, and nothing else:
   // an extra, missing or reordered entry fails here.
   await expect
     .poll(() =>

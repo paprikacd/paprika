@@ -25,6 +25,40 @@ func TestInsightsScopeIsExplicitAndIndependent(t *testing.T) {
 	assert.Equal(t, []Scope{ScopeRead, ScopeWrite}, defaults, "fleet defaults must not gain authoring access")
 }
 
+func TestInsightsInitializeGuidesReadOnlyClientsToDashboardBundles(t *testing.T) {
+	for _, tc := range []struct {
+		name, token string
+		server      *Server
+		insights    bool
+	}{
+		{"configured Observe with read-only token", observeBearerFor(t, ScopeObserve), newObservabilityTestServer(t, nil, nil, ScopeObserve, ScopeInsightsWrite), true},
+		{"Observe without Insights", observeBearerFor(t, ScopeObserve), newObservabilityTestServer(t, nil, nil), false},
+		{"fleet", bearerFor(t, ScopeRead), newTestServer(t), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := doJSONRPC(t, tc.server, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`, tc.token)
+			var envelope struct {
+				Result struct {
+					Instructions string `json:"instructions"`
+				} `json:"result"`
+				Error json.RawMessage `json:"error"`
+			}
+			require.NoError(t, json.Unmarshal(body, &envelope))
+			require.Empty(t, envelope.Error)
+			instructions := envelope.Result.Instructions
+			require.NotEmpty(t, instructions)
+			if !tc.insights {
+				assert.NotContains(t, instructions, "query_dashboard", "do not advertise a tool unavailable on this surface")
+				return
+			}
+			assert.True(t, strings.HasPrefix(instructions, "Prefer query_dashboard"))
+			for _, detail := range []string{"list_dashboards", "get_dashboard", "variables map", "identical queries once", "structuredContent", "not authoring consent", "Discover authorized providers", "exact ETag", "paprika:insights:write"} {
+				assert.Contains(t, instructions, detail)
+			}
+		})
+	}
+}
+
 func TestInsightsAuthoringScopeConsentAndRefreshPreserveExplicitGrant(t *testing.T) {
 	for _, scopes := range [][]string{{string(ScopeObserve)}, {string(ScopeObserve), string(ScopeInsightsWrite)}} {
 		t.Run(strings.Join(scopes, " "), func(t *testing.T) {
