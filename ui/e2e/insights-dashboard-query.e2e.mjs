@@ -232,7 +232,7 @@ try {
     const tokenFile = join(temporary, "console.token"), mcpTokenFile = join(temporary, "observe.token"), configFile = join(temporary, "live-config.json")
     await writeFile(tokenFile, fixture.token, { mode: 0o600 })
     await writeFile(mcpTokenFile, fixture.mcpViewerToken, { mode: 0o600 })
-    await writeFile(configFile, JSON.stringify({ baseURL: fixture.baseURL, mcpURL: fixture.mcpURL, tokenFile, mcpTokenFile, dashboardId: dashboard.id, services, outputDir: join(output, "live-validator") }), { mode: 0o600 })
+    await writeFile(configFile, JSON.stringify({ baseURL: fixture.baseURL, mcpURL: fixture.mcpURL, tokenFile, mcpTokenFile, dashboardId: dashboard.id, services: [...services, "no-telemetry"], outputDir: join(output, "live-validator") }), { mode: 0o600 })
     const validator = spawn(process.execPath, [join(repository, "ui/e2e/insights-dashboard-query-live.e2e.mjs")], { cwd: repository, env: { ...process.env, INSIGHTS_SERVICE_OVERVIEW_CONFIG: configFile }, stdio: "inherit" })
     assert.equal((await once(validator, "exit"))[0], 0)
     return { reusableLiveValidator: "passed" }

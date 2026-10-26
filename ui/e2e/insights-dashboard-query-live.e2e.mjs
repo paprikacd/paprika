@@ -103,10 +103,11 @@ try {
       const raw = rawQueries.get(key), signal = signalFor(result, widget.id)
       assert.ok(signal, `No signal for ${widget.id}`)
       if (request.kind === "metrics") {
-        const index = raw.series.findIndex(s => finite(s.points).length)
+        const rawSeries = raw.series ?? []
+        const index = rawSeries.findIndex(s => finite(s.points).length)
         if (index < 0) { assert.equal(signal.state, "empty"); comparisons.push({ widget: widget.id, state: "empty" }); continue }
         assert.equal(signal.state, "ok"); assert.equal(signal.primarySeries, index)
-        const summary = signal.series.find(s => s.index === index), points = finite(raw.series[index].points)
+        const summary = signal.series.find(s => s.index === index), points = finite(rawSeries[index].points)
         assert.deepEqual(summary.last, points.at(-1))
         assert.equal(summary.min, Math.min(...points.map(p => p.value)))
         assert.equal(summary.max, Math.max(...points.map(p => p.value)))
@@ -114,10 +115,11 @@ try {
         assert.equal(summary.history, undefined)
         comparisons.push({ widget: widget.id, state: signal.state, value: summary.last.value, timestamp: summary.last.timestamp, samples: summary.samples })
       } else {
-        assert.equal(signal.state, raw.traces.length ? "ok" : "empty")
-        assert.equal(signal.traces.returned, raw.traces.length)
-        for (const trace of signal.traces.examples ?? []) assert.equal(trace.service, service)
-        comparisons.push({ widget: widget.id, state: signal.state, traces: signal.traces.returned, examples: signal.traces.examples?.length ?? 0 })
+        const rawTraces = raw.traces ?? []
+        assert.equal(signal.state, rawTraces.length ? "ok" : "empty")
+        assert.equal(signal.traces?.returned ?? 0, rawTraces.length)
+        for (const trace of signal.traces?.examples ?? []) assert.equal(trace.service, service)
+        comparisons.push({ widget: widget.id, state: signal.state, traces: signal.traces?.returned ?? 0, examples: signal.traces?.examples?.length ?? 0 })
       }
     }
     assert.equal(result.queryCount.executed, rawQueries.size)
