@@ -277,6 +277,34 @@ describe("Insights HTTP client", () => {
     },
   )
 
+  it("asks the host to sign in once across concurrent unauthorized requests", async () => {
+    mockFetch(response({}, 401), response({}, 401), response({}, 401))
+    const onUnauthorized = vi.fn()
+    const api = createInsightsClient("/api/insights", () => null, onUnauthorized)
+    const outcomes = await Promise.allSettled([api.providers(), api.list(), api.listSavedQueries()])
+    expect(outcomes.every(result => result.status === "rejected" && /Sign in/.test(result.reason.message))).toBe(true)
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps forbidden responses local instead of restarting login", async () => {
+    mockFetch(response({}, 403))
+    const onUnauthorized = vi.fn()
+    await expect(createInsightsClient("/api/insights", () => "valid-token", onUnauthorized).list()).rejects.toThrow(/does not have access/)
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it("does not sign out a new session when an older request returns unauthorized", async () => {
+    let token = "old-token"
+    let respond!: (value: Response) => void
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { respond = resolve })))
+    const onUnauthorized = vi.fn()
+    const pending = createInsightsClient("/api/insights", () => token, onUnauthorized).list()
+    token = "new-token"
+    respond(response({}, 401))
+    await expect(pending).rejects.toThrow(/Sign in/)
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
   it("validates dashboard documents on both read and write", async () => {
     const fetcher = mockFetch(
       response({ ...dashboard, schemaVersion: 22 }),

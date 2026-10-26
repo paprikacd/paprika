@@ -83,15 +83,25 @@ function documentETag(response: Response): string | undefined {
 export function createInsightsClient(
   baseURL = "/api/insights",
   token?: () => string | null,
+  onUnauthorized?: () => void,
 ): InsightsClient {
   const snapshots = new Map<string, { bearer: string | null; generation: number; etag?: string; value?: unknown }>()
+  let authenticationRequested = false
   async function request(path: string, init: RequestInit = {}, bearer = token?.() ?? null, allowNotModified = false) {
     const headers = new Headers(init.headers)
     headers.set("Content-Type", "application/json")
     if (bearer) headers.set("Authorization", `Bearer ${bearer}`)
     const response = await fetch(`${baseURL}${path}`, { ...init, headers })
     if (!response.ok && !(allowNotModified && response.status === 304)) {
-      if (response.status === 401) throw new Error("Sign in to access your dashboards.")
+      if (response.status === 401) {
+        // Parallel startup/query requests must not repeatedly navigate the host.
+        // A late response from a previous session must not sign out a newer one.
+        if (!authenticationRequested && (token?.() ?? null) === bearer) {
+          authenticationRequested = true
+          onUnauthorized?.()
+        }
+        throw new Error("Sign in to access your dashboards.")
+      }
       if (response.status === 403 && path.startsWith("/provider-configs"))
         throw new Error("Managing data sources requires Insights administrator access.")
       if (response.status === 403 && path === "/observe-connection")
