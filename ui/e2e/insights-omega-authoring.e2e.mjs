@@ -34,9 +34,10 @@ const end = config.range?.to ? Date.parse(config.range.to) : Math.floor(Date.now
 const start = config.range?.from ? Date.parse(config.range.from) : end - (config.rangeMinutes ?? 60) * 60_000
 assert.ok(Number.isFinite(start) && Number.isFinite(end) && end > start && end - start <= 31 * 86_400_000)
 const fixedRange = { from: new Date(start).toISOString(), to: new Date(end).toISOString() }
+const step = Math.max(1, Math.ceil((end - start) / 1000 / 300))
 const unit = config.unit ?? "", template = config.metricTemplate
 const title = config.title ?? `Omega MCP authoring ${runId}`
-const reports = [], pageErrors = [], responses = [], documents = []
+const reports = [], pageErrors = [], responses = [], documents = [], versions = []
 let browser, context, page, rpcId = 0, metricProvider, traceProvider, queryEntry, dashboardEntry
 const expression = (service, query = template) => query.split("{{service}}").join(JSON.stringify(service))
 
@@ -48,7 +49,14 @@ async function until(predicate, message, timeout = 45_000) {
 async function api(path) {
   const response = await fetch(`${baseURL}/api/insights/${path}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) })
   assert.equal(response.status, 200, `GET ${path}: HTTP${response.status}`)
-  return { document: await response.json(), etag: response.headers.get("etag") }
+  const httpETag = response.headers.get("etag"), documentETag = response.headers.get("x-paprika-document-etag")
+  if (documentETag) assert.match(documentETag, /^"[a-f0-9]{64}"$/)
+  if (httpETag?.startsWith("W/")) {
+    assert.ok(documentETag, "A transformed response must retain its exact document version")
+    assert.equal(httpETag, `W/${documentETag}`)
+  }
+  versions.push({ client: "node", path, httpETag, documentETag, encoding: response.headers.get("content-encoding") })
+  return { document: await response.json(), etag: documentETag ?? httpETag }
 }
 async function rpc(method, params, credential = writeToken) {
   const id = ++rpcId
@@ -85,8 +93,9 @@ async function check(name, action) {
 const tile = () => page.locator('[data-widget-id="selected-service"]')
 async function reading(service, query = template) {
   const resolved = expression(service, query)
-  await until(() => responses.some(item => item.status === 200 && item.request.providerId === metricProvider.id && item.request.query === resolved), "The widget did not execute the expected saved-query binding")
-  const response = responses.findLast(item => item.status === 200 && item.request.providerId === metricProvider.id && item.request.query === resolved)
+  const matches = item => item.status === 200 && item.request.providerId === metricProvider.id && item.request.query === resolved && item.request.start === start / 1000 && item.request.end === end / 1000 && item.request.step === step
+  await until(() => responses.some(matches), "The widget did not execute the expected saved-query binding and exact dashboard time range")
+  const response = responses.findLast(matches)
   const series = response.body.series?.find(item => item.points.some(point => Number.isFinite(point.value)))
   assert.ok(series, "The real provider returned no finite metric samples")
   const points = [...series.points].sort((a, b) => a.timestamp - b.timestamp), finite = points.filter(point => Number.isFinite(point.value))
@@ -110,6 +119,7 @@ async function open(width = 1512, id) {
   page.on("pageerror", error => pageErrors.push(error.message))
   page.on("response", response => {
     if (new URL(response.url()).pathname === "/api/insights/query") void response.json().then(body => responses.push({ status: response.status(), request: JSON.parse(response.request().postData() || "{}"), body })).catch(() => {})
+    if (new URL(response.url()).pathname === `/api/insights/dashboards/${dashboardId}`) versions.push({ client: "browser", method: response.request().method(), status: response.status(), httpETag: response.headers().etag, documentETag: response.headers()["x-paprika-document-etag"], encoding: response.headers()["content-encoding"], ifMatch: response.request().headers()["if-match"] })
   })
   await page.goto(`${baseURL}/dashboard/insights/${id ? `?dashboard=${id}` : ""}`, { waitUntil: "networkidle" })
   await page.getByText("Live providers", { exact: true }).waitFor()
@@ -158,7 +168,7 @@ try {
     await entry.waitFor(); await entry.click()
     await page.getByRole("heading", { name: title, exact: true }).waitFor()
     const summary = await reading(services[0])
-    await until(() => responses.some(item => item.status === 200 && item.request.providerId === traceProvider.id && item.request.query === config.traceQuery && item.body.traces?.length), "The MCP-authored Tempo reference did not return real traces")
+    await until(() => responses.some(item => item.status === 200 && item.request.providerId === traceProvider.id && item.request.query === config.traceQuery && item.request.start === start / 1000 && item.request.end === end / 1000 && item.body.traces?.length), "The MCP-authored Tempo reference did not return real traces for the dashboard time range")
     await page.locator('[data-widget-id="service-traces"]').getByRole("table").waitFor()
     assert.deepEqual((await api(`saved-queries/${queryId}`)).document, saved)
     assert.deepEqual((await api(`dashboards/${dashboardId}`)).document, document)
@@ -185,6 +195,7 @@ try {
   await check("The query editor shows metadata written through MCP", async () => {
     await page.locator("#insights-navigation").getByRole("button", { name: /^Explore\b/ }).click()
     const editor = page.getByRole("region", { name: "Data source explorer", exact: true }).last()
+    await selectGammaOption(page, editor.getByRole("combobox", { name: "Explore data source", exact: true }), metricProvider.name)
     await selectGammaOption(page, editor.getByRole("combobox", { name: "Open saved query", exact: true }), new RegExp(queryEntry.document.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
     assert.equal(await editor.getByRole("textbox", { name: "Query description", exact: true }).inputValue(), queryEntry.document.description)
     await page.screenshot({ path: join(output, "mcp-updated-query-details.png"), fullPage: false })
@@ -204,7 +215,7 @@ try {
       return { before: { value: before.value, samples: before.samples }, after: { value: after.value, samples: after.samples }, persistedDefaultUnchanged: true }
     })
   }
-  await check("MCP-authored references and versions survive a fresh UI context and reload", async () => {
+  await check("MCP-authored references survive reload and a UI save returns the exact new version through MCP", async () => {
     await open(1512, dashboardId)
     await page.getByRole("heading", { name: dashboardEntry.document.title, exact: true }).waitFor()
     await reading(services[0], queryEntry.document.query)
@@ -214,7 +225,24 @@ try {
     const query = await tool("get_saved_query", { id: queryId }, readToken), board = await tool("get_dashboard", { id: dashboardId }, readToken)
     assert.deepEqual(query.document, queryEntry.document); assert.equal(query.etag, queryEntry.etag)
     assert.deepEqual(board.document, dashboardEntry.document); assert.equal(board.etag, dashboardEntry.etag)
-    return { restoredReferences: true, unchangedVersions: true }
+    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    const updatedTitle = `${title} — MCP and UI verified`
+    await page.getByRole("textbox", { name: "Dashboard title", exact: true }).fill(updatedTitle)
+    const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${dashboardId}`)
+    await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
+    const response = await saved
+    assert.equal(response.status(), 200, "The UI must save through the public compressed transport")
+    assert.equal(response.request().headers()["if-match"], board.etag, "UI compare-and-swap must send the exact application version")
+    await page.getByRole("heading", { name: updatedTitle, exact: true }).waitFor()
+    dashboardEntry = await tool("get_dashboard", { id: dashboardId }, readToken)
+    assert.deepEqual(dashboardEntry.document, JSON.parse(response.request().postData()))
+    assert.equal(dashboardEntry.document.title, updatedTitle)
+    assert.notEqual(dashboardEntry.etag, board.etag)
+    assert.equal(dashboardEntry.etag, response.headers()["x-paprika-document-etag"] ?? response.headers().etag)
+    assert.equal((await api(`dashboards/${dashboardId}`)).etag, dashboardEntry.etag)
+    await reading(services[0], queryEntry.document.query)
+    await page.screenshot({ path: join(output, "mcp-ui-roundtrip.png"), fullPage: false })
+    return { restoredReferences: true, uiSaveStatus: response.status(), exactVersionSent: true, uiChangeVisibleThroughMCP: true, transformedResponsesPreservedVersions: versions.filter(item => item.httpETag?.startsWith("W/") && item.documentETag).length }
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
   console.log(`PASS ${reports.length} ${config.environment ?? "live"} MCP authoring scenarios; dashboard ${dashboardId}`)
@@ -222,6 +250,6 @@ try {
   console.error(error.stack ?? error.message); process.exitCode = 1
 } finally {
   await mkdir(output, { recursive: true })
-  await writeFile(join(output, "report.json"), JSON.stringify({ timestamp: new Date().toISOString(), environment: config.environment ?? "live", dashboardURL: `${baseURL}/dashboard/insights/?dashboard=${dashboardId}`, range: fixedRange, documents, reports, pageErrors, queries: responses.map(({ status, request, body }) => ({ status, providerId: request.providerId, kind: request.kind, query: request.query, series: body.series?.length, traces: body.traces?.length })) }, null, 2))
+  await writeFile(join(output, "report.json"), JSON.stringify({ timestamp: new Date().toISOString(), environment: config.environment ?? "live", dashboardURL: `${baseURL}/dashboard/insights/?dashboard=${dashboardId}`, range: fixedRange, documents, reports, pageErrors, versions, queries: responses.map(({ status, request, body }) => ({ status, providerId: request.providerId, kind: request.kind, query: request.query, start: request.start, end: request.end, step: request.step, series: body.series?.length, samples: body.series?.[0]?.points?.length, latest: body.series?.[0]?.points?.at(-1), traces: body.traces?.length })) }, null, 2))
   await context?.close(); await browser?.close()
 }

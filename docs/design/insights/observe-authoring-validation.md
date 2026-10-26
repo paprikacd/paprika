@@ -80,6 +80,23 @@ conflict. A same-content rewrite can update a clean editor's ETag without
 resetting its results or test parameter values. Service selections remain view
 state unless explicitly saved as defaults.
 
+### Document versions through compression
+
+Live testing found that Cloudflare changes the HTTP `ETag` to a weak validator
+when compressing an API response. Using that representation validator for the
+store's strict `If-Match` check would reject a valid UI save. Dashboard and
+saved-query GET/PUT responses now also carry `X-Paprika-Document-ETag`, the exact
+stored-document version. The client uses that version for writes and preserves
+the separate HTTP ETag for conditional reads. GET revalidation supports weak
+comparison; write preconditions and MCP ETag arguments remain strict.
+
+Regression tests simulate the intermediary, verify header forwarding through
+the authenticated proxy, cover dashboard and saved-query save/delete flows,
+and ensure denied reads disclose no version. The browser acceptance test also
+saves through the visible UI and reads the resulting document/version through
+MCP. Its provider assertions match the exact query, time range and step, and
+explicitly select the intended source in a multi-provider catalog.
+
 ## Native OAuth and plugin upgrade
 
 The Observe plugin is version **0.2.0**, advertises Read and Write capabilities,
@@ -125,6 +142,8 @@ copied fleet token, service credential, or provider key. See the
 | Required controller regression tests | `go test ./internal/engine ./internal/controller/pipelines -count=1` passed |
 | UI unit tests | Full suite **1,334 tests in 139 files** passed; final conditional-read changes passed **76 targeted tests** plus TypeScript and ESLint |
 | Production UI build and existing Observe E2E | Build passed; **11/11** existing Observe integration scenarios passed with zero page errors |
+| Compression regression | Insights and authenticated proxy race tests passed; **48** targeted UI tests, TypeScript and ESLint passed |
+| Final browser rerun after compression fix | Production build, authoring **15/15**, Observe **11/11**, and live-smoke fixture **10/10** passed with zero page errors; the latter includes UI save → MCP readback |
 | Helm 3.21.2 | Lint, default template and every `task chart:validate` matrix passed |
 | CRD generation | `controller-gen@v0.20.1` and `task chart:crds` passed; SHA-256 comparison found all **42** base/wrapped files unchanged |
 | Whitespace validation | `git diff --check` passed |

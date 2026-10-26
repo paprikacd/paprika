@@ -25,8 +25,8 @@ func (s *Server) getSavedQuery(w http.ResponseWriter, r *http.Request) {
 		savedQueryStoreError(w, err)
 		return
 	}
-	w.Header().Set("ETag", tag)
-	if match := r.Header.Get("If-None-Match"); match == "*" || match == tag {
+	setDocumentETag(w, tag)
+	if matchesReadETag(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -78,7 +78,7 @@ func (s *Server) putSavedQuery(w http.ResponseWriter, r *http.Request) {
 		savedQueryStoreError(w, err)
 		return
 	}
-	w.Header().Set("ETag", tag)
+	setDocumentETag(w, tag)
 	writeJSON(w, 200, document)
 }
 

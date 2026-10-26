@@ -64,6 +64,12 @@ export interface InsightsClient {
   ): Promise<ProviderMetadata>
 }
 
+// A proxy may weaken the HTTP validator when compressing a response. Keep the
+// server's exact document revision for writes; HTTP ETag remains the cache key.
+function documentETag(response: Response): string | undefined {
+  return response.headers.get("X-Paprika-Document-ETag") ?? response.headers.get("ETag") ?? undefined
+}
+
 export function createInsightsClient(
   baseURL = "/api/insights",
   token?: () => string | null,
@@ -116,7 +122,7 @@ export function createInsightsClient(
       if (cached.value === undefined) throw new Error("The workspace response has no cached document. Try again.")
       return cached.value as T
     }
-    const value = parse(await response.json(), response.headers.get("ETag") ?? undefined)
+    const value = parse(await response.json(), documentETag(response))
     if (!signal?.aborted && snapshots.get(path) === cached && generation === cached.generation) {
       cached.value = value
       cached.etag = response.headers.get("ETag") ?? undefined
@@ -132,7 +138,7 @@ export function createInsightsClient(
     }, signal),
     getSavedQuery: async (id) => {
       const response = await request(`/saved-queries/${encodeURIComponent(id)}`)
-      return { query: savedQuerySchema.parse(await response.json()), etag: response.headers.get("ETag") ?? undefined }
+      return { query: savedQuerySchema.parse(await response.json()), etag: documentETag(response) }
     },
     saveSavedQuery: async (query, etag) => {
       const document = savedQuerySchema.parse(query)
@@ -141,7 +147,7 @@ export function createInsightsClient(
         method: "PUT", body: JSON.stringify(document),
         headers: etag ? { "If-Match": etag } : { "If-None-Match": "*" },
       })
-      return response.headers.get("ETag") ?? undefined
+      return documentETag(response)
     },
     removeSavedQuery: async (id, etag) => {
       if (!etag) throw new Error("Reload this saved query before deleting it.")
@@ -191,7 +197,7 @@ export function createInsightsClient(
         body: JSON.stringify(dashboardSchema.parse(dashboard)),
         headers: etag ? { "If-Match": etag } : { "If-None-Match": "*" },
       })
-      return response.headers.get("ETag") ?? undefined
+      return documentETag(response)
     },
     remove: async (id, etag) => {
       await request(`/dashboards/${encodeURIComponent(id)}`, {

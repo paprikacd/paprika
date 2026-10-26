@@ -52,7 +52,7 @@ func writeCollectionJSON(w http.ResponseWriter, r *http.Request, value any) {
 	tag := etag(body)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("ETag", tag)
-	if match := r.Header.Get("If-None-Match"); match == "*" || match == tag {
+	if matchesReadETag(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}

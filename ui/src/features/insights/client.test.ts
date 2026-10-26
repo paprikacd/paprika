@@ -54,6 +54,44 @@ describe("Insights HTTP client", () => {
     expect(fetcher.mock.calls[2][1].headers.get("If-None-Match")).toBe('\"d2\"')
   })
 
+  it("keeps compressed HTTP validators separate from strong dashboard write revisions", async () => {
+    const fetcher = mockFetch(
+      response(dashboard, 200, { ETag: 'W/"d1"', "X-Paprika-Document-ETag": '"d1"' }),
+      new Response(null, { status: 304, headers: { ETag: 'W/"d1"' } }),
+      response({}, 200, { ETag: 'W/"d2"', "X-Paprika-Document-ETag": '"d2"' }),
+      new Response(null, { status: 204 }),
+    )
+    const api = createInsightsClient()
+    const loaded = await api.get(dashboard.id)
+    expect(loaded.etag).toBe('"d1"')
+    const revalidated = await api.get(dashboard.id)
+    expect(revalidated).toBe(loaded)
+    expect(revalidated.etag).toBe('"d1"')
+    expect(fetcher.mock.calls[1][1].headers.get("If-None-Match")).toBe('W/"d1"')
+    const nextTag = await api.save({ ...dashboard, title: "Edited from the UI" }, revalidated.etag)
+    expect(fetcher.mock.calls[2][1].headers.get("If-Match")).toBe('"d1"')
+    expect(nextTag).toBe('"d2"')
+    await api.remove(dashboard.id, nextTag)
+    expect(fetcher.mock.calls[3][1].headers.get("If-Match")).toBe('"d2"')
+  })
+
+  it("uses exact saved-query document revisions for updates and deletes through compression", async () => {
+    const saved: SavedQuery = { schemaVersion: 1, id: "signal", name: "Signal", providerId: "metrics", kind: "metrics", query: "up" }
+    const fetcher = mockFetch(
+      response(saved, 200, { ETag: 'W/"q1"', "X-Paprika-Document-ETag": '"q1"' }),
+      response({}, 200, { ETag: 'W/"q2"', "X-Paprika-Document-ETag": '"q2"' }),
+      new Response(null, { status: 204 }),
+    )
+    const api = createInsightsClient()
+    const loaded = await api.getSavedQuery(saved.id)
+    expect(loaded.etag).toBe('"q1"')
+    const nextTag = await api.saveSavedQuery({ ...saved, description: "Edited from the UI" }, loaded.etag)
+    expect(fetcher.mock.calls[1][1].headers.get("If-Match")).toBe('"q1"')
+    expect(nextTag).toBe('"q2"')
+    await api.removeSavedQuery(saved.id, nextTag)
+    expect(fetcher.mock.calls[2][1].headers.get("If-Match")).toBe('"q2"')
+  })
+
   it("never reuses a previous account's cached library", async () => {
     let bearer: string | null = "first-account"
     const fetcher = mockFetch(
