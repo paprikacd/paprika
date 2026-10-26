@@ -1,3 +1,6 @@
+{{- if and .Values.apiServer.namespaceScope (ne .Values.deploymentMode "split") }}
+{{- fail "apiServer.namespaceScope requires deploymentMode: split; the controller-manager is not scoped by this API setting" }}
+{{- end }}
 {{- if and .Values.mcp.enabled (ne .Values.deploymentMode "split") }}
 {{- fail "mcp.enabled=true requires deploymentMode: split. MCP support (the --mcp-* flags and PAPRIKA_MCP_PUBLIC_URL) is currently wired only into the split-mode api-server Deployment; deploymentMode: monolith does not render any of it, which would otherwise be a silent no-op with no flags, no warning, and a deployment that looks healthy. Set deploymentMode: split to use MCP; monolith support is not yet implemented." }}
 {{- end }}
@@ -101,6 +104,9 @@ spec:
         # See the manager deployment: the release namespace, not the flag's
         # default, is what bounds Global-scoped DataProviderBindings.
         - --operator-namespace={{ .Release.Namespace }}
+        {{- with .Values.apiServer.namespaceScope }}
+        - --api-namespace={{ . }}
+        {{- end }}
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- include "paprika.authArgs" . | nindent 8 }}
         {{- include "paprika.observationStoreArgs" . | nindent 8 }}

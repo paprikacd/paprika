@@ -102,6 +102,9 @@ spec:
       containers:
       - args:
         - --mode=observability-gateway
+        {{- with .Values.apiServer.namespaceScope }}
+        - --api-namespace={{ . }}
+        {{- end }}
         - --observability-discovery-enabled={{ .Values.observabilityGateway.discovery.enabled }}
         - --health-probe-bind-address=:8081
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}

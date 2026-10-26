@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -91,6 +92,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	if err != nil {
 		return fmt.Errorf("create k8s client: %w", err)
 	}
+	k8sClient = namespaceScopedAPIClient(k8sClient, cfg.APINamespace)
 
 	srv, authenticator, usage, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient)
 	if err != nil {
@@ -109,7 +111,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	// that port, and an async exit cancels the gateway: discovery silently
 	// gone while queries still serve is the failure mode this avoids.
 	if cfg.ObservabilityDiscoveryEnabled {
-		if err := startObservabilityProviderDiscovery(gwCtx, cancel, restCfg, scheme); err != nil {
+		if err := startObservabilityProviderDiscovery(gwCtx, cancel, restCfg, scheme, cfg.APINamespace); err != nil {
 			return err
 		}
 	}
@@ -138,9 +140,10 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	return serveGatewayHTTP(gwCtx, cfg, mux)
 }
 
-func startObservabilityProviderDiscovery(ctx context.Context, cancel context.CancelFunc, restCfg *rest.Config, scheme *runtime.Scheme) error {
+func startObservabilityProviderDiscovery(ctx context.Context, cancel context.CancelFunc, restCfg *rest.Config, scheme *runtime.Scheme, namespace string) error {
 	discoveryMgr, err := ctrl.NewManager(clusterconfig.WithRateLimits(negotiateProtobuf(restCfg), 50, 100), ctrl.Options{
 		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"},
+		Cache: crcache.Options{DefaultNamespaces: apiCacheNamespaceOptions(namespace)},
 	})
 	if err != nil {
 		return fmt.Errorf("create provider-discovery manager: %w", err)
@@ -165,6 +168,9 @@ func startObservabilityProviderDiscovery(ctx context.Context, cancel context.Can
 // console users — the alternative would be minting observability tokens for
 // anyone.
 func validateObservabilityGatewayConfig(cfg *cliConfig) error {
+	if err := validateAPINamespace(cfg.APINamespace); err != nil {
+		return err
+	}
 	if cfg.MCPPublicURL == "" {
 		return errors.New("observability-gateway: --mcp-public-url is required; it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's issuer")
 	}

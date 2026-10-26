@@ -612,3 +612,25 @@ kubectl get application <app> -n <ns> -o json | jq '.spec.syncOptions'
 
 The metrics endpoint is HTTP on port 8443, not HTTPS. Use
 `http://localhost:8443/metrics` after port-forwarding.
+
+
+## Controller OOM while resolving a large Git source
+
+A healthy API and a running repo-server do not establish that an application
+source is advancing. Inspect the controller container’s restart count and last
+termination reason when a source-sync annotation leaves the old release active.
+On Omega, BrandBrain’s Git pack indexing exceeded the inherited test controller
+limit of 768Mi and repeatedly terminated the controller with `OOMKilled`.
+A repo-server render timeout can also fall back to indexing in the controller.
+
+`deploy/omega-values.yaml` reserves 2Gi and 500m CPU for the manager, allows 3Gi
+and two cores, and places it on the existing 8Gi core pool. Keep the smaller
+4Gi nodes and the dedicated search pool out of that placement. This is an Omega
+override; kind test values and other deployment components remain unchanged.
+
+Before a resource recovery, inspect node allocation and actual usage. Render
+the existing Helm release with its saved values and the Omega overrides, compare
+the complete object inventory, and server-validate the changed Deployment. Apply
+through Helm at the intended image, then verify its node, resources, readiness,
+restarts, application source revision and actual deployed commit. Do not clear
+Git caches or restart the repo-server as a substitute for fixing a memory cap.

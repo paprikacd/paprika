@@ -23,7 +23,19 @@ auth:
 # VKE_AUTH_TOKEN_SECRET before each upgrade. These lists replace test-values'
 # extraEnv wholesale, so the dev value never renders here. A manual upgrade
 # needs that Secret to exist in paprika-e2e first.
+# Large private Git packs can exceed the test cluster’s 768Mi controller cap.
+# Reserve memory on the existing 8Gi core pool; keep the dedicated search pool
+# untouched and avoid evicting workloads on the smaller 4Gi nodes.
 manager:
+  nodeSelector:
+    node.kubernetes.io/instance-type: vc2-4c-8gb
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 3Gi
   extraEnv:
     - name: PAPRIKA_AUTH_TOKEN_SECRET
       valueFrom:

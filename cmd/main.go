@@ -160,6 +160,7 @@ type cliConfig struct {
 	WebhookAddr                   string        `mapstructure:"webhook-bind-address"`
 	PprofAddr                     string        `mapstructure:"pprof-bind-address"`
 	OperatorNamespace             string        `mapstructure:"operator-namespace"`
+	APINamespace                  string        `mapstructure:"api-namespace"`
 	Mode                          string        `mapstructure:"mode"`
 	K8sAPIServer                  string        `mapstructure:"k8s-api-server"`
 	K8sTokenFile                  string        `mapstructure:"k8s-token-file"`
@@ -696,6 +697,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	fs.String("operator-namespace", "paprika-system",
 		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
+	fs.String("api-namespace", "", "Restrict standalone API and observability reads to one namespace. Empty retains cluster-wide behavior; Kubernetes RBAC remains required.")
 	fs.String("ui-bind-address", ":3000",
 		"The address the UI dashboard server binds to.")
 	fs.String("internal-bind-address", "",
@@ -1137,6 +1139,9 @@ type apiClients struct {
 }
 
 func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (*apiClients, error) {
+	if err := validateAPINamespace(cfg.APINamespace); err != nil {
+		return nil, err
+	}
 	config, err := buildAPIConfig(cfg.K8sAPIServer, cfg.K8sTokenFile)
 	if err != nil {
 		return nil, fmt.Errorf("build API config: %w", err)
@@ -1148,7 +1153,7 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		fleetReader fleet.Reader
 	)
 	if cfg.APICacheEnabled {
-		cacheBundle, err = createAPICacheBundle(ctx, config, scheme)
+		cacheBundle, err = createAPICacheBundle(ctx, config, scheme, cfg.APINamespace)
 		if cacheBundle != nil {
 			apiClient = cacheBundle.Client
 		}
@@ -1160,6 +1165,7 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	if err != nil {
 		return nil, fmt.Errorf("create API client: %w", err)
 	}
+	apiClient = namespaceScopedAPIClient(apiClient, cfg.APINamespace)
 
 	k8sClient, err := createK8sClient(config)
 	if err != nil {
@@ -1173,7 +1179,7 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	// can resolve AppProjects straight from the informer store instead of a
 	// deep copy per check — this lookup runs per candidate per request.
 	authzReader := client.Reader(apiClient)
-	if cacheBundle != nil {
+	if cacheBundle != nil && cfg.APINamespace == "" {
 		authzReader = cacheBundle.Cache
 	}
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, authzReader)
@@ -1686,10 +1692,11 @@ type apiCacheBundle struct {
 // createAPICacheBundle constructs and warms the standalone API cache without
 // starting it. Callers must register every informer handler before taking
 // ownership of Cache.Start.
-func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runtime.Scheme) (*apiCacheBundle, error) {
+func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runtime.Scheme, namespace string) (*apiCacheBundle, error) {
 	apiCache, err := crcache.New(config, crcache.Options{
-		Scheme:           scheme,
-		DefaultTransform: crcache.TransformStripManagedFields(),
+		Scheme:            scheme,
+		DefaultTransform:  crcache.TransformStripManagedFields(),
+		DefaultNamespaces: apiCacheNamespaceOptions(namespace),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create k8s cache: %w", err)
@@ -1704,13 +1711,22 @@ func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runt
 		&pipelinesv1alpha1.NotificationConfig{},
 		&pipelinesv1alpha1.AnalysisRun{},
 		&pipelinesv1alpha1.Artifact{},
-		&policyv1alpha1.Policy{},
 		&rolloutsv1alpha1.Rollout{},
 		&corev1alpha1.AppProject{},
 		&corev1alpha1.Repository{},
 		&clustersv1alpha1.Cluster{},
 		&featureflagsv1alpha1.FeatureFlag{},
 		&featureflagsv1alpha1.FeatureFlagBinding{},
+	}
+	directReadObjects := []client.Object{&corev1.Secret{}, &corev1.ConfigMap{}}
+	if namespace == "" {
+		warmObjects = append(warmObjects, &policyv1alpha1.Policy{})
+	} else {
+		// Policy is cluster-scoped: DefaultNamespaces cannot restrict its
+		// informer. A namespace-only identity must not need that watch to
+		// start serving. Explicit policy reads still reach Kubernetes and
+		// fail closed under its real RBAC instead of inventing an empty set.
+		directReadObjects = append(directReadObjects, &policyv1alpha1.Policy{})
 	}
 	for _, obj := range warmObjects {
 		if _, informerErr := apiCache.GetInformer(ctx, obj); informerErr != nil {
@@ -1727,10 +1743,7 @@ func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runt
 			// caches every Secret in the cluster for what is a keyed GET of a
 			// kubeconfig ref, and a ConfigMap informer does the same for the
 			// occasional artifact lookup. Route both straight to the API.
-			DisableFor: []client.Object{
-				&corev1.Secret{},
-				&corev1.ConfigMap{},
-			},
+			DisableFor: directReadObjects,
 		},
 	})
 	if err != nil {
