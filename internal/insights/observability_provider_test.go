@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,7 +48,7 @@ func observeQueryBody(t *testing.T, reference, kind string) []byte {
 func TestObserveProvidersCallerIsolationAndSavedQueryPersistence(t *testing.T) {
 	var catalogCalls, queryCalls atomic.Int32
 	var revoked atomic.Bool
-	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if token != "alice" && token != "bob" {
 			t.Errorf("gateway received a service token or unexpected caller: %q", token)
@@ -55,22 +56,22 @@ func TestObserveProvidersCallerIsolationAndSavedQueryPersistence(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/observe/api/providers":
+		case "/list_observability_providers":
 			catalogCalls.Add(1)
 			providers := []observeCatalogProvider{{Name: "team-b/metrics", Namespace: "team-b", Type: "prometheus"}}
 			if token == "alice" && !revoked.Load() {
 				providers = append(providers, observeCatalogProvider{Name: "team-a/metrics", Namespace: "team-a", Type: "prometheus"}, observeCatalogProvider{Name: "team-a/traces", Namespace: "team-a", Type: "tempo"}, observeCatalogProvider{Name: "team-a/logs", Namespace: "team-a", Type: "loki"})
 			}
 			writeJSON(w, 200, map[string]any{"providers": providers})
-		case "/observe/api/query":
+		case "/query_metrics":
 			queryCalls.Add(1)
 			var query map[string]any
 			if json.NewDecoder(r.Body).Decode(&query) != nil {
 				t.Error("invalid gateway query")
 			}
 			assert.False(t, query["provider"] != "team-a/metrics", "wrong query contract: %+v", query)
-			assert.False(t, query["signal"] != "metrics", "wrong query contract: %+v", query)
-			assert.False(t, query["stepSeconds"] != 1.25, "wrong query contract: %+v", query)
+			assert.False(t, r.URL.Path != "/query_metrics", "wrong query contract: %+v", query)
+			assert.False(t, query["step_seconds"] != 1.25, "wrong query contract: %+v", query)
 			assert.False(t, query["query"] != "up{service=\"api\"}", "wrong query contract: %+v", query)
 			assert.False(t, query["start"] != "2023-11-14T22:13:20.25Z", "wrong query contract: %+v", query)
 			assert.False(t, query["end"] != "2023-11-14T22:23:20.75Z", "wrong query contract: %+v", query)
@@ -155,8 +156,8 @@ func TestObserveProvidersCallerIsolationAndSavedQueryPersistence(t *testing.T) {
 
 func TestObserveMetadataTracesAndConnection(t *testing.T) {
 	var exploreCalls atomic.Int32
-	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/observe/api/providers" {
+	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list_observability_providers" {
 			writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}, {Name: "prod/tempo", Namespace: "prod", Type: "tempo"}}})
 			return
 		}
@@ -164,11 +165,11 @@ func TestObserveMetadataTracesAndConnection(t *testing.T) {
 		if json.NewDecoder(r.Body).Decode(&input) != nil {
 			t.Error("invalid request body")
 		}
-		if r.URL.Path == "/observe/api/query" {
+		if r.URL.Path == "/query_traces" {
 			assert.False(t, input["provider"] != "prod/tempo", "bad trace request %+v", input)
-			assert.False(t, input["signal"] != "traces", "bad trace request %+v", input)
+			assert.False(t, r.URL.Path != "/query_traces", "bad trace request %+v", input)
 			assert.False(t, input["limit"] != float64(maxTraces), "bad trace request %+v", input)
-			assert.False(t, input["stepSeconds"] != nil, "bad trace request %+v", input)
+			assert.False(t, input["step_seconds"] != nil, "bad trace request %+v", input)
 			writeJSON(w, 200, map[string]any{"state": "OK", "data": json.RawMessage(`{"traces":[{"traceID":"abc","rootServiceName":"api","rootTraceName":"GET /","startTimeUnixNano":"1700000000123000000","durationMs":12.25}]}`)})
 			return
 		}
@@ -178,14 +179,14 @@ func TestObserveMetadataTracesAndConnection(t *testing.T) {
 		assert.False(t, input["end"] == nil, "unbounded explore: %+v", input)
 		var data any
 		if input["provider"] == "prod/tempo" {
-			if input["kind"] == "label_values" {
+			if strings.TrimPrefix(r.URL.Path, "/list_") == "label_values" {
 				assert.False(t, input["label"] != "resource.service.name", "wrong trace tag %+v", input)
 				data = map[string]any{"tagValues": []string{"api", "worker"}, "truncated": true}
 			} else {
 				data = map[string]any{"tagNames": []string{"resource.service.name"}}
 			}
 		} else {
-			switch input["kind"] {
+			switch strings.TrimPrefix(r.URL.Path, "/list_") {
 			case "metric_names":
 				data = map[string]any{"status": "success", "data": []string{"up", "requests_total"}}
 			case "label_names":
@@ -251,8 +252,8 @@ func TestObserveFailuresAreNotSuccessfulEmptyResults(t *testing.T) {
 		{"failed", 200, "Error", 502}, {"malformed state", 200, "mystery", 502}, {"missing data", 200, "OK", 502},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/observe/api/providers" {
+			gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/list_observability_providers" {
 					writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
 					return
 				}
@@ -299,34 +300,30 @@ func TestObserveGatewayRedirectBoundsAndCancellation(t *testing.T) {
 	var leaked atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked.Add(1) }))
 	defer target.Close()
-	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/redirect":
-			http.Redirect(w, r, target.URL, http.StatusFound)
-		case "/large":
-			fmt.Fprint(w, strings.Repeat("x", 129))
-		case "/cancel":
-			<-r.Context().Done()
-		}
-	}))
-	defer gateway.Close()
-	g, err := newObserveGateway(gateway.URL)
-	if err != nil {
-		t.Fatal(err)
+	for _, kind := range []string{"redirect", "large", "cancel"} {
+		t.Run(kind, func(t *testing.T) {
+			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/observe/mcp", r.URL.Path)
+				switch kind {
+				case "redirect":
+					http.Redirect(w, r, target.URL, http.StatusFound)
+				case "large":
+					fmt.Fprint(w, strings.Repeat("x", maxResponseBytes+1))
+				case "cancel":
+					_, _ = io.Copy(io.Discard, r.Body)
+					<-r.Context().Done()
+				}
+			}))
+			defer gateway.Close()
+			g, err := newObserveGateway(gateway.URL)
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			_, err = g.connect(ctx, "alice")
+			require.Error(t, err)
+		})
 	}
-	for _, path := range []string{"/redirect", "/large"} {
-		if _, err := g.request(context.Background(), "alice", "GET", path, nil, 128); err == nil {
-			t.Fatalf("accepted %s", path)
-		}
-	}
-	if leaked.Load() != 0 {
-		t.Fatal("delegated token followed a redirect")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	if _, err := g.request(ctx, "alice", "GET", "/cancel", nil, 128); err == nil {
-		t.Fatal("cancelled caller completed successfully")
-	}
+	require.Zero(t, leaked.Load(), "delegated token followed a redirect")
 }
 
 func TestObserveNativePartialResultsRemainVisible(t *testing.T) {
@@ -363,6 +360,7 @@ func TestObserveSavedQueryCatalogDoesNotBlockStoreWrites(t *testing.T) {
 	started := make(chan struct{})
 	stopped := make(chan struct{})
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		close(started)
 		<-r.Context().Done()
 		close(stopped)

@@ -40,7 +40,7 @@ func providerToolPreview(value any, state connector.State) (*sdkmcp.CallToolResu
 	return result, nil
 }
 
-// RegisterTools registers the observability gateway's thirteen MCP tools on
+// RegisterTools registers the observability gateway's fourteen MCP tools on
 // registry. Every tool is read-only and carries ScopeObserve: querying logs,
 // metrics and traces — browsing the provider catalog, exploring backend
 // schema, and validating prospective configurations — never mutates the
@@ -67,6 +67,7 @@ func RegisterTools(registry *mcp.Registry, b Backend, usage *UsageTracker) error
 		describeProviderTypeTool(),
 		validateProviderTool(),
 		listMetricNamesTool(b),
+		listMetricSeriesTool(b),
 		listLabelNamesTool(b),
 		listLabelValuesTool(b),
 		getMetricMetadataTool(b),
@@ -514,6 +515,8 @@ func listMetricNamesTool(b Backend) mcp.Tool {
 			"type":"object",
 			"properties":{
 				"provider":{"type":"string"},
+				"start":{"type":"string","description":"Optional RFC3339 range start"},
+				"end":{"type":"string","description":"Optional RFC3339 range end; maximum window is 31 days"},
 				"prefix":{"type":"string"},
 				"namespace":{"type":"string"},
 				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
@@ -530,7 +533,7 @@ func listMetricNamesTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, err
 			}
-			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+			result, err := exploreToolRequest(ctx, b, provider, in, &connector.ExploreRequest{
 				Kind:   connector.ExploreMetricNames,
 				Prefix: in.string("prefix"),
 				Limit:  limitArg(in, 100),
@@ -563,6 +566,8 @@ func listLabelNamesTool(b Backend) mcp.Tool {
 			"type":"object",
 			"properties":{
 				"provider":{"type":"string"},
+				"start":{"type":"string","description":"Optional RFC3339 range start"},
+				"end":{"type":"string","description":"Optional RFC3339 range end; maximum window is 31 days"},
 				"metric":{"type":"string"},
 				"namespace":{"type":"string"},
 				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
@@ -579,7 +584,7 @@ func listLabelNamesTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, err
 			}
-			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+			result, err := exploreToolRequest(ctx, b, provider, in, &connector.ExploreRequest{
 				Kind:   connector.ExploreLabelNames,
 				Limit:  limitArg(in, 100),
 				Metric: in.string("metric"),
@@ -602,6 +607,8 @@ func listLabelValuesTool(b Backend) mcp.Tool {
 			"type":"object",
 			"properties":{
 				"provider":{"type":"string"},
+				"start":{"type":"string","description":"Optional RFC3339 range start"},
+				"end":{"type":"string","description":"Optional RFC3339 range end; maximum window is 31 days"},
 				"label":{"type":"string"},
 				"metric":{"type":"string"},
 				"namespace":{"type":"string"},
@@ -623,7 +630,7 @@ func listLabelValuesTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, err
 			}
-			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+			result, err := exploreToolRequest(ctx, b, provider, in, &connector.ExploreRequest{
 				Kind:   connector.ExploreLabelValues,
 				Limit:  limitArg(in, 100),
 				Label:  label,
@@ -647,6 +654,8 @@ func getMetricMetadataTool(b Backend) mcp.Tool {
 			"type":"object",
 			"properties":{
 				"provider":{"type":"string"},
+				"start":{"type":"string","description":"Optional RFC3339 range start"},
+				"end":{"type":"string","description":"Optional RFC3339 range end; maximum window is 31 days"},
 				"metric":{"type":"string"},
 				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
 			},
@@ -666,7 +675,7 @@ func getMetricMetadataTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, err
 			}
-			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+			result, err := exploreToolRequest(ctx, b, provider, in, &connector.ExploreRequest{
 				Kind:   connector.ExploreMetricMetadata,
 				Limit:  limitArg(in, 100),
 				Metric: metric,
@@ -688,6 +697,8 @@ func listTraceServicesTool(b Backend) mcp.Tool {
 			"type":"object",
 			"properties":{
 				"provider":{"type":"string"},
+				"start":{"type":"string","description":"Optional RFC3339 range start"},
+				"end":{"type":"string","description":"Optional RFC3339 range end; maximum window is 31 days"},
 				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}
 			},
 			"required":["provider"],
@@ -702,7 +713,7 @@ func listTraceServicesTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, err
 			}
-			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+			result, err := exploreToolRequest(ctx, b, provider, in, &connector.ExploreRequest{
 				Kind:  connector.ExploreTraceServices,
 				Limit: limitArg(in, 100),
 			})

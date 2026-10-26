@@ -101,17 +101,28 @@ Shared sources link to the existing Observability board for configuration; they
 are not copied into Insights provider configuration.
 
 The API proxy delegates the caller's subject and exact groups in a short-lived
-Observe token. The Insights service forwards that token to the gateway's
-providers/query/explore HTTP handlers; those handlers share the authorized
-backend with MCP. Backend Secrets stay in the gateway. Dashboard values and
-MCP `query_metrics` results use the same expression, absolute range and optional
-`step_seconds`. Insights normalizes native samples into milliseconds and keeps
-missing samples and partial-result markers.
+Observe token. Insights opens a request-local MCP connection to the configured
+gateway's `/observe/mcp`, discovers its read-only tools and invokes
+`list_observability_providers`, `query_metrics`, `query_traces` and the metric,
+label and trace-service discovery tools. There is no REST data fallback.
+Backend Secrets stay in the gateway. Query tools receive the resolved native
+expression, absolute range and metrics `step_seconds`; Insights normalizes
+native samples into milliseconds and keeps missing samples and partial-result
+markers. `list_metric_series` preserves bounded label/cardinality inspection.
+
+Data sources shows **Paprika Observe MCP**, its actual connection status,
+supported read tools and discovered providers. **Refresh connection** checks
+both discovery and the caller's current provider access. Choose **Explore** on
+a provider to open its PromQL or TraceQL editor; the editor explains the tool's
+provider, time-range and step bindings. Normal widget canvases stay focused on
+data. The connection uses existing Paprika permissions, with no client token
+or endpoint form. This is specifically the Paprika Observe integration, not a
+general-purpose MCP tool runner.
 
 Saved-query descriptions, tags, typed parameters and dashboard/tooltip bindings
 continue to live in Insights. The existing scheduler resolves their templates
-once before querying the shared provider; this integration does not introduce
-separate MCP persistence or additional saved-query tools. Other gateway connector
+once before querying the shared provider; existing MCP authoring tools and the
+UI continue to use the same document stores. Other gateway connector
 types remain available through MCP and Observability; the dashboard currently
 supports PromQL metrics and TraceQL searches.
 

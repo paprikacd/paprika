@@ -62,13 +62,17 @@ API proxy supplies a fresh caller token in `X-Paprika-Observe-Token`; Insights
 uses that token only as the gateway bearer token, independently of its own
 service authentication. Missing delegation is denied, including in development
 mode. Provider discovery, queries, connection tests, metadata and saved-query
-validation all resolve the current caller's authorized catalog. Removing access
-therefore takes effect on the next request.
+validation all resolve the current caller's authorized catalog through
+request-local MCP sessions on the configured origin's `/observe/mcp`. The
+adapter discovers read-only tools, calls provider/query/exploration tools and
+requires structured results; it never parses the truncated text preview or
+falls back to REST. Removing access takes effect on the next request. Sessions
+have a 20-second deadline, bounded responses and no redirect or retry behavior.
 
 Shared provider IDs are `observe-` plus the full SHA-256 of their canonical
 `namespace/name`, preserving namespace identity within the existing dashboard
 and saved-query ID contract. The public listing adds `source:"observability"`
-and `providerRef:"namespace/name"`. Shared configurations and tokens are never
+and `providerRef:"namespace/name"`, with `transport:"mcp"`. Shared configurations and tokens are never
 persisted in Insights, and provider configuration routes remain local-only.
 The `observe-` prefix is reserved when this integration is enabled. Manage
 shared providers through the Observability board. Remote metadata caches live
@@ -112,7 +116,8 @@ through Paprika. All service API routes require `Authorization: Bearer <token>`.
 
 | Method | Route | Result |
 | --- | --- | --- |
-| GET | `/api/providers` | `{providers:[{id,name,type,capabilities,managed,source?,providerRef?}]}` |
+| GET | `/api/providers` | `{providers:[{id,name,type,capabilities,managed,source?,providerRef?,transport?}]}` |
+| GET | `/api/observe-connection` | `{configured,connected,transport:"mcp",tools:[{name,description}],providerCount,protocolVersion?}`; unconfigured returns 200/disconnected, authorization and connection failures return sanitized non-2xx errors |
 | GET | `/api/provider-configs` | Admin-only `{providers:[ProviderConfigView]}` |
 | PUT | `/api/provider-configs/{id}` | Admin-only saved configuration and `ETag` |
 | DELETE | `/api/provider-configs/{id}` | Admin-only 204 |

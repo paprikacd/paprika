@@ -26,6 +26,7 @@ type Provider struct {
 	// catalog. ProviderRef is a public Kubernetes identity, never an endpoint.
 	Source      string `json:"source,omitempty"`
 	ProviderRef string `json:"providerRef,omitempty"`
+	Transport   string `json:"transport,omitempty"`
 }
 
 type ProviderConfigView struct {

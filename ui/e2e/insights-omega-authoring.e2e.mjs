@@ -7,6 +7,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
+import { assertObserveMCP, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 assert.ok(process.env.INSIGHTS_OMEGA_AUTHORING_CONFIG, "Set INSIGHTS_OMEGA_AUTHORING_CONFIG to a private JSON file")
@@ -38,7 +39,7 @@ const step = Math.max(1, Math.ceil((end - start) / 1000 / 300))
 const unit = config.unit ?? "", template = config.metricTemplate
 const title = config.title ?? `Omega MCP authoring ${runId}`
 const reports = [], pageErrors = [], responses = [], documents = [], versions = []
-let browser, context, page, rpcId = 0, metricProvider, traceProvider, queryEntry, dashboardEntry
+let browser, context, page, rpcId = 0, metricProvider, traceProvider, queryEntry, dashboardEntry, toolUsageBefore, toolUsageAfter, protocol
 const expression = (service, query = template) => query.split("{{service}}").join(JSON.stringify(service))
 
 async function until(predicate, message, timeout = 45_000) {
@@ -57,6 +58,18 @@ async function api(path) {
   }
   versions.push({ client: "node", path, httpETag, documentETag, encoding: response.headers.get("content-encoding") })
   return { document: await response.json(), etag: documentETag ?? httpETag }
+}
+async function usageSnapshot() {
+  // This is the gateway's operational counter endpoint, never a provider data
+  // source. The script itself does not call query_metrics/query_traces.
+  const response = await fetch(new URL("/observe/api/usage", mcpURL), { headers: { Authorization: `Bearer ${readToken}` }, signal: AbortSignal.timeout(30_000) })
+  assert.equal(response.status, 200, "Observe tool usage must be available to verify the actual data transport")
+  const snapshot = await response.json()
+  assert.ok(Array.isArray(snapshot.tools))
+  return snapshot
+}
+function usageDelta(before, after, name) {
+  return (after.tools.find(item => item.name === name)?.calls ?? 0) - (before.tools.find(item => item.name === name)?.calls ?? 0)
 }
 async function rpc(method, params, credential = writeToken) {
   const id = ++rpcId
@@ -133,6 +146,7 @@ async function service(value, query) {
 
 try {
   await mkdir(output, { recursive: true })
+  toolUsageBefore = await usageSnapshot()
   await check("The deployed MCP exposes authorized Insights providers and authoring tools", async () => {
     const initialized = await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "paprika-omega-authoring-validation", version: "1" } })
     assert.equal(initialized.error, undefined)
@@ -142,10 +156,14 @@ try {
     traceProvider = providers.find(item => item.providerRef === config.traceProviderRef)
     assert.equal(metricProvider?.type, "prometheus"); assert.equal(traceProvider?.type, "tempo")
     assert.equal(metricProvider.source, "observability"); assert.equal(traceProvider.source, "observability")
+    assert.equal(metricProvider.transport, "mcp"); assert.equal(traceProvider.transport, "mcp")
     assert.ok(providers.every(item => !Object.hasOwn(item, "url") && !Object.hasOwn(item, "credentials")))
     const listed = await rpc("tools/list", {}, readToken)
     for (const name of ["create_saved_query", "update_saved_query", "create_dashboard", "update_dashboard"]) assert.equal(listed.result.tools.find(item => item.name === name)?.annotations.readOnlyHint, false)
-    return { serverVersion: initialized.result.serverInfo.version, providers: [metricProvider.providerRef, traceProvider.providerRef] }
+    const connection = (await api("observe-connection")).document
+    assert.equal(connection.connected, true); assert.equal(connection.transport, "mcp")
+    for (const name of ["query_metrics", "query_traces", "list_metric_series"]) assert.ok(connection.tools.some(tool => tool.name === name))
+    return { serverVersion: initialized.result.serverInfo.version, providers: [metricProvider.providerRef, traceProvider.providerRef], connection: { transport: connection.transport, providerCount: connection.providerCount, tools: connection.tools.map(tool => tool.name) } }
   })
   const saved = { schemaVersion: 1, id: queryId, name: `MCP Omega service metric ${runId}`, description: "Created through Paprika Observe MCP using the shared real Prometheus provider.", tags: ["omega", "mcp", "service"], providerId: metricProvider.id, kind: "metrics", query: template, parameters: [{ name: "service", type: "string", defaultValue: services[0] }] }
   const traces = { schemaVersion: 1, id: traceId, name: `MCP Omega service traces ${runId}`, description: "Created through Observe MCP using the real Tempo provider.", tags: ["omega", "mcp", "traces"], providerId: traceProvider.id, kind: "traces", query: config.traceQuery }
@@ -193,14 +211,34 @@ try {
     return { before, after, refreshedWithoutReload: true, staleWritesRejected: true }
   })
   await check("The query editor shows metadata written through MCP", async () => {
-    await page.locator("#insights-navigation").getByRole("button", { name: /^Explore\b/ }).click()
+    await page.locator("#insights-navigation").getByRole("button", { name: /^Data sources\b/ }).click()
+    const panel = page.getByRole("region", { name: "Data sources", exact: true })
+    const connection = panel.getByRole("region", { name: "Paprika Observe MCP", exact: true })
+    await connection.getByRole("status").filter({ hasText: /^Connected\b/ }).waitFor()
+    await connection.getByRole("button", { name: /Discovered MCP tools/ }).click()
+    await connection.getByText("query_metrics", { exact: true }).waitFor()
+    for (const theme of ["Light", "Dark"]) {
+      await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
+      await page.screenshot({ path: join(output, `mcp-connection-${theme.toLowerCase()}.png`), fullPage: false })
+    }
+    const card = panel.getByRole("article").filter({ hasText: metricProvider.providerRef })
+    await card.getByRole("button", { name: `Explore ${metricProvider.name}`, exact: true }).click()
     const editor = page.getByRole("region", { name: "Data source explorer", exact: true }).last()
-    await selectGammaOption(page, editor.getByRole("combobox", { name: "Explore data source", exact: true }), metricProvider.name)
+    await editor.getByText("query_metrics", { exact: true }).waitFor()
     await selectGammaOption(page, editor.getByRole("combobox", { name: "Open saved query", exact: true }), new RegExp(queryEntry.document.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
     assert.equal(await editor.getByRole("textbox", { name: "Query description", exact: true }).inputValue(), queryEntry.document.description)
-    await page.screenshot({ path: join(output, "mcp-updated-query-details.png"), fullPage: false })
+    const metric = config.metricName ?? template.match(/([a-zA-Z_:][a-zA-Z0-9_:]*)\s*\{/)?.[1]
+    assert.ok(metric, "Set metricName when metricTemplate has no literal metric selector")
+    const metadata = async (kind, extra = {}) => (await api(`providers/${metricProvider.id}/metadata?${new URLSearchParams({ kind, ...extra })}`)).document
+    const metrics = await metadata("metrics"), labels = await metadata("labels", { metric }), values = await metadata("values", { metric, label: "service" }), series = await metadata("series", { metric })
+    assert.ok(metrics.values.includes(metric)); assert.ok(labels.values.includes("service")); assert.ok(services.every(service => values.values.includes(service)))
+    assert.ok(series.series.count >= 2 && series.series.labels.some(label => label.name === "service" && label.cardinality >= 2))
+    for (const theme of ["Light", "Dark"]) {
+      await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
+      await page.screenshot({ path: join(output, `mcp-query-details-${theme.toLowerCase()}.png`), fullPage: false })
+    }
     await editor.getByRole("button", { name: "Dashboard", exact: true }).click()
-    return { name: queryEntry.document.name, descriptionVisible: true, tags: queryEntry.document.tags }
+    return { name: queryEntry.document.name, descriptionVisible: true, tags: queryEntry.document.tags, metric, storedSeries: series.series.count, serviceCardinality: series.series.labels.find(label => label.name === "service").cardinality }
   })
   for (const width of [1512, 390]) {
     await open(width, dashboardId)
@@ -242,7 +280,13 @@ try {
     assert.equal((await api(`dashboards/${dashboardId}`)).etag, dashboardEntry.etag)
     await reading(services[0], queryEntry.document.query)
     await page.screenshot({ path: join(output, "mcp-ui-roundtrip.png"), fullPage: false })
-    return { restoredReferences: true, uiSaveStatus: response.status(), exactVersionSent: true, uiChangeVisibleThroughMCP: true, transformedResponsesPreservedVersions: versions.filter(item => item.httpETag?.startsWith("W/") && item.documentETag).length }
+    toolUsageAfter = await usageSnapshot()
+    const usedTools = ["list_observability_providers", "query_metrics", "query_traces", "list_metric_names", "list_label_names", "list_label_values", "list_metric_series"]
+    const toolDeltas = Object.fromEntries(usedTools.map(name => [name, usageDelta(toolUsageBefore, toolUsageAfter, name)]))
+    for (const [name, delta] of Object.entries(toolDeltas)) assert.ok(delta > 0, `Dashboard traffic must increment the actual ${name} MCP tool counter`)
+    for (const name of ["dashboard_list_providers", "dashboard_query", "dashboard_explore"]) assert.equal(usageDelta(toolUsageBefore, toolUsageAfter, name), 0, "No legacy Observe REST data fallback may execute")
+    if (config.environment === "fixture") { protocol = await readObserveProtocol(baseURL); assertObserveMCP(protocol, usedTools) }
+    return { restoredReferences: true, uiSaveStatus: response.status(), exactVersionSent: true, uiChangeVisibleThroughMCP: true, transformedResponsesPreservedVersions: versions.filter(item => item.httpETag?.startsWith("W/") && item.documentETag).length, toolDeltas, legacyDataCalls: 0 }
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
   console.log(`PASS ${reports.length} ${config.environment ?? "live"} MCP authoring scenarios; dashboard ${dashboardId}`)
@@ -250,6 +294,6 @@ try {
   console.error(error.stack ?? error.message); process.exitCode = 1
 } finally {
   await mkdir(output, { recursive: true })
-  await writeFile(join(output, "report.json"), JSON.stringify({ timestamp: new Date().toISOString(), environment: config.environment ?? "live", dashboardURL: `${baseURL}/dashboard/insights/?dashboard=${dashboardId}`, range: fixedRange, documents, reports, pageErrors, versions, queries: responses.map(({ status, request, body }) => ({ status, providerId: request.providerId, kind: request.kind, query: request.query, start: request.start, end: request.end, step: request.step, series: body.series?.length, samples: body.series?.[0]?.points?.length, latest: body.series?.[0]?.points?.at(-1), traces: body.traces?.length })) }, null, 2))
+  await writeFile(join(output, "report.json"), JSON.stringify({ timestamp: new Date().toISOString(), environment: config.environment ?? "live", dashboardURL: `${baseURL}/dashboard/insights/?dashboard=${dashboardId}`, range: fixedRange, documents, reports, pageErrors, versions, toolUsageBefore, toolUsageAfter, protocol, queries: responses.map(({ status, request, body }) => ({ status, providerId: request.providerId, kind: request.kind, query: request.query, start: request.start, end: request.end, step: request.step, series: body.series?.length, samples: body.series?.[0]?.points?.length, latest: body.series?.[0]?.points?.at(-1), traces: body.traces?.length })) }, null, 2))
   await context?.close(); await browser?.close()
 }

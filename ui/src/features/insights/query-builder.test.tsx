@@ -83,6 +83,21 @@ describe("guided PromQL construction", () => {
 })
 
 describe("query editor", () => {
+  it("identifies the MCP tool and automatic bindings without replacing the language editor", () => {
+    const provider = { id: "prod", name: "Shared metrics", type: "prometheus" as const, capabilities: ["metrics" as const], transport: "mcp" as const }
+    const { rerender } = render(<QueryBuilder widget={widget} provider={provider} onChange={vi.fn()} compact />)
+    expect(screen.getByText("query_metrics")).toBeInTheDocument()
+    expect(screen.getByText(/provider, time range and query step are bound automatically/)).toBeInTheDocument()
+    expect(screen.getByLabelText("PromQL query")).toBeInTheDocument()
+    rerender(<QueryBuilder widget={{ ...widget, type: "traces" }} provider={{ ...provider, type: "tempo", capabilities: ["traces"] }} onChange={vi.fn()} compact />)
+    expect(screen.getByText("query_traces")).toBeInTheDocument()
+    expect(screen.getByText(/provider and time range are bound automatically/)).toBeInTheDocument()
+    expect(screen.getByLabelText("TraceQL query")).toBeInTheDocument()
+    expect(screen.queryByText("query_metrics")).not.toBeInTheDocument()
+    rerender(<QueryBuilder widget={widget} provider={{ ...provider, transport: undefined }} onChange={vi.fn()} />)
+    expect(screen.queryByLabelText("Observe MCP query binding")).not.toBeInTheDocument()
+  })
+
   it("gates touched invalid live guidance and releases it on code edits or closing", async () => {
     const validity = vi.fn(), onChange = vi.fn();
     render(<QueryBuilder widget={widget} onChange={onChange} onValidityChange={validity} defaultExpanded live />);

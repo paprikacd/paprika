@@ -236,7 +236,7 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 		NextCursor string `json:"nextCursor"`
 	}
 	nativeGatewayContractDecodeRPC(t, listed, 2, &inventory)
-	require.Len(t, inventory.Tools, 13)
+	require.Len(t, inventory.Tools, 14)
 	require.Empty(t, inventory.NextCursor)
 	names := make([]string, 0, len(inventory.Tools))
 	for _, tool := range inventory.Tools {
@@ -244,7 +244,7 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 	}
 	require.ElementsMatch(t, []string{
 		"list_observability_providers", "get_observability_provider", "query_metrics", "query_logs", "query_traces",
-		"list_provider_types", "describe_provider_type", "validate_provider", "list_metric_names", "list_label_names",
+		"list_provider_types", "describe_provider_type", "validate_provider", "list_metric_names", "list_metric_series", "list_label_names",
 		"list_label_values", "get_metric_metadata", "list_trace_services",
 	}, names)
 	staticCall := nativeGatewayContractStaticCallBody(t, 3)

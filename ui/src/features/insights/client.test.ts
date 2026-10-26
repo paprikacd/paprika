@@ -25,6 +25,26 @@ function mockFetch(...responses: Response[]) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("Insights HTTP client", () => {
+  it("discovers the authenticated Observe MCP connection and keeps cancellation wired", async () => {
+    const connection = { configured: true, connected: true, transport: "mcp", providerCount: 2, protocolVersion: "2025-06-18", tools: [{ name: "query_metrics", description: "Run a metrics query" }] }
+    const fetcher = mockFetch(response(connection), response({ providers: [{ id: "observe-metrics", name: "Metrics", type: "prometheus", transport: "mcp", capabilities: ["metrics"] }] }))
+    const api = createInsightsClient("/api/insights", () => "session-token")
+    const signal = new AbortController().signal
+    expect(await api.observeConnection!(signal)).toEqual(connection)
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/observe-connection")
+    expect(fetcher.mock.calls[0][1].signal).toBe(signal)
+    expect(fetcher.mock.calls[0][1].headers.get("Authorization")).toBe("Bearer session-token")
+    expect((await api.providers())[0].transport).toBe("mcp")
+  })
+
+  it("distinguishes a disabled Observe connection from denied access", async () => {
+    const disabled = { configured: false, connected: false, transport: "mcp", providerCount: 0, tools: [] }
+    mockFetch(response(disabled), response({ error: "private upstream detail" }, 403))
+    const api = createInsightsClient()
+    expect(await api.observeConnection!()).toEqual(disabled)
+    await expect(api.observeConnection!()).rejects.toThrow("Your account does not have access to Paprika Observe. Check your Observability permissions.")
+  })
+
   it("conditionally refreshes each library and reuses its validated 304 snapshot", async () => {
     const saved: SavedQuery = { schemaVersion: 1, id: "signal", name: "Signal", providerId: "metrics", kind: "metrics", query: "up" }
     const fetcher = mockFetch(

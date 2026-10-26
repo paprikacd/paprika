@@ -5,12 +5,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -82,7 +84,7 @@ func run() error {
 	}
 	defer closeFixtureCache(storeCache)
 	gatewayMux := http.NewServeMux()
-	gateway := httptest.NewServer(gatewayMux)
+	gateway := httptest.NewServer(fixture.recordGateway(gatewayMux))
 	defer gateway.Close()
 	serviceToken := rand.Text() + rand.Text()
 	serviceHTTP, err := newInsightsFixture(*dataDir, gateway.URL, serviceToken)
@@ -158,10 +160,11 @@ func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret 
 		return nil, fmt.Errorf("configure fixture authenticator: %w", err)
 	}
 	registry := mcp.NewRegistry()
-	if err = observe.RegisterTools(registry, backend, nil); err != nil {
+	usage := observe.NewUsageTracker()
+	if err = observe.RegisterTools(registry, backend, usage); err != nil {
 		return nil, fmt.Errorf("register fixture MCP tools: %w", err)
 	}
-	if err = observe.RegisterInsightsTools(registry, authoring, nil); err != nil {
+	if err = observe.RegisterInsightsTools(registry, authoring, usage); err != nil {
 		return nil, fmt.Errorf("register fixture authoring tools: %w", err)
 	}
 	mcpServer, err := mcp.NewServer(mcp.ServerConfig{Registry: registry, Authenticator: verifier, Confirmer: mcp.NewConfirmer(storeCache, time.Minute), Auditor: audit.NoopAuditor{}, Cache: storeCache, Secret: secret, PublicURL: fixtureIssuer, ClientID: "e2e", RedirectURIs: []string{"http://127.0.0.1/callback"}, RoutePrefix: "/observe", ProtocolPath: "/observe/mcp", Audience: mcp.ObservabilityTokenAudience, SupportedScopes: []mcp.Scope{mcp.ScopeObserve, mcp.ScopeInsightsWrite}, DisableConsoleResources: true, LinkRequestCancellation: true})
@@ -170,9 +173,12 @@ func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret 
 	}
 	gatewayMux := http.NewServeMux()
 	protect := observe.RequireObserveScope(verifier, fixtureIssuer, "/observe")
-	gatewayMux.Handle("GET /observe/api/providers", protect(observe.DashboardProvidersHandler(backend, nil)))
-	gatewayMux.Handle("POST /observe/api/query", protect(observe.DashboardQueryHandler(backend, nil)))
-	gatewayMux.Handle("POST /observe/api/explore", protect(observe.DashboardExploreHandler(backend, nil)))
+	gatewayMux.Handle("GET /observe/api/providers", protect(observe.DashboardProvidersHandler(backend, usage)))
+	gatewayMux.Handle("POST /observe/api/query", protect(observe.DashboardQueryHandler(backend, usage)))
+	gatewayMux.Handle("POST /observe/api/explore", protect(observe.DashboardExploreHandler(backend, usage)))
+	gatewayMux.Handle("GET /observe/api/usage", protect(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		jsonResponse(w, usage.Snapshot())
+	})))
 	gatewayMux.Handle("/observe/mcp", mcpServer.Handler())
 	return gatewayMux, nil
 }
@@ -199,7 +205,7 @@ func newAppHandler(proxy http.Handler, fixture *telemetryFixture, uiURL, uiDir s
 	appMux.HandleFunc("GET /__test/requests", func(w http.ResponseWriter, _ *http.Request) {
 		fixture.mu.Lock()
 		defer fixture.mu.Unlock()
-		jsonResponse(w, map[string]any{"queries": fixture.requests})
+		jsonResponse(w, map[string]any{"queries": fixture.requests, "gateway": fixture.gatewayRequests})
 	})
 	appMux.Handle("/", frontend)
 	return appMux, nil
@@ -238,6 +244,10 @@ func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
 	if err != nil {
 		return err
 	}
+	viewer, err := mintFixtureToken(secret, "viewer", auth.ConsoleAPIAudience, []string{"metrics-readers"})
+	if err != nil {
+		return err
+	}
 	mcpToken, err := mintFixtureToken(secret, "reader", mcp.ObservabilityTokenAudience, []string{"metrics-readers"})
 	if err != nil {
 		return err
@@ -254,7 +264,7 @@ func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
 	if err != nil {
 		return err
 	}
-	readyJSON, err := json.Marshal(map[string]string{"baseURL": appURL, "token": token, "deniedToken": denied, "mcpURL": gatewayURL + "/observe/mcp", "mcpToken": mcpToken, "mcpWriteToken": writeToken, "mcpDeniedWriteToken": deniedWriteToken, "mcpDeniedProviderToken": deniedProviderToken, "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"})
+	readyJSON, err := json.Marshal(map[string]string{"baseURL": appURL, "token": token, "deniedToken": denied, "viewerToken": viewer, "mcpURL": gatewayURL + "/observe/mcp", "mcpToken": mcpToken, "mcpWriteToken": writeToken, "mcpDeniedWriteToken": deniedWriteToken, "mcpDeniedProviderToken": deniedProviderToken, "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"})
 	if err != nil {
 		return fmt.Errorf("encode fixture connection file: %w", err)
 	}
@@ -265,8 +275,50 @@ func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
 }
 
 type telemetryFixture struct {
-	mu       sync.Mutex
-	requests []map[string]string
+	mu              sync.Mutex
+	requests        []map[string]string
+	gatewayRequests []gatewayRequest
+}
+
+// Capture the protocol boundary without retaining authorization headers or
+// credentials. Native connector receipts alone cannot distinguish MCP from a
+// parallel REST data path.
+type gatewayRequest struct {
+	Path       string          `json:"path"`
+	HTTPMethod string          `json:"httpMethod"`
+	Method     string          `json:"method,omitempty"`
+	Tool       string          `json:"tool,omitempty"`
+	Arguments  json.RawMessage `json:"arguments,omitempty"`
+}
+
+func (f *telemetryFixture) recordGateway(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receipt := gatewayRequest{Path: r.URL.Path, HTTPMethod: r.Method}
+		if r.URL.Path == "/observe/mcp" && r.Method == http.MethodPost {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+			if err != nil {
+				http.Error(w, "invalid fixture MCP request", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var rpc struct {
+				Method string `json:"method"`
+				Params struct {
+					Name      string          `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
+				} `json:"params"`
+			}
+			if json.Unmarshal(body, &rpc) == nil {
+				receipt.Method = rpc.Method
+				receipt.Tool = rpc.Params.Name
+				receipt.Arguments = rpc.Params.Arguments
+			}
+		}
+		f.mu.Lock()
+		f.gatewayRequests = append(f.gatewayRequests, receipt)
+		f.mu.Unlock()
+		next.ServeHTTP(w, r)
+	})
 }
 
 var serviceLiteral = regexp.MustCompile(`service=("(?:\\.|[^"\\])*")`)

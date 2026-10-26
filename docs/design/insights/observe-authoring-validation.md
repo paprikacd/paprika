@@ -62,9 +62,12 @@ Neither credential is included in tool responses or manifests.
   document ID and bounded outcome, without document bodies or credentials.
 
 The gateway retains four shared request slots for MCP/query/explore responses,
-plus a separate four-slot pool for `GET /observe/api/providers`. The bounded
-catalogue reserve lets authoring complete its nested provider discovery when
-all four MCP slots are occupied. Provider queries retain the backend I/O budget.
+plus a separate four-slot catalog pool. The later MCP data-source integration
+extends that reserve from `GET /observe/api/providers` to exact bounded MCP
+handshake/discovery methods and `list_observability_providers`. Eight intake
+slots bound envelope classification. The catalog reserve lets authoring
+complete nested provider discovery when all four MCP work slots are occupied.
+Provider queries retain the backend I/O budget.
 
 ### UI synchronization
 

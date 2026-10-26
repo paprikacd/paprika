@@ -228,33 +228,28 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 // retained by slow clients. Metadata and health remain available under load.
 func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 	active := make(chan struct{}, 4)
-	// Authoring calls can re-enter provider discovery through Insights. Reserve
-	// a bounded catalogue pool so four active MCP calls cannot starve the
-	// requests needed to complete them. Query/exploration budgets stay shared.
-	providers := make(chan struct{}, 4)
+	catalog := make(chan struct{}, 4)
+	// Bound body classification too: a slow MCP upload must not allocate an
+	// unbounded number of readers before it reaches a work pool.
+	intake := make(chan struct{}, 8)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slots := active
-		switch r.URL.Path {
-		case observabilityGatewayRoutePrefix + "/api/providers":
-			if r.Method == http.MethodGet {
-				slots = providers
-			}
-		case observabilityGatewayRoutePrefix + "/mcp",
-			observabilityGatewayRoutePrefix + "/api/query",
-			observabilityGatewayRoutePrefix + "/api/explore":
-		default:
+		if !isObservabilityProtocolRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		select {
-		case slots <- struct{}{}:
-			defer func() { <-slots }()
-			next.ServeHTTP(w, r)
-		default:
-			w.Header().Set("Retry-After", "1")
-			w.Header().Set("Cache-Control", "no-store")
-			http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
+		if !admitObservabilityRequest(w, intake) {
+			return
 		}
+		defer func() { <-intake }()
+		slots := active
+		if isObservabilityCatalogRequest(r) {
+			slots = catalog
+		}
+		if !admitObservabilityRequest(w, slots) {
+			return
+		}
+		defer func() { <-slots }()
+		next.ServeHTTP(w, r)
 	})
 }
 

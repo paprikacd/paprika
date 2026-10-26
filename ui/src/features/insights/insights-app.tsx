@@ -165,6 +165,7 @@ export default function InsightsApp({
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [exploring, setExploring] = useState(false)
   const [explorerOpened, setExplorerOpened] = useState(false)
+  const [explorerSource, setExplorerSource] = useState<{ providerId?: string; revision: number }>({ revision: 0 })
   const [explorerDirty, setExplorerDirty] = useState(false)
   const [savedQueries, setSavedQueries] = useState<SavedQueryEntry[]>([])
   const [queriesLoading, setQueriesLoading] = useState(true)
@@ -874,6 +875,18 @@ export default function InsightsApp({
     setLibraryRevision(value => value + 1)
   }, [])
 
+  async function exploreProvider(provider: Provider) {
+    if (explorerDirty && !await confirmation.ask({
+      title: "Discard query changes?",
+      description: "Your unsaved query changes will be lost. Saved queries will remain unchanged.",
+      action: "Discard changes",
+    })) return
+    setExplorerSource(previous => ({ providerId: provider.id, revision: previous.revision + 1 }))
+    setExplorerDirty(false)
+    close()
+    openQueryExplorer()
+  }
+
   function importClient(): InsightsClient {
     return mode === "example"
       ? { ...libraryClient, ...createExampleDashboardImportClient(localStorage) }
@@ -1255,7 +1268,7 @@ export default function InsightsApp({
             {queriesLoading && <p className={styles.loading} role="status">Loading saved queries…</p>}
             {queriesError && <div role="alert"><p>{queriesError}</p><GammaButton variant="secondary" onClick={() => setLibraryRevision(value => value + 1)}>Reload saved queries</GammaButton></div>}
             {queriesLoaded && <Suspense fallback={<p className={styles.loading}>Loading explorer…</p>}>
-              <Explorer client={libraryClient} providers={providers} queries={savedQueries} onQueriesChange={updateSavedQueries} onDirtyChange={setExplorerDirty} onUse={useSavedQuery} onClose={() => setExploring(false)} active={exploring && !queriesLoading && !queriesError} />
+              <Explorer key={explorerSource.revision} initialProviderId={explorerSource.providerId} client={libraryClient} providers={providers} queries={savedQueries} onQueriesChange={updateSavedQueries} onDirtyChange={setExplorerDirty} onUse={useSavedQuery} onClose={() => setExploring(false)} active={exploring && !queriesLoading && !queriesError} />
             </Suspense>}
           </section>
         )}
@@ -1573,6 +1586,7 @@ export default function InsightsApp({
                   providers={providers}
                   example={mode === "example"}
                   onClose={close}
+                  onExplore={exploreProvider}
                   onChange={(next) => {
                     setProviders(next)
                     setQueryRevision((value) => value + 1)

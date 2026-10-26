@@ -4,6 +4,7 @@ export {
   type InsightsClient,
   type ProviderConfig,
   type ProviderMetadata,
+  type ObserveConnection,
 } from "./client"
 export {
   dashboardSchema,

@@ -14,6 +14,7 @@ import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
 import { GammaTabs } from "./gamma/tabs"
+import { ObserveQueryBinding } from "./observe-query-binding"
 import { MetricInspector } from "./metric-inspector"
 import { QueryCodeEditor } from "./query-code-editor"
 import type { QueryEditorParameter } from "./query-editor-language"
@@ -602,6 +603,7 @@ export function QueryBuilder({
   ) : null
   return (
     <div className={`${styles.query} ${compact ? styles.compact : ""}`}>
+      <ObserveQueryBinding provider={provider} kind={widgetKind(widget)} />
       {compact && (language === "promql" ? (
         <GammaTabs
           label="Query editor mode"

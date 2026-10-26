@@ -890,29 +890,50 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 	return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
 }
 
-// toolErrorResult renders domain-level failures (entity missing, bad
-// arguments, conflicts) as a CallToolResult with IsError=true and the real
-// message — the model gets "application X not found", not an opaque
-// -32603. Only Connect codes that carry caller-actionable detail map;
-// anything else still falls to the internal-error path.
+// toolErrorResult preserves human-readable domain errors for MCP clients and
+// adds only a fixed machine code for data consumers. Operational errors carry
+// fixed text too: upstream endpoints, credentials and diagnostics stay private.
 func toolErrorResult(err error) *sdkmcp.CallToolResult {
-	var ce *connect.Error
-	if !errors.As(err, &ce) {
+	ce := toolConnectError(err)
+	if ce == nil {
 		return nil
 	}
-	if !toolActionableCode(ce.Code()) {
+	text, operational := operationalToolErrorText[ce.Code()]
+	if toolActionableCode(ce.Code()) {
+		text = ce.Error()
+		if inner := ce.Unwrap(); inner != nil {
+			text = inner.Error()
+		}
+	} else if !operational {
 		return nil
-	}
-	text := ce.Error()
-	if inner := ce.Unwrap(); inner != nil {
-		text = inner.Error()
 	}
 	return &sdkmcp.CallToolResult{
-		IsError: true,
-		Content: []sdkmcp.Content{
-			&sdkmcp.TextContent{Text: text},
-		},
+		IsError:           true,
+		StructuredContent: map[string]any{"error": map[string]string{"code": ce.Code().String()}},
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: text}},
 	}
+}
+
+func toolConnectError(err error) *connect.Error {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return ce
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, err)
+	default:
+		return nil
+	}
+}
+
+var operationalToolErrorText = map[connect.Code]string{
+	connect.CodeResourceExhausted: "tool execution capacity is exhausted; retry later",
+	connect.CodeDeadlineExceeded:  "tool execution timed out",
+	connect.CodeCanceled:          "tool execution was canceled",
+	connect.CodeUnauthenticated:   "tool authentication is required",
 }
 
 // toolActionableCode reports whether a Connect error code carries a

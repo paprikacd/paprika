@@ -40,6 +40,21 @@ function makeClient(configs: ProviderConfig[] = [config]): InsightsClient {
 }
 
 describe("provider management", () => {
+  it("opens an MCP provider in Explore while standalone administration is denied", async () => {
+    const shared: Provider = { ...publicProviders[0], transport: "mcp", source: "observability" }
+    const client = makeClient(), onExplore = vi.fn()
+    client.observeConnection = vi.fn().mockResolvedValue({ configured: true, connected: true, transport: "mcp", tools: [], providerCount: 1 })
+    vi.mocked(client.providerConfigs).mockRejectedValue(new Error("Administrator access required"))
+    render(<ProviderManager client={client} providers={[shared]} onChange={vi.fn()} onExplore={onExplore} />)
+    const card = screen.getByRole("article")
+    expect(await within(screen.getByRole("region", { name: "Paprika Observe MCP" })).findByText("Connected")).toBeInTheDocument()
+    expect(within(card).getByText(/Paprika Observe MCP/)).toBeInTheDocument()
+    fireEvent.click(within(card).getByRole("button", { name: "Explore Production" }))
+    expect(onExplore).toHaveBeenCalledWith(shared)
+    expect(within(card).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument()
+  })
+
   it("chooses a trace provider with the custom keyboard combobox and saves the chosen type", async () => {
     const client = makeClient([])
     const { container } = render(<ProviderManager client={client} providers={[]} onChange={vi.fn()} />)
@@ -214,6 +229,7 @@ describe("provider management", () => {
   })
   it("shows example providers without requesting or changing service configuration", () => {
     const client = makeClient()
+    client.observeConnection = vi.fn()
     render(
       <ProviderManager
         client={client}
@@ -223,6 +239,7 @@ describe("provider management", () => {
       />,
     )
     expect(client.providerConfigs).not.toHaveBeenCalled()
+    expect(client.observeConnection).not.toHaveBeenCalled()
     expect(
       screen.queryByRole("button", { name: "Test connection" }),
     ).not.toBeInTheDocument()

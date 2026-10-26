@@ -506,6 +506,7 @@ export function widgetKind(widget: Pick<Widget, "type" | "dataKind">): DataKind 
 export interface Provider {
   /** Shared sources retain their canonical Observe identity in configuration only. */
   source?: "observability"
+  transport?: "mcp"
   providerRef?: string
   id: string
   name: string

@@ -18,8 +18,8 @@ export function providerOption(provider: Provider): GammaSelectOption {
     value: provider.id,
     label: provider.name,
     accessibleLabel: provider.name,
-    description: provider.type === "prometheus" ? "Prometheus · metrics" : "Tempo · traces",
+    description: `${provider.type === "prometheus" ? "Prometheus · metrics" : "Tempo · traces"}${provider.transport === "mcp" ? " · Observe MCP" : ""}`,
     icon: <ProviderIcon type={provider.type} />,
-    keywords: [provider.id, provider.type],
+    keywords: [provider.id, provider.type, ...(provider.transport === "mcp" ? ["Observe", "MCP"] : [])],
   };
 }

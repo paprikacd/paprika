@@ -10,12 +10,14 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
+import { assertObserveMCP, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-observe-authoring-"))
 const output = join(repository, "artifacts/insights/observe-authoring")
 const binary = join(temporary, "observe-e2e"), ready = join(temporary, "ready.json")
 const reports = [], pageErrors = [], queryResponses = [], writes = [], documentReads = []
+const protocolHistory = []
 const services = ["api-gateway", "release-controller"]
 const readings = [101.2345, 202.3456]
 const template = "sum(rate(http_requests_total{service={{service}}}[5m]))"
@@ -43,6 +45,10 @@ async function startFixture() {
 }
 async function stopFixture() {
   if (!processHandle || processHandle.exitCode !== null || processHandle.signalCode !== null) return
+  if (fixture?.baseURL) {
+    const protocol = await readObserveProtocol(fixture.baseURL).catch(() => undefined)
+    if (protocol) protocolHistory.push(protocol)
+  }
   const ended = once(processHandle, "exit")
   processHandle.kill("SIGTERM")
   const force = setTimeout(() => processHandle.kill("SIGKILL"), 5000)
@@ -337,6 +343,8 @@ try {
     return { freshService: true, sameDocuments: true, sameETags: true, savedReferencesRestored: true }
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
+  const currentProtocol = await readObserveProtocol(fixture.baseURL)
+  assertObserveMCP({ gateway: [...protocolHistory.flatMap(receipt => receipt.gateway), ...currentProtocol.gateway] }, ["list_observability_providers", "query_metrics", "create_saved_query", "update_saved_query", "create_dashboard", "update_dashboard"])
   console.log(`PASS ${reports.length} MCP authoring scenarios`)
 } catch (error) {
   console.error(error.stack ?? error.message)
@@ -344,7 +352,7 @@ try {
 } finally {
   await context?.close(); await browser?.close(); await stopFixture()
   await mkdir(output, { recursive: true })
-  await writeFile(join(output, "report.json"), JSON.stringify({ timestamp: new Date().toISOString(), reports, pageErrors, browserWrites: writes, documentReads, queryRequests: queryResponses.map(({ status, request, body }) => ({ status, providerId: request.providerId, query: request.query, series: body.series?.length })) }, null, 2))
+  await writeFile(join(output, "report.json"), JSON.stringify({ timestamp: new Date().toISOString(), reports, pageErrors, protocolHistory, browserWrites: writes, documentReads, queryRequests: queryResponses.map(({ status, request, body }) => ({ status, providerId: request.providerId, query: request.query, series: body.series?.length })) }, null, 2))
   for (const value of Object.values(fixture ?? {})) if (typeof value === "string" && value.split(".").length === 3 && value.startsWith("eyJ")) outputLog = outputLog.replaceAll(value, "[redacted token]")
   await writeFile(join(output, "fixture.log"), outputLog)
   await rm(temporary, { recursive: true, force: true })

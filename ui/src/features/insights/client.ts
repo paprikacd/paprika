@@ -25,6 +25,14 @@ export interface ProviderMetadata {
   truncated?: boolean
   series?: MetricSeriesMetadata
 }
+export interface ObserveConnection {
+  configured: boolean
+  connected: boolean
+  transport: "mcp"
+  tools: { name: string; description: string }[]
+  providerCount: number
+  protocolVersion?: string
+}
 export interface MetricSeriesMetadata {
   count: number
   limit: number
@@ -36,6 +44,8 @@ export interface MetricSeriesMetadata {
   labels: { name: string; cardinality: number; values: string[]; valuesTruncated?: boolean }[]
 }
 export interface InsightsClient {
+  /** Optional for embedded hosts that do not expose Paprika Observe. */
+  observeConnection?(signal?: AbortSignal): Promise<ObserveConnection>
   listSavedQueries(signal?: AbortSignal): Promise<SavedQueryEntry[]>
   getSavedQuery(id: string): Promise<{ query: SavedQuery; etag?: string }>
   saveSavedQuery(query: SavedQuery, etag?: string): Promise<string | undefined>
@@ -84,6 +94,8 @@ export function createInsightsClient(
       if (response.status === 401) throw new Error("Sign in to access your dashboards.")
       if (response.status === 403 && path.startsWith("/provider-configs"))
         throw new Error("Managing data sources requires Insights administrator access.")
+      if (response.status === 403 && path === "/observe-connection")
+        throw new Error("Your account does not have access to Paprika Observe. Check your Observability permissions.")
       if (response.status === 403 && (path === "/query" || path.startsWith("/providers/")))
         throw new Error("Your account does not have access to this data source. Check its Observability permissions.")
       if (response.status === 403) throw new Error("Your account does not have access to Insights.")
@@ -130,6 +142,7 @@ export function createInsightsClient(
     return value
   }
   return {
+    observeConnection: async (signal) => (await request("/observe-connection", { signal })).json(),
     listSavedQueries: (signal) => cachedRead("/saved-queries", body => {
       return ((body.queries ?? []) as SavedQueryEntry[]).map((entry: SavedQueryEntry) => {
         const { etag, ...document } = entry

@@ -1,4 +1,4 @@
-// Exercises the authenticated API -> Insights -> authorized Observe gateway ->
+// Exercises the authenticated API -> Insights -> Observe MCP tools ->
 // real connector path. Only the Kubernetes client and upstream telemetry are
 // deterministic fixtures; HTTP auth, saved storage, MCP and the UI are real.
 import assert from "node:assert/strict"
@@ -10,6 +10,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
+import { assertMetricCall, assertObserveMCP, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-observe-e2e-"))
@@ -20,7 +21,7 @@ const readings = [101.2345, 202.3456]
 const template = "sum(rate(http_requests_total{service={{service}}}[5m]))"
 const fixedRange = { from: "2026-10-20T12:00:00.000Z", to: "2026-10-20T13:00:00.000Z" }
 let fixture, processHandle, browser, context, page, outputLog = "", metricProvider, traceProvider
-let sessionId, rpcId = 0
+let sessionId, rpcId = 0, protocol
 async function until(predicate, message, timeout = 20000) {
   const end = Date.now() + timeout
   while (Date.now() < end) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
@@ -71,6 +72,25 @@ async function showService(service) {
   assert.ok(await sparkline.locator("[data-stat-area]").count() > 0)
   return { displayed, path: await sparkline.locator("[data-stat-trend]").getAttribute("d") }
 }
+async function showServiceTooltip(service, width, theme) {
+  const health = page.locator('[data-widget-id="service-health"]')
+  const cell = health.getByRole("group").getByRole("button").first()
+  await health.scrollIntoViewIfNeeded()
+  if (width < 600) await cell.tap(); else await cell.hover()
+  const tooltip = page.getByRole("tooltip")
+  await tooltip.waitFor()
+  const expected = readings[services.indexOf(service)] * 2
+  const value = tooltip.locator('[data-tooltip-widget="stat"] [data-metric-value]')
+  await until(async () => Number(await value.getAttribute("data-metric-value").catch(() => NaN)) === expected, "Hovered service label did not resolve through the saved tooltip query")
+  assert.equal((await value.innerText()).replace(/\s+/g, ""), `${expected.toFixed(2)}req/s`)
+  assert.equal(await tooltip.locator("[data-stat-sparkline]").getAttribute("data-sample-count"), "4")
+  const calls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["query_metrics"])
+  const query = `${template.replace("{{service}}", JSON.stringify(service))} * 2`
+  const args = assertMetricCall(calls, { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: 12 })
+  await page.screenshot({ path: join(output, `tooltip-${theme.toLowerCase()}-${width}.png`), fullPage: false })
+  await page.keyboard.press("Escape"); await tooltip.waitFor({ state: "hidden" })
+  return { value: expected, samples: 4, hoveredService: service, mcpArguments: args }
+}
 async function open(width) {
   await context?.close()
   context = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 960 }, reducedMotion: "reduce", colorScheme: "light", timezoneId: "UTC", ...(width < 600 ? { isMobile: true, hasTouch: true } : {}) })
@@ -107,6 +127,14 @@ try {
     await until(async () => { try { fixture = JSON.parse(await readFile(ready, "utf8")); return true } catch { return false } }, `Harness did not become ready: ${outputLog}`, 30000)
   }
   await check("Authorized provider discovery shares the MCP registry without local connection configuration", async () => {
+    assert.ok(fixture.viewerToken, "Connection discovery must also be tested as an Insights read-only caller")
+    const connection = (await api("observe-connection", { token: fixture.viewerToken })).document
+    assert.equal(connection.configured, true); assert.equal(connection.connected, true)
+    assert.equal(connection.transport, "mcp"); assert.equal(connection.providerCount, 2)
+    for (const name of ["list_observability_providers", "query_metrics", "query_traces", "list_metric_series"]) assert.ok(connection.tools.some(tool => tool.name === name))
+    const connectionReceipts = await readObserveProtocol(fixture.baseURL)
+    assert.ok(connectionReceipts.gateway.some(item => ["initialize", "server/discover"].includes(item.method)), "Connection discovery must negotiate the MCP protocol")
+    assert.ok(connectionReceipts.gateway.some(item => item.method === "tools/list"), "Connection discovery must enumerate actual MCP tools")
     const providers = (await api("providers")).document.providers
     metricProvider = providers.find(item => item.providerRef === fixture.providerRef)
     traceProvider = providers.find(item => item.providerRef === fixture.traceProviderRef)
@@ -117,11 +145,17 @@ try {
     assert.deepEqual(providers.map(item => item.providerRef).sort(), [fixture.providerRef, fixture.traceProviderRef].sort(), "Namespace-scoped discovery must hide restricted providers")
     assert.deepEqual((await api("provider-configs")).document.providers, [])
     assert.ok(providers.every(item => !Object.hasOwn(item, "url") && !Object.hasOwn(item, "credentials")))
-    return { providers: providers.map(({ id, providerRef, type }) => ({ id, providerRef, type })) }
+    assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["list_observability_providers"])
+    return { providers: providers.map(({ id, providerRef, type }) => ({ id, providerRef, type })), connection: { transport: connection.transport, providerCount: connection.providerCount, toolCount: connection.tools.length, readOnlyCaller: true } }
   })
   const saved = { schemaVersion: 1, id: "observe-service-rate", name: "Shared service request rate", description: "One saved query for dashboards and service filters.", tags: ["service", "request-rate"], providerId: metricProvider.id, kind: "metrics", query: template, parameters: [{ name: "service", type: "string", defaultValue: services[0] }] }
-  const dashboard = { schemaVersion: 1, id: "observe-flow", title: "Shared observability flow", timeRange: "1h", customTimeRange: fixedRange, refreshInterval: 0, variables: [{ name: "service", label: "Service", defaultValue: services[0], options: services }], widgets: [{ id: "selected-service", title: "Selected service request rate", type: "stat", providerId: metricProvider.id, query: "must_not_execute", queryRef: { id: saved.id, bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, unit: "req/s", options: { decimals: 2, showSparkline: true }, layout: { x: 0, y: 0, w: 6, h: 3 } }] }
+  const tooltipQuery = { ...saved, id: "observe-service-tooltip", name: "Hovered service detail", query: `${template} * 2` }
+  const dashboard = { schemaVersion: 1, id: "observe-flow", title: "Shared observability flow", timeRange: "1h", customTimeRange: fixedRange, refreshInterval: 0, variables: [{ name: "service", label: "Service", defaultValue: services[0], options: services }], widgets: [
+    { id: "selected-service", title: "Selected service request rate", type: "stat", providerId: metricProvider.id, query: "must_not_execute", queryRef: { id: saved.id, bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, unit: "req/s", options: { decimals: 2, showSparkline: true }, layout: { x: 0, y: 0, w: 6, h: 3 } },
+    { id: "service-health", title: "Service detail", type: "heatmap", providerId: metricProvider.id, query: "must_not_execute", queryRef: { id: saved.id, bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, unit: "req/s", options: { showTooltip: true, decimals: 2, tooltipView: { type: "stat", title: "Hovered service detail", unit: "req/s", decimals: 2, showSparkline: true, source: { type: "saved", ref: { id: tooltipQuery.id, bindings: [{ parameter: "service", source: "label", label: "service" }] } } } }, layout: { x: 6, y: 0, w: 6, h: 3 } },
+  ] }
   await api(`saved-queries/${saved.id}`, { method: "PUT", document: saved, headers: { "If-None-Match": "*" } })
+  await api(`saved-queries/${tooltipQuery.id}`, { method: "PUT", document: tooltipQuery, headers: { "If-None-Match": "*" } })
   const persisted = await api(`dashboards/${dashboard.id}`, { method: "PUT", document: dashboard, headers: { "If-None-Match": "*" } })
   await check("Namespace denial cannot discover or execute the shared provider", async () => {
     const before = ((await (await fetch(`${fixture.baseURL}/__test/requests`)).json()).queries ?? []).length
@@ -147,24 +181,33 @@ try {
         assert.equal((await api(`dashboards/${dashboard.id}`)).etag, persisted.etag, "Filtering must not persist dashboard defaults")
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         await page.screenshot({ path: join(output, `service-${theme.toLowerCase()}-${width}.png`), fullPage: false })
-        return { before, after, savedDefaultUnchanged: true }
+        const tooltip = await showServiceTooltip(services[1], width, theme)
+        return { before, after, tooltip, savedDefaultUnchanged: true }
       })
     }
   }
   await open(1512)
-  await check("Shared providers show their registry identity and route management to Observability", async () => {
+  await check("The MCP connection exposes discovered tools and opens a shared provider in Explore", async () => {
     const nav = await openNavigation(); await nav.getByRole("button", { name: /^Data sources\b/ }).click()
     const panel = page.getByRole("region", { name: "Data sources", exact: true })
     const card = panel.getByRole("article").filter({ hasText: fixture.providerRef })
-    await card.getByText("Shared with Observability MCP", { exact: false }).waitFor()
+    const connection = panel.getByRole("region", { name: "Paprika Observe MCP", exact: true })
+    await connection.getByRole("status").filter({ hasText: /^Connected\b/ }).waitFor()
+    await connection.getByRole("button", { name: "Refresh connection and providers", exact: true }).click()
+    await connection.getByRole("status").filter({ hasText: /^Connected\b/ }).waitFor()
+    await connection.getByRole("button", { name: /Discovered MCP tools/ }).click()
+    for (const name of ["list_observability_providers", "query_metrics", "query_traces", "list_metric_series"]) await connection.getByText(name, { exact: true }).waitFor()
     assert.equal(await card.getByRole("button", { name: "Edit", exact: true }).count(), 0)
     assert.equal(await card.getByRole("button", { name: /^Remove/ }).count(), 0)
     assert.match(await card.getByRole("link", { name: "Manage in Observability" }).getAttribute("href"), /\/dashboard\/observability\/?$/)
     await card.getByRole("button", { name: "Test connection", exact: true }).click()
     await panel.getByRole("status").filter({ hasText: /Connected|succeeded|available/i }).waitFor()
     await page.screenshot({ path: join(output, "shared-data-sources.png"), fullPage: false })
-    await panel.getByRole("button", { name: "Close data sources", exact: true }).click()
-    return { credentialsCopied: false, editControls: false }
+    await card.getByRole("button", { name: `Explore ${metricProvider.name}`, exact: true }).click()
+    await explorer().getByRole("heading", { name: "Explore", exact: true }).waitFor()
+    await explorer().getByText("Paprika Observe MCP", { exact: true }).waitFor()
+    await explorer().getByText("query_metrics", { exact: true }).waitFor()
+    return { credentialsCopied: false, editControls: false, connected: true, discoveredTools: true, exploredProvider: metricProvider.providerRef }
   })
   await check("PromQL completion and saved-query execution use shared provider metadata", async () => {
     await openExplorer()
@@ -186,7 +229,11 @@ try {
     assert.ok(metadata.series.count >= 2)
     assert.ok(metadata.series.labels.some(label => label.name === "service" && label.cardinality >= 2))
     await page.screenshot({ path: join(output, "shared-promql-editor.png"), fullPage: false })
-    return { resolved: exact, series: metadata.series.count }
+    const calls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["list_metric_names", "list_label_names", "list_label_values", "list_metric_series"])
+    const seriesCall = calls.findLast(item => item.tool === "list_metric_series" && item.arguments?.provider === fixture.providerRef && item.arguments.metric === "http_requests_total")
+    assert.ok(seriesCall && Date.parse(seriesCall.arguments.start) < Date.parse(seriesCall.arguments.end))
+    assert.equal(seriesCall.arguments.limit, 1000)
+    return { resolved: exact, series: metadata.series.count, mcpSeriesArguments: seriesCall.arguments }
   })
   await check("Metric inspection shows shared series cardinality and creates a label filter", async () => {
     await explorer().getByRole("tab", { name: "Builder", exact: true }).click()
@@ -218,7 +265,10 @@ try {
     await results().getByText("GET /api/orders", { exact: true }).waitFor()
     assert.ok(responses.some(item => item.status === 200 && item.request.providerId === traceProvider.id && item.request.query === query && item.body.traces?.some(trace => trace.service === "api-gateway")))
     await page.screenshot({ path: join(output, "shared-traceql-editor.png"), fullPage: false })
-    return { provider: traceProvider.providerRef, query }
+    const calls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["query_traces"])
+    const queryCall = calls.findLast(item => item.tool === "query_traces" && item.arguments?.provider === fixture.traceProviderRef && item.arguments.query === query)
+    assert.ok(queryCall && Date.parse(queryCall.arguments.start) < Date.parse(queryCall.arguments.end))
+    return { provider: traceProvider.providerRef, query, mcpArguments: queryCall.arguments }
   })
   await check("MCP and dashboard queries return the same samples for the same provider, range and step", async () => {
     await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "paprika-insights-e2e", version: "1" } })
@@ -229,6 +279,8 @@ try {
     const query = template.replace("{{service}}", JSON.stringify(services[1]))
     const start = Date.parse(fixedRange.from) / 1000, end = Date.parse(fixedRange.to) / 1000
     const dashboardResult = (await api("query", { method: "POST", document: { providerId: metricProvider.id, kind: "metrics", query, start, end, step: 60 } })).document
+    const uiCalls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["query_metrics"])
+    assertMetricCall(uiCalls, { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: 60 })
     const call = await rpc("tools/call", { name: "query_metrics", arguments: { provider: fixture.providerRef, query, start: fixedRange.from, end: fixedRange.to, step_seconds: 60 } })
     assert.notEqual(call.isError, true)
     const structured = call.structuredContent ?? JSON.parse(call.content.find(item => item.type === "text").text)
@@ -238,10 +290,13 @@ try {
     return { samples: dashboardResult.series[0].points.length, sharedProvider: fixture.providerRef }
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
+  protocol = await readObserveProtocol(fixture.baseURL)
+  assertObserveMCP(protocol, ["list_observability_providers", "query_metrics", "query_traces", "list_metric_names", "list_label_names", "list_label_values", "list_metric_series"])
   console.log(`PASS ${reports.length} observability integration scenarios`)
 } catch (error) { console.error(error); if (outputLog) console.error(outputLog); process.exitCode = 1 }
 finally {
-  await writeFile(join(output, "report.json"), JSON.stringify({ reports, pageErrors, queries: responses.map(({ status, request }) => ({ status, request })) }, null, 2)).catch(() => {})
+  if (fixture?.baseURL) protocol = await readObserveProtocol(fixture.baseURL).catch(() => protocol)
+  await writeFile(join(output, "report.json"), JSON.stringify({ reports, pageErrors, protocol, queries: responses.map(({ status, request }) => ({ status, request })) }, null, 2)).catch(() => {})
   await context?.close(); await browser?.close()
   if (processHandle && processHandle.exitCode === null && processHandle.signalCode === null) {
     const exited = once(processHandle, "exit"); processHandle.kill("SIGTERM")

@@ -276,6 +276,16 @@ Inspect state, reason, truncation and continuation fields. Provider-specific
 limitations and empty results remain visible. `validate_provider` is an offline
 configuration check; only a real bounded provider query validates connectivity.
 
+Paprika Insights can also consume this same Observe MCP endpoint as its data
+source. With the gateway configured for Insights, open **Data sources** to see
+the **Paprika Observe MCP** connection and discovered Prometheus/Tempo providers,
+then choose **Explore**. PromQL and TraceQL requests run through `query_metrics`
+and `query_traces`; dashboard variables, saved-query parameters and tooltip
+bindings are resolved before the tool call. `list_metric_series` supplies a
+bounded series sample for label/cardinality inspection. The UI uses the
+signed-in Paprika user's delegated read permissions, independently of an AI
+client's native OAuth connection. See the [Insights integration](../design/insights/README.md#shared-observability-mcp-providers).
+
 The observe resource advertises the authorization-server issuer
 `https://HOST/observe`. RFC 8414 discovery therefore resolves
 `/.well-known/oauth-authorization-server/observe`, independently of the fleet's

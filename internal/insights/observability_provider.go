@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -120,11 +119,12 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 	if err != nil {
 		return nil, err
 	}
-	for _, provider := range providers {
+	for i := range providers {
+		provider := &providers[i]
 		if provider.ID == id {
 			// A request-local client keeps its metadata cache scoped to this exact
 			// authorization check. Never retain delegated tokens in a registry.
-			return &providerClient{public: provider, metadataCache: make(map[string]metadataCacheEntry), remote: &observeProvider{
+			return &providerClient{public: *provider, metadataCache: make(map[string]metadataCacheEntry), remote: &observeProvider{
 				gateway: s.observe, token: token, reference: provider.ProviderRef,
 			}}, nil
 		}
@@ -133,19 +133,26 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 }
 
 func (g *observeGateway) providers(ctx context.Context, token string) ([]Provider, error) {
-	body, err := g.request(ctx, token, http.MethodGet, "/observe/api/providers", nil, 1<<20)
+	connection, err := g.connect(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	var response struct {
-		Providers []observeCatalogProvider `json:"providers"`
+	defer connection.close()
+	return connection.providers()
+}
+
+func (c *observeMCPConnection) providers() ([]Provider, error) {
+	body, failed, err := c.call("list_observability_providers", map[string]any{}, 1<<20)
+	if err != nil {
+		return nil, err
 	}
-	if json.Unmarshal(body, &response) != nil || response.Providers == nil {
-		return nil, errUpstream
+	catalog, err := decodeObserveCatalog(body, failed)
+	if err != nil {
+		return nil, err
 	}
-	result := make([]Provider, 0, len(response.Providers))
+	result := make([]Provider, 0, len(catalog))
 	seen := make(map[string]bool)
-	for _, p := range response.Providers {
+	for _, p := range catalog {
 		if p.Type != "prometheus" && p.Type != "tempo" {
 			continue
 		}
@@ -153,50 +160,26 @@ func (g *observeGateway) providers(ctx context.Context, token string) ([]Provide
 			return nil, errUpstream
 		}
 		seen[p.Name] = true
-		capability := "metrics"
+		capability, tool := "metrics", "query_metrics"
 		if p.Type == "tempo" {
-			capability = "traces"
+			capability, tool = "traces", "query_traces"
 		}
-		result = append(result, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: []string{capability}, Source: "observability", ProviderRef: p.Name})
+		if err := c.requireTool(tool); err != nil {
+			return nil, err
+		}
+		result = append(result, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: []string{capability}, Source: "observability", ProviderRef: p.Name, Transport: "mcp"})
 	}
 	return result, nil
 }
 
-func (g *observeGateway) request(ctx context.Context, token, method, path string, data any, limit int64) ([]byte, error) {
-	var input []byte
-	if data != nil {
-		var err error
-		input, err = json.Marshal(data)
-		if err != nil {
-			return nil, errUpstream
-		}
+func decodeObserveCatalog(body []byte, failed bool) ([]observeCatalogProvider, error) {
+	var response struct {
+		Providers []observeCatalogProvider `json:"providers"`
 	}
-	u := *g.baseURL
-	u.Path = strings.TrimSuffix(u.Path, "/") + path
-	u.RawPath = ""
-	// #nosec G704 -- The gateway origin is validated operator configuration; path is internal and redirects are disabled.
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(input))
-	if err != nil {
+	if failed || json.Unmarshal(body, &response) != nil || response.Providers == nil {
 		return nil, errUpstream
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-	if data != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := g.client.Do(req) // #nosec G704 -- Requests target the configured trusted gateway, with redirects disabled.
-	if err != nil {
-		return nil, &observeError{http.StatusBadGateway, "observability gateway is unavailable"}
-	}
-	defer closeReadBody(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, observeHTTPError(resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil || int64(len(body)) > limit {
-		return nil, errUpstream
-	}
-	return body, nil
+	return response.Providers, nil
 }
 
 func observeHTTPError(status int) error {
@@ -216,18 +199,27 @@ func observeHTTPError(status int) error {
 	}
 }
 
-func (p *observeProvider) data(ctx context.Context, path string, request any, limit int64) ([]byte, error) {
-	body, err := p.gateway.request(ctx, p.token, http.MethodPost, path, request, limit)
+func (p *observeProvider) data(ctx context.Context, tool string, request any, limit int64) ([]byte, error) {
+	connection, err := p.gateway.connect(ctx, p.token)
 	if err != nil {
 		return nil, err
 	}
+	defer connection.close()
+	body, failed, err := connection.call(tool, request, maxResponseBytes)
+	if err != nil {
+		return nil, err
+	}
+	return decodeObserveData(body, failed, limit)
+}
+
+func decodeObserveData(body []byte, failed bool, limit int64) ([]byte, error) {
 	var response observeResponse
 	if json.Unmarshal(body, &response) != nil {
 		return nil, errUpstream
 	}
 	switch response.State {
 	case "OK":
-		if len(response.Data) == 0 || bytes.Equal(bytes.TrimSpace(response.Data), []byte("null")) {
+		if !validObserveData(response.Data, failed, limit) {
 			return nil, errUpstream
 		}
 		return response.Data, nil
@@ -242,20 +234,28 @@ func (p *observeProvider) data(ctx context.Context, path string, request any, li
 	}
 }
 
+func validObserveData(data []byte, failed bool, limit int64) bool {
+	return !failed && int64(len(data)) <= limit && len(data) != 0 && !bytes.Equal(bytes.TrimSpace(data), []byte("null"))
+}
+
 func observeTime(seconds float64) string {
 	whole := int64(seconds)
 	return time.Unix(whole, int64((seconds-float64(whole))*1e9)).UTC().Format(time.RFC3339Nano)
 }
 
 func (p *observeProvider) query(ctx context.Context, q Query) ([]byte, error) {
-	input := map[string]any{"provider": p.reference, "signal": q.Kind, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
+	input := map[string]any{"provider": p.reference, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
 	if q.Kind == "metrics" {
-		input["stepSeconds"] = q.Step
+		input["step_seconds"] = q.Step
 		input["limit"] = maxSeries
 	} else {
 		input["limit"] = maxTraces
 	}
-	return p.data(ctx, "/observe/api/query", input, maxResponseBytes)
+	tool := "query_metrics"
+	if q.Kind == "traces" {
+		tool = "query_traces"
+	}
+	return p.data(ctx, tool, input, maxResponseBytes)
 }
 
 // Adapt the existing bounded native metadata decoders to the gateway's typed
@@ -275,7 +275,13 @@ func (p *observeProvider) metadata(ctx context.Context, path string, params url.
 		}
 		input[key] = time.Unix(seconds, 0).UTC().Format(time.RFC3339)
 	}
-	return p.data(ctx, "/observe/api/explore", input, limit)
+	kind, ok := input["kind"].(string)
+	if !ok {
+		return nil, errUpstream
+	}
+	tool := "list_" + kind
+	delete(input, "kind")
+	return p.data(ctx, tool, input, limit)
 }
 
 func writeProviderError(w http.ResponseWriter, err error) {

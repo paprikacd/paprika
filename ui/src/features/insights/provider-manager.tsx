@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { CheckCircle2, Plus, Trash2, X } from "lucide-react"
+import { CheckCircle2, Compass, Plus, Trash2, X } from "lucide-react"
 import { ProviderIcon } from "./source-identity"
+import { ObserveConnectionCard } from "./observe-connection"
 import type { InsightsClient, ProviderConfig } from "./client"
 import type { Provider } from "./schema"
 import { GammaButton } from "./gamma/button"
@@ -70,12 +71,14 @@ export function ProviderManager({
   onChange,
   example = false,
   onClose,
+  onExplore,
 }: {
   client: InsightsClient
   providers: Provider[]
   onChange: (providers: Provider[]) => void
   example?: boolean
   onClose?: () => void
+  onExplore?: (provider: Provider) => void
 }) {
   const hasSharedProviders = providers.some((provider) => provider.source === "observability")
   const [configs, setConfigs] = useState<ProviderConfig[]>()
@@ -218,8 +221,9 @@ export function ProviderManager({
         )}
       </div>
       <p className={styles.hint}>
-        Connect a metrics or trace backend once, then use it across dashboards.
+        Explore shared Observe providers or connect a standalone metrics or trace backend.
       </p>
+      {!example && <ObserveConnectionCard client={client} onProvidersChange={onChange} />}
       {example && (
         <p className={styles.notice}>
           Example data is local. Switch to connected mode to manage real
@@ -256,7 +260,7 @@ export function ProviderManager({
                     {provider.type === "prometheus"
                       ? "Prometheus · metrics"
                       : "Tempo · traces"}{" "}
-                    · {shared ? "Shared with Observability MCP" : config?.managed ? "Managed" : "Provisioned"}
+                    · {provider.transport === "mcp" ? "Paprika Observe MCP" : shared ? "Shared with Observability MCP" : config?.managed ? "Managed" : "Provisioned"}
                   </small>
                 </div>
               </div>
@@ -264,6 +268,12 @@ export function ProviderManager({
               {config && <p className={styles.providerURL}>{config.url}</p>}
               {!example && (
                 <div className={styles.row}>
+                  {onExplore && <GammaButton
+                    variant="primary"
+                    disabled={!!busy}
+                    aria-label={`Explore ${provider.name}`}
+                    onClick={() => onExplore(provider)}
+                  ><Compass size={14} aria-hidden="true" />Explore provider</GammaButton>}
                   <GammaButton
                     variant="secondary"
                     loading={busy === `test:${provider.id}`}
