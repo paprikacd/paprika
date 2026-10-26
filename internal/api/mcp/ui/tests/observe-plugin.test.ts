@@ -53,12 +53,15 @@ test("observe skill examples match real gateway schemas and preserve secure hand
   // query_metrics and query_logs are built by nativeQueryTool, whose tool name
   // is derived from the signal rather than a literal Name field.
   const nativeSource = source.slice(source.indexOf("func nativeQueryTool"), source.indexOf("func queryTracesTool"));
-  const nativeSchema = nativeSource.match(/InputSchema:\s*json\.RawMessage\(\s*`([^`]+)`\s*\)/);
-  if (nativeSchema) {
-    const schema = JSON.parse(nativeSchema[1]);
-    schemas.set("query_metrics", schema);
-    schemas.set("query_logs", schema);
-  }
+  const nativeSchema = nativeSource.match(/InputSchema:\s*json\.RawMessage\(fmt\.Sprintf\(\s*`([^`]+)`\s*,\s*metricFields\s*\)\)/);
+  const metricFields = nativeSource.match(/metricFields\s*=\s*`([^`]+)`/);
+  assert.ok(nativeSchema, "native query schema template must exist");
+  assert.ok(metricFields, "metric-specific query options must exist");
+  schemas.set("query_metrics", JSON.parse(nativeSchema[1].replace("%s", metricFields[1])));
+  schemas.set("query_logs", JSON.parse(nativeSchema[1].replace("%s", "")));
+  assert.equal(schemas.get("query_metrics").properties.step_seconds.type, "number");
+  assert.equal(schemas.get("query_metrics").properties.instant.type, "boolean");
+  assert.ok(!Object.hasOwn(schemas.get("query_logs").properties, "step_seconds"));
   const skill = await readFile(new URL("skills/paprika-observe/SKILL.md", plugin), "utf8");
   const examples = [...skill.matchAll(/```json\n([\s\S]*?)\n```/g)];
   assert.ok(examples.length >= 4);
