@@ -53,7 +53,7 @@ point.
 Trace results include `returned`, `statusCounts` and a few examples with IDs,
 service, operation, duration in milliseconds and start time. Counts describe the
 bounded provider sample, never total requests. Unknown status stays unknown.
-Malformed numeric trace fields are omitted and listed in `invalidFields`.
+Malformed numeric trace fields are omitted and marked with `invalidFields`.
 
 Missing saved-query references and invalid bindings are widget errors. Provider
 failures are signal errors with fixed, sanitized codes/messages. Empty successful
@@ -125,6 +125,9 @@ calls use the normal four-slot data pool, while discovery retains its existing
 four-slot reserve. This prevents outer dashboard requests from holding every
 data slot while waiting for their own inner calls. A third simultaneous dashboard
 request is bounded by admission instead of allowing unbounded fan-out.
+The HTTP layer marks orchestration admission in trusted request context. A
+dashboard envelope exceeding its 36 KiB inspection budget cannot execute from
+ordinary work slots; larger existing authoring requests remain supported.
 
 ## Verification
 
@@ -145,3 +148,8 @@ node e2e/run-insights.mjs e2e/insights-dashboard-query.e2e.mjs
 ```
 
 Evidence is written to `artifacts/insights/dashboard-query/` (git-ignored).
+`ui/e2e/insights-dashboard-query-live.e2e.mjs` repeats the comparison against
+deployed providers using the private `INSIGHTS_SERVICE_OVERVIEW_CONFIG` format
+documented by the service-overview browser test. It reads existing documents,
+executes their queries over a shared fixed range and verifies document ETags are
+unchanged. No telemetry is mocked and no saved documents are written.

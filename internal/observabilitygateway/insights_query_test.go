@@ -213,6 +213,35 @@ func TestDashboardQueryReadHelperDoesNotChangeAuthoringPermissions(t *testing.T)
 	require.Zero(t, calls.Load())
 }
 
+func TestDashboardQueryRequiresItsHTTPOrchestrationAdmission(t *testing.T) {
+	c, calls := newDashboardQueryClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, dashboardQueryFixture)
+	}))
+	principal := &auth.Principal{Subject: "human", Groups: []string{"readers"}, Scopes: []string{"paprika:observe"}}
+	ctx := auth.WithPrincipal(t.Context(), principal)
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		deny bool
+	}{
+		{"direct in-process call", ctx, false},
+		{"dashboard slot", WithDashboardQueryAdmission(ctx, true), false},
+		{"ordinary work slot", WithDashboardQueryAdmission(ctx, false), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := calls.Load()
+			_, err := insightsQueryDashboardTool(c).Invoke(tc.ctx, nil, json.RawMessage(`{"id":"demo"}`))
+			if tc.deny {
+				require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
+				require.Equal(t, before, calls.Load(), "misclassified request must never reach dashboard execution")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, before+1, calls.Load())
+			}
+		})
+	}
+}
+
 func TestDashboardQueryMCPWirePublishesSchemaAndAvoidsPayloadDuplication(t *testing.T) {
 	c, _ := newDashboardQueryClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, dashboardQueryFixture)

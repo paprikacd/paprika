@@ -245,7 +245,8 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 		}
 		defer func() { <-intake }()
 		slots := active
-		switch classifyObservabilityProtocolRequest(r) {
+		requestClass := classifyObservabilityProtocolRequest(r)
+		switch requestClass {
 		case observabilityWorkRequest:
 			slots = active
 		case observabilityCatalogRequest:
@@ -257,6 +258,10 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 			return
 		}
 		defer func() { <-slots }()
+		// Oversized or unclassifiable envelopes may still contain valid small
+		// query_dashboard arguments. They must not orchestrate nested work while
+		// holding a data-work slot; the tool checks this trusted context marker.
+		r = r.WithContext(observabilitygateway.WithDashboardQueryAdmission(r.Context(), requestClass == observabilityDashboardRequest))
 		next.ServeHTTP(w, r)
 	})
 }

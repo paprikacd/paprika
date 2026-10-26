@@ -228,6 +228,15 @@ try {
     assert.ok(!receipts.gateway.some(r => ["/observe/api/query", "/observe/api/providers", "/observe/api/explore"].includes(r.path)))
     return { unchangedDocuments: versions.length, browserWrites: 0, legacyDataCalls: 0 }
   })
+  await check("The reusable live validator checks the same read-only contract", async () => {
+    const tokenFile = join(temporary, "console.token"), mcpTokenFile = join(temporary, "observe.token"), configFile = join(temporary, "live-config.json")
+    await writeFile(tokenFile, fixture.token, { mode: 0o600 })
+    await writeFile(mcpTokenFile, fixture.mcpViewerToken, { mode: 0o600 })
+    await writeFile(configFile, JSON.stringify({ baseURL: fixture.baseURL, mcpURL: fixture.mcpURL, tokenFile, mcpTokenFile, dashboardId: dashboard.id, services, outputDir: join(output, "live-validator") }), { mode: 0o600 })
+    const validator = spawn(process.execPath, [join(repository, "ui/e2e/insights-dashboard-query-live.e2e.mjs")], { cwd: repository, env: { ...process.env, INSIGHTS_SERVICE_OVERVIEW_CONFIG: configFile }, stdio: "inherit" })
+    assert.equal((await once(validator, "exit"))[0], 0)
+    return { reusableLiveValidator: "passed" }
+  })
   await page.screenshot({ path: join(output, "dashboard.png"), fullPage: false })
 } catch (error) { console.error(error.stack ?? error.message); process.exitCode = 1 }
 finally {

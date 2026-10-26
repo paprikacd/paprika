@@ -22,6 +22,22 @@ import (
 const dashboardQueryResponseBytes = 128 << 10
 const dashboardQueryTextBytes = 8 << 10
 
+type dashboardQueryAdmissionKey struct{}
+
+// WithDashboardQueryAdmission records whether the HTTP admission layer acquired
+// a dashboard orchestration slot. The marker is server-owned, never derived from
+// a client header. Direct/in-process callers without HTTP admission are allowed.
+func WithDashboardQueryAdmission(ctx context.Context, admitted bool) context.Context {
+	return context.WithValue(ctx, dashboardQueryAdmissionKey{}, admitted)
+}
+
+func requireDashboardQueryAdmission(ctx context.Context) error {
+	if admitted, marked := ctx.Value(dashboardQueryAdmissionKey{}).(bool); marked && !admitted {
+		return connect.NewError(connect.CodeResourceExhausted, errors.New("dashboard query requires bounded orchestration admission; reduce the MCP request envelope"))
+	}
+	return nil
+}
+
 const dashboardQueryInputSchema = `{"type":"object","additionalProperties":false,"required":["id"],"properties":{
 "id":` + insightsIDSchema + `,
 "variables":{"type":"object","maxProperties":20,"additionalProperties":{"type":"string","maxLength":1024},"description":"Overrides declared dashboard variables for this read only; saved defaults are unchanged."},
@@ -63,6 +79,9 @@ func insightsQueryDashboardTool(c *InsightsAuthoringClient) mcp.Tool {
 		Description: "Execute a saved dashboard with its live saved queries and optional variable overrides. Returns compact, versioned machine-readable signals: exact latest values, bounded range summaries and trace samples, plus document versions and missing/error/truncation states. Identical queries execute once. No layout, query expressions or raw sample arrays by default. State describes data availability, not service health. Read-only; requires paprika:observe and human Insights read permission, not authoring consent.",
 		InputSchema: json.RawMessage(dashboardQueryInputSchema), OutputSchema: json.RawMessage(dashboardQueryOutputSchema),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
+			if err := requireDashboardQueryAdmission(ctx); err != nil {
+				return nil, err
+			}
 			if err := validateDashboardQueryEnvelope(raw); err != nil {
 				return nil, err
 			}
