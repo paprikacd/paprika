@@ -28,6 +28,7 @@ env:
   HELM_RELEASE: paprika-e2e
   HELM_CHART: charts/chart
   TEST_VALUES: deploy/test-values.yaml
+  INSIGHTS_VALUES: deploy/insights-omega-values.yaml
 
 jobs:
   deploy:
@@ -137,6 +138,16 @@ jobs:
           kubectl get nodes
           kubectl get namespace "${VKE_NAMESPACE}"
 
+      - name: Verify retained Insights storage
+        run: |
+          # Omega's saved queries and dashboards live on this existing claim.
+          # Stop before any release changes if recovery/provisioning is needed.
+          phase="$(kubectl -n "${VKE_NAMESPACE}" get pvc paprika-e2e-insights -o jsonpath='{.status.phase}')"
+          if [ "${phase}" != Bound ]; then
+            echo "::error::Omega Insights requires its retained paprika-e2e-insights PVC to be Bound before deployment"
+            exit 1
+          fi
+
       - name: Deploy Paprika chart
         env:
           VKE_OIDC_CLIENT_ID: ${{ secrets.VKE_OIDC_CLIENT_ID }}
@@ -191,6 +202,7 @@ jobs:
             --namespace "${VKE_NAMESPACE}" \
             --values "${TEST_VALUES}" \
             --values deploy/omega-values.yaml \
+            --values "${INSIGHTS_VALUES}" \
             --set-string manager.image.repository="${IMAGE_REFERENCE}" \
             --set-string apiServer.image.repository="${IMAGE_REFERENCE}" \
             --set-string repoServer.image.repository="${IMAGE_REFERENCE}" \

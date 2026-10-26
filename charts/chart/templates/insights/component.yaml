@@ -132,6 +132,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: {{ $name }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    # Saved dashboards and queries must survive disabling/removing Insights.
+    helm.sh/resource-policy: keep
 spec:
   accessModes: ["ReadWriteOnce"]
   {{- with .Values.insights.persistence.storageClassName }}

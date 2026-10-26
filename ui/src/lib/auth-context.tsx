@@ -1,5 +1,7 @@
 "use client"
 
+import { safeAuthReturnTo } from "@/lib/auth-return-to"
+
 import { clearBrowserQueryCache } from "@/lib/query-provider"
 
 import {
@@ -109,10 +111,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem("paprika_code_verifier", codeVerifier)
       sessionStorage.setItem("paprika_expected_state", state)
       sessionStorage.setItem("paprika_redirect_uri", redirectURI)
-      localStorage.setItem(
-        AUTH_RETURN_TO_KEY,
-        window.location.pathname + window.location.search
-      )
+      // Observe already saved its opaque consent request before navigating
+      // to /login/. Do not replace that destination with the login page.
+      const current = window.location.pathname + window.location.search
+      if (window.location.pathname.replace(/\/+$/, "") !== "/login") {
+        if (safeAuthReturnTo(current)) localStorage.setItem(AUTH_RETURN_TO_KEY, current)
+        else localStorage.removeItem(AUTH_RETURN_TO_KEY)
+      } else if (!safeAuthReturnTo(localStorage.getItem(AUTH_RETURN_TO_KEY))) {
+        localStorage.removeItem(AUTH_RETURN_TO_KEY)
+      }
       window.location.href = url
     } catch (err) {
       console.error("Login failed:", err)

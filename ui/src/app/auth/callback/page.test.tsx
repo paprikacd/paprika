@@ -174,4 +174,11 @@ describe("auth callback page", () => {
     expect(window.location.href).toBe("")
     expect(authMock.persistAuth).not.toHaveBeenCalled()
   })
+  it("returns to the exact gateway consent handler without adding a slash", async () => {
+    authMock.consumeReturnTo.mockReturnValue("/observe/consent?rid=opaque-request")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "id-token" }) }))
+    render(<CallbackPage />)
+    await waitFor(() => expect(window.location.href).toBe("/observe/consent?rid=opaque-request"))
+  })
+
 })

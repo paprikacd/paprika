@@ -7,6 +7,9 @@ insights:
     existingSecretKey: token
   persistence:
     enabled: true
+    # Reuse Omega's recovered retained volume; never provision an empty
+    # replacement during an upgrade. The deployment preflight requires Bound.
+    existingClaim: paprika-e2e-insights
     size: 10Gi
     storageClassName: vultr-block-storage-retain
   # Providers are discovered from the existing authorized Observe gateway.
