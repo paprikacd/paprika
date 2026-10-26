@@ -20,7 +20,11 @@ client's native OAuth flow and secure handoff. Reading provider data does
 not authorize creating providers, credentials, IAM/RBAC grants, or public
 exposure. Never send private observability data to another service.
 
-Start with provider discovery; preserve the returned `namespace/name` identity.
+For a request about an existing dashboard, prefer `list_dashboards` followed by
+`query_dashboard`. That one read resolves its saved queries and collects their
+signals together; do not fetch and execute each saved query separately just to
+read the dashboard. Use provider discovery for new queries or investigations
+beyond the dashboard. Preserve the returned `namespace/name` identity.
 
 ```json
 {"tool":"list_observability_providers","arguments":{}}

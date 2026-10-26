@@ -203,3 +203,25 @@ Receipts and screenshots are in the git-ignored
 `artifacts/insights/dashboard-query/`. Temporary read-only validation tokens were
 removed after acceptance. The test used scoped machine credentials, not an
 interactive OAuth sign-in test.
+
+### Rollout recheck — 27 October 2026
+
+On 27 October Melbourne time, the API, Insights and Observe gateway were still ready
+on the deployed `d4b6f354` image above. No replacement rollout was needed.
+The public Observe endpoint advertised `query_dashboard` and passed all four
+live machine checks again. The Service overview still resolves eight widgets
+into seven unique queries, with all eight saved documents unchanged.
+
+For `uptime-api`, the complete MCP response measured 6,335 bytes against 149,673
+bytes of full normalized provider results (96% smaller). For `brandbrain-api`,
+it measured 3,363 against 16,825 bytes (80% smaller), correctly preserving empty
+HTTP metric signals and a bounded trace sample. All seven real-provider browser
+checks also passed, including light/dark desktop/mobile rendering, service
+switching and sparklines. Existing unrelated fleet-health warnings are unchanged.
+
+The Observe README and both bundled skills now direct clients to
+`list_dashboards` → `query_dashboard` for an existing dashboard instead of
+fetching and executing each saved query separately. Package contract tests pass.
+Fresh results and a readable bundle presentation are available under
+`artifacts/insights/dashboard-bundle-rollout-20261027/` (git-ignored). Temporary
+read-only validation tokens were removed after this recheck.

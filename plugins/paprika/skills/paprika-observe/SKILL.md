@@ -15,7 +15,13 @@ gateway verifies the `paprika-observability` audience. Connect through the
 host's native OAuth flow for this exact endpoint. Never request pasted tokens,
 passwords, kubeconfigs, or provider credentials.
 
-## Pick the provider first
+## Choose a dashboard or provider
+
+For an existing dashboard, use `list_dashboards` and then `query_dashboard` to
+collect its saved-query signals in one read. The gateway resolves bindings and
+deduplicates executions; clients do not need to fetch and execute each saved
+query separately. Discover providers when constructing new queries or
+investigating beyond the dashboard.
 
 Every query tool takes `provider` as `namespace/name`. Start with
 `list_observability_providers` (no arguments) to see the configured providers,

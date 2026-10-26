@@ -1,7 +1,8 @@
 # Paprika Observe plugin
 
 An optional plugin for Paprika's separate observability gateway. It bundles
-provider discovery, bounded telemetry queries, and saved-query/dashboard authoring.
+provider discovery, bounded telemetry queries, dashboard query bundles, and
+saved-query/dashboard authoring.
 It does not add a connection to the existing fleet plugin automatically.
 
 The packaged endpoint is `https://paprika.benebsworth.com/observe/mcp`.
@@ -48,6 +49,37 @@ Portable `mcp.json` uses `streamable-http` and the OpenAI per-server OAuth
 extension; compatibility `.mcp.json` uses `http`. The Codex and Claude overlays
 point to the compatibility file. No background hooks or credential scripts
 are included.
+
+## Read a dashboard query bundle
+
+For an existing dashboard, call `list_dashboards` to discover its ID, then
+`query_dashboard` to collect its live signals in one request:
+
+```json
+{
+  "name": "query_dashboard",
+  "arguments": {
+    "id": "service-overview",
+    "variables": { "service": "uptime-api" }
+  }
+}
+```
+
+The gateway resolves the dashboard's saved queries and parameter bindings,
+applies one shared time range and filter set, and executes identical queries
+once. Its compact `structuredContent` includes widget-to-signal references,
+exact readings, units, timestamps, range summaries and a small trace sample.
+A short text synopsis presents the bundle without duplicating the full JSON.
+Missing data, failed queries and truncation remain explicit.
+
+This is read-only: it requires `paprika:observe` plus existing Insights/provider
+permissions, and never changes the dashboard's defaults. Clients do not need to
+fetch each saved query and execute it separately. To inspect a small trend, add
+`"widget_ids": ["request-rate"]` and `"history_points": 12`. The default uses
+the saved dashboard range; pass both `start` and `end` for a fixed interval.
+Tooltip-only queries still need a hovered observation. See the
+[dashboard query contract](../../docs/design/insights/dashboard-query.md) for
+limits, result interpretation and live validation.
 
 ## Authoring flow
 
