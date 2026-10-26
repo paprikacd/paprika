@@ -194,4 +194,18 @@ describe("login", () => {
     expect(sessionStorage.getItem("paprika_expected_state")).toBe("state123")
     expect(localStorage.getItem("paprika_return_to")).toBe("/mcp/consent?x=1")
   })
+  it("preserves Observe consent while starting Google login from the login page", async () => {
+    window.location.pathname = "/login/"
+    window.location.search = ""
+    localStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque-request")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ url: "https://accounts.example/authorize", codeVerifier: "v", state: "s" }),
+    }))
+    render(<AuthProvider><LoginProbe /></AuthProvider>)
+    screen.getByText("login").click()
+    await waitFor(() => expect(window.location.href).toBe("https://accounts.example/authorize"))
+    expect(localStorage.getItem("paprika_return_to")).toBe("/observe/consent?rid=opaque-request")
+  })
+
 })

@@ -1,8 +1,9 @@
 "use client"
 
 import { Blueprint } from "@/components/ui/blueprint"
-import { useAuth } from "@/lib/auth-context"
-import { FormEvent, useEffect, useState } from "react"
+import { authReturnDestination } from "@/lib/auth-return-to"
+import { consumeReturnTo, useAuth } from "@/lib/auth-context"
+import { FormEvent, useEffect, useRef, useState } from "react"
 
 export default function LoginPage() {
   const { user, isLoading, login } = useAuth()
@@ -10,11 +11,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const redirected = useRef(false)
 
   useEffect(() => {
-    if (!isLoading && user) {
-      const current = window.location.pathname.replace(/\/+$/, "")
-      if (current !== "/dashboard") window.location.href = "/dashboard/"
+    if (!isLoading && user && !redirected.current) {
+      redirected.current = true
+      window.location.href = authReturnDestination(consumeReturnTo())
     }
   }, [isLoading, user])
 
@@ -39,7 +41,7 @@ export default function LoginPage() {
       const data = await res.json()
       const { persistAuth } = await import("@/lib/auth-context")
       persistAuth(data.idToken)
-      window.location.href = "/dashboard/"
+      window.location.href = authReturnDestination(consumeReturnTo())
     } catch {
       setError("Network error")
     } finally {

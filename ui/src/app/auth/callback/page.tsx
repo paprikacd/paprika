@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useRef, useState } from "react"
+import { authReturnDestination } from "@/lib/auth-return-to"
 import { persistAuth, consumeReturnTo } from "@/lib/auth-context"
 
 function CallbackHandler() {
@@ -51,33 +52,7 @@ function CallbackHandler() {
       })
       .then((data: { idToken: string }) => {
         persistAuth(data.idToken)
-        const returnTo = consumeReturnTo()
-        let dest = "/dashboard/"
-        // Fix round 2, Fold-in 3: require a leading "/" and reject a
-        // leading "//" (protocol-relative, e.g. "//evil.example/x", which a
-        // browser resolves as same-scheme navigation to a different host)
-        // in addition to the existing !startsWith("/login") check. Not
-        // attacker-reachable today — the only writer of this value
-        // (auth-context.tsx's login()) always stores
-        // `pathname + search`, which can never start with "//" — but this
-        // makes the guard structurally safe rather than safe only by that
-        // caller's discipline.
-        if (
-          returnTo &&
-          returnTo.startsWith("/") &&
-          !returnTo.startsWith("//") &&
-          !returnTo.startsWith("/login")
-        ) {
-          // indexOf, not split("?") — a query component may legally contain
-          // its own literal "?", and split would silently drop everything
-          // after a second one.
-          const qIndex = returnTo.indexOf("?")
-          const path = qIndex === -1 ? returnTo : returnTo.slice(0, qIndex)
-          const search = qIndex === -1 ? "" : returnTo.slice(qIndex + 1)
-          const normalizedPath = path.endsWith("/") ? path : path + "/"
-          dest = search ? `${normalizedPath}?${search}` : normalizedPath
-        }
-        window.location.href = dest
+        window.location.href = authReturnDestination(consumeReturnTo())
       })
       .catch((err: Error) => {
         setError(err.message || "Token exchange failed")
