@@ -43,7 +43,8 @@ manager:
   resources:
     requests:
       cpu: 500m
-      memory: 2Gi
+      # Reserve observed steady capacity; retain the 3Gi cap for Git bursts.
+      memory: 1Gi
     limits:
       cpu: 2000m
       memory: 3Gi
