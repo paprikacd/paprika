@@ -57,7 +57,7 @@ sample is not used as a request count, nor described as an exhaustive list.
 The focused read-only validator is
 `ui/e2e/insights-service-overview.e2e.mjs`. It passed seven scenarios against an
 isolated real service/MCP fixture, then seven against the live dashboard.
-The final live receipt is timestamped **2026-10-26T07:05:16Z** (18:05 Melbourne).
+The initial live receipt is timestamped **2026-10-26T07:05:16Z** (18:05 Melbourne).
 It recorded 40 metric-tool calls and five trace-tool calls, with no data-tool
 errors, no legacy data calls and no browser errors.
 
@@ -77,3 +77,69 @@ errors, no legacy data calls and no browser errors.
 Canonical documents, authoring receipts, query evidence, browser report and
 screenshots are retained in `artifacts/insights/service-overview/`. This task
 created saved workspace content; it required no application deployment.
+
+## Omega recovery and deployment, 26 October 2026
+
+A subsequent master deployment (Helm revision 45, commit `2b2e2b47`) used a
+chart without Insights and removed its Deployment, Service and PVC. The 10Gi
+volume remained under its Retain policy. It was recovered by creating a claim
+pinned to that exact volume and conditionally replacing the old claim UID.
+The original four dashboards and thirteen saved queries were recovered;
+the Service overview and its seven queries matched their original documents.
+
+Revision 46 deployed the feature branch merged with master's login fix,
+commit `4c718a95`. The existing volume is now mounted through
+`insights.persistence.existingClaim`, outside Helm's deletion inventory.
+Chart-created Insights PVCs also receive `helm.sh/resource-policy: keep`.
+The Omega deployment workflow loads the Insights overlay and rejects a missing
+or unbound claim before modifying the release. These workflow changes are on
+the feature branch and must reach master to protect future master deployments.
+
+Live testing also found that anonymous shared links stopped at an unavailable
+screen without a sign-in action. Commit `5cc99039` adds a host authentication
+callback: a current-session 401 clears stale credentials and returns through
+login to the original dashboard, variables, time range and fragment. Concurrent
+401s navigate once; a late response cannot sign out a newer session; 403 remains
+a local permissions error. Standalone clients and anonymous examples retain
+their existing behavior.
+
+**Final Helm revision: 47, deployed.** All six components are ready. Its
+manifest changes only the API/UI image from revision 46. OAuth registrations,
+the original bound volume, and persisted documents remain intact.
+
+| Component | Immutable image |
+| --- | --- |
+| API/UI (`5cc99039`) | `ghcr.io/paprikacd/paprika@sha256:fa848ce962d13f5e1d160d9fa2d3cbcda10db63d56cdf16a9fddc0e02f1e16bb` |
+| Insights and Observe (`4c718a95`) | `ghcr.io/paprikacd/paprika@sha256:b7f52d75c86837b04c35890902b9984926522243abff47d47c8189704bf41b6b` |
+| Manager, repo server, webhook (preserved) | `ghcr.io/paprikacd/paprika@sha256:2173b30a99a64c976aba5b609cd7d50875e90cc02868e8ed47d50e8645b0844c` |
+
+Both full linux/amd64 builds passed:
+[recovery build](https://github.com/paprikacd/paprika/actions/runs/40306746765)
+and [sign-in fix](https://github.com/paprikacd/paprika/actions/runs/40308721872).
+
+Final live acceptance completed at **21:45 Melbourne** (10:45 UTC):
+
+- Seven service-overview E2E scenarios passed again on revision 47. This run
+  recorded 42 real metric-tool calls and five trace-tool calls, zero legacy
+  data calls, zero browser errors, and no document writes. All eight document
+  bodies, ETags and saved variable defaults remained unchanged during testing.
+- Four sign-in E2E scenarios passed: anonymous dashboard links, authenticated
+  return with the service parameter, invalid stored sessions, and anonymous
+  example mode. The authenticated handoff uses an isolated validation
+  credential; it does not exercise Google's consent screen.
+- 1,385 UI tests across 143 files and TypeScript checks passed. Go build/vet,
+  required engine/pipeline tests, Insights/Observe/Prometheus/Tempo tests and
+  API/MCP tests passed. Helm 3.21.2 lint/render checks, CRD generation/copy,
+  workflow lint and positive/negative storage checks passed.
+
+The control-plane health RPC remains degraded for the same pre-existing
+application warnings seen before recovery: one degraded application and three
+applications with exhausted release retries. Controller readiness and current
+observed generations pass; this deployment did not address those workloads.
+
+Receipts and screenshots are in
+`artifacts/insights/service-overview-deploy-20261026/`, including
+`deployment.json`, `report.json`, `login-return.json` and before-recovery
+evidence. The reusable read-only sign-in validator is
+`ui/e2e/insights-auth.e2e.mjs`, using the same private configuration as the
+service-overview validator. Temporary validation credentials were removed.

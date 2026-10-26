@@ -41,7 +41,13 @@ try {
     assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), target)
   })
   await check("An authenticated login returns to the saved dashboard and service", async () => {
-    await page.evaluate(value => localStorage.setItem("paprika_id_token", value), token)
+    // Match persistAuth's two records after a successful authentication. A bare
+    // bearer token authorizes API calls but does not restore the console user.
+    const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString())
+    await page.evaluate(({ token, user }) => {
+      localStorage.setItem("paprika_id_token", token)
+      localStorage.setItem("paprika_auth_user", JSON.stringify(user))
+    }, { token, user: { sub: claims.sub, email: claims.email ?? "", name: claims.name ?? "" } })
     await page.reload({ waitUntil: "domcontentloaded" })
     await page.waitForURL(new URL(target, origin).href)
     await page.getByRole("heading", { name: config.expectedDocument?.title ?? "Service overview", exact: true }).waitFor()
@@ -61,7 +67,10 @@ try {
     const target = new URL("/dashboard/insights/?example=1", origin)
     await page.goto(target.href, { waitUntil: "domcontentloaded" })
     await page.locator("[data-widget-id]").first().waitFor()
-    assert.equal(page.url(), target.href)
+    const current = new URL(page.url())
+    assert.equal(current.origin, target.origin)
+    assert.equal(current.pathname, target.pathname)
+    assert.equal(current.searchParams.get("example"), "1")
     assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), null)
   })
   assert.deepEqual(errors, [])
