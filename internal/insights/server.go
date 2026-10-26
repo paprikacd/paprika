@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -90,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/providers/{id}/test", s.testProvider)
 	api.HandleFunc("GET /api/providers/{id}/metadata", s.providerMetadata)
 	api.HandleFunc("POST /api/query", s.query)
+	api.HandleFunc("POST /api/query-dashboard", s.queryDashboard)
 	api.HandleFunc("GET /api/saved-queries", s.listSavedQueries)
 	api.HandleFunc("GET /api/saved-queries/{id}", s.getSavedQuery)
 	api.HandleFunc("PUT /api/saved-queries/{id}", s.putSavedQuery)
@@ -143,28 +145,46 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "provider does not support this query kind")
 		return
 	}
-	select {
-	case s.queries <- struct{}{}:
-		defer func() { <-s.queries }()
-	default:
+	result, _, err := s.runProviderQuery(r.Context(), p, q)
+	if errors.Is(err, errQueryCapacity) {
 		w.Header().Set("Retry-After", "1")
 		writeError(w, 429, "too many active queries; retry shortly")
 		return
 	}
-	started := time.Now()
-	result, err := p.query(r.Context(), q)
-	outcome := "success"
-	if err != nil {
-		outcome = "error"
-	}
-	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
-	s.queryCount.Add(r.Context(), 1, attributes)
-	s.queryDuration.Record(r.Context(), time.Since(started).Seconds(), attributes)
 	if err != nil {
 		writeProviderError(w, err)
 		return
 	}
 	writeJSON(w, 200, result)
+}
+
+var errQueryCapacity = errors.New("query execution capacity reached")
+
+// The dashboard reader and ordinary widget queries share execution admission
+// and instrumentation. The boolean records whether provider I/O actually began.
+func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q Query) (QueryResult, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return QueryResult{}, false, fmt.Errorf("query context: %w", err)
+	}
+	select {
+	case s.queries <- struct{}{}:
+		defer func() { <-s.queries }()
+	default:
+		return QueryResult{}, false, errQueryCapacity
+	}
+	started := time.Now()
+	result, err := p.query(ctx, q)
+	if err != nil && ctx.Err() != nil {
+		err = fmt.Errorf("query execution context: %w", ctx.Err())
+	}
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
+	s.queryCount.Add(ctx, 1, attributes)
+	s.queryDuration.Record(ctx, time.Since(started).Seconds(), attributes)
+	return result, true, err
 }
 
 func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {

@@ -229,6 +229,9 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 	active := make(chan struct{}, 4)
 	catalog := make(chan struct{}, 4)
+	// Dashboard orchestration waits on nested data-tool requests. Giving it a
+	// separate small pool leaves data slots available and bounds aggregate work.
+	dashboards := make(chan struct{}, 2)
 	// Bound body classification too: a slow MCP upload must not allocate an
 	// unbounded number of readers before it reaches a work pool.
 	intake := make(chan struct{}, 8)
@@ -242,8 +245,13 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 		}
 		defer func() { <-intake }()
 		slots := active
-		if isObservabilityCatalogRequest(r) {
+		switch classifyObservabilityProtocolRequest(r) {
+		case observabilityWorkRequest:
+			slots = active
+		case observabilityCatalogRequest:
 			slots = catalog
+		case observabilityDashboardRequest:
+			slots = dashboards
 		}
 		if !admitObservabilityRequest(w, slots) {
 			return

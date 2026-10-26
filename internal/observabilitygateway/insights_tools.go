@@ -17,8 +17,8 @@ const dashboardDocumentSchema = `{"type":"object","description":"Canonical UI da
 // RegisterInsightsTools adds document authoring only when the authenticated
 // Insights proxy is configured. Telemetry tools retain their read-only scope.
 func RegisterInsightsTools(registry *mcp.Registry, c *InsightsAuthoringClient, usage *UsageTracker) error {
-	tools := make([]mcp.Tool, 0, 9)
-	tools = append(tools, insightsListTool(c, "list_insights_providers", "providers"), insightsListTool(c, "list_saved_queries", "saved-queries"), insightsListTool(c, "list_dashboards", "dashboards"))
+	tools := make([]mcp.Tool, 0, 10)
+	tools = append(tools, insightsListTool(c, "list_insights_providers", "providers"), insightsListTool(c, "list_saved_queries", "saved-queries"), insightsListTool(c, "list_dashboards", "dashboards"), insightsQueryDashboardTool(c))
 	for _, document := range []struct{ singular, collection, schema string }{{"saved_query", "saved-queries", savedQueryDocumentSchema}, {"dashboard", "dashboards", dashboardDocumentSchema}} {
 		tools = append(tools, insightsGetTool(c, document.singular, document.collection), insightsPutTool(c, document.singular, document.collection, document.schema, true), insightsPutTool(c, document.singular, document.collection, document.schema, false))
 	}

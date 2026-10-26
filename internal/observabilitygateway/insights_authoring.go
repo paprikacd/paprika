@@ -105,7 +105,13 @@ func hasInsightsWriteScope(p *auth.Principal) bool {
 }
 
 func (c *InsightsAuthoringClient) request(ctx context.Context, method, path string, document json.RawMessage, headers http.Header) (json.RawMessage, string, error) {
-	credential, err := c.credential(ctx, method != http.MethodGet)
+	return c.requestAuthorized(ctx, method, path, document, headers, method != http.MethodGet, 2<<20)
+}
+
+// requestAuthorized keeps the action explicit for read-only POST operations.
+// Its callers use fixed routes; arbitrary authoring routes cannot opt into read access.
+func (c *InsightsAuthoringClient) requestAuthorized(ctx context.Context, method, path string, document json.RawMessage, headers http.Header, write bool, limit int64) (json.RawMessage, string, error) {
+	credential, err := c.credential(ctx, write)
 	if err != nil {
 		return nil, "", err
 	}
@@ -124,17 +130,17 @@ func (c *InsightsAuthoringClient) request(ctx context.Context, method, path stri
 	if err != nil {
 		return nil, "", insightsTransportError(ctx)
 	}
-	return readInsightsResponse(resp)
+	return readInsightsResponseLimit(resp, limit)
 }
 
-func readInsightsResponse(resp *http.Response) (json.RawMessage, string, error) {
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, (2<<20)+1))
+func readInsightsResponseLimit(resp *http.Response, limit int64) (json.RawMessage, string, error) {
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	closeErr := resp.Body.Close()
 	if readErr != nil || closeErr != nil {
 		return nil, "", connect.NewError(connect.CodeUnavailable, errors.New("insights response could not be read"))
 	}
-	if len(body) > 2<<20 {
-		return nil, "", connect.NewError(connect.CodeResourceExhausted, errors.New("insights response exceeds the authoring limit"))
+	if int64(len(body)) > limit {
+		return nil, "", connect.NewError(connect.CodeResourceExhausted, errors.New("insights response exceeds its size limit"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", insightsStatusError(resp.StatusCode, body)

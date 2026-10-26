@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -236,35 +237,34 @@ func mintFixtureToken(secret []byte, subject, audience string, groups []string, 
 }
 
 func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
-	token, err := mintFixtureToken(secret, "reader", auth.ConsoleAPIAudience, []string{"metrics-readers"})
-	if err != nil {
-		return err
+	ready := map[string]string{"baseURL": appURL, "mcpURL": gatewayURL + "/observe/mcp", "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"}
+	credentials := []struct {
+		key, subject, audience string
+		providerAccess         bool
+		scopes                 []mcp.Scope
+	}{
+		{"token", "reader", auth.ConsoleAPIAudience, true, nil},
+		{"deniedToken", "denied", auth.ConsoleAPIAudience, false, nil},
+		{"viewerToken", "viewer", auth.ConsoleAPIAudience, true, nil},
+		{"mcpToken", "reader", mcp.ObservabilityTokenAudience, true, nil},
+		{"mcpViewerToken", "viewer", mcp.ObservabilityTokenAudience, true, nil},
+		{"mcpNoInsightsToken", "outsider", mcp.ObservabilityTokenAudience, true, nil},
+		{"mcpWriteToken", "reader", mcp.ObservabilityTokenAudience, true, []mcp.Scope{mcp.ScopeInsightsWrite}},
+		{"mcpDeniedWriteToken", "viewer", mcp.ObservabilityTokenAudience, true, []mcp.Scope{mcp.ScopeInsightsWrite}},
+		{"mcpDeniedProviderToken", "denied", mcp.ObservabilityTokenAudience, false, []mcp.Scope{mcp.ScopeInsightsWrite}},
 	}
-	denied, err := mintFixtureToken(secret, "denied", auth.ConsoleAPIAudience, []string{})
-	if err != nil {
-		return err
+	for _, credential := range credentials {
+		groups := []string{}
+		if credential.providerAccess {
+			groups = append(groups, "metrics-readers")
+		}
+		token, err := mintFixtureToken(secret, credential.subject, credential.audience, groups, credential.scopes...)
+		if err != nil {
+			return err
+		}
+		ready[credential.key] = token
 	}
-	viewer, err := mintFixtureToken(secret, "viewer", auth.ConsoleAPIAudience, []string{"metrics-readers"})
-	if err != nil {
-		return err
-	}
-	mcpToken, err := mintFixtureToken(secret, "reader", mcp.ObservabilityTokenAudience, []string{"metrics-readers"})
-	if err != nil {
-		return err
-	}
-	writeToken, err := mintFixtureToken(secret, "reader", mcp.ObservabilityTokenAudience, []string{"metrics-readers"}, mcp.ScopeInsightsWrite)
-	if err != nil {
-		return err
-	}
-	deniedWriteToken, err := mintFixtureToken(secret, "viewer", mcp.ObservabilityTokenAudience, []string{"metrics-readers"}, mcp.ScopeInsightsWrite)
-	if err != nil {
-		return err
-	}
-	deniedProviderToken, err := mintFixtureToken(secret, "denied", mcp.ObservabilityTokenAudience, []string{}, mcp.ScopeInsightsWrite)
-	if err != nil {
-		return err
-	}
-	readyJSON, err := json.Marshal(map[string]string{"baseURL": appURL, "token": token, "deniedToken": denied, "viewerToken": viewer, "mcpURL": gatewayURL + "/observe/mcp", "mcpToken": mcpToken, "mcpWriteToken": writeToken, "mcpDeniedWriteToken": deniedWriteToken, "mcpDeniedProviderToken": deniedProviderToken, "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"})
+	readyJSON, err := json.Marshal(ready)
 	if err != nil {
 		return fmt.Errorf("encode fixture connection file: %w", err)
 	}
@@ -378,6 +378,10 @@ func metricRangeEnd(raw string) float64 {
 
 func serveMetricRange(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	if strings.Contains(q.Get("query"), "unavailable_fixture_metric") {
+		http.Error(w, "simulated upstream unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	end := metricRangeEnd(q.Get("end"))
 	service := fixtureServices[0]
 	if match := serviceLiteral.FindStringSubmatch(q.Get("query")); len(match) > 1 {
@@ -396,23 +400,57 @@ func serveMetricRange(w http.ResponseWriter, r *http.Request) {
 		values[1][1] = strconv.FormatFloat(last-4.25, 'f', -1, 64)
 		values[2][1] = strconv.FormatFloat(last+1.75, 'f', -1, 64)
 	}
-	if strings.HasSuffix(strings.TrimSpace(q.Get("query")), " * 2") {
+	if strings.Contains(q.Get("query"), "dense_http_requests_total") {
+		values = denseMetricValues(q, last)
+	}
+	if !scaleMetricValues(w, q.Get("query"), values) {
+		return
+	}
+	result := []any{map[string]any{"metric": map[string]string{"service": service}, "values": values}}
+	if service == "no-telemetry" {
+		result = []any{}
+	}
+	jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": result}})
+}
+
+func scaleMetricValues(w http.ResponseWriter, query string, values [][]any) bool {
+	if strings.HasSuffix(strings.TrimSpace(query), " * 2") {
 		for i := range values {
 			value, parseErr := strconv.ParseFloat(fmt.Sprint(values[i][1]), 64)
 			if parseErr != nil {
 				http.Error(w, "invalid fixture sample", http.StatusInternalServerError)
-				return
+				return false
 			}
 			values[i][1] = strconv.FormatFloat(value*2, 'f', -1, 64)
 		}
 	}
-	jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": []any{map[string]any{"metric": map[string]string{"service": service}, "values": values}}}})
+	return true
 }
+
+func denseMetricValues(query url.Values, last float64) [][]any {
+	start, end := metricRangeEnd(query.Get("start")), metricRangeEnd(query.Get("end"))
+	step, err := strconv.ParseFloat(query.Get("step"), 64)
+	if err != nil || step <= 0 || end <= start {
+		return nil
+	}
+	points := min(1001, int(math.Floor((end-start)/step))+1)
+	values := make([][]any, points)
+	for i := range values {
+		value := last + math.Sin(float64(i)/8)*12
+		if i == points-1 {
+			value = last
+		}
+		values[i] = []any{start + float64(i)*step, strconv.FormatFloat(value, 'f', -1, 64)}
+	}
+	return values
+}
+
+var traceServiceLiteral = regexp.MustCompile(`resource\.service\.name\s*=\s*("(?:\\.|[^"\\])*")`)
 
 func serveTempo(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/search":
-		jsonResponse(w, map[string]any{"traces": []any{map[string]any{"traceID": "abc123", "rootServiceName": fixtureServices[0], "rootTraceName": "GET /api/orders", "durationMs": 12.34, "startTimeUnixNano": strconv.FormatInt(time.Now().UnixNano(), 10)}}})
+		serveTraceSearch(w, r)
 	case "/api/search/tags":
 		jsonResponse(w, map[string]any{"tagNames": []string{"resource.service.name", "http.method"}})
 	case "/api/echo":
@@ -426,6 +464,25 @@ func serveTempo(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}
+}
+
+func serveTraceSearch(w http.ResponseWriter, r *http.Request) {
+	service := fixtureServices[0]
+	if match := traceServiceLiteral.FindStringSubmatch(r.URL.Query().Get("q")); len(match) > 1 {
+		if err := json.Unmarshal([]byte(match[1]), &service); err != nil {
+			http.Error(w, "invalid trace service", http.StatusBadRequest)
+			return
+		}
+	}
+	observed := metricRangeEnd(r.URL.Query().Get("end")) - 60
+	if observed <= 0 {
+		observed = float64(time.Now().Unix())
+	}
+	traces := []any{map[string]any{"traceID": "abc123", "rootServiceName": service, "rootTraceName": "GET /api/orders", "durationMs": 12.34, "startTimeUnixNano": strconv.FormatInt(int64(observed*1e9), 10)}}
+	if service == "no-telemetry" {
+		traces = []any{}
+	}
+	jsonResponse(w, map[string]any{"traces": traces})
 }
 
 func jsonResponse(w http.ResponseWriter, body any) {

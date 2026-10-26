@@ -87,6 +87,7 @@ When Insights is configured, the same MCP endpoint additionally exposes:
 | `list_insights_providers` | `paprika:observe` | Discover provider IDs used in saved UI documents |
 | `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags |
 | `list_dashboards`, `get_dashboard` | `paprika:observe` | Read shared dashboards and their ETags |
+| `query_dashboard` | `paprika:observe` | Execute a saved dashboard and read compact, versioned live signals with optional variable overrides |
 | `create_saved_query`, `create_dashboard` | `paprika:observe` + `paprika:insights:write` | Create a new shared document without replacing an existing ID |
 | `update_saved_query`, `update_dashboard` | `paprika:observe` + `paprika:insights:write` | Update a document using the exact ETag from its latest read |
 
@@ -102,6 +103,13 @@ and reconcile the intended edit instead of issuing a wildcard overwrite.
 The tools use the same persistent Insights service as the UI. Open workspaces
 refresh externally saved changes while protecting unsaved local drafts.
 Provider credentials and the Insights service token never enter tool responses.
+`query_dashboard` resolves the same saved-query bindings as the UI and executes
+identical panel queries once. Its structured result contains latest readings,
+range summaries, a bounded trace sample, document ETags and explicit
+missing/error/truncation states. History is opt-in; service overrides never
+modify saved defaults. Data availability is not a service-health verdict.
+See the [dashboard query contract](../design/insights/dashboard-query.md) for
+limits, examples and interpretation.
 See the [Observe plugin](../../plugins/paprika-observe/README.md) for connection
 and authoring guidance.
 

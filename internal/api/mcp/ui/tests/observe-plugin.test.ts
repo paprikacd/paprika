@@ -47,8 +47,9 @@ test("marketplaces expose observe as an independent opt-in plugin", async () => 
 
 test("observe skill examples match real gateway schemas and preserve secure handoff boundaries", async () => {
   const source = await readFile(new URL("internal/observabilitygateway/tools.go", root), "utf8");
+  const rangeSource = await readFile(new URL("internal/observabilitygateway/tools_explore_range.go", root), "utf8");
   const schemas = new Map<string, any>();
-  for (const match of source.matchAll(/\bName:\s*"([^"]+)"(?:(?!\bName:\s*")[\s\S])*?\bInputSchema:\s*json\.RawMessage\(\s*`([^`]+)`\s*\)/g)) {
+  for (const match of (source + rangeSource).matchAll(/\bName:\s*"([^"]+)"(?:(?!\bName:\s*")[\s\S])*?\bInputSchema:\s*json\.RawMessage\(\s*`([^`]+)`\s*\)/g)) {
     schemas.set(match[1], JSON.parse(match[2]));
   }
   // query_metrics and query_logs are built by nativeQueryTool, whose tool name
@@ -60,6 +61,12 @@ test("observe skill examples match real gateway schemas and preserve secure hand
   assert.ok(metricFields, "metric-specific query options must exist");
   schemas.set("query_metrics", JSON.parse(nativeSchema[1].replace("%s", metricFields[1])));
   schemas.set("query_logs", JSON.parse(nativeSchema[1].replace("%s", "")));
+  const insightsSource = await readFile(new URL("internal/observabilitygateway/insights_tools.go", root), "utf8");
+  const querySource = await readFile(new URL("internal/observabilitygateway/insights_query.go", root), "utf8");
+  const idSchema = insightsSource.match(/const insightsIDSchema = `([^`]+)`/);
+  const dashboardSchema = querySource.match(/const dashboardQueryInputSchema = ([\s\S]+?)\n\n/);
+  assert.ok(idSchema && dashboardSchema, "dashboard query schema must exist");
+  schemas.set("query_dashboard", JSON.parse(dashboardSchema[1].replaceAll("` + insightsIDSchema + `", idSchema[1]).slice(1, -1)));
   assert.equal(schemas.get("query_metrics").properties.step_seconds.type, "number");
   assert.equal(schemas.get("query_metrics").properties.instant.type, "boolean");
   assert.ok(!Object.hasOwn(schemas.get("query_logs").properties, "step_seconds"));
@@ -74,7 +81,14 @@ test("observe skill examples match real gateway schemas and preserve secure hand
       for (const [name, value] of Object.entries(args)) {
         assert.ok(Object.hasOwn(schema.properties, name), `${tool}.${name} must exist`);
         const field = schema.properties[name];
-        assert.equal(typeof value, field.type === "integer" ? "number" : field.type);
+        if (field.anyOf) {
+          assert.ok(field.anyOf.some((variant: any) => variant.const === value ||
+            (variant.type === "integer" && Number.isInteger(value) && (value as number) >= variant.minimum && (value as number) <= variant.maximum)));
+        } else if (field.type === "array") {
+          assert.ok(Array.isArray(value));
+        } else {
+          assert.equal(typeof value, field.type === "integer" ? "number" : field.type);
+        }
         if (field.maximum !== undefined) assert.ok((value as number) <= field.maximum);
         if (field.minimum !== undefined) assert.ok((value as number) >= field.minimum);
       }
@@ -90,6 +104,9 @@ test("observe skill examples match real gateway schemas and preserve secure hand
   assert.match(skill, /exact\s+ETag/);
   assert.match(skill, /never silently overwrite/);
   assert.match(skill, /retaining unsaved local/);
+  assert.match(skill, /structuredContent.*authoritative/);
+  assert.match(skill, /state.*data availability, never service health/);
+  assert.match(skill, /Overrides apply only to this call, never to saved defaults/);
 });
 
 

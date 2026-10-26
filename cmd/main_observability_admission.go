@@ -9,6 +9,18 @@ import (
 
 const maxObserveCatalogEnvelopeBytes = 4 << 10
 
+// Dashboard arguments are capped at 32 KiB; leave a bounded allowance for the
+// JSON-RPC envelope so valid large variable overrides retain orchestration slots.
+const maxObserveDashboardEnvelopeBytes = (32 + 4) << 10
+
+type observabilityRequestClass uint8
+
+const (
+	observabilityWorkRequest observabilityRequestClass = iota
+	observabilityCatalogRequest
+	observabilityDashboardRequest
+)
+
 func isObservabilityProtocolRequest(r *http.Request) bool {
 	switch r.URL.Path {
 	case observabilityGatewayRoutePrefix + "/mcp",
@@ -29,11 +41,43 @@ func isObservabilityCatalogRequest(r *http.Request) bool {
 	if r.URL.Path == observabilityGatewayRoutePrefix+"/api/providers" {
 		return r.Method == http.MethodGet
 	}
-	if r.URL.Path != observabilityGatewayRoutePrefix+"/mcp" || r.Method != http.MethodPost || r.Body == nil || r.ContentLength > maxObserveCatalogEnvelopeBytes {
+	if !canInspectObservabilityEnvelope(r, maxObserveCatalogEnvelopeBytes) {
 		return false
 	}
+	prefix, ok := readObservabilityEnvelope(r, maxObserveCatalogEnvelopeBytes)
+	return ok && isObservabilityCatalogEnvelope(prefix)
+}
+
+// A dashboard query re-enters MCP data tools through Insights. It cannot hold a
+// data-work slot while waiting for another data-work slot from the same pool.
+// Classification is bounded, exact-key and leaves the SDK the original body.
+func classifyObservabilityProtocolRequest(r *http.Request) observabilityRequestClass {
+	if r.URL.Path == observabilityGatewayRoutePrefix+"/api/providers" && r.Method == http.MethodGet {
+		return observabilityCatalogRequest
+	}
+	if !canInspectObservabilityEnvelope(r, maxObserveDashboardEnvelopeBytes) {
+		return observabilityWorkRequest
+	}
+	prefix, ok := readObservabilityEnvelope(r, maxObserveDashboardEnvelopeBytes)
+	if !ok {
+		return observabilityWorkRequest
+	}
+	if len(prefix) <= maxObserveCatalogEnvelopeBytes && isObservabilityCatalogEnvelope(prefix) {
+		return observabilityCatalogRequest
+	}
+	if isObservabilityDashboardEnvelope(prefix) {
+		return observabilityDashboardRequest
+	}
+	return observabilityWorkRequest
+}
+
+func canInspectObservabilityEnvelope(r *http.Request, limit int64) bool {
+	return r.URL.Path == observabilityGatewayRoutePrefix+"/mcp" && r.Method == http.MethodPost && r.Body != nil && r.ContentLength <= limit
+}
+
+func readObservabilityEnvelope(r *http.Request, limit int) ([]byte, bool) {
 	original := r.Body
-	prefix, err := io.ReadAll(io.LimitReader(original, maxObserveCatalogEnvelopeBytes+1))
+	prefix, err := io.ReadAll(io.LimitReader(original, int64(limit)+1))
 	var remainder io.Reader = original
 	if err != nil {
 		// A one-shot upload error must reach the SDK as well. Replaying only
@@ -44,10 +88,18 @@ func isObservabilityCatalogRequest(r *http.Request) bool {
 		io.Reader
 		io.Closer
 	}{Reader: io.MultiReader(bytes.NewReader(prefix), remainder), Closer: original}
-	if err != nil || len(prefix) > maxObserveCatalogEnvelopeBytes {
-		return false
-	}
-	return isObservabilityCatalogEnvelope(prefix)
+	return prefix, err == nil && len(prefix) <= limit
+}
+
+func isObservabilityDashboardEnvelope(body []byte) bool {
+	var envelope map[string]json.RawMessage
+	var version, method, name string
+	var params map[string]json.RawMessage
+	return json.Unmarshal(body, &envelope) == nil &&
+		json.Unmarshal(envelope["jsonrpc"], &version) == nil && version == "2.0" &&
+		json.Unmarshal(envelope["method"], &method) == nil && method == "tools/call" &&
+		json.Unmarshal(envelope["params"], &params) == nil &&
+		json.Unmarshal(params["name"], &name) == nil && name == "query_dashboard"
 }
 
 type observabilityBodyError struct{ err error }

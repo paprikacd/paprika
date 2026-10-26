@@ -70,20 +70,28 @@ try {
     if (!ready) throw new Error(`Next was not ready after 90 seconds:\n${nextOutput}`)
     console.log(`Insights E2E server ready at ${baseURL}`)
   }
-  await run("e2e/insights.e2e.mjs", baseURL)
-  await run("e2e/insights-advanced.e2e.mjs", baseURL)
-  await run("e2e/insights-responsive.e2e.mjs", baseURL)
-  await run("e2e/insights-live.e2e.mjs", baseURL)
-  await run("e2e/insights-live-editing.e2e.mjs", baseURL)
-  await run("e2e/insights-drilldown.e2e.mjs", baseURL)
-  await run("e2e/insights-variable-filter.e2e.mjs", baseURL)
-  await run("e2e/insights-widget-audit.e2e.mjs", baseURL)
-  await run("e2e/insights-builder.e2e.mjs", baseURL)
-  await run("e2e/insights-tooltip-query.e2e.mjs", baseURL)
-  await run("e2e/insights-explorer.e2e.mjs", baseURL)
-  await run("e2e/insights-observability.e2e.mjs", baseURL)
-  await run("e2e/insights-portable.e2e.mjs", baseURL)
-  await run("e2e/insights-import-review.e2e.mjs", baseURL)
+  const selected = process.argv.slice(2)
+  for (const script of selected) {
+    if (!/^e2e\/insights(?:-[a-z-]+)?\.e2e\.mjs$/.test(script)) throw new Error("Select an Insights E2E script under e2e/")
+  }
+  const scripts = selected.length ? selected : [
+    "e2e/insights.e2e.mjs",
+    "e2e/insights-advanced.e2e.mjs",
+    "e2e/insights-responsive.e2e.mjs",
+    "e2e/insights-live.e2e.mjs",
+    "e2e/insights-live-editing.e2e.mjs",
+    "e2e/insights-drilldown.e2e.mjs",
+    "e2e/insights-variable-filter.e2e.mjs",
+    "e2e/insights-widget-audit.e2e.mjs",
+    "e2e/insights-builder.e2e.mjs",
+    "e2e/insights-tooltip-query.e2e.mjs",
+    "e2e/insights-explorer.e2e.mjs",
+    "e2e/insights-observability.e2e.mjs",
+    "e2e/insights-portable.e2e.mjs",
+    "e2e/insights-import-review.e2e.mjs",
+    "e2e/insights-dashboard-query.e2e.mjs",
+  ]
+  for (const script of scripts) await run(script, baseURL)
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   process.exitCode = 1

@@ -145,3 +145,41 @@ to add `credentialsSecretRef` and it still converges endpoint drift.
 Report the provider identity and UTC interval queried, the strongest signals,
 what each establishes, what remains unproven, and the next discriminating
 check.
+
+## Read a dashboard as live signals
+
+Use `list_dashboards` to find a saved dashboard. `get_dashboard` reads its
+definition; `query_dashboard` executes it and returns a compact machine-readable
+snapshot using the same saved queries, parameter bindings and service filter as
+the UI. It requires only `paprika:observe` plus the user's Insights read and
+provider access. An agent does not need authoring consent to read a dashboard.
+
+```json
+{"tool":"query_dashboard","arguments":{"id":"service-overview","variables":{"service":"uptime-api"}}}
+{"tool":"query_dashboard","arguments":{"id":"service-overview","widget_ids":["request-rate"],"variables":{"service":"uptime-api"},"history_points":12}}
+```
+
+Replace the example IDs and variable names with those in the actual dashboard.
+Overrides apply only to this call, never to saved defaults. Omit `start`/`end`
+to use the saved range, or pass both as RFC3339 bounds (maximum 31 days).
+The response records the resolved range, variables, observation time, dashboard
+ETag and saved-query ETags so later reads can be compared reproducibly.
+
+Treat `structuredContent` as authoritative. Widgets reference deduplicated
+signals; a stat card and graph sharing a query execute it once. Metrics contain
+the exact latest finite value and timestamp, min/max and valid/missing sample
+counts. `decimals` is presentation metadata; numbers retain provider precision.
+History is omitted by default. Request 2–32 `history_points` for a selected
+widget when a small trend is needed. `max_series` defaults to 3 (maximum 8),
+and `max_traces` defaults to 3 (maximum 10).
+
+`state` describes data availability, never service health or SLO compliance.
+Keep widget errors, empty signals, missing tails and truncation flags visible.
+An unavailable provider must not become zero traffic; an older finite reading
+must not be presented as a current sample. Trace counts describe the bounded
+returned sample, not total traffic, and unknown trace status stays unknown.
+Layout and query expressions are omitted. Tooltip-only queries need a hovered
+observation and are not executed. Plugin widgets expose their underlying query
+data, not the plugin's arbitrary rendering behavior. Narrow `widget_ids` after
+a result-size limit; do not repeatedly request the whole dashboard.
+

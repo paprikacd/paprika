@@ -89,7 +89,7 @@ func insightsRequestPermission(r *http.Request) (auth.Action, auth.Resource) {
 	if r.URL.Path == InsightsPrefix+"/provider-configs" || strings.HasPrefix(r.URL.Path, InsightsPrefix+"/provider-configs/") {
 		return auth.ActionAdmin, auth.ResourceInsights
 	}
-	readPost := r.Method == http.MethodPost && (r.URL.Path == InsightsPrefix+"/query" || (strings.HasPrefix(r.URL.Path, InsightsPrefix+"/providers/") && strings.HasSuffix(r.URL.Path, "/test")))
+	readPost := r.Method == http.MethodPost && (r.URL.Path == InsightsPrefix+"/query" || r.URL.Path == InsightsPrefix+"/query-dashboard" || (strings.HasPrefix(r.URL.Path, InsightsPrefix+"/providers/") && strings.HasSuffix(r.URL.Path, "/test")))
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || readPost {
 		return auth.ActionRead, auth.ResourceInsights
 	}

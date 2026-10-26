@@ -48,7 +48,7 @@ func TestObservabilityInsightsRegistrationRequiresExplicitConfiguration(t *testi
 				return
 			}
 			require.Equal(t, []mcp.Scope{mcp.ScopeObserve, mcp.ScopeInsightsWrite}, scopes)
-			require.Len(t, registry.All(), 9)
+			require.Len(t, registry.All(), 10)
 			for _, name := range []string{"create_saved_query", "update_saved_query", "create_dashboard", "update_dashboard"} {
 				tool, found := registry.Lookup(name)
 				require.True(t, found, name)
