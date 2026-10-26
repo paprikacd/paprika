@@ -2,9 +2,11 @@
 
 Date: 2026-10-26.
 
-**Status: implemented and validated locally; live deployment and native-client
-acceptance are pending.** The earlier [Omega validation](omega-validation.md)
-covers provider/query integration, not this new MCP authoring capability.
+**Status: deployed to Omega and validated through live MCP and UI flows.**
+Existing native clients need a fresh authoring consent grant; their previous
+read-only credentials are unchanged. The earlier
+[Omega validation](omega-validation.md) covers the underlying provider/query
+integration.
 
 ## Implemented contract
 
@@ -153,7 +155,7 @@ No live result is inferred from these local checks.
 ### Browser integration receipt
 
 `artifacts/insights/observe-authoring/report.json`, timestamp
-**2026-10-26T04:25:53.701Z**, records **15/15 scenarios passed and zero page
+**2026-10-26T04:51:42.056Z**, records **15/15 scenarios passed and zero page
 errors**. The test uses the real MCP transport, authenticated API proxy,
 Insights file storage, Observe handlers, provider authorization and native
 connectors against local deterministic telemetry/Kubernetes fixtures.
@@ -179,13 +181,54 @@ These are local fixture results. OAuth protocol tests exercise native grant
 semantics, while the browser fixture uses scoped test credentials. Neither is
 proof that an installed Codex/Claude client has obtained the new live grant.
 
-## Live acceptance pending
+## Live Omega acceptance
 
-Before claiming live completion, record the deployed immutable image/commit,
-verify the authoring scope and tool inventory on the live endpoint, complete
-fresh native OAuth consent with both scopes, and exercise create/get/update and
-stale-write rejection against the deployed shared store. Open the resulting
-saved dashboard in the live UI and verify its saved query, service selector,
-two-decimal value and sparkline against the real authorized providers. Confirm
-Observe-only grants still cannot write, and record cleanup or retention of any
-validation documents. Append those receipts here when completed.
+The final run at **2026-10-26T05:02:22.694Z** passed **10/10 scenarios**, with
+zero browser errors. Receipt:
+`artifacts/insights/omega-authoring/20261026050157/report.json`.
+
+- Source commit: `fd99705e6f19f82dc6caefdfd37e37715a37fd28`.
+- [Successful amd64 image build](https://github.com/paprikacd/paprika/actions/runs/40271306365).
+- Immutable image:
+  `ghcr.io/paprikacd/paprika@sha256:16ff52c034591f742e0c15baac7bef14eec3abb6dd83501acbee355c8bce0582`.
+- Helm release `paprika-e2e`, revision **43**, deployed on Omega. All six
+  deployments were ready. Only API, Observe gateway and Insights changed;
+  existing providers, credentials and storage were preserved.
+- Live OAuth metadata advertises both Observe and Insights authoring scopes.
+  The test's existing Observe-only credential was denied authoring access.
+
+[Open the retained MCP-authored dashboard](https://paprika.benebsworth.com/dashboard/insights/?dashboard=omega-mcp-dashboard-20261026050157).
+It references saved queries `omega-mcp-metric-20261026050157` and
+`omega-mcp-traces-20261026050157`.
+
+The MCP-created documents appeared in an already-open UI. Cuttlefish Prometheus
+returned **301 samples** for **03:59–04:59 UTC** at a 12-second step. An MCP edit
+that deliberately doubled the CPU expression changed the selected value from
+`2.0070175438596585` to `4.014035087719317`, along with its history extrema.
+The retained demo explains this doubling. Selecting `brandbrain` versus
+`telesis` displayed **4.01%** versus **6.32%**, with matching sparkline histories.
+The separate Tempo saved query returned its bounded **100 trace rows** for
+`uptime-api`. The trace result limit remains visible in the UI.
+
+Dashboard title/description and query metadata updates appeared without a
+browser reload. Read-only writes and stale versions were rejected, and the
+current stored documents remained intact. Light and dark modes passed at
+1512px and 390px, including service selection, decimal formatting and absence
+of horizontal overflow.
+
+The run verified **16 compressed responses** where a weak HTTP ETag coexisted
+with the strong application document version. A visible UI Save sent the exact
+strong `If-Match`, received HTTP 200, and MCP returned that exact submitted
+document and new version. This closes the live compression issue rather than
+only demonstrating it through a local fixture.
+
+Checksums confirm the pre-existing dashboard and its two saved queries were
+unchanged across deployment. Nine documents from the three incomplete test
+runs were removed after taking private recovery copies; the completed demo and
+the original workspace remain. Deployment, image, preservation and cleanup
+receipts are under `artifacts/insights/omega-authoring/`.
+
+Live protocol checks used short-lived validation credentials. Native OAuth
+grant semantics passed locally; this does not claim an installed Codex/Claude
+connection was silently reauthorized. Use the fresh native sign-in instructions
+above to enable authoring on an existing connection.
