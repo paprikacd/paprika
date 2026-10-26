@@ -2,6 +2,8 @@
 
 Date: 2026-10-26.
 
+**Status: deployed to Omega and validated against real Prometheus and Tempo.**
+
 ## Data path
 
 The Insights service now uses Paprika Observe's MCP tools for shared provider
@@ -81,3 +83,48 @@ layouts passed. MCP authoring and UI save/readback continued to work with
 strict document versions. Screenshots and JSON receipts are under
 `artifacts/insights/observability/`, `observe-authoring/` and
 `omega-authoring/fixture/`. These are local fixture results, not live receipts.
+
+## Live Omega acceptance
+
+At **2026-10-26T06:03:26Z**, all **10/10** live browser scenarios passed with
+zero page errors. [Open the retained demonstration dashboard](https://paprika.benebsworth.com/dashboard/insights/?dashboard=omega-mcp-dashboard-20261026054753).
+In **Data sources**, expand **Paprika Observe MCP** to see the connected
+gateway's nine supported read tools and three discovered providers, then choose
+**Explore provider** to build a query.
+
+- Source commit: `60e12b27518d98e6efecd90452c8e9e36290ed79`.
+- [Successful amd64 image build](https://github.com/paprikacd/paprika/actions/runs/40276639982).
+- Image: `ghcr.io/paprikacd/paprika@sha256:9b09a7f21922152446ec9706174e6009c7ca720bb7fb089c89af532dc2b7b46d`.
+- Helm release `paprika-e2e`, revision **44** on Omega; all six components ready.
+- Only API, Observe gateway and Insights images changed across 66 rendered
+  resources. The existing live OAuth client registration was retained.
+
+The gateway recorded **nine `query_metrics` calls** and **six `query_traces`
+calls** from UI data requests; the script made neither query tool call directly.
+All data tools reported zero errors. Discovery counters included 34 provider
+listings, two metric-name calls, two label-name calls, one label-value call and
+one metric-series call. Legacy `dashboard_list_providers`, `dashboard_query`
+and `dashboard_explore` counters stayed at zero.
+
+The real Cuttlefish Prometheus query returned **301 samples** for
+**05:00–06:00 UTC** at a 12-second step. An MCP edit deliberately doubled the
+query to prove that a saved-query change updates the open widget; the retained
+demo explicitly explains that scaling. Selecting `brandbrain` and `telesis`
+showed **4.01%** and **6.27%**, respectively, with the matching history and
+unchanged saved service default. Metric inspection returned ten stored series
+and two service-label values. These are bounded observations, not a claim of
+global cardinality.
+
+The real Tempo provider returned its bounded **100 trace rows** for `uptime-api`,
+with the result-limit notice visible. The service filter belongs to the metrics
+saved query; Tempo retains its separate query and service vocabulary. Both
+themes passed at 1512px and 390px widths. Strict stale-write rejection, read-only
+scope denial and UI save → MCP readback passed, including sixteen transformed
+responses retaining their strong application document versions.
+
+The pre-existing two dashboards and four saved queries retain their exact
+documents and versions. The successful demo adds one dashboard and two saved
+queries. Short-lived validation credentials were used for these protocol and
+browser checks; no client OAuth grant was replaced. Receipts, screenshots,
+image/deployment metadata and document-preservation checks are under
+`artifacts/insights/omega-mcp-data-source/`.

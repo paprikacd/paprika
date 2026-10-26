@@ -44,6 +44,7 @@ do not invent pagination or equate a bounded list with a complete inventory.
 
 ```json
 {"tool":"list_metric_names","arguments":{"provider":"monitoring/prometheus","limit":20}}
+{"tool":"list_metric_series","arguments":{"provider":"monitoring/prometheus","metric":"http_requests_total","limit":100}}
 {"tool":"list_label_names","arguments":{"provider":"monitoring/prometheus","metric":"http_requests_total","limit":20}}
 {"tool":"list_label_values","arguments":{"provider":"monitoring/prometheus","label":"namespace","metric":"http_requests_total","limit":20}}
 {"tool":"get_metric_metadata","arguments":{"provider":"monitoring/prometheus","metric":"http_requests_total"}}
@@ -56,6 +57,12 @@ answering `NotAvailable` means that capability does not exist for the provider
 type — it is data, not an error. Google Cloud Monitoring label values are not
 enumerable, and the optional `namespace` argument scopes AWS CloudWatch
 enumeration only.
+
+For dashboard label inspection, pass explicit `start` and `end` RFC 3339
+bounds. `list_metric_series` enumerates a bounded series sample, not a global
+active-series count. Paprika Insights consumes these tools through the same
+Observe MCP endpoint; its native PromQL/TraceQL editors, saved-query parameters,
+dashboard service filters and tooltip bindings remain the authoring surface.
 
 `query` is always the connector's native language — there is no gateway
 dialect. Check the provider type and use its language:

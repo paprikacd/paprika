@@ -7,7 +7,9 @@ description: Query logs, metrics, and traces through the Paprika observability g
 
 The observability gateway is a second MCP surface at
 `https://<paprika-host>/observe/mcp`, separate from the fleet surface at `/mcp`.
-All thirteen tools are read-only and require the `paprika:observe` scope. A
+The fourteen telemetry tools are read-only and require `paprika:observe`.
+When Insights is configured, separate document authoring tools additionally
+require `paprika:insights:write` and the user's Insights write permission. A
 token minted for the fleet or console surface is not replayable here: the
 gateway verifies the `paprika-observability` audience. Connect through the
 host's native OAuth flow for this exact endpoint. Never request pasted tokens,
@@ -40,16 +42,21 @@ Discover what the backend actually exposes before writing a query:
 
 ```json
 {"tool":"list_metric_names","arguments":{"provider":"monitoring/prometheus","prefix":"http"}}
+{"tool":"list_metric_series","arguments":{"provider":"monitoring/prometheus","metric":"http_requests_total","limit":100}}
 {"tool":"list_label_names","arguments":{"provider":"monitoring/prometheus","metric":"http_requests_total"}}
 {"tool":"list_label_values","arguments":{"provider":"monitoring/prometheus","label":"namespace","metric":"http_requests_total"}}
 {"tool":"get_metric_metadata","arguments":{"provider":"monitoring/prometheus","metric":"http_requests_total"}}
 {"tool":"list_trace_services","arguments":{"provider":"tracing/tempo"}}
 ```
 
-These five tools answer in the backend's own JSON envelope, so what you find
+These six tools answer in the backend's own JSON envelope, so what you find
 is what you can query. `get_metric_metadata` tells you the type: `rate()` a
 counter, read a gauge directly. A metric name existing does not prove recent
 samples — a `rate()` window needs at least two points inside it.
+
+Use explicit `start` and `end` bounds when inspecting labels for a dashboard
+window. `list_metric_series` returns a bounded sample, so its cardinality is
+approximate and must not be described as a global active-series count.
 
 Not every connector implements every exploration kind. A `NotAvailable` result
 means that capability does not exist for that provider type — it is data, not

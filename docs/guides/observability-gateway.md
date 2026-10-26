@@ -55,7 +55,7 @@ Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observ
 
 ## The MCP surface
 
-Thirteen telemetry tools, all read-only and requiring `paprika:observe`:
+Fourteen telemetry tools, all read-only and requiring `paprika:observe`:
 
 | Tool | Purpose |
 |---|---|
@@ -65,6 +65,7 @@ Thirteen telemetry tools, all read-only and requiring `paprika:observe`:
 | `query_metrics` | PromQL instant/range query (prometheus/otlp) |
 | `query_traces` | TraceQL search or `trace_id` fetch (tempo/otlp) |
 | `list_metric_names` | Enumerate a metrics provider's metric names (`prefix`/`limit` filters) |
+| `list_metric_series` | Bounded metric series/label sets in a time range; supports approximate cardinality inspection |
 | `list_label_names` | Label names — globally or on one `metric` (prometheus/loki/tempo tags) |
 | `list_label_values` | One `label`'s values, optionally constrained to a `metric` |
 | `get_metric_metadata` | One metric's type/help/unit (prometheus `/api/v1/metadata`) |
@@ -72,6 +73,12 @@ Thirteen telemetry tools, all read-only and requiring `paprika:observe`:
 | `list_provider_types` | The provider-type catalog (library view) |
 | `describe_provider_type` | One type's config schema + onboarding walkthrough |
 | `validate_provider` | Offline syntax validation of prospective provider configuration |
+
+Metric, label and trace-service exploration accepts optional RFC 3339 `start`
+and `end` bounds. Series enumeration defaults to the trailing thirty minutes;
+explicit windows are limited to 31 days. A bounded series sample is not a
+global active-series count. Insights consumes the supported Prometheus/Tempo
+tools through this MCP endpoint using the signed-in user's delegated access.
 
 When Insights is configured, the same MCP endpoint additionally exposes:
 
