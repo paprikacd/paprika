@@ -124,15 +124,21 @@ async function contrast(locator) {
   return locator.evaluate(element => {
     const rgb = value => { const match = value.match(/^rgba?\(([^)]+)\)$/); if (!match) throw new Error(`Unsupported computed color ${value}`); return match[1].split(/[,\s/]+/).filter(Boolean).map(Number) }
     const fg = rgb(getComputedStyle(element).color)
-    let bg = [255, 255, 255], current = element
+    let bg = [255, 255, 255], current = element, backgroundFound = false
+    const transitions = []
     while (current) {
       const color = rgb(getComputedStyle(current).backgroundColor)
-      if (color.length === 3 || color[3] === 1) { bg = color; break }
+      if (!backgroundFound && (color.length === 3 || color[3] === 1)) { bg = color; backgroundFound = true }
+      for (const animation of current.getAnimations()) {
+        if (animation instanceof CSSTransition && (animation.pending || animation.playState === "running") && /color|background/.test(animation.transitionProperty)) {
+          transitions.push({ element: current.tagName, property: animation.transitionProperty, state: animation.playState, pending: animation.pending })
+        }
+      }
       current = current.parentElement
     }
     const luminance = color => color.slice(0, 3).map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0)
     const colors = [luminance(fg), luminance(bg)].sort((a, b) => b - a)
-    return { ratio: (colors[0] + .05) / (colors[1] + .05), foreground: fg, background: bg }
+    return { ratio: (colors[0] + .05) / (colors[1] + .05), foreground: fg, background: bg, theme: element.closest("[data-insights-theme]")?.getAttribute("data-insights-theme"), reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches, transitions }
   })
 }
 // Capture native viewports: full-page capture can resize the browser's scroll
@@ -243,12 +249,24 @@ try {
     })
     await check(`System appearance responds to color scheme changes at ${width}px`, async () => {
       await selectGammaOption(page, appearance(), "System")
+      const appearances = []
       for (const colorScheme of ["light", "dark"]) {
         await page.emulateMedia({ colorScheme })
         await until(async () => await page.locator(`[data-insights-theme="${colorScheme}"]`).count() > 0, `System appearance did not follow ${colorScheme}`)
-        assert.ok((await contrast(displayed())).ratio >= 4.5)
+        const samples = []
+        await until(async () => {
+          const sample = await contrast(displayed()); samples.push(sample)
+          if (samples.length > 8) samples.shift()
+          return sample.theme === colorScheme && sample.transitions.length === 0 && sample.ratio >= 4.5
+        }, `System ${colorScheme} appearance did not settle at readable contrast`).catch(error => {
+          throw new Error(`${error.message}; recent computed colors: ${JSON.stringify(samples)}`, { cause: error })
+        })
+        const settled = samples.at(-1)
+        assert.equal(settled.theme, colorScheme)
+        assert.ok(settled.ratio >= 4.5, `Value contrast ${settled.ratio} in system ${colorScheme}: ${JSON.stringify(samples)}`)
+        appearances.push({ colorScheme, samples })
       }
-      return { followsSystem: true }
+      return { followsSystem: true, appearances }
     })
   }
   assert.equal(requests.some(entry => entry.query?.includes("dormant_query_must_not_run")), false)
