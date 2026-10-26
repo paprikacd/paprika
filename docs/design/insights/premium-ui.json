@@ -1,0 +1,19 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["ui/src/features/insights"],
+  "locale": "en",
+  "canonicalMap": "docs/design/insights/UX-CONTRACT.md",
+  "requiredCapabilities": ["Table Selection", "Select/Listbox", "Date", "Form", "Scrollbar", "Toast", "CRUD"],
+  "ownership": {"Select/Listbox": "authored", "Date": "native"},
+  "requiredCommands": ["unit", "e2e", "typecheck", "build"],
+  "commands": {
+    "unit": "rtk proxy npm --prefix ui test",
+    "e2e": "rtk proxy env INSIGHTS_E2E_URL=http://127.0.0.1:3015 node ui/e2e/run-insights.mjs",
+    "typecheck": "rtk proxy npm --prefix ui exec -- tsc --project ui/tsconfig.json --noEmit --pretty false",
+    "build": "rtk proxy npm --prefix ui run build"
+  },
+  "evidence": {
+    "crudFullFlow": "ui/e2e/insights.e2e.mjs",
+    "failurePaths": "ui/e2e/insights-live.e2e.mjs"
+  }
+}

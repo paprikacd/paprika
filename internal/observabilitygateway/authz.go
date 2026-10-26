@@ -156,7 +156,7 @@ func RequireObserveScope(authenticator Authenticator, publicURL, routePrefix str
 					gatewayError{Error: "insufficient_scope", ErrorDescription: "the paprika:observe scope is required"})
 				return
 			}
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
 		})
 	}
 }

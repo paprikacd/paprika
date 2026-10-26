@@ -53,6 +53,7 @@ describe("AppShell navigation", () => {
       ["Overview", "/dashboard/"],
       ["Applications", "/dashboard/applications/"],
       ["Fleet map", "/dashboard/map/"],
+      ["Insights", "/dashboard/insights/"],
       ["Pipelines", "/dashboard/pipelines/"],
       ["Rollouts", "/dashboard/rollouts/"],
       ["Sync & diff", "/dashboard/diff/"],
@@ -74,6 +75,15 @@ describe("AppShell navigation", () => {
     const skipLink = screen.getByRole("link", { name: "Skip to fleet content" })
     expect(skipLink).toHaveAttribute("href", "#dashboard-main")
     expect(skipLink).toHaveClass("bg-primary", "text-primary-foreground")
+  })
+
+  it.each(["/dashboard/insights", "/dashboard/insights/"])("lets Insights own its full workspace at %s", (pathname) => {
+    navigation.pathname = pathname
+    const { container } = render(<AppShell><main aria-label="Insights workspace">Query and results</main></AppShell>)
+    expect(screen.getByRole("main", { name: "Insights workspace" })).toBeInTheDocument()
+    expect(screen.queryByRole("navigation", { name: "Fleet sections" })).not.toBeInTheDocument()
+    expect(container.querySelector("[data-dashboard-shell-content]")).toBeNull()
+    expect(screen.getAllByRole("main")).toHaveLength(1)
   })
 
   it("groups destinations under the three fleet sections", () => {

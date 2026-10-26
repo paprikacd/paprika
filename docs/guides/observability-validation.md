@@ -43,7 +43,7 @@ nonempty public-origin JWT issuer and the `paprika-observability` audience.
 
 Backend calls have a 30 second overall deadline and a four-operation process limit.
 Excess work is rejected immediately. Query windows default to the trailing 30 minutes,
-must be ordered, and cannot exceed 24 hours. The default result limit is 100 and the
+must be ordered, and cannot exceed 31 days. The default result limit is 100 and the
 maximum is 1000. These are safety budgets, not measured production capacity. The
 listener also honors `--api-max-conns`, bounds protocol requests through response
 serialization/writing, and drains requests during shutdown. Slow request bodies

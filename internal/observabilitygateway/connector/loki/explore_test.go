@@ -57,6 +57,7 @@ func TestExploreMetricKindsAreNotServed(t *testing.T) {
 	for _, kind := range []connector.ExploreKind{
 		connector.ExploreMetricNames,
 		connector.ExploreMetricMetadata,
+		connector.ExploreMetricSeries,
 		connector.ExploreTraceServices,
 	} {
 		res, err := Loki{}.Explore(context.Background(), connector.ExploreRequest{

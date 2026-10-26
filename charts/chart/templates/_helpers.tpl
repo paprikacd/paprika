@@ -23,6 +23,19 @@ If release name contains chart name it will be used as a full name.
 {{- end }}
 {{- end }}
 
+{{/* Shared secret and destination for the in-process Insights API proxy. */}}
+{{- define "paprika.insightsEnv" -}}
+{{- if .Values.insights.enabled }}
+- name: PAPRIKA_INSIGHTS_URL
+  value: http://{{ include "paprika.resourceName" (dict "suffix" "insights" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:8090
+- name: PAPRIKA_INSIGHTS_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "insights.token.existingSecretName is required when Insights is enabled" .Values.insights.token.existingSecretName }}
+      key: {{ .Values.insights.token.existingSecretKey | default "token" }}
+{{- end }}
+{{- end }}
+
 {{/*
 Namespace for generated references.
 Always uses the Helm release namespace.

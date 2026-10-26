@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -104,7 +105,7 @@ type ServerConfig struct {
 
 	// SupportedScopes is the set of scopes this authorization server grants
 	// and advertises in discovery metadata. Empty defaults to read+write. The
-	// observability gateway grants only ScopeObserve.
+	// observability gateway grants ScopeObserve, plus optional ScopeInsightsWrite.
 	SupportedScopes []Scope
 
 	// DisableConsoleResources suppresses registration of the interactive
@@ -368,7 +369,7 @@ func resolveGrants(cfg *ServerConfig) (string, []Scope, error) {
 		supportedScopes = []Scope{ScopeRead, ScopeWrite}
 	}
 	for _, sc := range supportedScopes {
-		if sc != ScopeRead && sc != ScopeWrite && sc != ScopeObserve {
+		if !isKnownScope(sc) {
 			return "", nil, fmt.Errorf("mcp: ServerConfig.SupportedScopes contains unknown scope %q", sc)
 		}
 	}
@@ -416,12 +417,7 @@ func validatePublicURL(publicURL string) error {
 // matches this package's request/response tool-call model and lets a caller
 // invoke a tool without first running the initialize handshake.
 func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler {
-	description := "Application delivery, fleet health, drift, and deployment diagnostics."
-	instructions := "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
-	if s.disableConsoleResources {
-		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
-		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
-	}
+	description, instructions := serverDescriptionAndInstructions(s.disableConsoleResources, s.supportedScopes)
 	sdkSrv := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:        implementationName,
 		Title:       "Paprika",
@@ -477,6 +473,21 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 	)
 }
 
+func serverDescriptionAndInstructions(disableConsoleResources bool, supportedScopes []Scope) (description, instructions string) {
+	description = "Application delivery, fleet health, drift, and deployment diagnostics."
+	instructions = "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
+	if disableConsoleResources {
+		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
+		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
+		if slices.Contains(supportedScopes, ScopeInsightsWrite) {
+			description = "Observability discovery, compact dashboard query bundles, and authorized saved-query and dashboard authoring."
+			instructions = "Prefer query_dashboard when a saved dashboard covers the question. Discover its ID with list_dashboards, inspect its variables with get_dashboard when needed, and pass a variables map to query_dashboard for shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing/error/truncation states and document versions; text is a compact synopsis. This read requires paprika:observe and existing Insights/provider read permission, not authoring consent. For standalone provider queries: " + instructions
+			instructions += " Saved-query and dashboard creation or updates additionally require explicit paprika:insights:write consent and Insights write permission. Discover Insights providers and read current documents first. Create with a new ID; update using the exact ETag just read. Changes appear in the Insights UI. This scope grants no provider configuration or fleet delivery writes."
+		}
+	}
+	return description, instructions
+}
+
 // Handler returns the http.Handler that serves the MCP protocol. It
 // authenticates every request with the configured Authenticator before
 // delegating to the underlying Streamable HTTP handler, so an unauthenticated
@@ -509,8 +520,8 @@ const consoleCredentialTTL = 30 * time.Second
 
 // mintConsoleCredential mints a short-lived, unscoped self-signed token for
 // the in-process Connect request tools/call issues, carrying p's real
-// subject/email/name so the audit trail records the actual acting user
-// rather than a service identity. Its audience is auth.ConsoleAPIAudience,
+// subject/email/name and exact groups so the audit trail records the acting
+// user rather than a service identity. Its audience is auth.ConsoleAPIAudience,
 // distinct from this server's own MCP-audience tokens (MCPTokenAudience) —
 // see transport.go's internalCredentialKey doc comment for why forwarding
 // the caller's own MCP-audience token instead would defeat the console
@@ -526,6 +537,7 @@ func (s *Server) mintConsoleCredential(p *auth.Principal) (string, error) {
 		Subject:  p.Subject,
 		Email:    p.Email,
 		Name:     p.Name,
+		Groups:   append([]string{}, p.Groups...),
 		Audience: auth.ConsoleAPIAudience,
 		TTL:      consoleCredentialTTL,
 		Secret:   s.secret,
@@ -879,29 +891,50 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 	return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
 }
 
-// toolErrorResult renders domain-level failures (entity missing, bad
-// arguments, conflicts) as a CallToolResult with IsError=true and the real
-// message — the model gets "application X not found", not an opaque
-// -32603. Only Connect codes that carry caller-actionable detail map;
-// anything else still falls to the internal-error path.
+// toolErrorResult preserves human-readable domain errors for MCP clients and
+// adds only a fixed machine code for data consumers. Operational errors carry
+// fixed text too: upstream endpoints, credentials and diagnostics stay private.
 func toolErrorResult(err error) *sdkmcp.CallToolResult {
-	var ce *connect.Error
-	if !errors.As(err, &ce) {
+	ce := toolConnectError(err)
+	if ce == nil {
 		return nil
 	}
-	if !toolActionableCode(ce.Code()) {
+	text, operational := operationalToolErrorText[ce.Code()]
+	if toolActionableCode(ce.Code()) {
+		text = ce.Error()
+		if inner := ce.Unwrap(); inner != nil {
+			text = inner.Error()
+		}
+	} else if !operational {
 		return nil
-	}
-	text := ce.Error()
-	if inner := ce.Unwrap(); inner != nil {
-		text = inner.Error()
 	}
 	return &sdkmcp.CallToolResult{
-		IsError: true,
-		Content: []sdkmcp.Content{
-			&sdkmcp.TextContent{Text: text},
-		},
+		IsError:           true,
+		StructuredContent: map[string]any{"error": map[string]string{"code": ce.Code().String()}},
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: text}},
 	}
+}
+
+func toolConnectError(err error) *connect.Error {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return ce
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, err)
+	default:
+		return nil
+	}
+}
+
+var operationalToolErrorText = map[connect.Code]string{
+	connect.CodeResourceExhausted: "tool execution capacity is exhausted; retry later",
+	connect.CodeDeadlineExceeded:  "tool execution timed out",
+	connect.CodeCanceled:          "tool execution was canceled",
+	connect.CodeUnauthenticated:   "tool authentication is required",
 }
 
 // toolActionableCode reports whether a Connect error code carries a
@@ -915,6 +948,7 @@ var actionableCodes = map[connect.Code]struct{}{
 	connect.CodeNotFound:           {},
 	connect.CodeInvalidArgument:    {},
 	connect.CodeAlreadyExists:      {},
+	connect.CodeAborted:            {},
 	connect.CodeFailedPrecondition: {},
 	connect.CodePermissionDenied:   {},
 }

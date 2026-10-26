@@ -11,9 +11,11 @@ https://<paprika-host>/observe/mcp
 
 on the same hostname and TLS identity as the console (`/mcp` keeps serving the
 fleet surface). Gateway tokens carry the **`paprika-observability`** audience and
-the **`paprika:observe`** scope, so a token minted for the console or fleet MCP
-surface is not replayable here and vice versa — even though all surfaces share
-the deployment's HMAC token secret.
+the **`paprika:observe`** scope for reads. When Insights is configured, the separate
+**`paprika:insights:write`** scope enables saved-query and dashboard authoring,
+subject to the user's Insights RBAC permissions. A token minted for the console
+or fleet MCP surface is not replayable here and vice versa — even though all
+surfaces share the deployment's HMAC token secret.
 
 For request budgets, scope boundaries, repeatable local checks, profiling and live
 acceptance, see [validation guidance](observability-validation.md).
@@ -25,7 +27,7 @@ Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observ
                      │ h2c
                      ▼
        Deployment/<release>-observability-gateway
-                     │  mcp.Server (RoutePrefix /observe, ScopeObserve only,
+                     │  mcp.Server (RoutePrefix /observe, ScopeObserve + optional authoring,
                      │  console resource extensions disabled, own embedded
                      │  consent page at /observe/consent)
                      ▼
@@ -53,7 +55,7 @@ Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observ
 
 ## The MCP surface
 
-Thirteen tools, all read-only, all requiring `paprika:observe`:
+Fourteen telemetry tools, all read-only and requiring `paprika:observe`:
 
 | Tool | Purpose |
 |---|---|
@@ -63,6 +65,7 @@ Thirteen tools, all read-only, all requiring `paprika:observe`:
 | `query_metrics` | PromQL instant/range query (prometheus/otlp) |
 | `query_traces` | TraceQL search or `trace_id` fetch (tempo/otlp) |
 | `list_metric_names` | Enumerate a metrics provider's metric names (`prefix`/`limit` filters) |
+| `list_metric_series` | Bounded metric series/label sets in a time range; supports approximate cardinality inspection |
 | `list_label_names` | Label names — globally or on one `metric` (prometheus/loki/tempo tags) |
 | `list_label_values` | One `label`'s values, optionally constrained to a `metric` |
 | `get_metric_metadata` | One metric's type/help/unit (prometheus `/api/v1/metadata`) |
@@ -70,6 +73,45 @@ Thirteen tools, all read-only, all requiring `paprika:observe`:
 | `list_provider_types` | The provider-type catalog (library view) |
 | `describe_provider_type` | One type's config schema + onboarding walkthrough |
 | `validate_provider` | Offline syntax validation of prospective provider configuration |
+
+Metric, label and trace-service exploration accepts optional RFC 3339 `start`
+and `end` bounds. Series enumeration defaults to the trailing thirty minutes;
+explicit windows are limited to 31 days. A bounded series sample is not a
+global active-series count. Insights consumes the supported Prometheus/Tempo
+tools through this MCP endpoint using the signed-in user's delegated access.
+
+When Insights is configured, the same MCP endpoint additionally exposes:
+
+| Tool | Required scope | Purpose |
+|---|---|---|
+| `list_insights_providers` | `paprika:observe` | Discover provider IDs used in saved UI documents |
+| `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags |
+| `list_dashboards`, `get_dashboard` | `paprika:observe` | Read shared dashboards and their ETags |
+| `query_dashboard` | `paprika:observe` | Execute a saved dashboard and read compact, versioned live signals with optional variable overrides |
+| `create_saved_query`, `create_dashboard` | `paprika:observe` + `paprika:insights:write` | Create a new shared document without replacing an existing ID |
+| `update_saved_query`, `update_dashboard` | `paprika:observe` + `paprika:insights:write` | Update a document using the exact ETag from its latest read |
+
+All document tools also enforce the user's global `insights` read/write RBAC.
+The authoring scope grants no fleet operations or provider configuration.
+Existing `paprika:observe` tokens remain read-only, including on refresh;
+authoring requires a fresh native OAuth grant that explicitly requests the new
+scope. An omitted-scope authorization request retains the read-only default.
+Create saved queries before dashboards that reference them, and preserve typed
+parameters and bindings. A stale update returns a conflict: reread the document
+and reconcile the intended edit instead of issuing a wildcard overwrite.
+
+The tools use the same persistent Insights service as the UI. Open workspaces
+refresh externally saved changes while protecting unsaved local drafts.
+Provider credentials and the Insights service token never enter tool responses.
+`query_dashboard` resolves the same saved-query bindings as the UI and executes
+identical panel queries once. Its structured result contains latest readings,
+range summaries, a bounded trace sample, document ETags and explicit
+missing/error/truncation states. History is opt-in; service overrides never
+modify saved defaults. Data availability is not a service-health verdict.
+See the [dashboard query contract](../design/insights/dashboard-query.md) for
+limits, examples and interpretation.
+See the [Observe plugin](../../plugins/paprika-observe/README.md) for connection
+and authoring guidance.
 
 The five exploration tools answer in the backend's own JSON envelope
 (`{"status":"success","data":[...]}` for prometheus/loki, `{"tagNames":[...]}`
@@ -290,7 +332,8 @@ Verify:
 curl -s https://paprika.benebsworth.com/.well-known/oauth-protected-resource/observe/mcp | jq .
 # { "resource": "https://paprika.benebsworth.com/observe/mcp",
 #   "authorization_servers": ["https://paprika.benebsworth.com/observe"],
-#   "scopes_supported": ["paprika:observe"] }
+#   "scopes_supported": ["paprika:observe", "paprika:insights:write"] }
+# The authoring scope is present only when Insights is configured.
 ```
 
 ## Autodiscovery from in-cluster Services
@@ -417,3 +460,27 @@ itself is agnostic to that: tools already accept any `namespace/name` provider.
 - `api/observability/v1alpha1/` — the `ObservabilityProvider` CRD
 - `internal/webhook/observability/v1alpha1/` — admission validation
 - `charts/chart/templates/observability-gateway/` — Deployment/Service/HTTPRoute/HPA/VPA/PDB
+
+## Dashboard and query integration
+
+Paprika Insights consumes the same authorized provider backend as the MCP tools.
+The gateway exposes `GET /observe/api/providers`, `POST /observe/api/query` and
+`POST /observe/api/explore` for this integration. These routes require an
+Observe-audience bearer token and `paprika:observe`, then enforce the caller's
+namespace RBAC before reading providers or credential Secrets. HTTP and MCP
+requests share the connector concurrency budget and bounded response limits.
+
+The query route accepts a canonical `namespace/name` provider, signal, native
+query, RFC3339 start/end, optional `stepSeconds`, limit and supported pagination
+fields. Windows are bounded to 31 days; metrics steps must be at least one
+second and produce at most 11,000 points. `query_metrics` accepts the equivalent
+`step_seconds` argument. Native response JSON and explicit provider outcome
+states are preserved. Exploration adds bounded metric series and Tempo tags,
+including truncation indicators, for label cardinality and editor completion.
+
+Insights only advertises Prometheus and Tempo adapters, maintains stable IDs
+from the full provider namespace/name, and normalizes results for existing
+widgets. Its API proxy mints a 30-second token for the authenticated human;
+it never queries as a shared service account. OAuth authorization and refresh
+also retain exact group membership. See the
+[Insights integration guide](../design/insights/README.md#shared-observability-mcp-providers).

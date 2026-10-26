@@ -413,6 +413,15 @@ jobs:
         run: npm run test:e2e -- fleet-console.spec.ts
         working-directory: ui
 
+      - name: Run Insights MCP and dashboard browser smoke
+        timeout-minutes: 10
+        run: >-
+          node e2e/run-insights.mjs
+          e2e/insights-dashboard-query.e2e.mjs
+          e2e/insights-observe-authoring.e2e.mjs
+          e2e/insights-variable-filter.e2e.mjs
+        working-directory: ui
+
       - name: Upload browser diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -421,6 +430,9 @@ jobs:
           path: |
             ui/playwright-report
             ui/test-results
+            artifacts/insights/dashboard-query
+            artifacts/insights/observe-authoring
+            artifacts/insights/variable-filter
           if-no-files-found: ignore
           retention-days: 14
 

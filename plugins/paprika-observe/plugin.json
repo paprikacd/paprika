@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "paprika-observe",
-  "version": "0.1.0",
-  "description": "Discover and query authorized Paprika observability providers for bounded logs, metrics, and traces with independent OAuth access.",
+  "version": "0.2.0",
+  "description": "Discover and query Paprika observability providers, and create or update saved queries and dashboards with explicitly authorized Insights access.",
   "author": {
     "name": "Paprika"
   },
@@ -19,12 +19,13 @@
     "com.openai": {
       "interface": {
         "displayName": "Paprika Observe",
-        "shortDescription": "Logs, metrics, and traces",
-        "longDescription": "Discover and query authorized Paprika observability providers for bounded logs, metrics, and traces with independent OAuth access.",
+        "shortDescription": "Telemetry and dashboard authoring",
+        "longDescription": "Discover and query Paprika observability providers, and create or update saved queries and dashboards with explicitly authorized Insights access.",
         "developerName": "Paprika",
         "category": "Developer Tools",
         "capabilities": [
-          "Read"
+          "Read",
+          "Write"
         ],
         "websiteURL": "https://paprika.benebsworth.com",
         "brandColor": "#E23B26",
@@ -33,7 +34,8 @@
         "defaultPrompt": [
           "Discover the observability providers and the signals each supports.",
           "Find metric names and labels before running a bounded metrics query.",
-          "Inspect recent logs and traces for one selected provider."
+          "Inspect recent logs and traces for one selected provider.",
+          "Create a saved query and dashboard from an authorized provider, then open it in Insights."
         ]
       }
     }

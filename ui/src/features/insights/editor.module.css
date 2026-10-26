@@ -1,0 +1,510 @@
+.editor {
+  padding: 25px 21px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  color: var(--gamma-ink);
+  font-size: 13px;
+}
+.editor *,
+.editor *::before,
+.editor *::after {
+  box-sizing: border-box;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.heading h2 {
+  margin: 4px 0 0;
+  font-size: 23px;
+  line-height: 1.2;
+  font-weight: 550;
+  letter-spacing: -0.8px;
+}
+.eyebrow {
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  font-weight: 650;
+  color: var(--gamma-muted);
+}
+.stack,
+.query,
+.guided {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  min-width: 0;
+}
+.tooltipShortcut,
+.tooltipIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tooltipShortcut {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--gamma-border);
+}
+.tooltipIntro h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.35;
+}
+.guided {
+  padding: 15px 0 2px;
+}
+.query details {
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  padding: 11px;
+  background: var(--gamma-surface);
+}
+.query summary {
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 550;
+}
+.field > input,
+.field > select,
+.field > textarea,
+.thresholdLabel input,
+.filterValue > select,
+.filterValue > button[role="combobox"] {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  background: var(--gamma-bg);
+  color: var(--gamma-ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 10px 11px;
+  outline: none;
+}
+.field > input:focus,
+.field > select:focus,
+.field > textarea:focus,
+.thresholdLabel input:focus,
+.filterValue > select:focus {
+  border-color: var(--gamma-accent);
+  box-shadow: var(--gamma-focus-ring);
+}
+.field > input[type="color"] {
+  padding: 4px;
+  height: 36px;
+  cursor: pointer;
+}
+.field > textarea {
+  resize: none;
+  line-height: 1.7;
+}
+.field .codeInput.codeInput {
+  --gamma-field-min-height: calc(5lh + 20px);
+  --gamma-field-font: var(--gamma-font-code);
+  --gamma-field-font-size: 12px;
+  field-sizing: fixed;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.row > .field {
+  flex: 1;
+  min-width: 85px;
+}
+.row > button {
+  flex: 1 1 auto;
+}
+.hint {
+  color: var(--gamma-muted);
+  font-size: 11px;
+  line-height: 1.65;
+  margin: 0;
+  font-weight: 400;
+}
+.primary,
+.secondary,
+.danger,
+.textButton,
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.3;
+  cursor: pointer;
+  border-radius: var(--gamma-radius-control);
+  padding: 10px 12px;
+  transition: background 130ms ease;
+}
+.primary {
+  background: var(--gamma-accent);
+  border: 1px solid var(--gamma-accent);
+  color: white;
+}
+.primary:hover {
+  background: color-mix(in srgb, var(--gamma-accent) 86%, var(--gamma-ink));
+}
+.secondary {
+  background: var(--gamma-bg);
+  border: 1px solid var(--gamma-border);
+  color: var(--gamma-ink);
+}
+.secondary:hover {
+  background: var(--gamma-surface-2);
+}
+.danger {
+  background: var(--gamma-bg);
+  border: 1px solid var(--gamma-border);
+  color: var(--gamma-danger);
+}
+.textButton {
+  background: transparent;
+  border: 0;
+  color: var(--gamma-muted);
+  padding: 8px 0;
+  font-size: 10px;
+}
+.iconButton {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex: none;
+  border: 1px solid transparent;
+  color: var(--gamma-muted);
+  background: transparent;
+}
+.iconButton:hover {
+  background: var(--gamma-surface-2);
+}
+.editor button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.editor button:focus-visible,
+.query summary:focus-visible {
+  outline: 2px solid var(--gamma-accent);
+  outline-offset: 3px;
+}
+.error,
+.notice,
+.success {
+  font-family: inherit;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--gamma-radius-control);
+  overflow-wrap: anywhere;
+}
+.error {
+  background: var(--gamma-danger-soft);
+  color: var(--gamma-danger);
+  border: 1px solid
+    color-mix(in srgb, var(--gamma-danger) 20%, var(--gamma-border));
+}
+.error button {
+  margin-top: 9px;
+}
+.notice {
+  background: var(--gamma-warning-soft);
+  color: var(--gamma-warning);
+  border: 1px solid
+    color-mix(in srgb, var(--gamma-warning) 15%, var(--gamma-border));
+}
+.success {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  background: var(--gamma-success-soft);
+  color: var(--gamma-success);
+  border: 1px solid
+    color-mix(in srgb, var(--gamma-success) 15%, var(--gamma-border));
+}
+.code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  padding: 10px;
+  background: var(--gamma-surface-2);
+  font:
+    10px/1.7 ui-monospace,
+    monospace;
+  margin: 0;
+}
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 1px solid var(--gamma-border);
+  padding-left: 10px;
+}
+.filterValue {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: end;
+}
+.filterValue > select,
+.filterValue > button[role="combobox"] {
+  width: 100%;
+  padding: 10px 8px;
+}
+.filterValue > button:last-child {
+  padding-inline: 0;
+}
+.filterValue > .iconButton {
+  margin-bottom: 5px;
+}
+.preview {
+  height: 210px;
+  min-height: 160px;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  padding: 12px;
+  background: var(--gamma-bg);
+  overflow: auto;
+}
+.thresholds {
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.thresholds legend {
+  font-size: 11px;
+  padding: 0 6px;
+  font-weight: 600;
+}
+.threshold {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 65px 44px;
+  gap: 8px;
+  align-items: end;
+}
+.thresholdLabel {
+  grid-column: 1/-1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--gamma-muted);
+}
+.thresholdLabel input {
+  flex: 1;
+}
+.moveRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.moveRow > span {
+  flex: 1;
+  font-size: 11px;
+}
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--gamma-border);
+  margin-top: 4px;
+  padding-top: 18px;
+}
+.providerList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.provider {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-panel);
+  background: var(--gamma-bg);
+}
+.providerTitle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.providerTitle > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.providerTitle strong {
+  font-size: 12px;
+}
+.providerTitle small {
+  font-size: 11px;
+  color: var(--gamma-muted);
+}
+.provider code {
+  font:
+    11px ui-monospace,
+    monospace;
+  color: var(--gamma-muted);
+  overflow-wrap: anywhere;
+}
+.providerURL {
+  margin: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  color: var(--gamma-muted);
+}
+.providerForm {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  border-top: 1px solid var(--gamma-border);
+  padding-top: 20px;
+}
+.providerForm h3 {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 550;
+}
+
+/* Keep layout hooks local; Gamma adapters own control appearance. */
+.editor {
+  background: var(--gamma-surface);
+}
+.heading {
+  padding-bottom: 4px;
+}
+.eyebrow {
+  color: var(--gamma-accent);
+  font-size: 10px;
+  letter-spacing: 1.35px;
+}
+.heading h2 {
+  font-size: 24px;
+  letter-spacing: -0.85px;
+  font-weight: 550;
+}
+.field {
+  gap: 8px;
+  font-size: 11px;
+  color: var(--gamma-ink);
+}
+.field > button[role="combobox"] {
+  width: 100%;
+}
+.query details {
+  background: var(--gamma-bg);
+  padding: 13px;
+}
+.preview,
+.thresholds,
+.provider {
+  background: var(--gamma-bg);
+  border-radius: var(--gamma-radius-panel);
+}
+.provider {
+  padding: 17px;
+}
+.providerTitle strong {
+  font-size: 13px;
+}
+.footer {
+  margin-top: 8px;
+  padding-top: 20px;
+}
+.filter {
+  border-left-color: color-mix(
+    in srgb,
+    var(--gamma-accent) 30%,
+    var(--gamma-border)
+  );
+  padding-left: 12px;
+}
+.iconButton {
+  flex: none;
+}
+@media (max-width: 600px) {
+  .editor {
+    padding: 22px 17px;
+  }
+}
+@media (pointer: coarse), (max-width: 700px) {
+  .filterValue {
+    grid-template-columns: 66px minmax(0, 1fr) 44px;
+  }
+  .query summary {
+    min-height: 44px;
+    align-content: center;
+  }
+}
+
+.contrastHint {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--gamma-radius-control);
+  background: var(--gamma-warning-soft);
+  color: var(--gamma-warning);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.previewStatus {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--gamma-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.previewStatus > span {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gamma-accent);
+}
+.field .sourceInput.sourceInput {
+  --gamma-field-min-height: 320px;
+  max-height: 55vh;
+  overflow: auto;
+  white-space: pre;
+}
+
+.providerManageLink {
+  color: var(--gamma-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.providerManageLink:focus-visible {
+  outline: 2px solid var(--gamma-accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}

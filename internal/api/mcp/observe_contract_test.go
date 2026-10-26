@@ -106,7 +106,7 @@ func TestObserveResourceIndicatorRejectsCrossSurfaceBeforeConsumingToken(t *test
 	assert.False(t, srv.validResource([]string{"https://paprika.example/observe/mcp#fragment"}))
 	assert.False(t, srv.validResource([]string{"https://paprika.example/observe/mcp", "https://paprika.example/mcp"}))
 	rec := httptest.NewRecorder()
-	srv.issueTokenPair(t.Context(), rec, "test", "user", "", "", "paprika:observe")
+	srv.issueTokenPair(t.Context(), rec, "test", "user", "", "", "paprika:observe", []string{})
 	var pair tokenResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &pair))
 	mux := http.NewServeMux()
@@ -217,8 +217,12 @@ func TestProtocolRequestContextRestoresAlreadyCancelledCarrier(t *testing.T) {
 	srv := newObservabilityTestServer(t, registry, nil)
 	srv.linkRequestCancellation = true
 	sdk = auth.WithPrincipal(sdk, &auth.Principal{Subject: "observe-user", Scopes: []string{string(ScopeObserve)}})
-	_, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
-	require.Error(t, err)
+	result, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	encoded, err := json.Marshal(result.StructuredContent)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"error":{"code":"canceled"}}`, string(encoded))
 	require.False(t, invoked, "already cancelled calls must not dispatch provider work")
 }
 

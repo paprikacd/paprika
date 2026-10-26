@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/audit"
@@ -94,7 +96,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	}
 	k8sClient = namespaceScopedAPIClient(k8sClient, cfg.APINamespace)
 
-	srv, authenticator, usage, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient)
+	srv, authenticator, usage, backend, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient)
 	if err != nil {
 		return err
 	}
@@ -136,7 +138,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	defer func() { _ = telemetry.Shutdown(gwCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
 	startGatewaySupportServers(gwCtx, ctx, cfg, setupLog)
 
-	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage)
+	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
 	return serveGatewayHTTP(gwCtx, cfg, mux)
 }
 
@@ -226,20 +228,41 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 // retained by slow clients. Metadata and health remain available under load.
 func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 	active := make(chan struct{}, 4)
+	catalog := make(chan struct{}, 4)
+	// Dashboard orchestration waits on nested data-tool requests. Giving it a
+	// separate small pool leaves data slots available and bounds aggregate work.
+	dashboards := make(chan struct{}, 2)
+	// Bound body classification too: a slow MCP upload must not allocate an
+	// unbounded number of readers before it reaches a work pool.
+	intake := make(chan struct{}, 8)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != observabilityGatewayRoutePrefix+"/mcp" {
+		if !isObservabilityProtocolRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		select {
-		case active <- struct{}{}:
-			defer func() { <-active }()
-			next.ServeHTTP(w, r)
-		default:
-			w.Header().Set("Retry-After", "1")
-			w.Header().Set("Cache-Control", "no-store")
-			http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
+		if !admitObservabilityRequest(w, intake) {
+			return
 		}
+		defer func() { <-intake }()
+		slots := active
+		requestClass := classifyObservabilityProtocolRequest(r)
+		switch requestClass {
+		case observabilityWorkRequest:
+			slots = active
+		case observabilityCatalogRequest:
+			slots = catalog
+		case observabilityDashboardRequest:
+			slots = dashboards
+		}
+		if !admitObservabilityRequest(w, slots) {
+			return
+		}
+		defer func() { <-slots }()
+		// Oversized or unclassifiable envelopes may still contain valid small
+		// query_dashboard arguments. They must not orchestrate nested work while
+		// holding a data-work slot; the tool checks this trusted context marker.
+		r = r.WithContext(observabilitygateway.WithDashboardQueryAdmission(r.Context(), requestClass == observabilityDashboardRequest))
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -251,9 +274,9 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 // /observe-shaped MCP server itself. The authenticator is returned alongside
 // the server because the usage endpoint mounts on the same mux and must
 // verify the same audience.
-func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, error) {
+func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, observabilitygateway.Backend, error) {
 	if len(authCfg.TokenSecret) == 0 {
-		return nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
+		return nil, nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
 	}
 	// Provider CRs select a cloud project and may reference credentials. OAuth
 	// scope alone must never grant every principal the gateway service account's
@@ -264,23 +287,27 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	registry := mcp.NewRegistry()
 	usage := observabilitygateway.NewUsageTracker()
 	if err := observabilitygateway.RegisterTools(registry, backend, usage); err != nil {
-		return nil, nil, nil, fmt.Errorf("register observability tools: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("register observability tools: %w", err)
 	}
 	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.ObservabilityTokenAudience, cfg.MCPPublicURL)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build authenticator: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("build authenticator: %w", err)
 	}
 	consoleAuthenticator, err := auth.BuildAuthenticator(ctx, authCfg)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build console authenticator: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("build console authenticator: %w", err)
 	}
 	var auditor audit.Auditor = audit.NoopAuditor{}
 	if cfg.AuditLogEnabled {
 		auditor = audit.NewLogAuditor()
 	}
+	supportedScopes, err := registerObservabilityInsights(ctx, registry, usage, authCfg, cfg.MCPPublicURL, auditor)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	clientRegistry, err := newMCPClientRegistry(ctx, cfg, k8sClient, observabilityGatewayRoutePrefix+"/mcp")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	srv, err := mcp.NewServer(mcp.ServerConfig{
 		Registry:                     registry,
@@ -300,7 +327,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		RoutePrefix:                  observabilityGatewayRoutePrefix,
 		ProtocolPath:                 observabilityGatewayRoutePrefix + "/mcp",
 		Audience:                     mcp.ObservabilityTokenAudience,
-		SupportedScopes:              []mcp.Scope{mcp.ScopeObserve},
+		SupportedScopes:              supportedScopes,
 		DisableConsoleResources:      true,
 		LinkRequestCancellation:      true,
 		// Query tool results are large, highly repetitive JSON; level 3 keeps
@@ -311,9 +338,9 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		// call the console Connect API.
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build mcp server: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("build mcp server: %w", err)
 	}
-	return srv, authenticator, usage, nil
+	return srv, authenticator, usage, backend, nil
 }
 
 // buildObservabilityMux mounts the gateway's public surface on one mux: the
@@ -326,7 +353,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 // and /healthz on the serve port (repo-server precedent) so load-balancer
 // checks and port-forward-based e2e setups can probe it; the kubelet keeps
 // using the dedicated health listener.
-func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthenticator, publicURL string, usage *observabilitygateway.UsageTracker) *http.ServeMux {
+func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthenticator, publicURL string, usage *observabilitygateway.UsageTracker, backend observabilitygateway.Backend) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle(observabilityGatewayRoutePrefix+"/mcp", srv.Handler())
 	srv.RegisterOAuthRoutes(mux)
@@ -341,6 +368,9 @@ func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthen
 	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/catalog", gatewayAPI(observabilitygateway.CatalogHandler()))
 	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/catalog/{type}", gatewayAPI(observabilitygateway.CatalogTypeHandler()))
 	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/validate", gatewayAPI(observabilitygateway.ValidateHandler()))
+	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/providers", gatewayAPI(observabilitygateway.DashboardProvidersHandler(backend, usage)))
+	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/query", gatewayAPI(observabilitygateway.DashboardQueryHandler(backend, usage)))
+	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/explore", gatewayAPI(observabilitygateway.DashboardExploreHandler(backend, usage)))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("ok")); err != nil {
@@ -389,4 +419,30 @@ func writeGatewayJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v) //nolint:errcheck // best-effort: the status/headers are already written
+}
+
+// Reuse the UI proxy so OAuth authoring cannot bypass human Insights RBAC or
+// access storage with the gateway service account's authority.
+func registerObservabilityInsights(ctx context.Context, registry *mcp.Registry, usage *observabilitygateway.UsageTracker, cfg auth.Config, publicURL string, auditor audit.Auditor) ([]mcp.Scope, error) {
+	scopes := make([]mcp.Scope, 1, 2)
+	scopes[0] = mcp.ScopeObserve
+	endpoint := os.Getenv("PAPRIKA_INSIGHTS_URL")
+	if endpoint == "" {
+		return scopes, nil
+	}
+	if !cfg.Enabled {
+		return nil, errors.New("insights MCP authoring requires authentication")
+	}
+	proxy, err := apiserver.NewInsightsProxy(ctx, cfg, endpoint, os.Getenv("PAPRIKA_INSIGHTS_TOKEN"), apiserver.InsightsProxyOptions{ObservabilityIssuer: publicURL})
+	if err != nil {
+		return nil, fmt.Errorf("configure Insights authoring proxy: %w", err)
+	}
+	authoring, err := observabilitygateway.NewInsightsAuthoringClient(proxy, cfg.TokenSecret, publicURL, auditor)
+	if err != nil {
+		return nil, fmt.Errorf("configure Insights authoring client: %w", err)
+	}
+	if err := observabilitygateway.RegisterInsightsTools(registry, authoring, usage); err != nil {
+		return nil, fmt.Errorf("configure Insights authoring tools: %w", err)
+	}
+	return append(scopes, mcp.ScopeInsightsWrite), nil
 }

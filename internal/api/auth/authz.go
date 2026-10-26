@@ -27,6 +27,7 @@ const (
 	ResourceTemplates    Resource = "templates"
 	ResourceArtifacts    Resource = "artifacts"
 	ResourceRollouts     Resource = "rollouts"
+	ResourceInsights     Resource = "insights"
 	// ResourceObservabilityProviders is the control-plane config namespace
 	// hosting ObservabilityProvider CRs and their credential Secrets.
 	// Providers are not project-scoped workload objects, so handlers

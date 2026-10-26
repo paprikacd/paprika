@@ -61,6 +61,13 @@ const DESTINATIONS: readonly Destination[] = [
     href: "/dashboard/clusters/",
   },
   {
+    id: "destination:insights",
+    label: "Insights",
+    group: "Go to",
+    description: "Dashboards, saved queries and metrics exploration",
+    href: "/dashboard/insights/",
+  },
+  {
     id: "destination:observability",
     label: "Observability",
     group: "Go to",

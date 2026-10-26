@@ -202,6 +202,7 @@ spec:
             readOnly: true
           {{- end }}
         env:
+        {{- include "paprika.insightsEnv" . | nindent 8 }}
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
         {{- include "paprika.githubActionsTokenExchangeEnv" . | nindent 8 }}

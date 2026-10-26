@@ -89,6 +89,7 @@ spec:
         command:
         - /manager
         env:
+        {{- include "paprika.insightsEnv" . | nindent 8 }}
         - name: POD_NAME
           valueFrom:
             fieldRef:

@@ -188,6 +188,7 @@ spec:
             readOnly: true
           {{- end }}
         env:
+        {{- include "paprika.insightsEnv" . | nindent 8 }}
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
         {{- include "paprika.githubActionsTokenExchangeEnv" . | nindent 8 }}
@@ -219,7 +220,7 @@ spec:
         - name: PAPRIKA_TLS_KEY
           value: /etc/paprika/tls/tls.key
         {{- end }}
-        {{- if .Values.mcp.enabled }}
+        {{- if or .Values.mcp.enabled .Values.observabilityGateway.enabled }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}
         {{- end }}

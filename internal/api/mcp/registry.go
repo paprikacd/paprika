@@ -45,8 +45,8 @@ func (r *Registry) Register(t Tool) error { //nolint:gocritic
 	switch {
 	case t.Name == "":
 		return errors.New("tool name is required")
-	case t.Scope != ScopeRead && t.Scope != ScopeWrite && t.Scope != ScopeObserve:
-		return fmt.Errorf("tool %q: scope must be %q, %q or %q", t.Name, ScopeRead, ScopeWrite, ScopeObserve)
+	case !isKnownScope(t.Scope):
+		return fmt.Errorf("tool %q: scope must be %q, %q, %q or %q", t.Name, ScopeRead, ScopeWrite, ScopeObserve, ScopeInsightsWrite)
 	case t.Invoke == nil:
 		return fmt.Errorf("tool %q: Invoke is required", t.Name)
 	case t.Destructive && t.Scope != ScopeWrite:

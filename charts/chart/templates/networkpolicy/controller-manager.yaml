@@ -39,6 +39,16 @@ spec:
           port: {{ .Values.metrics.port }}
         {{- end }}
   egress:
+    {{- if .Values.insights.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: insights
+      ports:
+        - protocol: TCP
+          port: 8090
+    {{- end }}
     - to: []
       ports:
         - protocol: TCP

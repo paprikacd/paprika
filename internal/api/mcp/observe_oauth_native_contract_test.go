@@ -22,8 +22,11 @@ const nativeContractRedirect = "http://127.0.0.1:8791/native-contract-callback"
 // This fixture deliberately does not use testIssuer (which is empty). Tokens
 // minted by the HTTP token endpoint must satisfy the real nonempty origin
 // issuer as well as the distinct observability audience.
-func newNativeOAuthContractServer(t *testing.T) (*Server, *http.ServeMux, string, string) {
+func newNativeOAuthContractServer(t *testing.T, scopes ...Scope) (*Server, *http.ServeMux, string, string) {
 	t.Helper()
+	if len(scopes) == 0 {
+		scopes = []Scope{ScopeObserve}
+	}
 	store, err := cache.New(t.Context(), cache.Config{Backend: cache.BackendMemory})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
@@ -34,7 +37,7 @@ func newNativeOAuthContractServer(t *testing.T) (*Server, *http.ServeMux, string
 		ConsoleAuthenticator: console, Confirmer: NewConfirmer(store, time.Minute), Auditor: &recordingAuditor{},
 		Cache: store, Secret: testSecret, PublicURL: nativeContractOrigin, AllowDynamicRegistrationOnly: true,
 		RoutePrefix: "/observe", ProtocolPath: "/observe/mcp", Audience: ObservabilityTokenAudience,
-		SupportedScopes: []Scope{ScopeObserve}, DisableConsoleResources: true,
+		SupportedScopes: scopes, DisableConsoleResources: true,
 	})
 	require.NoError(t, err)
 	mux := http.NewServeMux()
@@ -58,11 +61,14 @@ func newNativeOAuthContractServer(t *testing.T) (*Server, *http.ServeMux, string
 	return srv, mux, registration.ClientID, consoleBearer
 }
 
-func nativeContractConsentCode(t *testing.T, mux *http.ServeMux, clientID, consoleBearer string) string {
+func nativeContractConsentCode(t *testing.T, mux *http.ServeMux, clientID, consoleBearer string, scopes ...string) string {
 	t.Helper()
+	if len(scopes) == 0 {
+		scopes = []string{string(ScopeObserve)}
+	}
 	consented := postJSON(t, mux, "/observe/authorize/consent", consoleBearer, consentRequest{
 		ClientID: clientID, RedirectURI: nativeContractRedirect, State: "known-nonsecret-contract-state",
-		CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256", Scopes: []string{"paprika:observe"}, Decision: decisionApprove,
+		CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256", Scopes: scopes, Decision: decisionApprove,
 	})
 	require.Equal(t, http.StatusOK, consented.Code)
 	var handoff consentResponse

@@ -157,7 +157,7 @@ func TestUnsupportedProviderRejectsPageTokenBeforeCredentialRead(t *testing.T) {
 func TestToolsEnforceIntegerLimitsAndStablePaginationRange(t *testing.T) {
 	t.Parallel()
 	for _, tool := range []string{"query_metrics", "query_logs", "query_traces"} {
-		for _, suffix := range []string{`,"limit":1.5`, `,"limit":1001`, `,"limit":-1`, `,"limit":"10"`, `,"page_token":"next"`, `,"start":"2026-10-15T01:00:00Z","end":"2026-10-15T00:00:00Z"`, `,"start":"2026-10-13T00:00:00Z","end":"2026-10-15T00:00:00Z"`} {
+		for _, suffix := range []string{`,"limit":1.5`, `,"limit":1001`, `,"limit":-1`, `,"limit":"10"`, `,"page_token":"next"`, `,"start":"2026-10-15T01:00:00Z","end":"2026-10-15T00:00:00Z"`, `,"start":"2026-09-13T00:00:00Z","end":"2026-10-15T00:00:00Z"`} {
 			b := &fakeBackend{}
 			reg := newRegisteredTools(t, b)
 			_, err := invokeTool(t, reg, tool, `{"provider":"obs/prom","query":"up"`+suffix+`}`)

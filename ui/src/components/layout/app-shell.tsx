@@ -1,4 +1,7 @@
+"use client"
+
 import { Suspense, type ReactNode } from "react"
+import { usePathname } from "next/navigation"
 
 import {
   ConsoleHeader,
@@ -7,6 +10,12 @@ import {
 import { Sidebar } from "@/components/layout/sidebar"
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  // Insights owns its navigation and viewport-sized query workspace. Keeping
+  // the fleet shell around it would duplicate navigation and shrink editors.
+  if (pathname === "/dashboard/insights" || pathname.startsWith("/dashboard/insights/"))
+    return <>{children}</>
+
   return (
     <ConsoleScopeProvider>
       <div className="min-h-dvh bg-background">

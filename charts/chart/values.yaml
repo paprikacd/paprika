@@ -919,6 +919,61 @@ agent:
 
 ## API server authentication and authorization
 ##
+## Independent observability query and dashboard component. Available in both
+## deployment modes through the authenticated /api/insights/ proxy.
+insights:
+  enabled: false
+  # Uses the main Paprika image, which includes /insights. Override when needed.
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  token:
+    # Required when enabled; use the same >=32-character token in both services.
+    existingSecretName: ""
+    existingSecretKey: token
+  # With observabilityGateway.enabled, Insights also discovers authorized
+  # Prometheus/Tempo ObservabilityProvider CRs used by paprika-observe MCP.
+  # Shared providers use the signed-in caller's namespace RBAC and Secrets stay
+  # in the gateway. The local list below is optional for standalone providers.
+  # Provider URLs and credential environment-variable names are administrator
+  # configuration. Actual credentials belong in Secrets via extraEnv/extraEnvFrom.
+  providers: []
+  # - id: prometheus
+  #   name: Production metrics
+  #   type: prometheus
+  #   url: http://prometheus.monitoring.svc.cluster.local:9090
+  # - id: tempo
+  #   name: Production traces
+  #   type: tempo
+  #   url: http://tempo.monitoring.svc.cluster.local:3200
+  #   headersEnv:
+  #     X-Scope-OrgID: TEMPO_TENANT
+  extraEnv: []
+  extraEnvFrom: []
+  persistence:
+    enabled: true
+    existingClaim: ""
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # In addition to DNS, permit query traffic on these provider ports. Operators
+  # may replace this with namespace/pod selectors for their monitoring stack.
+  networkPolicy:
+    egress:
+      - ports:
+          - { protocol: TCP, port: 80 }
+          - { protocol: TCP, port: 443 }
+          - { protocol: TCP, port: 9090 }
+          - { protocol: TCP, port: 3200 }
+
 auth:
   # -- Enable authentication and authorization for the API server
   enabled: false
@@ -954,7 +1009,8 @@ auth:
   ## RBAC authorization rules
   ## Subjects may be user names or "group:<group-name>".
   ## Actions: read, write, admin (or * for all).
-  ## Resources: applications, pipelines, releases, stages, templates, artifacts (or *).
+  ## Resources: applications, pipelines, releases, stages, templates, artifacts, insights (or *).
+  ## Insights is global: its RBAC rules must use namespaces: ["*"].
   ## Namespaces: specific namespace or * for all.
   ##
   rbac: []

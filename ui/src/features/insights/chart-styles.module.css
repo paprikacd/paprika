@@ -1,0 +1,562 @@
+.visualization {
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+.customText :is(td, th, p, small) {
+  color: var(--widget-text);
+}
+.heatmap {
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+}
+.cells {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  flex: 1;
+  align-content: stretch;
+  scrollbar-width: thin;
+}
+.colorOnlyCells {
+  gap: 5px;
+}
+.cell {
+  border: 0;
+  border-radius: var(--gamma-radius-small, 4px);
+  padding: 10px;
+  min-height: 64px;
+  min-width: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 9px;
+  cursor: pointer;
+  transition: filter var(--gamma-duration-fast, 130ms)
+    var(--gamma-ease-standard, ease-out);
+}
+.colorOnlyCell {
+  min-height: 44px;
+  padding: 0;
+}
+.cell[aria-pressed="true"] {
+  outline: 2px solid var(--gamma-ink, #27332e);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 5px var(--gamma-bg, #ffffff);
+}
+.cell:hover {
+  filter: brightness(1.04);
+}
+.cell:focus-visible {
+  outline: 2px solid var(--gamma-ink, #27332e);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 5px var(--gamma-bg, #ffffff);
+}
+.cellName {
+  font-size: 11px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  opacity: 1;
+}
+.cell strong {
+  font-size: 21px;
+  line-height: 1.1;
+  font-weight: 570;
+  font-variant-numeric: tabular-nums;
+}
+.thresholdLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 17px;
+  font-size: 11px;
+  color: inherit;
+  max-height: 58px;
+  overflow: auto;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+.thresholdLegend > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.thresholdLegend i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.thresholdLegend small {
+  display: block;
+  font-size: 11px;
+  opacity: 1;
+  margin-top: 2px;
+}
+.heatmapTooltip {
+  position: fixed;
+  box-sizing: border-box;
+  z-index: 1500;
+  width: min(330px, calc(100vw - 24px));
+  max-height: min(560px, calc(100dvh - 24px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--gamma-bg, #ffffff);
+  border: 1px solid var(--gamma-border, #dfe4db);
+  border-radius: var(--gamma-radius-panel, 12px);
+  box-shadow: var(--gamma-shadow-high, 0 18px 54px rgb(39 51 46 / 14%));
+  font:
+    11px/1.5 var(--font-sans),
+    sans-serif;
+  color: var(--gamma-ink, #27332e);
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.tooltipHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 15px 17px 12px;
+  border-bottom: 1px solid var(--gamma-border, #dfe4db);
+}
+.tooltipEyebrow {
+  color: var(--gamma-muted, #626e65);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0;
+}
+.tooltipTitle {
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--gamma-ink, #27332e);
+}
+.tooltipKeyHint {
+  color: var(--gamma-muted, #626e65);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.tooltipReading {
+  padding: 14px 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tooltipReading > strong {
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.6px;
+  color: var(--gamma-ink, #27332e);
+}
+.tooltipStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.tooltipStatus i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.tooltipRange {
+  color: var(--gamma-muted, #626e65);
+  font-size: 11px;
+}
+.tooltipLabels {
+  margin: 0 17px;
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--gamma-border, #dfe4db);
+}
+.tooltipLabels dl {
+  margin: 7px 0 0;
+}
+.tooltipLabels dl > div {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.7fr) minmax(0, 1.3fr);
+  gap: 10px;
+  margin-top: 4px;
+}
+.tooltipLabels dt {
+  color: var(--gamma-muted, #626e65);
+  font-size: 11px;
+}
+.tooltipLabels dd {
+  margin: 0;
+  color: var(--gamma-ink, #27332e);
+  font-family: var(--gamma-font-code, ui-monospace), monospace;
+  font-size: 11px;
+  user-select: text;
+}
+.tooltipFooter {
+  border-top: 1px solid var(--gamma-border, #dfe4db);
+  background: var(--gamma-surface, #fafaf7);
+  padding: 10px 17px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 0 0 var(--gamma-radius-panel, 12px)
+    var(--gamma-radius-panel, 12px);
+}
+.tooltipFooter > span {
+  color: var(--gamma-muted, #626e65);
+  font-size: 11px;
+}
+.tooltipFooter time {
+  color: var(--gamma-muted, #626e65);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tooltipFooter small {
+  font-size: 11px;
+  color: var(--gamma-muted, #626e65);
+  margin-top: 5px;
+}
+.gauge {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  min-height: 0;
+  overflow: auto;
+  gap: 13px;
+  padding: 6px 14px;
+}
+.gaugeValue {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  gap: 7px;
+  font-size: clamp(24px, 11cqw, 40px);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+@container insight-widget (max-height: 110px) {
+  .heatmap {
+    gap: 5px;
+    padding-block: 2px;
+  }
+  .cell {
+    min-height: 44px;
+    padding: 6px;
+    gap: 3px;
+  }
+  .colorOnlyCell {
+    padding: 0;
+  }
+  .cell strong {
+    font-size: 17px;
+  }
+  .thresholdLegend {
+    max-height: 26px;
+  }
+  .thresholdLegend small {
+    display: none;
+  }
+  .gauge {
+    gap: 6px;
+    padding: 0 6px;
+  }
+}
+@container insight-widget (max-width: 340px) {
+  .cells {
+    gap: 4px;
+  }
+  .cell {
+    padding-inline: 8px;
+  }
+  .colorOnlyCell {
+    padding: 0;
+  }
+}
+.gaugeValue small {
+  color: var(--widget-text, var(--gamma-muted, #626e65));
+  font-size: 13px;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.gaugeTrack {
+  height: 9px;
+  width: 100%;
+  background: var(--gamma-surface-2, #f1f2ed);
+  overflow: hidden;
+  border-radius: 5px;
+}
+.gaugeFill {
+  height: 100%;
+  border-radius: inherit;
+}
+.gaugeBounds {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--widget-text, var(--gamma-muted, #626e65));
+}
+.gaugeLabel {
+  font-size: 11px;
+  color: var(--widget-text, var(--gamma-muted, #626e65));
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell {
+    transition: none;
+  }
+}
+
+.gaugeSelection.gaugeSelection {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  max-width: calc(100% + 16px);
+  min-height: 44px;
+  padding: 8px;
+  margin: -8px;
+  text-align: left;
+  white-space: normal;
+}
+.gaugeHint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--widget-text, var(--gamma-muted, #626e65));
+}
+.gaugeTrack {
+  flex-shrink: 0;
+}
+.gaugeBounds {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gaugeBounds > span {
+  overflow-wrap: anywhere;
+}
+.heatmapTooltip {
+  scrollbar-color: var(--gamma-muted, #626e65) transparent;
+}
+.heatmapTooltip ::selection {
+  background: var(--gamma-accent-soft, #f9ede6);
+  color: var(--gamma-ink, #27332e);
+}
+@media (forced-colors: active) {
+  .cell {
+    border: 1px solid ButtonText;
+  }
+  .cell:focus-visible,
+  .cell[aria-pressed="true"] {
+    outline-color: Highlight;
+    box-shadow: none;
+  }
+  .gaugeTrack {
+    border: 1px solid CanvasText;
+  }
+  .gaugeFill {
+    background: Highlight !important;
+  }
+  .heatmapTooltip {
+    border-color: CanvasText;
+    scrollbar-color: auto;
+  }
+}
+
+/* Data remains the visual priority; the shared Gamma button owns interaction. */
+.observationTrigger.observationTrigger.observationTrigger[data-gamma-button] {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 6px;
+  margin-block: -4px;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent;
+  box-shadow: none;
+}
+.observationTrigger.observationTrigger.observationTrigger[data-gamma-button]:hover:not(
+    :disabled
+  ),
+.observationTrigger.observationTrigger.observationTrigger[data-gamma-button]:active:not(
+    :disabled
+  ) {
+  color: inherit;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  transform: none;
+}
+.observationTrigger > :is(span, strong) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chartDataAction {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  min-width: 0;
+  margin-top: 4px;
+}
+.inspectorToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--gamma-muted);
+  font-size: 12px;
+}
+.inspectorToolbar > label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.inspectorFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--gamma-border);
+  color: var(--gamma-muted);
+  font-size: 12px;
+}
+.inspectorFooter > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dataDialog {
+  --widget-text: var(--gamma-ink, #27332e);
+  --widget-background: var(--gamma-bg, #ffffff);
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  border: 1px solid var(--gamma-border, #dfe4db);
+  border-radius: var(--gamma-radius-panel, 12px);
+  background: var(--gamma-bg, #ffffff);
+  color: var(--gamma-ink, #27332e);
+  box-shadow: var(--gamma-shadow-high);
+  font: 13px/1.5 var(--gamma-font-ui);
+  overflow: hidden;
+}
+.dataDialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dataDialog::backdrop {
+  background: rgb(20 23 27 / 40%);
+}
+.dataDialog h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--gamma-ink);
+}
+.dataDialog > p {
+  margin: 0;
+  color: var(--gamma-muted);
+  max-width: 70ch;
+}
+.dataDialog > [role="region"] {
+  flex: 1;
+  min-height: 100px;
+  height: auto;
+  max-height: 50dvh;
+}
+.inspectorLabels {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+}
+.inspectorLabels > div {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.inspectorLabels dt {
+  color: var(--gamma-muted);
+  overflow-wrap: anywhere;
+}
+.inspectorLabels dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 12px/1.5 var(--gamma-font-code);
+  color: var(--gamma-ink);
+}
+@media (max-width: 600px) {
+  .dataDialog {
+    padding: 16px;
+  }
+  .dataDialog[open] {
+    gap: 12px;
+  }
+  .inspectorFooter > span {
+    width: 100%;
+  }
+  .inspectorFooter > button {
+    flex: 1;
+    min-width: 0;
+    white-space: normal;
+  }
+}
+@media (forced-colors: active) {
+  .dataDialog {
+    border-color: CanvasText;
+  }
+}
+
+.gaugeSelection.gaugeSelection.gaugeSelection[data-gamma-button] {
+  color: var(--widget-text, var(--gamma-ink));
+}
+.gaugeSelection.gaugeSelection.gaugeSelection[data-gamma-button]:hover:not(
+    :disabled
+  ),
+.gaugeSelection.gaugeSelection.gaugeSelection[data-gamma-button]:active:not(
+    :disabled
+  ) {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  color: var(--widget-text, var(--gamma-ink));
+  transform: none;
+}
+.chartDataAction.chartDataAction
+  > button[data-gamma-button][data-variant="quiet"] {
+  color: var(--widget-text, var(--gamma-muted));
+}

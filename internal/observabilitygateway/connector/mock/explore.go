@@ -52,10 +52,9 @@ func (Mock) Explore(_ context.Context, req connector.ExploreRequest) (*connector
 		values := mockLabelValues(req.Label)
 		return exploreResult(values, req.Prefix, req.Limit), nil
 	case connector.ExploreMetricMetadata:
-		if req.Metric == "" {
-			return exploreUnsupported("a metric name is required")
-		}
 		return exploreMetadata(req.Metric)
+	case connector.ExploreMetricSeries:
+		return exploreUnsupported("mock connector does not enumerate metric series")
 	case connector.ExploreTraceServices:
 		return exploreResult(mockServices, req.Prefix, req.Limit), nil
 	default:
@@ -87,6 +86,9 @@ func mockLabelValues(label string) []string {
 // exploreMetadata describes one mock metric in the shape Prometheus'
 // /api/v1/metadata answers: {"status":"success","data":{<name>:[{type,help,unit}]}}.
 func exploreMetadata(metric string) (*connector.ExploreResult, error) {
+	if metric == "" {
+		return exploreUnsupported("a metric name is required")
+	}
 	entry := map[string]string{"type": "gauge", "help": "Synthetic mock metric.", "unit": ""}
 	switch {
 	case strings.HasSuffix(metric, "_total"):

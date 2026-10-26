@@ -700,12 +700,36 @@ tasks:
           else
             echo "ok[$name]"
           fi
+          if [ "$name" = insights-shared ]; then
+            gateway_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_OBSERVABILITY_GATEWAY_ADDR')"
+            issuer_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_MCP_PUBLIC_URL')"
+            insights_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_INSIGHTS_URL')"
+            if [ "$gateway_count" -ne 2 ] || [ "$issuer_count" -ne 2 ] || [ "$insights_count" -ne 3 ]; then
+              echo "FAIL[$name]: API, Insights and gateway must share destination, authoring and issuer wiring"; rc=1
+            fi
+          fi
           if [ "$name" = namespace-scoped ]; then
             count="$(printf '%s\n' "$out" | grep -c -- '--api-namespace=review-samples')"
             if [ "$count" -ne 2 ]; then
               echo "FAIL[$name]: both API and gateway must receive the namespace bound"; rc=1
             fi
           fi
+          case "$name" in
+            insights-persistent|insights-existing|omega-insights)
+              pvc="$(printf '%s\n' "$out" | awk 'BEGIN { RS="---" } /kind: PersistentVolumeClaim/ && /name: paprika-insights/ { print }')"
+              if [ "$name" = insights-persistent ]; then
+                if [ -z "$pvc" ] || ! printf '%s\n' "$pvc" | grep -q '^    helm.sh/resource-policy: keep$'; then
+                  echo "FAIL[$name]: chart-created Insights storage must survive removal from a release"; rc=1
+                fi
+              else
+                expected_claim=restored-insights
+                if [ "$name" = omega-insights ]; then expected_claim=paprika-e2e-insights; fi
+                if [ -n "$pvc" ] || ! printf '%s\n' "$out" | grep -q "claimName: $expected_claim$"; then
+                  echo "FAIL[$name]: Insights must mount the existing claim without creating replacement storage"; rc=1
+                fi
+              fi
+              ;;
+          esac
         }
         expect_fail() { # name, extra set-args...
           name="$1"; shift
@@ -743,6 +767,19 @@ tasks:
           --set mcp.publicURL=https://review.example.com \
           --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
           --set 'observabilityGateway.extraEnv[0].value=test-token-secret'
+        check_render insights-shared --set deploymentMode=split --set apiServer.enabled=true \
+          --set insights.enabled=true --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret'
+        check_render insights-persistent --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test
+        check_render insights-existing --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set insights.persistence.existingClaim=restored-insights
+        check_render omega-insights -f deploy/test-values.yaml -f deploy/omega-values.yaml \
+          -f deploy/insights-omega-values.yaml
         expect_fail invalid-namespace-scope --set apiServer.namespaceScope=Review/production
         expect_fail namespace-scope-in-monolith --set apiServer.namespaceScope=review-samples
         check_render reconcile-zero \

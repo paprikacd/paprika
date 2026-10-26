@@ -294,7 +294,7 @@ func (s *Server) authorizationIssuer() string {
 
 // scopesSupported is this authorization server's advertised scope set as
 // strings — ServerConfig.SupportedScopes (read+write by default,
-// [paprika:observe] on the observability gateway). Every place discovery
+// [paprika:observe] with optional Insights authoring on the observability gateway). Every place discovery
 // metadata names the granted scopes reads through this one method so the
 // advertised set can never drift from the set consent and token minting
 // actually enforce.
@@ -347,14 +347,17 @@ func (s *Server) handleAuthorizationServerMetadata(w http.ResponseWriter, _ *htt
 //
 //nolint:tagliatelle // internal cache-only serialization; snake_case matches the OAuth field names it mirrors.
 type authCodeRecord struct {
-	Audience      string `json:"aud"`
-	Subject       string `json:"sub"`
-	Email         string `json:"email"`
-	Name          string `json:"name"`
-	Scope         string `json:"scope"`
-	RedirectURI   string `json:"redirect_uri"`
-	CodeChallenge string `json:"code_challenge"`
-	ClientID      string `json:"client_id"`
+	Audience string `json:"aud"`
+	Subject  string `json:"sub"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	// Fresh grants always store a non-nil slice, including an empty group set.
+	// Nil is reserved for pre-upgrade cache entries with legacy token behavior.
+	Groups        []string `json:"groups"`
+	Scope         string   `json:"scope"`
+	RedirectURI   string   `json:"redirect_uri"`
+	CodeChallenge string   `json:"code_challenge"`
+	ClientID      string   `json:"client_id"`
 }
 
 // handleAuthorize implements the authorization_code + PKCE authorization
@@ -448,6 +451,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		Subject:       principal.Subject,
 		Email:         principal.Email,
 		Name:          principal.Name,
+		Groups:        append([]string{}, principal.Groups...),
 		Scope:         scope,
 		RedirectURI:   redirectURI,
 		CodeChallenge: codeChallenge,
@@ -981,6 +985,7 @@ func (s *Server) finishConsentApprove(ctx context.Context, w http.ResponseWriter
 		Subject:       principal.Subject,
 		Email:         principal.Email,
 		Name:          principal.Name,
+		Groups:        append([]string{}, principal.Groups...),
 		Scope:         scope,
 		RedirectURI:   req.RedirectURI,
 		CodeChallenge: req.CodeChallenge,
@@ -1241,12 +1246,13 @@ func authCodeKey(code string) string {
 //
 //nolint:tagliatelle // Retain the established OAuth grant cache format and RFC 6749 client_id binding.
 type refreshRecord struct {
-	Audience string `json:"aud"`
-	ClientID string `json:"client_id"`
-	Subject  string `json:"sub"`
-	Email    string `json:"email,omitempty"`
-	Name     string `json:"name,omitempty"`
-	Scope    string `json:"scope"`
+	Audience string   `json:"aud"`
+	ClientID string   `json:"client_id"`
+	Subject  string   `json:"sub"`
+	Email    string   `json:"email,omitempty"`
+	Name     string   `json:"name,omitempty"`
+	Groups   []string `json:"groups"`
+	Scope    string   `json:"scope"`
 }
 
 func refreshKey(token string) string {
@@ -1353,7 +1359,7 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope)
+	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope, rec.Groups)
 }
 
 // consumeAuthCode atomically looks up and deletes code in a single cache
@@ -1406,7 +1412,7 @@ func (s *Server) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope)
+	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope, rec.Groups)
 }
 
 // consumeRefreshToken atomically looks up and deletes token in a single
@@ -1447,11 +1453,12 @@ func (s *Server) consumeRefreshToken(ctx context.Context, token string) (refresh
 // RFC 6749 section 5.1 JSON response. It is the single place both grant
 // types converge, so every successful <prefix>/token response is built the same
 // way.
-func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, clientID, subject, email, name, scope string) {
+func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, clientID, subject, email, name, scope string, groups []string) {
 	access, err := auth.IssueTokenWithOptions(auth.TokenOptions{
 		Subject:  subject,
 		Email:    email,
 		Name:     name,
+		Groups:   groups,
 		Audience: s.audience,
 		Issuer:   s.publicURL,
 		Scope:    scope,
@@ -1468,7 +1475,7 @@ func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, clie
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	payload, err := json.Marshal(refreshRecord{Audience: s.audience, ClientID: clientID, Subject: subject, Email: email, Name: name, Scope: scope})
+	payload, err := json.Marshal(refreshRecord{Audience: s.audience, ClientID: clientID, Subject: subject, Email: email, Name: name, Scope: scope, Groups: groups})
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

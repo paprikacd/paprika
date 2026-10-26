@@ -1,0 +1,122 @@
+/* Gamma's semantic token contract, with Paprika's compact workspace styling. */
+.scope {
+  --gamma-bg: #ffffff;
+  --gamma-surface: #f8f9fb;
+  --gamma-surface-2: #f0f2f5;
+  --gamma-ink: #1c2430;
+  --gamma-muted: #5c6777;
+  --gamma-border: #dce1e8;
+  --gamma-accent: #b65332;
+  --gamma-accent-text: #a24628;
+  --gamma-accent-ink: #ffffff;
+  --gamma-accent-soft: #faeee8;
+  --gamma-success: #327959;
+  --gamma-success-soft: #eaf4ed;
+  --gamma-danger: #b4473d;
+  --gamma-danger-soft: #fff0ec;
+  --gamma-warning: #886827;
+  --gamma-warning-soft: #faf5e8;
+  --gamma-page: #f7f8fa;
+  --gamma-sidebar: #f4f6f8;
+  --gamma-sage: #517e66;
+  --gamma-chart-1: #b65332;
+  --gamma-chart-2: #517e66;
+  --gamma-chart-3: #597a98;
+  --gamma-chart-4: #8b7435;
+  --gamma-chart-5: #86658b;
+  --gamma-chart-6: #517c79;
+  --gamma-chart-7: #95694c;
+  --gamma-chart-8: #737c3e;
+  --gamma-color-scheme: light;
+  --gamma-radius-small: 4px;
+  --gamma-radius-control: 5px;
+  --gamma-radius-button: 5px;
+  --gamma-radius-panel: 6px;
+  --gamma-radius-pill: 999px;
+  --gamma-hairline: 1px;
+  --gamma-duration-fast: 130ms;
+  --gamma-duration-base: 200ms;
+  --gamma-duration-slow: 360ms;
+  --gamma-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --gamma-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Keep Gamma's token contract, with smooth deceleration in Paprika. */
+  --gamma-ease-spring: var(--gamma-ease-emphasized);
+  --gamma-font-ui: var(--font-sans, ui-sans-serif), system-ui, sans-serif;
+  --gamma-font-code: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --gamma-shadow-low: none;
+  --gamma-shadow-mid: 0 4px 14px rgb(28 36 48 / 10%);
+  --gamma-shadow-high: 0 8px 24px rgb(28 36 48 / 14%);
+  --gamma-focus-ring: 0 0 0 3px rgb(182 83 50 / 18%);
+  color-scheme: var(--gamma-color-scheme);
+  font-family: var(--gamma-font-ui);
+}
+.scope[data-insights-theme="dark"] {
+  --gamma-bg: #1c2026;
+  --gamma-surface: #20252d;
+  --gamma-surface-2: #272e37;
+  --gamma-ink: #f2f4f7;
+  --gamma-muted: #b4bdc9;
+  --gamma-border: #343d49;
+  --gamma-accent: #e78d6b;
+  --gamma-accent-text: #f0a98c;
+  --gamma-accent-ink: #241810;
+  --gamma-accent-soft: #3c2b25;
+  --gamma-success: #83b69b;
+  --gamma-success-soft: #22382c;
+  --gamma-danger: #f29c8e;
+  --gamma-danger-soft: #422b28;
+  --gamma-warning: #dec48b;
+  --gamma-warning-soft: #3b3525;
+  --gamma-page: #14171b;
+  --gamma-sidebar: #171b20;
+  --gamma-sage: #83b69b;
+  --gamma-chart-1: #e78d6b;
+  --gamma-chart-2: #83b69b;
+  --gamma-chart-3: #9ab3d3;
+  --gamma-chart-4: #c8b573;
+  --gamma-chart-5: #b6a0cd;
+  --gamma-chart-6: #86b8b2;
+  --gamma-chart-7: #c99f7c;
+  --gamma-chart-8: #b2bd7e;
+  --gamma-color-scheme: dark;
+  --gamma-shadow-low: none;
+  --gamma-shadow-mid: 0 4px 14px rgb(0 0 0 / 22%);
+  --gamma-shadow-high: 0 8px 24px rgb(0 0 0 / 32%);
+  --gamma-focus-ring: 0 0 0 3px rgb(231 141 107 / 26%);
+}
+.scope,
+.scope *,
+.scope *::before,
+.scope *::after {
+  box-sizing: border-box;
+}
+.scope ::selection {
+  background: var(--gamma-accent-soft);
+  color: var(--gamma-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scope {
+    --gamma-duration-fast: 0ms;
+    --gamma-duration-base: 0ms;
+    --gamma-duration-slow: 0ms;
+  }
+}
+
+.scope,
+.scope * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gamma-muted) transparent;
+  caret-color: var(--gamma-accent);
+  text-underline-offset: 0.18em;
+}
+@media (forced-colors: active) {
+  .scope,
+  .scope * {
+    scrollbar-color: auto;
+    caret-color: auto;
+  }
+  .scope ::selection {
+    background: Highlight;
+    color: HighlightText;
+  }
+}

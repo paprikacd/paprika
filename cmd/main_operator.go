@@ -626,7 +626,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
 
-	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
+	authHandlers, err := buildOperatorAuthHandlers(ctx, cfg, k8sClient, authCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -642,8 +642,8 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	if err != nil {
 		return nil, err
 	}
-	githubExchangeHandlers = append(githubExchangeHandlers, satelliteRegistrar)
-	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
+	authHandlers = append(authHandlers, satelliteRegistrar)
+	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, authHandlers...)
 
 	return httpx.WithH2C(&http.Server{
 		Addr:              cfg.UIAddr,
@@ -652,6 +652,18 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		IdleTimeout:       apiServerIdleTimeout,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}), nil
+}
+
+func buildOperatorAuthHandlers(ctx context.Context, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config) ([]func(*http.ServeMux), error) {
+	handlers, err := buildAuthHandlers(ctx, authCfg, cfg)
+	if err != nil {
+		return nil, err
+	}
+	githubHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
+	if err != nil {
+		return nil, err
+	}
+	return append(handlers, githubHandlers...), nil
 }
 
 func buildOperatorUIMux(
