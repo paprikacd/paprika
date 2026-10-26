@@ -27,6 +27,17 @@ auth:
 # Reserve memory on the existing 8Gi core pool; keep the dedicated search pool
 # untouched and avoid evicting workloads on the smaller 4Gi nodes.
 manager:
+  # Keep the controller on the other existing large node when capacity permits,
+  # leaving room for bounded CI workers on cf404. Allow fallback after replacement.
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["core-large-a2ff109d4a7d"]
   nodeSelector:
     node.kubernetes.io/instance-type: vc2-4c-8gb
   resources:
