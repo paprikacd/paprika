@@ -205,10 +205,10 @@ describe("dashboard source editor", () => {
         ],
       },
     });
-    await screen.findByRole("heading", { name: "Review dashboard import" });
-    expect(
-      screen.getByRole("heading", { name: "Review dashboard import" }),
-    ).toHaveFocus();
+    const reviewHeading = await screen.findByRole("heading", {
+      name: "Review dashboard import",
+    });
+    await waitFor(() => expect(reviewHeading).toHaveFocus());
     expect(screen.getByText("External dashboard")).toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Back to source" }));
