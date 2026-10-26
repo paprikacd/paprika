@@ -1042,7 +1042,7 @@ func buildAPIExtraMuxHandlers(
 	hub *satellitecontrol.Hub,
 	observationStore obsstore.Store,
 ) ([]func(*http.ServeMux), *cache.Cache, error) {
-	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg)
+	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1259,8 +1259,22 @@ func buildCapacityRegistry(apiClient client.Client) (*dataprovider.Registry, err
 	return registry, nil
 }
 
-func buildAuthHandlers(ctx context.Context, authCfg auth.Config) ([]func(*http.ServeMux), error) {
+func buildAuthHandlers(ctx context.Context, authCfg auth.Config, cfg *cliConfig) ([]func(*http.ServeMux), error) {
 	var handlers []func(*http.ServeMux)
+	issuer := ""
+	if cfg.ObservabilityGatewayAddr != "" {
+		issuer = cfg.MCPPublicURL
+		if os.Getenv("PAPRIKA_INSIGHTS_URL") != "" && issuer == "" {
+			return nil, errors.New("insights observability integration requires --mcp-public-url matching the gateway issuer")
+		}
+	}
+	insightsHandler, err := apiserver.NewInsightsProxy(ctx, authCfg, os.Getenv("PAPRIKA_INSIGHTS_URL"), os.Getenv("PAPRIKA_INSIGHTS_TOKEN"), apiserver.InsightsProxyOptions{ObservabilityIssuer: issuer})
+	if err != nil {
+		return nil, fmt.Errorf("configure Insights proxy: %w", err)
+	}
+	handlers = append(handlers, func(mux *http.ServeMux) {
+		mux.Handle(apiserver.InsightsPrefix+"/", insightsHandler)
+	})
 
 	if authCfg.OIDC != nil {
 		oidcAuth, err := auth.NewOIDCAuthenticator(ctx, authCfg.OIDC)

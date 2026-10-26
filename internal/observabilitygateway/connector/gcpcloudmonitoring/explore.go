@@ -94,7 +94,7 @@ func (CloudMonitoring) Explore(ctx context.Context, req connector.ExploreRequest
 	case connector.ExploreMetricMetadata:
 		// The shape check guaranteed Metric is set.
 		return exploreMetricMetadata(ctx, client, cfg, project, req.Metric), nil
-	case connector.ExploreLabelValues, connector.ExploreTraceServices:
+	case connector.ExploreLabelValues, connector.ExploreMetricSeries, connector.ExploreTraceServices:
 		return exploreUnsupported(exploreShapeError(req.Kind, req.Metric))
 	}
 	// Unknown kinds were rejected by the shape check above.
@@ -109,6 +109,8 @@ func exploreShapeError(kind connector.ExploreKind, metric string) string {
 		return ""
 	case connector.ExploreLabelValues:
 		return "cloud monitoring does not enumerate label values; only label keys are enumerable"
+	case connector.ExploreMetricSeries:
+		return "gcp-cloudmonitoring connector does not enumerate metric series"
 	case connector.ExploreMetricMetadata:
 		if metric == "" {
 			return "a metric name is required"

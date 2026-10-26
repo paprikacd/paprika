@@ -1,0 +1,141 @@
+.widget {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 14px 17px 12px;
+  border-top: 1px solid var(--gamma-border, #dfe4db);
+  color: var(--gamma-ink, #27332e);
+  background: transparent;
+}
+.heading,
+.summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.heading {
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: var(--gamma-muted, #626e65);
+}
+.heading > :first-child {
+  font-weight: 550;
+  color: var(--gamma-ink, #27332e);
+}
+.plot {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.plot svg {
+  display: block;
+  max-width: 100%;
+}
+.summary {
+  margin: 8px 0 0;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.summary > div {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+.summary dt {
+  color: var(--gamma-muted, #626e65);
+}
+.summary dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.note,
+.range {
+  margin: 7px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--gamma-muted, #626e65);
+  overflow-wrap: anywhere;
+}
+.range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.empty {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 12px;
+  box-sizing: border-box;
+  color: var(--gamma-muted, #626e65);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .widget * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.title {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.embedded {
+  min-width: 0;
+  width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.error {
+  margin: 0;
+  padding: 10px 0;
+  color: var(--gamma-danger, #a63f32);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.legend {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--gamma-muted, #626e65);
+  margin-top: 8px;
+}
+.legend i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+.legend span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,26 @@
+.providerIcon, .sourceIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: var(--gamma-radius-small);
+  flex: none;
+  background: var(--gamma-surface-2);
+  color: var(--gamma-muted);
+}
+.providerIcon[data-provider-type="prometheus"] {
+  color: #b44825;
+  background: #f9ede6;
+}
+.providerIcon[data-provider-type="tempo"] {
+  color: #775093;
+  background: #f2edf7;
+}
+.sourceIcon[data-query-source="saved"] {
+  color: var(--gamma-accent-text);
+  background: var(--gamma-accent-soft);
+}
+.sourceIcon[data-query-source="provider"] {
+  color: var(--gamma-success);
+  background: var(--gamma-success-soft);
+}

@@ -1,0 +1,43 @@
+# Replace provider identifiers with IDs configured on your Insights service.
+# Queries below target Prometheus scrape health and Tempo TraceQL.
+schemaVersion: 1
+id: service-health
+title: Service health
+description: Scrape availability and recent service traces
+timeRange: 1h
+refreshInterval: 30
+widgets:
+  - id: available-targets
+    title: Available targets
+    type: stat
+    providerId: prometheus
+    query: sum(up)
+    unit: targets
+    layout:
+      x: 0
+      y: 0
+      w: 4
+      h: 2
+  - id: scrape-health
+    title: Scrape health over time
+    type: timeseries
+    providerId: prometheus
+    query: up
+    unit: ""
+    color: "#6e947a"
+    layout:
+      x: 4
+      y: 0
+      w: 8
+      h: 4
+  - id: service-traces
+    title: Recent traces
+    type: traces
+    providerId: tempo
+    query: "{}"
+    unit: ms
+    layout:
+      x: 0
+      y: 4
+      w: 12
+      h: 4

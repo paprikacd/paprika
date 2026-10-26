@@ -106,7 +106,7 @@ func TestObserveResourceIndicatorRejectsCrossSurfaceBeforeConsumingToken(t *test
 	assert.False(t, srv.validResource([]string{"https://paprika.example/observe/mcp#fragment"}))
 	assert.False(t, srv.validResource([]string{"https://paprika.example/observe/mcp", "https://paprika.example/mcp"}))
 	rec := httptest.NewRecorder()
-	srv.issueTokenPair(t.Context(), rec, "test", "user", "", "", "paprika:observe")
+	srv.issueTokenPair(t.Context(), rec, "test", "user", "", "", "paprika:observe", []string{})
 	var pair tokenResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &pair))
 	mux := http.NewServeMux()

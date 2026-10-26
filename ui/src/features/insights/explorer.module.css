@@ -1,0 +1,185 @@
+.explorer {
+  color: var(--gamma-ink, #27332e);
+  min-width: 0;
+  padding: 16px clamp(16px, 2vw, 24px) 24px;
+}
+.header, .headerIntro, .pageTitle, .sourceLabel {
+  display: flex;
+  align-items: center;
+}
+.header { justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.headerIntro { gap: 12px; min-width: 0; }
+.pageTitle { gap: 14px; min-width: 0; }
+.pageTitle h1 { font-size: 22px; font-weight: 600; letter-spacing: -.03em; margin: 0; }
+.pageTitle > span { border-left: 1px solid var(--gamma-border); padding-left: 14px; color: var(--gamma-muted); font-size: 12px; }
+.source { display: flex; align-items: center; gap: 8px; width: 330px; font-size: 11px; font-weight: 600; }
+.sourceLabel { flex: none; gap: 6px; white-space: nowrap; }
+.source > [role="combobox"] { flex: 1; min-width: 0; }
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "library" "query" "results" "details";
+  gap: 12px;
+  min-width: 0;
+  align-items: start;
+}
+.library {
+  grid-area: library;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gamma-border);
+}
+.library h2 { display: flex; align-items: center; gap: 7px; flex: none; margin: 0; font-size: 12px; font-weight: 600; }
+.library h2 > span { color: var(--gamma-muted); font-size: 10px; padding: 2px 5px; border-radius: 4px; background: var(--gamma-surface-2); font-variant-numeric: tabular-nums; }
+.library > [role="combobox"] { width: min(440px, 100%); min-width: 0; }
+.newQuery { flex: none; margin-left: auto; }
+.queryCard { grid-area: query; }
+.saveCard { grid-area: details; }
+.resultsCard { grid-area: results; }
+.saveCard, .queryCard, .resultsCard { border: 1px solid var(--gamma-border); border-radius: 6px; background: var(--gamma-bg); padding: 16px; min-width: 0; }
+.sectionHeading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; min-width: 0; }
+.sectionHeading h2, .sectionHeading h3 { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.sectionHeading h2 { display: flex; align-items: center; gap: 7px; }
+.sectionHeading p { color: var(--gamma-muted); font-size: 11px; line-height: 1.5; margin: 4px 0 0; }
+.workbenchTitle { min-width: 0; }
+.workbenchTitle h2 { font-size: 15px; letter-spacing: -.02em; }
+.fields, .detailsFields, .bindingEditor { border: 0; padding: 0; margin: 0; min-width: 0; }
+.fields, .bindingEditor, .detailsSection { display: grid; gap: 14px; }
+.bindingEditor legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.field { display: flex; flex-direction: column; gap: 7px; font-size: 12px; font-weight: 600; min-width: 0; }
+.field > p { margin: 0; font-weight: 400; }
+.field > button { text-align: left; }
+.optional { color: var(--gamma-muted); font-weight: 400; }
+.description { --gamma-field-min-height: 108px; resize: vertical; max-height: 200px; }
+.detailsFields [role="tablist"] { flex: none; }
+.detailsFields [role="tab"] { min-width: 0; white-space: nowrap; font-size: 11px; padding: 8px 6px; }
+.detailsFields [role="tabpanel"] { padding: 16px 0 0; }
+.detailsSection { align-content: start; }
+.detailsSection .detailsIntro, .detailsSection .parameterEmpty { color: var(--gamma-muted); font-size: 12px; line-height: 1.6; margin: 0; }
+.parameters { min-width: 0; }
+.parameters > .sectionHeading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.parameters > .sectionHeading > div { display: contents; }
+.parameters > .sectionHeading h3 { grid-column: 1; grid-row: 1; }
+.parameters > .sectionHeading p { grid-column: 1 / -1; grid-row: 2; margin: 0; color: var(--gamma-muted); }
+.parameters > .sectionHeading > button { grid-column: 2; grid-row: 1; }
+.parameters .sectionHeading > div { min-width: 0; }
+.parameters .sectionHeading > button { flex: none; padding-inline: 9px; }
+.parameter, .binding { border: 1px solid var(--gamma-border); border-radius: 6px; padding: 12px; display: grid; gap: 12px; min-width: 0; margin-top: 12px; }
+.parameter { background: var(--gamma-surface); padding: 10px; gap: 10px; }
+.parameterHeading { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.parameterFields { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 12px; }
+.parameterFields > :nth-child(2) { grid-row: 2; grid-column: 1 / -1; }
+.parameterFields > :last-child { grid-row: 1; grid-column: 2; }
+.twoColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.binding .twoColumns { grid-template-columns: minmax(0, 1fr); }
+.bindingTitle { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
+.bindingTitle code, .bindingTitle span { color: var(--gamma-muted); font-weight: 400; overflow-wrap: anywhere; }
+.hint { color: var(--gamma-muted); font-size: 12px; line-height: 1.6; margin: 12px 0 0; overflow-wrap: anywhere; }
+.hint code, .sectionHeading code, .bindingTitle code { font-family: var(--gamma-font-code, monospace); }
+.error { font-size: 12px; line-height: 1.6; color: var(--gamma-danger); margin: 12px 0 0; overflow-wrap: anywhere; }
+.error p { margin: 0 0 10px; }
+.unsaved, .savedState { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; line-height: 1.4; border-radius: 4px; padding: 4px 6px; flex: none; color: var(--gamma-muted); background: var(--gamma-surface-2); }
+.unsaved { color: var(--gamma-accent-text); background: var(--gamma-accent-soft); }
+.unsaved > span { height: 5px; width: 5px; border-radius: 50%; background: currentColor; }
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.saveActions { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--gamma-border); }
+.saveActions > .actions { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 8px; }
+.saveActions > .actions > button { padding-inline: 8px; font-size: 11px; gap: 5px; }
+.saveActions button { width: 100%; }
+.saveCard > .hint { font-size: 10px; margin-top: 7px; line-height: 1.4; }
+.resultsCard > .sectionHeading { flex-wrap: wrap; }
+.runActions { display: flex; justify-content: flex-start; gap: 10px; align-items: center; flex-wrap: wrap; }
+.runActions > [role="combobox"] { width: 140px; }
+.resultsBody { min-width: 0; }
+.testValues { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 10px; }
+.testValues .field { flex-direction: row; align-items: center; font-size: 11px; gap: 8px; max-width: 100%; }
+.testValues .field > span { flex: 0 1 auto; max-width: 160px; overflow-wrap: anywhere; }
+.testValues .field > input { flex: 0 1 170px; width: 170px; min-width: 70px; }
+.testValues .field > button { flex: none; align-self: center; }
+.resultView { height: 320px; min-width: 0; }
+.resultMeta { font-size: 10px; color: var(--gamma-muted); margin: 0 0 6px; font-variant-numeric: tabular-nums; }
+.stale { font-size: 12px; line-height: 1.5; color: var(--gamma-warning); background: var(--gamma-warning-soft); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+.empty { min-height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 16px 0; }
+.empty h3 { font-size: 13px; font-weight: 500; margin: 0 0 6px; }
+.empty p { font-size: 12px; line-height: 1.6; color: var(--gamma-muted); max-width: 440px; margin: 0; }
+.emptyIcon { width: 36px; height: 36px; display: grid; place-items: center; color: var(--gamma-success); background: var(--gamma-surface-2); border: 1px solid var(--gamma-border); border-radius: 6px; margin-bottom: 10px; }
+.executedQuery { border-top: 1px solid var(--gamma-border); padding-top: 6px; margin-top: 8px; font-size: 11px; }
+.executedQuery summary { cursor: pointer; color: var(--gamma-muted); min-height: 26px; display: list-item; }
+.executedQuery summary:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: 3px; }
+.executedQuery pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; margin: 0; }
+
+/* Details uses the entire workbench height instead of sharing the short editor row. */
+@media (min-width: 1100px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 340px; grid-template-areas: "library library" "query details" "results details"; align-items: stretch; }
+  .saveCard { display: flex; flex-direction: column; }
+  .detailsFields { flex: 1; }
+  .saveCard > .sectionHeading { flex: none; }
+  .runActions { gap: 8px; }
+  .runActions > .actions { flex-wrap: nowrap; }
+}
+@media (min-width: 1100px) and (min-height: 650px) {
+  .explorer { height: calc(100dvh - var(--insights-topbar-height, 48px)); min-height: 0; padding: 12px 20px 16px; display: flex; flex-direction: column; }
+  .header { flex: none; margin-bottom: 8px; }
+  .workspace { flex: 1; min-height: 0; grid-template-rows: auto minmax(195px, .85fr) minmax(260px, 1.15fr); }
+  .workspace:has([aria-label="Query editor mode"] [id$="-tab-code"][aria-selected="true"]) {
+    grid-template-rows: auto 190px minmax(260px, 1fr);
+  }
+  .library { padding-bottom: 8px; }
+  .library > [role="combobox"] > span > span:last-child { display: flex; align-items: center; gap: 10px; }
+  .library > [role="combobox"] [data-query-tags] { flex-wrap: nowrap; }
+  .library > [role="combobox"] > span > span:last-child > span:first-child { flex: 1; min-width: 0; }
+  .library > [role="combobox"] > span > span:last-child > span:last-child:not(:first-child) { min-width: 0; max-width: 48%; overflow: hidden; }
+  .queryCard, .saveCard, .resultsCard { min-height: 0; padding: 12px; display: flex; flex-direction: column; }
+  .queryCard { position: relative; }
+  .queryCard:has([aria-label="Query editor mode"] [id$="-tab-code"][aria-selected="true"]) { padding-bottom: 10px; }
+  .queryCard:has([aria-label="Query editor mode"]) > .sectionHeading { position: absolute; top: 16px; right: 12px; max-width: calc(100% - 150px); margin: 0; }
+  .queryCard:has([aria-label="Query editor mode"]) .workbenchTitle { overflow: hidden; }
+  .queryCard:has([aria-label="Query editor mode"]) .workbenchTitle h2 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  .queryCard:has([aria-label="Query editor mode"]) .workbenchTitle h2 > span { display: inline-flex; vertical-align: middle; margin-right: 5px; }
+  .queryCard > .sectionHeading, .saveCard > .sectionHeading { flex: none; margin-bottom: 10px; gap: 8px; }
+  .queryCard > .fields { min-height: 0; overflow: auto; flex: 1; align-content: start; gap: 8px; }
+  .detailsFields { min-height: 0; display: flex; }
+  .detailsFields > div { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+  .detailsFields [role="tabpanel"] { min-height: 0; flex: 1; overflow: auto; padding-right: 3px; padding-bottom: 3px; scrollbar-gutter: stable; }
+  .saveActions, .saveCard > .hint, .saveCard > .error, .saveCard > .stale { flex: none; }
+  .saveActions { margin-top: 12px; }
+  .resultsCard { padding-block: 10px; }
+  .resultsCard > .sectionHeading { flex: none; margin-bottom: 8px; gap: 8px; }
+  .resultsBody { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: auto; }
+  .resultsBody > :not(.resultView):not(.empty) { flex: none; }
+  .resultView { height: auto; min-height: 120px; flex: 1; }
+  .testValues { max-height: 76px; overflow: auto; }
+  .empty { flex: 1; min-height: 90px; padding: 8px; }
+  .emptyIcon { width: 28px; height: 28px; margin-bottom: 6px; }
+  .emptyIcon svg { width: 18px; height: 18px; }
+  .empty p { font-size: 11px; }
+  .executedQuery { font-size: 10px; padding-top: 4px; margin-top: 5px; }
+  .executedQuery summary { min-height: 20px; }
+}
+@media (min-width: 1440px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 360px; }
+  .resultsCard > .sectionHeading { flex-wrap: nowrap; }
+  .runActions { flex-wrap: nowrap; }
+}
+@media (max-width: 760px) {
+  .explorer { padding: 14px 12px 28px; }
+  .header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .headerIntro { flex-wrap: wrap; gap: 8px; }
+  .source { width: 100%; }
+  .library { flex-wrap: wrap; gap: 10px; }
+  .library > [role="combobox"] { width: 100%; order: 3; }
+  .newQuery { margin-left: auto; }
+  .pageTitle > span { display: none; }
+  .queryCard, .saveCard, .resultsCard { padding: 14px 12px; }
+  .twoColumns { grid-template-columns: minmax(0, 1fr); }
+  .runActions { gap: 8px; }
+  .runActions > [role="combobox"] { width: 125px; }
+  .resultView { height: 280px; }
+  .testValues { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .testValues .field { display: flex; flex-wrap: wrap; }
+  .testValues .field > input { flex: 1; }
+  .executedQuery summary { min-height: 36px; }
+}

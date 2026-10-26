@@ -15,7 +15,7 @@ import (
 const (
 	queryTimeout       = 30 * time.Second
 	maxConcurrentQuery = 4
-	maxQueryWindow     = 24 * time.Hour
+	maxQueryWindow     = 31 * 24 * time.Hour
 	maxQueryResults    = 1000
 	maxQueryBytes      = 32 << 10
 )
@@ -64,12 +64,28 @@ func validateWindow(window connector.TimeRange) error {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("end must be after start"))
 	}
 	if window.End.Sub(window.Start) > maxQueryWindow {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("query window must not exceed 24 hours"))
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("query window must not exceed 31 days"))
 	}
 	return nil
 }
 
 func boundQuery(req *connector.QueryRequest) error {
+	if err := validateQueryInputs(req); err != nil {
+		return err
+	}
+	defaultWindow(&req.Range)
+	if err := validateWindow(req.Range); err != nil {
+		return err
+	}
+	if err := validateQueryStep(req); err != nil {
+		return err
+	}
+	limit, err := boundedLimit(req.Limit, 100)
+	req.Limit = limit
+	return err
+}
+
+func validateQueryInputs(req *connector.QueryRequest) error {
 	if len(req.PageToken) > 4096 {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("page_token exceeds its size limit"))
 	}
@@ -79,18 +95,24 @@ func boundQuery(req *connector.QueryRequest) error {
 	if len(req.Query) > maxQueryBytes || len(req.TraceID) > 256 {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("query expression or trace ID exceeds its size limit"))
 	}
-	if req.Range.End.IsZero() {
-		req.Range.End = time.Now().UTC()
+	return nil
+}
+
+func defaultWindow(window *connector.TimeRange) {
+	if window.End.IsZero() {
+		window.End = time.Now().UTC()
 	}
-	if req.Range.Start.IsZero() {
-		req.Range.Start = req.Range.End.Add(-defaultQueryWindow)
+	if window.Start.IsZero() {
+		window.Start = window.End.Add(-defaultQueryWindow)
 	}
-	if err := validateWindow(req.Range); err != nil {
-		return err
+}
+
+func validateQueryStep(req *connector.QueryRequest) error {
+	if req.Step < 0 || req.Step > maxQueryWindow || (req.Step > 0 && req.Step < time.Second) ||
+		(!req.Instant && req.Step > 0 && req.Range.End.Sub(req.Range.Start)/req.Step >= 11000) {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("step must be between 1 second and 31 days and produce at most 11000 points"))
 	}
-	limit, err := boundedLimit(req.Limit, 100)
-	req.Limit = limit
-	return err
+	return nil
 }
 
 func boundedLimit(limit, fallback int) (int, error) {

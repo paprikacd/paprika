@@ -94,7 +94,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	}
 	k8sClient = namespaceScopedAPIClient(k8sClient, cfg.APINamespace)
 
-	srv, authenticator, usage, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient)
+	srv, authenticator, usage, backend, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient)
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	defer func() { _ = telemetry.Shutdown(gwCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
 	startGatewaySupportServers(gwCtx, ctx, cfg, setupLog)
 
-	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage)
+	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
 	return serveGatewayHTTP(gwCtx, cfg, mux)
 }
 
@@ -227,7 +227,12 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 	active := make(chan struct{}, 4)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != observabilityGatewayRoutePrefix+"/mcp" {
+		switch r.URL.Path {
+		case observabilityGatewayRoutePrefix + "/mcp",
+			observabilityGatewayRoutePrefix + "/api/providers",
+			observabilityGatewayRoutePrefix + "/api/query",
+			observabilityGatewayRoutePrefix + "/api/explore":
+		default:
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -251,9 +256,9 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 // /observe-shaped MCP server itself. The authenticator is returned alongside
 // the server because the usage endpoint mounts on the same mux and must
 // verify the same audience.
-func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, error) {
+func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, observabilitygateway.Backend, error) {
 	if len(authCfg.TokenSecret) == 0 {
-		return nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
+		return nil, nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
 	}
 	// Provider CRs select a cloud project and may reference credentials. OAuth
 	// scope alone must never grant every principal the gateway service account's
@@ -264,15 +269,15 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	registry := mcp.NewRegistry()
 	usage := observabilitygateway.NewUsageTracker()
 	if err := observabilitygateway.RegisterTools(registry, backend, usage); err != nil {
-		return nil, nil, nil, fmt.Errorf("register observability tools: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("register observability tools: %w", err)
 	}
 	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.ObservabilityTokenAudience, cfg.MCPPublicURL)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build authenticator: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("build authenticator: %w", err)
 	}
 	consoleAuthenticator, err := auth.BuildAuthenticator(ctx, authCfg)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build console authenticator: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("build console authenticator: %w", err)
 	}
 	var auditor audit.Auditor = audit.NoopAuditor{}
 	if cfg.AuditLogEnabled {
@@ -280,7 +285,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	}
 	clientRegistry, err := newMCPClientRegistry(ctx, cfg, k8sClient, observabilityGatewayRoutePrefix+"/mcp")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	srv, err := mcp.NewServer(mcp.ServerConfig{
 		Registry:                     registry,
@@ -311,9 +316,9 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		// call the console Connect API.
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build mcp server: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("build mcp server: %w", err)
 	}
-	return srv, authenticator, usage, nil
+	return srv, authenticator, usage, backend, nil
 }
 
 // buildObservabilityMux mounts the gateway's public surface on one mux: the
@@ -326,7 +331,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 // and /healthz on the serve port (repo-server precedent) so load-balancer
 // checks and port-forward-based e2e setups can probe it; the kubelet keeps
 // using the dedicated health listener.
-func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthenticator, publicURL string, usage *observabilitygateway.UsageTracker) *http.ServeMux {
+func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthenticator, publicURL string, usage *observabilitygateway.UsageTracker, backend observabilitygateway.Backend) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle(observabilityGatewayRoutePrefix+"/mcp", srv.Handler())
 	srv.RegisterOAuthRoutes(mux)
@@ -341,6 +346,9 @@ func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthen
 	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/catalog", gatewayAPI(observabilitygateway.CatalogHandler()))
 	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/catalog/{type}", gatewayAPI(observabilitygateway.CatalogTypeHandler()))
 	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/validate", gatewayAPI(observabilitygateway.ValidateHandler()))
+	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/providers", gatewayAPI(observabilitygateway.DashboardProvidersHandler(backend, usage)))
+	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/query", gatewayAPI(observabilitygateway.DashboardQueryHandler(backend, usage)))
+	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/explore", gatewayAPI(observabilitygateway.DashboardExploreHandler(backend, usage)))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("ok")); err != nil {

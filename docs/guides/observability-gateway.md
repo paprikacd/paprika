@@ -417,3 +417,27 @@ itself is agnostic to that: tools already accept any `namespace/name` provider.
 - `api/observability/v1alpha1/` — the `ObservabilityProvider` CRD
 - `internal/webhook/observability/v1alpha1/` — admission validation
 - `charts/chart/templates/observability-gateway/` — Deployment/Service/HTTPRoute/HPA/VPA/PDB
+
+## Dashboard and query integration
+
+Paprika Insights consumes the same authorized provider backend as the MCP tools.
+The gateway exposes `GET /observe/api/providers`, `POST /observe/api/query` and
+`POST /observe/api/explore` for this integration. These routes require an
+Observe-audience bearer token and `paprika:observe`, then enforce the caller's
+namespace RBAC before reading providers or credential Secrets. HTTP and MCP
+requests share the connector concurrency budget and bounded response limits.
+
+The query route accepts a canonical `namespace/name` provider, signal, native
+query, RFC3339 start/end, optional `stepSeconds`, limit and supported pagination
+fields. Windows are bounded to 31 days; metrics steps must be at least one
+second and produce at most 11,000 points. `query_metrics` accepts the equivalent
+`step_seconds` argument. Native response JSON and explicit provider outcome
+states are preserved. Exploration adds bounded metric series and Tempo tags,
+including truncation indicators, for label cardinality and editor completion.
+
+Insights only advertises Prometheus and Tempo adapters, maintains stable IDs
+from the full provider namespace/name, and normalizes results for existing
+widgets. Its API proxy mints a 30-second token for the authenticated human;
+it never queries as a shared service account. OAuth authorization and refresh
+also retain exact group membership. See the
+[Insights integration guide](../design/insights/README.md#shared-observability-mcp-providers).

@@ -1,0 +1,76 @@
+name: Build Insights preview
+
+on:
+  push:
+    branches: [issue/observability-dashboard-integration]
+  workflow_dispatch:
+
+concurrency:
+  group: insights-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish linux amd64 preview
+    if: github.repository == 'paprikacd/paprika'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image_ref: ghcr.io/paprikacd/paprika@${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record build time
+        id: metadata
+        run: printf 'date=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # Use the full Dockerfile: the preview needs the dashboard, MCP App and
+      # /insights binary. Publishing never deploys or replaces the latest tag.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            VERSION=0.0.0-dev+sha.${{ github.sha }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.metadata.outputs.date }}
+          tags: ghcr.io/paprikacd/paprika:insights-${{ github.sha }}
+          cache-from: type=gha,scope=paprika-insights-preview
+          cache-to: type=gha,mode=max,scope=paprika-insights-preview
+
+      - name: Record immutable image reference
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          {
+            printf '### Insights preview image\n\n'
+            printf -- '- Commit: %s\n' "$SOURCE_COMMIT"
+            printf -- '- Platform: linux/amd64\n'
+            printf -- '- Image: ghcr.io/paprikacd/paprika@%s\n' "$IMAGE_DIGEST"
+            printf -- '- Tag: ghcr.io/paprikacd/paprika:insights-%s\n' "$SOURCE_COMMIT"
+          } >> "$GITHUB_STEP_SUMMARY"

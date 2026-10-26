@@ -467,7 +467,7 @@ func traceID(rng *rand.Rand) string {
 	const hex = "0123456789abcdef"
 	var id [32]byte
 	for i := range id {
-		id[i] = hex[rng.Uint64()%16]
+		id[i] = hex[rng.Uint64()%16] // #nosec G602 -- i ranges over id and modulo 16 bounds the index to the 16-character alphabet.
 	}
 	return string(id[:])
 }

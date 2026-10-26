@@ -46,7 +46,7 @@ func TestObservabilityGatewayAllowsDCRWithoutStaticClient(t *testing.T) {
 			store, err := cache.New(t.Context(), cache.Config{Backend: cache.BackendMemory})
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, store.Close()) })
-			srv, _, _, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: []byte("test-observe-startup-secret")}, nil, store)
+			srv, _, _, _, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: []byte("test-observe-startup-secret")}, nil, store)
 			require.NoError(t, err)
 			require.NotNil(t, srv)
 		})
@@ -199,9 +199,9 @@ func TestObservabilityRequestSlotsCoverResponseWriting(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	completed := make(chan struct{}, 4)
-	for range 4 {
+	for _, path := range []string{"/observe/mcp", "/observe/api/query", "/observe/api/explore", "/observe/api/providers"} {
 		go func() {
-			limited.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/observe/mcp", nil))
+			limited.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, nil))
 			completed <- struct{}{}
 		}()
 	}
@@ -216,6 +216,11 @@ func TestObservabilityRequestSlotsCoverResponseWriting(t *testing.T) {
 	limited.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/observe/mcp", nil))
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, "1", rec.Header().Get("Retry-After"))
+	for _, path := range []string{"/observe/api/query", "/observe/api/explore", "/observe/api/providers"} {
+		apiRec := httptest.NewRecorder()
+		limited.ServeHTTP(apiRec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, nil))
+		require.Equal(t, http.StatusTooManyRequests, apiRec.Code, path)
+	}
 	health := httptest.NewRecorder()
 	limited.ServeHTTP(health, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil))
 	require.Equal(t, http.StatusOK, health.Code)
@@ -319,7 +324,7 @@ func TestObservabilityRequestSlotsReleaseOnHTTPDisconnect(t *testing.T) {
 				defer cancel()
 				req := request(ctx, true)
 				go func() {
-					resp, requestErr := httpClient.Do(req)
+					resp, requestErr := httpClient.Do(req) // #nosec G704 -- The request closure targets only the local httptest server.
 					if requestErr == nil {
 						_, _ = io.Copy(io.Discard, resp.Body)
 						_ = resp.Body.Close()
@@ -338,14 +343,14 @@ func TestObservabilityRequestSlotsReleaseOnHTTPDisconnect(t *testing.T) {
 			for range 4 {
 				await(started, "admitted tool did not start")
 			}
-			resp, err := httpClient.Do(request(t.Context(), false))
+			resp, err := httpClient.Do(request(t.Context(), false)) // #nosec G704 -- The request closure targets only the local httptest server.
 			require.NoError(t, err)
 			_ = resp.Body.Close()
 			require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 			cancellations[0]()
 			await(stopped, "HTTP disconnect did not cancel provider work")
 			await(completed, "cancelled protocol request retained its gateway slot")
-			resp, err = httpClient.Do(request(t.Context(), false))
+			resp, err = httpClient.Do(request(t.Context(), false)) // #nosec G704 -- The request closure targets only the local httptest server.
 			require.NoError(t, err)
 			body, err := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()

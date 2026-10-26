@@ -1,0 +1,691 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-23T14:48:52.077Z",
+  "source": {
+    "repository": "/Users/benebsworth/projects/gamma",
+    "commit": "1860ed792a6ce0dbcbb9c6469ace28085c0df035",
+    "skill": "/Users/benebsworth/projects/gamma/plugins/gamma/skills/explore-gamma/SKILL.md",
+    "skillSha256": "9ac6a7dea02f7ca5d33f3a7eb8c299501cd25596cc976f5d6357580540724e5a",
+    "provenance": "Maintained Gamma React implementations; external reference links are design guidance, not imported source or licenses."
+  },
+  "mcp": {
+    "endpoint": "http://127.0.0.1:3000/api/mcp",
+    "protocolVersion": "2025-11-25",
+    "name": "gamma",
+    "version": "0.3.0",
+    "availableTools": [
+      "gamma_browse_catalogue",
+      "gamma_search_catalogue",
+      "gamma_get_catalogue_entry",
+      "gamma_list_components",
+      "gamma_list_component_briefs",
+      "gamma_get_component_brief",
+      "gamma_get_component",
+      "gamma_list_backgrounds",
+      "gamma_get_background",
+      "gamma_list_shaders",
+      "gamma_get_shader",
+      "gamma_compose_shader",
+      "gamma_list_design_systems",
+      "gamma_get_design_system",
+      "gamma_list_sources",
+      "gamma_search",
+      "gamma_list_review_feedback",
+      "gamma_list_validation_loops",
+      "gamma_get_validation_loop",
+      "gamma_update_review_feedback",
+      "gamma_get_checklist",
+      "gamma_mentions_search"
+    ]
+  },
+  "retrieval": {
+    "script": "scripts/gamma-discovery.mjs",
+    "readBriefBeforeAdapting": true,
+    "styles": "gamma_get_component currently returns shared library CSS. Extract component rules and dependencies, retaining Gamma token semantics and reference notices."
+  },
+  "components": [
+    {
+      "slug": "button",
+      "name": "Button",
+      "category": "Inputs",
+      "use": "Toolbar actions and save states",
+      "uri": "gamma://explore/component/button",
+      "sourceFile": "src/components/GammaButton.tsx",
+      "sourceSha256": "a8ffa0370e5c559c106b5bb6f95d29f62a7bd2536e21a67c87bb87bbaeb9c773",
+      "checkoutSourceSha256": "a8ffa0370e5c559c106b5bb6f95d29f62a7bd2536e21a67c87bb87bbaeb9c773",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "1ce4744844a4111217707055527698eab57b13bcef2aa561d04b38aadd0407ab",
+      "cssBytes": 472977,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Button when the interface needs a clear action primitive with visual variants, sizes, and a busy state.",
+        "avoidWhen": "Avoid it when the value is not user-editable or when one clear action is enough."
+      },
+      "notes": [
+        "Use one primary action in each local decision area.",
+        "Busy state preserves button width."
+      ],
+      "references": [
+        {
+          "label": "shadcn/ui",
+          "url": "https://ui.shadcn.com/",
+          "role": "Primitive approach"
+        },
+        {
+          "label": "Amicro",
+          "url": "https://github.com/Subhan-code/Amicro--Micro-transitions-",
+          "role": "Motion reference"
+        }
+      ]
+    },
+    {
+      "slug": "breadcrumb-trail",
+      "name": "Breadcrumb trail",
+      "category": "Navigation",
+      "use": "Dashboard drilldown path and return navigation",
+      "uri": "gamma://explore/component/breadcrumb-trail",
+      "sourceFile": "src/components/BreadcrumbTrail.tsx",
+      "sourceSha256": "433b267a7d4fa92abfcc1cadd72e23c38babdd957e112c4a784273f87ad838fd",
+      "checkoutSourceSha256": "433b267a7d4fa92abfcc1cadd72e23c38babdd957e112c4a784273f87ad838fd",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "251c7321396147088fbf8a7eac4d13220e1d8175ad181c64a5ec393bf85d4c3b",
+      "cssBytes": 1245,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Breadcrumb trail when the interface needs a wrapping breadcrumb path with native links, a named navigation landmark and a clear current location.",
+        "avoidWhen": "Avoid it when there is only one destination or a flat list would be faster to scan."
+      },
+      "notes": [
+        "Pass the path from broad context to the current location. Earlier items with href render real links; the final item identifies the current page.",
+        "The trail uses a named navigation landmark and an ordered list. Separators and icons are decorative, while every meaningful destination has a visible text label.",
+        "Items wrap on narrow surfaces rather than dropping intermediate destinations. Native links keep browser navigation and keyboard behavior.",
+        "Original Gamma markup and token styles. The demo points at the real Gamma catalogue and component routes; no client state or animation is needed."
+      ],
+      "references": [
+        {
+          "label": "Original",
+          "url": "/components/breadcrumb-trail",
+          "role": "Original Gamma behavior, markup and token styles; no external component source or assets imported"
+        },
+        {
+          "label": "WAI APG",
+          "url": "https://www.w3.org/WAI/ARIA/apg/patterns/breadcrumb/",
+          "role": "Named navigation landmark and current-page breadcrumb semantics"
+        }
+      ]
+    },
+    {
+      "slug": "search-field",
+      "name": "Search field",
+      "category": "Inputs",
+      "use": "Dashboard and provider filtering",
+      "uri": "gamma://explore/component/search-field",
+      "sourceFile": "src/components/SearchField.tsx",
+      "sourceSha256": "b241f317ee718daaba109ca01bed0d6b5f23f1d523f2977c7ba0bf5b250c8b99",
+      "checkoutSourceSha256": "b241f317ee718daaba109ca01bed0d6b5f23f1d523f2977c7ba0bf5b250c8b99",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "0affc970a5a34fc78d45eb074504e204d6ac2716710d18428fec3bef2b9132b2",
+      "cssBytes": 2203,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Search field when the interface needs a labeled native search input with focus-preserving clear and an optional explicit submit action.",
+        "avoidWhen": "Avoid it when the value is not user-editable or when one clear action is enough."
+      },
+      "notes": [
+        "The native search input supports a visible label, optional instructions and a clear action. Clearing returns focus to the input and updates controlled consumers with an empty string.",
+        "With onSearch, Enter and the explicit action request the same search. Without it, Enter retains the surrounding form’s normal submit behavior.",
+        "The component does not fetch or filter data. The live demo filters catalogue entries locally and shows the last explicit submission so both editing and submission are observable.",
+        "Disabled blocks the field and its actions. ReadOnly prevents editing and clearing while allowing the existing query to be searched. Original Gamma layout and token styling; no decorative animation or remote service is involved."
+      ],
+      "references": [
+        {
+          "label": "Original",
+          "url": "/components/search-field",
+          "role": "Original Gamma behavior, markup and token styles; no external component source or assets imported"
+        },
+        {
+          "label": "MDN HTML",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input/search",
+          "role": "Native search input labeling, value and form behavior"
+        }
+      ]
+    },
+    {
+      "slug": "floating-field",
+      "name": "Floating field",
+      "category": "Inputs",
+      "use": "Named configuration and query fields",
+      "uri": "gamma://explore/component/floating-field",
+      "sourceFile": "src/components/FloatingField.tsx",
+      "sourceSha256": "01b80e47fb377700ac9e01baac73d1bec6bf25ef5802b2f5a768ff9ac0053e4e",
+      "checkoutSourceSha256": "01b80e47fb377700ac9e01baac73d1bec6bf25ef5802b2f5a768ff9ac0053e4e",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "4660446f08d4585b9e03e6e75e4c50fad8db6729eb339c2cc44e22784941acac",
+      "cssBytes": 2442,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Floating field when the interface needs a native text field with a label that makes room for the entered value.",
+        "avoidWhen": "Avoid it when the value is not user-editable or when one clear action is enough."
+      },
+      "notes": [
+        "The label stays visible after typing or autofill.",
+        "Errors are linked to the input with aria-describedby.",
+        "The password toggle is a separate native button."
+      ],
+      "references": [
+        {
+          "label": "Spell UI",
+          "url": "https://spell.sh/docs/label-input",
+          "role": "Floating label reference"
+        }
+      ]
+    },
+    {
+      "slug": "search-combobox",
+      "name": "Search combobox",
+      "category": "Inputs",
+      "use": "Provider, metric, and label selection",
+      "uri": "gamma://explore/component/search-combobox",
+      "sourceFile": "src/components/SearchCombobox.tsx",
+      "sourceSha256": "7bf3cb2d43848d1496a2e1ef6f0ce6f2aae29af15f7acf97fe178056d13fce22",
+      "checkoutSourceSha256": "7bf3cb2d43848d1496a2e1ef6f0ce6f2aae29af15f7acf97fe178056d13fce22",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "e421559b2f8070f2ed3cf30eb3d34fc6df84ce7f304fb89577f3f4c0d64cfa83",
+      "cssBytes": 6315,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Search combobox when the interface needs a searchable single-choice field with disabled options, clear, and explicit loading and recovery states.",
+        "avoidWhen": "Avoid it when the value is not user-editable or when one clear action is enough."
+      },
+      "notes": [
+        "Type to filter; Arrow Up/Down opens the list and moves through enabled options, Enter commits, Escape closes, and Tab closes while leaving focus to continue naturally. Alt+Home/End reaches the first/last option without overriding native caret movement.",
+        "The editable input keeps focus while aria-activedescendant identifies the active option. Disabled choices remain visible. Clear resets the committed value and query. Blur/Escape discard uncommitted input without changing the choice.",
+        "The list uses the browser’s native popover top layer while staying beneath the component in the DOM, preserving nearest-scope tokens and avoiding clipping. It measures viewport space, flips above when necessary, and follows scroll/resize.",
+        "For remote results, control query, set filter={false}, and supply loading/error/onRetry. Requests, cancellation and stale-result handling belong to the consumer. Enter retries an open load error; the demo only simulates a local delay.",
+        "Original DOM/React implementation distilled from PanelUI’s MIT-licensed native Combobox. This component supports a single predefined option. Reduced motion removes entry fade and spinner rotation."
+      ],
+      "origin": "PanelUI",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/LICENSE",
+      "references": [
+        {
+          "label": "PanelUI",
+          "url": "https://panelui.dev/docs/components/combobox",
+          "role": "Editable field filtering, supporting option copy, selected indicator, clear action and loading states."
+        },
+        {
+          "label": "PanelUI source",
+          "url": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/packages/panelui/src/components/combobox/index.tsx",
+          "role": "MIT source reviewed for searchable single-choice behavior and anchored overlay; independently implemented with React DOM."
+        }
+      ]
+    },
+    {
+      "slug": "switch",
+      "name": "Switch",
+      "category": "Inputs",
+      "use": "Independent visualization options",
+      "uri": "gamma://explore/component/switch",
+      "sourceFile": "src/components/GammaSwitch.tsx",
+      "sourceSha256": "ac85891dd8115688d3ad969e3bb9079e57c81e2f85ecb1f9515f736d067dff46",
+      "checkoutSourceSha256": "ac85891dd8115688d3ad969e3bb9079e57c81e2f85ecb1f9515f736d067dff46",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "1ce4744844a4111217707055527698eab57b13bcef2aa561d04b38aadd0407ab",
+      "cssBytes": 472977,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Switch when the interface needs a labeled on/off control for immediate settings.",
+        "avoidWhen": "Avoid it when the value is not user-editable or when one clear action is enough."
+      },
+      "notes": [
+        "Use for immediate state changes, not form submission.",
+        "The native checkbox remains the interaction owner."
+      ],
+      "references": [
+        {
+          "label": "Spell UI",
+          "url": "https://spell.sh/",
+          "role": "Interaction reference"
+        }
+      ]
+    },
+    {
+      "slug": "tabs",
+      "name": "Tabs",
+      "category": "Navigation",
+      "use": "Query, style, and layout settings",
+      "uri": "gamma://explore/component/tabs",
+      "sourceFile": "src/components/GammaTabs.tsx",
+      "sourceSha256": "933b559aebad0e839a3d662bca3fc9b86b7792c77a4fef0cc6a659c78ca974f6",
+      "checkoutSourceSha256": "933b559aebad0e839a3d662bca3fc9b86b7792c77a4fef0cc6a659c78ca974f6",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "1ce4744844a4111217707055527698eab57b13bcef2aa561d04b38aadd0407ab",
+      "cssBytes": 472977,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Tabs when the interface needs a keyboard-aware way to switch between related panels.",
+        "avoidWhen": "Avoid it when there is only one destination or a flat list would be faster to scan."
+      },
+      "notes": [
+        "Arrow keys move between tabs.",
+        "Each tab controls one labeled panel."
+      ],
+      "references": [
+        {
+          "label": "useLayouts",
+          "url": "https://uselayouts.com/",
+          "role": "Layout reference"
+        }
+      ]
+    },
+    {
+      "slug": "action-menu",
+      "name": "Action menu",
+      "category": "Navigation",
+      "use": "Widget and dashboard action menus",
+      "uri": "gamma://explore/component/action-menu",
+      "sourceFile": "src/components/ActionMenu.tsx",
+      "sourceSha256": "e7068c04fad573a60174bca3e850f9501c9e98299100e4fbc23d858fdeaa334e",
+      "checkoutSourceSha256": "e7068c04fad573a60174bca3e850f9501c9e98299100e4fbc23d858fdeaa334e",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "020fd10078068d2cc8bd12ddafced1d89c8311eacd108aa7f27f247bc6bc0f8f",
+      "cssBytes": 3436,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Use Action menu for a compact set of project or row actions when the trigger should stay visible and shortcuts help repeat users.",
+        "avoidWhen": "Avoid it for a single action or a primary decision; keep one obvious button in that case."
+      },
+      "notes": [
+        "The trigger is a menu button. Enter, Space, or ArrowDown opens it and focuses the first enabled action.",
+        "ArrowDown/ArrowUp cycle enabled actions; Home and End jump; Escape or Tab closes and returns focus to the trigger.",
+        "Disabled actions stay visible but are skipped by keyboard navigation and do not fire.",
+        "Reduced motion removes the panel arrival; focus and state changes stay intact."
+      ],
+      "references": [
+        {
+          "label": "Component Gallery",
+          "url": "https://component.gallery/components/dropdown-menu/",
+          "role": "Menu-button structure and example review."
+        },
+        {
+          "label": "SaaS Interface",
+          "url": "https://saasinterface.com/components/menu-picker/",
+          "role": "SaaS menu and picker pattern reference."
+        }
+      ]
+    },
+    {
+      "slug": "context-menu",
+      "name": "Context menu",
+      "category": "Navigation",
+      "use": "Optional secondary widget actions",
+      "uri": "gamma://explore/component/context-menu",
+      "sourceFile": "src/components/ContextMenu.tsx",
+      "sourceSha256": "58d2c1d7baf1fc4237296132c60e221bf53c8454e1d5e4325d76dcf70c1a3533",
+      "checkoutSourceSha256": "58d2c1d7baf1fc4237296132c60e221bf53c8454e1d5e4325d76dcf70c1a3533",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "7b7e4059b88ffed59500ff84915243be6e5d339dda33f61f77b7c054d16b16ae",
+      "cssBytes": 2884,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Context menu when the interface needs a right-click action menu with a keyboard entry point, grouped items, shortcuts, and viewport clamping.",
+        "avoidWhen": "Avoid it when there is only one destination or a flat list would be faster to scan."
+      },
+      "notes": [
+        "Right-click opens at the pointer; Shift+F10 or the ContextMenu key opens at a stable point inside the surface.",
+        "The menu renders in a portal, clamps to the viewport, and closes on outside pointer, scroll, resize, Escape, or Tab.",
+        "ArrowUp and ArrowDown move by roving focus, Home and End jump to the edges, Enter or Space activates, and letter keys jump to a matching action.",
+        "Disabled actions stay visible but cannot be focused or activated. Danger actions use a semantic color mix and still keep readable text.",
+        "The menu is a real floating surface, so its elevation shadow is deliberate. Reduced motion does not affect the immediate open/close.",
+        "Original React implementation informed by the shadcn/ui context-menu pattern and the WAI-ARIA menu button guidance; no source or artwork is copied."
+      ],
+      "references": [
+        {
+          "label": "shadcn/ui",
+          "url": "https://ui.shadcn.com/docs/components/context-menu",
+          "role": "Context menu grouping and portal reference."
+        },
+        {
+          "label": "WAI APG",
+          "url": "https://www.w3.org/WAI/ARIA/apg/patterns/menu-button/",
+          "role": "Keyboard menu pattern reference."
+        }
+      ]
+    },
+    {
+      "slug": "side-sheet",
+      "name": "Side sheet",
+      "category": "Navigation",
+      "use": "Focused editing and mobile panels",
+      "uri": "gamma://explore/component/side-sheet",
+      "sourceFile": "src/components/SideSheet.tsx",
+      "sourceSha256": "3515ad5b7c60df2a5050f2b6ee96b322d37eaa854a58ae44ab382bc1169b0240",
+      "checkoutSourceSha256": "3515ad5b7c60df2a5050f2b6ee96b322d37eaa854a58ae44ab382bc1169b0240",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "b9ca9a64b5dac32c9c881ae0e1f2033b97703ca533bc03d654b8bf3ced06d3b4",
+      "cssBytes": 6304,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Side sheet when the interface needs edit page settings in a modal panel with a scrollable body, pinned actions and deliberate focus return.",
+        "avoidWhen": "Avoid it when there is only one destination or a flat list would be faster to scan."
+      },
+      "notes": [
+        "Uses showModal() on an in-scope native dialog: focus is contained and background content is inert without moving the panel out of its design-system token island.",
+        "The heading receives initial focus. Tab reaches the close button, body fields and footer. Escape, the close button or the backdrop returns focus to the opener; external blur is not pulled back.",
+        "Body scroll locks are reference counted and restore the previous inline overflow on close and unmount. Header and footer stay visible while the body scrolls.",
+        "Pass open and onOpenChange for save/cancel forms. Form data belongs to the consumer; dismissing the demo discards drafts, while Save applies the preview settings.",
+        "The detached panel fits the viewport on narrow screens. Entry uses token timing; close is immediate. Reduced motion removes sheet and backdrop entry animations.",
+        "Original React DOM implementation informed by the MIT PanelUI Sheet. SideSheet supports left and right edges; swipe dismissal, nested sheet staging, and top/bottom variants are outside this API."
+      ],
+      "origin": "PanelUI",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/LICENSE",
+      "references": [
+        {
+          "label": "PanelUI",
+          "url": "https://panelui.dev/docs/web/components/sheet",
+          "role": "Detached edge panel, modal focus, pinned header/footer and dismissal reference"
+        },
+        {
+          "label": "PanelUI source",
+          "url": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/packages/web/src/components/sheet/index.tsx",
+          "role": "MIT source inspected; original Gamma native dialog implementation without Base UI dependency"
+        }
+      ]
+    },
+    {
+      "slug": "data-table",
+      "name": "Data table",
+      "category": "Displays",
+      "use": "Tabular metrics and trace detail",
+      "uri": "gamma://explore/component/data-table",
+      "sourceFile": "src/components/DataTable.tsx",
+      "sourceSha256": "e1a6cc418fc4298894d4b97653d303639ff6d9b0dfa2ce0b07e1f32d421e1287",
+      "checkoutSourceSha256": "6f9005bff18912501d2796a9d732fdf4e3f2d2b99b0c24e89b99695ee6bd23ff",
+      "sourceMatchesCheckout": false,
+      "cssSha256": "dfa90bf8393f9389738a243c1427e182fa963c9368749a3994ca59fd174bf7f6",
+      "cssBytes": 44388,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Data table when the interface needs search, filter, sort, select, and expand rows in a reusable accessible table.",
+        "avoidWhen": "Avoid it when the content must be selected or operated; use an interactive control instead."
+      },
+      "notes": [
+        "Adapted from Spectrum UI, Apache-2.0, pinned to acdc998c64829f8ae037be48e3c273ccc8d71f60; retains the original Motion springs, layout reordering, filter thumb, and count transitions.",
+        "Tab reaches controls; Enter or Space activates buttons. Focus the table region for arrows, Home/End, Shift selection, and Cmd/Ctrl+A or C. Native checkbox and switch controls remain reachable.",
+        "Reduced motion or animate=false removes row layout motion and disclosure/count transitions. Tables scroll horizontally where content needs room; secondary columns hide at upstream breakpoints.",
+        "Data stays local. Supply loading and emptyState from your app; asynchronous requests, authorization, and persistence remain consumer-owned."
+      ],
+      "origin": "Spectrum UI adaptation",
+      "license": "Apache-2.0",
+      "licenseUrl": "https://github.com/arihantcodes/spectrum-ui/blob/acdc998c64829f8ae037be48e3c273ccc8d71f60/LICENSE",
+      "references": [
+        {
+          "label": "Spectrum UI",
+          "url": "https://ui.spectrumhq.in/docs/data-table",
+          "role": "Apache-2.0 source adaptation; original spring motion, Gamma token styling and supplied data."
+        },
+        {
+          "label": "Spectrum UI source",
+          "url": "https://github.com/arihantcodes/spectrum-ui/blob/acdc998c64829f8ae037be48e3c273ccc8d71f60/components/spectrumui/data-table.tsx",
+          "role": "Pinned upstream implementation; modified source retains attribution."
+        }
+      ]
+    },
+    {
+      "slug": "filter-bar",
+      "name": "Filter bar",
+      "category": "Inputs",
+      "use": "Query and drilldown filter context",
+      "uri": "gamma://explore/component/filter-bar",
+      "sourceFile": "src/components/FilterBar.tsx",
+      "sourceSha256": "9c8d030758fc1a1347337f1ebbe38a03e84120c4605c8e63f9ceeca8539195a7",
+      "checkoutSourceSha256": "9c8d030758fc1a1347337f1ebbe38a03e84120c4605c8e63f9ceeca8539195a7",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "82b563e84f1a3fa3c70d0aff9cd0a47d422fc4e41d4eea91ea3300ee575d75cd",
+      "cssBytes": 4459,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Use Filter bar when a list needs multi-select facets, removable active constraints, and a visible count.",
+        "avoidWhen": "Avoid it when there are one or two fixed views; a segmented control or tabs may be faster."
+      },
+      "notes": [
+        "Tab opens the trigger and moves through native checkboxes. Escape closes the panel and returns focus to the trigger.",
+        "Active filters become removable chips; each removal or clear returns focus to the trigger.",
+        "The active count is a polite live region, and every checkbox keeps its native checked state.",
+        "Reduced motion removes the panel arrival; selection and focus behavior stay unchanged."
+      ],
+      "references": [
+        {
+          "label": "SaaS Interface",
+          "url": "https://saasinterface.com/components/filters/",
+          "role": "SaaS filter and list refinement reference."
+        }
+      ]
+    },
+    {
+      "slug": "tree-navigator",
+      "name": "Tree navigator",
+      "category": "Navigation",
+      "use": "Dashboard folders and hierarchy",
+      "uri": "gamma://explore/component/tree-navigator",
+      "sourceFile": "src/components/TreeNavigator.tsx",
+      "sourceSha256": "bb647488c2f16d572ac8c825cd88d1c2ab1f1d50abad725fe46978fc1282ee00",
+      "checkoutSourceSha256": "bb647488c2f16d572ac8c825cd88d1c2ab1f1d50abad725fe46978fc1282ee00",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "269fc27196098672e12cd9ad674719b7d780869932494c8f5ab38419de51740b",
+      "cssBytes": 4247,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Tree navigator when the interface needs explore and select a nested hierarchy with guide lines, independent disclosure, and complete keyboard navigation.",
+        "avoidWhen": "Avoid it when there is only one destination or a flat list would be faster to scan."
+      },
+      "notes": [
+        "Tab enters one tree item. Up/Down move through visible enabled rows; Home/End reach the first or last row. Typing a label prefix moves focus.",
+        "Right opens a branch or enters its children; Left closes it or returns to its parent. These directions mirror in RTL. Enter and Space select the focused row.",
+        "Click a row to select it, or its chevron to expand without selecting. Selection does not follow focus, and opening a branch preserves selection.",
+        "Disabled items and their descendants are skipped by arrow navigation. If a focused branch collapses or a focused node disappears, focus returns to its nearest available ancestor.",
+        "Only open children are mounted. This component is synchronous, single-select, and unvirtualized; owners supply updated node data and handle navigation in onValueChange.",
+        "Only disclosure rotation animates; reduced motion removes transitions. All interactive colors, shapes, typography, focus, and motion use Gamma design-system tokens.",
+        "Icon and meta slots should contain noninteractive content. Stable unique IDs are required for selection, expansion, focus, and React keys."
+      ],
+      "origin": "PanelUI",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/LICENSE",
+      "references": [
+        {
+          "label": "PanelUI",
+          "url": "https://panelui.dev/docs/components/tree",
+          "role": "Nested disclosure, guide lines, and independent expansion/selection reference; original DOM implementation."
+        },
+        {
+          "label": "PanelUI source",
+          "url": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/packages/panelui/src/components/tree/index.tsx",
+          "role": "Reviewed React Native construction; no source or assets copied."
+        }
+      ]
+    },
+    {
+      "slug": "calendar-picker",
+      "name": "Calendar picker",
+      "category": "Inputs",
+      "use": "Civil-date selection within a time-range workflow",
+      "uri": "gamma://explore/component/calendar-picker",
+      "sourceFile": "src/components/CalendarPicker.tsx",
+      "sourceSha256": "cb86ecf2bfdd63b02f43f15900997c1559f18dbfebde83a847751bcdd5b8a326",
+      "checkoutSourceSha256": "cb86ecf2bfdd63b02f43f15900997c1559f18dbfebde83a847751bcdd5b8a326",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "a3e2ae19d50f4ba978e192e4c6ba2903de4d6c5f253065b1f7f7c4c19c685005",
+      "cssBytes": 4185,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Calendar picker when the interface needs a six-week calendar for choosing one date, with bounded month browsing and unavailable days.",
+        "avoidWhen": "Avoid it when the value is not user-editable or when one clear action is enough."
+      },
+      "notes": [
+        "Arrow keys move through available dates. Home/End reach available dates within the current week; Page Up/Down change month, with Shift changing year. Enter or Space selects; selecting the date again clears it.",
+        "Values are Gregorian YYYY-MM-DD civil dates, independent of timezone. The month is YYYY-MM. Supply valid bounds with minDate <= maxDate; an empty month remains keyboard reachable and announces that no dates are available.",
+        "The grid always occupies six weeks. Outside days are deliberately nonselectable; arrow navigation can change the month. Controlled month consumers must apply onMonthChange to complete navigation across a month boundary.",
+        "Today marks the local date at mount. Styling uses the nearest Gamma design-system scope. Reduced motion removes hover transitions; selection remains visible.",
+        "Original DOM/React implementation distilled from PanelUI’s MIT-licensed native Calendar. This focused component supports a single date rather than range, multiple, or alternate calendar systems."
+      ],
+      "origin": "PanelUI",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/LICENSE",
+      "references": [
+        {
+          "label": "PanelUI",
+          "url": "https://panelui.dev/docs/components/calendar",
+          "role": "Six-week layout, centered caption, unavailable-day rules and bounded single-date selection."
+        },
+        {
+          "label": "PanelUI source",
+          "url": "https://github.com/panel-ui/PanelUI/blob/3812a4509eb8b935b14a4f8f173a82d603030491/packages/panelui/src/components/calendar/index.tsx",
+          "role": "MIT source reviewed for calendar structure and selection behavior; independently implemented with React DOM."
+        }
+      ]
+    },
+    {
+      "slug": "tooltip",
+      "name": "Tooltip",
+      "category": "Feedback",
+      "use": "Short supplemental control descriptions",
+      "uri": "gamma://explore/component/tooltip",
+      "sourceFile": "src/components/Tooltip.tsx",
+      "sourceSha256": "a3086d9eaa8b5894061d9b9974e49a3eb108ad05b9ea5184da1a03bfad1415cb",
+      "checkoutSourceSha256": "a3086d9eaa8b5894061d9b9974e49a3eb108ad05b9ea5184da1a03bfad1415cb",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "304e8d5b24212b1dfbd021fbf16276379e754c564f8d01382a3059c5faa04bd1",
+      "cssBytes": 2540,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Use Tooltip for a short, non-interactive annotation attached to a single trigger that needs clarification on hover, focus, or tap.",
+        "avoidWhen": "Avoid it for long guidance or interactive content; use a popover, help panel, or inline message."
+      },
+      "notes": [
+        "Hover opens after a short delay; keyboard focus opens immediately and Escape closes without moving focus.",
+        "Placement is measured against the viewport. The bubble flips to a side with room, slides along the boundary, and keeps its arrow pointing at the trigger.",
+        "A warm handoff after closing skips the open delay, so moving across adjacent triggers stays responsive.",
+        "The bubble uses width max-content with a 240px cap, wraps long words, and scrolls a taller description instead of escaping the viewport.",
+        "The bubble stays mounted with aria-hidden while closed; it enters and exits with opacity, scale, and a short directional slide.",
+        "Reduced motion removes the scale, translation, and transition; the text still appears immediately.",
+        "Keep the content to a phrase or one sentence; interactive content belongs in a popover."
+      ],
+      "references": [
+        {
+          "label": "Component Gallery",
+          "url": "https://component.gallery/components/tooltip/",
+          "role": "Tooltip taxonomy and example review; behavior reproduced independently."
+        },
+        {
+          "label": "Tip Glide",
+          "url": "https://tip-glide.vercel.app/",
+          "role": "Auto placement, boundary clamping, warm handoffs, and enter/exit motion reference."
+        }
+      ]
+    },
+    {
+      "slug": "badge",
+      "name": "Badge",
+      "category": "Displays",
+      "use": "Provider type and status metadata",
+      "uri": "gamma://explore/component/badge",
+      "sourceFile": "src/components/Badge.tsx",
+      "sourceSha256": "31cf012c56e36210e07234f93e7ad57801960a95468427b0563577ec9efd0fe2",
+      "checkoutSourceSha256": "31cf012c56e36210e07234f93e7ad57801960a95468427b0563577ec9efd0fe2",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "fc902c2660cae0eb4e3dd0a4a591d622a7b7aaf5627e045cb36f8acf419df176",
+      "cssBytes": 3156,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Use Badge for a short status, count, or metadata label that belongs inside a sentence or row.",
+        "avoidWhen": "Avoid it for actions or filters; a badge is not interactive. Use a chip or button when selection matters."
+      },
+      "notes": [
+        "A badge is not interactive and has no keyboard path; use a button or filter chip when selection is needed.",
+        "The dot and icon are decorative; the visible label carries status, count, or metadata for screen readers.",
+        "All tones map to design-system tokens and inherit the surrounding system.",
+        "There is no animation; reduced motion does not change the badge."
+      ],
+      "references": [
+        {
+          "label": "Component Gallery",
+          "url": "https://component.gallery/components/badge/",
+          "role": "Badge taxonomy and tone/variant reference."
+        }
+      ]
+    },
+    {
+      "slug": "empty-state",
+      "name": "Empty state",
+      "category": "Displays",
+      "use": "Empty dashboards and no-results states",
+      "uri": "gamma://explore/component/empty-state",
+      "sourceFile": "src/components/EmptyState.tsx",
+      "sourceSha256": "7bb5d7a3d0347a6d609991688cd2113ab15427c708e69d48d853593e19ac81e7",
+      "checkoutSourceSha256": "7bb5d7a3d0347a6d609991688cd2113ab15427c708e69d48d853593e19ac81e7",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "5ee5efb0dbcb98fecf6f6a33ff892f8a9d2bc5e7e281932693ba4470f2b900d9",
+      "cssBytes": 1756,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Empty state when the interface needs a quiet empty surface that explains the context and gives the user a clear next action.",
+        "avoidWhen": "Avoid it when the content must be selected or operated; use an interactive control instead."
+      },
+      "notes": [
+        "Read context with consumer-owned actions: the authored moment is replacing an empty surface with real content after an action. The component itself owns no loading or data state.",
+        "Use a concrete title and one useful next step. Empty collections, filtered results and errors need different copy; loading belongs to a loading indicator rather than this surface.",
+        "Actions remain native buttons or links supplied as children, with visible focus styling. An icon is decorative; do not put essential information in it. The title is an h3, so place the surface within an appropriate heading hierarchy.",
+        "No client boundary or animation is needed. Reduced motion shows the same static layout. The live collection demo creates and removes local preview content."
+      ],
+      "references": [
+        {
+          "label": "Original",
+          "url": "/components/empty-state",
+          "role": "Original Gamma contextual copy, layout and action slot; no external component source or assets imported"
+        },
+        {
+          "label": "WAI Forms",
+          "url": "https://www.w3.org/WAI/tutorials/forms/labels/",
+          "role": "Meaningful visible labels for consumer-owned action controls"
+        }
+      ]
+    },
+    {
+      "slug": "pagination",
+      "name": "Pagination",
+      "category": "Navigation",
+      "use": "Bounded table navigation",
+      "uri": "gamma://explore/component/pagination",
+      "sourceFile": "src/components/Pagination.tsx",
+      "sourceSha256": "839b5aba7d371caed225f7038fed4c940025b5dd2230b8eb684050a1211ec201",
+      "checkoutSourceSha256": "839b5aba7d371caed225f7038fed4c940025b5dd2230b8eb684050a1211ec201",
+      "sourceMatchesCheckout": true,
+      "cssSha256": "2d4e4098921db0b03503ba6676e594d8fe6028be47ac880b54f6f03a5ce3cc25",
+      "cssBytes": 1544,
+      "defaultSystem": "gamma",
+      "selection": {
+        "bestFor": "Choose Pagination when the interface needs a bounded page selector with previous and next actions, current-page semantics and compact numbered ranges.",
+        "avoidWhen": "Avoid it when there is only one destination or a flat list would be faster to scan."
+      },
+      "notes": [
+        "The control owns only page selection. Fetching data, updating the displayed collection and synchronizing a URL remain consumer concerns.",
+        "Current-page semantics accompany native numbered buttons. Previous and next are disabled at the bounds; omitted ranges use noninteractive ellipses.",
+        "The live demo paginates real Gamma catalogue names four at a time. Controlled consumers should keep page and totalPages consistent when their collection changes.",
+        "Buttons retain native keyboard interaction and do not submit forms. No motion, external component implementation or routing dependency is required."
+      ],
+      "references": [
+        {
+          "label": "Original",
+          "url": "/components/pagination",
+          "role": "Original Gamma behavior, markup and token styles; no external component source or assets imported"
+        },
+        {
+          "label": "MDN ARIA",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-current",
+          "role": "Current-page identification within a navigation set"
+        }
+      ]
+    }
+  ]
+}

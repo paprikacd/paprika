@@ -48,6 +48,7 @@ COPY --from=mcp-ui-builder /mcp-ui/dist/console.html internal/api/mcp/ui/dist/co
 # Docker buildx supplies TARGETARCH in CI. The amd64 fallback keeps local builds
 # compatible with the current VKE node architecture.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -a -o manager ./cmd
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w" -o insights ./cmd/paprika-insights
 
 # Alpine: runtime needs ca-certificates for outbound TLS and tar (busybox)
 # for S3 archives. All git/helm work is in-process (go-git, Helm SDK) — no
@@ -58,6 +59,7 @@ RUN apk add --no-cache ca-certificates && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/insights .
 COPY --from=builder /workspace/charts /charts
 ENV HELM_CACHE_HOME=/tmp/helm/cache \
     HELM_CONFIG_HOME=/tmp/helm/config \

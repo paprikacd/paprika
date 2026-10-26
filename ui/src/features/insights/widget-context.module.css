@@ -1,0 +1,55 @@
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 17px 8px;
+  min-width: 0;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+}
+.picker > button {
+  flex: 1;
+  min-width: 0;
+}
+.selection {
+  padding: 0 17px 7px;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.interactiveRow {
+  cursor: pointer;
+}
+.interactiveRow:focus {
+  outline: 2px solid var(--gamma-accent, #bd512d);
+  outline-offset: -2px;
+  background: var(--gamma-accent-soft, #f9ede6);
+}
+.interactiveRow:hover {
+  background: var(--gamma-surface-2, #f1f2ed);
+}
+
+.interactiveRow[aria-selected="true"] {
+  background: var(--gamma-accent-soft, #f9ede6);
+}
+.interactiveRow[aria-selected="true"] td:first-child {
+  box-shadow: inset 2px 0 var(--gamma-accent, #bd512d);
+}
+@media (forced-colors: active) {
+  .interactiveRow:focus {
+    outline-color: Highlight;
+  }
+  .interactiveRow[aria-selected="true"] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+}
+
+.interactiveRow:hover,
+.interactiveRow:focus,
+.interactiveRow[aria-selected="true"] {
+  --widget-text: var(--gamma-ink, #27332e);
+}

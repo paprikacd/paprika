@@ -1138,7 +1138,7 @@ func getCallbackResponse(ctx context.Context, path string) callbackHTTPResponse 
 	if err != nil {
 		return callbackHTTPResponse{body: "callback request failed"}
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) // #nosec G704 -- This test helper always contacts the fixed loopback login callback listener.
 	if err != nil {
 		return callbackHTTPResponse{body: "callback request failed"}
 	}
@@ -1212,7 +1212,7 @@ func requestCallback(ctx context.Context, path string, result chan<- string) {
 		result <- "callback request failed: " + err.Error()
 		return
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) // #nosec G704 -- This test helper always contacts the fixed loopback login callback listener.
 	if err != nil {
 		result <- "callback request failed: " + err.Error()
 		return
@@ -1231,7 +1231,7 @@ func callbackStatus(ctx context.Context, method, path string) int {
 	if err != nil {
 		return 0
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) // #nosec G704 -- This test helper always contacts the fixed loopback login callback listener.
 	if err != nil {
 		return 0
 	}

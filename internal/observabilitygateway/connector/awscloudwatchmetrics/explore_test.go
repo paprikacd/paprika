@@ -215,6 +215,11 @@ func TestExploreUnsupportedKinds(t *testing.T) {
 	require.Equal(t, connector.StateNotAvailable, res.State)
 	require.Contains(t, res.Reason, "no metric metadata api")
 
+	res, err = CloudWatchMetrics{}.Explore(context.Background(), connector.ExploreRequest{Kind: connector.ExploreMetricSeries})
+	require.ErrorIs(t, err, connector.ErrUnsupported)
+	require.Equal(t, connector.StateNotAvailable, res.State)
+	require.Contains(t, res.Reason, "does not enumerate metric series")
+
 	res, err = CloudWatchMetrics{}.Explore(context.Background(), exploreRequest(
 		queryConfig(t, server.URL, "AWS/ECS"), connector.ExploreKind("bogus"), nil))
 	require.ErrorIs(t, err, connector.ErrUnsupported)

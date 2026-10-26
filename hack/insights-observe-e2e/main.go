@@ -1,0 +1,340 @@
+// An isolated loopback fixture for browser integration tests. It uses the real
+// authenticated API proxy, Insights stores, Observe handlers, MCP server and
+// Kubernetes-backed provider resolver. Only Kubernetes storage and telemetry
+// backends are deterministic fixtures; it never contacts a cluster.
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"os/signal"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	observev1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
+	apiserver "github.com/benebsworth/paprika/internal/api"
+	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/audit"
+	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/insights"
+	observe "github.com/benebsworth/paprika/internal/observabilitygateway"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+const fixtureIssuer = "https://observe-e2e.example.test"
+
+func run() error {
+	ready := flag.String("ready-file", "", "Private JSON connection file")
+	uiURL := flag.String("ui-url", "", "Optional local frontend server")
+	uiDir := flag.String("ui-dir", "ui/out", "Built static UI")
+	dataDir := flag.String("data-dir", "", "Isolated Insights persistence")
+	flag.Parse()
+	if *ready == "" || *dataDir == "" {
+		return errors.New("ready-file and data-dir are required")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fixture := &telemetryFixture{}
+	upstream := httptest.NewServer(fixture)
+	defer upstream.Close()
+	k8s, err := newFixtureClient(upstream.URL)
+	if err != nil {
+		return err
+	}
+	rules := []auth.RBACRule{
+		{Subjects: []string{"reader", "denied"}, Actions: []string{"admin"}, Resources: []string{"insights"}, Namespaces: []string{"*"}},
+		{Subjects: []string{"group:metrics-readers"}, Actions: []string{"read"}, Resources: []string{"observabilityproviders"}, Namespaces: []string{"observability"}},
+	}
+	secret := []byte(rand.Text() + rand.Text())
+	authCfg := auth.Config{Enabled: true, TokenSecret: secret, RBACRules: rules}
+	backend := observe.NewAuthorizedBackend(k8s, auth.NewRBACAuthorizer(rules))
+	storeCache, err := cache.New(ctx, cache.Config{Backend: cache.BackendMemory})
+	if err != nil {
+		return fmt.Errorf("open fixture cache: %w", err)
+	}
+	defer closeFixtureCache(storeCache)
+	gatewayHandler, err := newGatewayHandler(backend, storeCache, secret)
+	if err != nil {
+		return err
+	}
+	gateway := httptest.NewServer(gatewayHandler)
+	defer gateway.Close()
+	serviceToken := rand.Text() + rand.Text()
+	serviceHTTP, err := newInsightsFixture(*dataDir, gateway.URL, serviceToken)
+	if err != nil {
+		return err
+	}
+	defer serviceHTTP.Close()
+	appHandler, err := newAppHandler(ctx, authCfg, serviceHTTP.URL, serviceToken, fixture, *uiURL, *uiDir)
+	if err != nil {
+		return err
+	}
+	app := httptest.NewServer(appHandler)
+	defer app.Close()
+	if err = writeReadyFile(*ready, app.URL, gateway.URL, secret); err != nil {
+		return err
+	}
+	fmt.Println("Observe/Insights E2E fixture ready")
+	<-ctx.Done()
+	return nil
+}
+
+func newFixtureClient(endpoint string) (client.Client, error) {
+	scheme := runtime.NewScheme()
+	if err := observev1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register observability fixture scheme: %w", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register core fixture scheme: %w", err)
+	}
+	config, err := json.Marshal(map[string]string{"endpoint": endpoint})
+	if err != nil {
+		return nil, fmt.Errorf("encode fixture provider config: %w", err)
+	}
+	objects := make([]client.Object, 0, 6)
+	for _, namespace := range []string{"observability", "restricted"} {
+		objects = append(objects, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "provider-key", Namespace: namespace, Labels: map[string]string{observev1.CredentialsSecretLabel: "true"}}, Data: map[string][]byte{"credentials": []byte("fixture-provider-secret")}})
+		for _, typ := range []string{"prometheus", "tempo"} {
+			objects = append(objects, &observev1.ObservabilityProvider{ObjectMeta: metav1.ObjectMeta{Name: typ, Namespace: namespace}, Spec: observev1.ObservabilityProviderSpec{Type: typ, Config: runtime.RawExtension{Raw: config}, CredentialsSecretRef: &observev1.CredentialsSecretRef{Name: "provider-key"}}})
+		}
+	}
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build(), nil
+}
+
+func closeFixtureCache(storeCache *cache.Cache) {
+	if err := storeCache.Close(); err != nil {
+		slog.Warn("close fixture cache", "error", err)
+	}
+}
+
+func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret []byte) (http.Handler, error) {
+	verifier, err := auth.NewSelfSignedAuthenticatorForAudience(secret, mcp.ObservabilityTokenAudience, fixtureIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("configure fixture authenticator: %w", err)
+	}
+	registry := mcp.NewRegistry()
+	if err = observe.RegisterTools(registry, backend, nil); err != nil {
+		return nil, fmt.Errorf("register fixture MCP tools: %w", err)
+	}
+	mcpServer, err := mcp.NewServer(mcp.ServerConfig{Registry: registry, Authenticator: verifier, Confirmer: mcp.NewConfirmer(storeCache, time.Minute), Auditor: audit.NoopAuditor{}, Cache: storeCache, Secret: secret, PublicURL: fixtureIssuer, ClientID: "e2e", RedirectURIs: []string{"http://127.0.0.1/callback"}, RoutePrefix: "/observe", ProtocolPath: "/observe/mcp", Audience: mcp.ObservabilityTokenAudience, SupportedScopes: []mcp.Scope{mcp.ScopeObserve}, DisableConsoleResources: true, LinkRequestCancellation: true})
+	if err != nil {
+		return nil, fmt.Errorf("configure fixture MCP server: %w", err)
+	}
+	gatewayMux := http.NewServeMux()
+	protect := observe.RequireObserveScope(verifier, fixtureIssuer, "/observe")
+	gatewayMux.Handle("GET /observe/api/providers", protect(observe.DashboardProvidersHandler(backend, nil)))
+	gatewayMux.Handle("POST /observe/api/query", protect(observe.DashboardQueryHandler(backend, nil)))
+	gatewayMux.Handle("POST /observe/api/explore", protect(observe.DashboardExploreHandler(backend, nil)))
+	gatewayMux.Handle("/observe/mcp", mcpServer.Handler())
+	return gatewayMux, nil
+}
+
+func newInsightsFixture(dataDir, gatewayURL, token string) (*httptest.Server, error) {
+	documents, err := insights.OpenStore(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("open fixture Insights store: %w", err)
+	}
+	service, err := insights.NewServer(insights.Config{Token: token, ObservabilityURL: gatewayURL}, documents)
+	if err != nil {
+		return nil, fmt.Errorf("configure fixture Insights server: %w", err)
+	}
+	return httptest.NewServer(service.Handler()), nil
+}
+
+func newAppHandler(ctx context.Context, authCfg auth.Config, serviceURL, serviceToken string, fixture *telemetryFixture, uiURL, uiDir string) (http.Handler, error) {
+	proxy, err := apiserver.NewInsightsProxy(ctx, authCfg, serviceURL, serviceToken, apiserver.InsightsProxyOptions{ObservabilityIssuer: fixtureIssuer})
+	if err != nil {
+		return nil, fmt.Errorf("configure fixture Insights proxy: %w", err)
+	}
+	frontend, err := frontendHandler(uiURL, uiDir)
+	if err != nil {
+		return nil, err
+	}
+	appMux := http.NewServeMux()
+	appMux.Handle("/api/insights/", proxy)
+	appMux.HandleFunc("GET /__test/requests", func(w http.ResponseWriter, _ *http.Request) {
+		fixture.mu.Lock()
+		defer fixture.mu.Unlock()
+		jsonResponse(w, map[string]any{"queries": fixture.requests})
+	})
+	appMux.Handle("/", frontend)
+	return appMux, nil
+}
+
+func frontendHandler(uiURL, uiDir string) (http.Handler, error) {
+	if uiURL == "" {
+		return http.FileServer(http.Dir(uiDir)), nil
+	}
+	frontend, err := url.Parse(uiURL)
+	if err != nil || (frontend.Scheme != "http" && frontend.Scheme != "https") || (frontend.Hostname() != "localhost" && frontend.Hostname() != "127.0.0.1" && frontend.Hostname() != "::1") {
+		return nil, errors.New("ui-url must be a loopback HTTP(S) server")
+	}
+	return httputil.NewSingleHostReverseProxy(frontend), nil
+}
+
+func mintFixtureToken(secret []byte, subject, audience string, groups []string) (string, error) {
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: subject, Email: subject + "@example.test", Name: subject, Groups: groups, Audience: audience, Issuer: fixtureIssuer, Scope: "paprika:observe", Secret: secret, TTL: time.Hour})
+	if err != nil {
+		return "", fmt.Errorf("issue fixture token: %w", err)
+	}
+	return token, nil
+}
+
+func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
+	token, err := mintFixtureToken(secret, "reader", auth.ConsoleAPIAudience, []string{"metrics-readers"})
+	if err != nil {
+		return err
+	}
+	denied, err := mintFixtureToken(secret, "denied", auth.ConsoleAPIAudience, []string{})
+	if err != nil {
+		return err
+	}
+	mcpToken, err := mintFixtureToken(secret, "reader", mcp.ObservabilityTokenAudience, []string{"metrics-readers"})
+	if err != nil {
+		return err
+	}
+	readyJSON, err := json.Marshal(map[string]string{"baseURL": appURL, "token": token, "deniedToken": denied, "mcpURL": gatewayURL + "/observe/mcp", "mcpToken": mcpToken, "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"})
+	if err != nil {
+		return fmt.Errorf("encode fixture connection file: %w", err)
+	}
+	if err = os.WriteFile(path, readyJSON, 0600); err != nil {
+		return fmt.Errorf("write fixture connection file: %w", err)
+	}
+	return nil
+}
+
+type telemetryFixture struct {
+	mu       sync.Mutex
+	requests []map[string]string
+}
+
+var serviceLiteral = regexp.MustCompile(`service=("(?:\\.|[^"\\])*")`)
+
+func (f *telemetryFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer fixture-provider-secret" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	q := r.URL.Query()
+	f.mu.Lock()
+	f.requests = append(f.requests, map[string]string{"path": r.URL.Path, "query": q.Get("query"), "traceQuery": q.Get("q"), "start": q.Get("start"), "end": q.Get("end"), "step": q.Get("step")})
+	f.mu.Unlock()
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		servePrometheus(w, r)
+		return
+	}
+	serveTempo(w, r)
+}
+
+var fixtureServices = []string{"api-gateway", "release-controller"}
+
+func servePrometheus(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/api/v1/query_range":
+		serveMetricRange(w, r)
+	case "/api/v1/query":
+		jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"resultType": "vector", "result": []any{map[string]any{"metric": map[string]string{}, "value": []any{time.Now().Unix(), "1"}}}}})
+	case "/api/v1/label/__name__/values":
+		jsonResponse(w, map[string]any{"status": "success", "data": []string{"http_requests_total"}})
+	case "/api/v1/labels":
+		jsonResponse(w, map[string]any{"status": "success", "data": []string{"service", "instance"}})
+	case "/api/v1/label/service/values":
+		jsonResponse(w, map[string]any{"status": "success", "data": fixtureServices})
+	case "/api/v1/label/instance/values":
+		jsonResponse(w, map[string]any{"status": "success", "data": []string{"one", "two"}})
+	case "/api/v1/series":
+		jsonResponse(w, map[string]any{"status": "success", "data": []any{map[string]string{"__name__": "http_requests_total", "service": fixtureServices[0], "instance": "one"}, map[string]string{"__name__": "http_requests_total", "service": fixtureServices[1], "instance": "two"}}})
+	case "/api/v1/metadata":
+		jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"http_requests_total": []any{map[string]string{"type": "counter", "help": "HTTP requests", "unit": "requests"}}}})
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func metricRangeEnd(raw string) float64 {
+	end, err := strconv.ParseFloat(raw, 64)
+	if err == nil && end != 0 {
+		return end
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return 0
+	}
+	return float64(parsed.UnixNano()) / 1e9
+}
+
+func serveMetricRange(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	end := metricRangeEnd(q.Get("end"))
+	service := fixtureServices[0]
+	if match := serviceLiteral.FindStringSubmatch(q.Get("query")); len(match) > 1 {
+		if err := json.Unmarshal([]byte(match[1]), &service); err != nil {
+			http.Error(w, "invalid service selector", http.StatusBadRequest)
+			return
+		}
+	}
+	last := 101.2345
+	if service == fixtureServices[1] {
+		last = 202.3456
+	}
+	values := [][]any{{end - 180, strconv.FormatFloat(last-9.25, 'f', -1, 64)}, {end - 120, strconv.FormatFloat(last+12.5, 'f', -1, 64)}, {end - 60, strconv.FormatFloat(last-3.75, 'f', -1, 64)}, {end, strconv.FormatFloat(last, 'f', -1, 64)}}
+	if service == fixtureServices[0] {
+		values[0][1] = strconv.FormatFloat(last+8.5, 'f', -1, 64)
+		values[1][1] = strconv.FormatFloat(last-4.25, 'f', -1, 64)
+		values[2][1] = strconv.FormatFloat(last+1.75, 'f', -1, 64)
+	}
+	jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": []any{map[string]any{"metric": map[string]string{"service": service}, "values": values}}}})
+}
+
+func serveTempo(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/api/search":
+		jsonResponse(w, map[string]any{"traces": []any{map[string]any{"traceID": "abc123", "rootServiceName": fixtureServices[0], "rootTraceName": "GET /api/orders", "durationMs": 12.34, "startTimeUnixNano": strconv.FormatInt(time.Now().UnixNano(), 10)}}})
+	case "/api/search/tags":
+		jsonResponse(w, map[string]any{"tagNames": []string{"resource.service.name", "http.method"}})
+	case "/api/echo":
+		if _, err := w.Write([]byte("echo")); err != nil {
+			slog.Warn("write fixture echo response", "error", err)
+		}
+	default:
+		if strings.HasPrefix(r.URL.Path, "/api/search/tag/") {
+			jsonResponse(w, map[string]any{"tagValues": fixtureServices})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func jsonResponse(w http.ResponseWriter, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		slog.Warn("write fixture JSON response", "error", err)
+	}
+}

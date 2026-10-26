@@ -700,6 +700,13 @@ tasks:
           else
             echo "ok[$name]"
           fi
+          if [ "$name" = insights-shared ]; then
+            gateway_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_OBSERVABILITY_GATEWAY_ADDR')"
+            issuer_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_MCP_PUBLIC_URL')"
+            if [ "$gateway_count" -ne 2 ] || [ "$issuer_count" -ne 2 ]; then
+              echo "FAIL[$name]: API, Insights and gateway must share destination and issuer wiring"; rc=1
+            fi
+          fi
           if [ "$name" = namespace-scoped ]; then
             count="$(printf '%s\n' "$out" | grep -c -- '--api-namespace=review-samples')"
             if [ "$count" -ne 2 ]; then
@@ -741,6 +748,12 @@ tasks:
         check_render namespace-scoped --set deploymentMode=split --set apiServer.namespaceScope=review-samples \
           --set observabilityGateway.enabled=true --set auth.enabled=true \
           --set mcp.publicURL=https://review.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret'
+        check_render insights-shared --set deploymentMode=split --set apiServer.enabled=true \
+          --set insights.enabled=true --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
           --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
           --set 'observabilityGateway.extraEnv[0].value=test-token-secret'
         expect_fail invalid-namespace-scope --set apiServer.namespaceScope=Review/production

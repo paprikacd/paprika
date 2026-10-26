@@ -206,6 +206,8 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 		Query:       req.Query,
 		TraceID:     req.TraceID,
 		Range:       req.Range,
+		Step:        req.Step,
+		Instant:     req.Instant,
 		Limit:       req.Limit,
 		PageToken:   req.PageToken,
 		Config:      cr.Spec.Config.Raw,
@@ -257,6 +259,7 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 		Metric:      req.Metric,
 		Label:       req.Label,
 		Prefix:      req.Prefix,
+		Range:       req.Range,
 		Limit:       req.Limit,
 		Params:      req.Params,
 		Config:      cr.Spec.Config.Raw,
@@ -312,6 +315,25 @@ func boundExplore(req *connector.ExploreRequest) error {
 	req.Limit = limit
 	if len(req.Metric) > maxQueryBytes || len(req.Label) > maxQueryBytes || len(req.Prefix) > maxQueryBytes {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration filter exceeds its size limit"))
+	}
+	if err := validateExploreParams(req.Params); err != nil {
+		return err
+	}
+	if req.Kind == connector.ExploreMetricSeries || !req.Range.Start.IsZero() || !req.Range.End.IsZero() {
+		defaultWindow(&req.Range)
+		return validateWindow(req.Range)
+	}
+	return nil
+}
+
+func validateExploreParams(params map[string]string) error {
+	if len(params) > 16 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration parameters exceed their size limit"))
+	}
+	for key, value := range params {
+		if len(key) > 128 || len(value) > 4096 {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration parameters exceed their size limit"))
+		}
 	}
 	return nil
 }

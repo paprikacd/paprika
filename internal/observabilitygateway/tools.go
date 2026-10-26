@@ -343,23 +343,28 @@ func queryLogsTool(b Backend) mcp.Tool {
 // signal selects the connector's query language and response label.
 func nativeQueryTool(b Backend, signal connector.Signal) mcp.Tool {
 	name := "query_" + string(signal)
+	metricFields := ""
+	if signal == connector.SignalMetrics {
+		metricFields = `"step_seconds":{"type":"number","minimum":1,"maximum":2678400},"instant":{"type":"boolean"},`
+	}
 	return mcp.Tool{
 		Name:        name,
-		Description: fmt.Sprintf("Run a %s query in the configured provider's native query language. Read-only; start and end default to the trailing thirty minutes, with a maximum window of 24 hours. Limit defaults to 100 (maximum 1000).", signal),
+		Description: fmt.Sprintf("Run a %s query in the configured provider's native query language. Read-only; start and end default to the trailing thirty minutes, with a maximum window of 31 days. Limit defaults to 100 (maximum 1000).", signal),
 		Scope:       mcp.ScopeObserve,
-		InputSchema: json.RawMessage(`{
+		InputSchema: json.RawMessage(fmt.Sprintf(`{
 			"type":"object",
 			"properties":{
 				"provider":{"type":"string"},
 				"query":{"type":"string"},
 				"start":{"type":"string"},
 				"end":{"type":"string"},
+				%s
 				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100},
 				"page_token":{"type":"string","maxLength":4096,"description":"GCP continuation token; resend the original query, start, end and limit unchanged"}
 			},
 			"required":["provider","query"],
 			"additionalProperties":false
-		}`),
+		}`, metricFields)),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
 			in, err := decodeArgs(args)
 			if err != nil {
@@ -377,13 +382,23 @@ func nativeQueryTool(b Backend, signal connector.Signal) mcp.Tool {
 			if err != nil {
 				return nil, err
 			}
-			result, err := b.Query(ctx, provider, connector.QueryRequest{
+			step, instant, err := metricQueryOptions(in, signal)
+			if err != nil {
+				return nil, err
+			}
+			request := connector.QueryRequest{
 				Signal:    signal,
 				Query:     query,
 				Range:     window,
+				Step:      step,
+				Instant:   instant,
 				Limit:     limitArg(in, 100),
 				PageToken: in.string("page_token"),
-			})
+			}
+			if boundErr := boundQuery(&request); boundErr != nil {
+				return nil, boundErr
+			}
+			result, err := b.Query(ctx, provider, request)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", name, err)
 			}
@@ -392,10 +407,30 @@ func nativeQueryTool(b Backend, signal connector.Signal) mcp.Tool {
 	}
 }
 
+func metricQueryOptions(in toolArgs, signal connector.Signal) (time.Duration, bool, error) {
+	var step time.Duration
+	var instant bool
+	if raw, present := in["step_seconds"]; present {
+		seconds, ok := raw.(float64)
+		if signal != connector.SignalMetrics || !ok || seconds < 1 || seconds > maxQueryWindow.Seconds() {
+			return 0, false, invalidDashboardRequest()
+		}
+		step = time.Duration(seconds * float64(time.Second))
+	}
+	if raw, present := in["instant"]; present {
+		value, ok := raw.(bool)
+		if signal != connector.SignalMetrics || !ok {
+			return 0, false, invalidDashboardRequest()
+		}
+		instant = value
+	}
+	return step, instant, nil
+}
+
 func queryTracesTool(b Backend) mcp.Tool {
 	return mcp.Tool{
 		Name:        "query_traces",
-		Description: "Query traces in the configured provider's native query language or by trace ID (at least one of query or trace_id is required). Read-only; start and end default to the trailing thirty minutes, with a maximum window of 24 hours. Limit defaults to 100 (maximum 1000).",
+		Description: "Query traces in the configured provider's native query language or by trace ID (at least one of query or trace_id is required). Read-only; start and end default to the trailing thirty minutes, with a maximum window of 31 days. Limit defaults to 100 (maximum 1000).",
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{
 			"type":"object",

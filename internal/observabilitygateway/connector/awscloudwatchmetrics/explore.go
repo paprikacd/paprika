@@ -69,7 +69,7 @@ func (CloudWatchMetrics) Explore(ctx context.Context, req connector.ExploreReque
 		return exploreDimensionNames(ctx, client, input, req.Limit), nil
 	case connector.ExploreLabelValues:
 		return exploreDimensionValues(ctx, client, input, req.Label, req.Limit), nil
-	case connector.ExploreMetricMetadata, connector.ExploreTraceServices:
+	case connector.ExploreMetricMetadata, connector.ExploreMetricSeries, connector.ExploreTraceServices:
 		return exploreUnsupported(exploreShapeError(req.Kind, req.Label))
 	}
 	// Unknown kinds were rejected by the shape check above.
@@ -87,6 +87,8 @@ func exploreShapeError(kind connector.ExploreKind, label string) string {
 			return "a dimension name is required"
 		}
 		return ""
+	case connector.ExploreMetricSeries:
+		return "aws-cloudwatch-metrics connector does not enumerate metric series"
 	case connector.ExploreMetricMetadata:
 		return "cloudwatch has no metric metadata api; metric types, help text and units cannot be enumerated"
 	case connector.ExploreTraceServices:

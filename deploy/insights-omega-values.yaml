@@ -1,0 +1,13 @@
+# Layer over Omega's current release values. Keep image digests in the deployment
+# command/receipt so this file does not downgrade unrelated Paprika components.
+insights:
+  enabled: true
+  token:
+    existingSecretName: paprika-insights-service-token
+    existingSecretKey: token
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClassName: vultr-block-storage-retain
+  # Providers are discovered from the existing authorized Observe gateway.
+  providers: []

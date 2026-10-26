@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/cache"
 )
 
@@ -522,9 +524,92 @@ func TestBoundRefreshRecordsKeepEmptyDisplayIdentity(t *testing.T) {
 		assert.Empty(t, principal.Email)
 		assert.Empty(t, principal.Name)
 		assert.Equal(t, []string{"paprika:read"}, principal.Scopes)
+		assert.Equal(t, []string{"users"}, principal.Groups, "only legacy cached records retain the historical group default")
 		require.NotEmpty(t, pair.RefreshToken)
 		assert.NotEqual(t, refresh, pair.RefreshToken)
 		refresh = pair.RefreshToken
+	}
+}
+
+type nilGroupOAuthAuthenticator struct{}
+
+func (nilGroupOAuthAuthenticator) Authenticate(context.Context) (*auth.Principal, error) {
+	return &auth.Principal{Subject: "group-user", Email: "group-user@example.com", Name: "Group User", Scopes: []string{"paprika:observe"}}, nil
+}
+
+func TestObserveOAuthPreservesExactGroupsThroughCodeAndRefresh(t *testing.T) {
+	for _, flow := range []string{"consent", "direct authorize"} {
+		for _, tc := range []struct {
+			name   string
+			groups []string
+		}{
+			{"restricted groups", []string{"team-a-readers", "production-observers"}},
+			{"explicit empty groups", []string{}},
+			{"principal without groups", nil},
+		} {
+			t.Run(flow+"/"+tc.name, func(t *testing.T) {
+				srv, mux, clientID, _ := newNativeOAuthContractServer(t)
+				bearer, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+					Subject: "group-user", Email: "group-user@example.com", Name: "Group User", Groups: tc.groups,
+					Audience: auth.ConsoleAPIAudience, Issuer: nativeContractOrigin, Scope: "paprika:observe", TTL: time.Hour, Secret: testSecret,
+				})
+				require.NoError(t, err)
+				if tc.groups == nil {
+					// OIDC principals can have no groups at all. A newly consented
+					// grant must preserve that emptiness, never invent "users".
+					srv.authorizeAuthenticator = nilGroupOAuthAuthenticator{}
+				}
+				var code string
+				if flow == "consent" {
+					code = nativeContractConsentCode(t, mux, clientID, bearer)
+				} else {
+					query := url.Values{"client_id": {clientID}, "redirect_uri": {nativeContractRedirect}, "response_type": {"code"},
+						"code_challenge": {pkceChallengeForFix1}, "code_challenge_method": {"S256"}, "scope": {"paprika:observe"}}
+					req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/observe/authorize?"+query.Encode(), nil)
+					req.Header.Set("Authorization", "Bearer "+bearer)
+					response := httptest.NewRecorder()
+					mux.ServeHTTP(response, req)
+					require.Equal(t, http.StatusFound, response.Code, response.Body.String())
+					destination, parseErr := url.Parse(response.Header().Get("Location"))
+					require.NoError(t, parseErr)
+					code = destination.Query().Get("code")
+					require.NotEmpty(t, code)
+				}
+				wantGroups := append([]string{}, tc.groups...)
+				encoded, err := srv.cache.Get(t.Context(), authCodeKey(code))
+				require.NoError(t, err)
+				var codeRecord authCodeRecord
+				require.NoError(t, json.Unmarshal(encoded, &codeRecord))
+				assert.Equal(t, wantGroups, codeRecord.Groups, "the code cache must distinguish an explicit empty group set")
+				response := postForm(t, mux, "/observe/token", url.Values{
+					"grant_type": {"authorization_code"}, "client_id": {clientID}, "redirect_uri": {nativeContractRedirect},
+					"code": {code}, "code_verifier": {pkceVerifierForFix1}, "groups": {"users admin"},
+				})
+				for generation := range 3 {
+					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+					var pair tokenResponse
+					require.NoError(t, json.Unmarshal(response.Body.Bytes(), &pair))
+					principal, authErr := srv.authenticator.Authenticate(ctxWithBearer(pair.AccessToken))
+					require.NoError(t, authErr)
+					assert.Equal(t, "group-user", principal.Subject)
+					assert.Equal(t, "group-user@example.com", principal.Email)
+					assert.Equal(t, "Group User", principal.Name)
+					assert.Equal(t, []string{"paprika:observe"}, principal.Scopes)
+					assert.Equal(t, wantGroups, principal.Groups, "generation %d", generation)
+					encoded, err = srv.cache.Get(t.Context(), refreshKey(pair.RefreshToken))
+					require.NoError(t, err)
+					var refresh refreshRecord
+					require.NoError(t, json.Unmarshal(encoded, &refresh))
+					assert.Equal(t, wantGroups, refresh.Groups, "refresh cache generation %d", generation)
+					if generation < 2 {
+						response = postForm(t, mux, "/observe/token", url.Values{
+							"grant_type": {"refresh_token"}, "client_id": {clientID}, "refresh_token": {pair.RefreshToken},
+							"groups": {"users admin"}, "scope": {"paprika:read paprika:write"},
+						})
+					}
+				}
+			})
+		}
 	}
 }
 
