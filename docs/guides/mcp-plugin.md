@@ -228,9 +228,11 @@ The optional `paprika-setup` skill verifies access with `fleet_status` after log
 The optional [`paprika-observe`](../../plugins/paprika-observe/README.md) package
 connects the separate `/observe/mcp` endpoint and bundles an observability skill.
 Its portable manifest uses `streamable-http` and per-server OpenAI OAuth
-configuration with DCR and `paprika:observe`; its supported Codex and Claude
-compatibility manifests use `.mcp.json` with `type: "http"`. It advertises only
-Read capability. The existing fleet package still connects only `/mcp`.
+configuration with DCR and the independent `paprika:observe` and
+`paprika:insights:write` scopes; its supported Codex and Claude compatibility
+manifests use `.mcp.json` with `type: "http"`. Version 0.2.0 advertises Read and
+Write capabilities for telemetry reads and saved-query/dashboard authoring.
+The existing fleet package still connects only `/mcp`.
 
 After the user explicitly approves configuring persistent access to the exact
 deployment, install `paprika-observe@paprika` from this repository marketplace
@@ -248,6 +250,19 @@ For Claude Code:
 ```sh
 claude mcp add --transport http paprika_observe https://YOUR_VERIFIED_PAPRIKA_HOST/observe/mcp
 ```
+
+For saved-query and dashboard authoring, request a fresh consent grant with
+both scopes (and retain the user's existing Insights write permission):
+
+```sh
+codex mcp login paprika_observe --scopes paprika:observe,paprika:insights:write
+```
+
+Existing read-only tokens stay read-only on refresh. An OAuth request without
+scopes keeps the read-only default; compatibility clients need to request the
+authoring scope explicitly. The deployment advertises that scope only when
+Insights is configured. Authoring does not grant provider configuration or
+fleet writes.
 
 Then complete sign-in through `/mcp` in Claude Code. Use native OAuth consent;
 never supply copied fleet tokens or provider credentials. Each deployment and
@@ -281,14 +296,13 @@ include `Retry-After`. Package tests and local protocol tests establish server
 contracts; they do not prove installed-client OAuth, deployed ingress, or live
 provider access.
 
-Two deployment limitations remain: DCR registrations are held in the server
-process, so a restart requires re-registration and replicas cannot share those
-registrations. Keep the gateway at one replica until registration storage is
-shared. Self-signed OAuth access tokens preserve subject/email/display name but
-currently reconstruct only the `users` group; group-based RBAC grants cannot
-rely on original OIDC group memberships. Use an already approved exact subject
-rule or implement group-claim preservation separately; do not broaden RBAC to
-work around a denied query.
+With `mcp.oauth.persistClients` enabled (the chart default), the gateway's DCR
+registry persists in its resource-bound ConfigMap and survives restarts.
+Without persistent registration storage, clients must re-register after a
+restart. OAuth access/refresh grants and internal console delegation preserve
+the authenticated user's exact groups, including an explicitly empty set;
+subject and group RBAC apply without substituting a service identity. Never
+broaden RBAC to work around a denied query or document write.
 
 Validate without installation or new credentials:
 

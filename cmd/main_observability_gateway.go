@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/audit"
@@ -226,10 +228,18 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 // retained by slow clients. Metadata and health remain available under load.
 func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 	active := make(chan struct{}, 4)
+	// Authoring calls can re-enter provider discovery through Insights. Reserve
+	// a bounded catalogue pool so four active MCP calls cannot starve the
+	// requests needed to complete them. Query/exploration budgets stay shared.
+	providers := make(chan struct{}, 4)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slots := active
 		switch r.URL.Path {
+		case observabilityGatewayRoutePrefix + "/api/providers":
+			if r.Method == http.MethodGet {
+				slots = providers
+			}
 		case observabilityGatewayRoutePrefix + "/mcp",
-			observabilityGatewayRoutePrefix + "/api/providers",
 			observabilityGatewayRoutePrefix + "/api/query",
 			observabilityGatewayRoutePrefix + "/api/explore":
 		default:
@@ -237,8 +247,8 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 			return
 		}
 		select {
-		case active <- struct{}{}:
-			defer func() { <-active }()
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
 			next.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Retry-After", "1")
@@ -283,6 +293,10 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	if cfg.AuditLogEnabled {
 		auditor = audit.NewLogAuditor()
 	}
+	supportedScopes, err := registerObservabilityInsights(ctx, registry, usage, authCfg, cfg.MCPPublicURL, auditor)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	clientRegistry, err := newMCPClientRegistry(ctx, cfg, k8sClient, observabilityGatewayRoutePrefix+"/mcp")
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -305,7 +319,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		RoutePrefix:                  observabilityGatewayRoutePrefix,
 		ProtocolPath:                 observabilityGatewayRoutePrefix + "/mcp",
 		Audience:                     mcp.ObservabilityTokenAudience,
-		SupportedScopes:              []mcp.Scope{mcp.ScopeObserve},
+		SupportedScopes:              supportedScopes,
 		DisableConsoleResources:      true,
 		LinkRequestCancellation:      true,
 		// Query tool results are large, highly repetitive JSON; level 3 keeps
@@ -397,4 +411,30 @@ func writeGatewayJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v) //nolint:errcheck // best-effort: the status/headers are already written
+}
+
+// Reuse the UI proxy so OAuth authoring cannot bypass human Insights RBAC or
+// access storage with the gateway service account's authority.
+func registerObservabilityInsights(ctx context.Context, registry *mcp.Registry, usage *observabilitygateway.UsageTracker, cfg auth.Config, publicURL string, auditor audit.Auditor) ([]mcp.Scope, error) {
+	scopes := make([]mcp.Scope, 1, 2)
+	scopes[0] = mcp.ScopeObserve
+	endpoint := os.Getenv("PAPRIKA_INSIGHTS_URL")
+	if endpoint == "" {
+		return scopes, nil
+	}
+	if !cfg.Enabled {
+		return nil, errors.New("insights MCP authoring requires authentication")
+	}
+	proxy, err := apiserver.NewInsightsProxy(ctx, cfg, endpoint, os.Getenv("PAPRIKA_INSIGHTS_TOKEN"), apiserver.InsightsProxyOptions{ObservabilityIssuer: publicURL})
+	if err != nil {
+		return nil, fmt.Errorf("configure Insights authoring proxy: %w", err)
+	}
+	authoring, err := observabilitygateway.NewInsightsAuthoringClient(proxy, cfg.TokenSecret, publicURL, auditor)
+	if err != nil {
+		return nil, fmt.Errorf("configure Insights authoring client: %w", err)
+	}
+	if err := observabilitygateway.RegisterInsightsTools(registry, authoring, usage); err != nil {
+		return nil, fmt.Errorf("configure Insights authoring tools: %w", err)
+	}
+	return append(scopes, mcp.ScopeInsightsWrite), nil
 }

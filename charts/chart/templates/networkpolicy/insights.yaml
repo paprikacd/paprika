@@ -20,6 +20,10 @@ spec:
             matchLabels:
               app.kubernetes.io/instance: {{ .Release.Name }}
               control-plane: controller-manager
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: observability-gateway
       ports:
         - { protocol: TCP, port: 8090 }
   egress:

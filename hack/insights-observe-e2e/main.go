@@ -70,6 +70,7 @@ func run() error {
 	}
 	rules := []auth.RBACRule{
 		{Subjects: []string{"reader", "denied"}, Actions: []string{"admin"}, Resources: []string{"insights"}, Namespaces: []string{"*"}},
+		{Subjects: []string{"viewer"}, Actions: []string{"read"}, Resources: []string{"insights"}, Namespaces: []string{"*"}},
 		{Subjects: []string{"group:metrics-readers"}, Actions: []string{"read"}, Resources: []string{"observabilityproviders"}, Namespaces: []string{"observability"}},
 	}
 	secret := []byte(rand.Text() + rand.Text())
@@ -80,11 +81,8 @@ func run() error {
 		return fmt.Errorf("open fixture cache: %w", err)
 	}
 	defer closeFixtureCache(storeCache)
-	gatewayHandler, err := newGatewayHandler(backend, storeCache, secret)
-	if err != nil {
-		return err
-	}
-	gateway := httptest.NewServer(gatewayHandler)
+	gatewayMux := http.NewServeMux()
+	gateway := httptest.NewServer(gatewayMux)
 	defer gateway.Close()
 	serviceToken := rand.Text() + rand.Text()
 	serviceHTTP, err := newInsightsFixture(*dataDir, gateway.URL, serviceToken)
@@ -92,17 +90,37 @@ func run() error {
 		return err
 	}
 	defer serviceHTTP.Close()
-	appHandler, err := newAppHandler(ctx, authCfg, serviceHTTP.URL, serviceToken, fixture, *uiURL, *uiDir)
+	proxy, err := apiserver.NewInsightsProxy(ctx, authCfg, serviceHTTP.URL, serviceToken, apiserver.InsightsProxyOptions{ObservabilityIssuer: fixtureIssuer})
+	if err != nil {
+		return fmt.Errorf("configure fixture Insights proxy: %w", err)
+	}
+	appHandler, err := newAppHandler(proxy, fixture, *uiURL, *uiDir)
 	if err != nil {
 		return err
 	}
 	app := httptest.NewServer(appHandler)
 	defer app.Close()
+	if err = registerFixtureGateway(gatewayMux, proxy, backend, storeCache, secret, app.URL); err != nil {
+		return err
+	}
 	if err = writeReadyFile(*ready, app.URL, gateway.URL, secret); err != nil {
 		return err
 	}
 	fmt.Println("Observe/Insights E2E fixture ready")
 	<-ctx.Done()
+	return nil
+}
+
+func registerFixtureGateway(mux *http.ServeMux, proxy http.Handler, backend observe.Backend, storeCache *cache.Cache, secret []byte, appURL string) error {
+	authoring, err := observe.NewInsightsAuthoringClient(proxy, secret, appURL, audit.NoopAuditor{})
+	if err != nil {
+		return fmt.Errorf("configure fixture authoring client: %w", err)
+	}
+	handler, err := newGatewayHandler(backend, storeCache, secret, authoring)
+	if err != nil {
+		return err
+	}
+	mux.Handle("/", handler)
 	return nil
 }
 
@@ -134,7 +152,7 @@ func closeFixtureCache(storeCache *cache.Cache) {
 	}
 }
 
-func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret []byte) (http.Handler, error) {
+func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret []byte, authoring *observe.InsightsAuthoringClient) (http.Handler, error) {
 	verifier, err := auth.NewSelfSignedAuthenticatorForAudience(secret, mcp.ObservabilityTokenAudience, fixtureIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("configure fixture authenticator: %w", err)
@@ -143,7 +161,10 @@ func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret 
 	if err = observe.RegisterTools(registry, backend, nil); err != nil {
 		return nil, fmt.Errorf("register fixture MCP tools: %w", err)
 	}
-	mcpServer, err := mcp.NewServer(mcp.ServerConfig{Registry: registry, Authenticator: verifier, Confirmer: mcp.NewConfirmer(storeCache, time.Minute), Auditor: audit.NoopAuditor{}, Cache: storeCache, Secret: secret, PublicURL: fixtureIssuer, ClientID: "e2e", RedirectURIs: []string{"http://127.0.0.1/callback"}, RoutePrefix: "/observe", ProtocolPath: "/observe/mcp", Audience: mcp.ObservabilityTokenAudience, SupportedScopes: []mcp.Scope{mcp.ScopeObserve}, DisableConsoleResources: true, LinkRequestCancellation: true})
+	if err = observe.RegisterInsightsTools(registry, authoring, nil); err != nil {
+		return nil, fmt.Errorf("register fixture authoring tools: %w", err)
+	}
+	mcpServer, err := mcp.NewServer(mcp.ServerConfig{Registry: registry, Authenticator: verifier, Confirmer: mcp.NewConfirmer(storeCache, time.Minute), Auditor: audit.NoopAuditor{}, Cache: storeCache, Secret: secret, PublicURL: fixtureIssuer, ClientID: "e2e", RedirectURIs: []string{"http://127.0.0.1/callback"}, RoutePrefix: "/observe", ProtocolPath: "/observe/mcp", Audience: mcp.ObservabilityTokenAudience, SupportedScopes: []mcp.Scope{mcp.ScopeObserve, mcp.ScopeInsightsWrite}, DisableConsoleResources: true, LinkRequestCancellation: true})
 	if err != nil {
 		return nil, fmt.Errorf("configure fixture MCP server: %w", err)
 	}
@@ -168,11 +189,7 @@ func newInsightsFixture(dataDir, gatewayURL, token string) (*httptest.Server, er
 	return httptest.NewServer(service.Handler()), nil
 }
 
-func newAppHandler(ctx context.Context, authCfg auth.Config, serviceURL, serviceToken string, fixture *telemetryFixture, uiURL, uiDir string) (http.Handler, error) {
-	proxy, err := apiserver.NewInsightsProxy(ctx, authCfg, serviceURL, serviceToken, apiserver.InsightsProxyOptions{ObservabilityIssuer: fixtureIssuer})
-	if err != nil {
-		return nil, fmt.Errorf("configure fixture Insights proxy: %w", err)
-	}
+func newAppHandler(proxy http.Handler, fixture *telemetryFixture, uiURL, uiDir string) (http.Handler, error) {
 	frontend, err := frontendHandler(uiURL, uiDir)
 	if err != nil {
 		return nil, err
@@ -199,8 +216,13 @@ func frontendHandler(uiURL, uiDir string) (http.Handler, error) {
 	return httputil.NewSingleHostReverseProxy(frontend), nil
 }
 
-func mintFixtureToken(secret []byte, subject, audience string, groups []string) (string, error) {
-	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: subject, Email: subject + "@example.test", Name: subject, Groups: groups, Audience: audience, Issuer: fixtureIssuer, Scope: "paprika:observe", Secret: secret, TTL: time.Hour})
+func mintFixtureToken(secret []byte, subject, audience string, groups []string, scopes ...mcp.Scope) (string, error) {
+	granted := make([]string, 0, 1+len(scopes))
+	granted = append(granted, string(mcp.ScopeObserve))
+	for _, scope := range scopes {
+		granted = append(granted, string(scope))
+	}
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: subject, Email: subject + "@example.test", Name: subject, Groups: groups, Audience: audience, Issuer: fixtureIssuer, Scope: strings.Join(granted, " "), Secret: secret, TTL: time.Hour})
 	if err != nil {
 		return "", fmt.Errorf("issue fixture token: %w", err)
 	}
@@ -220,7 +242,19 @@ func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
 	if err != nil {
 		return err
 	}
-	readyJSON, err := json.Marshal(map[string]string{"baseURL": appURL, "token": token, "deniedToken": denied, "mcpURL": gatewayURL + "/observe/mcp", "mcpToken": mcpToken, "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"})
+	writeToken, err := mintFixtureToken(secret, "reader", mcp.ObservabilityTokenAudience, []string{"metrics-readers"}, mcp.ScopeInsightsWrite)
+	if err != nil {
+		return err
+	}
+	deniedWriteToken, err := mintFixtureToken(secret, "viewer", mcp.ObservabilityTokenAudience, []string{"metrics-readers"}, mcp.ScopeInsightsWrite)
+	if err != nil {
+		return err
+	}
+	deniedProviderToken, err := mintFixtureToken(secret, "denied", mcp.ObservabilityTokenAudience, []string{}, mcp.ScopeInsightsWrite)
+	if err != nil {
+		return err
+	}
+	readyJSON, err := json.Marshal(map[string]string{"baseURL": appURL, "token": token, "deniedToken": denied, "mcpURL": gatewayURL + "/observe/mcp", "mcpToken": mcpToken, "mcpWriteToken": writeToken, "mcpDeniedWriteToken": deniedWriteToken, "mcpDeniedProviderToken": deniedProviderToken, "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"})
 	if err != nil {
 		return fmt.Errorf("encode fixture connection file: %w", err)
 	}
@@ -309,6 +343,16 @@ func serveMetricRange(w http.ResponseWriter, r *http.Request) {
 		values[0][1] = strconv.FormatFloat(last+8.5, 'f', -1, 64)
 		values[1][1] = strconv.FormatFloat(last-4.25, 'f', -1, 64)
 		values[2][1] = strconv.FormatFloat(last+1.75, 'f', -1, 64)
+	}
+	if strings.HasSuffix(strings.TrimSpace(q.Get("query")), " * 2") {
+		for i := range values {
+			value, parseErr := strconv.ParseFloat(fmt.Sprint(values[i][1]), 64)
+			if parseErr != nil {
+				http.Error(w, "invalid fixture sample", http.StatusInternalServerError)
+				return
+			}
+			values[i][1] = strconv.FormatFloat(value*2, 'f', -1, 64)
+		}
 	}
 	jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": []any{map[string]any{"metric": map[string]string{"service": service}, "values": values}}}})
 }

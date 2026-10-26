@@ -12,7 +12,11 @@ func (s *Server) listSavedQueries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid provider ID")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"queries": s.savedQueries.list(providerID)})
+	documents := s.savedQueries.list(providerID)
+	if r.URL.Query().Get("summary") == "true" {
+		documents = summarizeDocuments(documents, []string{"id", "name", "description", "tags", "providerId", "kind", "etag"}, false)
+	}
+	writeCollectionJSON(w, r, map[string]any{"queries": documents})
 }
 
 func (s *Server) getSavedQuery(w http.ResponseWriter, r *http.Request) {

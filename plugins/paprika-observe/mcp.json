@@ -12,7 +12,8 @@
               "mode": "dcr"
             },
             "baseScopes": [
-              "paprika:observe"
+              "paprika:observe",
+              "paprika:insights:write"
             ]
           }
         }

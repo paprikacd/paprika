@@ -79,6 +79,16 @@ spec:
         - protocol: TCP
           port: 6379
     {{- end }}
+    {{- if .Values.insights.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: insights
+      ports:
+        - protocol: TCP
+          port: 8090
+    {{- end }}
     {{- with .Values.observabilityGateway.additionalEgress }}
     # Explicit operator-approved peers/ports for in-cluster backends and
     # environment-specific DNS. Never open all backend ports by default.

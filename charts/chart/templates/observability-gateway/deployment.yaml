@@ -183,6 +183,7 @@ spec:
           {{- end }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- include "paprika.insightsEnv" . | nindent 8 }}
         {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}

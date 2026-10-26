@@ -42,7 +42,7 @@ export interface InsightsClient {
   removeSavedQuery(id: string, etag?: string): Promise<void>
   providers(signal?: AbortSignal): Promise<Provider[]>
   list(signal?: AbortSignal): Promise<Dashboard[]>
-  get(id: string): Promise<{ dashboard: Dashboard; etag?: string }>
+  get(id: string, signal?: AbortSignal): Promise<{ dashboard: Dashboard; etag?: string }>
   save(dashboard: Dashboard, etag?: string): Promise<string | undefined>
   remove(id: string, etag?: string): Promise<void>
   query(request: QueryRequest, signal: AbortSignal): Promise<QueryResult>
@@ -68,13 +68,13 @@ export function createInsightsClient(
   baseURL = "/api/insights",
   token?: () => string | null,
 ): InsightsClient {
-  async function request(path: string, init: RequestInit = {}) {
+  const snapshots = new Map<string, { bearer: string | null; generation: number; etag?: string; value?: unknown }>()
+  async function request(path: string, init: RequestInit = {}, bearer = token?.() ?? null, allowNotModified = false) {
     const headers = new Headers(init.headers)
     headers.set("Content-Type", "application/json")
-    const bearer = token?.()
     if (bearer) headers.set("Authorization", `Bearer ${bearer}`)
     const response = await fetch(`${baseURL}${path}`, { ...init, headers })
-    if (!response.ok) {
+    if (!response.ok && !(allowNotModified && response.status === 304)) {
       if (response.status === 401) throw new Error("Sign in to access your dashboards.")
       if (response.status === 403 && path.startsWith("/provider-configs"))
         throw new Error("Managing data sources requires Insights administrator access.")
@@ -98,14 +98,38 @@ export function createInsightsClient(
     }
     return response
   }
+  async function cachedRead<T>(path: string, parse: (body: Record<string, unknown>, etag?: string) => T, signal?: AbortSignal): Promise<T> {
+    const bearer = token?.() ?? null
+    let cached = snapshots.get(path)
+    if (!cached || cached.bearer !== bearer) {
+      cached = { bearer, generation: 0 }
+      snapshots.set(path, cached)
+    }
+    // Bound revalidation memory when a session visits many dashboards.
+    snapshots.delete(path)
+    snapshots.set(path, cached)
+    while (snapshots.size > 32) snapshots.delete(snapshots.keys().next().value!)
+    const generation = ++cached.generation
+    const response = await request(path, { signal, headers: cached.etag ? { "If-None-Match": cached.etag } : {} }, bearer, true)
+    if ((token?.() ?? null) !== bearer) throw new Error("Your session changed. Refresh the workspace before continuing.")
+    if (response.status === 304) {
+      if (cached.value === undefined) throw new Error("The workspace response has no cached document. Try again.")
+      return cached.value as T
+    }
+    const value = parse(await response.json(), response.headers.get("ETag") ?? undefined)
+    if (!signal?.aborted && snapshots.get(path) === cached && generation === cached.generation) {
+      cached.value = value
+      cached.etag = response.headers.get("ETag") ?? undefined
+    }
+    return value
+  }
   return {
-    listSavedQueries: async (signal) => {
-      const body = await (await request("/saved-queries", { signal })).json()
-      return (body.queries ?? []).map((entry: SavedQueryEntry) => {
+    listSavedQueries: (signal) => cachedRead("/saved-queries", body => {
+      return ((body.queries ?? []) as SavedQueryEntry[]).map((entry: SavedQueryEntry) => {
         const { etag, ...document } = entry
         return { ...savedQuerySchema.parse(document), ...(typeof etag === "string" ? { etag } : {}) }
       })
-    },
+    }, signal),
     getSavedQuery: async (id) => {
       const response = await request(`/saved-queries/${encodeURIComponent(id)}`)
       return { query: savedQuerySchema.parse(await response.json()), etag: response.headers.get("ETag") ?? undefined }
@@ -155,17 +179,12 @@ export function createInsightsClient(
         await request(`/providers/${encodeURIComponent(id)}/metadata?${params}`, { signal })
       ).json()
     },
-    list: async (signal) => {
-      const body = await (await request("/dashboards", { signal })).json()
-      return (body.dashboards ?? []).map((item: unknown) => dashboardSchema.parse(item))
-    },
-    get: async (id) => {
-      const response = await request(`/dashboards/${encodeURIComponent(id)}`)
-      return {
-        dashboard: dashboardSchema.parse(await response.json()),
-        etag: response.headers.get("ETag") ?? undefined,
-      }
-    },
+    list: (signal) => cachedRead("/dashboards", body => {
+      return ((body.dashboards ?? []) as unknown[]).map((item: unknown) => dashboardSchema.parse(item))
+    }, signal),
+    get: (id, signal) => cachedRead(`/dashboards/${encodeURIComponent(id)}`, (body, etag) => ({
+      dashboard: dashboardSchema.parse(body), etag,
+    }), signal),
     save: async (dashboard, etag) => {
       const response = await request(`/dashboards/${encodeURIComponent(dashboard.id)}`, {
         method: "PUT",

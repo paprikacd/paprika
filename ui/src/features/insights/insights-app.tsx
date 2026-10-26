@@ -73,6 +73,7 @@ import { documentFingerprint } from "./fingerprint"
 import { useMobileNavigation } from "./use-mobile-navigation"
 import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import { useDashboardHistory } from "./history"
+import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas } from "./canvas"
 import { createQueryScheduler } from "./query"
 import { DocumentEditor } from "./document-editor"
@@ -212,6 +213,7 @@ export default function InsightsApp({
   const [selected, setSelected] = useState<string>()
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
+  const [remoteDashboard, setRemoteDashboard] = useState<{ id: string; removed: boolean }>()
   const [busy, setBusy] = useState(false)
   const [importingBundle, setImportingBundle] = useState(false)
   const confirmation = useConfirmation()
@@ -233,6 +235,47 @@ export default function InsightsApp({
   const bundleImportActive = useRef(false)
   if (!bundleImporter.current) bundleImporter.current = createBundleImporter()
   const dirty = saved !== documentFingerprint(dashboard)
+  const liveSyncState = useRef({ dashboards, savedQueries, dashboard, saved, dirty, editing, explorerDirty, panel, busy, importingBundle, queriesLoading })
+  useLayoutEffect(() => {
+    liveSyncState.current = { dashboards, savedQueries, dashboard, saved, dirty, editing, explorerDirty, panel, busy, importingBundle, queriesLoading }
+  })
+  const syncError = useWorkspaceRefresh(mode === "live", async signal => {
+    const before = liveSyncState.current
+    if (before.busy || before.importingBundle || before.queriesLoading) return
+    const request = openRequest.current
+    const generation = libraryMutation.current
+    const [documents, entries] = await Promise.all([client.list(signal), client.listSavedQueries(signal)])
+    const listed = documents.find(item => item.id === before.dashboard.id)
+    const active = listed ? await client.get(listed.id, signal) : undefined
+    const current = liveSyncState.current
+    // A list request started before a save/import/navigation must never restore
+    // its older snapshot, even if the write finished while the request ran.
+    if (signal.aborted || request !== openRequest.current || generation !== libraryMutation.current ||
+      current.busy || current.importingBundle || current.queriesLoading ||
+      current.saved !== before.saved || current.dashboards !== before.dashboards || current.savedQueries !== before.savedQueries) return
+    const nextDocuments = active
+      ? documents.map(item => item.id === active.dashboard.id ? active.dashboard : item)
+      : documents
+    if (documentFingerprint(nextDocuments) !== documentFingerprint(current.dashboards)) setDashboards(nextDocuments)
+    if (documentFingerprint(entries) !== documentFingerprint(current.savedQueries)) updateSavedQueries(entries)
+    setQueriesLoaded(true)
+    setQueriesError("")
+    if (active && (documentFingerprint(active.dashboard) !== current.saved || active.etag !== etags.current.get(active.dashboard.id))) {
+      if (current.dirty || current.editing || current.explorerDirty || current.panel) {
+        setRemoteDashboard({ id: active.dashboard.id, removed: false })
+      } else {
+        if (active.etag) etags.current.set(active.dashboard.id, active.etag)
+        else etags.current.delete(active.dashboard.id)
+        if (documentFingerprint(active.dashboard) !== current.saved) {
+          reset(active.dashboard)
+          setSaved(documentFingerprint(active.dashboard))
+        }
+        setRemoteDashboard(undefined)
+      }
+    } else if (!listed && etags.current.has(current.dashboard.id)) {
+      setRemoteDashboard({ id: current.dashboard.id, removed: true })
+    } else setRemoteDashboard(undefined)
+  })
   const currentRoute = routeState?.dashboardId === dashboard.id ? routeState : undefined
   const viewDashboard = currentRoute?.customTimeRange
     ? { ...dashboard, customTimeRange: currentRoute.customTimeRange }
@@ -677,6 +720,34 @@ export default function InsightsApp({
   function confirmDiscard() {
     return confirmation.ask({ title: "Discard unsaved changes?", description: `Your unsaved changes to “${dashboard.title}” will be lost.`, action: "Discard changes" })
   }
+  async function reloadRemoteDashboard() {
+    if (busy || importingBundle) return
+    const id = dashboard.id
+    const request = ++openRequest.current
+    const before = documentFingerprint(dashboard)
+    if ((dirty || editing || panel) && !await confirmDiscard()) return
+    if (request !== openRequest.current) return
+    setBusy(true)
+    setError("")
+    try {
+      const active = await client.get(id)
+      if (request !== openRequest.current || latestDocument.current.id !== id) return
+      if (documentFingerprint(latestDocument.current) !== before)
+        throw new Error("Your draft changed while the saved dashboard was loading. Load it again when you are ready.")
+      if (active.etag) etags.current.set(id, active.etag)
+      else etags.current.delete(id)
+      reset(active.dashboard)
+      setSaved(documentFingerprint(active.dashboard))
+      setDashboards(items => [...items.filter(item => item.id !== id), active.dashboard])
+      setEditing(false)
+      setRemoteDashboard(undefined)
+      close()
+      setMessage("Loaded the latest saved dashboard.")
+    } catch (reason) {
+      if (request === openRequest.current) setError(reason instanceof Error ? reason.message : "Could not load the saved dashboard.")
+    } finally { setBusy(false) }
+  }
+
   async function createDashboard() {
     if (bundleImportActive.current) return
     const request = ++openRequest.current
@@ -1349,6 +1420,15 @@ export default function InsightsApp({
             }}><ArrowLeft size={14} /> Back to {returnTo.title}</GammaButton>
           </div>
         ) : null}
+        {remoteDashboard?.id === dashboard.id && (
+          <div className={styles.notice} role="status">
+            <span>{remoteDashboard.removed
+              ? "The saved dashboard was removed elsewhere. This view is preserved; duplicate it to keep a copy."
+              : "The saved dashboard changed elsewhere. Your draft is preserved."}</span>
+            {!remoteDashboard.removed && <GammaButton size="sm" variant="secondary" disabled={busy || importingBundle} onClick={reloadRemoteDashboard}>Load latest dashboard</GammaButton>}
+          </div>
+        )}
+        {syncError && <p className={styles.notice} role="status">Workspace updates paused: {syncError} Retrying automatically.</p>}
         {(error || message) && (
           <div
             className={`${styles.notice} ${error ? styles.errorNotice : ""}`}

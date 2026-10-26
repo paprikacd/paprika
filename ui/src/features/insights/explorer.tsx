@@ -217,6 +217,15 @@ export function Explorer({
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange]);
   const remoteEntry =
     persisted && queries.find((query) => query.id === persisted.id);
+  useEffect(() => {
+    // A same-content rewrite may change the server's byte-level ETag. A clean
+    // editor can adopt that revision without resetting test values or results.
+    if (dirty || busy || !persisted || !remoteEntry || persisted.etag === remoteEntry.etag ||
+      fingerprint({ ...persisted, etag: undefined }) !== fingerprint({ ...remoteEntry, etag: undefined })) return;
+    let active = true;
+    queueMicrotask(() => { if (active) setPersisted(remoteEntry); });
+    return () => { active = false; };
+  }, [dirty, busy, persisted, remoteEntry]);
   const remoteChanged =
     !!persisted &&
     (!remoteEntry || fingerprint(remoteEntry) !== fingerprint(persisted));

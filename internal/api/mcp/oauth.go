@@ -294,7 +294,7 @@ func (s *Server) authorizationIssuer() string {
 
 // scopesSupported is this authorization server's advertised scope set as
 // strings — ServerConfig.SupportedScopes (read+write by default,
-// [paprika:observe] on the observability gateway). Every place discovery
+// [paprika:observe] with optional Insights authoring on the observability gateway). Every place discovery
 // metadata names the granted scopes reads through this one method so the
 // advertised set can never drift from the set consent and token minting
 // actually enforce.

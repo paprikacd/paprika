@@ -247,8 +247,11 @@ helm upgrade paprika-e2e charts/chart/ \
   rejection cleans the secret up), and the MCP tools `list_provider_types`/
   `describe_provider_type`/`validate_provider`. It mints/verifies the
   `paprika-observability` audience
-  (distinct from `paprika-api` and `paprika-mcp`) and grants only the
-  `paprika:observe` scope; the shared `mcp.Server` was generalized with
+  (distinct from `paprika-api` and `paprika-mcp`) and grants
+  `paprika:observe`, plus explicit `paprika:insights:write` consent when
+  Insights is configured. Authoring reuses the UI's authenticated Insights
+  proxy and exact document ETags; it grants no provider or fleet writes.
+  Existing read-only grants stay read-only. The shared `mcp.Server` uses
   RoutePrefix/ProtocolPath/Audience/SupportedScopes so both surfaces run
   from one implementation. Admission validation (webhook
   `rejectInlineCredentials` + per-connector `ValidateConfig`) lives in

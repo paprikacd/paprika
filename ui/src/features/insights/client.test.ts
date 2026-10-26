@@ -25,6 +25,90 @@ function mockFetch(...responses: Response[]) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("Insights HTTP client", () => {
+  it("conditionally refreshes each library and reuses its validated 304 snapshot", async () => {
+    const saved: SavedQuery = { schemaVersion: 1, id: "signal", name: "Signal", providerId: "metrics", kind: "metrics", query: "up" }
+    const fetcher = mockFetch(
+      response({ dashboards: [dashboard] }, 200, { ETag: '\"d1\"' }),
+      response({ queries: [{ ...saved, etag: '\"q1\"' }] }, 200, { ETag: '\"library1\"' }),
+      new Response(null, { status: 304 }), new Response(null, { status: 304 }),
+    )
+    const api = createInsightsClient()
+    const dashboards = await api.list(), queries = await api.listSavedQueries()
+    expect(await api.list()).toBe(dashboards)
+    expect(await api.listSavedQueries()).toBe(queries)
+    expect(fetcher.mock.calls[2][1].headers.get("If-None-Match")).toBe('\"d1\"')
+    expect(fetcher.mock.calls[3][1].headers.get("If-None-Match")).toBe('\"library1\"')
+  })
+
+  it("revalidates active dashboard ETags even when the canonical contents are unchanged", async () => {
+    const fetcher = mockFetch(
+      response(dashboard, 200, { ETag: '\"d1\"' }),
+      response({ ...dashboard }, 200, { ETag: '\"d2\"' }),
+      new Response(null, { status: 304 }),
+    )
+    const api = createInsightsClient()
+    expect((await api.get(dashboard.id)).etag).toBe('\"d1\"')
+    expect((await api.get(dashboard.id)).etag).toBe('\"d2\"')
+    expect((await api.get(dashboard.id)).etag).toBe('\"d2\"')
+    expect(fetcher.mock.calls[1][1].headers.get("If-None-Match")).toBe('\"d1\"')
+    expect(fetcher.mock.calls[2][1].headers.get("If-None-Match")).toBe('\"d2\"')
+  })
+
+  it("never reuses a previous account's cached library", async () => {
+    let bearer: string | null = "first-account"
+    const fetcher = mockFetch(
+      response({ dashboards: [dashboard] }, 200, { ETag: '\"private\"' }),
+      response({ dashboards: [] }, 200, { ETag: '\"empty\"' }),
+      new Response(null, { status: 304 }),
+    )
+    const api = createInsightsClient("/api/insights", () => bearer)
+    await api.list()
+    bearer = null
+    expect(await api.list()).toEqual([])
+    expect(fetcher.mock.calls[1][1].headers.has("If-None-Match")).toBe(false)
+    expect(fetcher.mock.calls[1][1].headers.has("Authorization")).toBe(false)
+    expect(await api.list()).toEqual([])
+    expect(fetcher.mock.calls[2][1].headers.get("If-None-Match")).toBe('\"empty\"')
+  })
+
+  it("does not let an earlier library response replace a newer conditional cache", async () => {
+    const fetcher = vi.fn()
+    let finish!: (response: Response) => void
+    fetcher.mockReturnValueOnce(new Promise<Response>(resolve => { finish = resolve }))
+    fetcher.mockResolvedValueOnce(response({ dashboards: [{ ...dashboard, title: "New version" }] }, 200, { ETag: '\"new\"' }))
+    fetcher.mockResolvedValueOnce(new Response(null, { status: 304 }))
+    vi.stubGlobal("fetch", fetcher)
+    const api = createInsightsClient()
+    const pending = api.list()
+    await api.list()
+    finish(response({ dashboards: [dashboard] }, 200, { ETag: '\"old\"' }))
+    await pending
+    expect((await api.list())[0].title).toBe("New version")
+    expect(fetcher.mock.calls[2][1].headers.get("If-None-Match")).toBe('\"new\"')
+  })
+
+  it("rejects an old account's response when the session changes in flight", async () => {
+    let bearer = "first-account"
+    let finish!: (response: Response) => void
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise<Response>(resolve => { finish = resolve })))
+    const api = createInsightsClient("/api/insights", () => bearer)
+    const pending = api.list()
+    bearer = "second-account"
+    finish(response({ dashboards: [dashboard] }, 200, { ETag: '\"private\"' }))
+    await expect(pending).rejects.toThrow(/session changed/)
+  })
+
+  it("does not cache a response from an aborted library refresh", async () => {
+    const controller = new AbortController()
+    const fetcher = mockFetch(response({ dashboards: [dashboard] }, 200, { ETag: '\"old\"' }), response({ dashboards: [] }))
+    const api = createInsightsClient()
+    const pending = api.list(controller.signal)
+    controller.abort()
+    await pending
+    expect(await api.list()).toEqual([])
+    expect(fetcher.mock.calls[1][1].headers.has("If-None-Match")).toBe(false)
+  })
+
   it("uses per-provider ETags without sending response metadata or resolved credentials", async () => {
     const fetcher = mockFetch(
       response({}),

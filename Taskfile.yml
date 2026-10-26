@@ -703,8 +703,9 @@ tasks:
           if [ "$name" = insights-shared ]; then
             gateway_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_OBSERVABILITY_GATEWAY_ADDR')"
             issuer_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_MCP_PUBLIC_URL')"
-            if [ "$gateway_count" -ne 2 ] || [ "$issuer_count" -ne 2 ]; then
-              echo "FAIL[$name]: API, Insights and gateway must share destination and issuer wiring"; rc=1
+            insights_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_INSIGHTS_URL')"
+            if [ "$gateway_count" -ne 2 ] || [ "$issuer_count" -ne 2 ] || [ "$insights_count" -ne 3 ]; then
+              echo "FAIL[$name]: API, Insights and gateway must share destination, authoring and issuer wiring"; rc=1
             fi
           fi
           if [ "$name" = namespace-scoped ]; then

@@ -185,6 +185,30 @@ describe("Explore query workspace", () => {
     expect(screen.queryByRole("button", { name: "Save as new query" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load latest saved version" })).not.toBeInTheDocument();
   });
+  it("adopts a same-content query revision without resetting a clean editor", async () => {
+    const api = client();
+    const props = { client: api, providers, onQueriesChange: vi.fn(), onUse: vi.fn(), onClose: vi.fn() };
+    const { rerender } = render(<Explorer {...props} queries={[saved]} />);
+    await openSaved();
+    edit("Test value for factor", "7");
+    rerender(<Explorer {...props} queries={[{ ...saved, etag: '\"same-content-v2\"' }]} />);
+    await waitFor(() => expect(screen.queryByText(/changed or was removed elsewhere/)).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Test value for factor")).toHaveValue("7");
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+    await waitFor(() => expect(api.saveSavedQuery).toHaveBeenCalledWith(expect.objectContaining({ id: saved.id }), '\"same-content-v2\"'));
+  });
+  it("retains a dirty query's ETag after a same-content remote rewrite", async () => {
+    const api = client();
+    const props = { client: api, providers, onQueriesChange: vi.fn(), onUse: vi.fn(), onClose: vi.fn() };
+    const { rerender } = render(<Explorer {...props} queries={[saved]} />);
+    await openSaved();
+    edit("Query name", "My query draft");
+    rerender(<Explorer {...props} queries={[{ ...saved, etag: '\"same-content-v2\"' }]} />);
+    expect(await screen.findByText(/changed or was removed elsewhere/)).toBeVisible();
+    expect(screen.getByLabelText("Query name")).toHaveValue("My query draft");
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+    await waitFor(() => expect(api.saveSavedQuery).toHaveBeenCalledWith(expect.objectContaining({ name: "My query draft" }), saved.etag));
+  });
   it("does not link an outdated selected definition after a library refresh", async () => {
     const props = {
       client: client(),

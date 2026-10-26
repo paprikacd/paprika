@@ -1,7 +1,7 @@
 {
   "name": "paprika-observe",
-  "version": "0.1.0",
-  "description": "Discover and query authorized Paprika observability providers for bounded logs, metrics, and traces with independent OAuth access.",
+  "version": "0.2.0",
+  "description": "Discover and query Paprika observability providers, and create or update saved queries and dashboards with explicitly authorized Insights access.",
   "author": {
     "name": "Paprika"
   },

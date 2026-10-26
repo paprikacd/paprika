@@ -16,6 +16,10 @@ const (
 	// different trust domains, and the observability gateway validates its
 	// own token audience, so a console token can never be replayed there.
 	ScopeObserve Scope = "paprika:observe"
+	// ScopeInsightsWrite grants authoring of saved queries and dashboards on
+	// the Observe surface. It grants no provider configuration or fleet writes.
+	// Existing observe-only credentials remain read-only.
+	ScopeInsightsWrite Scope = "paprika:insights:write"
 )
 
 // ParseScopes splits a space-delimited scope claim (RFC 6749 section 3.3) and
@@ -24,13 +28,8 @@ const (
 func ParseScopes(raw string) []Scope {
 	var out []Scope
 	for _, field := range strings.Fields(raw) {
-		switch Scope(field) {
-		case ScopeRead:
-			out = append(out, ScopeRead)
-		case ScopeWrite:
-			out = append(out, ScopeWrite)
-		case ScopeObserve:
-			out = append(out, ScopeObserve)
+		if isKnownScope(Scope(field)) {
+			out = append(out, Scope(field))
 		}
 	}
 	return out
@@ -45,4 +44,13 @@ func HasScope(granted []Scope, required Scope) bool {
 		}
 	}
 	return false
+}
+
+func isKnownScope(scope Scope) bool {
+	switch scope {
+	case ScopeRead, ScopeWrite, ScopeObserve, ScopeInsightsWrite:
+		return true
+	default:
+		return false
+	}
 }

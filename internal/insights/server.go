@@ -93,9 +93,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/saved-queries/{id}", s.getSavedQuery)
 	api.HandleFunc("PUT /api/saved-queries/{id}", s.putSavedQuery)
 	api.HandleFunc("DELETE /api/saved-queries/{id}", s.deleteSavedQuery)
-	api.HandleFunc("GET /api/dashboards", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, 200, map[string]any{"dashboards": s.store.List()})
-	})
+	api.HandleFunc("GET /api/dashboards", s.listDashboards)
 	api.HandleFunc("GET /api/dashboards/{id}", s.getDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
@@ -175,6 +173,10 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("ETag", tag)
+	if match := r.Header.Get("If-None-Match"); match == "*" || match == tag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	writeJSON(w, 200, doc)
 }
 

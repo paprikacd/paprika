@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, realpath } from "node:fs/promises";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 const root = new URL("../../../../../", import.meta.url);
 const plugin = new URL("plugins/paprika-observe/", root);
@@ -14,11 +15,11 @@ test("observe is an optional separate package with consistent supported manifest
   assert.equal(portable.$schema, "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
   for (const manifest of [portable, codex, claude]) {
     assert.equal(manifest.name, "paprika-observe");
-    assert.equal(manifest.version, "0.1.0");
+    assert.equal(manifest.version, "0.2.0");
     assert.equal(manifest.description, portable.description);
   }
   assert.deepEqual(codex.interface, portable.extensions["com.openai"].interface);
-  assert.deepEqual(codex.interface.capabilities, ["Read"]);
+  assert.deepEqual(codex.interface.capabilities, ["Read", "Write"]);
   for (const manifest of [codex, claude]) {
     assert.equal(manifest.mcpServers, "./.mcp.json");
     assert.equal(manifest.skills, "./skills/");
@@ -28,7 +29,7 @@ test("observe is an optional separate package with consistent supported manifest
   assert.deepEqual(Object.keys(mcp.mcpServers), ["paprika_observe"]);
   assert.deepEqual(mcp.mcpServers.paprika_observe, {
     type: "streamable-http", url: endpoint,
-    extensions: { "com.openai": { auth: { type: "oauth", client: { mode: "dcr" }, baseScopes: ["paprika:observe"] } } },
+    extensions: { "com.openai": { auth: { type: "oauth", client: { mode: "dcr" }, baseScopes: ["paprika:observe", "paprika:insights:write"] } } },
   });
   const fleet = JSON.parse(await readFile(new URL("plugins/paprika/.mcp.json", root), "utf8"));
   assert.deepEqual(Object.keys(fleet.mcpServers), ["paprika_hosted"], "updating the fleet package must not attach a new connection");
@@ -84,4 +85,40 @@ test("observe skill examples match real gateway schemas and preserve secure hand
   assert.match(skill, /offline; it does not test backend connectivity/);
   assert.match(skill, /do not invent pagination/);
   assert.match(skill, /Empty successful results/);
+  assert.match(skill, /paprika:insights:write/);
+  assert.match(skill, /refresh cannot add authoring/);
+  assert.match(skill, /exact\s+ETag/);
+  assert.match(skill, /never silently overwrite/);
+  assert.match(skill, /retaining unsaved local/);
+});
+
+
+test("Observe consent renders only requested scopes and keeps legacy requests read-only", async () => {
+  const source = await readFile(new URL("internal/observabilitygateway/consent.go", root), "utf8");
+  const start = source.indexOf("function render(rec) {");
+  const end = source.indexOf("function checkedScopes()", start);
+  assert.ok(start > 0 && end > start);
+  for (const requested of ["", "paprika:observe", "paprika:observe paprika:insights:write"]) {
+    function element() {
+      return { children: [] as any[], textContent: "", type: "", name: "", value: "", checked: false,
+        appendChild(child: any) { this.children.push(child); }, addEventListener() {} };
+    }
+    const nodes = new Map<string, ReturnType<typeof element>>();
+    const get = (id: string) => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id)!; };
+    runInNewContext(source.slice(start, end) + "\nrender(rec);", {
+      rec: { client_id: "<script>untrusted-client</script>", scope: requested }, consentEl: { hidden: true },
+      document: { createElement: element, createTextNode: (textContent: string) => ({ textContent }), getElementById: get },
+    });
+    const checkboxes = get("scopes").children.map(label => label.children[0]);
+    assert.deepEqual(checkboxes.map(box => box.value), requested ? requested.split(" ") : ["paprika:observe"]);
+    assert.ok(checkboxes.every(box => box.checked));
+    const description = get("access-description").textContent;
+    if (requested.includes("paprika:insights:write")) {
+      assert.match(description, /create and update saved queries and dashboards/);
+      assert.match(description, /cannot configure providers or change fleet applications/);
+    } else {
+      assert.match(description, /cannot create or update/);
+    }
+    assert.equal(get("client-line").children[0].textContent, "<script>untrusted-client</script>");
+  }
 });

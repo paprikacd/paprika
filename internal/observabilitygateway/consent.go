@@ -218,7 +218,7 @@ a.docs:hover { text-decoration: underline; }
   <section id="consent" hidden>
     <p id="client-line"></p>
     <fieldset id="scopes"><legend>Requested access</legend></fieldset>
-    <p class="info">Granting this access allows the application to read logs, metrics, and traces through the observability providers configured in this cluster. It cannot change anything.</p>
+    <p class="info" id="access-description"></p>
     <div class="actions">
       <button id="approve" type="button">Approve</button>
       <button id="deny" type="button" class="secondary">Deny</button>
@@ -230,7 +230,7 @@ a.docs:hover { text-decoration: underline; }
       <code class="block" id="endpoint"></code>
       <button id="copy-endpoint" type="button" class="copy">Copy</button>
     </div>
-    <p class="hint">For example <code id="claude-cmd"></code> — Claude and Codex also self-register on first connect. Tokens carry the <code>paprika:observe</code> scope and can be revoked any time from the console.</p>
+    <p class="hint">For example <code id="claude-cmd"></code> — Claude and Codex also self-register on first connect. Reading telemetry uses <code>paprika:observe</code>. Creating or updating saved queries and dashboards additionally requires <code>paprika:insights:write</code>, a fresh consent grant, and your existing Insights write permission.</p>
     <a class="docs" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/observability-gateway.md" target="_blank" rel="noopener noreferrer">Observability gateway documentation</a>
   </section>
 </main>
@@ -362,8 +362,8 @@ function render(rec) {
 
   var scopes = String(rec.scope || "").split(/\s+/).filter(Boolean);
   if (scopes.length === 0) {
-    // This surface grants only paprika:observe; a request that asked for
-    // nothing still consents to exactly that.
+    // A request that asked for nothing retains the read-only default.
+    // Never add authoring permission to a legacy or read-only request.
     scopes = ["paprika:observe"];
   }
   var box = document.getElementById("scopes");
@@ -375,11 +375,19 @@ function render(rec) {
     cb.value = scope;
     cb.checked = true;
     var span = document.createElement("span");
-    span.textContent = scope;
+    var description = {
+      "paprika:observe": "Read observability data and saved Insights documents",
+      "paprika:insights:write": "Create and update saved queries and dashboards"
+    }[scope];
+    span.textContent = description ? description + " (" + scope + ")" : scope;
     label.appendChild(cb);
     label.appendChild(span);
     box.appendChild(label);
   });
+
+  document.getElementById("access-description").textContent = scopes.indexOf("paprika:insights:write") !== -1
+    ? "Authoring access lets this application create and update saved queries and dashboards within your Insights permissions. It cannot configure providers or change fleet applications. Existing read-only tokens keep their original access."
+    : "This application can read observability data and saved Insights documents within your permissions. This access cannot create or update them.";
 
   document.getElementById("approve").addEventListener("click", function () { decide(rec, "approve"); });
   document.getElementById("deny").addEventListener("click", function () { decide(rec, "deny"); });

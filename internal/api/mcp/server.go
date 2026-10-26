@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -104,7 +105,7 @@ type ServerConfig struct {
 
 	// SupportedScopes is the set of scopes this authorization server grants
 	// and advertises in discovery metadata. Empty defaults to read+write. The
-	// observability gateway grants only ScopeObserve.
+	// observability gateway grants ScopeObserve, plus optional ScopeInsightsWrite.
 	SupportedScopes []Scope
 
 	// DisableConsoleResources suppresses registration of the interactive
@@ -368,7 +369,7 @@ func resolveGrants(cfg *ServerConfig) (string, []Scope, error) {
 		supportedScopes = []Scope{ScopeRead, ScopeWrite}
 	}
 	for _, sc := range supportedScopes {
-		if sc != ScopeRead && sc != ScopeWrite && sc != ScopeObserve {
+		if !isKnownScope(sc) {
 			return "", nil, fmt.Errorf("mcp: ServerConfig.SupportedScopes contains unknown scope %q", sc)
 		}
 	}
@@ -416,12 +417,7 @@ func validatePublicURL(publicURL string) error {
 // matches this package's request/response tool-call model and lets a caller
 // invoke a tool without first running the initialize handshake.
 func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler {
-	description := "Application delivery, fleet health, drift, and deployment diagnostics."
-	instructions := "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
-	if s.disableConsoleResources {
-		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
-		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
-	}
+	description, instructions := serverDescriptionAndInstructions(s.disableConsoleResources, s.supportedScopes)
 	sdkSrv := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:        implementationName,
 		Title:       "Paprika",
@@ -477,6 +473,20 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 	)
 }
 
+func serverDescriptionAndInstructions(disableConsoleResources bool, supportedScopes []Scope) (description, instructions string) {
+	description = "Application delivery, fleet health, drift, and deployment diagnostics."
+	instructions = "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
+	if disableConsoleResources {
+		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
+		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
+		if slices.Contains(supportedScopes, ScopeInsightsWrite) {
+			description = "Observability discovery and bounded queries, with authorized saved-query and dashboard authoring."
+			instructions += " Saved-query and dashboard creation or updates additionally require explicit paprika:insights:write consent and Insights write permission. Discover Insights providers and read current documents first. Create with a new ID; update using the exact ETag just read. Changes appear in the Insights UI. This scope grants no provider configuration or fleet delivery writes."
+		}
+	}
+	return description, instructions
+}
+
 // Handler returns the http.Handler that serves the MCP protocol. It
 // authenticates every request with the configured Authenticator before
 // delegating to the underlying Streamable HTTP handler, so an unauthenticated
@@ -509,8 +519,8 @@ const consoleCredentialTTL = 30 * time.Second
 
 // mintConsoleCredential mints a short-lived, unscoped self-signed token for
 // the in-process Connect request tools/call issues, carrying p's real
-// subject/email/name so the audit trail records the actual acting user
-// rather than a service identity. Its audience is auth.ConsoleAPIAudience,
+// subject/email/name and exact groups so the audit trail records the acting
+// user rather than a service identity. Its audience is auth.ConsoleAPIAudience,
 // distinct from this server's own MCP-audience tokens (MCPTokenAudience) —
 // see transport.go's internalCredentialKey doc comment for why forwarding
 // the caller's own MCP-audience token instead would defeat the console
@@ -526,6 +536,7 @@ func (s *Server) mintConsoleCredential(p *auth.Principal) (string, error) {
 		Subject:  p.Subject,
 		Email:    p.Email,
 		Name:     p.Name,
+		Groups:   append([]string{}, p.Groups...),
 		Audience: auth.ConsoleAPIAudience,
 		TTL:      consoleCredentialTTL,
 		Secret:   s.secret,
@@ -915,6 +926,7 @@ var actionableCodes = map[connect.Code]struct{}{
 	connect.CodeNotFound:           {},
 	connect.CodeInvalidArgument:    {},
 	connect.CodeAlreadyExists:      {},
+	connect.CodeAborted:            {},
 	connect.CodeFailedPrecondition: {},
 	connect.CodePermissionDenied:   {},
 }

@@ -11,9 +11,11 @@ https://<paprika-host>/observe/mcp
 
 on the same hostname and TLS identity as the console (`/mcp` keeps serving the
 fleet surface). Gateway tokens carry the **`paprika-observability`** audience and
-the **`paprika:observe`** scope, so a token minted for the console or fleet MCP
-surface is not replayable here and vice versa — even though all surfaces share
-the deployment's HMAC token secret.
+the **`paprika:observe`** scope for reads. When Insights is configured, the separate
+**`paprika:insights:write`** scope enables saved-query and dashboard authoring,
+subject to the user's Insights RBAC permissions. A token minted for the console
+or fleet MCP surface is not replayable here and vice versa — even though all
+surfaces share the deployment's HMAC token secret.
 
 For request budgets, scope boundaries, repeatable local checks, profiling and live
 acceptance, see [validation guidance](observability-validation.md).
@@ -25,7 +27,7 @@ Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observ
                      │ h2c
                      ▼
        Deployment/<release>-observability-gateway
-                     │  mcp.Server (RoutePrefix /observe, ScopeObserve only,
+                     │  mcp.Server (RoutePrefix /observe, ScopeObserve + optional authoring,
                      │  console resource extensions disabled, own embedded
                      │  consent page at /observe/consent)
                      ▼
@@ -53,7 +55,7 @@ Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observ
 
 ## The MCP surface
 
-Thirteen tools, all read-only, all requiring `paprika:observe`:
+Thirteen telemetry tools, all read-only and requiring `paprika:observe`:
 
 | Tool | Purpose |
 |---|---|
@@ -70,6 +72,31 @@ Thirteen tools, all read-only, all requiring `paprika:observe`:
 | `list_provider_types` | The provider-type catalog (library view) |
 | `describe_provider_type` | One type's config schema + onboarding walkthrough |
 | `validate_provider` | Offline syntax validation of prospective provider configuration |
+
+When Insights is configured, the same MCP endpoint additionally exposes:
+
+| Tool | Required scope | Purpose |
+|---|---|---|
+| `list_insights_providers` | `paprika:observe` | Discover provider IDs used in saved UI documents |
+| `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags |
+| `list_dashboards`, `get_dashboard` | `paprika:observe` | Read shared dashboards and their ETags |
+| `create_saved_query`, `create_dashboard` | `paprika:observe` + `paprika:insights:write` | Create a new shared document without replacing an existing ID |
+| `update_saved_query`, `update_dashboard` | `paprika:observe` + `paprika:insights:write` | Update a document using the exact ETag from its latest read |
+
+All document tools also enforce the user's global `insights` read/write RBAC.
+The authoring scope grants no fleet operations or provider configuration.
+Existing `paprika:observe` tokens remain read-only, including on refresh;
+authoring requires a fresh native OAuth grant that explicitly requests the new
+scope. An omitted-scope authorization request retains the read-only default.
+Create saved queries before dashboards that reference them, and preserve typed
+parameters and bindings. A stale update returns a conflict: reread the document
+and reconcile the intended edit instead of issuing a wildcard overwrite.
+
+The tools use the same persistent Insights service as the UI. Open workspaces
+refresh externally saved changes while protecting unsaved local drafts.
+Provider credentials and the Insights service token never enter tool responses.
+See the [Observe plugin](../../plugins/paprika-observe/README.md) for connection
+and authoring guidance.
 
 The five exploration tools answer in the backend's own JSON envelope
 (`{"status":"success","data":[...]}` for prometheus/loki, `{"tagNames":[...]}`
@@ -290,7 +317,8 @@ Verify:
 curl -s https://paprika.benebsworth.com/.well-known/oauth-protected-resource/observe/mcp | jq .
 # { "resource": "https://paprika.benebsworth.com/observe/mcp",
 #   "authorization_servers": ["https://paprika.benebsworth.com/observe"],
-#   "scopes_supported": ["paprika:observe"] }
+#   "scopes_supported": ["paprika:observe", "paprika:insights:write"] }
+# The authoring scope is present only when Insights is configured.
 ```
 
 ## Autodiscovery from in-cluster Services
