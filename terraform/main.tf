@@ -115,9 +115,17 @@ variable "kubernetes_oidc_groups_claim" {
 }
 
 variable "cloudflare_api_key" {
-  description = "Cloudflare Global API key"
+  description = "Legacy Cloudflare Global API key; prefer a scoped cloudflare_api_token."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "cloudflare_api_token" {
+  description = "Scoped Cloudflare token with access to the managed DNS records. Do not also set cloudflare_api_key."
+  type        = string
+  sensitive   = true
+  default     = null
 }
 
 variable "cloudflare_email" {
@@ -175,13 +183,16 @@ provider "vultr" {
 }
 
 provider "cloudflare" {
-  api_key = var.cloudflare_api_key
-  email   = var.cloudflare_email
+  api_key   = var.cloudflare_api_key
+  api_token = var.cloudflare_api_token
+  email     = var.cloudflare_api_key == null ? null : var.cloudflare_email
 }
 
 # Import existing repo (run: terraform import github_repository.paprika paprika)
 resource "github_repository" "paprika" {
-  name = var.repo_name
+  name         = var.repo_name
+  description  = "Open source Kubernetes application delivery operator with pipelines, staged releases, health checks, and progressive rollouts."
+  homepage_url = "https://paprikacd.github.io/paprika/"
 
   visibility = "public"
 
