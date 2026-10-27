@@ -16,6 +16,7 @@ import {
 } from "./charts";
 import type { QueryResult, Widget } from "./schema";
 import { contrastRatio } from "./appearance";
+import chartStyles from "./charts.module.css";
 import {
   contrastText,
   balancedHeatmapColumns,
@@ -394,6 +395,60 @@ describe("widget visualizations", () => {
     expect(screen.getByText("POST /orders")).toBeInTheDocument();
     expect(screen.getByText("132.5 ms")).toBeInTheDocument();
     expect(screen.getByText("error")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["ok", "success"],
+    [" OK ", "success"],
+    ["success", "success"],
+    ["succeeded", "success"],
+    ["STATUS_CODE_OK", "success"],
+    ["error", "error"],
+    ["FAILED", "error"],
+    ["failure", "error"],
+    ["STATUS_CODE_ERROR", "error"],
+    ["unknown", "neutral"],
+    ["", "neutral"],
+    ["unset", "neutral"],
+    ["pending", "neutral"],
+    ["not_ok", "neutral"],
+    ["no-error", "neutral"],
+    ["failure pending", "neutral"],
+  ] as const)("uses an honest %s trace-status tone (%s)", (status, tone) => {
+    render(
+      <WidgetVisualization
+        widget={{ ...widget, type: "traces" }}
+        result={{
+          traces: [{
+            traceId: "status-test",
+            service: "checkout",
+            operation: "POST /orders",
+            durationMs: 12,
+            startTime: 1000,
+            status,
+          }],
+        }}
+      />,
+    );
+    const row = screen.getByRole("row", { name: /POST \/orders/ });
+    const label = within(row).getAllByRole("cell")[2].querySelector("span")!;
+    expect(label.textContent).toBe(status || "Unknown");
+    const statusClasses = {
+      success: chartStyles.statusSuccess,
+      error: chartStyles.statusError,
+      neutral: chartStyles.statusNeutral,
+    };
+    expect(label).toHaveClass(statusClasses[tone]);
+    for (const [other, className] of Object.entries(statusClasses)) {
+      if (other !== tone) expect(label).not.toHaveClass(className);
+    }
+    const bar = row.querySelector(`.${chartStyles.traceBar}`)!;
+    expect(bar.classList.contains(chartStyles.traceSuccess)).toBe(
+      tone === "success",
+    );
+    expect(bar.classList.contains(chartStyles.traceError)).toBe(
+      tone === "error",
+    );
   });
 
   it("distinguishes loading, empty and failed queries", () => {

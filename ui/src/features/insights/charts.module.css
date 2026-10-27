@@ -251,8 +251,11 @@
   left: 0;
   bottom: -4px;
   height: 2px;
-  background: var(--gamma-chart-2, #517e66);
+  background: var(--gamma-muted, #626e65);
   border-radius: 2px;
+}
+.traceSuccess {
+  background: var(--gamma-success, #327959);
 }
 .traceError {
   background: var(--gamma-danger, #b4473d);
@@ -260,6 +263,11 @@
 .status {
   font-size: 11px;
   white-space: nowrap;
+}
+.statusNeutral {
+  color: var(--widget-text, var(--gamma-muted, #626e65));
+}
+.statusSuccess {
   color: var(--widget-text, var(--gamma-success, #327959));
 }
 .statusError {
