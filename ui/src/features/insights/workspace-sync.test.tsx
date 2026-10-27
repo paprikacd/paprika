@@ -35,6 +35,10 @@ async function open(api: InsightsClient) {
   await screen.findByRole("heading", { name: "Original dashboard" })
   await waitFor(() => expect(api.listSavedQueries).toHaveBeenCalled())
 }
+async function explorerReady() {
+  // Provider changes remount the lazy Explorer; wait for its visible workspace.
+  expect(await screen.findByRole("region", { name: "Query workbench" }, { timeout: 5000 })).toBeVisible()
+}
 beforeEach(() => {
   window.history.replaceState(null, "", "/dashboard/insights/")
   vi.spyOn(document, "hidden", "get").mockReturnValue(false)
@@ -51,6 +55,7 @@ it("opens the selected MCP provider from Data sources and preserves an existing 
   await open(api)
   fireEvent.click(screen.getByRole("button", { name: "Data sources 2" }))
   fireEvent.click(screen.getByRole("button", { name: "Explore Traces" }))
+  await explorerReady()
   expect(await screen.findByRole("combobox", { name: "Explore data source" })).toHaveTextContent("Traces")
   expect(screen.getByText("query_traces")).toBeVisible()
   fireEvent.change(screen.getByLabelText("Query name"), { target: { value: "My trace draft" } })
@@ -59,16 +64,18 @@ it("opens the selected MCP provider from Data sources and preserves an existing 
   expect(await screen.findByRole("alertdialog")).toHaveTextContent("Discard query changes?")
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
   fireEvent.click(screen.getByRole("button", { name: "Explore 0" }))
+  await explorerReady()
   expect(screen.getByLabelText("Query name")).toHaveValue("My trace draft")
   expect(screen.getByRole("combobox", { name: "Explore data source" })).toHaveTextContent("Traces")
   fireEvent.click(screen.getByRole("button", { name: "Data sources 2" }))
   fireEvent.click(screen.getByRole("button", { name: "Explore Metrics" }))
   fireEvent.click(await screen.findByRole("button", { name: "Discard changes" }))
+  await explorerReady()
   await waitFor(() => expect(screen.getByRole("combobox", { name: "Explore data source" })).toHaveTextContent("Metrics"))
   expect(screen.getByLabelText("Query name")).toHaveValue("")
   expect(screen.getByText("query_metrics")).toBeVisible()
   expect(api.query).not.toHaveBeenCalled()
-})
+}, 10000) // Three workspace transitions plus both confirmation paths exceed five seconds on CI.
 
 it("shows externally created library documents and adopts a changed clean dashboard without reload", async () => {
   const { store, api } = fixture()
