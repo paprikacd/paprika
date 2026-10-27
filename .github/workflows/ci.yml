@@ -493,6 +493,9 @@ jobs:
           PAPRIKA_POSTGRES_TEST_DSN: postgres://postgres:paprika-local-test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/postgres?sslmode=disable
         run: go test -race ./internal/observabilitygateway/connector/postgresql -count=1 -timeout=90s
 
+      - name: Verify service queries with Prometheus and enforce live coverage
+        run: node --test hack/service-overview/*.test.mjs ui/e2e/service-overview-coverage.test.mjs
+
       - name: Verify authenticated application records through MCP and the browser
         env:
           PAPRIKA_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
