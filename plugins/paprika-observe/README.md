@@ -84,10 +84,16 @@ limits, result interpretation and live validation.
 ## Authoring flow
 
 Discover `list_insights_providers` for the actual provider IDs used by the UI.
+Use `get_insights_schema` with `kind: dashboard`, `widget`, or `saved_query`
+for the deployed schema, examples and semantic constraints.
 Read existing documents with `list_saved_queries`, `get_saved_query`,
 `list_dashboards`, and `get_dashboard`. Create saved queries before dashboards
 that reference them, using `create_saved_query` and `create_dashboard`.
-Updates use `update_saved_query` and `update_dashboard` with the exact ETag
+Targeted edits use `patch_saved_query` and `patch_dashboard`: nested objects
+merge, `null` removes a field, and arrays replace. Dashboard `widget_edits`
+add, update or remove widgets by stable ID in one atomic save. Full-document
+replacements remain available through `update_saved_query` and
+`update_dashboard`. Every edit requires the exact ETag
 returned by the last read. A conflict requires a fresh read and review of both
 changes; do not retry an overwrite with a wildcard ETag. Query provider/kind
 identity and existing dashboard parameter bindings remain protected by the
@@ -97,3 +103,6 @@ These tools edit the shared Insights documents. An open UI refreshes external
 changes while preserving unsaved local drafts. Returned dashboard links open
 the saved workspace. Authoring grants no fleet writes, provider configuration,
 credential management, or deletion tools.
+
+See the [targeted authoring contract](../../docs/design/insights/targeted-authoring.md)
+for patch examples, immutable fields and limits.

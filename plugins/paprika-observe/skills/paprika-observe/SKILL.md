@@ -197,12 +197,19 @@ explicitly for authoring. The server offers authoring only with Insights enabled
    a UI ID from a provider name or copy provider endpoints/credentials.
 2. Use `list_saved_queries`/`get_saved_query` and `list_dashboards`/`get_dashboard`
    to understand the current documents and capture their ETags.
+   Call `get_insights_schema` with `kind: saved_query`, `dashboard`, or `widget`
+   to discover the deployed canonical fields, constraints and examples.
 3. Create saved queries with `create_saved_query` before creating dashboards
    that reference them with `create_dashboard`. Preserve typed parameters and
    explicit bindings; use the existing canonical JSON document format.
-4. Update with `update_saved_query` or `update_dashboard`, supplying the exact
-   ETag from the last read. Preserve unrelated metadata, tags, widget settings,
-   layouts, parameter defaults and bindings. Do not use wildcard ETags.
+4. Prefer `patch_saved_query` or `patch_dashboard` for targeted edits, supplying
+   the exact ETag from the last read. Nested objects merge, `null` removes a
+   field, and arrays replace in full. Dashboard `widget_edits` address widgets
+   by ID: `update` merges fields, `add` appends a complete widget, and `remove`
+   removes that widget. One batch saves atomically. Document identities and
+   saved-query provider/kind cannot change through patches. Use full-document
+   `update_saved_query`/`update_dashboard` when replacement is intentional;
+   preserve unrelated fields and never use wildcard ETags.
 5. A conflict means another editor changed the document. Read it again, compare
    changes, and apply only the user's intended edit; never silently overwrite.
    A provider/kind identity change or incompatible parameter change may require

@@ -85,11 +85,13 @@ When Insights is configured, the same MCP endpoint additionally exposes:
 | Tool | Required scope | Purpose |
 |---|---|---|
 | `list_insights_providers` | `paprika:observe` | Discover provider IDs used in saved UI documents |
+| `get_insights_schema` | `paprika:observe` | Discover canonical dashboard, widget or saved-query JSON Schema and examples |
 | `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags |
 | `list_dashboards`, `get_dashboard` | `paprika:observe` | Read shared dashboards and their ETags |
 | `query_dashboard` | `paprika:observe` | Execute a saved dashboard and read compact, versioned live signals with optional variable overrides |
 | `create_saved_query`, `create_dashboard` | `paprika:observe` + `paprika:insights:write` | Create a new shared document without replacing an existing ID |
 | `update_saved_query`, `update_dashboard` | `paprika:observe` + `paprika:insights:write` | Update a document using the exact ETag from its latest read |
+| `patch_saved_query`, `patch_dashboard` | `paprika:observe` + `paprika:insights:write` | Edit selected fields and dashboard widgets by ID, atomically against the current ETag |
 
 All document tools also enforce the user's global `insights` read/write RBAC.
 The authoring scope grants no fleet operations or provider configuration.
@@ -99,6 +101,15 @@ scope. An omitted-scope authorization request retains the read-only default.
 Create saved queries before dashboards that reference them, and preserve typed
 parameters and bindings. A stale update returns a conflict: reread the document
 and reconcile the intended edit instead of issuing a wildcard overwrite.
+
+Start authoring with `get_insights_schema` (`kind`: `dashboard`, `widget`, or
+`saved_query`). It returns the deployed Insights service's full JSON Schema,
+examples and semantic-validation notes. For small changes, prefer
+`patch_saved_query` or `patch_dashboard`: nested objects merge, `null` removes a
+field, and arrays replace in full. Dashboard widgets use `widget_edits` with
+`add`, `update` or `remove` operations addressed by stable widget ID. A batch is
+validated and persisted once; any invalid edit or ETag conflict leaves the
+document unchanged. See the [targeted authoring contract](../design/insights/targeted-authoring.md).
 
 The tools use the same persistent Insights service as the UI. Open workspaces
 refresh externally saved changes while protecting unsaved local drafts.

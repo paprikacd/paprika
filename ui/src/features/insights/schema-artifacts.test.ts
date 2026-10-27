@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
-import { dashboardSchema, savedQuerySchema, parseDashboard } from "./schema"
+import { dashboardSchema, savedQuerySchema, widgetSchema, parseDashboard } from "./schema"
 
 describe("published dashboard authoring artifacts", () => {
   it("keeps the machine-readable JSON Schema aligned with the runtime contract", () => {
@@ -23,6 +23,16 @@ describe("published dashboard authoring artifacts", () => {
     delete schema.title
     delete schema.description
     expect(schema).toEqual(z.toJSONSchema(savedQuerySchema))
+  })
+
+  it("can expose the full standalone widget contract without losing recursive definitions", () => {
+    const dashboard = JSON.parse(readFileSync(new URL("../../../../docs/design/insights/dashboard.schema.json", import.meta.url), "utf8"))
+    const widget = {
+      ...dashboard.properties.widgets.items,
+      $schema: dashboard.$schema,
+      $defs: dashboard.$defs,
+    }
+    expect(widget).toEqual(z.toJSONSchema(widgetSchema))
   })
 
   it("ships an importable YAML example", () => {
