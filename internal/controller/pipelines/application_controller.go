@@ -718,6 +718,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 			log.Error(err, "Failed to request current release resync")
 			return ctrl.Result{}, fmt.Errorf("requesting current release resync: %w", err)
 		}
+		clearReleaseRetriesExhaustedCondition(app)
 		r.setApplicationPhase(ctx, app, paprikav1.ApplicationPending, "ManualSync", "manual sync requested")
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			log.Error(err, "Failed to update status after manual sync trigger")
@@ -2713,6 +2714,18 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 // one only after its own release completed and nothing in it is degraded.
 func (r *ApplicationReconciler) finishCompletedRing(ctx context.Context, app *paprikav1.Application, release *paprikav1.Release, pollInterval time.Duration) (ctrl.Result, error) {
 	app.Status.Revision = release.Annotations[sourceRevisionAnnotation]
+	// A retry started by an older controller may have left the Application
+	// Healthy throughout delivery. Verified completion must clear its stale
+	// retry warning even when there is no phase transition to do so.
+	if releaseRetryRecoveryComplete(app, release) {
+		if cond := meta.FindStatusCondition(app.Status.Conditions, releaseRetriesExhaustedCondition); cond != nil && cond.Status == metav1.ConditionTrue {
+			meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+				Type: releaseRetriesExhaustedCondition, Status: metav1.ConditionFalse,
+				Reason: "Recovered", Message: "active release completed successfully",
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+	}
 	if app.Status.Phase != paprikav1.ApplicationHealthy {
 		r.updatePhase(ctx, app, paprikav1.ApplicationHealthy, "ReleaseComplete", "active release completed")
 	}
@@ -2728,6 +2741,22 @@ func (r *ApplicationReconciler) finishCompletedRing(ctx context.Context, app *pa
 		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 	return result, nil
+}
+
+func releaseRetryRecoveryComplete(app *paprikav1.Application, release *paprikav1.Release) bool {
+	if release.Name != app.Status.ReleaseRef || release.Namespace != app.Namespace ||
+		release.Status.Phase != paprikav1.ReleaseComplete || release.Status.ObservedGeneration != release.Generation {
+		return false
+	}
+	for _, annotation := range []string{rollbackAnnotation, resyncAnnotation} {
+		if _, pending := release.Annotations[annotation]; pending {
+			return false
+		}
+	}
+	// Successful completion removes this annotation. Accept an explicit zero
+	// too, but never interpret a malformed counter as proof of recovery.
+	count, present := release.Annotations[autoRetryCountAnnotation]
+	return !present || count == "0"
 }
 
 func (r *ApplicationReconciler) handleTriggeredHealthyPhase(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
@@ -2820,6 +2849,12 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	logger := log.FromContext(ctx)
 	logger.Info("Release auto-retry budget exhausted; holding terminal release and polling source",
 		"release", release.Name, "retries", releaseAutoRetryCount(release))
+	// Holding delivery must not freeze observations of the running rollback.
+	// Keep this read-only: analysis and self-heal must not resurrect the release.
+	diff := r.evaluateDiff(ctx, app)
+	r.evaluateResourceHealth(ctx, app, diff)
+	r.recordDeploymentObservation(ctx, app, diff)
+
 	if promotionTriggered(app) || manualTriggered(app) {
 		setReleaseRetriesExhaustedCondition(app, release)
 		if err := r.patchAppStatus(ctx, app); err != nil {
@@ -3221,12 +3256,13 @@ func configuredHealthResultFresh(check paprikav1.HealthCheck, previous *paprikav
 
 func observationResult(check paprikav1.HealthCheck, prev *paprikav1.HealthCheckResult, result health.EvalResult, now metav1.Time, duration time.Duration) paprikav1.HealthCheckResult {
 	hcr := paprikav1.HealthCheckResult{
-		Name:              result.Name,
-		Status:            result.Status,
-		Message:           result.Message,
-		CheckedAt:         &now,
-		ConfigurationHash: health.MeasurementHash(check),
-		DurationMillis:    duration.Milliseconds(),
+		Name:                result.Name,
+		Status:              result.Status,
+		Message:             result.Message,
+		CheckedAt:           &now,
+		ConfigurationHash:   health.MeasurementHash(check),
+		ConsecutiveFailures: nextHealthFailureCount(check, prev, result.Status, now.Time),
+		DurationMillis:      duration.Milliseconds(),
 	}
 	health.CaptureEvidence(check, prev, result, &hcr)
 	if check.SLO != nil {

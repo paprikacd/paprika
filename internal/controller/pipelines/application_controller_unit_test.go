@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/engine"
@@ -358,6 +359,47 @@ func TestApplicationReconciler_handleSyncTrigger(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplicationReconciler_handleSyncTrigger_failedResyncPreservesExhaustion(t *testing.T) {
+	ctx := context.Background()
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "retry-app", Namespace: "default",
+			Annotations: map[string]string{syncAnnotation: "retry", manualSyncAnnotation: "retry"},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase: pipelinesv1alpha1.ApplicationRolledBack, ReleaseRef: "retry-release", SourceHash: "same-source",
+		},
+	}
+	release := &pipelinesv1alpha1.Release{ObjectMeta: metav1.ObjectMeta{
+		Name: app.Status.ReleaseRef, Namespace: app.Namespace,
+		Annotations: map[string]string{autoRetryCountAnnotation: "3", rollbackAnnotation: "failed", sourceHashAnnotation: "same-source"},
+	}}
+	setReleaseRetriesExhaustedCondition(app, release)
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+	resyncErr := errors.New("release update unavailable")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app, release).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+		WithInterceptorFuncs(interceptor.Funcs{Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			if _, ok := obj.(*pipelinesv1alpha1.Release); ok {
+				return resyncErr
+			}
+			return c.Update(ctx, obj, opts...)
+		}}).Build()
+	r := &ApplicationReconciler{client: c}
+	_, err := r.handleSyncTrigger(ctx, app)
+	require.ErrorIs(t, err, resyncErr)
+	var stored pipelinesv1alpha1.Application
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(app), &stored))
+	require.Equal(t, pipelinesv1alpha1.ApplicationRolledBack, stored.Status.Phase)
+	require.True(t, conditionIsTrue(&stored, releaseRetriesExhaustedCondition))
+	require.True(t, conditionIsTrue(app, releaseRetriesExhaustedCondition), "failed reset must not clear in-memory warning")
+	var storedRelease pipelinesv1alpha1.Release
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(release), &storedRelease))
+	require.Equal(t, "3", storedRelease.Annotations[autoRetryCountAnnotation])
+	require.Equal(t, "failed", storedRelease.Annotations[rollbackAnnotation])
 }
 
 func TestApplicationReconciler_handleSyncTrigger_changedSourceStartsNewReleaseFlow(t *testing.T) {

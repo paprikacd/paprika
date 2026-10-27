@@ -294,6 +294,9 @@ func TestRolloutStory_RetryExhaustionAndRecovery(t *testing.T) {
 		t.Fatalf("manual sync must reset the auto-retry counter, got %q",
 			release.Annotations[autoRetryCountAnnotation])
 	}
+	if conditionIsTrue(app, releaseRetriesExhaustedCondition) {
+		t.Fatal("manual sync reset the retry budget but left the exhausted warning active")
+	}
 
 	// The resynced release completes: the app recovers to Healthy and the
 	// latch clears on the transition.
@@ -400,6 +403,71 @@ func TestSetApplicationPhase_RetiresStalePhaseConditions(t *testing.T) {
 	}
 	if len(truePhases) != 1 || truePhases[0] != string(pipelinesv1alpha1.ApplicationRolledBack) {
 		t.Fatalf("true phase conditions = %v, want exactly [RolledBack]", truePhases)
+	}
+}
+
+func TestHealthyApplicationClearsRetryWarningOnlyAfterReleaseRecovery(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		phase      pipelinesv1alpha1.ReleasePhase
+		retries    string
+		pending    string
+		stale      bool
+		wantWarned bool
+	}{
+		{name: "completed recovery", phase: pipelinesv1alpha1.ReleaseComplete},
+		{name: "completed with explicit zero retries", phase: pipelinesv1alpha1.ReleaseComplete, retries: "0"},
+		{name: "completed before retry counter reset", phase: pipelinesv1alpha1.ReleaseComplete, retries: "3", wantWarned: true},
+		{name: "completed with malformed retry counter", phase: pipelinesv1alpha1.ReleaseComplete, retries: "invalid", wantWarned: true},
+		{name: "completed previous generation", phase: pipelinesv1alpha1.ReleaseComplete, stale: true, wantWarned: true},
+		{name: "completed with pending rollback", phase: pipelinesv1alpha1.ReleaseComplete, pending: rollbackAnnotation, wantWarned: true},
+		{name: "completed with pending resync", phase: pipelinesv1alpha1.ReleaseComplete, pending: resyncAnnotation, wantWarned: true},
+		{name: "held rollback", phase: pipelinesv1alpha1.ReleaseRolledBack, retries: "3", wantWarned: true},
+		{name: "failed", phase: pipelinesv1alpha1.ReleaseFailed, retries: "3", wantWarned: true},
+		{name: "retry canary in progress", phase: pipelinesv1alpha1.ReleaseCanarying, wantWarned: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := newRolloutApp("recovered-app")
+			app.Status = pipelinesv1alpha1.ApplicationStatus{
+				Phase: pipelinesv1alpha1.ApplicationHealthy, SourceHash: "rollout-hash-1", SourceRevision: "rev-1",
+			}
+			app.Status.ReleaseRef = applicationReleaseName(app, &app.Spec.Stages[0])
+			release := &pipelinesv1alpha1.Release{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: app.Status.ReleaseRef, Namespace: app.Namespace,
+					Annotations: map[string]string{sourceHashAnnotation: app.Status.SourceHash, sourceRevisionAnnotation: app.Status.SourceRevision},
+				},
+				Status: pipelinesv1alpha1.ReleaseStatus{Phase: tc.phase},
+			}
+			if tc.retries != "" {
+				release.Annotations[autoRetryCountAnnotation] = tc.retries
+			}
+			if tc.pending != "" {
+				release.Annotations[tc.pending] = "pending"
+			}
+			if tc.stale {
+				release.Generation = 2
+				release.Status.ObservedGeneration = 1
+			}
+			setReleaseRetriesExhaustedCondition(app, release)
+			template := &pipelinesv1alpha1.Template{ObjectMeta: metav1.ObjectMeta{Name: app.Name + "-template", Namespace: app.Namespace}}
+			fx := newRolloutFixture(t, app, release, template)
+			if _, err := fx.r.handleHealthyPhase(context.Background(), app); err != nil {
+				t.Fatalf("handleHealthyPhase: %v", err)
+			}
+			stored := fx.fetch()
+			if got := conditionIsTrue(stored, releaseRetriesExhaustedCondition); got != tc.wantWarned {
+				t.Fatalf("exhausted warning = %v, want %v (release %s)", got, tc.wantWarned, tc.phase)
+			}
+			fx.expectPhase(stored, pipelinesv1alpha1.ApplicationHealthy)
+			if !tc.wantWarned {
+				condition := meta.FindStatusCondition(stored.Status.Conditions, releaseRetriesExhaustedCondition)
+				if condition == nil || condition.Reason != "Recovered" {
+					t.Fatalf("completed recovery condition = %+v, want Recovered", condition)
+				}
+			}
+		})
 	}
 }
 
