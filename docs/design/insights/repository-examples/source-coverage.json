@@ -1803,7 +1803,8 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+            "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
           ],
           "sourcePointer": "/panels/2/targets/0",
           "language": "sql-postgresql",
@@ -1821,7 +1822,8 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+            "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
           ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "sql-postgresql",
@@ -1852,6 +1854,7 @@
         "SQL stock timeseries has no dashboard time-filter macro.",
         "Variable stocks: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
         "Variable top10shorts: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
         "Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust."
       ]
     },
@@ -1897,7 +1900,8 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+            "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "sql-postgresql",
@@ -1912,6 +1916,7 @@
         "Top-ten RANK query may return duplicate stock codes on tied maxima.",
         "Variable stocks: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
         "Variable top10shorts: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
         "Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust."
       ]
     },

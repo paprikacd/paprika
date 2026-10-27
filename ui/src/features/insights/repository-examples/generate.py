@@ -48,7 +48,7 @@ def coverage(e,key,title,kind,**extra):
  c={'sourceId':str(key),'sourceTitle':title,'sourceType':kind,'sampleWidgetIds':[],'liveWidgetIds':[],'status':'mapped','notes':[],**extra}
  e['coverage'].append(c);return c
 
-def add(e,key,title,kind='metrics',visual='timeseries',unit='',fixture=None,live=None,provider='shorted',params=None,filter_columns=None,config=None,options=None,cov=None,notes=None):
+def add(e,key,title,kind='metrics',visual='timeseries',unit='',fixture=None,live=None,provider='shorted',params=None,filter_columns=None,config=None,options=None,cov=None,notes=None,live_description=None):
  key=slug(key); wid=key[:72]; qid=(slug(e['id'])+'-'+key)[:70]; params=params or []
  fixture=fixture or metric_fixture(qid,title)
  fixture['id']=qid;fixture['metric']='paprika_example_'+qid.replace('-','_')
@@ -79,6 +79,7 @@ def add(e,key,title,kind='metrics',visual='timeseries',unit='',fixture=None,live
   bindings=[{'parameter':p['name'],'source':'variable','variable':p['name']} for p in params]
   metadata={'project':e['project'],'sourceRevision':e['source']['revision'],'sourcePath':(e['source']['paths'] or ['Paprika feature coverage'])[0][:256],'sourcePanel':str(cov['sourceId'] if cov else key)[:256],'dataMode':('source-authored static' if e['id']=='shorted-housing-feature' else 'synthetic sample') if mode=='sample' else 'live source'}
   saved={'schemaVersion':1,'id':id,'name':title.strip()[:120],'description':(('Source-authored static values for ' if e['id']=='shorted-housing-feature' else 'Illustrative sample for ') if mode=='sample' else 'Source query for ')+e['title'][:300],'tags':['repository-example',e['project'],mode],'metadata':metadata,'providerId':provider_id,'kind':kind,'query':query.strip()}
+  if mode=='live' and live_description:saved['description']=live_description
   if params: saved['parameters']=params
   dest['savedQueries'].append(saved)
   widget={'id':wid,'title':title.strip()[:120],'type':visual,'providerId':provider_id,'query':query.strip(),'queryRef':{'id':id,**({'bindings':bindings} if bindings else {})},'unit':unit[:24],'options':{'showTooltip':True,'decimals':2,**(options or {})},'layout':{'x':(index%2)*6,'y':(index//2)*5,'w':6,'h':5}}
@@ -103,7 +104,7 @@ def arrange_widgets(widgets):
   x+=width;height=max(height,h)
   if x==12:y+=height;x=0;height=0
 
-def finish(e):
+def finish(e,history_limit=None):
  if any(provider['type']=='postgresql' for provider in e['providers']):e['limitations'].append('Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust.')
  if not e['live']['dashboards'][0]['widgets']:
   e.pop('live');e['liveStatus']='unavailable'
@@ -111,11 +112,13 @@ def finish(e):
  for mode in ['sample','live']:
   if mode in e:
    e[mode]['dashboards'][0]['description']=(('Authored historical data. ' if e['id']=='shorted-housing-feature' else 'Illustrative data. ') if mode=='sample' else 'Live provider reads. ')+e['description'][:430]
+   if mode=='live' and history_limit:e[mode]['dashboards'][0]['description']=e[mode]['dashboards'][0]['description'][:350].rstrip('. ')+f'. History charts show the latest {history_limit} source observations. Source date filters apply; the dashboard time range does not rewrite this SQL.'
    arrange_widgets(e[mode]['dashboards'][0]['widgets'])
 
 # All seven Grafana definitions, one saved query for each target including hidden targets.
 for src in SHORT['examples'][:7]:
  e=make_entry(src)
+ bounded_history=False
  e['limitations']=['Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.','Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.']+src.get('notes',[])
  vars=[]
  for v in src['variables']:
@@ -160,7 +163,7 @@ for src in SHORT['examples'][:7]:
    base=0 if any(t in title.lower() for t in ['corrupt','failed','error','blocked']) else 95 if 'ratio' in title.lower() else 25+ordinal*3+ti
    if unit=='ratio':base=.02 if 'error' in title.lower() else .95
    fixture=metric_fixture(key,title,base,variation=0 if typ=='stat' else max(abs(base)*.12,.01))
-   params=[];live=expression;provider='prometheus';notes=[]
+   params=[];live=expression;provider='prometheus';notes=[];live_description=None
    if expression:
     used=[v for v in vars if re.search(r'\$(?:\{)?'+re.escape(v['name'])+r'\b',expression)]
     params=[{'name':v['name'],'type':'string','defaultValue':v['defaultValue']} for v in used]
@@ -175,15 +178,25 @@ for src in SHORT['examples'][:7]:
      provider='postgresql';sql=expression.strip().rstrip(';');sqlparams=[]
      for i,v in enumerate(used):sql=sql.replace('$'+v['name'],'$'+str(i+1));sqlparams.append('@@'+v['name']+'@@')
      projection={'value':'shorted percentage','labels':['metric']} if typ=='bargauge' else {'value':'value','time':'time','labels':['metric']}
+     if 'time' in projection:
+      # Bound the recent end of source history before the connector's row cap.
+      # Keep the source query/filters intact inside the wrapper and restore
+      # chronological order for charts after selecting the latest 100 rows.
+      sql='SELECT * FROM (\n  SELECT * FROM (\n'+sql+'\n  ) AS source_history\n  ORDER BY "time" DESC NULLS LAST\n  LIMIT 100\n) AS recent_history\nORDER BY "time" ASC NULLS LAST'
+      history_note='Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.'
+      notes.append(history_note)
+      if history_note not in e['limitations']:e['limitations'].append(history_note)
+      bounded_history=True
+      live_description='Latest 100 source observations for '+e['title']+'. Source stock/date filters apply; the dashboard time range does not rewrite this SQL.'
      live=template({'sql':sql,'parameters':sqlparams,'projection':projection})
-     notes.append('Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained.')
+     notes.append('Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. '+('Source calculations and filters are retained.' if 'time' in projection else 'Source query is otherwise retained.'))
    else:
     notes.append('Grafana test-data gauge is explicitly synthetic and has no live provider equivalent.');live=None
    if len(targets)>1: notes.append(f'Split from source panel {ordinal}, target {ref}; sibling targets retain independent units and queries.')
    if target.get('settings',{}).get('hide'):notes.append('Source target is hidden; exposed here for complete query coverage.')
    if notes:c['status']='adapted'
-   add(e,key,title+(f' · {ref}' if len(targets)>1 else ''),visual=visual,unit=unit,fixture=fixture,live=live,provider=provider,params=params,config=config,options=options,cov=c,notes=notes)
- finish(e)
+   add(e,key,title+(f' · {ref}' if len(targets)>1 else ''),visual=visual,unit=unit,fixture=fixture,live=live,provider=provider,params=params,config=config,options=options,cov=c,notes=notes,live_description=live_description)
+ finish(e,history_limit=100 if bounded_history else None)
 
 # The checked-in My Dashboard preset and its separate eleven-widget coverage gallery.
 def shorted_query(operation,args=None,value=None,time=None,labels=None):

@@ -89,6 +89,44 @@ describe("source-derived repository example library", () => {
     expect(scenarios.records!.rows.find(row => row[0] === 5)).toEqual([5, 128, 117, 28, 17])
   })
 
+  it("selects recent bounded SQL history before chronological presentation and preserves source filters", () => {
+    const histories: string[] = []
+    for (const entry of repositoryExamples) {
+      const bundle = entry.live
+      if (!bundle) continue
+      for (const saved of bundle.savedQueries ?? []) {
+        if (saved.providerId !== "source-shorted-postgresql") continue
+        const original = entry.coverage.find(item => item.sourceId === saved.metadata?.sourcePanel)!
+        expect(original.sourceQuery).toBeDefined()
+        const widget = bundle.dashboards[0].widgets.find(item => item.queryRef?.id === saved.id)!
+        const variables = Object.fromEntries(bundle.dashboards[0].variables!.map(variable => [variable.name, variable.defaultValue ?? ""]))
+        const initial = JSON.parse(resolveSavedQueryReference(widget.queryRef!, bundle.savedQueries!, variables, "metrics").query)
+        const sourceSQL = original.sourceQuery!.trim().replace(/;$/, "").replace(/\$(?:stocks|top10shorts)\b/g, "$1")
+        if (!initial.projection.time) {
+          expect(initial.sql).toBe(sourceSQL)
+          expect(initial.sql).not.toContain("recent_history")
+          continue
+        }
+        histories.push(saved.id)
+        const sourceBlock = initial.sql.slice(initial.sql.indexOf("SELECT * FROM (\n", 1) + "SELECT * FROM (\n".length, initial.sql.indexOf("\n  ) AS source_history"))
+        expect(sourceBlock).toBe(sourceSQL)
+        expect(initial.sql).toMatch(/\) AS source_history\s+ORDER BY "time" DESC NULLS LAST\s+LIMIT 100\s+\) AS recent_history\s+ORDER BY "time" ASC NULLS LAST$/)
+        expect(original.notes.some(note => note.includes("latest 100 source observations") && note.includes("filters remain intact"))).toBe(true)
+        expect(entry.limitations.some(note => note.includes("full history and dashboard-range filtering are not implied"))).toBe(true)
+        expect(saved.description).toContain("Latest 100 source observations")
+        expect(bundle.dashboards[0].description).toContain("latest 100 source observations")
+        expect(bundle.dashboards[0].description).toContain("dashboard time range does not rewrite this SQL")
+        const selected = saved.parameters![0].name
+        for (const stock of ["BHP", "BHP' OR TRUE --"]) {
+          const changed = JSON.parse(resolveSavedQueryReference(widget.queryRef!, bundle.savedQueries!, { ...variables, [selected]: stock }, "metrics").query)
+          expect(changed.sql).toBe(initial.sql)
+          expect(changed.parameters).toEqual([stock])
+        }
+      }
+    }
+    expect(histories).toEqual(["src-shorted-per-stock-p2-t0", "src-shorted-per-stock-p3-t0", "src-shorted-shorts-overview-p1-t0"])
+  })
+
   it("binds the remaining application operations to real read adapters with explicit admin scope", () => {
     const admin = repositoryExamples.find(entry => entry.id === "shorted-admin-dashboard")!
     expect(admin.liveStatus).toBe("ready")
