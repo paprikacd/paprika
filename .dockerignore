@@ -10,6 +10,10 @@
 !go.mod
 !go.sum
 
+# Runtime schema discovery embeds the same published contracts tested by the UI.
+!docs/design/insights/dashboard.schema.json
+!docs/design/insights/saved-query.schema.json
+
 # Re-include generated protobuf stubs
 !internal/api/paprika/**
 !internal/api/server.go

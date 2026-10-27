@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ready"}) })
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/providers", s.listProviders)
+	api.HandleFunc("GET /api/schemas/{kind}", s.getAuthoringSchema)
 	api.HandleFunc("GET /api/observe-connection", s.observeConnection)
 	api.HandleFunc("GET /api/provider-configs", s.listProviderConfigs)
 	api.HandleFunc("PUT /api/provider-configs/{id}", s.putProviderConfig)

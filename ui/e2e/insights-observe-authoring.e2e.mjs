@@ -18,6 +18,7 @@ const output = join(repository, "artifacts/insights/observe-authoring")
 const binary = join(temporary, "observe-e2e"), ready = join(temporary, "ready.json")
 const reports = [], pageErrors = [], queryResponses = [], writes = [], documentReads = []
 const protocolHistory = []
+const schemas = {}
 const services = ["api-gateway", "release-controller"]
 const readings = [101.2345, 202.3456]
 const template = "sum(rate(http_requests_total{service={{service}}}[5m]))"
@@ -60,7 +61,7 @@ async function http(path, options = {}) {
 async function api(path) {
   const response = await http(path), text = await response.text()
   assert.equal(response.status, 200, `GET ${path}: ${response.status} ${text}`)
-  return { document: JSON.parse(text), etag: response.headers.get("etag") }
+  return { document: JSON.parse(text), etag: response.headers.get("x-paprika-document-etag") ?? response.headers.get("etag") }
 }
 async function rpc(method, params, token = fixture.mcpWriteToken) {
   const id = ++rpcId
@@ -106,6 +107,25 @@ function verifyDocumentResult(result, document) {
   assert.equal(url.pathname, "/dashboard/insights/")
   return result
 }
+function schemaNode(root, node = root) {
+  while (node?.$ref) {
+    assert.ok(node.$ref.startsWith("#/"), "Schema references must resolve within the advertised document")
+    node = node.$ref.slice(2).split("/").reduce((value, key) => value[key.replaceAll("~1", "/").replaceAll("~0", "~")], root)
+  }
+  return node
+}
+function schemaProperty(root, ...names) {
+  return names.reduce((node, name) => schemaNode(root, schemaNode(root, node).properties[name]), root)
+}
+async function unchanged(collection, entry) {
+  assert.deepEqual(await api(`${collection}/${entry.document.id}`), { document: entry.document, etag: entry.etag })
+}
+async function assertQueryCall(query, fromIndex = 0) {
+  await until(() => queryResponses.slice(fromIndex).some(({ status, request }) => status === 200 && request.providerId === metricProvider.id && request.query === query && request.start === Date.parse(fixedRange.from) / 1000 && request.end === Date.parse(fixedRange.to) / 1000 && request.step === 12), "The live widget did not execute the exact patched query and dashboard time range")
+  const protocol = await readObserveProtocol(fixture.baseURL)
+  const calls = assertObserveMCP(protocol, ["query_metrics"])
+  assert.ok(calls.some(call => call.tool === "query_metrics" && call.arguments.provider === fixture.providerRef && call.arguments.query === query && Date.parse(call.arguments.start) === Date.parse(fixedRange.from) && Date.parse(call.arguments.end) === Date.parse(fixedRange.to) && call.arguments.step_seconds === 12))
+}
 async function check(name, action) {
   try { const evidence = await action(); reports.push({ name, passed: true, evidence }); console.log(`PASS ${name}`) }
   catch (error) {
@@ -116,11 +136,11 @@ async function check(name, action) {
 }
 const tile = () => page.locator('[data-widget-id="selected-service"]')
 const explorer = () => page.getByRole("region", { name: "Data source explorer", exact: true }).last()
-async function showReading(service, factor = 1) {
+async function showReading(service, factor = 1, decimals = 2) {
   const value = readings[services.indexOf(service)] * factor
-  const reading = tile().locator("[data-metric-value]")
+  const reading = tile().locator("[data-stat-reading] [data-metric-value]")
   await until(async () => Number(await reading.getAttribute("data-metric-value").catch(() => NaN)) === value, `Expected ${service} latest value ${value}`)
-  assert.equal((await reading.innerText()).replace(/\s+/g, ""), `${value.toFixed(2)}req/s`)
+  await until(async () => (await reading.innerText()).replace(/\s+/g, "") === `${value.toFixed(decimals)}req/s`, `Expected ${decimals} decimal places in the live stat`)
   const sparkline = tile().locator("[data-stat-sparkline]")
   assert.equal(Number(await sparkline.getAttribute("data-sample-count")), 4)
   assert.ok((await sparkline.locator("[data-stat-trend]").getAttribute("d"))?.length > 2)
@@ -166,7 +186,7 @@ try {
   await check("Observe advertises authoring tools separately from provider reads", async () => {
     const listed = await rpc("tools/list", {}, fixture.mcpToken)
     assert.equal(listed.error, undefined)
-    for (const name of ["create_saved_query", "update_saved_query", "create_dashboard", "update_dashboard"]) {
+    for (const name of ["create_saved_query", "update_saved_query", "patch_saved_query", "create_dashboard", "update_dashboard", "patch_dashboard"]) {
       const entry = listed.result.tools.find(tool => tool.name === name)
       assert.ok(entry, `${name} must be discoverable`)
       assert.equal(entry.annotations.readOnlyHint, false)
@@ -178,10 +198,37 @@ try {
     assert.ok(providers.every(provider => !Object.hasOwn(provider, "url") && !Object.hasOwn(provider, "credentials")))
     assert.deepEqual((await tool("list_saved_queries", {}, fixture.mcpToken)).queries, [])
     assert.deepEqual((await tool("list_dashboards", {}, fixture.mcpToken)).dashboards, [])
-    return { authoringTools: 4, provider: metricProvider.providerRef, credentialsExposed: false }
+    assert.equal(listed.result.tools.find(tool => tool.name === "get_insights_schema")?.annotations.readOnlyHint, true)
+    return { authoringTools: 6, provider: metricProvider.providerRef, credentialsExposed: false }
   })
-  const saved = { schemaVersion: 1, id: "mcp-service-rate", name: "MCP service request rate", description: "Created through Observe MCP.", tags: ["mcp", "service"], providerId: metricProvider.id, kind: "metrics", query: template, parameters: [{ name: "service", type: "string", defaultValue: services[0] }] }
-  const dashboard = { schemaVersion: 1, id: "mcp-authoring-flow", title: "MCP authored dashboard", description: "Shared documents, created without a UI write.", timeRange: "1h", customTimeRange: fixedRange, refreshInterval: 0, variables: [{ name: "service", label: "Service", defaultValue: services[0], options: services }], widgets: [{ id: "selected-service", title: "Selected service request rate", type: "stat", providerId: metricProvider.id, query: "must_not_execute", queryRef: { id: saved.id, bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, unit: "req/s", options: { decimals: 2, showSparkline: true }, layout: { x: 0, y: 0, w: 6, h: 4 } }] }
+  await check("Read-only MCP schema discovery describes complete authoring documents and usable examples", async () => {
+    for (const kind of ["dashboard", "widget", "saved_query"]) {
+      const result = await tool("get_insights_schema", { kind }, fixture.mcpViewerToken)
+      assert.equal(result.schemaVersion, 1); assert.equal(result.kind, kind)
+      assert.equal(schemaNode(result.schema).type, "object")
+      assert.equal(schemaNode(result.schema).additionalProperties, false)
+      assert.ok(result.examples.length && result.notes.length)
+      assert.ok(result.examples.every(example => example && typeof example === "object" && !Array.isArray(example)))
+      schemas[kind] = result
+      assert.deepEqual((await api(`schemas/${kind}`)).document, result)
+    }
+    const widget = schemas.widget.schema, query = schemas.saved_query.schema, board = schemas.dashboard.schema
+    assert.equal(schemaProperty(widget, "options", "decimals").maximum, 8)
+    assert.equal(schemaProperty(widget, "options", "showSparkline").type, "boolean")
+    assert.equal(schemaProperty(widget, "layout", "w").maximum, 12)
+    for (const name of ["queryRef", "drilldowns", "options", "layout"]) assert.ok(schemaProperty(widget, name))
+    for (const name of ["description", "imageUrl", "tags", "metadata", "parameters"]) assert.ok(schemaProperty(query, name))
+    assert.equal(schemaProperty(query, "tags").maxItems, 12)
+    assert.equal(schemaProperty(board, "widgets").maxItems, 48)
+    assert.ok(schemaProperty(board, "variables")); assert.ok(schemaProperty(board, "customTimeRange"))
+    await rejectedTool("get_insights_schema", { kind: "unknown" }, fixture.mcpToken)
+    await rejectedTool("get_insights_schema", { kind: "dashboard" }, fixture.mcpNoInsightsToken, /permission|forbidden|denied/i)
+    return { kinds: Object.keys(schemas), completeNestedSchemas: true, readOnlyViewerAllowed: true, noInsightsCallerDenied: true }
+  })
+  // Use the advertised canonical examples as the starting point, binding their
+  // illustrative provider and document IDs to this authenticated workspace.
+  const saved = { ...schemas.saved_query.examples[0], schemaVersion: 1, id: "mcp-service-rate", name: "MCP service request rate", description: "Created through Observe MCP.", imageUrl: "/brand/paprika-mark.png", tags: ["mcp", "service"], metadata: { owner: "platform", tier: "critical", temporary: "remove with null" }, providerId: metricProvider.id, kind: "metrics", query: template, parameters: [{ name: "service", type: "string", defaultValue: services[0] }] }
+  const dashboard = { ...schemas.dashboard.examples[0], schemaVersion: 1, id: "mcp-authoring-flow", title: "MCP authored dashboard", description: "Shared documents, created without a UI write.", timeRange: "1h", customTimeRange: fixedRange, refreshInterval: 0, variables: [{ name: "service", label: "Service", defaultValue: services[0], options: services }], widgets: [{ ...schemas.widget.examples[0], id: "selected-service", title: "Selected service request rate", type: "stat", providerId: metricProvider.id, query: "must_not_execute", queryRef: { id: saved.id, bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, unit: "req/s", color: "#557EAA", options: { decimals: 2, showSparkline: true, showTooltip: true, tooltipView: { type: "stat", decimals: 2, showSparkline: true, source: { type: "widget" } } }, layout: { x: 0, y: 0, w: 6, h: 4 } }] }
   await check("OAuth scope and Insights RBAC independently reject writes", async () => {
     const scope = await rejectedTool("create_saved_query", { document: saved }, fixture.mcpToken, /paprika:insights:write/)
     const rbac = await rejectedTool("create_saved_query", { document: saved }, fixture.mcpDeniedWriteToken, /permission|forbidden|denied/i)
@@ -236,6 +283,135 @@ try {
     assert.deepEqual((await api(`dashboards/${dashboard.id}`)).document, document)
     return { refreshedWithoutReload: true, staleDashboardWriteRejected: true }
   })
+  await check("Targeted saved-query metadata merges preserve execution fields and remove optional fields with null", async () => {
+    const before = queryEntry
+    const patch = { description: "Metadata patched through Observe MCP.", tags: ["mcp", "patched"], imageUrl: null, metadata: { owner: "observability", temporary: null } }
+    const document = { ...before.document, description: patch.description, tags: patch.tags, metadata: { owner: "observability", tier: "critical" } }
+    delete document.imageUrl
+    queryEntry = verifyDocumentResult(await tool("patch_saved_query", { id: saved.id, etag: before.etag, patch }), document)
+    assert.notEqual(queryEntry.etag, before.etag)
+    await unchanged("dashboards", dashboardEntry)
+    await openExplorer()
+    const picker = explorer().getByRole("combobox", { name: "Open saved query", exact: true })
+    await picker.click()
+    const option = page.getByRole("option").filter({ hasText: queryEntry.document.name })
+    await option.getByText("patched", { exact: true }).waitFor()
+    await option.click()
+    await until(async () => await explorer().getByRole("textbox", { name: "Query description", exact: true }).inputValue() === patch.description, "Patched saved-query metadata did not appear in the query editor")
+    await page.screenshot({ path: join(output, "patched-query-metadata.png"), fullPage: false })
+    await page.locator("#insights-navigation").getByRole("button", { name: dashboardEntry.document.title, exact: true }).click()
+    await page.getByRole("heading", { name: dashboardEntry.document.title, exact: true }).waitFor()
+    await showReading(services[0], 2)
+    return { preserved: ["id", "providerId", "kind", "query", "parameters", "metadata.tier"], removed: ["imageUrl", "metadata.temporary"], tagsReplaced: true, dropdownAndEditorRefreshed: true }
+  })
+  await check("Targeted expression patches requery the real provider and refresh values and full sparkline history", async () => {
+    const original = queryEntry, before = await showReading(services[0], 2), firstResponse = queryResponses.length
+    const document = { ...original.document, query: template }
+    queryEntry = verifyDocumentResult(await tool("patch_saved_query", { id: saved.id, etag: original.etag, patch: { query: template } }), document)
+    const after = await showReading(services[0])
+    assert.equal(after.min * 2, before.min); assert.equal(after.max * 2, before.max)
+    await assertQueryCall(template.replace("{{service}}", JSON.stringify(services[0])), firstResponse)
+    await rejectedConflict("patch_saved_query", { id: saved.id, etag: original.etag, patch: { description: "Stale targeted writer" } })
+    await unchanged("saved-queries", queryEntry); await unchanged("dashboards", dashboardEntry)
+    const restoreResponse = queryResponses.length
+    queryEntry = verifyDocumentResult(await tool("patch_saved_query", { id: saved.id, etag: queryEntry.etag, patch: { query: original.document.query } }), original.document)
+    await showReading(services[0], 2)
+    await assertQueryCall(original.document.query.replace("{{service}}", JSON.stringify(services[0])), restoreResponse)
+    return { before, after, exactMCPProviderCalls: true, unchangedMetadataAndParameters: true, dashboardUnchanged: true, stalePatchRejected: true }
+  })
+  await check("Targeted dashboard metadata and widget edits refresh the UI while preserving sibling fields", async () => {
+    const before = dashboardEntry
+    const sibling = { ...structuredClone(before.document.widgets[0]), id: "untouched-sibling", title: "Unchanged sibling", description: "This widget must survive targeted edits intact.", queryRef: { id: saved.id, bindings: [{ parameter: "service", source: "constant", value: services[1] }] }, layout: { x: 6, y: 0, w: 6, h: 4 } }
+    const added = { ...before.document, description: "Targeted dashboard description.", folder: "MCP/Targeted edits", widgets: [...before.document.widgets, sibling] }
+    dashboardEntry = verifyDocumentResult(await tool("patch_dashboard", { id: dashboard.id, etag: before.etag, patch: { description: added.description, folder: added.folder }, widget_edits: [{ op: "add", widget: sibling }] }), added)
+    await page.getByText(added.description, { exact: true }).waitFor()
+    const siblingTile = page.locator('[data-widget-id="untouched-sibling"]')
+    await siblingTile.waitFor()
+    await until(async () => Number(await siblingTile.locator("[data-stat-reading] [data-metric-value]").getAttribute("data-metric-value").catch(() => NaN)) === readings[1] * 2, "Added saved-query widget did not execute its constant binding")
+    const initialHeight = (await tile().boundingBox()).height
+    const widget = { ...added.widgets[0], title: "Patched service request rate", options: { ...added.widgets[0].options, decimals: 3 }, layout: { ...added.widgets[0].layout, h: 3 } }
+    const document = { ...added, widgets: [widget, sibling] }
+    dashboardEntry = verifyDocumentResult(await tool("patch_dashboard", { id: dashboard.id, etag: dashboardEntry.etag, widget_edits: [{ op: "update", id: widget.id, patch: { title: widget.title, options: { decimals: 3 }, layout: { h: 3 } } }] }), document)
+    await tile().getByText(widget.title, { exact: true }).waitFor()
+    const reading = await showReading(services[0], 2, 3)
+    await until(async () => (await tile().boundingBox()).height < initialHeight, "The live widget layout did not adopt the targeted height")
+    await unchanged("saved-queries", queryEntry)
+    await page.screenshot({ path: join(output, "patched-widget-layout.png"), fullPage: false })
+    return { addedWidgetExecuted: true, nestedOptionsAndLayoutMerged: true, siblingUnchanged: true, preserved: ["queryRef", "options.tooltipView", "color", "variables", "customTimeRange"], reading }
+  })
+  await check("Targeted binding replacement updates one widget without changing the shared service default", async () => {
+    const before = dashboardEntry, previousWidget = before.document.widgets[0]
+    const bindings = [{ parameter: "service", source: "constant", value: services[1] }]
+    const widget = { ...previousWidget, options: { ...previousWidget.options, decimals: 2 }, queryRef: { ...previousWidget.queryRef, bindings } }
+    const document = { ...before.document, widgets: [widget, ...before.document.widgets.slice(1)] }
+    dashboardEntry = verifyDocumentResult(await tool("patch_dashboard", { id: dashboard.id, etag: before.etag, widget_edits: [{ op: "update", id: widget.id, patch: { queryRef: { bindings }, options: { decimals: 2 } } }] }), document)
+    await showReading(services[1], 2)
+    assert.equal(dashboardEntry.document.variables[0].defaultValue, services[0])
+    await unchanged("saved-queries", queryEntry)
+    const restored = { ...document, widgets: [{ ...widget, queryRef: previousWidget.queryRef }, ...document.widgets.slice(1)] }
+    dashboardEntry = verifyDocumentResult(await tool("patch_dashboard", { id: dashboard.id, etag: dashboardEntry.etag, widget_edits: [{ op: "update", id: widget.id, patch: { queryRef: { bindings: previousWidget.queryRef.bindings } } }] }), restored)
+    await showReading(services[0], 2)
+    return { bindingsArrayReplaced: true, savedDefaultUnchanged: true, savedQueryUnchanged: true, variableBindingRestored: true, twoDecimalSparklineRestored: true }
+  })
+  await check("Targeted edits enforce scopes, exact versions, immutable identities and atomic validation", async () => {
+    const board = dashboardEntry, query = queryEntry
+    for (const token of [fixture.mcpToken, fixture.mcpDeniedWriteToken]) {
+      await rejectedTool("patch_dashboard", { id: dashboard.id, etag: board.etag, patch: { title: "Unauthorized dashboard" } }, token)
+      await rejectedTool("patch_saved_query", { id: saved.id, etag: query.etag, patch: { name: "Unauthorized query" } }, token)
+    }
+    for (const etag of [undefined, "", "*", `W/${board.etag}`]) await rejectedTool("patch_dashboard", { id: dashboard.id, etag, patch: { title: "Missing exact version" } })
+    for (const etag of [undefined, "", "*", `W/${query.etag}`]) await rejectedTool("patch_saved_query", { id: saved.id, etag, patch: { name: "Missing exact version" } })
+    for (const patch of [{ id: "changed-id" }, { schemaVersion: 2 }, { widgets: [] }, { title: null }, {}, { description: board.document.description }, { unknownField: "invalid" }]) {
+      await rejectedTool("patch_dashboard", { id: dashboard.id, etag: board.etag, patch })
+      await unchanged("dashboards", board)
+    }
+    for (const patch of [{ id: "changed-id" }, { schemaVersion: 2 }, { providerId: "changed-provider" }, { kind: "traces" }, { query: null }, {}, { imageUrl: null }, { name: query.document.name }, { tags: ["same", "same"] }]) {
+      await rejectedTool("patch_saved_query", { id: saved.id, etag: query.etag, patch })
+      await unchanged("saved-queries", query)
+    }
+    const firstID = board.document.widgets[0].id
+    const invalidEdits = [
+      [{ op: "update", id: firstID, patch: { id: "renamed-widget" } }],
+      [{ op: "update", id: firstID, patch: { options: { decimals: 9 } } }],
+      [{ op: "update", id: firstID, patch: { layout: { x: 11, w: 2 } } }],
+      [{ op: "update", id: firstID, patch: { title: "Must roll back" } }, { op: "remove", id: "missing-widget" }],
+      [{ op: "add", widget: { ...board.document.widgets[0], id: "must-not-be-added" } }, { op: "update", id: firstID, patch: { options: { min: 10, max: 1 } } }],
+      [{ op: "update", id: firstID, patch: { title: "First edit" } }, { op: "remove", id: firstID }],
+      [{ op: "add", widget: board.document.widgets[0] }],
+      Array.from({ length: 49 }, (_, index) => ({ op: "remove", id: `missing-${index}` })),
+    ]
+    for (const widget_edits of invalidEdits) {
+      await rejectedTool("patch_dashboard", { id: dashboard.id, etag: board.etag, patch: { description: "Must also roll back" }, widget_edits })
+      await unchanged("dashboards", board)
+    }
+    await unchanged("saved-queries", query)
+    return { scopeAndRBACEnforced: true, exactStrongETagRequired: true, immutableIdentities: true, noOpsRejected: true, invalidBatches: invalidEdits.length, noPartialMutation: true }
+  })
+  await check("Concurrent targeted edits commit one revision and preserve the actionable conflict boundary", async () => {
+    const before = dashboardEntry
+    const patches = [{ description: "Concurrent writer A" }, { description: "Concurrent writer B" }]
+    const results = await Promise.all(patches.map(patch => rpc("tools/call", { name: "patch_dashboard", arguments: { id: dashboard.id, etag: before.etag, patch } })))
+    assert.ok(results.every(result => result.error === undefined))
+    const successes = results.filter(result => !result.result.isError)
+    const conflicts = results.filter(result => result.result.isError)
+    assert.equal(successes.length, 1); assert.equal(conflicts.length, 1)
+    assert.match(conflicts[0].result.content.filter(item => item.type === "text").map(item => item.text).join("\n"), /get the latest document and ETag/)
+    const winningIndex = results.indexOf(successes[0]), document = { ...before.document, ...patches[winningIndex] }
+    dashboardEntry = verifyDocumentResult(structured(successes[0].result), document)
+    await unchanged("dashboards", dashboardEntry)
+    await page.getByText(document.description, { exact: true }).waitFor()
+    await rejectedConflict("patch_dashboard", { id: dashboard.id, etag: before.etag, patch: { title: "Stale patch writer" } })
+    return { successfulWriters: 1, actionableConflicts: 1, unrelatedWidgetFieldsPreserved: true }
+  })
+  await check("Targeted removal deletes only the named widget and optional dashboard field", async () => {
+    const before = dashboardEntry, document = { ...before.document, widgets: before.document.widgets.filter(widget => widget.id !== "untouched-sibling") }
+    delete document.description
+    dashboardEntry = verifyDocumentResult(await tool("patch_dashboard", { id: dashboard.id, etag: before.etag, patch: { description: null }, widget_edits: [{ op: "remove", id: "untouched-sibling" }] }), document)
+    await page.locator('[data-widget-id="untouched-sibling"]').waitFor({ state: "detached" })
+    await showReading(services[0], 2)
+    await unchanged("saved-queries", queryEntry)
+    return { remainingWidgets: document.widgets.length, optionalFieldRemoved: true, remainingWidgetUnchanged: true, noCascadeToSavedQuery: true }
+  })
   await check("A same-content MCP revision refreshes the UI version before its next save", async () => {
     const previous = dashboardEntry
     // Property order changes the stored byte ETag, but not the canonical dashboard.
@@ -261,7 +437,7 @@ try {
     const title = page.getByRole("textbox", { name: "Dashboard title", exact: true })
     await title.fill("Local dashboard draft")
     const document = { ...dashboardEntry.document, title: "New remote dashboard revision" }
-    dashboardEntry = verifyDocumentResult(await tool("update_dashboard", { document, etag: dashboardEntry.etag }), document)
+    dashboardEntry = verifyDocumentResult(await tool("patch_dashboard", { id: dashboard.id, etag: dashboardEntry.etag, patch: { title: document.title } }), document)
     await page.getByText("The saved dashboard changed elsewhere. Your draft is preserved.", { exact: true }).waitFor()
     assert.equal(await title.inputValue(), "Local dashboard draft")
     const before = writes.length
@@ -282,7 +458,7 @@ try {
     assert.equal(await description.inputValue(), queryEntry.document.description)
     await description.fill("Local query description draft")
     const document = { ...queryEntry.document, description: "A newer query description written through MCP.", tags: ["mcp", "reviewed"] }
-    queryEntry = verifyDocumentResult(await tool("update_saved_query", { document, etag: queryEntry.etag }), document)
+    queryEntry = verifyDocumentResult(await tool("patch_saved_query", { id: saved.id, etag: queryEntry.etag, patch: { description: document.description, tags: document.tags } }), document)
     await explorer().getByText(/The saved query changed or was removed elsewhere\. Your draft is preserved\./).waitFor()
     assert.equal(await description.inputValue(), "Local query description draft")
     const before = writes.length
@@ -344,7 +520,7 @@ try {
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
   const currentProtocol = await readObserveProtocol(fixture.baseURL)
-  assertObserveMCP({ gateway: [...protocolHistory.flatMap(receipt => receipt.gateway), ...currentProtocol.gateway] }, ["list_observability_providers", "query_metrics", "create_saved_query", "update_saved_query", "create_dashboard", "update_dashboard"])
+  assertObserveMCP({ gateway: [...protocolHistory.flatMap(receipt => receipt.gateway), ...currentProtocol.gateway] }, ["list_observability_providers", "query_metrics", "get_insights_schema", "create_saved_query", "update_saved_query", "patch_saved_query", "create_dashboard", "update_dashboard", "patch_dashboard"])
   console.log(`PASS ${reports.length} MCP authoring scenarios`)
 } catch (error) {
   console.error(error.stack ?? error.message)

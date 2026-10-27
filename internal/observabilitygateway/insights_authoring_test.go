@@ -231,7 +231,7 @@ func TestInsightsAuthoringListsAreCompactAndToolsDoNotExposeDeletion(t *testing.
 	require.NoError(t, err)
 	require.Contains(t, string(dashboards["dashboards"]), `"widgetCount":0`)
 	require.NotContains(t, string(dashboards["dashboards"]), `"widgets"`)
-	require.Len(t, h.registry.All(), 10)
+	require.Len(t, h.registry.All(), 13)
 	for _, tool := range h.registry.All() {
 		require.False(t, strings.HasPrefix(tool.Name, "delete_"))
 		require.True(t, json.Valid(tool.InputSchema))
