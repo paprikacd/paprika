@@ -494,7 +494,7 @@ jobs:
         run: go test -race ./internal/observabilitygateway/connector/postgresql -count=1 -timeout=90s
 
       - name: Verify service queries with Prometheus and enforce live coverage
-        run: node --test hack/service-overview/*.test.mjs ui/e2e/service-overview-coverage.test.mjs
+        run: node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs
 
       - name: Verify independent source requirements in the example gallery
         run: node e2e/run-insights.mjs e2e/insights-source-provenance.e2e.mjs

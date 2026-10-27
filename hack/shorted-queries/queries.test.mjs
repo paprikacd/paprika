@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -62,6 +62,9 @@ test("native Prometheus evaluates confirmed Shorted metrics, units, matching and
   assert.deepEqual(Object.keys(patches).sort(), expectedIDs.sort())
   const directory = await mkdtemp(join(tmpdir(), "paprika-shorted-promql-"))
   try {
+    // The Linux Prometheus container runs as nobody; only synthetic fixtures
+    // live here, and its bind-mounted input must be readable across host UIDs.
+    await chmod(directory, 0o755)
     const empty = Object.fromEntries(expectedIDs.map(id => [id, []]))
     const secondWorkload = { ...resource, job: "other-news-worker" }
     const document = { evaluation_interval: "1m", tests: [
@@ -78,7 +81,7 @@ test("native Prometheus evaluates confirmed Shorted metrics, units, matching and
         promSeries("shorted_stealth_fetch_errors_total", secondWorkload, 6),
       ], promql_expr_test: expressions({ "src-shorted-stealth-scraping-p2-t0": [...expected["src-shorted-stealth-scraping-p2-t0"], sample(.05, '{http_host="example.test",job="other-news-worker",stealth_engine="native"}')] }, { ids: ["src-shorted-stealth-scraping-p2-t0"] }) },
     ] }
-    await writeFile(join(directory, "test.json"), JSON.stringify(document))
+    await writeFile(join(directory, "test.json"), JSON.stringify(document), { mode: 0o644 })
     const result = process.env.PROMTOOL
       ? spawnSync(process.env.PROMTOOL, ["test", "rules", join(directory, "test.json")], { encoding: "utf8" })
       : spawnSync("docker", ["run", "--rm", "--network=none", "--entrypoint=/bin/promtool", "-v", `${directory}:/tests:ro`, image, "test", "rules", "/tests/test.json"], { encoding: "utf8" })

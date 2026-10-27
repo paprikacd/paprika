@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -32,6 +32,9 @@ function expectations(service, values = {}) {
 test("saved HTTP queries evaluate both metric schemas, units, error classes and absent services", async () => {
   const directory = await mkdtemp(join(tmpdir(), "paprika-service-promql-"))
   try {
+    // Prometheus runs as nobody in the Linux container. These synthetic test
+    // fixtures must be readable through the bind mount regardless of host UID.
+    await chmod(directory, 0o755)
     const allEmpty = Object.fromEntries(Object.keys(patches).map(id => [id, []]))
     const serverErrors = metricInput("brandbrain-api", true)
     serverErrors[0].values = "0+42x10"
@@ -50,7 +53,7 @@ test("saved HTTP queries evaluate both metric schemas, units, error classes and 
       { name: "Real server errors aggregate across route labels", interval: "1m", input_series: serverErrors, promql_expr_test: expectations("brandbrain-api", { "service-http-server-error-ratio": [sample(10)], "service-http-error-ratios": [sample(20, '{status_class="4xx"}'), sample(10, '{status_class="5xx"}')] }) },
       { name: "Zero traffic keeps ratios and quantiles undefined", interval: "1m", input_series: metricInput("brandbrain-api", true).map(item => ({ ...item, values: "0+0x10" })), promql_expr_test: zeroTraffic },
     ] }
-    await writeFile(join(directory, "test.json"), JSON.stringify(document))
+    await writeFile(join(directory, "test.json"), JSON.stringify(document), { mode: 0o644 })
     const result = process.env.PROMTOOL
       ? spawnSync(process.env.PROMTOOL, ["test", "rules", join(directory, "test.json")], { encoding: "utf8" })
       : spawnSync("docker", ["run", "--rm", "--network=none", "--entrypoint=/bin/promtool", "-v", `${directory}:/tests:ro`, image, "test", "rules", "/tests/test.json"], { encoding: "utf8" })
