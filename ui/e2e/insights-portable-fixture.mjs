@@ -33,7 +33,7 @@ export async function portableEnvironment(repository, staticURL) {
   const binary = join(temporary, "insights")
   const fixtures = []
   const providerRequests = []
-  const build = spawn("rtk", ["proxy", "go", "build", "-o", binary, "./cmd/paprika-insights"], { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
+  const build = spawn("go", ["build", "-o", binary, "./cmd/paprika-insights"], { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
   let logs = ""
   build.stdout.on("data", data => { logs += data })
   build.stderr.on("data", data => { logs += data })
