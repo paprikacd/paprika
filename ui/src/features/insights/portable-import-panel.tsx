@@ -35,6 +35,8 @@ import styles from "./portable-import-panel.module.css";
 
 export interface PortableImportProps {
   providers: Provider[];
+  /** Source workload context supplied by the example gallery, not installed providers. */
+  sourceProviders?: readonly { id: string; name: string; description?: string }[];
   onImportBundle?: (
     request: BundleImportRequest,
   ) => Promise<BundleImportResult>;
@@ -125,6 +127,7 @@ function selectedAction(choices: Record<string, ImportAction>, id: string) {
 }
 export function PortableImportPanel({
   providers,
+  sourceProviders = [],
   onImportBundle,
   onReviewBundle,
   onRefreshQueries,
@@ -686,36 +689,47 @@ export function PortableImportPanel({
                 </div>
               ))}
             </div>
-            {[...requirements].map(([id, kinds]) => (
-              <label key={id}>
-                Connect {id}
-                <GammaSelect
-                  aria-label={`Connect ${id}`}
-                  disabled={importing || refreshing || loading}
-                  value={mapping[id] ?? ""}
-                  onValueChange={(value) => {
-                    setMapping((previous) =>
-                      Object.assign(Object.create(null), previous, {
-                        [id]: value,
-                      }),
-                    );
-                  }}
-                  placeholder="Choose a data source"
-                  searchable
-                  options={providers
-                    .filter((provider) =>
-                      [...kinds].every((kind) =>
-                        provider.capabilities.includes(kind),
-                      ),
-                    )
-                    .map((provider) => ({
-                      value: provider.id,
-                      label: provider.name,
-                      icon: <ProviderIcon type={provider.type} />,
-                    }))}
-                />
-              </label>
-            ))}
+            {[...requirements].map(([id, kinds]) => {
+              const source = sourceProviders.find((provider) => provider.id === id);
+              const name = source?.name ?? id;
+              const descriptionId = source?.description
+                ? `source-requirement-${id}`
+                : undefined;
+              return (
+                <label key={id}>
+                  Connect {name}
+                  {source?.description && (
+                    <small id={descriptionId}>{source.description}</small>
+                  )}
+                  <GammaSelect
+                    aria-label={`Connect ${name}`}
+                    aria-describedby={descriptionId}
+                    disabled={importing || refreshing || loading}
+                    value={mapping[id] ?? ""}
+                    onValueChange={(value) => {
+                      setMapping((previous) =>
+                        Object.assign(Object.create(null), previous, {
+                          [id]: value,
+                        }),
+                      );
+                    }}
+                    placeholder="Choose a data source"
+                    searchable
+                    options={providers
+                      .filter((provider) =>
+                        [...kinds].every((kind) =>
+                          provider.capabilities.includes(kind),
+                        ),
+                      )
+                      .map((provider) => ({
+                        value: provider.id,
+                        label: provider.name,
+                        icon: <ProviderIcon type={provider.type} />,
+                      }))}
+                  />
+                </label>
+              );
+            })}
             {!!queries.length && (
               <div className={styles.queries} aria-label="Saved query review">
                 <h4>

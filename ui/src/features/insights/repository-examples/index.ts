@@ -27,7 +27,7 @@ export interface RepositoryExample {
   live?: DashboardLibraryBundle
   liveStatus: "ready" | "partial" | "unavailable"
   /** Placeholder source providers; import review remaps these to installed providers. */
-  providers: Provider[]
+  providers: (Provider & { description?: string })[]
   coverage: SourceCoverage[]
   limitations: string[]
 }

@@ -16,10 +16,20 @@ UP = json.loads((DOC / 'uptime-sources.json').read_text())
 CATALOG, FIXTURES = [], []
 COLORS = ['#53876a', '#2d7ca6', '#bd8439', '#a86386']
 PROVIDERS = {
- 'prometheus': {'id':'source-shorted-prometheus','name':'Shorted source Prometheus','type':'prometheus','capabilities':['metrics']},
+ 'shorted-metrics': {'id':'source-shorted-grafana-cloud-prometheus','name':'Shorted production metrics · Grafana Cloud','type':'prometheus','capabilities':['metrics'],'description':'Requires Shorted application telemetry from skunkworq.grafana.net. Verify the application metric names and service labels before importing.'},
+ 'analysis-grafana': {'id':'source-shorted-analysis-grafana','name':'Shorted local analysis · Grafana metrics','type':'prometheus','capabilities':['metrics'],'description':'Requires the local analysis Grafana scrape at grafana:3000 with job="grafana". A generic ALERTS result does not establish that this Grafana instance is being monitored.'},
+ 'analysis-postgres': {'id':'source-shorted-analysis-postgres','name':'Shorted local analysis · PostgreSQL exporter','type':'prometheus','capabilities':['metrics'],'description':'Requires postgres_exporter:9187 connected to the Shorted analysis database. Verify the database and instance labels; another application database does not satisfy this source.'},
+ 'analysis-prometheus': {'id':'source-shorted-analysis-prometheus','name':'Shorted local analysis · Prometheus self-metrics','type':'prometheus','capabilities':['metrics'],'description':'Requires self-metrics from the Prometheus server serving the Shorted local analysis stack. Configure its self-scrape and verify the instance before importing.'},
  'postgresql': {'id':'source-shorted-postgresql','name':'Shorted source PostgreSQL','type':'postgresql','capabilities':['metrics','records']},
  'shorted': {'id':'source-shorted-api','name':'Shorted application API','type':'shorted','capabilities':['metrics','records']},
  'uptime': {'id':'source-uptime-api','name':'Uptime organization API','type':'uptime','capabilities':['metrics','records']},
+}
+GRAFANA_METRIC_SOURCES = {
+ 'shorted-operations': 'shorted-metrics',
+ 'shorted-stealth-scraping': 'shorted-metrics',
+ 'shorted-grafana-metrics': 'analysis-grafana',
+ 'shorted-postgres-exporter': 'analysis-postgres',
+ 'shorted-prometheus-stats': 'analysis-prometheus',
 }
 
 def slug(s): return re.sub('[^a-z0-9]+','-',str(s).lower()).strip('-')
@@ -163,11 +173,13 @@ for src in SHORT['examples'][:7]:
    base=0 if any(t in title.lower() for t in ['corrupt','failed','error','blocked']) else 95 if 'ratio' in title.lower() else 25+ordinal*3+ti
    if unit=='ratio':base=.02 if 'error' in title.lower() else .95
    fixture=metric_fixture(key,title,base,variation=0 if typ=='stat' else max(abs(base)*.12,.01))
-   params=[];live=expression;provider='prometheus';notes=[];live_description=None
+   params=[];live=expression;provider=None;notes=[];live_description=None
    if expression:
     used=[v for v in vars if re.search(r'\$(?:\{)?'+re.escape(v['name'])+r'\b',expression)]
     params=[{'name':v['name'],'type':'string','defaultValue':v['defaultValue']} for v in used]
     if lang=='promql':
+     # Every metric template needs an explicit workload provenance; never infer it from protocol.
+     provider=GRAFANA_METRIC_SOURCES[src['id']]
      live=expression.replace('$__rate_interval','5m').replace('$__interval','1m')
      if live!=expression:notes.append('Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained.')
      for v in used:
@@ -190,6 +202,7 @@ for src in SHORT['examples'][:7]:
       live_description='Latest 100 source observations for '+e['title']+'. Source stock/date filters apply; the dashboard time range does not rewrite this SQL.'
      live=template({'sql':sql,'parameters':sqlparams,'projection':projection})
      notes.append('Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. '+('Source calculations and filters are retained.' if 'time' in projection else 'Source query is otherwise retained.'))
+    else:raise ValueError(f"Unsupported live query language {lang} in {src['id']}")
    else:
     notes.append('Grafana test-data gauge is explicitly synthetic and has no live provider equivalent.');live=None
    if len(targets)>1: notes.append(f'Split from source panel {ordinal}, target {ref}; sibling targets retain independent units and queries.')

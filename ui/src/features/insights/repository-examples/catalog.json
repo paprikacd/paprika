@@ -1322,7 +1322,7 @@
               "id": "p1-t0",
               "title": "RPC Request Rate",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(rate(rpc_server_requests_total{job=~{{service}}}[5m])) by (job, rpc_method)",
               "queryRef": {
                 "id": "src-shorted-operations-p1-t0",
@@ -1350,7 +1350,7 @@
               "id": "p2-t0",
               "title": "RPC Duration (p50 / p95 / p99) · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.50, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le))",
               "queryRef": {
                 "id": "src-shorted-operations-p2-t0",
@@ -1378,7 +1378,7 @@
               "id": "p2-t1",
               "title": "RPC Duration (p50 / p95 / p99) · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le))",
               "queryRef": {
                 "id": "src-shorted-operations-p2-t1",
@@ -1406,7 +1406,7 @@
               "id": "p2-t2",
               "title": "RPC Duration (p50 / p95 / p99) · C",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.99, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le))",
               "queryRef": {
                 "id": "src-shorted-operations-p2-t2",
@@ -1434,7 +1434,7 @@
               "id": "p3-t0",
               "title": "RPC Error Rate",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(rate(rpc_server_requests_total{job=~{{service}}, rpc_connect_status_code!=\"ok\"}[5m])) by (job, rpc_connect_status_code)",
               "queryRef": {
                 "id": "src-shorted-operations-p3-t0",
@@ -1462,7 +1462,7 @@
               "id": "p4-t0",
               "title": "RPC p95 by Method",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le, job, rpc_method))",
               "queryRef": {
                 "id": "src-shorted-operations-p4-t0",
@@ -1490,7 +1490,7 @@
               "id": "p5-t0",
               "title": "Total Requests (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(rpc_server_requests_total{job=~{{service}}}[24h]))",
               "queryRef": {
                 "id": "src-shorted-operations-p5-t0",
@@ -1529,7 +1529,7 @@
               "id": "p6-t0",
               "title": "Errors (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(rpc_server_requests_total{job=~{{service}}, rpc_connect_status_code!=\"ok\"}[24h]))",
               "queryRef": {
                 "id": "src-shorted-operations-p6-t0",
@@ -1568,7 +1568,7 @@
               "id": "p8-t0",
               "title": "Rate Limit Blocks",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(rate(shorted_rate_limit_blocked_total{job=\"shorted-api\"}[5m])) by (tier)",
               "queryRef": {
                 "id": "src-shorted-operations-p8-t0"
@@ -1589,7 +1589,7 @@
               "id": "p9-t0",
               "title": "Scraper / Bot Blocks",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(rate(shorted_scraper_blocked_total{job=\"shorted-api\"}[5m])) by (reason)",
               "queryRef": {
                 "id": "src-shorted-operations-p9-t0"
@@ -1610,7 +1610,7 @@
               "id": "p10-t0",
               "title": "Auth Methods (24h)",
               "type": "plugin",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_auth_method_total{job=\"shorted-api\"}[24h])) by (method)",
               "queryRef": {
                 "id": "src-shorted-operations-p10-t0"
@@ -1634,7 +1634,7 @@
               "id": "p11-t0",
               "title": "Rate Limited (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_rate_limit_blocked_total{job=\"shorted-api\"}[24h]))",
               "queryRef": {
                 "id": "src-shorted-operations-p11-t0"
@@ -1666,7 +1666,7 @@
               "id": "p12-t0",
               "title": "Scrapers Blocked (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_scraper_blocked_total{job=\"shorted-api\"}[24h]))",
               "queryRef": {
                 "id": "src-shorted-operations-p12-t0"
@@ -1698,7 +1698,7 @@
               "id": "p13-t0",
               "title": "Anonymous Requests (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_auth_method_total{job=\"shorted-api\", method=\"anonymous\"}[24h]))",
               "queryRef": {
                 "id": "src-shorted-operations-p13-t0"
@@ -1720,7 +1720,7 @@
               "id": "p14-t0",
               "title": "Authenticated (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_auth_method_total{job=\"shorted-api\", method!=\"anonymous\"}[24h]))",
               "queryRef": {
                 "id": "src-shorted-operations-p14-t0"
@@ -1742,7 +1742,7 @@
               "id": "p16-t0",
               "title": "HTTP Request Rate by Service",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(rate(http_server_duration_milliseconds_count{job=~{{service}}}[5m])) by (job, http_route)",
               "queryRef": {
                 "id": "src-shorted-operations-p16-t0",
@@ -1770,7 +1770,7 @@
               "id": "p17-t0",
               "title": "HTTP Duration p95 by Service",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le, job))",
               "queryRef": {
                 "id": "src-shorted-operations-p17-t0",
@@ -1798,7 +1798,7 @@
               "id": "p19-t0",
               "title": "Server Action Duration (p95)",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{job=\"shorted-web\"}[5m])) by (le, http_route))",
               "queryRef": {
                 "id": "src-shorted-operations-p19-t0"
@@ -1819,7 +1819,7 @@
               "id": "p20-t0",
               "title": "Frontend Request Rate",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(rate(http_server_duration_milliseconds_count{job=\"shorted-web\"}[5m])) by (http_route)",
               "queryRef": {
                 "id": "src-shorted-operations-p20-t0"
@@ -1840,7 +1840,7 @@
               "id": "p22-t0",
               "title": "Job Execution Status",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_sync_status_total[5m])) by (sync_job, status)",
               "queryRef": {
                 "id": "src-shorted-operations-p22-t0"
@@ -1861,7 +1861,7 @@
               "id": "p23-t0",
               "title": "Job Duration (avg)",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "rate(shorted_sync_duration_seconds_sum[5m]) / rate(shorted_sync_duration_seconds_count[5m])",
               "queryRef": {
                 "id": "src-shorted-operations-p23-t0"
@@ -1882,7 +1882,7 @@
               "id": "p24-t0",
               "title": "Records Processed",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_sync_records_processed_total[5m])) by (sync_job)",
               "queryRef": {
                 "id": "src-shorted-operations-p24-t0"
@@ -1903,7 +1903,7 @@
               "id": "p25-t0",
               "title": "Time Since Last Success",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "(time() - shorted_sync_last_success) / 3600",
               "queryRef": {
                 "id": "src-shorted-operations-p25-t0"
@@ -1935,7 +1935,7 @@
               "id": "p26-t0",
               "title": "Successful Runs (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_sync_status_total{status=\"success\"}[24h])) by (sync_job)",
               "queryRef": {
                 "id": "src-shorted-operations-p26-t0"
@@ -1957,7 +1957,7 @@
               "id": "p27-t0",
               "title": "Failed Runs (24h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_sync_status_total{status=\"failure\"}[24h])) by (sync_job)",
               "queryRef": {
                 "id": "src-shorted-operations-p27-t0"
@@ -2024,7 +2024,7 @@
             "sourcePanel": "p1-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(rate(rpc_server_requests_total{job=~{{service}}}[5m])) by (job, rpc_method)",
           "parameters": [
@@ -2052,7 +2052,7 @@
             "sourcePanel": "p2-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.50, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le))",
           "parameters": [
@@ -2080,7 +2080,7 @@
             "sourcePanel": "p2-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le))",
           "parameters": [
@@ -2108,7 +2108,7 @@
             "sourcePanel": "p2-t2",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.99, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le))",
           "parameters": [
@@ -2136,7 +2136,7 @@
             "sourcePanel": "p3-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(rate(rpc_server_requests_total{job=~{{service}}, rpc_connect_status_code!=\"ok\"}[5m])) by (job, rpc_connect_status_code)",
           "parameters": [
@@ -2164,7 +2164,7 @@
             "sourcePanel": "p4-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, sum(rate(rpc_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le, job, rpc_method))",
           "parameters": [
@@ -2192,7 +2192,7 @@
             "sourcePanel": "p5-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(rpc_server_requests_total{job=~{{service}}}[24h]))",
           "parameters": [
@@ -2220,7 +2220,7 @@
             "sourcePanel": "p6-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(rpc_server_requests_total{job=~{{service}}, rpc_connect_status_code!=\"ok\"}[24h]))",
           "parameters": [
@@ -2248,7 +2248,7 @@
             "sourcePanel": "p8-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(rate(shorted_rate_limit_blocked_total{job=\"shorted-api\"}[5m])) by (tier)"
         },
@@ -2269,7 +2269,7 @@
             "sourcePanel": "p9-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(rate(shorted_scraper_blocked_total{job=\"shorted-api\"}[5m])) by (reason)"
         },
@@ -2290,7 +2290,7 @@
             "sourcePanel": "p10-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_auth_method_total{job=\"shorted-api\"}[24h])) by (method)"
         },
@@ -2311,7 +2311,7 @@
             "sourcePanel": "p11-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_rate_limit_blocked_total{job=\"shorted-api\"}[24h]))"
         },
@@ -2332,7 +2332,7 @@
             "sourcePanel": "p12-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_scraper_blocked_total{job=\"shorted-api\"}[24h]))"
         },
@@ -2353,7 +2353,7 @@
             "sourcePanel": "p13-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_auth_method_total{job=\"shorted-api\", method=\"anonymous\"}[24h]))"
         },
@@ -2374,7 +2374,7 @@
             "sourcePanel": "p14-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_auth_method_total{job=\"shorted-api\", method!=\"anonymous\"}[24h]))"
         },
@@ -2395,7 +2395,7 @@
             "sourcePanel": "p16-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(rate(http_server_duration_milliseconds_count{job=~{{service}}}[5m])) by (job, http_route)",
           "parameters": [
@@ -2423,7 +2423,7 @@
             "sourcePanel": "p17-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{job=~{{service}}}[5m])) by (le, job))",
           "parameters": [
@@ -2451,7 +2451,7 @@
             "sourcePanel": "p19-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{job=\"shorted-web\"}[5m])) by (le, http_route))"
         },
@@ -2472,7 +2472,7 @@
             "sourcePanel": "p20-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(rate(http_server_duration_milliseconds_count{job=\"shorted-web\"}[5m])) by (http_route)"
         },
@@ -2493,7 +2493,7 @@
             "sourcePanel": "p22-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_sync_status_total[5m])) by (sync_job, status)"
         },
@@ -2514,7 +2514,7 @@
             "sourcePanel": "p23-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "rate(shorted_sync_duration_seconds_sum[5m]) / rate(shorted_sync_duration_seconds_count[5m])"
         },
@@ -2535,7 +2535,7 @@
             "sourcePanel": "p24-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_sync_records_processed_total[5m])) by (sync_job)"
         },
@@ -2556,7 +2556,7 @@
             "sourcePanel": "p25-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "(time() - shorted_sync_last_success) / 3600"
         },
@@ -2577,7 +2577,7 @@
             "sourcePanel": "p26-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_sync_status_total{status=\"success\"}[24h])) by (sync_job)"
         },
@@ -2598,7 +2598,7 @@
             "sourcePanel": "p27-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_sync_status_total{status=\"failure\"}[24h])) by (sync_job)"
         }
@@ -2607,12 +2607,13 @@
     "liveStatus": "ready",
     "providers": [
       {
-        "id": "source-shorted-prometheus",
-        "name": "Shorted source Prometheus",
+        "id": "source-shorted-grafana-cloud-prometheus",
+        "name": "Shorted production metrics · Grafana Cloud",
         "type": "prometheus",
         "capabilities": [
           "metrics"
-        ]
+        ],
+        "description": "Requires Shorted application telemetry from skunkworq.grafana.net. Verify the application metric names and service labels before importing."
       }
     ],
     "coverage": [
@@ -3893,7 +3894,7 @@
               "id": "p1-t0",
               "title": "Total Fetches (1h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "increase(shorted_stealth_fetch_total[1h])",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p1-t0"
@@ -3925,7 +3926,7 @@
               "id": "p2-t0",
               "title": "Error Rate (1h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "increase(shorted_stealth_fetch_errors[1h]) / (increase(shorted_stealth_fetch_total[1h]) > 0)",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p2-t0"
@@ -3957,7 +3958,7 @@
               "id": "p3-t0",
               "title": "P95 Fetch Latency",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, rate(shorted_stealth_fetch_duration_bucket[5m]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p3-t0"
@@ -3989,7 +3990,7 @@
               "id": "p4-t0",
               "title": "Bytes Fetched (1h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "increase(shorted_stealth_fetch_bytes[1h])",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p4-t0"
@@ -4011,7 +4012,7 @@
               "id": "p5-t0",
               "title": "Fetch Latency by Host · 1",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.50, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_bucket[5m])))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p5-t0"
@@ -4032,7 +4033,7 @@
               "id": "p5-t1",
               "title": "Fetch Latency by Host · 2",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_bucket[5m])))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p5-t1"
@@ -4053,7 +4054,7 @@
               "id": "p6-t0",
               "title": "Fetch Requests by Status",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum by(status) (rate(shorted_stealth_fetch_total[5m]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p6-t0"
@@ -4074,7 +4075,7 @@
               "id": "p7-t0",
               "title": "Fetch Errors by Host",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum by(http_host) (rate(shorted_stealth_fetch_errors[5m]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p7-t0"
@@ -4095,7 +4096,7 @@
               "id": "p8-t0",
               "title": "Fetch Throughput (bytes/sec)",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum by(stealth_engine) (rate(shorted_stealth_fetch_bytes[5m]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p8-t0"
@@ -4116,7 +4117,7 @@
               "id": "p10-t0",
               "title": "Logo Discoveries (1h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_logo_discovery_total{logo_success=\"true\"}[1h]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p10-t0"
@@ -4138,7 +4139,7 @@
               "id": "p11-t0",
               "title": "Logo Failure Rate (1h)",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum(increase(shorted_logo_discovery_total{logo_success=\"false\"}[1h])) / sum(increase(shorted_logo_discovery_total[1h]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p11-t0"
@@ -4170,7 +4171,7 @@
               "id": "p12-t0",
               "title": "P95 Logo Discovery Latency",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, rate(shorted_logo_discovery_duration_bucket[5m]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p12-t0"
@@ -4202,7 +4203,7 @@
               "id": "p13-t0",
               "title": "Logo Discovery by Source",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum by(logo_source) (rate(shorted_logo_discovery_total{logo_success=\"true\"}[5m]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p13-t0"
@@ -4223,7 +4224,7 @@
               "id": "p14-t0",
               "title": "Logo Discovery by Format",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "sum by(logo_format) (rate(shorted_logo_discovery_total{logo_success=\"true\"}[5m]))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p14-t0"
@@ -4244,7 +4245,7 @@
               "id": "p15-t0",
               "title": "Logo Discovery Latency by Source · 1",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.50, sum by(le, logo_source) (rate(shorted_logo_discovery_duration_bucket[5m])))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p15-t0"
@@ -4265,7 +4266,7 @@
               "id": "p15-t1",
               "title": "Logo Discovery Latency by Source · 2",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-grafana-cloud-prometheus",
               "query": "histogram_quantile(0.95, sum by(le, logo_source) (rate(shorted_logo_discovery_duration_bucket[5m])))",
               "queryRef": {
                 "id": "src-shorted-stealth-scraping-p15-t1"
@@ -4304,7 +4305,7 @@
             "sourcePanel": "p1-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "increase(shorted_stealth_fetch_total[1h])"
         },
@@ -4325,7 +4326,7 @@
             "sourcePanel": "p2-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "increase(shorted_stealth_fetch_errors[1h]) / (increase(shorted_stealth_fetch_total[1h]) > 0)"
         },
@@ -4346,7 +4347,7 @@
             "sourcePanel": "p3-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, rate(shorted_stealth_fetch_duration_bucket[5m]))"
         },
@@ -4367,7 +4368,7 @@
             "sourcePanel": "p4-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "increase(shorted_stealth_fetch_bytes[1h])"
         },
@@ -4388,7 +4389,7 @@
             "sourcePanel": "p5-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.50, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_bucket[5m])))"
         },
@@ -4409,7 +4410,7 @@
             "sourcePanel": "p5-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_bucket[5m])))"
         },
@@ -4430,7 +4431,7 @@
             "sourcePanel": "p6-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum by(status) (rate(shorted_stealth_fetch_total[5m]))"
         },
@@ -4451,7 +4452,7 @@
             "sourcePanel": "p7-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum by(http_host) (rate(shorted_stealth_fetch_errors[5m]))"
         },
@@ -4472,7 +4473,7 @@
             "sourcePanel": "p8-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum by(stealth_engine) (rate(shorted_stealth_fetch_bytes[5m]))"
         },
@@ -4493,7 +4494,7 @@
             "sourcePanel": "p10-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_logo_discovery_total{logo_success=\"true\"}[1h]))"
         },
@@ -4514,7 +4515,7 @@
             "sourcePanel": "p11-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum(increase(shorted_logo_discovery_total{logo_success=\"false\"}[1h])) / sum(increase(shorted_logo_discovery_total[1h]))"
         },
@@ -4535,7 +4536,7 @@
             "sourcePanel": "p12-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, rate(shorted_logo_discovery_duration_bucket[5m]))"
         },
@@ -4556,7 +4557,7 @@
             "sourcePanel": "p13-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum by(logo_source) (rate(shorted_logo_discovery_total{logo_success=\"true\"}[5m]))"
         },
@@ -4577,7 +4578,7 @@
             "sourcePanel": "p14-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "sum by(logo_format) (rate(shorted_logo_discovery_total{logo_success=\"true\"}[5m]))"
         },
@@ -4598,7 +4599,7 @@
             "sourcePanel": "p15-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.50, sum by(le, logo_source) (rate(shorted_logo_discovery_duration_bucket[5m])))"
         },
@@ -4619,7 +4620,7 @@
             "sourcePanel": "p15-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-grafana-cloud-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.95, sum by(le, logo_source) (rate(shorted_logo_discovery_duration_bucket[5m])))"
         }
@@ -4628,12 +4629,13 @@
     "liveStatus": "ready",
     "providers": [
       {
-        "id": "source-shorted-prometheus",
-        "name": "Shorted source Prometheus",
+        "id": "source-shorted-grafana-cloud-prometheus",
+        "name": "Shorted production metrics · Grafana Cloud",
         "type": "prometheus",
         "capabilities": [
           "metrics"
-        ]
+        ],
+        "description": "Requires Shorted application telemetry from skunkworq.grafana.net. Verify the application metric names and service labels before importing."
       }
     ],
     "coverage": [
@@ -5634,7 +5636,7 @@
               "id": "p0-t0",
               "title": "Active instances",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "up{job=\"grafana\"}",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p0-t0"
@@ -5656,7 +5658,7 @@
               "id": "p1-t0",
               "title": "Dashboard count",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "grafana_stat_totals_dashboard",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p1-t0"
@@ -5684,7 +5686,7 @@
               "id": "p2-t0",
               "title": "User count",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "grafana_stat_total_users",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p2-t0"
@@ -5712,7 +5714,7 @@
               "id": "p3-t0",
               "title": "Playlist count",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "grafana_stat_total_playlists",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p3-t0"
@@ -5740,7 +5742,7 @@
               "id": "p4-t0",
               "title": "Grafana version",
               "type": "table",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "topk(1, grafana_info or grafana_build_info)",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p4-t0"
@@ -5761,7 +5763,7 @@
               "id": "p5-t0",
               "title": "http status codes",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sum by (status_code) (irate(grafana_http_request_duration_seconds_count[5m]))",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p5-t0"
@@ -5788,7 +5790,7 @@
               "id": "p6-t0",
               "title": "Requests by routing group · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sum(irate(grafana_api_response_status_total[5m]))",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p6-t0"
@@ -5815,7 +5817,7 @@
               "id": "p6-t1",
               "title": "Requests by routing group · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sum(irate(grafana_proxy_response_status_total[5m]))",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p6-t1"
@@ -5842,7 +5844,7 @@
               "id": "p6-t2",
               "title": "Requests by routing group · C",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sum(irate(grafana_page_response_status_total[5m]))",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p6-t2"
@@ -5869,7 +5871,7 @@
               "id": "p7-t0",
               "title": "Most used handlers",
               "type": "table",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sort(topk(8, sum by (handler) (grafana_http_request_duration_seconds_count)))",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p7-t0"
@@ -5890,7 +5892,7 @@
               "id": "p8-t0",
               "title": "Grafana active alerts",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "increase(grafana_alerting_active_alerts[1m])",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p8-t0"
@@ -5917,7 +5919,7 @@
               "id": "p9-t0",
               "title": "Prometheus alerts",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sum (ALERTS)",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p9-t0"
@@ -5944,7 +5946,7 @@
               "id": "p10-t0",
               "title": "Grafana performance · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sum(go_goroutines{job=\"grafana\"})",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p10-t0"
@@ -5971,7 +5973,7 @@
               "id": "p10-t1",
               "title": "Grafana performance · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-grafana",
               "query": "sum(process_resident_memory_bytes{job=\"grafana\"})",
               "queryRef": {
                 "id": "src-shorted-grafana-metrics-p10-t1"
@@ -6016,7 +6018,7 @@
             "sourcePanel": "p0-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "up{job=\"grafana\"}"
         },
@@ -6037,7 +6039,7 @@
             "sourcePanel": "p1-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "grafana_stat_totals_dashboard"
         },
@@ -6058,7 +6060,7 @@
             "sourcePanel": "p2-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "grafana_stat_total_users"
         },
@@ -6079,7 +6081,7 @@
             "sourcePanel": "p3-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "grafana_stat_total_playlists"
         },
@@ -6100,7 +6102,7 @@
             "sourcePanel": "p4-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "topk(1, grafana_info or grafana_build_info)"
         },
@@ -6121,7 +6123,7 @@
             "sourcePanel": "p5-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sum by (status_code) (irate(grafana_http_request_duration_seconds_count[5m]))"
         },
@@ -6142,7 +6144,7 @@
             "sourcePanel": "p6-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sum(irate(grafana_api_response_status_total[5m]))"
         },
@@ -6163,7 +6165,7 @@
             "sourcePanel": "p6-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sum(irate(grafana_proxy_response_status_total[5m]))"
         },
@@ -6184,7 +6186,7 @@
             "sourcePanel": "p6-t2",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sum(irate(grafana_page_response_status_total[5m]))"
         },
@@ -6205,7 +6207,7 @@
             "sourcePanel": "p7-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sort(topk(8, sum by (handler) (grafana_http_request_duration_seconds_count)))"
         },
@@ -6226,7 +6228,7 @@
             "sourcePanel": "p8-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "increase(grafana_alerting_active_alerts[1m])"
         },
@@ -6247,7 +6249,7 @@
             "sourcePanel": "p9-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sum (ALERTS)"
         },
@@ -6268,7 +6270,7 @@
             "sourcePanel": "p10-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sum(go_goroutines{job=\"grafana\"})"
         },
@@ -6289,7 +6291,7 @@
             "sourcePanel": "p10-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-grafana",
           "kind": "metrics",
           "query": "sum(process_resident_memory_bytes{job=\"grafana\"})"
         }
@@ -6298,12 +6300,13 @@
     "liveStatus": "ready",
     "providers": [
       {
-        "id": "source-shorted-prometheus",
-        "name": "Shorted source Prometheus",
+        "id": "source-shorted-analysis-grafana",
+        "name": "Shorted local analysis · Grafana metrics",
         "type": "prometheus",
         "capabilities": [
           "metrics"
-        ]
+        ],
+        "description": "Requires the local analysis Grafana scrape at grafana:3000 with job=\"grafana\". A generic ALERTS result does not establish that this Grafana instance is being monitored."
       }
     ],
     "coverage": [
@@ -7564,7 +7567,7 @@
               "id": "p0-t0",
               "title": "Rows · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(irate(pg_stat_database_tup_fetched{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p0-t0",
@@ -7597,7 +7600,7 @@
               "id": "p0-t1",
               "title": "Rows · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(irate(pg_stat_database_tup_returned{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p0-t1",
@@ -7630,7 +7633,7 @@
               "id": "p0-t2",
               "title": "Rows · C",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(irate(pg_stat_database_tup_inserted{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p0-t2",
@@ -7663,7 +7666,7 @@
               "id": "p0-t3",
               "title": "Rows · D",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(irate(pg_stat_database_tup_updated{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p0-t3",
@@ -7696,7 +7699,7 @@
               "id": "p0-t4",
               "title": "Rows · E",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(irate(pg_stat_database_tup_deleted{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p0-t4",
@@ -7729,7 +7732,7 @@
               "id": "p1-t0",
               "title": "QPS",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(irate(pg_stat_database_xact_commit{datname=~{{db}},instance=~{{instance}}}[5m])) + sum(irate(pg_stat_database_xact_rollback{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p1-t0",
@@ -7769,7 +7772,7 @@
               "id": "p2-t0",
               "title": "Buffers · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "irate(pg_stat_bgwriter_buffers_alloc{instance=~{{instance}}}[5m])",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p2-t0",
@@ -7797,7 +7800,7 @@
               "id": "p2-t1",
               "title": "Buffers · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "irate(pg_stat_bgwriter_buffers_backend_fsync{instance=~{{instance}}}[5m])",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p2-t1",
@@ -7825,7 +7828,7 @@
               "id": "p2-t2",
               "title": "Buffers · C",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "irate(pg_stat_bgwriter_buffers_backend{instance=~{{instance}}}[5m])",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p2-t2",
@@ -7853,7 +7856,7 @@
               "id": "p2-t3",
               "title": "Buffers · D",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "irate(pg_stat_bgwriter_buffers_clean{instance=~{{instance}}}[5m])",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p2-t3",
@@ -7881,7 +7884,7 @@
               "id": "p2-t4",
               "title": "Buffers · E",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "irate(pg_stat_bgwriter_buffers_checkpoint{instance=~{{instance}}}[5m])",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p2-t4",
@@ -7909,7 +7912,7 @@
               "id": "p3-t0",
               "title": "Conflicts/Deadlocks · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(rate(pg_stat_database_deadlocks{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p3-t0",
@@ -7942,7 +7945,7 @@
               "id": "p3-t1",
               "title": "Conflicts/Deadlocks · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(rate(pg_stat_database_conflicts{datname=~{{db}},instance=~{{instance}}}[5m]))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p3-t1",
@@ -7975,7 +7978,7 @@
               "id": "p4-t0",
               "title": "Cache hit ratio",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "sum(pg_stat_database_blks_hit{datname=~{{db}},instance=~{{instance}}}) / (sum(pg_stat_database_blks_hit{datname=~{{db}},instance=~{{instance}}}) + sum(pg_stat_database_blks_read{datname=~{{db}},instance=~{{instance}}}))",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p4-t0",
@@ -8008,7 +8011,7 @@
               "id": "p5-t0",
               "title": "Number of active connections",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-postgres",
               "query": "pg_stat_database_numbackends{datname=~{{db}},instance=~{{instance}}}",
               "queryRef": {
                 "id": "src-shorted-postgres-exporter-p5-t0",
@@ -8084,7 +8087,7 @@
             "sourcePanel": "p0-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(irate(pg_stat_database_tup_fetched{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8117,7 +8120,7 @@
             "sourcePanel": "p0-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(irate(pg_stat_database_tup_returned{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8150,7 +8153,7 @@
             "sourcePanel": "p0-t2",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(irate(pg_stat_database_tup_inserted{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8183,7 +8186,7 @@
             "sourcePanel": "p0-t3",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(irate(pg_stat_database_tup_updated{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8216,7 +8219,7 @@
             "sourcePanel": "p0-t4",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(irate(pg_stat_database_tup_deleted{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8249,7 +8252,7 @@
             "sourcePanel": "p1-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(irate(pg_stat_database_xact_commit{datname=~{{db}},instance=~{{instance}}}[5m])) + sum(irate(pg_stat_database_xact_rollback{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8282,7 +8285,7 @@
             "sourcePanel": "p2-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "irate(pg_stat_bgwriter_buffers_alloc{instance=~{{instance}}}[5m])",
           "parameters": [
@@ -8310,7 +8313,7 @@
             "sourcePanel": "p2-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "irate(pg_stat_bgwriter_buffers_backend_fsync{instance=~{{instance}}}[5m])",
           "parameters": [
@@ -8338,7 +8341,7 @@
             "sourcePanel": "p2-t2",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "irate(pg_stat_bgwriter_buffers_backend{instance=~{{instance}}}[5m])",
           "parameters": [
@@ -8366,7 +8369,7 @@
             "sourcePanel": "p2-t3",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "irate(pg_stat_bgwriter_buffers_clean{instance=~{{instance}}}[5m])",
           "parameters": [
@@ -8394,7 +8397,7 @@
             "sourcePanel": "p2-t4",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "irate(pg_stat_bgwriter_buffers_checkpoint{instance=~{{instance}}}[5m])",
           "parameters": [
@@ -8422,7 +8425,7 @@
             "sourcePanel": "p3-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(rate(pg_stat_database_deadlocks{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8455,7 +8458,7 @@
             "sourcePanel": "p3-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(rate(pg_stat_database_conflicts{datname=~{{db}},instance=~{{instance}}}[5m]))",
           "parameters": [
@@ -8488,7 +8491,7 @@
             "sourcePanel": "p4-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "sum(pg_stat_database_blks_hit{datname=~{{db}},instance=~{{instance}}}) / (sum(pg_stat_database_blks_hit{datname=~{{db}},instance=~{{instance}}}) + sum(pg_stat_database_blks_read{datname=~{{db}},instance=~{{instance}}}))",
           "parameters": [
@@ -8521,7 +8524,7 @@
             "sourcePanel": "p5-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-postgres",
           "kind": "metrics",
           "query": "pg_stat_database_numbackends{datname=~{{db}},instance=~{{instance}}}",
           "parameters": [
@@ -8542,12 +8545,13 @@
     "liveStatus": "ready",
     "providers": [
       {
-        "id": "source-shorted-prometheus",
-        "name": "Shorted source Prometheus",
+        "id": "source-shorted-analysis-postgres",
+        "name": "Shorted local analysis · PostgreSQL exporter",
         "type": "prometheus",
         "capabilities": [
           "metrics"
-        ]
+        ],
+        "description": "Requires postgres_exporter:9187 connected to the Shorted analysis database. Verify the database and instance labels; another application database does not satisfy this source."
       }
     ],
     "coverage": [
@@ -9873,7 +9877,7 @@
               "id": "p0-t0",
               "title": "Samples Appended",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "sum(irate(prometheus_tsdb_head_samples_appended_total{job=\"prometheus\"}[5m]))",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p0-t0"
@@ -9900,7 +9904,7 @@
               "id": "p1-t0",
               "title": "Scrape Duration",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "topk(5, max(scrape_duration_seconds) by (job))",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p1-t0"
@@ -9927,7 +9931,7 @@
               "id": "p2-t0",
               "title": "Memory Profile · D",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "sum(process_resident_memory_bytes{job=\"prometheus\"})",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p2-t0"
@@ -9954,7 +9958,7 @@
               "id": "p2-t1",
               "title": "Memory Profile · C",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "process_virtual_memory_bytes{job=\"prometheus\"}",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p2-t1"
@@ -9981,7 +9985,7 @@
               "id": "p3-t0",
               "title": "WAL Corruptions",
               "type": "stat",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "prometheus_tsdb_wal_corruptions_total{job=\"prometheus\"}",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p3-t0"
@@ -10003,7 +10007,7 @@
               "id": "p4-t0",
               "title": "Active Appenders · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "sum(prometheus_tsdb_head_active_appenders{job=\"prometheus\"})",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p4-t0"
@@ -10030,7 +10034,7 @@
               "id": "p4-t1",
               "title": "Active Appenders · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "sum(process_open_fds{job=\"prometheus\"})",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p4-t1"
@@ -10057,7 +10061,7 @@
               "id": "p5-t0",
               "title": "Blocks Loaded",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "prometheus_tsdb_blocks_loaded{job=\"prometheus\"}",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p5-t0"
@@ -10084,7 +10088,7 @@
               "id": "p6-t0",
               "title": "Head Chunks",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "prometheus_tsdb_head_chunks{job=\"prometheus\"}",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p6-t0"
@@ -10111,7 +10115,7 @@
               "id": "p7-t0",
               "title": "Head Block GC Activity · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "prometheus_tsdb_head_gc_duration_seconds{job=\"prometheus\",quantile=\"0.99\"}",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p7-t0"
@@ -10138,7 +10142,7 @@
               "id": "p7-t1",
               "title": "Head Block GC Activity · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "irate(prometheus_tsdb_head_gc_duration_seconds_count{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p7-t1"
@@ -10165,7 +10169,7 @@
               "id": "p8-t0",
               "title": "Compaction Activity · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "histogram_quantile(0.99, sum(rate(prometheus_tsdb_compaction_duration_bucket{job=\"prometheus\"}[5m])) by (le))",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p8-t0"
@@ -10192,7 +10196,7 @@
               "id": "p8-t1",
               "title": "Compaction Activity · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "irate(prometheus_tsdb_compactions_total{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p8-t1"
@@ -10219,7 +10223,7 @@
               "id": "p8-t2",
               "title": "Compaction Activity · C",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "irate(prometheus_tsdb_compactions_failed_total{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p8-t2"
@@ -10246,7 +10250,7 @@
               "id": "p8-t3",
               "title": "Compaction Activity · D",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "irate(prometheus_tsdb_compactions_triggered_total{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p8-t3"
@@ -10273,7 +10277,7 @@
               "id": "p9-t0",
               "title": "Reload Count · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "rate(prometheus_tsdb_reloads_total{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p9-t0"
@@ -10300,7 +10304,7 @@
               "id": "p9-t1",
               "title": "Reload Count · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "rate(prometheus_tsdb_reloads_failures_total{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p9-t1"
@@ -10327,7 +10331,7 @@
               "id": "p10-t0",
               "title": "Query Durations",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "prometheus_engine_query_duration_seconds{job=\"prometheus\", quantile=\"0.99\"}",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p10-t0"
@@ -10354,7 +10358,7 @@
               "id": "p11-t0",
               "title": "Rule Group Eval Duration",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "max(prometheus_rule_group_duration_seconds{job=\"prometheus\"}) by (quantile)",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p11-t0"
@@ -10381,7 +10385,7 @@
               "id": "p12-t0",
               "title": "Rule Group Eval Activity · B",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "rate(prometheus_rule_group_iterations_missed_total{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p12-t0"
@@ -10408,7 +10412,7 @@
               "id": "p12-t1",
               "title": "Rule Group Eval Activity · A",
               "type": "timeseries",
-              "providerId": "source-shorted-prometheus",
+              "providerId": "source-shorted-analysis-prometheus",
               "query": "rate(prometheus_rule_group_iterations_total{job=\"prometheus\"}[5m])",
               "queryRef": {
                 "id": "src-shorted-prometheus-stats-p12-t1"
@@ -10453,7 +10457,7 @@
             "sourcePanel": "p0-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "sum(irate(prometheus_tsdb_head_samples_appended_total{job=\"prometheus\"}[5m]))"
         },
@@ -10474,7 +10478,7 @@
             "sourcePanel": "p1-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "topk(5, max(scrape_duration_seconds) by (job))"
         },
@@ -10495,7 +10499,7 @@
             "sourcePanel": "p2-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "sum(process_resident_memory_bytes{job=\"prometheus\"})"
         },
@@ -10516,7 +10520,7 @@
             "sourcePanel": "p2-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "process_virtual_memory_bytes{job=\"prometheus\"}"
         },
@@ -10537,7 +10541,7 @@
             "sourcePanel": "p3-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "prometheus_tsdb_wal_corruptions_total{job=\"prometheus\"}"
         },
@@ -10558,7 +10562,7 @@
             "sourcePanel": "p4-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "sum(prometheus_tsdb_head_active_appenders{job=\"prometheus\"})"
         },
@@ -10579,7 +10583,7 @@
             "sourcePanel": "p4-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "sum(process_open_fds{job=\"prometheus\"})"
         },
@@ -10600,7 +10604,7 @@
             "sourcePanel": "p5-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "prometheus_tsdb_blocks_loaded{job=\"prometheus\"}"
         },
@@ -10621,7 +10625,7 @@
             "sourcePanel": "p6-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "prometheus_tsdb_head_chunks{job=\"prometheus\"}"
         },
@@ -10642,7 +10646,7 @@
             "sourcePanel": "p7-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "prometheus_tsdb_head_gc_duration_seconds{job=\"prometheus\",quantile=\"0.99\"}"
         },
@@ -10663,7 +10667,7 @@
             "sourcePanel": "p7-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "irate(prometheus_tsdb_head_gc_duration_seconds_count{job=\"prometheus\"}[5m])"
         },
@@ -10684,7 +10688,7 @@
             "sourcePanel": "p8-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "histogram_quantile(0.99, sum(rate(prometheus_tsdb_compaction_duration_bucket{job=\"prometheus\"}[5m])) by (le))"
         },
@@ -10705,7 +10709,7 @@
             "sourcePanel": "p8-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "irate(prometheus_tsdb_compactions_total{job=\"prometheus\"}[5m])"
         },
@@ -10726,7 +10730,7 @@
             "sourcePanel": "p8-t2",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "irate(prometheus_tsdb_compactions_failed_total{job=\"prometheus\"}[5m])"
         },
@@ -10747,7 +10751,7 @@
             "sourcePanel": "p8-t3",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "irate(prometheus_tsdb_compactions_triggered_total{job=\"prometheus\"}[5m])"
         },
@@ -10768,7 +10772,7 @@
             "sourcePanel": "p9-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "rate(prometheus_tsdb_reloads_total{job=\"prometheus\"}[5m])"
         },
@@ -10789,7 +10793,7 @@
             "sourcePanel": "p9-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "rate(prometheus_tsdb_reloads_failures_total{job=\"prometheus\"}[5m])"
         },
@@ -10810,7 +10814,7 @@
             "sourcePanel": "p10-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "prometheus_engine_query_duration_seconds{job=\"prometheus\", quantile=\"0.99\"}"
         },
@@ -10831,7 +10835,7 @@
             "sourcePanel": "p11-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "max(prometheus_rule_group_duration_seconds{job=\"prometheus\"}) by (quantile)"
         },
@@ -10852,7 +10856,7 @@
             "sourcePanel": "p12-t0",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "rate(prometheus_rule_group_iterations_missed_total{job=\"prometheus\"}[5m])"
         },
@@ -10873,7 +10877,7 @@
             "sourcePanel": "p12-t1",
             "dataMode": "live source"
           },
-          "providerId": "source-shorted-prometheus",
+          "providerId": "source-shorted-analysis-prometheus",
           "kind": "metrics",
           "query": "rate(prometheus_rule_group_iterations_total{job=\"prometheus\"}[5m])"
         }
@@ -10882,12 +10886,13 @@
     "liveStatus": "ready",
     "providers": [
       {
-        "id": "source-shorted-prometheus",
-        "name": "Shorted source Prometheus",
+        "id": "source-shorted-analysis-prometheus",
+        "name": "Shorted local analysis · Prometheus self-metrics",
         "type": "prometheus",
         "capabilities": [
           "metrics"
-        ]
+        ],
+        "description": "Requires self-metrics from the Prometheus server serving the Shorted local analysis stack. Configure its self-scrape and verify the instance before importing."
       }
     ],
     "coverage": [

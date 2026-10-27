@@ -25,6 +25,7 @@ export interface GalleryExample {
   sample: DashboardBundle
   live?: DashboardBundle
   liveStatus: "ready" | "partial" | "unavailable"
+  providers?: PortableImportProps["sourceProviders"]
   limitations: string[]
 }
 
@@ -126,6 +127,7 @@ export function RepositoryGallery({
             <PortableImportPanel
               key={`${entry.id}-${mode}`}
               {...importProps}
+              sourceProviders={mode === "live" ? entry.providers : undefined}
               initialDocument={{
                 source: serializeDashboardBundle(bundle, "json"),
                 format: "json",
