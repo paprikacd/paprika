@@ -1,0 +1,2929 @@
+{
+  "version": 1,
+  "canonicalDashboardCount": 14,
+  "supplementalCollections": 2,
+  "sourceGrafanaTargets": 96,
+  "entries": [
+    {
+      "id": "shorted-operations",
+      "title": "Shorted - Operations",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "terraform/modules/grafana-dashboards/main.tf"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "panel-0",
+          "sourceTitle": "API Overview",
+          "sourceType": "row",
+          "sampleWidgetIds": [],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source row grouping is retained in the inventory."
+          ],
+          "sourcePointer": "/panels/0"
+        },
+        {
+          "sourceId": "p1-t0",
+          "sourceTitle": "RPC Request Rate",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p1-t0"
+          ],
+          "liveWidgetIds": [
+            "p1-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/1/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(rate(rpc_server_requests_total{job=~\"$service\"}[$__rate_interval])) by (job, rpc_method)"
+        },
+        {
+          "sourceId": "p2-t0",
+          "sourceTitle": "RPC Duration (p50 / p95 / p99)",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p2-t0"
+          ],
+          "liveWidgetIds": [
+            "p2-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained.",
+            "Split from source panel 2, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.50, sum(rate(rpc_server_duration_milliseconds_bucket{job=~\"$service\"}[$__rate_interval])) by (le))"
+        },
+        {
+          "sourceId": "p2-t1",
+          "sourceTitle": "RPC Duration (p50 / p95 / p99)",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p2-t1"
+          ],
+          "liveWidgetIds": [
+            "p2-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained.",
+            "Split from source panel 2, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/1",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, sum(rate(rpc_server_duration_milliseconds_bucket{job=~\"$service\"}[$__rate_interval])) by (le))"
+        },
+        {
+          "sourceId": "p2-t2",
+          "sourceTitle": "RPC Duration (p50 / p95 / p99)",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p2-t2"
+          ],
+          "liveWidgetIds": [
+            "p2-t2"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained.",
+            "Split from source panel 2, target C; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/2",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.99, sum(rate(rpc_server_duration_milliseconds_bucket{job=~\"$service\"}[$__rate_interval])) by (le))"
+        },
+        {
+          "sourceId": "p3-t0",
+          "sourceTitle": "RPC Error Rate",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p3-t0"
+          ],
+          "liveWidgetIds": [
+            "p3-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/3/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(rate(rpc_server_requests_total{job=~\"$service\", rpc_connect_status_code!=\"ok\"}[$__rate_interval])) by (job, rpc_connect_status_code)"
+        },
+        {
+          "sourceId": "p4-t0",
+          "sourceTitle": "RPC p95 by Method",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p4-t0"
+          ],
+          "liveWidgetIds": [
+            "p4-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/4/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, sum(rate(rpc_server_duration_milliseconds_bucket{job=~\"$service\"}[$__rate_interval])) by (le, job, rpc_method))"
+        },
+        {
+          "sourceId": "p5-t0",
+          "sourceTitle": "Total Requests (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p5-t0"
+          ],
+          "liveWidgetIds": [
+            "p5-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/5/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(rpc_server_requests_total{job=~\"$service\"}[24h]))"
+        },
+        {
+          "sourceId": "p6-t0",
+          "sourceTitle": "Errors (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p6-t0"
+          ],
+          "liveWidgetIds": [
+            "p6-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/6/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(rpc_server_requests_total{job=~\"$service\", rpc_connect_status_code!=\"ok\"}[24h]))"
+        },
+        {
+          "sourceId": "panel-7",
+          "sourceTitle": "Security & Rate Limiting",
+          "sourceType": "row",
+          "sampleWidgetIds": [],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source row grouping is retained in the inventory."
+          ],
+          "sourcePointer": "/panels/7"
+        },
+        {
+          "sourceId": "p8-t0",
+          "sourceTitle": "Rate Limit Blocks",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p8-t0"
+          ],
+          "liveWidgetIds": [
+            "p8-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/8/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(rate(shorted_rate_limit_blocked_total{job=\"shorted-api\"}[$__rate_interval])) by (tier)"
+        },
+        {
+          "sourceId": "p9-t0",
+          "sourceTitle": "Scraper / Bot Blocks",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p9-t0"
+          ],
+          "liveWidgetIds": [
+            "p9-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/9/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(rate(shorted_scraper_blocked_total{job=\"shorted-api\"}[$__rate_interval])) by (reason)"
+        },
+        {
+          "sourceId": "p10-t0",
+          "sourceTitle": "Auth Methods (24h)",
+          "sourceType": "piechart",
+          "sampleWidgetIds": [
+            "p10-t0"
+          ],
+          "liveWidgetIds": [
+            "p10-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/10/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_auth_method_total{job=\"shorted-api\"}[24h])) by (method)"
+        },
+        {
+          "sourceId": "p11-t0",
+          "sourceTitle": "Rate Limited (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p11-t0"
+          ],
+          "liveWidgetIds": [
+            "p11-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/11/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_rate_limit_blocked_total{job=\"shorted-api\"}[24h]))"
+        },
+        {
+          "sourceId": "p12-t0",
+          "sourceTitle": "Scrapers Blocked (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p12-t0"
+          ],
+          "liveWidgetIds": [
+            "p12-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/12/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_scraper_blocked_total{job=\"shorted-api\"}[24h]))"
+        },
+        {
+          "sourceId": "p13-t0",
+          "sourceTitle": "Anonymous Requests (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p13-t0"
+          ],
+          "liveWidgetIds": [
+            "p13-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/13/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_auth_method_total{job=\"shorted-api\", method=\"anonymous\"}[24h]))"
+        },
+        {
+          "sourceId": "p14-t0",
+          "sourceTitle": "Authenticated (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p14-t0"
+          ],
+          "liveWidgetIds": [
+            "p14-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/14/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_auth_method_total{job=\"shorted-api\", method!=\"anonymous\"}[24h]))"
+        },
+        {
+          "sourceId": "panel-15",
+          "sourceTitle": "HTTP Services",
+          "sourceType": "row",
+          "sampleWidgetIds": [],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source row grouping is retained in the inventory."
+          ],
+          "sourcePointer": "/panels/15"
+        },
+        {
+          "sourceId": "p16-t0",
+          "sourceTitle": "HTTP Request Rate by Service",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p16-t0"
+          ],
+          "liveWidgetIds": [
+            "p16-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/16/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(rate(http_server_duration_milliseconds_count{job=~\"$service\"}[$__rate_interval])) by (job, http_route)"
+        },
+        {
+          "sourceId": "p17-t0",
+          "sourceTitle": "HTTP Duration p95 by Service",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p17-t0"
+          ],
+          "liveWidgetIds": [
+            "p17-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/17/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{job=~\"$service\"}[$__rate_interval])) by (le, job))"
+        },
+        {
+          "sourceId": "panel-18",
+          "sourceTitle": "Frontend (Next.js)",
+          "sourceType": "row",
+          "sampleWidgetIds": [],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source row grouping is retained in the inventory."
+          ],
+          "sourcePointer": "/panels/18"
+        },
+        {
+          "sourceId": "p19-t0",
+          "sourceTitle": "Server Action Duration (p95)",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p19-t0"
+          ],
+          "liveWidgetIds": [
+            "p19-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/19/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{job=\"shorted-web\"}[$__rate_interval])) by (le, http_route))"
+        },
+        {
+          "sourceId": "p20-t0",
+          "sourceTitle": "Frontend Request Rate",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p20-t0"
+          ],
+          "liveWidgetIds": [
+            "p20-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/20/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(rate(http_server_duration_milliseconds_count{job=\"shorted-web\"}[$__rate_interval])) by (http_route)"
+        },
+        {
+          "sourceId": "panel-21",
+          "sourceTitle": "Async Jobs & Data Pipeline",
+          "sourceType": "row",
+          "sampleWidgetIds": [],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source row grouping is retained in the inventory."
+          ],
+          "sourcePointer": "/panels/21"
+        },
+        {
+          "sourceId": "p22-t0",
+          "sourceTitle": "Job Execution Status",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p22-t0"
+          ],
+          "liveWidgetIds": [
+            "p22-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/22/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_sync_status_total[$__rate_interval])) by (sync_job, status)"
+        },
+        {
+          "sourceId": "p23-t0",
+          "sourceTitle": "Job Duration (avg)",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p23-t0"
+          ],
+          "liveWidgetIds": [
+            "p23-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/23/targets/0",
+          "language": "promql",
+          "sourceQuery": "rate(shorted_sync_duration_seconds_sum[$__rate_interval]) / rate(shorted_sync_duration_seconds_count[$__rate_interval])"
+        },
+        {
+          "sourceId": "p24-t0",
+          "sourceTitle": "Records Processed",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p24-t0"
+          ],
+          "liveWidgetIds": [
+            "p24-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana adaptive interval macro is explicitly fixed to 5m/1m; exact source expression retained."
+          ],
+          "sourcePointer": "/panels/24/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_sync_records_processed_total[$__rate_interval])) by (sync_job)"
+        },
+        {
+          "sourceId": "p25-t0",
+          "sourceTitle": "Time Since Last Success",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p25-t0"
+          ],
+          "liveWidgetIds": [
+            "p25-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/25/targets/0",
+          "language": "promql",
+          "sourceQuery": "(time() - shorted_sync_last_success) / 3600"
+        },
+        {
+          "sourceId": "p26-t0",
+          "sourceTitle": "Successful Runs (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p26-t0"
+          ],
+          "liveWidgetIds": [
+            "p26-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/26/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_sync_status_total{status=\"success\"}[24h])) by (sync_job)"
+        },
+        {
+          "sourceId": "p27-t0",
+          "sourceTitle": "Failed Runs (24h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p27-t0"
+          ],
+          "liveWidgetIds": [
+            "p27-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/27/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_sync_status_total{status=\"failure\"}[24h])) by (sync_job)"
+        }
+      ],
+      "limitations": [
+        "Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.",
+        "Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.",
+        "No explicit Grafana dashboard/panel IDs: sourceOrdinal and sourcePointer identify panels.",
+        "Retained module is not called by current production Terraform; README decommission-shim detail is stale.",
+        "Service All regex omits shorted-web; frontend panels use fixed shorted-web selectors. Preserve and disclose before any deliberate correction.",
+        "Tempo variable exists in variables.tf but no trace query/panel uses it.",
+        "Variable service: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory."
+      ]
+    },
+    {
+      "id": "shorted-stealth-scraping",
+      "title": "Stealth Scraping & Logo Discovery",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "analysis/sql/grafana/dashboards/shorted/stealth-scraping.json"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "panel-0",
+          "sourceTitle": "Stealth HTTP Overview",
+          "sourceType": "row",
+          "sampleWidgetIds": [],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source row grouping is retained in the inventory."
+          ],
+          "sourcePointer": "/panels/0"
+        },
+        {
+          "sourceId": "p1-t0",
+          "sourceTitle": "Total Fetches (1h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p1-t0"
+          ],
+          "liveWidgetIds": [
+            "p1-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/1/targets/0",
+          "language": "promql",
+          "sourceQuery": "increase(shorted_stealth_fetch_total[1h])"
+        },
+        {
+          "sourceId": "p2-t0",
+          "sourceTitle": "Error Rate (1h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p2-t0"
+          ],
+          "liveWidgetIds": [
+            "p2-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/2/targets/0",
+          "language": "promql",
+          "sourceQuery": "increase(shorted_stealth_fetch_errors[1h]) / (increase(shorted_stealth_fetch_total[1h]) > 0)"
+        },
+        {
+          "sourceId": "p3-t0",
+          "sourceTitle": "P95 Fetch Latency",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p3-t0"
+          ],
+          "liveWidgetIds": [
+            "p3-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/3/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, rate(shorted_stealth_fetch_duration_bucket[5m]))"
+        },
+        {
+          "sourceId": "p4-t0",
+          "sourceTitle": "Bytes Fetched (1h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p4-t0"
+          ],
+          "liveWidgetIds": [
+            "p4-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/4/targets/0",
+          "language": "promql",
+          "sourceQuery": "increase(shorted_stealth_fetch_bytes[1h])"
+        },
+        {
+          "sourceId": "p5-t0",
+          "sourceTitle": "Fetch Latency by Host",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p5-t0"
+          ],
+          "liveWidgetIds": [
+            "p5-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 5, target 1; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/5/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.50, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_bucket[5m])))"
+        },
+        {
+          "sourceId": "p5-t1",
+          "sourceTitle": "Fetch Latency by Host",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p5-t1"
+          ],
+          "liveWidgetIds": [
+            "p5-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 5, target 2; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/5/targets/1",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_bucket[5m])))"
+        },
+        {
+          "sourceId": "p6-t0",
+          "sourceTitle": "Fetch Requests by Status",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p6-t0"
+          ],
+          "liveWidgetIds": [
+            "p6-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/6/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum by(status) (rate(shorted_stealth_fetch_total[5m]))"
+        },
+        {
+          "sourceId": "p7-t0",
+          "sourceTitle": "Fetch Errors by Host",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p7-t0"
+          ],
+          "liveWidgetIds": [
+            "p7-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/7/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum by(http_host) (rate(shorted_stealth_fetch_errors[5m]))"
+        },
+        {
+          "sourceId": "p8-t0",
+          "sourceTitle": "Fetch Throughput (bytes/sec)",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p8-t0"
+          ],
+          "liveWidgetIds": [
+            "p8-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/8/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum by(stealth_engine) (rate(shorted_stealth_fetch_bytes[5m]))"
+        },
+        {
+          "sourceId": "panel-9",
+          "sourceTitle": "Logo Discovery",
+          "sourceType": "row",
+          "sampleWidgetIds": [],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source row grouping is retained in the inventory."
+          ],
+          "sourcePointer": "/panels/9"
+        },
+        {
+          "sourceId": "p10-t0",
+          "sourceTitle": "Logo Discoveries (1h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p10-t0"
+          ],
+          "liveWidgetIds": [
+            "p10-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/10/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_logo_discovery_total{logo_success=\"true\"}[1h]))"
+        },
+        {
+          "sourceId": "p11-t0",
+          "sourceTitle": "Logo Failure Rate (1h)",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p11-t0"
+          ],
+          "liveWidgetIds": [
+            "p11-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/11/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(increase(shorted_logo_discovery_total{logo_success=\"false\"}[1h])) / sum(increase(shorted_logo_discovery_total[1h]))"
+        },
+        {
+          "sourceId": "p12-t0",
+          "sourceTitle": "P95 Logo Discovery Latency",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p12-t0"
+          ],
+          "liveWidgetIds": [
+            "p12-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/12/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, rate(shorted_logo_discovery_duration_bucket[5m]))"
+        },
+        {
+          "sourceId": "p13-t0",
+          "sourceTitle": "Logo Discovery by Source",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p13-t0"
+          ],
+          "liveWidgetIds": [
+            "p13-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/13/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum by(logo_source) (rate(shorted_logo_discovery_total{logo_success=\"true\"}[5m]))"
+        },
+        {
+          "sourceId": "p14-t0",
+          "sourceTitle": "Logo Discovery by Format",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p14-t0"
+          ],
+          "liveWidgetIds": [
+            "p14-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/14/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum by(logo_format) (rate(shorted_logo_discovery_total{logo_success=\"true\"}[5m]))"
+        },
+        {
+          "sourceId": "p15-t0",
+          "sourceTitle": "Logo Discovery Latency by Source",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p15-t0"
+          ],
+          "liveWidgetIds": [
+            "p15-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 15, target 1; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/15/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.50, sum by(le, logo_source) (rate(shorted_logo_discovery_duration_bucket[5m])))"
+        },
+        {
+          "sourceId": "p15-t1",
+          "sourceTitle": "Logo Discovery Latency by Source",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p15-t1"
+          ],
+          "liveWidgetIds": [
+            "p15-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 15, target 2; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/15/targets/1",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.95, sum by(le, logo_source) (rate(shorted_logo_discovery_duration_bucket[5m])))"
+        }
+      ],
+      "limitations": [
+        "Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.",
+        "Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.",
+        "OTel dotted instrument names are defined in services/pkg/stealthhttp/client.go and services/pkg/otel/metrics.go. Metric export/name availability is not live-validated."
+      ]
+    },
+    {
+      "id": "shorted-grafana-metrics",
+      "title": "Grafana metrics",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "analysis/sql/grafana/dashboards/system/grafana.json"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "p0-t0",
+          "sourceTitle": "Active instances",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p0-t0"
+          ],
+          "liveWidgetIds": [
+            "p0-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/0/targets/0",
+          "language": "promql",
+          "sourceQuery": "up{job=\"grafana\"}"
+        },
+        {
+          "sourceId": "p1-t0",
+          "sourceTitle": "Dashboard count",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p1-t0"
+          ],
+          "liveWidgetIds": [
+            "p1-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/1/targets/0",
+          "language": "promql",
+          "sourceQuery": "grafana_stat_totals_dashboard"
+        },
+        {
+          "sourceId": "p2-t0",
+          "sourceTitle": "User count",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p2-t0"
+          ],
+          "liveWidgetIds": [
+            "p2-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/2/targets/0",
+          "language": "promql",
+          "sourceQuery": "grafana_stat_total_users"
+        },
+        {
+          "sourceId": "p3-t0",
+          "sourceTitle": "Playlist count",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p3-t0"
+          ],
+          "liveWidgetIds": [
+            "p3-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/3/targets/0",
+          "language": "promql",
+          "sourceQuery": "grafana_stat_total_playlists"
+        },
+        {
+          "sourceId": "p4-t0",
+          "sourceTitle": "Grafana version",
+          "sourceType": "table-old",
+          "sampleWidgetIds": [
+            "p4-t0"
+          ],
+          "liveWidgetIds": [
+            "p4-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/4/targets/0",
+          "language": "promql",
+          "sourceQuery": "topk(1, grafana_info or grafana_build_info)"
+        },
+        {
+          "sourceId": "p5-t0",
+          "sourceTitle": "http status codes",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p5-t0"
+          ],
+          "liveWidgetIds": [
+            "p5-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/5/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum by (status_code) (irate(grafana_http_request_duration_seconds_count[5m]))"
+        },
+        {
+          "sourceId": "p6-t0",
+          "sourceTitle": "Requests by routing group",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p6-t0"
+          ],
+          "liveWidgetIds": [
+            "p6-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 6, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/6/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(irate(grafana_api_response_status_total[5m]))"
+        },
+        {
+          "sourceId": "p6-t1",
+          "sourceTitle": "Requests by routing group",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p6-t1"
+          ],
+          "liveWidgetIds": [
+            "p6-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 6, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/6/targets/1",
+          "language": "promql",
+          "sourceQuery": "sum(irate(grafana_proxy_response_status_total[5m]))"
+        },
+        {
+          "sourceId": "p6-t2",
+          "sourceTitle": "Requests by routing group",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p6-t2"
+          ],
+          "liveWidgetIds": [
+            "p6-t2"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 6, target C; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/6/targets/2",
+          "language": "promql",
+          "sourceQuery": "sum(irate(grafana_page_response_status_total[5m]))"
+        },
+        {
+          "sourceId": "p7-t0",
+          "sourceTitle": "Most used handlers",
+          "sourceType": "table-old",
+          "sampleWidgetIds": [
+            "p7-t0"
+          ],
+          "liveWidgetIds": [
+            "p7-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/7/targets/0",
+          "language": "promql",
+          "sourceQuery": "sort(topk(8, sum by (handler) (grafana_http_request_duration_seconds_count)))"
+        },
+        {
+          "sourceId": "p8-t0",
+          "sourceTitle": "Grafana active alerts",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p8-t0"
+          ],
+          "liveWidgetIds": [
+            "p8-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/8/targets/0",
+          "language": "promql",
+          "sourceQuery": "increase(grafana_alerting_active_alerts[1m])"
+        },
+        {
+          "sourceId": "p9-t0",
+          "sourceTitle": "Prometheus alerts",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p9-t0"
+          ],
+          "liveWidgetIds": [
+            "p9-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/9/targets/0",
+          "language": "promql",
+          "sourceQuery": " sum (ALERTS)"
+        },
+        {
+          "sourceId": "p10-t0",
+          "sourceTitle": "Grafana performance",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p10-t0"
+          ],
+          "liveWidgetIds": [
+            "p10-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 10, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/10/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(go_goroutines{job=\"grafana\"})"
+        },
+        {
+          "sourceId": "p10-t1",
+          "sourceTitle": "Grafana performance",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p10-t1"
+          ],
+          "liveWidgetIds": [
+            "p10-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 10, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/10/targets/1",
+          "language": "promql",
+          "sourceQuery": "sum(process_resident_memory_bytes{job=\"grafana\"})"
+        }
+      ],
+      "limitations": [
+        "Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.",
+        "Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.",
+        "Legacy table-old panels and instant queries must retain reducers, hidden columns and field styling."
+      ]
+    },
+    {
+      "id": "shorted-postgres-exporter",
+      "title": "PostgreSQL Exporter Quickstart and Dashboard",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "analysis/sql/grafana/dashboards/system/postgres.json"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "p0-t0",
+          "sourceTitle": "Rows",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p0-t0"
+          ],
+          "liveWidgetIds": [
+            "p0-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 0, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/0/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(irate(pg_stat_database_tup_fetched{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p0-t1",
+          "sourceTitle": "Rows",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p0-t1"
+          ],
+          "liveWidgetIds": [
+            "p0-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 0, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/0/targets/1",
+          "language": "promql",
+          "sourceQuery": "sum(irate(pg_stat_database_tup_returned{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p0-t2",
+          "sourceTitle": "Rows",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p0-t2"
+          ],
+          "liveWidgetIds": [
+            "p0-t2"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 0, target C; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/0/targets/2",
+          "language": "promql",
+          "sourceQuery": "sum(irate(pg_stat_database_tup_inserted{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p0-t3",
+          "sourceTitle": "Rows",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p0-t3"
+          ],
+          "liveWidgetIds": [
+            "p0-t3"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 0, target D; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/0/targets/3",
+          "language": "promql",
+          "sourceQuery": "sum(irate(pg_stat_database_tup_updated{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p0-t4",
+          "sourceTitle": "Rows",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p0-t4"
+          ],
+          "liveWidgetIds": [
+            "p0-t4"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 0, target E; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/0/targets/4",
+          "language": "promql",
+          "sourceQuery": "sum(irate(pg_stat_database_tup_deleted{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p1-t0",
+          "sourceTitle": "QPS",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p1-t0"
+          ],
+          "liveWidgetIds": [
+            "p1-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/1/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(irate(pg_stat_database_xact_commit{datname=~\"$db\",instance=~\"$instance\"}[5m])) + sum(irate(pg_stat_database_xact_rollback{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p2-t0",
+          "sourceTitle": "Buffers",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p2-t0"
+          ],
+          "liveWidgetIds": [
+            "p2-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 2, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/0",
+          "language": "promql",
+          "sourceQuery": "irate(pg_stat_bgwriter_buffers_alloc{instance=~'$instance'}[5m])"
+        },
+        {
+          "sourceId": "p2-t1",
+          "sourceTitle": "Buffers",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p2-t1"
+          ],
+          "liveWidgetIds": [
+            "p2-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 2, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/1",
+          "language": "promql",
+          "sourceQuery": "irate(pg_stat_bgwriter_buffers_backend_fsync{instance=~'$instance'}[5m])"
+        },
+        {
+          "sourceId": "p2-t2",
+          "sourceTitle": "Buffers",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p2-t2"
+          ],
+          "liveWidgetIds": [
+            "p2-t2"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 2, target C; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/2",
+          "language": "promql",
+          "sourceQuery": "irate(pg_stat_bgwriter_buffers_backend{instance=~'$instance'}[5m])"
+        },
+        {
+          "sourceId": "p2-t3",
+          "sourceTitle": "Buffers",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p2-t3"
+          ],
+          "liveWidgetIds": [
+            "p2-t3"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 2, target D; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/3",
+          "language": "promql",
+          "sourceQuery": "irate(pg_stat_bgwriter_buffers_clean{instance=~'$instance'}[5m])"
+        },
+        {
+          "sourceId": "p2-t4",
+          "sourceTitle": "Buffers",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p2-t4"
+          ],
+          "liveWidgetIds": [
+            "p2-t4"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 2, target E; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/4",
+          "language": "promql",
+          "sourceQuery": "irate(pg_stat_bgwriter_buffers_checkpoint{instance=~'$instance'}[5m])"
+        },
+        {
+          "sourceId": "p3-t0",
+          "sourceTitle": "Conflicts/Deadlocks",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p3-t0"
+          ],
+          "liveWidgetIds": [
+            "p3-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 3, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/3/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(rate(pg_stat_database_deadlocks{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p3-t1",
+          "sourceTitle": "Conflicts/Deadlocks",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p3-t1"
+          ],
+          "liveWidgetIds": [
+            "p3-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 3, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/3/targets/1",
+          "language": "promql",
+          "sourceQuery": "sum(rate(pg_stat_database_conflicts{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
+        },
+        {
+          "sourceId": "p4-t0",
+          "sourceTitle": "Cache hit ratio",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p4-t0"
+          ],
+          "liveWidgetIds": [
+            "p4-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/4/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(pg_stat_database_blks_hit{datname=~\"$db\",instance=~\"$instance\"}) / (sum(pg_stat_database_blks_hit{datname=~\"$db\",instance=~\"$instance\"}) + sum(pg_stat_database_blks_read{datname=~\"$db\",instance=~\"$instance\"}))"
+        },
+        {
+          "sourceId": "p5-t0",
+          "sourceTitle": "Number of active connections",
+          "sourceType": "graph",
+          "sampleWidgetIds": [
+            "p5-t0"
+          ],
+          "liveWidgetIds": [
+            "p5-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/5/targets/0",
+          "language": "promql",
+          "sourceQuery": "pg_stat_database_numbackends{datname=~\"$db\",instance=~\"$instance\"}"
+        }
+      ],
+      "limitations": [
+        "Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.",
+        "Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.",
+        "Legacy graph panels; query variables instance and db are chained; declared job variable is unused.",
+        "options.alertThreshold is a visual setting, not an authored alert rule.",
+        "Variable instance: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Variable db: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Variable job: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory."
+      ]
+    },
+    {
+      "id": "shorted-prometheus-stats",
+      "title": "Prometheus 2.0 Stats",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "analysis/sql/grafana/dashboards/system/prometheus.json"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "p0-t0",
+          "sourceTitle": "Samples Appended",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p0-t0"
+          ],
+          "liveWidgetIds": [
+            "p0-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/0/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(irate(prometheus_tsdb_head_samples_appended_total{job=\"prometheus\"}[5m]))"
+        },
+        {
+          "sourceId": "p1-t0",
+          "sourceTitle": "Scrape Duration",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p1-t0"
+          ],
+          "liveWidgetIds": [
+            "p1-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/1/targets/0",
+          "language": "promql",
+          "sourceQuery": "topk(5, max(scrape_duration_seconds) by (job))"
+        },
+        {
+          "sourceId": "p2-t0",
+          "sourceTitle": "Memory Profile",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p2-t0"
+          ],
+          "liveWidgetIds": [
+            "p2-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 2, target D; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(process_resident_memory_bytes{job=\"prometheus\"})"
+        },
+        {
+          "sourceId": "p2-t1",
+          "sourceTitle": "Memory Profile",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p2-t1"
+          ],
+          "liveWidgetIds": [
+            "p2-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 2, target C; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/2/targets/1",
+          "language": "promql",
+          "sourceQuery": "process_virtual_memory_bytes{job=\"prometheus\"}"
+        },
+        {
+          "sourceId": "p3-t0",
+          "sourceTitle": "WAL Corruptions",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "p3-t0"
+          ],
+          "liveWidgetIds": [
+            "p3-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/3/targets/0",
+          "language": "promql",
+          "sourceQuery": "prometheus_tsdb_wal_corruptions_total{job=\"prometheus\"}"
+        },
+        {
+          "sourceId": "p4-t0",
+          "sourceTitle": "Active Appenders",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p4-t0"
+          ],
+          "liveWidgetIds": [
+            "p4-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 4, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/4/targets/0",
+          "language": "promql",
+          "sourceQuery": "sum(prometheus_tsdb_head_active_appenders{job=\"prometheus\"})"
+        },
+        {
+          "sourceId": "p4-t1",
+          "sourceTitle": "Active Appenders",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p4-t1"
+          ],
+          "liveWidgetIds": [
+            "p4-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 4, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/4/targets/1",
+          "language": "promql",
+          "sourceQuery": "sum(process_open_fds{job=\"prometheus\"})"
+        },
+        {
+          "sourceId": "p5-t0",
+          "sourceTitle": "Blocks Loaded",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p5-t0"
+          ],
+          "liveWidgetIds": [
+            "p5-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/5/targets/0",
+          "language": "promql",
+          "sourceQuery": "prometheus_tsdb_blocks_loaded{job=\"prometheus\"}"
+        },
+        {
+          "sourceId": "p6-t0",
+          "sourceTitle": "Head Chunks",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p6-t0"
+          ],
+          "liveWidgetIds": [
+            "p6-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/6/targets/0",
+          "language": "promql",
+          "sourceQuery": "prometheus_tsdb_head_chunks{job=\"prometheus\"}"
+        },
+        {
+          "sourceId": "p7-t0",
+          "sourceTitle": "Head Block GC Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p7-t0"
+          ],
+          "liveWidgetIds": [
+            "p7-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 7, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/7/targets/0",
+          "language": "promql",
+          "sourceQuery": "prometheus_tsdb_head_gc_duration_seconds{job=\"prometheus\",quantile=\"0.99\"}"
+        },
+        {
+          "sourceId": "p7-t1",
+          "sourceTitle": "Head Block GC Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p7-t1"
+          ],
+          "liveWidgetIds": [
+            "p7-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 7, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/7/targets/1",
+          "language": "promql",
+          "sourceQuery": "irate(prometheus_tsdb_head_gc_duration_seconds_count{job=\"prometheus\"}[5m])"
+        },
+        {
+          "sourceId": "p8-t0",
+          "sourceTitle": "Compaction Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p8-t0"
+          ],
+          "liveWidgetIds": [
+            "p8-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 8, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/8/targets/0",
+          "language": "promql",
+          "sourceQuery": "histogram_quantile(0.99, sum(rate(prometheus_tsdb_compaction_duration_bucket{job=\"prometheus\"}[5m])) by (le))"
+        },
+        {
+          "sourceId": "p8-t1",
+          "sourceTitle": "Compaction Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p8-t1"
+          ],
+          "liveWidgetIds": [
+            "p8-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 8, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/8/targets/1",
+          "language": "promql",
+          "sourceQuery": "irate(prometheus_tsdb_compactions_total{job=\"prometheus\"}[5m])"
+        },
+        {
+          "sourceId": "p8-t2",
+          "sourceTitle": "Compaction Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p8-t2"
+          ],
+          "liveWidgetIds": [
+            "p8-t2"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 8, target C; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/8/targets/2",
+          "language": "promql",
+          "sourceQuery": "irate(prometheus_tsdb_compactions_failed_total{job=\"prometheus\"}[5m])"
+        },
+        {
+          "sourceId": "p8-t3",
+          "sourceTitle": "Compaction Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p8-t3"
+          ],
+          "liveWidgetIds": [
+            "p8-t3"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 8, target D; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/8/targets/3",
+          "language": "promql",
+          "sourceQuery": "irate(prometheus_tsdb_compactions_triggered_total{job=\"prometheus\"}[5m])"
+        },
+        {
+          "sourceId": "p9-t0",
+          "sourceTitle": "Reload Count",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p9-t0"
+          ],
+          "liveWidgetIds": [
+            "p9-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 9, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/9/targets/0",
+          "language": "promql",
+          "sourceQuery": "rate(prometheus_tsdb_reloads_total{job=\"prometheus\"}[5m])"
+        },
+        {
+          "sourceId": "p9-t1",
+          "sourceTitle": "Reload Count",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p9-t1"
+          ],
+          "liveWidgetIds": [
+            "p9-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 9, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/9/targets/1",
+          "language": "promql",
+          "sourceQuery": "rate(prometheus_tsdb_reloads_failures_total{job=\"prometheus\"}[5m])"
+        },
+        {
+          "sourceId": "p10-t0",
+          "sourceTitle": "Query Durations",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p10-t0"
+          ],
+          "liveWidgetIds": [
+            "p10-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/10/targets/0",
+          "language": "promql",
+          "sourceQuery": "prometheus_engine_query_duration_seconds{job=\"prometheus\", quantile=\"0.99\"}"
+        },
+        {
+          "sourceId": "p11-t0",
+          "sourceTitle": "Rule Group Eval Duration",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p11-t0"
+          ],
+          "liveWidgetIds": [
+            "p11-t0"
+          ],
+          "status": "mapped",
+          "notes": [],
+          "sourcePointer": "/panels/11/targets/0",
+          "language": "promql",
+          "sourceQuery": "max(prometheus_rule_group_duration_seconds{job=\"prometheus\"}) by (quantile)"
+        },
+        {
+          "sourceId": "p12-t0",
+          "sourceTitle": "Rule Group Eval Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p12-t0"
+          ],
+          "liveWidgetIds": [
+            "p12-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 12, target B; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/12/targets/0",
+          "language": "promql",
+          "sourceQuery": "rate(prometheus_rule_group_iterations_missed_total{job=\"prometheus\"}[5m])"
+        },
+        {
+          "sourceId": "p12-t1",
+          "sourceTitle": "Rule Group Eval Activity",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p12-t1"
+          ],
+          "liveWidgetIds": [
+            "p12-t1"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Split from source panel 12, target A; sibling targets retain independent units and queries."
+          ],
+          "sourcePointer": "/panels/12/targets/1",
+          "language": "promql",
+          "sourceQuery": "rate(prometheus_rule_group_iterations_total{job=\"prometheus\"}[5m])"
+        }
+      ],
+      "limitations": [
+        "Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.",
+        "Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.",
+        "Local scrape config lists postgres and grafana, not Prometheus self-scraping; live coverage is not established."
+      ]
+    },
+    {
+      "id": "shorted-per-stock",
+      "title": "per stock",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "analysis/sql/grafana/dashboards/shorted/per-stock-summary.json"
+        ]
+      },
+      "liveStatus": "partial",
+      "coverage": [
+        {
+          "sourceId": "panel-0",
+          "sourceTitle": "Panel Title",
+          "sourceType": "text",
+          "sampleWidgetIds": [
+            "p0"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": [
+            "Source has no provider query."
+          ],
+          "sourcePointer": "/panels/0"
+        },
+        {
+          "sourceId": "p1-t0",
+          "sourceTitle": "Sentiment",
+          "sourceType": "gauge",
+          "sampleWidgetIds": [
+            "p1-t0"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": [
+            "Grafana test-data gauge is explicitly synthetic and has no live provider equivalent."
+          ],
+          "sourcePointer": "/panels/1/targets/0",
+          "language": "grafana-testdata"
+        },
+        {
+          "sourceId": "p2-t0",
+          "sourceTitle": "short positions for $stocks",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p2-t0"
+          ],
+          "liveWidgetIds": [
+            "p2-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+          ],
+          "sourcePointer": "/panels/2/targets/0",
+          "language": "sql-postgresql",
+          "sourceQuery": "SELECT\n  \"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\" AS \"value\",\n  \"PRODUCT_CODE\" || ' - ' || \"PRODUCT\" AS metric,\n  \"DATE\" AS \"time\"\nFROM\n  shorts\nWHERE\n  \"PRODUCT_CODE\" IN ($stocks)\nORDER BY\n  \"DATE\""
+        },
+        {
+          "sourceId": "p3-t0",
+          "sourceTitle": "shares shorted for $stocks",
+          "sourceType": "barchart",
+          "sampleWidgetIds": [
+            "p3-t0"
+          ],
+          "liveWidgetIds": [
+            "p3-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+          ],
+          "sourcePointer": "/panels/3/targets/0",
+          "language": "sql-postgresql",
+          "sourceQuery": "SELECT\n  \"REPORTED_SHORT_POSITIONS\" AS \"value\",\n  \"PRODUCT_CODE\" || ' - ' || \"PRODUCT\" AS metric,\n  \"DATE\" AS \"time\"\nFROM\n  shorts\nWHERE\n  \"PRODUCT_CODE\" IN ($stocks)\nORDER BY\n  \"DATE\""
+        },
+        {
+          "sourceId": "panel-4",
+          "sourceTitle": "Panel Title",
+          "sourceType": "news",
+          "sampleWidgetIds": [
+            "p4"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": [
+            "Source has no provider query."
+          ],
+          "sourcePointer": "/panels/4"
+        }
+      ],
+      "limitations": [
+        "Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.",
+        "Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.",
+        "Sentiment gauge is Grafana random test data, not real sentiment.",
+        "Long text panel contains editorial placeholders; source pointer/hash retained instead of reproducing placeholder claims.",
+        "News feed/proxy endpoint omitted.",
+        "top10shorts variable is unused by panels; datasource UID macros must be remapped.",
+        "SQL stock timeseries has no dashboard time-filter macro.",
+        "Variable stocks: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Variable top10shorts: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust."
+      ]
+    },
+    {
+      "id": "shorted-shorts-overview",
+      "title": "percentage short positions by stock v2",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "analysis/sql/grafana/dashboards/shorted/shorts-overview.json"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "p0-t0",
+          "sourceTitle": "top 10 shorts",
+          "sourceType": "bargauge",
+          "sampleWidgetIds": [
+            "p0-t0"
+          ],
+          "liveWidgetIds": [
+            "p0-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+          ],
+          "sourcePointer": "/panels/0/targets/0",
+          "language": "sql-postgresql",
+          "sourceQuery": "WITH RankedShorts AS (\n  SELECT\n    \"PRODUCT_CODE\",\n    \"PRODUCT\",\n    \"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\",\n    \"DATE\",\n    RANK() OVER (PARTITION BY \"PRODUCT_CODE\" ORDER BY \"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\" DESC) as rank\n  FROM\n    shorts\n  WHERE\n    \"DATE\" > CURRENT_DATE - INTERVAL '1 month'\n)\nSELECT\n  \"PRODUCT_CODE\" || ' - ' || \"PRODUCT\" as metric,\n  \"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\" AS \"shorted percentage\"\nFROM\n  RankedShorts\nWHERE\n  rank = 1\nORDER BY\n  \"shorted percentage\" DESC\nLIMIT\n  10;\n"
+        },
+        {
+          "sourceId": "p1-t0",
+          "sourceTitle": "top 10 shorted ",
+          "sourceType": "timeseries",
+          "sampleWidgetIds": [
+            "p1-t0"
+          ],
+          "liveWidgetIds": [
+            "p1-t0"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+          ],
+          "sourcePointer": "/panels/1/targets/0",
+          "language": "sql-postgresql",
+          "sourceQuery": "SELECT\n  \"DATE\" AS \"time\",\n  \"PRODUCT_CODE\" AS \"metric\",\n  \"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\" AS \"value\"\nFROM\n  shorts\nWHERE\n  \"PRODUCT_CODE\" IN ($top10shorts)\n  AND \"DATE\" > CURRENT_DATE - INTERVAL '12 month'\nORDER BY\n  \"DATE\" ASC;"
+        }
+      ],
+      "limitations": [
+        "Multi-target panels are split into individually inspectable widgets; their source grouping remains in coverage.",
+        "Grafana-only row groups, shared cursors, field overrides, reducers, panel links and annotations remain documented in the source inventory. Paprika uses its native latest-sample presentation.",
+        "stocks variable is unused; top10shorts drives the line chart.",
+        "Panel/variable PostgreSQL datasource IDs differ and require remapping.",
+        "Top-ten RANK query may return duplicate stock codes on tied maxima.",
+        "Variable stocks: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Variable top10shorts: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+        "Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust."
+      ]
+    },
+    {
+      "id": "shorted-my-dashboard",
+      "title": "My Dashboard",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "web/src/app/dashboards/page.tsx",
+          "web/src/@/lib/widget-registry.ts",
+          "web/src/@/types/dashboard.ts"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "1",
+          "sourceTitle": "Top Shorted Stocks",
+          "sourceType": "TOP_SHORTS",
+          "sampleWidgetIds": [
+            "top-shorts"
+          ],
+          "liveWidgetIds": [
+            "top-shorts"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Native record view replaces the source component; row sparklines, stock search and nested tooltips remain source-only."
+          ],
+          "sourcePointer": "defaultWidgets[0]"
+        },
+        {
+          "sourceId": "2",
+          "sourceTitle": "Industry Short Positions",
+          "sourceType": "INDUSTRY_TREEMAP",
+          "sampleWidgetIds": [
+            "industry"
+          ],
+          "liveWidgetIds": [
+            "industry"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Native record view replaces the source component; row sparklines, stock search and nested tooltips remain source-only."
+          ],
+          "sourcePointer": "defaultWidgets[1]"
+        }
+      ],
+      "limitations": [
+        "Source period selection is retained for live reads. Sample records are fixed illustrative snapshots and do not imply period-derived calculations.",
+        "The treemap uses positive area; percentage-change sign coloring and nested sector layout are not identical to the source."
+      ]
+    },
+    {
+      "id": "shorted-widget-catalog",
+      "title": "Shorted widget collection",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "web/src/app/dashboards/page.tsx",
+          "web/src/@/lib/widget-registry.ts",
+          "web/src/@/types/dashboard.ts"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "TOP_SHORTS",
+          "sourceTitle": "Top Shorts",
+          "sourceType": "TOP_SHORTS",
+          "sampleWidgetIds": [
+            "top-shorts"
+          ],
+          "liveWidgetIds": [
+            "top-shorts"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Source settings and full feature list remain in shorted-sources.json."
+          ]
+        },
+        {
+          "sourceId": "INDUSTRY_TREEMAP",
+          "sourceTitle": "Industry Treemap",
+          "sourceType": "INDUSTRY_TREEMAP",
+          "sampleWidgetIds": [
+            "industry-treemap"
+          ],
+          "liveWidgetIds": [
+            "industry-treemap"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Source settings and full feature list remain in shorted-sources.json."
+          ]
+        },
+        {
+          "sourceId": "STOCK_CHART",
+          "sourceTitle": "Stock Chart",
+          "sourceType": "STOCK_CHART",
+          "sampleWidgetIds": [
+            "stock-chart"
+          ],
+          "liveWidgetIds": [
+            "stock-chart"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Source settings and full feature list remain in shorted-sources.json.",
+            "Raw source series retained. Normalization, moving averages, oscillators, brush controls and mixed axes are not implemented by this view."
+          ]
+        },
+        {
+          "sourceId": "TIME_SERIES_ANALYSIS",
+          "sourceTitle": "Time Series Analysis",
+          "sourceType": "TIME_SERIES_ANALYSIS",
+          "sampleWidgetIds": [
+            "time-series-analysis"
+          ],
+          "liveWidgetIds": [
+            "time-series-analysis"
+          ],
+          "status": "adapted",
+          "notes": [
+            "The registry advertises analysisType trend/volatility/comparison, but the runtime reads viewMode/indicators/analysisMode instead. Preserve this mismatch explicitly; do not claim an unimplemented transform.",
+            "Source settings and full feature list remain in shorted-sources.json.",
+            "Raw source series retained. Normalization, moving averages, oscillators, brush controls and mixed axes are not implemented by this view."
+          ]
+        },
+        {
+          "sourceId": "SECTOR_PERFORMANCE",
+          "sourceTitle": "Sector Performance",
+          "sourceType": "SECTOR_PERFORMANCE",
+          "sampleWidgetIds": [
+            "sector-performance"
+          ],
+          "liveWidgetIds": [
+            "sector-performance"
+          ],
+          "status": "adapted",
+          "notes": [
+            "getSectorPerformance ignores its period argument; it averages current quote change across fixed representative stock baskets. Preserve source limitations instead of claiming period-derived index returns.",
+            "Source settings and full feature list remain in shorted-sources.json.",
+            "Exact source representative baskets use current quote percentage changes; period is not a historical return. A missing constituent yields unknown aggregate rather than a fabricated zero."
+          ]
+        },
+        {
+          "sourceId": "WATCHLIST",
+          "sourceTitle": "Watchlist",
+          "sourceType": "WATCHLIST",
+          "sampleWidgetIds": [
+            "watchlist"
+          ],
+          "liveWidgetIds": [
+            "watchlist"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Source settings and full feature list remain in shorted-sources.json.",
+            "Current quotes are retained. Add/remove/search and per-row historical sparklines are source controls requiring a separate adaptation."
+          ]
+        },
+        {
+          "sourceId": "PORTFOLIO_SUMMARY",
+          "sourceTitle": "Portfolio Summary",
+          "sourceType": "PORTFOLIO_SUMMARY",
+          "sampleWidgetIds": [
+            "portfolio-summary"
+          ],
+          "liveWidgetIds": [
+            "portfolio-summary"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Registry marketing describes short exposure, but this component calculates market value and daily change from quotes; no short-exposure query is implemented.",
+            "Source settings and full feature list remain in shorted-sources.json.",
+            "Explicit source default holdings and editable share variables are used with current quotes. No private portfolio is queried. Cost basis can be added in the saved query positions."
+          ]
+        },
+        {
+          "sourceId": "CORRELATION_MATRIX",
+          "sourceTitle": "Correlation Matrix",
+          "sourceType": "CORRELATION_MATRIX",
+          "sampleWidgetIds": [
+            "correlation-matrix"
+          ],
+          "liveWidgetIds": [
+            "correlation-matrix"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Source settings and full feature list remain in shorted-sources.json."
+          ]
+        },
+        {
+          "sourceId": "MARKET_WATCHLIST",
+          "sourceTitle": "Market Watchlist",
+          "sourceType": "MARKET_WATCHLIST",
+          "sampleWidgetIds": [
+            "market-watchlist"
+          ],
+          "liveWidgetIds": [
+            "market-watchlist"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Source settings and full feature list remain in shorted-sources.json.",
+            "Current quotes are retained. Add/remove/search and per-row historical sparklines are source controls requiring a separate adaptation."
+          ]
+        },
+        {
+          "sourceId": "NEWS_FEED",
+          "sourceTitle": "News Feed",
+          "sourceType": "NEWS_FEED",
+          "sampleWidgetIds": [
+            "news-feed"
+          ],
+          "liveWidgetIds": [
+            "news-feed"
+          ],
+          "status": "adapted",
+          "notes": [
+            "Source settings and full feature list remain in shorted-sources.json."
+          ]
+        },
+        {
+          "sourceId": "SCREENER",
+          "sourceTitle": "Screener",
+          "sourceType": "SCREENER",
+          "sampleWidgetIds": [
+            "screener"
+          ],
+          "liveWidgetIds": [
+            "screener"
+          ],
+          "status": "adapted",
+          "notes": [
+            "The widget currently ignores configured limit and uses 5 compact/10 standard rows with fixed short_pct descending sort; compound filters and five presets exist in the separate full screener screen, not this widget.",
+            "Source settings and full feature list remain in shorted-sources.json.",
+            "The native ScreenStocks operation retains four-week change and reports truncated result universes."
+          ]
+        }
+      ],
+      "limitations": [
+        "This is the source widget catalog coverage collection, not an additional checked-in dashboard preset.",
+        "Live records use actual native RPCs; portfolio values derive only from explicit quantities, and sector values use the source representative baskets."
+      ]
+    },
+    {
+      "id": "shorted-housing-feature",
+      "title": "Housing: The Widow-Maker",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "web/src/@/components/features/housing/dashboards.tsx",
+          "web/src/app/features/the-widow-maker/page.tsx",
+          "web/src/@/components/features/housing/charts/use-live-year-values.ts"
+        ]
+      },
+      "liveStatus": "unavailable",
+      "coverage": [
+        {
+          "sourceId": "bank-short-basket",
+          "sourceTitle": "Big four bank short positions",
+          "sourceType": "BankShortBasket",
+          "sampleWidgetIds": [
+            "bank-short-basket",
+            "bank-short-basket-percent"
+          ],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source-authored static dataset; live refresh is not applicable to the baked history. Exact scalar values are preserved in this record adaptation.",
+            "stacked dollar series",
+            "percentage comparison",
+            "hover rows",
+            "individual bank tiles",
+            "record reference line",
+            "Authored static records preserve historical axes and source values. Source toggle alternatives are explicit sibling widgets; scenario slider is an exact precomputed rate curve."
+          ]
+        },
+        {
+          "sourceId": "policy-price",
+          "sourceTitle": "Policy and house prices",
+          "sourceType": "PolicyPriceChart",
+          "sampleWidgetIds": [
+            "policy-price",
+            "policy-landlords"
+          ],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source-authored static dataset; live refresh is not applicable to the baked history. Exact scalar values are preserved in this record adaptation.",
+            "mixed-unit dual axes",
+            "policy-event markers",
+            "shared hover",
+            "area and line overlay",
+            "Authored static records preserve historical axes and source values. Source toggle alternatives are explicit sibling widgets; scenario slider is an exact precomputed rate curve."
+          ]
+        },
+        {
+          "sourceId": "buying-power",
+          "sourceTitle": "Household buying power",
+          "sourceType": "BuyingPowerChart",
+          "sampleWidgetIds": [
+            "buying-power"
+          ],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source-authored static dataset; live refresh is not applicable to the baked history. Exact scalar values are preserved in this record adaptation.",
+            "mixed-unit dual axes",
+            "APRA event markers",
+            "peak reference annotation",
+            "shared hover",
+            "area and line overlay",
+            "Authored static records preserve historical axes and source values. Source toggle alternatives are explicit sibling widgets; scenario slider is an exact precomputed rate curve."
+          ]
+        },
+        {
+          "sourceId": "borrowing-power",
+          "sourceTitle": "What a rate move does to prices",
+          "sourceType": "BorrowingPowerSlider",
+          "sampleWidgetIds": [
+            "borrowing-power"
+          ],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source-authored static dataset; live refresh is not applicable to the baked history. Exact scalar values are preserved in this record adaptation.",
+            "interactive derived scenario",
+            "two comparison bars",
+            "baseline 100",
+            "formatted percentage/stat",
+            "Authored static records preserve historical axes and source values. Source toggle alternatives are explicit sibling widgets; scenario slider is an exact precomputed rate curve."
+          ]
+        },
+        {
+          "sourceId": "international-corrections",
+          "sourceTitle": "International housing corrections",
+          "sourceType": "InternationalCorrectionsChart",
+          "sampleWidgetIds": [
+            "international-corrections",
+            "international-corrections-aligned"
+          ],
+          "liveWidgetIds": [],
+          "status": "source-only",
+          "notes": [
+            "Source-authored static dataset; live refresh is not applicable to the baked history. Exact scalar values are preserved in this record adaptation.",
+            "rebased multiple series",
+            "aligned/calendar x-axis",
+            "country visibility",
+            "shared hover",
+            "Authored static records preserve historical axes and source values. Source toggle alternatives are explicit sibling widgets; scenario slider is an exact precomputed rate curve."
+          ]
+        }
+      ],
+      "limitations": [
+        "Housing source uses attributed baked histories, not an observability provider. The optional HousingService live tail is not implemented by the Shorted adapter.",
+        "Borrowing-power records enumerate the source elasticity model: illustrative scenarios, not forecasts. Historical dates and model constants are not shifted into a recent dashboard time range."
+      ]
+    },
+    {
+      "id": "shorted-industry-intelligence",
+      "title": "Industry Intelligence",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "web/src/@/components/industry/industry-channel-dashboards.tsx",
+          "web/src/app/industry-intelligence/industry-intelligence-client.tsx",
+          "web/src/app/industry-intelligence/page.tsx",
+          "web/src/app/actions/getIndustryIntelligence.ts"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "tax_environment",
+          "sourceTitle": "Tax Environment",
+          "sourceType": "ChannelDetail",
+          "sampleWidgetIds": [
+            "tax-environment"
+          ],
+          "liveWidgetIds": [
+            "tax-environment"
+          ],
+          "status": "adapted",
+          "notes": [
+            "The source channel contains bucket charts, entity rankings, source citations and derived counters. Records retain these fields; source formulas are preserved in inventory.",
+            "The native industry response is filtered by exact signal_kind and metric_key before row limiting. No SQL or arbitrary field expressions are accepted."
+          ]
+        },
+        {
+          "sourceId": "public_money",
+          "sourceTitle": "Public Money",
+          "sourceType": "ChannelDetail",
+          "sampleWidgetIds": [
+            "public-money"
+          ],
+          "liveWidgetIds": [
+            "public-money"
+          ],
+          "status": "adapted",
+          "notes": [
+            "The source channel contains bucket charts, entity rankings, source citations and derived counters. Records retain these fields; source formulas are preserved in inventory.",
+            "The native industry response is filtered by exact signal_kind and metric_key before row limiting. No SQL or arbitrary field expressions are accepted."
+          ]
+        },
+        {
+          "sourceId": "emissions",
+          "sourceTitle": "Emissions",
+          "sourceType": "ChannelDetail",
+          "sampleWidgetIds": [
+            "emissions"
+          ],
+          "liveWidgetIds": [
+            "emissions"
+          ],
+          "status": "adapted",
+          "notes": [
+            "The source channel contains bucket charts, entity rankings, source citations and derived counters. Records retain these fields; source formulas are preserved in inventory.",
+            "The native industry response is filtered by exact signal_kind and metric_key before row limiting. No SQL or arbitrary field expressions are accepted."
+          ]
+        },
+        {
+          "sourceId": "trade_exposure",
+          "sourceTitle": "Trade Exposure",
+          "sourceType": "ChannelDetail",
+          "sampleWidgetIds": [
+            "trade-exposure"
+          ],
+          "liveWidgetIds": [
+            "trade-exposure"
+          ],
+          "status": "adapted",
+          "notes": [
+            "The source channel contains bucket charts, entity rankings, source citations and derived counters. Records retain these fields; source formulas are preserved in inventory.",
+            "The native industry response is filtered by exact signal_kind and metric_key before row limiting. No SQL or arbitrary field expressions are accepted."
+          ]
+        },
+        {
+          "sourceId": "policy_footprint",
+          "sourceTitle": "Policy Footprint",
+          "sourceType": "ChannelDetail",
+          "sampleWidgetIds": [
+            "policy-footprint"
+          ],
+          "liveWidgetIds": [
+            "policy-footprint"
+          ],
+          "status": "adapted",
+          "notes": [
+            "The source channel contains bucket charts, entity rankings, source citations and derived counters. Records retain these fields; source formulas are preserved in inventory.",
+            "The native industry response is filtered by exact signal_kind and metric_key before row limiting. No SQL or arbitrary field expressions are accepted."
+          ]
+        },
+        {
+          "sourceId": "source-attribution",
+          "sourceTitle": "Sources and licences",
+          "sourceType": "attribution",
+          "sampleWidgetIds": [
+            "sources"
+          ],
+          "liveWidgetIds": [
+            "sources"
+          ],
+          "status": "adapted",
+          "notes": []
+        }
+      ],
+      "limitations": [
+        "Industry filter is shared across all live reads, and each channel selects its source metric. Source-derived counter formulas remain in the inventory; raw bucket values and entity counts are preserved.",
+        "Crowding overview uses a different industry profile aggregate; its exact transform is not implemented by this records adapter."
+      ]
+    },
+    {
+      "id": "shorted-admin-dashboard",
+      "title": "Admin Dashboard",
+      "project": "shorted",
+      "source": {
+        "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+        "paths": [
+          "web/src/app/admin/page.tsx",
+          "web/src/app/admin/jobs-overview.tsx",
+          "web/src/app/actions/getJobsOverview.ts",
+          "web/src/app/admin/admin-filters.tsx",
+          "web/src/app/admin/cache-panel.tsx",
+          "web/src/app/actions/getSyncStatus.ts"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "fleet-health",
+          "sourceTitle": "Fleet health",
+          "sourceType": "status-summary",
+          "sampleWidgetIds": [
+            "fleet-health"
+          ],
+          "liveWidgetIds": [
+            "fleet-health"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Uses adminToken-only fixed GET endpoints. Hostnames, execution IDs, log URIs and backend freeform error messages are intentionally omitted."
+          ]
+        },
+        {
+          "sourceId": "needs-attention",
+          "sourceTitle": "Needs attention",
+          "sourceType": "conditional-list",
+          "sampleWidgetIds": [
+            "needs-attention"
+          ],
+          "liveWidgetIds": [
+            "needs-attention"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Uses adminToken-only fixed GET endpoints. Hostnames, execution IDs, log URIs and backend freeform error messages are intentionally omitted."
+          ]
+        },
+        {
+          "sourceId": "jobs-overview",
+          "sourceTitle": "Scheduled jobs",
+          "sourceType": "table",
+          "sampleWidgetIds": [
+            "jobs-overview"
+          ],
+          "liveWidgetIds": [
+            "jobs-overview"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Uses adminToken-only fixed GET endpoints. Hostnames, execution IDs, log URIs and backend freeform error messages are intentionally omitted."
+          ]
+        },
+        {
+          "sourceId": "market-data-sync",
+          "sourceTitle": "Market Data Sync — record detail",
+          "sourceType": "table",
+          "sampleWidgetIds": [
+            "market-data-sync"
+          ],
+          "liveWidgetIds": [
+            "market-data-sync"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Uses adminToken-only fixed GET endpoints. Hostnames, execution IDs, log URIs and backend freeform error messages are intentionally omitted."
+          ]
+        }
+      ],
+      "limitations": [
+        "Live admin access requires an explicitly supplied adminToken credential; public API tokens are never forwarded to admin routes.",
+        "Retired jobs do not degrade fleet health. Stale source data remains visible. Interactive execution, cache flush and privileged log links are excluded."
+      ]
+    },
+    {
+      "id": "uptime-overview",
+      "title": "Overview",
+      "project": "uptime",
+      "source": {
+        "revision": "d2fb0dd85129049c39e64fef4f9620d298ae0371",
+        "paths": [
+          "frontend/app/(dashboard)/dashboard/page.tsx",
+          "frontend/components/dashboard/overview-page.tsx",
+          "frontend/components/dashboard/overview-service-signals.tsx",
+          "frontend/components/dashboard/overview-service-signal-rows.tsx",
+          "frontend/components/dashboard/overview-active-alerts.tsx"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "services",
+          "sourceTitle": "Services",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "services"
+          ],
+          "liveWidgetIds": [
+            "services"
+          ],
+          "status": "mapped",
+          "notes": [
+            "",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "configured-monitors",
+          "sourceTitle": "Configured monitors",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "configured-monitors"
+          ],
+          "liveWidgetIds": [
+            "configured-monitors"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Prefer server totalCount; details distinguish loaded and ever-reporting monitors.",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "active-alerts",
+          "sourceTitle": "Active alerts",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "active-alerts"
+          ],
+          "liveWidgetIds": [
+            "active-alerts"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Count only TRIGGERED alert events.",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "loaded-security-results",
+          "sourceTitle": "Loaded security results",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "loaded-security-results"
+          ],
+          "liveWidgetIds": [
+            "loaded-security-results"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Count loaded summaries with a recorded result; do not imply an organization-wide total.",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "service-signals",
+          "sourceTitle": "Service signals",
+          "sourceType": "record table",
+          "sampleWidgetIds": [
+            "service-signals"
+          ],
+          "liveWidgetIds": [
+            "service-signals"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Availability includes UPTIME, BROWSER and PLAYWRIGHT. Displayed duration is the maximum latest response time among reporting enabled availability checks, not a global average."
+          ]
+        },
+        {
+          "sourceId": "needs-attention",
+          "sourceTitle": "Needs attention",
+          "sourceType": "event list",
+          "sampleWidgetIds": [
+            "needs-attention"
+          ],
+          "liveWidgetIds": [
+            "needs-attention"
+          ],
+          "status": "mapped",
+          "notes": [
+            ""
+          ]
+        }
+      ],
+      "limitations": [
+        "Organization membership is fixed by provider configuration. Source controls that mutate or generate data are excluded."
+      ]
+    },
+    {
+      "id": "uptime-slo",
+      "title": "SLO Dashboard",
+      "project": "uptime",
+      "source": {
+        "revision": "d2fb0dd85129049c39e64fef4f9620d298ae0371",
+        "paths": [
+          "frontend/app/(dashboard)/slo/page.tsx",
+          "frontend/components/dashboard/slo-summary-cards.tsx",
+          "frontend/components/dashboard/slo-breach-table.tsx",
+          "frontend/components/dashboard/slo-burn-rates.tsx",
+          "frontend/components/dashboard/slo-card.tsx",
+          "backend/internal/api/service.go",
+          "backend/internal/db/querier_impl.go"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "total-services",
+          "sourceTitle": "Total Services",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "total-services"
+          ],
+          "liveWidgetIds": [
+            "total-services"
+          ],
+          "status": "mapped",
+          "notes": [
+            "",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "average-uptime",
+          "sourceTitle": "Average Uptime",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "average-uptime"
+          ],
+          "liveWidgetIds": [
+            "average-uptime"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Unweighted arithmetic mean across returned services; source colors change at 99 and 99.9 percent.",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "sla-status",
+          "sourceTitle": "SLA Status",
+          "sourceType": "paired counts",
+          "sampleWidgetIds": [
+            "sla-status"
+          ],
+          "liveWidgetIds": [
+            "sla-status"
+          ],
+          "status": "mapped",
+          "notes": [
+            "",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "burn-alerts",
+          "sourceTitle": "Burn Rate Alerts",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "burn-alerts"
+          ],
+          "liveWidgetIds": [
+            "burn-alerts"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Count services whose normalized 30-day budget consumption exceeds 200 percent.",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "sla-breaches",
+          "sourceTitle": "Active SLA Breaches",
+          "sourceType": "record table",
+          "sampleWidgetIds": [
+            "sla-breaches"
+          ],
+          "liveWidgetIds": [
+            "sla-breaches"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Filter slaBreached; uptime uses two decimals and target gap uses three.",
+            "Native repeated service cards/ranked burn bars become a sortable records table preserving the exact SLO fields. Missing observations stay null."
+          ]
+        },
+        {
+          "sourceId": "burn-rates",
+          "sourceTitle": "Error Budget Burn Rates",
+          "sourceType": "ranked progress bars",
+          "sampleWidgetIds": [
+            "burn-rates"
+          ],
+          "liveWidgetIds": [
+            "burn-rates"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Descending rate = (100 - errorBudgetPercentage) / windowDays * 30. Sustainable <=100; Elevated <=200; Critical >200. Source progress track is capped at100 while the number remains uncapped.",
+            "Native repeated service cards/ranked burn bars become a sortable records table preserving the exact SLO fields. Missing observations stay null."
+          ]
+        },
+        {
+          "sourceId": "service-slos",
+          "sourceTitle": "Service SLOs",
+          "sourceType": "repeated service cards",
+          "sampleWidgetIds": [
+            "service-slos"
+          ],
+          "liveWidgetIds": [
+            "service-slos"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Uptime two decimals; remaining budget percentage and minutes one decimal. Budget thresholds >50 healthy, >20 warning, <=20 critical. Selected-service drilldown can replace a dynamic repeated grid without dropping its values.",
+            "Native repeated service cards/ranked burn bars become a sortable records table preserving the exact SLO fields. Missing observations stay null."
+          ]
+        }
+      ],
+      "limitations": [
+        "Organization membership is fixed by provider configuration. Source controls that mutate or generate data are excluded.",
+        "Paprika custom/provider query ranges currently stop at 31 days; 60/90-day parity needs an explicit design.",
+        "Current Uptime backend initializes currentUptime to 0 when totalChecks is 0 and can mark that service breached. A new example must label absent observations explicitly rather than imply a measured outage.",
+        "Do not relabel the source normalized budget-consumption formula as a multiwindow SRE burn-rate calculation.",
+        "Live windowDays controls the native SLO read. Fixed sample records illustrate fields, not recalculated service history. SLA-status stat displays on-track count; source exact breach fields remain in the records table."
+      ]
+    },
+    {
+      "id": "uptime-reliability",
+      "title": "Reliability Insights",
+      "project": "uptime",
+      "source": {
+        "revision": "d2fb0dd85129049c39e64fef4f9620d298ae0371",
+        "paths": [
+          "frontend/app/(dashboard)/insights/page.tsx",
+          "frontend/lib/api/hooks.ts",
+          "backend/internal/api/reliability_insights.go",
+          "proto/uptimetypes/v1/types.proto"
+        ]
+      },
+      "liveStatus": "ready",
+      "coverage": [
+        {
+          "sourceId": "health-score",
+          "sourceTitle": "Health Score",
+          "sourceType": "radial gauge",
+          "sampleWidgetIds": [
+            "health-score"
+          ],
+          "liveWidgetIds": [
+            "health-score"
+          ],
+          "status": "mapped",
+          "notes": [
+            "0–100. Excellent >=90, Good >=70, Fair >=50, Needs Attention below50.",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "critical-issues",
+          "sourceTitle": "Critical Issues",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "critical-issues"
+          ],
+          "liveWidgetIds": [
+            "critical-issues"
+          ],
+          "status": "mapped",
+          "notes": [
+            "",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "warnings",
+          "sourceTitle": "Warnings",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "warnings"
+          ],
+          "liveWidgetIds": [
+            "warnings"
+          ],
+          "status": "mapped",
+          "notes": [
+            "",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "informational",
+          "sourceTitle": "Informational",
+          "sourceType": "stat",
+          "sampleWidgetIds": [
+            "informational"
+          ],
+          "liveWidgetIds": [
+            "informational"
+          ],
+          "status": "mapped",
+          "notes": [
+            "",
+            "Current snapshot only; no historical samples are invented by the live adapter."
+          ]
+        },
+        {
+          "sourceId": "executive-summary",
+          "sourceTitle": "Executive Summary",
+          "sourceType": "narrative",
+          "sampleWidgetIds": [
+            "executive-summary"
+          ],
+          "liveWidgetIds": [
+            "executive-summary"
+          ],
+          "status": "mapped",
+          "notes": [
+            ""
+          ]
+        },
+        {
+          "sourceId": "recommendations",
+          "sourceTitle": "Insights & Recommendations",
+          "sourceType": "repeated narrative cards",
+          "sampleWidgetIds": [
+            "recommendations"
+          ],
+          "liveWidgetIds": [
+            "recommendations"
+          ],
+          "status": "mapped",
+          "notes": [
+            "Categories: performance, availability, trends, capacity, security. Severity and affected-service tags are data, not dashboard authoring metadata."
+          ]
+        }
+      ],
+      "limitations": [
+        "Organization membership is fixed by provider configuration. Source controls that mutate or generate data are excluded.",
+        "No existing Paprika narrative/record result type",
+        "The source period selector triggers generation; it must not be represented as a working read filter without a new data API"
+      ]
+    },
+    {
+      "id": "paprika-signal-features",
+      "title": "Signal interactions",
+      "project": "paprika",
+      "source": {
+        "revision": "working-tree",
+        "paths": [
+          "ui/src/features/insights/repository-examples/generate.py"
+        ]
+      },
+      "liveStatus": "unavailable",
+      "coverage": [
+        {
+          "sourceId": "requests",
+          "sourceTitle": "Request rate",
+          "sourceType": "paprika-feature",
+          "sampleWidgetIds": [
+            "requests"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": [
+            "Supplemental synthetic capability example, not a cloned source dashboard."
+          ]
+        },
+        {
+          "sourceId": "errors",
+          "sourceTitle": "Error ratio",
+          "sourceType": "paprika-feature",
+          "sampleWidgetIds": [
+            "errors"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": [
+            "Supplemental synthetic capability example, not a cloned source dashboard."
+          ]
+        },
+        {
+          "sourceId": "latency",
+          "sourceTitle": "Latency",
+          "sourceType": "paprika-feature",
+          "sampleWidgetIds": [
+            "latency"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": [
+            "Supplemental synthetic capability example, not a cloned source dashboard."
+          ]
+        },
+        {
+          "sourceId": "states",
+          "sourceTitle": "Service status",
+          "sourceType": "paprika-feature",
+          "sampleWidgetIds": [
+            "states"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": [
+            "Supplemental synthetic capability example, not a cloned source dashboard."
+          ]
+        },
+        {
+          "sourceId": "traces",
+          "sourceTitle": "Recent traces",
+          "sourceType": "paprika-feature",
+          "sampleWidgetIds": [
+            "traces"
+          ],
+          "liveWidgetIds": [],
+          "status": "unsupported-live",
+          "notes": []
+        }
+      ],
+      "limitations": [
+        "Supplementary synthetic interaction coverage: shared variables, saved queries, hovered-label tooltip, stat sparklines, decimal precision, status history and traces."
+      ]
+    }
+  ]
+}

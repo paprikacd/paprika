@@ -108,8 +108,8 @@ export function registerWidgetPlugin(plugin: WidgetPlugin): () => void {
     throw new Error(`Widget plugin “${plugin.id}” is already registered`);
   if (!plugin.label.trim() || !plugin.description.trim())
     throw new Error("Widget plugins need a label and description");
-  if (!["metrics", "traces"].includes(plugin.dataKind))
-    throw new Error("Widget plugin data kind must be metrics or traces");
+  if (!["metrics", "traces", "records"].includes(plugin.dataKind))
+    throw new Error("Widget plugin data kind must be metrics, traces or records");
   if (
     typeof plugin.render !== "function" &&
     (typeof plugin.render !== "object" || !plugin.render)

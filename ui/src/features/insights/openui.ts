@@ -188,7 +188,7 @@ export function dashboardToOpenUI(dashboard: Dashboard): string {
 export function validateAIProviders(dashboard: Dashboard, providers: Provider[], savedQueries: SavedQuery[] = []) {
   // Validate bindings with typed placeholders rather than requiring a hovered
   // observation or populated dashboard controls at authoring time.
-  function referenceProvider(ref: SavedQueryReference, kind: "metrics" | "traces", observation: boolean) {
+  function referenceProvider(ref: SavedQueryReference, kind: "metrics" | "traces" | "records", observation: boolean) {
     const declared = new Set((dashboard.variables ?? []).map(variable => variable.name))
     for (const binding of ref.bindings ?? []) {
       if (binding.source === "variable" && !declared.has(binding.variable))

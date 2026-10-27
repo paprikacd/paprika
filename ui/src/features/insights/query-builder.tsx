@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ArrowDown, ChevronDown, Code2, Plus, Play, SlidersHorizontal, Trash2 } from "lucide-react"
 import type { InsightsClient, ProviderMetadata } from "./client"
 import {
@@ -17,7 +17,8 @@ import { GammaTabs } from "./gamma/tabs"
 import { ObserveQueryBinding } from "./observe-query-binding"
 import { MetricInspector } from "./metric-inspector"
 import { QueryCodeEditor } from "./query-code-editor"
-import type { QueryEditorParameter } from "./query-editor-language"
+import { providerQueryLanguage, queryLanguageNames, type QueryEditorParameter } from "./query-editor-language"
+import { assertProviderQueryTemplate } from "./provider-query-template"
 import styles from "./query-builder.module.css"
 
 export interface GuidedQuery {
@@ -505,6 +506,13 @@ export function QueryBuilder({
   onValidityChange?: (valid: boolean) => void
 }) {
   const [guided, setGuided] = useState(defaultExpanded)
+  const language = providerQueryLanguage(provider, widgetKind(widget))
+  const languageName = queryLanguageNames[language]
+  const validityKey = `${widget.providerId}:${language}`
+  const [editorValidation, setEditorValidation] = useState({ key: validityKey, valid: true })
+  const editorValid = (language !== "sql" && language !== "json") || editorValidation.key !== validityKey || editorValidation.valid
+  const editorValidity = useCallback((valid: boolean) => { setEditorValidation({ key: validityKey, valid }); onValidityChange?.(valid) }, [onValidityChange, validityKey])
+  useEffect(() => { if (language !== "sql" && language !== "json") onValidityChange?.(true) }, [language, onValidityChange])
   const [codeRevision, setCodeRevision] = useState(0)
   useEffect(() => () => onValidityChange?.(true), [onValidityChange])
   const [hasOpened, setHasOpened] = useState(defaultExpanded)
@@ -526,7 +534,7 @@ export function QueryBuilder({
   ])
   useEffect(() => () => request.current?.abort(), [key])
   async function run() {
-    if (!fetcher || !widget.query.trim()) return
+    if (!fetcher || !widget.query.trim() || !editorValid) return
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
@@ -534,6 +542,7 @@ export function QueryBuilder({
     const end = range?.end ?? Math.floor(Date.now() / 1000),
       start = range?.start ?? end - 3600
     try {
+      assertProviderQueryTemplate(provider?.type, widget.query)
       const result = await fetcher(
         {
           providerId: widget.providerId,
@@ -557,8 +566,6 @@ export function QueryBuilder({
     }
   }
   const current = preview?.key === key ? preview : undefined
-  const language = provider ? (provider.type === "tempo" ? "traceql" : "promql") : widgetKind(widget) === "traces" ? "traceql" : "promql"
-  const languageName = language === "traceql" ? "TraceQL" : "PromQL"
   const codeEditor = (
     <div className={styles.codeEditor}>
       <div className={styles.field}>
@@ -570,9 +577,11 @@ export function QueryBuilder({
         <QueryCodeEditor
           language={language}
           provider={provider}
+          kind={widgetKind(widget)}
           providerId={widget.providerId}
           client={client}
           parameters={parameters}
+          onValidityChange={language === "sql" || language === "json" ? editorValidity : undefined}
           value={widget.query}
           onChange={(query) => {
             setCodeRevision(revision => revision + 1)
@@ -581,13 +590,14 @@ export function QueryBuilder({
           className={styles.codeInput}
         />
       </div>
-      <p className={styles.hint}>
+      {language !== "sql" && <p className={styles.hint}>
         Reference {showRunControl ? "dashboard variables" : "query parameters"} as whole values, such as{" "}
-        <code>{"service={{service}}"}</code>, without surrounding quotes.
-      </p>
+        <code>{language === "json" ? provider?.type === "shorted" ? '"product_code": {{ticker}}' : '"serviceId": {{service}}' : "service={{service}}"}</code>, without surrounding quotes.
+        {language === "json" && " Choose a read operation and its arguments. Metrics also require an explicit projection; records omit it."}
+      </p>}
     </div>
   )
-  const builder = hasOpened ? (
+  const builder = hasOpened && language === "promql" ? (
     <GuidedBuilder
       key={widget.providerId}
       client={client}
@@ -642,7 +652,7 @@ export function QueryBuilder({
             type="button"
             variant="secondary"
             loading={current?.loading}
-            disabled={current?.loading || !widget.query.trim()}
+            disabled={current?.loading || !widget.query.trim() || !editorValid}
             onClick={run}
           >
             <Play size={13} />

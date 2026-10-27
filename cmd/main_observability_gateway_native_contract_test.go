@@ -236,14 +236,14 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 		NextCursor string `json:"nextCursor"`
 	}
 	nativeGatewayContractDecodeRPC(t, listed, 2, &inventory)
-	require.Len(t, inventory.Tools, 14)
+	require.Len(t, inventory.Tools, 15)
 	require.Empty(t, inventory.NextCursor)
 	names := make([]string, 0, len(inventory.Tools))
 	for _, tool := range inventory.Tools {
 		names = append(names, tool.Name)
 	}
 	require.ElementsMatch(t, []string{
-		"list_observability_providers", "get_observability_provider", "query_metrics", "query_logs", "query_traces",
+		"list_observability_providers", "get_observability_provider", "query_metrics", "query_logs", "query_traces", "query_records",
 		"list_provider_types", "describe_provider_type", "validate_provider", "list_metric_names", "list_metric_series", "list_label_names",
 		"list_label_values", "get_metric_metadata", "list_trace_services",
 	}, names)
@@ -443,7 +443,7 @@ func nativeGatewayContractStaticResult(response nativeGatewayContractResponse, i
 	if err := nativeGatewayContractRPCResult(response, id, &callResult); err != nil {
 		return err
 	}
-	if callResult.IsError || len(callResult.StructuredContent.Types) != 13 {
+	if callResult.IsError || len(callResult.StructuredContent.Types) != 16 {
 		return errors.New("contract static tool result was erroneous or had an incomplete catalog")
 	}
 	seen := make(map[string]struct{}, 13)

@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"github.com/google/jsonschema-go/jsonschema"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
@@ -25,6 +26,82 @@ import (
 )
 
 const dashboardQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-overview","title":"Service overview","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{"service":"api"},"widgets":[{"id":"rate","title":"Request rate","type":"stat","unit":"req/s","signalId":"s1"},{"id":"trace","title":"Matching traces","type":"traces","unit":"ms","signalId":"s2"}],"savedQueries":[{"id":"requests","etag":"q1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"samples":300,"valid":299,"missing":1,"last":{"timestamp":1793008800000,"value":1.234567890123}}]},{"id":"s2","state":"partial","traces":{"returned":100,"statusCounts":{"unknown":100},"examples":[],"examplesTruncated":true}}],"queryCount":{"planned":2,"executed":2,"deduplicated":0},"state":"partial"}`
+
+const dashboardRecordsQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-records","title":"Service records","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{},"widgets":[{"id":"services","title":"Service records","type":"plugin","unit":"","signalId":"q1"}],"savedQueries":[],"signals":[{"id":"q1","state":"ok","truncated":true,"providerTruncated":true,"records":{"returned":7,"columns":[{"key":"service","type":"string"},{"key":"requests","label":"Requests","type":"number","unit":"req/s"},{"key":"active","type":"boolean"}],"rows":[["api",0,false],["worker",null,true]],"rowsTruncated":true,"columnsOmitted":1,"metadataTruncated":true}}],"queryCount":{"planned":1,"executed":1,"deduplicated":0},"state":"ok"}`
+
+func TestDashboardQueryRecordsContractAndCompactText(t *testing.T) {
+	c, calls := newDashboardQueryClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, dashboardRecordsQueryFixture)
+	}))
+	tool := insightsQueryDashboardTool(c)
+	principal := &auth.Principal{Subject: "human", Groups: []string{"readers"}, Scopes: []string{"paprika:observe"}}
+	result, err := tool.Invoke(auth.WithPrincipal(t.Context(), principal), nil, json.RawMessage(`{"id":"service-records"}`))
+	require.NoError(t, err)
+	wire, ok := result.(*sdkmcp.CallToolResult)
+	require.True(t, ok)
+	structured, ok := wire.StructuredContent.(json.RawMessage)
+	require.True(t, ok)
+	require.JSONEq(t, dashboardRecordsQueryFixture, string(structured), "null, zero and false must survive in the authoritative record tuples")
+	require.Equal(t, int32(1), calls.Load())
+	content, ok := wire.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, content.Text, "returned records=7 (bounded page)")
+	require.Contains(t, content.Text, "record preview truncated; omitted columns=1; partial source response")
+	require.Contains(t, content.Text, `first record (3/4 columns): "service"="api", "requests"=0, "active"=false`)
+	require.NotContains(t, content.Text, "worker", "later record rows belong only in structuredContent")
+	require.LessOrEqual(t, len(content.Text), dashboardQueryTextBytes)
+
+	var schema jsonschema.Schema
+	require.NoError(t, json.Unmarshal(tool.OutputSchema, &schema))
+	resolved, err := schema.Resolve(nil)
+	require.NoError(t, err)
+	var document any
+	require.NoError(t, json.Unmarshal(structured, &document))
+	require.NoError(t, resolved.Validate(document))
+	for _, invalid := range []string{
+		strings.Replace(dashboardRecordsQueryFixture, `"returned":7`, `"returned":-1`, 1),
+		strings.Replace(dashboardRecordsQueryFixture, `"type":"number"`, `"type":"json"`, 1),
+		strings.Replace(dashboardRecordsQueryFixture, `["api",0,false]`, `["api",{"opaque":"object"},false]`, 1),
+		strings.Replace(dashboardRecordsQueryFixture, `"rowsTruncated":true`, `"rowsTruncated":"yes"`, 1),
+	} {
+		require.NoError(t, json.Unmarshal([]byte(invalid), &document))
+		require.Error(t, resolved.Validate(document), "records must be an explicit validated output contract")
+	}
+}
+
+func TestDashboardQueryEmptyAndCompleteRecordText(t *testing.T) {
+	for _, count := range []int{0, 2} {
+		text := dashboardSignalText(&dashboardTextSignal{ID: "q1", State: "empty", Records: &dashboardTextRecords{Returned: count}}, nil)
+		require.Contains(t, text, fmt.Sprintf("returned records=%d (bounded page)", count))
+		require.NotContains(t, text, "truncated")
+		require.NotContains(t, text, "partial source")
+	}
+}
+
+func TestDashboardQueryRecordTextBoundsAndScalarHonesty(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+	}{
+		{`null`, "null"}, {`0`, "0"}, {`false`, "false"},
+		{`1.23456789012345`, "1.23456789012345"}, {`"line\nnext"`, `"line\nnext"`},
+		{`{"opaque":"not-a-cell"}`, "[unavailable]"},
+	} {
+		require.Equal(t, tc.want, dashboardRecordScalarText(json.RawMessage(tc.raw)))
+	}
+	longCell, err := json.Marshal(strings.Repeat("🫑\n", 200))
+	require.NoError(t, err)
+	formatted := dashboardRecordScalarText(longCell)
+	require.True(t, utf8.ValidString(formatted))
+	require.Less(t, len(formatted), 180)
+	require.NotContains(t, formatted, "\n")
+	require.Contains(t, formatted, `\n`)
+	var records dashboardTextRecords
+	require.NoError(t, json.Unmarshal([]byte(`{"returned":1,"columns":[{"key":"a"},{"key":"b"},{"key":"c"},{"key":"hidden"}],"rows":[[null,0,false,"omit-me"]]}`), &records))
+	var preview strings.Builder
+	appendDashboardRecordPreview(&preview, &records)
+	require.Contains(t, preview.String(), `first record (3/4 columns): "a"=null, "b"=0, "c"=false`)
+	require.NotContains(t, preview.String(), "omit-me")
+}
 
 func newDashboardQueryClient(t *testing.T, responder http.Handler) (*InsightsAuthoringClient, *atomic.Int32) {
 	t.Helper()
@@ -151,7 +228,11 @@ func TestDashboardQueryCompactTextBoundsAndQuotesUntrustedTitles(t *testing.T) {
 	for i := range 48 {
 		id := strings.Repeat("s", 78) + string(rune('a'+i))
 		widgets = append(widgets, map[string]any{"id": id, "title": strings.Repeat("🫑\n", 100), "unit": "req/s", "signalId": id})
-		signals = append(signals, map[string]any{"id": id, "state": "empty"})
+		signals = append(signals, map[string]any{"id": id, "state": "ok", "records": map[string]any{
+			"returned": 1000, "rowsTruncated": true,
+			"columns": []any{map[string]any{"key": "name"}, map[string]any{"key": "count"}, map[string]any{"key": "missing"}},
+			"rows":    []any{[]any{strings.Repeat("🫑\n", 80), 0, nil}},
+		}})
 	}
 	body["widgets"], body["signals"] = widgets, signals
 	raw, err := json.Marshal(body)

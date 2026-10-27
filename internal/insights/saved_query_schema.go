@@ -152,7 +152,7 @@ func validateTemplatePlaceholder(text []rune, start int, types map[string]string
 }
 
 func validPlaceholderBoundaries(text []rune, start, end int, kind string) bool {
-	before := "(=~!<>:,|&"
+	before := "[(=~!<>:,|&"
 	if kind == "number" {
 		before += "+-*/%^@"
 	}
@@ -289,8 +289,8 @@ func validateSavedQueryParameter(item json.RawMessage, types map[string]string) 
 }
 
 func decodeSavedQuery(raw json.RawMessage, id string, query *SavedQuery) error {
-	if json.Unmarshal(raw, query) != nil || query.SchemaVersion != 1 || query.ID != id || !validID.MatchString(query.ProviderID) || (query.Kind != "metrics" && query.Kind != "traces") {
-		return errors.New("saved query requires schemaVersion 1, matching id, provider ID, and metrics or traces kind")
+	if json.Unmarshal(raw, query) != nil || query.SchemaVersion != 1 || query.ID != id || !validID.MatchString(query.ProviderID) || (query.Kind != "metrics" && query.Kind != "traces" && query.Kind != "records") {
+		return errors.New("saved query requires schemaVersion 1, matching id, provider ID, and metrics, traces or records kind")
 	}
 	return validateSavedQueryText(query)
 }

@@ -55,7 +55,7 @@ Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observ
 
 ## The MCP surface
 
-Fourteen telemetry tools, all read-only and requiring `paprika:observe`:
+Fifteen provider tools, all read-only and requiring `paprika:observe`:
 
 | Tool | Purpose |
 |---|---|
@@ -64,6 +64,7 @@ Fourteen telemetry tools, all read-only and requiring `paprika:observe`:
 | `query_logs` | LogQL query (loki/otlp connectors) |
 | `query_metrics` | PromQL instant/range query (prometheus/otlp) |
 | `query_traces` | TraceQL search or `trace_id` fetch (tempo/otlp) |
+| `query_records` | Bounded typed rows from Shorted, Uptime or read-only PostgreSQL |
 | `list_metric_names` | Enumerate a metrics provider's metric names (`prefix`/`limit` filters) |
 | `list_metric_series` | Bounded metric series/label sets in a time range; supports approximate cardinality inspection |
 | `list_label_names` | Label names — globally or on one `metric` (prometheus/loki/tempo tags) |
@@ -79,6 +80,13 @@ and `end` bounds. Series enumeration defaults to the trailing thirty minutes;
 explicit windows are limited to 31 days. A bounded series sample is not a
 global active-series count. Insights consumes the supported Prometheus/Tempo
 tools through this MCP endpoint using the signed-in user's delegated access.
+
+Insights also uses `query_records` for application and SQL dashboards. These
+providers can project numeric columns through `query_metrics`; inventories do
+not become historical series unless the source supplies timestamps. See the
+[repository example library](dashboard-repository-examples.md) and the
+[Shorted](shorted-provider.md), [Uptime](uptime-provider.md) and
+[PostgreSQL](postgresql-provider.md) adapter contracts.
 
 When Insights is configured, the same MCP endpoint additionally exposes:
 

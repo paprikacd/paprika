@@ -40,7 +40,7 @@ func providerToolPreview(value any, state connector.State) (*sdkmcp.CallToolResu
 	return result, nil
 }
 
-// RegisterTools registers the observability gateway's fourteen MCP tools on
+// RegisterTools registers the observability gateway's read-only MCP tools on
 // registry. Every tool is read-only and carries ScopeObserve: querying logs,
 // metrics and traces — browsing the provider catalog, exploring backend
 // schema, and validating prospective configurations — never mutates the
@@ -63,6 +63,7 @@ func RegisterTools(registry *mcp.Registry, b Backend, usage *UsageTracker) error
 		queryMetricsTool(b),
 		queryLogsTool(b),
 		queryTracesTool(b),
+		queryRecordsTool(b),
 		listProviderTypesTool(),
 		describeProviderTypeTool(),
 		validateProviderTool(),
@@ -300,7 +301,7 @@ func listObservabilityProvidersTool(b Backend) mcp.Tool {
 func getObservabilityProviderTool(b Backend) mcp.Tool {
 	return mcp.Tool{
 		Name:        "get_observability_provider",
-		Description: "Describe one observability provider by \"namespace/name\": its type, current state, and which signals (logs, metrics, traces) its connector can serve.",
+		Description: "Describe one observability provider by \"namespace/name\": its type, current state, and which signals (logs, metrics, traces, records) its connector can serve.",
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{
 			"type":"object",
@@ -403,6 +404,10 @@ func nativeQueryTool(b Backend, signal connector.Signal) mcp.Tool {
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", name, err)
 			}
+			if result == nil {
+				return nil, errors.New("provider returned no result")
+			}
+			result = boundedRecordResult(signal, result)
 			return providerToolPreview(queryToolResponse(provider, string(signal), result), result.State)
 		},
 	}

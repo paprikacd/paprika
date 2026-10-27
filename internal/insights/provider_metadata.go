@@ -28,6 +28,9 @@ type metadataCacheEntry struct {
 }
 
 func (p *providerClient) metadata(ctx context.Context, kind, label, metricName string) (MetadataResult, error) {
+	if p.public.Type != "prometheus" && p.public.Type != "tempo" {
+		return MetadataResult{}, errors.New("metric label discovery is unavailable for this provider; use its documented operations or SQL schema")
+	}
 	key := kind + "\x00" + label + "\x00" + metricName
 	now := time.Now()
 	p.metadataMu.Lock()
@@ -103,6 +106,12 @@ func cloneMetadata(result MetadataResult) MetadataResult {
 
 func (p *providerClient) testConnection(ctx context.Context) error {
 	if p.remote != nil {
+		if p.public.supports("records") {
+			expression := map[string]string{"shorted": `{"operation":"top_shorts","args":{"limit":1}}`, "uptime": `{"operation":"services","args":{"limit":1}}`, "postgresql": "SELECT 1 AS value"}[p.public.Type]
+			now := float64(time.Now().Unix())
+			_, err := p.query(ctx, Query{ProviderID: p.public.ID, Kind: "records", Query: expression, Start: now - 60, End: now, Step: 1})
+			return err
+		}
 		_, err := p.metadata(ctx, "labels", "", "")
 		return err
 	}

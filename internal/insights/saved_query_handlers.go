@@ -61,10 +61,11 @@ func (s *Server) putSavedQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if provider.public.Capabilities[0] != query.Kind {
-		writeError(w, 400, "saved query provider does not support this query kind")
+	if providerErr := validateSavedQueryProvider(&provider.public, &query); providerErr != nil {
+		writeError(w, http.StatusBadRequest, providerErr.Error())
 		return
 	}
+
 	if shared {
 		s.mutations.Lock()
 		defer s.mutations.Unlock()
@@ -144,4 +145,11 @@ func (s *Server) validateSavedQueryUpdate(query *SavedQuery, ifMatch, ifNoneMatc
 		return errSavedQueryIdentity
 	}
 	return s.store.validateSavedQueryReplacement(&old, query)
+}
+
+func validateSavedQueryProvider(provider *Provider, query *SavedQuery) error {
+	if !provider.supports(query.Kind) {
+		return errors.New("saved query provider does not support this query kind")
+	}
+	return validateSQLTemplate(provider.Type, query.Query)
 }

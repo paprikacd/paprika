@@ -28,6 +28,9 @@ var connectorProviderTypes = []string{
 	connector.ProviderAWSCloudTrail,
 	connector.ProviderVultrMonitoring,
 	connector.ProviderMock,
+	connector.ProviderShorted,
+	connector.ProviderUptime,
+	connector.ProviderPostgreSQL,
 }
 
 func TestAllListsExactlyTheConnectorProviderTypes(t *testing.T) {
@@ -54,16 +57,18 @@ func TestEveryEntryCarriesCompleteMetadata(t *testing.T) {
 		vendorVultr:       {},
 	}
 	validCategories := map[string]struct{}{
-		categoryLogs:    {},
-		categoryMetrics: {},
-		categoryTraces:  {},
-		categoryAudit:   {},
-		categoryTest:    {},
+		categoryLogs:        {},
+		categoryMetrics:     {},
+		categoryTraces:      {},
+		categoryAudit:       {},
+		categoryTest:        {},
+		categoryApplication: {},
 	}
 	validSignals := map[connector.Signal]struct{}{
 		connector.SignalLogs:    {},
 		connector.SignalMetrics: {},
 		connector.SignalTraces:  {},
+		connector.SignalRecords: {},
 	}
 
 	for _, info := range All() {

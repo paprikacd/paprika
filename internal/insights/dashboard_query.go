@@ -106,12 +106,22 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 		ObservedAt: now.Format(time.RFC3339Nano), Range: queryRange, Variables: variables,
 		Widgets: make([]DashboardQueryWidget, 0, len(selected)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
 	}
-	queries := planDashboardQueries(&result, selected, saved, document.Variables, start, end)
-	s.executeDashboardQueries(r, queries, options, &result)
+	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
+	queries := planDashboardQueries(&result, selected, saved, document.Variables, start, end, func(providerID, template string) *DashboardQueryError {
+		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
+		if err != nil {
+			return nil // Execution reports the cached provider failure as a signal.
+		}
+		if err := validateSQLTemplate(provider.public.Type, template); err != nil {
+			return &DashboardQueryError{Code: "invalid_query", Message: err.Error()}
+		}
+		return nil
+	})
+	s.executeDashboardQueries(r, queries, options, &result, &cache)
 	writeDashboardQueryResult(w, &result)
 }
 
-func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64) []Query {
+func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, validators ...func(string, string) *DashboardQueryError) []Query {
 	seenSaved := make(map[string]bool)
 	queries := make([]Query, 0, len(selected))
 	seenQueries := make(map[Query]string)
@@ -127,10 +137,9 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 		query, resolutionError := resolveDashboardWidget(widget, saved, result.Variables, definitions)
 		query.Start, query.End, query.Step = start, end, result.Range.StepSeconds
 		if resolutionError == nil {
-			if err := validateQuery(query); err != nil {
-				resolutionError = &DashboardQueryError{Code: "invalid_query", Message: "The resolved widget query is invalid."}
-			}
+			resolutionError = validatePlannedDashboardQuery(widget, query, saved, validators)
 		}
+
 		if resolutionError != nil {
 			output.Error = resolutionError
 			result.State = "partial"
@@ -146,6 +155,22 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 	}
 	result.QueryCount.Planned = len(queries)
 	return queries
+}
+
+func validatePlannedDashboardQuery(widget *dashboardReadWidget, query Query, saved map[string]dashboardSavedSnapshot, validators []func(string, string) *DashboardQueryError) *DashboardQueryError {
+	if len(validators) > 0 {
+		template := widget.Query
+		if widget.QueryRef != nil {
+			template = saved[widget.QueryRef.ID].Query.Query
+		}
+		if failure := validators[0](query.ProviderID, template); failure != nil {
+			return failure
+		}
+	}
+	if validateQuery(query) != nil {
+		return &DashboardQueryError{Code: "invalid_query", Message: "The resolved widget query is invalid."}
+	}
+	return nil
 }
 
 func writeDashboardQueryResult(w http.ResponseWriter, result *DashboardQueryResult) {
@@ -341,10 +366,13 @@ func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardRe
 	return DashboardQueryRange{Start: start.Format(time.RFC3339Nano), End: end.Format(time.RFC3339Nano), StepSeconds: step}, startSeconds, endSeconds, nil
 }
 
-func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, options DashboardSummaryOptions, result *DashboardQueryResult) {
-	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
+func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, options DashboardSummaryOptions, result *DashboardQueryResult, caches ...*dashboardQueryProviders) {
+	cache := &dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
+	if len(caches) > 0 {
+		cache = caches[0]
+	}
 	for index, query := range queries {
-		signal, executed := s.executeDashboardQuery(r, query, options, &cache)
+		signal, executed := s.executeDashboardQuery(r, query, options, cache)
 		signal.ID = fmt.Sprintf("q%d", index+1)
 		if executed {
 			result.QueryCount.Executed++
@@ -390,7 +418,7 @@ func (s *Server) executeDashboardQuery(r *http.Request, query Query, options Das
 	if err != nil {
 		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, false
 	}
-	if len(provider.public.Capabilities) == 0 || provider.public.Capabilities[0] != query.Kind {
+	if !provider.public.supports(query.Kind) {
 		return DashboardSignal{State: "error", Error: &DashboardQueryError{Code: "incompatible_provider", Message: "The provider does not support this widget's data kind."}}, false
 	}
 	raw, executed, err := s.runProviderQuery(r.Context(), provider, query)

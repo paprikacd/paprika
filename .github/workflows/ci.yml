@@ -414,12 +414,14 @@ jobs:
         working-directory: ui
 
       - name: Run Insights MCP and dashboard browser smoke
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: >-
           node e2e/run-insights.mjs
           e2e/insights-dashboard-query.e2e.mjs
           e2e/insights-observe-authoring.e2e.mjs
           e2e/insights-variable-filter.e2e.mjs
+          e2e/insights-repository-examples.e2e.mjs
+          e2e/insights-record-charts.e2e.mjs
         working-directory: ui
 
       - name: Upload browser diagnostics
@@ -433,7 +435,78 @@ jobs:
             artifacts/insights/dashboard-query
             artifacts/insights/observe-authoring
             artifacts/insights/variable-filter
+            artifacts/insights/repository-examples/browser
+            artifacts/insights/record-charts
           if-no-files-found: ignore
+          retention-days: 14
+
+  application-records:
+    name: Application records integration
+    # Hosted: PostgreSQL service containers require a Linux Docker server.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: auto
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: paprika-local-test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: ui
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ui
+
+      - name: Verify PostgreSQL reader boundaries against a real database
+        env:
+          PAPRIKA_POSTGRES_TEST_DSN: postgres://postgres:paprika-local-test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/postgres?sslmode=disable
+        run: go test -race ./internal/observabilitygateway/connector/postgresql -count=1 -timeout=90s
+
+      - name: Verify authenticated application records through MCP and the browser
+        env:
+          PAPRIKA_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          PAPRIKA_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: node e2e/run-insights.mjs e2e/insights-application-records.e2e.mjs
+        working-directory: ui
+
+      - name: Upload application records evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: application-records-integration
+          path: artifacts/insights/application-records
+          if-no-files-found: warn
           retention-days: 14
 
   fleet-scale:
@@ -554,6 +627,7 @@ jobs:
       - release-contract
       - distribution-contracts
       - fleet-ui-smoke
+      - application-records
       - fleet-scale
       - cluster-integration
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'

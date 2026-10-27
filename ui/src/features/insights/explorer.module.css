@@ -183,3 +183,8 @@
   .testValues .field > input { flex: 1; }
   .executedQuery summary { min-height: 36px; }
 }
+
+/* SQL includes a separate binding editor; keep both editors and results visible. */
+@media (min-width: 1100px) and (min-height: 800px) {
+  .workspace:has([data-language="sql"]) { grid-template-rows: auto minmax(390px, 1fr) minmax(220px, 1fr); }
+}

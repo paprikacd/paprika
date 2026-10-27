@@ -103,7 +103,7 @@ function interpolateLiterals(query: string, values: Record<string, string | numb
       const after = query[end + 2]
       const numeric = typeof values[name] === "number"
       if (
-        (before && !(numeric ? /[\s(=~!<>:,|&+\-*/%^@]/ : /[\s(=~!<>:,|&]/).test(before)) ||
+        (before && !(numeric ? /[\s\[(=~!<>:,|&+\-*/%^@]/ : /[\s\[(=~!<>:,|&]/).test(before)) ||
         (after && !/[\s,})\]|&!<>=:+\-*/%^]/.test(after))
       )
         throw new Error(`Use {{${name}}} as a complete literal value, not part of a token`)

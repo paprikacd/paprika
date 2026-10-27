@@ -3,6 +3,7 @@ import {
   savedQuerySchema,
   type Dashboard,
   type SavedQueryEntry,
+  type SavedQuery,
 } from "./schema";
 import {
   dashboardUsesSavedQuery,
@@ -25,15 +26,15 @@ function checkSize(query: unknown) {
 export function createExampleSavedQueryClient(
   storage: Pick<Storage, "getItem" | "setItem">,
   dashboards: () => Dashboard[],
+  initialQueries: readonly SavedQuery[] = [],
 ): SavedQueryClient {
   const read = (): SavedQueryEntry[] => {
     const source = storage.getItem(EXAMPLE_SAVED_QUERIES_KEY);
-    if (!source) return [];
-    const entries: unknown = JSON.parse(source);
+    const entries: unknown = source === null ? initialQueries.map(query => ({...query,etag: seedETag(query)})) : JSON.parse(source);
     if (!Array.isArray(entries) || entries.length > 256)
       throw new Error("The example saved-query library is invalid.");
     const ids = new Set<string>();
-    return entries.map((entry) => {
+    const validated = entries.map((entry) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry))
         throw new Error("The example saved-query library is invalid.");
       const { etag, ...document } = entry;
@@ -45,6 +46,11 @@ export function createExampleSavedQueryClient(
       ids.add(query.id);
       return { ...query, etag };
     });
+    // The library outlives dashboard references. Materialize its initial
+    // snapshot once so removing a dashboard cannot remove orphaned queries.
+    if (source === null && initialQueries.length > 0)
+      storage.setItem(EXAMPLE_SAVED_QUERIES_KEY, JSON.stringify(validated));
+    return validated;
   };
   return {
     listSavedQueries: async () => read(),
@@ -106,4 +112,10 @@ export function createExampleSavedQueryClient(
       );
     },
   };
+}
+
+function seedETag(query: SavedQuery) {
+  let hash = 2166136261;
+  for (const char of JSON.stringify(query)) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return `"example-seed-${query.id}-${(hash >>> 0).toString(16)}"`;
 }

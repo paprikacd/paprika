@@ -58,6 +58,9 @@ func run() error {
 	uiURL := flag.String("ui-url", "", "Optional local frontend server")
 	uiDir := flag.String("ui-dir", "ui/out", "Built static UI")
 	dataDir := flag.String("data-dir", "", "Isolated Insights persistence")
+	applicationFixtures := flag.Bool("application-fixtures", false, "Include deterministic Shorted and Uptime source APIs")
+	applicationProviders := flag.String("application-providers", "", "Private optional application provider fixture file")
+	applicationProvidersStdin := flag.Bool("application-providers-stdin", false, "Read private optional provider fixtures from stdin without persisting credentials")
 	flag.Parse()
 	if *ready == "" || *dataDir == "" {
 		return errors.New("ready-file and data-dir are required")
@@ -67,7 +70,7 @@ func run() error {
 	fixture := &telemetryFixture{}
 	upstream := httptest.NewServer(fixture)
 	defer upstream.Close()
-	k8s, err := newFixtureClient(upstream.URL)
+	k8s, err := newFixtureClient(upstream.URL, *applicationFixtures, *applicationProviders, *applicationProvidersStdin)
 	if err != nil {
 		return err
 	}
@@ -127,7 +130,7 @@ func registerFixtureGateway(mux *http.ServeMux, proxy http.Handler, backend obse
 	return nil
 }
 
-func newFixtureClient(endpoint string) (client.Client, error) {
+func newFixtureClient(endpoint string, applications bool, providerFile string, providerStdin bool) (client.Client, error) {
 	scheme := runtime.NewScheme()
 	if err := observev1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register observability fixture scheme: %w", err)
@@ -145,6 +148,13 @@ func newFixtureClient(endpoint string) (client.Client, error) {
 		for _, typ := range []string{"prometheus", "tempo"} {
 			objects = append(objects, &observev1.ObservabilityProvider{ObjectMeta: metav1.ObjectMeta{Name: typ, Namespace: namespace}, Spec: observev1.ObservabilityProviderSpec{Type: typ, Config: runtime.RawExtension{Raw: config}, CredentialsSecretRef: &observev1.CredentialsSecretRef{Name: "provider-key"}}})
 		}
+	}
+	if applications {
+		appObjects, appErr := applicationFixtureObjects(endpoint, providerFile, providerStdin)
+		if appErr != nil {
+			return nil, appErr
+		}
+		objects = append(objects, appObjects...)
 	}
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build(), nil
 }
@@ -332,6 +342,9 @@ func (f *telemetryFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.requests = append(f.requests, map[string]string{"path": r.URL.Path, "query": q.Get("query"), "traceQuery": q.Get("q"), "start": q.Get("start"), "end": q.Get("end"), "step": q.Get("step")})
 	f.mu.Unlock()
+	if f.serveApplicationFixture(w, r) {
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
 		servePrometheus(w, r)
 		return

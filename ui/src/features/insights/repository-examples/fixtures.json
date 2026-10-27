@@ -1,0 +1,8503 @@
+[
+  {
+    "id": "shorted-operations-p1-t0",
+    "metric": "paprika_example_shorted_operations_p1_t0",
+    "series": [
+      {
+        "name": "RPC Request Rate · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 28.0,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 31.360000000000003,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 34.72,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 38.08,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 41.44,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 44.800000000000004,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 48.16,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 51.519999999999996,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "RPC Request Rate · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 54.879999999999995,
+        "variation": 3.36,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p2-t0",
+    "metric": "paprika_example_shorted_operations_p2_t0",
+    "series": [
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 95.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 106.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 117.8,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 129.2,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 140.6,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 152.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 163.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 174.79999999999998,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 186.2,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p2-t1",
+    "metric": "paprika_example_shorted_operations_p2_t1",
+    "series": [
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 95.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 106.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 117.8,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 129.2,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 140.6,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 152.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 163.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 174.79999999999998,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 186.2,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p2-t2",
+    "metric": "paprika_example_shorted_operations_p2_t2",
+    "series": [
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 95.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 106.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 117.8,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 129.2,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 140.6,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 152.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 163.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 174.79999999999998,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "RPC Duration (p50 / p95 / p99) · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 186.2,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p3-t0",
+    "metric": "paprika_example_shorted_operations_p3_t0",
+    "series": [
+      {
+        "name": "RPC Error Rate · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      },
+      {
+        "name": "RPC Error Rate · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 0.0,
+        "variation": 0.01,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p4-t0",
+    "metric": "paprika_example_shorted_operations_p4_t0",
+    "series": [
+      {
+        "name": "RPC p95 by Method · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 37.0,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 41.440000000000005,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 45.88,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 50.31999999999999,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 54.76,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 59.2,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 63.64,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 68.08,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      },
+      {
+        "name": "RPC p95 by Method · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 72.52,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p5-t0",
+    "metric": "paprika_example_shorted_operations_p5_t0",
+    "series": [
+      {
+        "name": "Total Requests (24h) · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 40.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 44.800000000000004,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 49.6,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 54.39999999999999,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 59.2,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 64.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 68.8,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 73.6,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Total Requests (24h) · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 78.4,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p6-t0",
+    "metric": "paprika_example_shorted_operations_p6_t0",
+    "series": [
+      {
+        "name": "Errors (24h) · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Errors (24h) · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 0.0,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p8-t0",
+    "metric": "paprika_example_shorted_operations_p8_t0",
+    "series": [
+      {
+        "name": "Rate Limit Blocks",
+        "labels": {},
+        "base": 49,
+        "variation": 5.88,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p9-t0",
+    "metric": "paprika_example_shorted_operations_p9_t0",
+    "series": [
+      {
+        "name": "Scraper / Bot Blocks",
+        "labels": {},
+        "base": 52,
+        "variation": 6.24,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p10-t0",
+    "metric": "paprika_example_shorted_operations_p10_t0",
+    "series": [
+      {
+        "name": "Auth Methods (24h)",
+        "labels": {},
+        "base": 55,
+        "variation": 6.6,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p11-t0",
+    "metric": "paprika_example_shorted_operations_p11_t0",
+    "series": [
+      {
+        "name": "Rate Limited (24h)",
+        "labels": {},
+        "base": 58,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p12-t0",
+    "metric": "paprika_example_shorted_operations_p12_t0",
+    "series": [
+      {
+        "name": "Scrapers Blocked (24h)",
+        "labels": {},
+        "base": 0,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p13-t0",
+    "metric": "paprika_example_shorted_operations_p13_t0",
+    "series": [
+      {
+        "name": "Anonymous Requests (24h)",
+        "labels": {},
+        "base": 64,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p14-t0",
+    "metric": "paprika_example_shorted_operations_p14_t0",
+    "series": [
+      {
+        "name": "Authenticated (24h)",
+        "labels": {},
+        "base": 67,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p16-t0",
+    "metric": "paprika_example_shorted_operations_p16_t0",
+    "series": [
+      {
+        "name": "HTTP Request Rate by Service · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 73.0,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 81.76,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 90.52,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 99.27999999999999,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 108.03999999999999,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 116.80000000000001,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 125.56,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 134.32,
+        "variation": 8.76,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Request Rate by Service · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 143.07999999999998,
+        "variation": 8.76,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p17-t0",
+    "metric": "paprika_example_shorted_operations_p17_t0",
+    "series": [
+      {
+        "name": "HTTP Duration p95 by Service · shorted-api",
+        "labels": {
+          "service": "shorted-api"
+        },
+        "base": 95.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · market-data",
+        "labels": {
+          "service": "market-data"
+        },
+        "base": 106.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · shorted-market-data-sync",
+        "labels": {
+          "service": "shorted-market-data-sync"
+        },
+        "base": 117.8,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · enrichment-processor",
+        "labels": {
+          "service": "enrichment-processor"
+        },
+        "base": 129.2,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · weekly-report-generator",
+        "labels": {
+          "service": "weekly-report-generator"
+        },
+        "base": 140.6,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · asx-discovery",
+        "labels": {
+          "service": "asx-discovery"
+        },
+        "base": 152.0,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · news-aggregator",
+        "labels": {
+          "service": "news-aggregator"
+        },
+        "base": 163.4,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · asx-announcement-crawler",
+        "labels": {
+          "service": "asx-announcement-crawler"
+        },
+        "base": 174.79999999999998,
+        "variation": 11.4,
+        "trend": 0
+      },
+      {
+        "name": "HTTP Duration p95 by Service · shorted-web",
+        "labels": {
+          "service": "shorted-web"
+        },
+        "base": 186.2,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p19-t0",
+    "metric": "paprika_example_shorted_operations_p19_t0",
+    "series": [
+      {
+        "name": "Server Action Duration (p95)",
+        "labels": {},
+        "base": 95,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p20-t0",
+    "metric": "paprika_example_shorted_operations_p20_t0",
+    "series": [
+      {
+        "name": "Frontend Request Rate",
+        "labels": {},
+        "base": 85,
+        "variation": 10.2,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p22-t0",
+    "metric": "paprika_example_shorted_operations_p22_t0",
+    "series": [
+      {
+        "name": "Job Execution Status",
+        "labels": {},
+        "base": 91,
+        "variation": 10.92,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p23-t0",
+    "metric": "paprika_example_shorted_operations_p23_t0",
+    "series": [
+      {
+        "name": "Job Duration (avg)",
+        "labels": {},
+        "base": 95,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p24-t0",
+    "metric": "paprika_example_shorted_operations_p24_t0",
+    "series": [
+      {
+        "name": "Records Processed",
+        "labels": {},
+        "base": 97,
+        "variation": 11.639999999999999,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p25-t0",
+    "metric": "paprika_example_shorted_operations_p25_t0",
+    "series": [
+      {
+        "name": "Time Since Last Success",
+        "labels": {},
+        "base": 100,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p26-t0",
+    "metric": "paprika_example_shorted_operations_p26_t0",
+    "series": [
+      {
+        "name": "Successful Runs (24h)",
+        "labels": {},
+        "base": 103,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-operations-p27-t0",
+    "metric": "paprika_example_shorted_operations_p27_t0",
+    "series": [
+      {
+        "name": "Failed Runs (24h)",
+        "labels": {},
+        "base": 0,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p1-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p1_t0",
+    "series": [
+      {
+        "name": "Total Fetches (1h)",
+        "labels": {},
+        "base": 28,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p2-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p2_t0",
+    "series": [
+      {
+        "name": "Error Rate (1h)",
+        "labels": {},
+        "base": 0.02,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p3-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p3_t0",
+    "series": [
+      {
+        "name": "P95 Fetch Latency",
+        "labels": {},
+        "base": 34,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p4-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p4_t0",
+    "series": [
+      {
+        "name": "Bytes Fetched (1h)",
+        "labels": {},
+        "base": 37,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p5-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p5_t0",
+    "series": [
+      {
+        "name": "Fetch Latency by Host",
+        "labels": {},
+        "base": 40,
+        "variation": 4.8,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p5-t1",
+    "metric": "paprika_example_shorted_stealth_scraping_p5_t1",
+    "series": [
+      {
+        "name": "Fetch Latency by Host",
+        "labels": {},
+        "base": 41,
+        "variation": 4.92,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p6-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p6_t0",
+    "series": [
+      {
+        "name": "Fetch Requests by Status",
+        "labels": {},
+        "base": 43,
+        "variation": 5.16,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p7-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p7_t0",
+    "series": [
+      {
+        "name": "Fetch Errors by Host",
+        "labels": {},
+        "base": 0,
+        "variation": 0.01,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p8-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p8_t0",
+    "series": [
+      {
+        "name": "Fetch Throughput (bytes/sec)",
+        "labels": {},
+        "base": 49,
+        "variation": 5.88,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p10-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p10_t0",
+    "series": [
+      {
+        "name": "Logo Discoveries (1h)",
+        "labels": {},
+        "base": 55,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p11-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p11_t0",
+    "series": [
+      {
+        "name": "Logo Failure Rate (1h)",
+        "labels": {},
+        "base": 0.95,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p12-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p12_t0",
+    "series": [
+      {
+        "name": "P95 Logo Discovery Latency",
+        "labels": {},
+        "base": 61,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p13-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p13_t0",
+    "series": [
+      {
+        "name": "Logo Discovery by Source",
+        "labels": {},
+        "base": 64,
+        "variation": 7.68,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p14-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p14_t0",
+    "series": [
+      {
+        "name": "Logo Discovery by Format",
+        "labels": {},
+        "base": 67,
+        "variation": 8.04,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p15-t0",
+    "metric": "paprika_example_shorted_stealth_scraping_p15_t0",
+    "series": [
+      {
+        "name": "Logo Discovery Latency by Source",
+        "labels": {},
+        "base": 70,
+        "variation": 8.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-stealth-scraping-p15-t1",
+    "metric": "paprika_example_shorted_stealth_scraping_p15_t1",
+    "series": [
+      {
+        "name": "Logo Discovery Latency by Source",
+        "labels": {},
+        "base": 71,
+        "variation": 8.52,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p0-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p0_t0",
+    "series": [
+      {
+        "name": "Active instances",
+        "labels": {},
+        "base": 25,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p1-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p1_t0",
+    "series": [
+      {
+        "name": "Dashboard count",
+        "labels": {},
+        "base": 28,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p2-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p2_t0",
+    "series": [
+      {
+        "name": "User count",
+        "labels": {},
+        "base": 31,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p3-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p3_t0",
+    "series": [
+      {
+        "name": "Playlist count",
+        "labels": {},
+        "base": 34,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p4-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p4_t0",
+    "series": [
+      {
+        "name": "Grafana version",
+        "labels": {},
+        "base": 37,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p5-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p5_t0",
+    "series": [
+      {
+        "name": "http status codes",
+        "labels": {},
+        "base": 40,
+        "variation": 4.8,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p6-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p6_t0",
+    "series": [
+      {
+        "name": "Requests by routing group",
+        "labels": {},
+        "base": 43,
+        "variation": 5.16,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p6-t1",
+    "metric": "paprika_example_shorted_grafana_metrics_p6_t1",
+    "series": [
+      {
+        "name": "Requests by routing group",
+        "labels": {},
+        "base": 44,
+        "variation": 5.279999999999999,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p6-t2",
+    "metric": "paprika_example_shorted_grafana_metrics_p6_t2",
+    "series": [
+      {
+        "name": "Requests by routing group",
+        "labels": {},
+        "base": 45,
+        "variation": 5.3999999999999995,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p7-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p7_t0",
+    "series": [
+      {
+        "name": "Most used handlers",
+        "labels": {},
+        "base": 46,
+        "variation": 5.52,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p8-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p8_t0",
+    "series": [
+      {
+        "name": "Grafana active alerts",
+        "labels": {},
+        "base": 49,
+        "variation": 5.88,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p9-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p9_t0",
+    "series": [
+      {
+        "name": "Prometheus alerts",
+        "labels": {},
+        "base": 52,
+        "variation": 6.24,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p10-t0",
+    "metric": "paprika_example_shorted_grafana_metrics_p10_t0",
+    "series": [
+      {
+        "name": "Grafana performance",
+        "labels": {},
+        "base": 55,
+        "variation": 6.6,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-grafana-metrics-p10-t1",
+    "metric": "paprika_example_shorted_grafana_metrics_p10_t1",
+    "series": [
+      {
+        "name": "Grafana performance",
+        "labels": {},
+        "base": 56,
+        "variation": 6.72,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p0-t0",
+    "metric": "paprika_example_shorted_postgres_exporter_p0_t0",
+    "series": [
+      {
+        "name": "Rows · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 25.0,
+        "variation": 3.0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p0-t1",
+    "metric": "paprika_example_shorted_postgres_exporter_p0_t1",
+    "series": [
+      {
+        "name": "Rows · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 26.0,
+        "variation": 3.12,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p0-t2",
+    "metric": "paprika_example_shorted_postgres_exporter_p0_t2",
+    "series": [
+      {
+        "name": "Rows · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 27.0,
+        "variation": 3.2399999999999998,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p0-t3",
+    "metric": "paprika_example_shorted_postgres_exporter_p0_t3",
+    "series": [
+      {
+        "name": "Rows · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 28.0,
+        "variation": 3.36,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p0-t4",
+    "metric": "paprika_example_shorted_postgres_exporter_p0_t4",
+    "series": [
+      {
+        "name": "Rows · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 29.0,
+        "variation": 3.48,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p1-t0",
+    "metric": "paprika_example_shorted_postgres_exporter_p1_t0",
+    "series": [
+      {
+        "name": "QPS · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 28.0,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p2-t0",
+    "metric": "paprika_example_shorted_postgres_exporter_p2_t0",
+    "series": [
+      {
+        "name": "Buffers · postgres-demo",
+        "labels": {
+          "instance": "postgres-demo"
+        },
+        "base": 31.0,
+        "variation": 3.7199999999999998,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p2-t1",
+    "metric": "paprika_example_shorted_postgres_exporter_p2_t1",
+    "series": [
+      {
+        "name": "Buffers · postgres-demo",
+        "labels": {
+          "instance": "postgres-demo"
+        },
+        "base": 32.0,
+        "variation": 3.84,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p2-t2",
+    "metric": "paprika_example_shorted_postgres_exporter_p2_t2",
+    "series": [
+      {
+        "name": "Buffers · postgres-demo",
+        "labels": {
+          "instance": "postgres-demo"
+        },
+        "base": 33.0,
+        "variation": 3.96,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p2-t3",
+    "metric": "paprika_example_shorted_postgres_exporter_p2_t3",
+    "series": [
+      {
+        "name": "Buffers · postgres-demo",
+        "labels": {
+          "instance": "postgres-demo"
+        },
+        "base": 34.0,
+        "variation": 4.08,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p2-t4",
+    "metric": "paprika_example_shorted_postgres_exporter_p2_t4",
+    "series": [
+      {
+        "name": "Buffers · postgres-demo",
+        "labels": {
+          "instance": "postgres-demo"
+        },
+        "base": 35.0,
+        "variation": 4.2,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p3-t0",
+    "metric": "paprika_example_shorted_postgres_exporter_p3_t0",
+    "series": [
+      {
+        "name": "Conflicts/Deadlocks · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 34.0,
+        "variation": 4.08,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p3-t1",
+    "metric": "paprika_example_shorted_postgres_exporter_p3_t1",
+    "series": [
+      {
+        "name": "Conflicts/Deadlocks · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 35.0,
+        "variation": 4.2,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p4-t0",
+    "metric": "paprika_example_shorted_postgres_exporter_p4_t0",
+    "series": [
+      {
+        "name": "Cache hit ratio · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 0.95,
+        "variation": 0.11399999999999999,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-postgres-exporter-p5-t0",
+    "metric": "paprika_example_shorted_postgres_exporter_p5_t0",
+    "series": [
+      {
+        "name": "Number of active connections · postgres-demo / shorted",
+        "labels": {
+          "instance": "postgres-demo",
+          "db": "shorted"
+        },
+        "base": 40.0,
+        "variation": 4.8,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p0-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p0_t0",
+    "series": [
+      {
+        "name": "Samples Appended",
+        "labels": {},
+        "base": 25,
+        "variation": 3.0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p1-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p1_t0",
+    "series": [
+      {
+        "name": "Scrape Duration",
+        "labels": {},
+        "base": 95,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p2-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p2_t0",
+    "series": [
+      {
+        "name": "Memory Profile",
+        "labels": {},
+        "base": 31,
+        "variation": 3.7199999999999998,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p2-t1",
+    "metric": "paprika_example_shorted_prometheus_stats_p2_t1",
+    "series": [
+      {
+        "name": "Memory Profile",
+        "labels": {},
+        "base": 32,
+        "variation": 3.84,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p3-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p3_t0",
+    "series": [
+      {
+        "name": "WAL Corruptions",
+        "labels": {},
+        "base": 0,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p4-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p4_t0",
+    "series": [
+      {
+        "name": "Active Appenders",
+        "labels": {},
+        "base": 37,
+        "variation": 4.4399999999999995,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p4-t1",
+    "metric": "paprika_example_shorted_prometheus_stats_p4_t1",
+    "series": [
+      {
+        "name": "Active Appenders",
+        "labels": {},
+        "base": 38,
+        "variation": 4.56,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p5-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p5_t0",
+    "series": [
+      {
+        "name": "Blocks Loaded",
+        "labels": {},
+        "base": 40,
+        "variation": 4.8,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p6-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p6_t0",
+    "series": [
+      {
+        "name": "Head Chunks",
+        "labels": {},
+        "base": 43,
+        "variation": 5.16,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p7-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p7_t0",
+    "series": [
+      {
+        "name": "Head Block GC Activity",
+        "labels": {},
+        "base": 46,
+        "variation": 5.52,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p7-t1",
+    "metric": "paprika_example_shorted_prometheus_stats_p7_t1",
+    "series": [
+      {
+        "name": "Head Block GC Activity",
+        "labels": {},
+        "base": 47,
+        "variation": 5.64,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p8-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p8_t0",
+    "series": [
+      {
+        "name": "Compaction Activity",
+        "labels": {},
+        "base": 49,
+        "variation": 5.88,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p8-t1",
+    "metric": "paprika_example_shorted_prometheus_stats_p8_t1",
+    "series": [
+      {
+        "name": "Compaction Activity",
+        "labels": {},
+        "base": 50,
+        "variation": 6.0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p8-t2",
+    "metric": "paprika_example_shorted_prometheus_stats_p8_t2",
+    "series": [
+      {
+        "name": "Compaction Activity",
+        "labels": {},
+        "base": 51,
+        "variation": 6.12,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p8-t3",
+    "metric": "paprika_example_shorted_prometheus_stats_p8_t3",
+    "series": [
+      {
+        "name": "Compaction Activity",
+        "labels": {},
+        "base": 52,
+        "variation": 6.24,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p9-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p9_t0",
+    "series": [
+      {
+        "name": "Reload Count",
+        "labels": {},
+        "base": 52,
+        "variation": 6.24,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p9-t1",
+    "metric": "paprika_example_shorted_prometheus_stats_p9_t1",
+    "series": [
+      {
+        "name": "Reload Count",
+        "labels": {},
+        "base": 53,
+        "variation": 6.359999999999999,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p10-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p10_t0",
+    "series": [
+      {
+        "name": "Query Durations",
+        "labels": {},
+        "base": 95,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p11-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p11_t0",
+    "series": [
+      {
+        "name": "Rule Group Eval Duration",
+        "labels": {},
+        "base": 95,
+        "variation": 11.4,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p12-t0",
+    "metric": "paprika_example_shorted_prometheus_stats_p12_t0",
+    "series": [
+      {
+        "name": "Rule Group Eval Activity",
+        "labels": {},
+        "base": 61,
+        "variation": 7.319999999999999,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-prometheus-stats-p12-t1",
+    "metric": "paprika_example_shorted_prometheus_stats_p12_t1",
+    "series": [
+      {
+        "name": "Rule Group Eval Activity",
+        "labels": {},
+        "base": 62,
+        "variation": 7.4399999999999995,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-per-stock-p0",
+    "metric": "paprika_example_shorted_per_stock_p0",
+    "records": {
+      "columns": [
+        {
+          "key": "title",
+          "type": "string"
+        },
+        {
+          "key": "description",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "Panel Title",
+          "Source placeholder narrative; no company facts are asserted."
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-per-stock-p1-t0",
+    "metric": "paprika_example_shorted_per_stock_p1_t0",
+    "series": [
+      {
+        "name": "Sentiment",
+        "labels": {},
+        "base": 28,
+        "variation": 3.36,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-per-stock-p2-t0",
+    "metric": "paprika_example_shorted_per_stock_p2_t0",
+    "series": [
+      {
+        "name": "short positions for $stocks · CBA",
+        "labels": {
+          "stocks": "CBA"
+        },
+        "base": 31.0,
+        "variation": 3.7199999999999998,
+        "trend": 0
+      },
+      {
+        "name": "short positions for $stocks · BHP",
+        "labels": {
+          "stocks": "BHP"
+        },
+        "base": 34.720000000000006,
+        "variation": 3.7199999999999998,
+        "trend": 0
+      },
+      {
+        "name": "short positions for $stocks · ZIP",
+        "labels": {
+          "stocks": "ZIP"
+        },
+        "base": 38.44,
+        "variation": 3.7199999999999998,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-per-stock-p3-t0",
+    "metric": "paprika_example_shorted_per_stock_p3_t0",
+    "series": [
+      {
+        "name": "shares shorted for $stocks · CBA",
+        "labels": {
+          "stocks": "CBA"
+        },
+        "base": 34.0,
+        "variation": 4.08,
+        "trend": 0
+      },
+      {
+        "name": "shares shorted for $stocks · BHP",
+        "labels": {
+          "stocks": "BHP"
+        },
+        "base": 38.080000000000005,
+        "variation": 4.08,
+        "trend": 0
+      },
+      {
+        "name": "shares shorted for $stocks · ZIP",
+        "labels": {
+          "stocks": "ZIP"
+        },
+        "base": 42.16,
+        "variation": 4.08,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-per-stock-p4",
+    "metric": "paprika_example_shorted_per_stock_p4",
+    "records": {
+      "columns": [
+        {
+          "key": "title",
+          "type": "string"
+        },
+        {
+          "key": "description",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "Panel Title",
+          "Source Grafana News plugin. No configured feed was present in the portable definition."
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-shorts-overview-p0-t0",
+    "metric": "paprika_example_shorted_shorts_overview_p0_t0",
+    "series": [
+      {
+        "name": "top 10 shorts",
+        "labels": {},
+        "base": 25,
+        "variation": 3.0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-shorts-overview-p1-t0",
+    "metric": "paprika_example_shorted_shorts_overview_p1_t0",
+    "series": [
+      {
+        "name": "top 10 shorted  · CBA",
+        "labels": {
+          "top10shorts": "CBA"
+        },
+        "base": 28.0,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "top 10 shorted  · BHP",
+        "labels": {
+          "top10shorts": "BHP"
+        },
+        "base": 31.360000000000003,
+        "variation": 3.36,
+        "trend": 0
+      },
+      {
+        "name": "top 10 shorted  · ZIP",
+        "labels": {
+          "top10shorts": "ZIP"
+        },
+        "base": 34.72,
+        "variation": 3.36,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-my-dashboard-top-shorts",
+    "metric": "paprika_example_shorted_my_dashboard_top_shorts",
+    "records": {
+      "columns": [
+        {
+          "key": "product_code",
+          "type": "string"
+        },
+        {
+          "key": "name",
+          "type": "string"
+        },
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "short_position",
+          "type": "number",
+          "unit": "percent"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          "Commonwealth Bank",
+          "Banks",
+          1.24
+        ],
+        [
+          "BHP",
+          "BHP Group",
+          "Materials",
+          2.41
+        ],
+        [
+          "CSL",
+          "CSL",
+          "Health Care",
+          0.84
+        ],
+        [
+          "WBC",
+          "Westpac",
+          "Banks",
+          1.72
+        ],
+        [
+          "ANZ",
+          "ANZ Group",
+          "Banks",
+          0.96
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-my-dashboard-industry",
+    "metric": "paprika_example_shorted_my_dashboard_industry",
+    "records": {
+      "columns": [
+        {
+          "key": "product_code",
+          "type": "string"
+        },
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "short_position",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          "Banks",
+          1.24
+        ],
+        [
+          "BHP",
+          "Materials",
+          2.41
+        ],
+        [
+          "CSL",
+          "Health Care",
+          0.84
+        ],
+        [
+          "WBC",
+          "Banks",
+          1.72
+        ],
+        [
+          "ANZ",
+          "Banks",
+          0.96
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-top-shorts",
+    "metric": "paprika_example_shorted_widget_catalog_top_shorts",
+    "records": {
+      "columns": [
+        {
+          "key": "product_code",
+          "type": "string"
+        },
+        {
+          "key": "name",
+          "type": "string"
+        },
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "short_position",
+          "type": "number",
+          "unit": "percent"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          "Commonwealth Bank",
+          "Banks",
+          1.24
+        ],
+        [
+          "BHP",
+          "BHP Group",
+          "Materials",
+          2.41
+        ],
+        [
+          "CSL",
+          "CSL",
+          "Health Care",
+          0.84
+        ],
+        [
+          "WBC",
+          "Westpac",
+          "Banks",
+          1.72
+        ],
+        [
+          "ANZ",
+          "ANZ Group",
+          "Banks",
+          0.96
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-industry-treemap",
+    "metric": "paprika_example_shorted_widget_catalog_industry_treemap",
+    "records": {
+      "columns": [
+        {
+          "key": "product_code",
+          "type": "string"
+        },
+        {
+          "key": "name",
+          "type": "string"
+        },
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "short_position",
+          "type": "number",
+          "unit": "percent"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          "Commonwealth Bank",
+          "Banks",
+          1.24
+        ],
+        [
+          "BHP",
+          "BHP Group",
+          "Materials",
+          2.41
+        ],
+        [
+          "CSL",
+          "CSL",
+          "Health Care",
+          0.84
+        ],
+        [
+          "WBC",
+          "Westpac",
+          "Banks",
+          1.72
+        ],
+        [
+          "ANZ",
+          "ANZ Group",
+          "Banks",
+          0.96
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-stock-chart",
+    "metric": "paprika_example_shorted_widget_catalog_stock_chart",
+    "series": [
+      {
+        "name": "Stock Chart · CBA / 1M",
+        "labels": {
+          "stock": "CBA",
+          "period": "1M"
+        },
+        "base": 135.0,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · CBA / 3M",
+        "labels": {
+          "stock": "CBA",
+          "period": "3M"
+        },
+        "base": 151.20000000000002,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · CBA / 6M",
+        "labels": {
+          "stock": "CBA",
+          "period": "6M"
+        },
+        "base": 167.4,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · CBA / 1Y",
+        "labels": {
+          "stock": "CBA",
+          "period": "1Y"
+        },
+        "base": 183.6,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · BHP / 1M",
+        "labels": {
+          "stock": "BHP",
+          "period": "1M"
+        },
+        "base": 199.8,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · BHP / 3M",
+        "labels": {
+          "stock": "BHP",
+          "period": "3M"
+        },
+        "base": 216.0,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · BHP / 6M",
+        "labels": {
+          "stock": "BHP",
+          "period": "6M"
+        },
+        "base": 232.2,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · BHP / 1Y",
+        "labels": {
+          "stock": "BHP",
+          "period": "1Y"
+        },
+        "base": 248.39999999999998,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · CSL / 1M",
+        "labels": {
+          "stock": "CSL",
+          "period": "1M"
+        },
+        "base": 264.6,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · CSL / 3M",
+        "labels": {
+          "stock": "CSL",
+          "period": "3M"
+        },
+        "base": 280.8,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · CSL / 6M",
+        "labels": {
+          "stock": "CSL",
+          "period": "6M"
+        },
+        "base": 297.0,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · CSL / 1Y",
+        "labels": {
+          "stock": "CSL",
+          "period": "1Y"
+        },
+        "base": 313.2,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · WBC / 1M",
+        "labels": {
+          "stock": "WBC",
+          "period": "1M"
+        },
+        "base": 329.4,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · WBC / 3M",
+        "labels": {
+          "stock": "WBC",
+          "period": "3M"
+        },
+        "base": 345.6,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · WBC / 6M",
+        "labels": {
+          "stock": "WBC",
+          "period": "6M"
+        },
+        "base": 361.79999999999995,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · WBC / 1Y",
+        "labels": {
+          "stock": "WBC",
+          "period": "1Y"
+        },
+        "base": 378.0,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · ANZ / 1M",
+        "labels": {
+          "stock": "ANZ",
+          "period": "1M"
+        },
+        "base": 394.2,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · ANZ / 3M",
+        "labels": {
+          "stock": "ANZ",
+          "period": "3M"
+        },
+        "base": 410.4,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · ANZ / 6M",
+        "labels": {
+          "stock": "ANZ",
+          "period": "6M"
+        },
+        "base": 426.6,
+        "variation": 2,
+        "trend": 0
+      },
+      {
+        "name": "Stock Chart · ANZ / 1Y",
+        "labels": {
+          "stock": "ANZ",
+          "period": "1Y"
+        },
+        "base": 442.79999999999995,
+        "variation": 2,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-widget-catalog-time-series-analysis",
+    "metric": "paprika_example_shorted_widget_catalog_time_series_analysis",
+    "series": [
+      {
+        "name": "Time Series Analysis · CBA / 1M",
+        "labels": {
+          "stock": "CBA",
+          "period": "1M"
+        },
+        "base": 1.4,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · CBA / 3M",
+        "labels": {
+          "stock": "CBA",
+          "period": "3M"
+        },
+        "base": 1.568,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · CBA / 6M",
+        "labels": {
+          "stock": "CBA",
+          "period": "6M"
+        },
+        "base": 1.736,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · CBA / 1Y",
+        "labels": {
+          "stock": "CBA",
+          "period": "1Y"
+        },
+        "base": 1.9039999999999997,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · BHP / 1M",
+        "labels": {
+          "stock": "BHP",
+          "period": "1M"
+        },
+        "base": 2.072,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · BHP / 3M",
+        "labels": {
+          "stock": "BHP",
+          "period": "3M"
+        },
+        "base": 2.2399999999999998,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · BHP / 6M",
+        "labels": {
+          "stock": "BHP",
+          "period": "6M"
+        },
+        "base": 2.408,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · BHP / 1Y",
+        "labels": {
+          "stock": "BHP",
+          "period": "1Y"
+        },
+        "base": 2.5759999999999996,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · CSL / 1M",
+        "labels": {
+          "stock": "CSL",
+          "period": "1M"
+        },
+        "base": 2.7439999999999998,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · CSL / 3M",
+        "labels": {
+          "stock": "CSL",
+          "period": "3M"
+        },
+        "base": 2.912,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · CSL / 6M",
+        "labels": {
+          "stock": "CSL",
+          "period": "6M"
+        },
+        "base": 3.08,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · CSL / 1Y",
+        "labels": {
+          "stock": "CSL",
+          "period": "1Y"
+        },
+        "base": 3.2479999999999998,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · WBC / 1M",
+        "labels": {
+          "stock": "WBC",
+          "period": "1M"
+        },
+        "base": 3.416,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · WBC / 3M",
+        "labels": {
+          "stock": "WBC",
+          "period": "3M"
+        },
+        "base": 3.5839999999999996,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · WBC / 6M",
+        "labels": {
+          "stock": "WBC",
+          "period": "6M"
+        },
+        "base": 3.7519999999999993,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · WBC / 1Y",
+        "labels": {
+          "stock": "WBC",
+          "period": "1Y"
+        },
+        "base": 3.9199999999999995,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · ANZ / 1M",
+        "labels": {
+          "stock": "ANZ",
+          "period": "1M"
+        },
+        "base": 4.088,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · ANZ / 3M",
+        "labels": {
+          "stock": "ANZ",
+          "period": "3M"
+        },
+        "base": 4.255999999999999,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · ANZ / 6M",
+        "labels": {
+          "stock": "ANZ",
+          "period": "6M"
+        },
+        "base": 4.4239999999999995,
+        "variation": 0.2,
+        "trend": 0
+      },
+      {
+        "name": "Time Series Analysis · ANZ / 1Y",
+        "labels": {
+          "stock": "ANZ",
+          "period": "1Y"
+        },
+        "base": 4.592,
+        "variation": 0.2,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-widget-catalog-sector-performance",
+    "metric": "paprika_example_shorted_widget_catalog_sector_performance",
+    "series": [
+      {
+        "name": "Financials",
+        "labels": {
+          "sector": "Financials"
+        },
+        "base": 1.2,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "shorted-widget-catalog-watchlist",
+    "metric": "paprika_example_shorted_widget_catalog_watchlist",
+    "records": {
+      "columns": [
+        {
+          "key": "stock_code",
+          "type": "string"
+        },
+        {
+          "key": "close",
+          "type": "number",
+          "unit": "AUD"
+        },
+        {
+          "key": "change",
+          "type": "number",
+          "unit": "AUD"
+        },
+        {
+          "key": "change_percent",
+          "type": "number",
+          "unit": "percent"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          135.2,
+          1.2,
+          0.8875739644970414
+        ],
+        [
+          "BHP",
+          43.5,
+          -0.45,
+          -1.0344827586206897
+        ],
+        [
+          "CSL",
+          282.5,
+          2.5,
+          0.8849557522123894
+        ],
+        [
+          "WBC",
+          28.8,
+          0.35,
+          1.2152777777777777
+        ],
+        [
+          "ANZ",
+          29.2,
+          0.15,
+          0.5136986301369862
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-portfolio-summary",
+    "metric": "paprika_example_shorted_widget_catalog_portfolio_summary",
+    "records": {
+      "columns": [
+        {
+          "key": "stock_code",
+          "type": "string"
+        },
+        {
+          "key": "quantity",
+          "type": "number"
+        },
+        {
+          "key": "close",
+          "type": "number",
+          "unit": "AUD"
+        },
+        {
+          "key": "market_value",
+          "type": "number",
+          "unit": "AUD"
+        },
+        {
+          "key": "day_change",
+          "type": "number",
+          "unit": "AUD"
+        },
+        {
+          "key": "change",
+          "type": "number",
+          "unit": "AUD"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          100,
+          135.2,
+          13519.999999999998,
+          120.0,
+          1.2
+        ],
+        [
+          "BHP",
+          50,
+          43.5,
+          2175.0,
+          -22.5,
+          -0.45
+        ],
+        [
+          "CSL",
+          25,
+          282.5,
+          7062.5,
+          62.5,
+          2.5
+        ],
+        [
+          "WBC",
+          80,
+          28.8,
+          2304.0,
+          28.0,
+          0.35
+        ],
+        [
+          "WOW",
+          40,
+          35.1,
+          1404.0,
+          4.8,
+          0.12
+        ]
+      ]
+    },
+    "portfolioParameters": {
+      "CBA": "cba_shares",
+      "BHP": "bhp_shares",
+      "CSL": "csl_shares",
+      "WBC": "wbc_shares",
+      "WOW": "wow_shares"
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-correlation-matrix",
+    "metric": "paprika_example_shorted_widget_catalog_correlation_matrix",
+    "records": {
+      "columns": [
+        {
+          "key": "stock_code",
+          "type": "string"
+        },
+        {
+          "key": "other_stock_code",
+          "type": "string"
+        },
+        {
+          "key": "correlation",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          "CBA",
+          1
+        ],
+        [
+          "CBA",
+          "BHP",
+          0.33
+        ],
+        [
+          "CBA",
+          "CSL",
+          0.41
+        ],
+        [
+          "BHP",
+          "CBA",
+          0.33
+        ],
+        [
+          "BHP",
+          "BHP",
+          1
+        ],
+        [
+          "BHP",
+          "CSL",
+          0.49
+        ],
+        [
+          "CSL",
+          "CBA",
+          0.41
+        ],
+        [
+          "CSL",
+          "BHP",
+          0.49
+        ],
+        [
+          "CSL",
+          "CSL",
+          1
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-market-watchlist",
+    "metric": "paprika_example_shorted_widget_catalog_market_watchlist",
+    "records": {
+      "columns": [
+        {
+          "key": "stock_code",
+          "type": "string"
+        },
+        {
+          "key": "close",
+          "type": "number",
+          "unit": "AUD"
+        },
+        {
+          "key": "change",
+          "type": "number",
+          "unit": "AUD"
+        },
+        {
+          "key": "change_percent",
+          "type": "number",
+          "unit": "percent"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          135.2,
+          1.2,
+          0.8875739644970414
+        ],
+        [
+          "BHP",
+          43.5,
+          -0.45,
+          -1.0344827586206897
+        ],
+        [
+          "CSL",
+          282.5,
+          2.5,
+          0.8849557522123894
+        ],
+        [
+          "WBC",
+          28.8,
+          0.35,
+          1.2152777777777777
+        ],
+        [
+          "ANZ",
+          29.2,
+          0.15,
+          0.5136986301369862
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-news-feed",
+    "metric": "paprika_example_shorted_widget_catalog_news_feed",
+    "records": {
+      "columns": [
+        {
+          "key": "headline",
+          "type": "string"
+        },
+        {
+          "key": "summary",
+          "type": "string"
+        },
+        {
+          "key": "source",
+          "type": "string"
+        },
+        {
+          "key": "sentiment",
+          "type": "string"
+        },
+        {
+          "key": "url",
+          "type": "string"
+        },
+        {
+          "key": "stock_code",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "Illustrative trading update",
+          "Fictional sample article for dashboard rendering.",
+          "Sample feed",
+          "neutral",
+          "https://example.com/market-update",
+          "CBA"
+        ],
+        [
+          "Illustrative market briefing",
+          "This is sample content, not financial advice or live reporting.",
+          "Sample feed",
+          "positive",
+          "https://example.com/briefing",
+          "BHP"
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-widget-catalog-screener",
+    "metric": "paprika_example_shorted_widget_catalog_screener",
+    "records": {
+      "columns": [
+        {
+          "key": "stock_code",
+          "type": "string"
+        },
+        {
+          "key": "company_name",
+          "type": "string"
+        },
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "short_pct",
+          "type": "number"
+        },
+        {
+          "key": "short_pct_change_4w",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "CBA",
+          "Commonwealth Bank",
+          "Banks",
+          1.24,
+          -0.12
+        ],
+        [
+          "BHP",
+          "BHP Group",
+          "Materials",
+          2.41,
+          -0.12
+        ],
+        [
+          "CSL",
+          "CSL",
+          "Health Care",
+          0.84,
+          -0.12
+        ],
+        [
+          "WBC",
+          "Westpac",
+          "Banks",
+          1.72,
+          -0.12
+        ],
+        [
+          "ANZ",
+          "ANZ Group",
+          "Banks",
+          0.96,
+          -0.12
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-bank-short-basket",
+    "metric": "paprika_example_shorted_housing_feature_bank_short_basket",
+    "records": {
+      "columns": [
+        {
+          "key": "date",
+          "type": "timestamp"
+        },
+        {
+          "key": "CBA",
+          "type": "number",
+          "unit": "AUD bn"
+        },
+        {
+          "key": "WBC",
+          "type": "number",
+          "unit": "AUD bn"
+        },
+        {
+          "key": "NAB",
+          "type": "number",
+          "unit": "AUD bn"
+        },
+        {
+          "key": "ANZ",
+          "type": "number",
+          "unit": "AUD bn"
+        }
+      ],
+      "rows": [
+        [
+          "2024-06-17T00:00:00Z",
+          3.2889,
+          0.5628,
+          0.6076,
+          0.341
+        ],
+        [
+          "2024-06-24T00:00:00Z",
+          3.3303,
+          0.6662,
+          0.587,
+          0.3617
+        ],
+        [
+          "2024-07-01T00:00:00Z",
+          3.3836,
+          0.6884,
+          0.541,
+          0.384
+        ],
+        [
+          "2024-07-08T00:00:00Z",
+          3.3947,
+          0.7398,
+          0.5647,
+          0.3848
+        ],
+        [
+          "2024-07-15T00:00:00Z",
+          3.2243,
+          0.753,
+          0.5875,
+          0.3568
+        ],
+        [
+          "2024-07-22T00:00:00Z",
+          3.4045,
+          0.7682,
+          0.6923,
+          0.4675
+        ],
+        [
+          "2024-07-29T00:00:00Z",
+          3.3871,
+          0.7854,
+          0.6403,
+          0.3805
+        ],
+        [
+          "2024-08-05T00:00:00Z",
+          3.3472,
+          0.7659,
+          0.6131,
+          0.4014
+        ],
+        [
+          "2024-08-12T00:00:00Z",
+          3.5918,
+          0.732,
+          0.6584,
+          0.4405
+        ],
+        [
+          "2024-08-19T00:00:00Z",
+          3.3446,
+          0.678,
+          0.6749,
+          0.4489
+        ],
+        [
+          "2024-08-26T00:00:00Z",
+          3.5781,
+          0.8171,
+          0.826,
+          0.5611
+        ],
+        [
+          "2024-09-02T00:00:00Z",
+          3.5142,
+          0.868,
+          0.8888,
+          0.5885
+        ],
+        [
+          "2024-09-09T00:00:00Z",
+          3.3818,
+          0.9915,
+          0.8991,
+          0.5549
+        ],
+        [
+          "2024-09-16T00:00:00Z",
+          3.5334,
+          1.1263,
+          0.94,
+          0.4528
+        ],
+        [
+          "2024-09-23T00:00:00Z",
+          3.0088,
+          1.0698,
+          0.8165,
+          0.4765
+        ],
+        [
+          "2024-09-30T00:00:00Z",
+          3.2375,
+          0.9253,
+          0.8248,
+          0.44
+        ],
+        [
+          "2024-10-07T00:00:00Z",
+          3.2777,
+          0.8696,
+          0.8403,
+          0.466
+        ],
+        [
+          "2024-10-14T00:00:00Z",
+          3.3122,
+          0.9594,
+          0.903,
+          0.5359
+        ],
+        [
+          "2024-10-21T00:00:00Z",
+          3.2116,
+          0.8764,
+          0.8623,
+          0.4998
+        ],
+        [
+          "2024-10-28T00:00:00Z",
+          3.1206,
+          0.8679,
+          0.848,
+          0.506
+        ],
+        [
+          "2024-11-04T00:00:00Z",
+          3.3774,
+          0.8816,
+          0.981,
+          0.5038
+        ],
+        [
+          "2024-11-11T00:00:00Z",
+          3.6518,
+          0.9016,
+          0.9245,
+          0.663
+        ],
+        [
+          "2024-11-18T00:00:00Z",
+          3.5411,
+          0.8679,
+          0.9135,
+          0.5337
+        ],
+        [
+          "2024-11-25T00:00:00Z",
+          3.2939,
+          0.7564,
+          0.8047,
+          0.3665
+        ],
+        [
+          "2024-12-02T00:00:00Z",
+          3.0408,
+          0.7207,
+          0.7127,
+          0.3319
+        ],
+        [
+          "2024-12-09T00:00:00Z",
+          3.073,
+          0.71,
+          0.6636,
+          0.3291
+        ],
+        [
+          "2024-12-16T00:00:00Z",
+          2.6304,
+          0.6524,
+          0.6361,
+          0.2316
+        ],
+        [
+          "2024-12-23T00:00:00Z",
+          2.7801,
+          0.6773,
+          0.6607,
+          0.235
+        ],
+        [
+          "2024-12-30T00:00:00Z",
+          2.7283,
+          0.6662,
+          0.632,
+          0.2398
+        ],
+        [
+          "2025-01-06T00:00:00Z",
+          2.8075,
+          0.6579,
+          0.638,
+          0.2289
+        ],
+        [
+          "2025-01-13T00:00:00Z",
+          2.7189,
+          0.6479,
+          0.6307,
+          0.2412
+        ],
+        [
+          "2025-01-20T00:00:00Z",
+          2.8715,
+          0.6724,
+          0.7347,
+          0.2795
+        ],
+        [
+          "2025-01-27T00:00:00Z",
+          2.8616,
+          0.6909,
+          0.7438,
+          0.294
+        ],
+        [
+          "2025-02-03T00:00:00Z",
+          2.861,
+          0.7003,
+          0.7409,
+          0.2866
+        ],
+        [
+          "2025-02-10T00:00:00Z",
+          2.9189,
+          0.7031,
+          0.7361,
+          0.2684
+        ],
+        [
+          "2025-02-17T00:00:00Z",
+          2.6602,
+          0.5932,
+          0.6819,
+          0.2658
+        ],
+        [
+          "2025-02-24T00:00:00Z",
+          2.8812,
+          0.704,
+          0.8038,
+          0.4464
+        ],
+        [
+          "2025-03-03T00:00:00Z",
+          2.767,
+          0.7742,
+          0.7764,
+          0.4273
+        ],
+        [
+          "2025-03-10T00:00:00Z",
+          2.6222,
+          0.7233,
+          0.796,
+          0.4365
+        ],
+        [
+          "2025-03-17T00:00:00Z",
+          2.8124,
+          0.6259,
+          0.693,
+          0.5351
+        ],
+        [
+          "2025-03-24T00:00:00Z",
+          3.6034,
+          0.8772,
+          0.7361,
+          0.3914
+        ],
+        [
+          "2025-03-31T00:00:00Z",
+          3.5726,
+          0.8795,
+          0.7789,
+          0.3638
+        ],
+        [
+          "2025-04-07T00:00:00Z",
+          3.5165,
+          0.7603,
+          0.7168,
+          0.3317
+        ],
+        [
+          "2025-04-14T00:00:00Z",
+          3.5705,
+          0.8005,
+          0.7584,
+          0.32
+        ],
+        [
+          "2025-04-21T00:00:00Z",
+          3.6096,
+          0.8374,
+          0.8736,
+          0.3132
+        ],
+        [
+          "2025-04-28T00:00:00Z",
+          3.5484,
+          1.0383,
+          0.8882,
+          0.3494
+        ],
+        [
+          "2025-05-05T00:00:00Z",
+          3.1477,
+          1.0749,
+          0.9352,
+          0.3448
+        ],
+        [
+          "2025-05-12T00:00:00Z",
+          2.9927,
+          0.9609,
+          0.9347,
+          0.3555
+        ],
+        [
+          "2025-05-19T00:00:00Z",
+          3.1358,
+          0.877,
+          1.2172,
+          0.47
+        ],
+        [
+          "2025-05-26T00:00:00Z",
+          2.9848,
+          1.2479,
+          1.103,
+          0.4287
+        ],
+        [
+          "2025-06-02T00:00:00Z",
+          3.105,
+          1.325,
+          1.0727,
+          0.4249
+        ],
+        [
+          "2025-06-09T00:00:00Z",
+          2.6397,
+          1.3113,
+          1.0493,
+          0.4413
+        ],
+        [
+          "2025-06-16T00:00:00Z",
+          2.6618,
+          1.1545,
+          0.8726,
+          0.457
+        ],
+        [
+          "2025-06-23T00:00:00Z",
+          2.6625,
+          1.0202,
+          1.0775,
+          0.4522
+        ],
+        [
+          "2025-06-30T00:00:00Z",
+          2.253,
+          0.6611,
+          0.8164,
+          0.3809
+        ],
+        [
+          "2025-07-07T00:00:00Z",
+          2.0904,
+          0.6289,
+          0.7961,
+          0.4068
+        ],
+        [
+          "2025-07-14T00:00:00Z",
+          2.1945,
+          0.6376,
+          0.6904,
+          0.4241
+        ],
+        [
+          "2025-07-21T00:00:00Z",
+          1.9415,
+          0.6338,
+          0.6557,
+          0.4633
+        ],
+        [
+          "2025-07-28T00:00:00Z",
+          1.9693,
+          0.5894,
+          0.763,
+          0.4679
+        ],
+        [
+          "2025-08-04T00:00:00Z",
+          2.0404,
+          0.6138,
+          0.7061,
+          0.4687
+        ],
+        [
+          "2025-08-11T00:00:00Z",
+          1.786,
+          0.5707,
+          0.7184,
+          0.6107
+        ],
+        [
+          "2025-08-18T00:00:00Z",
+          1.7515,
+          0.7223,
+          0.7512,
+          0.6428
+        ],
+        [
+          "2025-08-25T00:00:00Z",
+          1.7341,
+          0.6778,
+          0.7682,
+          0.6448
+        ],
+        [
+          "2025-09-01T00:00:00Z",
+          1.719,
+          0.6416,
+          0.8545,
+          0.5648
+        ],
+        [
+          "2025-09-08T00:00:00Z",
+          1.8085,
+          0.8162,
+          0.9848,
+          0.747
+        ],
+        [
+          "2025-09-15T00:00:00Z",
+          1.8939,
+          0.7754,
+          0.8808,
+          0.5406
+        ],
+        [
+          "2025-09-22T00:00:00Z",
+          1.7991,
+          0.7766,
+          0.843,
+          0.5562
+        ],
+        [
+          "2025-09-29T00:00:00Z",
+          1.8713,
+          0.7694,
+          0.8143,
+          0.6059
+        ],
+        [
+          "2025-10-06T00:00:00Z",
+          1.779,
+          0.732,
+          0.698,
+          0.7621
+        ],
+        [
+          "2025-10-13T00:00:00Z",
+          1.912,
+          0.6406,
+          0.5522,
+          1.0083
+        ],
+        [
+          "2025-10-20T00:00:00Z",
+          1.7889,
+          0.6898,
+          0.5334,
+          0.8995
+        ],
+        [
+          "2025-10-27T00:00:00Z",
+          1.8177,
+          0.7706,
+          0.5979,
+          0.8945
+        ],
+        [
+          "2025-11-03T00:00:00Z",
+          2.0397,
+          0.728,
+          0.5705,
+          0.8064
+        ],
+        [
+          "2025-11-10T00:00:00Z",
+          1.7108,
+          0.7168,
+          0.5545,
+          0.8419
+        ],
+        [
+          "2025-11-17T00:00:00Z",
+          1.6404,
+          0.6156,
+          0.5671,
+          0.8097
+        ],
+        [
+          "2025-11-24T00:00:00Z",
+          1.8159,
+          0.8178,
+          0.7479,
+          0.7167
+        ],
+        [
+          "2025-12-01T00:00:00Z",
+          2.057,
+          0.9032,
+          0.7688,
+          0.8573
+        ],
+        [
+          "2025-12-08T00:00:00Z",
+          2.1779,
+          0.9996,
+          0.9639,
+          0.8497
+        ],
+        [
+          "2025-12-15T00:00:00Z",
+          2.4582,
+          1.1841,
+          0.9299,
+          0.8971
+        ],
+        [
+          "2025-12-22T00:00:00Z",
+          2.4148,
+          1.2155,
+          0.8176,
+          0.894
+        ],
+        [
+          "2025-12-29T00:00:00Z",
+          2.3987,
+          1.1533,
+          0.7867,
+          0.8416
+        ],
+        [
+          "2026-01-05T00:00:00Z",
+          2.3094,
+          1.1058,
+          0.7538,
+          0.6757
+        ],
+        [
+          "2026-01-12T00:00:00Z",
+          2.3512,
+          1.1284,
+          0.816,
+          0.727
+        ],
+        [
+          "2026-01-19T00:00:00Z",
+          2.4043,
+          1.1411,
+          0.8453,
+          0.7003
+        ],
+        [
+          "2026-01-26T00:00:00Z",
+          2.2535,
+          1.163,
+          1.0391,
+          0.6776
+        ],
+        [
+          "2026-02-02T00:00:00Z",
+          2.5852,
+          1.0293,
+          1.1694,
+          0.708
+        ],
+        [
+          "2026-02-09T00:00:00Z",
+          3.3883,
+          1.023,
+          1.1755,
+          0.6584
+        ],
+        [
+          "2026-02-16T00:00:00Z",
+          3.4213,
+          1.1639,
+          1.318,
+          0.6305
+        ],
+        [
+          "2026-02-23T00:00:00Z",
+          3.3241,
+          1.3238,
+          1.6402,
+          0.7594
+        ],
+        [
+          "2026-03-02T00:00:00Z",
+          3.456,
+          1.4121,
+          1.6087,
+          0.7173
+        ],
+        [
+          "2026-03-09T00:00:00Z",
+          4.0746,
+          1.6308,
+          1.8597,
+          0.8353
+        ],
+        [
+          "2026-03-16T00:00:00Z",
+          4.155,
+          1.5955,
+          1.5845,
+          0.9056
+        ],
+        [
+          "2026-03-23T00:00:00Z",
+          4.1339,
+          1.7518,
+          1.2681,
+          0.8342
+        ],
+        [
+          "2026-03-30T00:00:00Z",
+          4.5161,
+          1.9328,
+          1.2812,
+          0.9663
+        ],
+        [
+          "2026-04-06T00:00:00Z",
+          4.9861,
+          2.1885,
+          1.5091,
+          1.132
+        ],
+        [
+          "2026-04-13T00:00:00Z",
+          4.8127,
+          2.0143,
+          1.4212,
+          1.1443
+        ],
+        [
+          "2026-04-20T00:00:00Z",
+          4.7072,
+          2.031,
+          1.2805,
+          1.0536
+        ],
+        [
+          "2026-04-27T00:00:00Z",
+          4.6945,
+          2.0201,
+          1.4661,
+          1.0189
+        ],
+        [
+          "2026-05-04T00:00:00Z",
+          4.8982,
+          2.2095,
+          1.6641,
+          1.033
+        ],
+        [
+          "2026-05-11T00:00:00Z",
+          4.5117,
+          2.0729,
+          1.5857,
+          0.9223
+        ],
+        [
+          "2026-05-18T00:00:00Z",
+          4.7311,
+          2.0975,
+          1.7668,
+          0.8945
+        ],
+        [
+          "2026-05-25T00:00:00Z",
+          5.7911,
+          2.1935,
+          2.0261,
+          0.8747
+        ],
+        [
+          "2026-06-01T00:00:00Z",
+          5.4882,
+          1.9471,
+          1.8423,
+          0.7823
+        ],
+        [
+          "2026-06-08T00:00:00Z",
+          5.2921,
+          1.88,
+          1.7676,
+          0.7665
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-bank-short-basket-percent",
+    "metric": "paprika_example_shorted_housing_feature_bank_short_basket_percent",
+    "records": {
+      "columns": [
+        {
+          "key": "date",
+          "type": "timestamp"
+        },
+        {
+          "key": "CBA",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "WBC",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "NAB",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "ANZ",
+          "type": "number",
+          "unit": "%"
+        }
+      ],
+      "rows": [
+        [
+          "2024-06-17T00:00:00Z",
+          1.539,
+          0.596,
+          0.541,
+          0.392
+        ],
+        [
+          "2024-06-24T00:00:00Z",
+          1.562,
+          0.705,
+          0.523,
+          0.426
+        ],
+        [
+          "2024-07-01T00:00:00Z",
+          1.591,
+          0.73,
+          0.495,
+          0.445
+        ],
+        [
+          "2024-07-08T00:00:00Z",
+          1.541,
+          0.765,
+          0.494,
+          0.432
+        ],
+        [
+          "2024-07-15T00:00:00Z",
+          1.464,
+          0.771,
+          0.51,
+          0.399
+        ],
+        [
+          "2024-07-22T00:00:00Z",
+          1.528,
+          0.776,
+          0.599,
+          0.533
+        ],
+        [
+          "2024-07-29T00:00:00Z",
+          1.528,
+          0.783,
+          0.568,
+          0.442
+        ],
+        [
+          "2024-08-05T00:00:00Z",
+          1.544,
+          0.789,
+          0.558,
+          0.478
+        ],
+        [
+          "2024-08-12T00:00:00Z",
+          1.554,
+          0.713,
+          0.585,
+          0.496
+        ],
+        [
+          "2024-08-19T00:00:00Z",
+          1.461,
+          0.654,
+          0.593,
+          0.511
+        ],
+        [
+          "2024-08-26T00:00:00Z",
+          1.533,
+          0.758,
+          0.702,
+          0.617
+        ],
+        [
+          "2024-09-02T00:00:00Z",
+          1.464,
+          0.784,
+          0.739,
+          0.619
+        ],
+        [
+          "2024-09-09T00:00:00Z",
+          1.427,
+          0.896,
+          0.763,
+          0.596
+        ],
+        [
+          "2024-09-16T00:00:00Z",
+          1.461,
+          0.973,
+          0.77,
+          0.476
+        ],
+        [
+          "2024-09-23T00:00:00Z",
+          1.34,
+          0.976,
+          0.719,
+          0.525
+        ],
+        [
+          "2024-09-30T00:00:00Z",
+          1.457,
+          0.892,
+          0.736,
+          0.498
+        ],
+        [
+          "2024-10-07T00:00:00Z",
+          1.487,
+          0.859,
+          0.767,
+          0.544
+        ],
+        [
+          "2024-10-14T00:00:00Z",
+          1.427,
+          0.903,
+          0.784,
+          0.602
+        ],
+        [
+          "2024-10-21T00:00:00Z",
+          1.372,
+          0.832,
+          0.753,
+          0.559
+        ],
+        [
+          "2024-10-28T00:00:00Z",
+          1.351,
+          0.825,
+          0.755,
+          0.577
+        ],
+        [
+          "2024-11-04T00:00:00Z",
+          1.392,
+          0.817,
+          0.842,
+          0.556
+        ],
+        [
+          "2024-11-11T00:00:00Z",
+          1.448,
+          0.813,
+          0.785,
+          0.706
+        ],
+        [
+          "2024-11-18T00:00:00Z",
+          1.37,
+          0.765,
+          0.759,
+          0.572
+        ],
+        [
+          "2024-11-25T00:00:00Z",
+          1.278,
+          0.676,
+          0.685,
+          0.406
+        ],
+        [
+          "2024-12-02T00:00:00Z",
+          1.191,
+          0.656,
+          0.612,
+          0.368
+        ],
+        [
+          "2024-12-09T00:00:00Z",
+          1.195,
+          0.658,
+          0.588,
+          0.39
+        ],
+        [
+          "2024-12-16T00:00:00Z",
+          1.077,
+          0.614,
+          0.583,
+          0.286
+        ],
+        [
+          "2024-12-23T00:00:00Z",
+          1.095,
+          0.618,
+          0.585,
+          0.282
+        ],
+        [
+          "2024-12-30T00:00:00Z",
+          1.083,
+          0.609,
+          0.56,
+          0.287
+        ],
+        [
+          "2025-01-06T00:00:00Z",
+          1.107,
+          0.602,
+          0.559,
+          0.27
+        ],
+        [
+          "2025-01-13T00:00:00Z",
+          1.087,
+          0.601,
+          0.556,
+          0.283
+        ],
+        [
+          "2025-01-20T00:00:00Z",
+          1.114,
+          0.608,
+          0.621,
+          0.32
+        ],
+        [
+          "2025-01-27T00:00:00Z",
+          1.097,
+          0.612,
+          0.617,
+          0.332
+        ],
+        [
+          "2025-02-03T00:00:00Z",
+          1.082,
+          0.614,
+          0.607,
+          0.32
+        ],
+        [
+          "2025-02-10T00:00:00Z",
+          1.086,
+          0.605,
+          0.599,
+          0.297
+        ],
+        [
+          "2025-02-17T00:00:00Z",
+          1.064,
+          0.571,
+          0.648,
+          0.319
+        ],
+        [
+          "2025-02-24T00:00:00Z",
+          1.115,
+          0.661,
+          0.76,
+          0.518
+        ],
+        [
+          "2025-03-03T00:00:00Z",
+          1.131,
+          0.757,
+          0.757,
+          0.516
+        ],
+        [
+          "2025-03-10T00:00:00Z",
+          1.118,
+          0.731,
+          0.799,
+          0.534
+        ],
+        [
+          "2025-03-17T00:00:00Z",
+          1.172,
+          0.609,
+          0.698,
+          0.632
+        ],
+        [
+          "2025-03-24T00:00:00Z",
+          1.454,
+          0.823,
+          0.72,
+          0.457
+        ],
+        [
+          "2025-03-31T00:00:00Z",
+          1.408,
+          0.849,
+          0.773,
+          0.447
+        ],
+        [
+          "2025-04-07T00:00:00Z",
+          1.358,
+          0.739,
+          0.704,
+          0.414
+        ],
+        [
+          "2025-04-14T00:00:00Z",
+          1.323,
+          0.751,
+          0.729,
+          0.384
+        ],
+        [
+          "2025-04-21T00:00:00Z",
+          1.309,
+          0.764,
+          0.813,
+          0.365
+        ],
+        [
+          "2025-04-28T00:00:00Z",
+          1.25,
+          0.907,
+          0.795,
+          0.387
+        ],
+        [
+          "2025-05-05T00:00:00Z",
+          1.126,
+          1.006,
+          0.836,
+          0.4
+        ],
+        [
+          "2025-05-12T00:00:00Z",
+          1.054,
+          0.888,
+          0.825,
+          0.414
+        ],
+        [
+          "2025-05-19T00:00:00Z",
+          1.078,
+          0.818,
+          1.054,
+          0.544
+        ],
+        [
+          "2025-05-26T00:00:00Z",
+          1.014,
+          1.12,
+          0.948,
+          0.497
+        ],
+        [
+          "2025-06-02T00:00:00Z",
+          1.031,
+          1.167,
+          0.908,
+          0.485
+        ],
+        [
+          "2025-06-09T00:00:00Z",
+          0.88,
+          1.149,
+          0.881,
+          0.501
+        ],
+        [
+          "2025-06-16T00:00:00Z",
+          0.871,
+          1.016,
+          0.732,
+          0.542
+        ],
+        [
+          "2025-06-23T00:00:00Z",
+          0.858,
+          0.879,
+          0.896,
+          0.521
+        ],
+        [
+          "2025-06-30T00:00:00Z",
+          0.756,
+          0.574,
+          0.681,
+          0.421
+        ],
+        [
+          "2025-07-07T00:00:00Z",
+          0.696,
+          0.544,
+          0.656,
+          0.45
+        ],
+        [
+          "2025-07-14T00:00:00Z",
+          0.719,
+          0.543,
+          0.575,
+          0.461
+        ],
+        [
+          "2025-07-21T00:00:00Z",
+          0.671,
+          0.561,
+          0.571,
+          0.514
+        ],
+        [
+          "2025-07-28T00:00:00Z",
+          0.672,
+          0.515,
+          0.648,
+          0.508
+        ],
+        [
+          "2025-08-04T00:00:00Z",
+          0.69,
+          0.533,
+          0.599,
+          0.509
+        ],
+        [
+          "2025-08-11T00:00:00Z",
+          0.635,
+          0.453,
+          0.598,
+          0.619
+        ],
+        [
+          "2025-08-18T00:00:00Z",
+          0.606,
+          0.542,
+          0.577,
+          0.636
+        ],
+        [
+          "2025-08-25T00:00:00Z",
+          0.608,
+          0.513,
+          0.586,
+          0.642
+        ],
+        [
+          "2025-09-01T00:00:00Z",
+          0.611,
+          0.491,
+          0.646,
+          0.569
+        ],
+        [
+          "2025-09-08T00:00:00Z",
+          0.636,
+          0.62,
+          0.738,
+          0.754
+        ],
+        [
+          "2025-09-15T00:00:00Z",
+          0.681,
+          0.588,
+          0.657,
+          0.548
+        ],
+        [
+          "2025-09-22T00:00:00Z",
+          0.652,
+          0.595,
+          0.631,
+          0.568
+        ],
+        [
+          "2025-09-29T00:00:00Z",
+          0.656,
+          0.572,
+          0.596,
+          0.594
+        ],
+        [
+          "2025-10-06T00:00:00Z",
+          0.631,
+          0.546,
+          0.518,
+          0.733
+        ],
+        [
+          "2025-10-13T00:00:00Z",
+          0.679,
+          0.484,
+          0.416,
+          0.923
+        ],
+        [
+          "2025-10-20T00:00:00Z",
+          0.627,
+          0.519,
+          0.403,
+          0.823
+        ],
+        [
+          "2025-10-27T00:00:00Z",
+          0.633,
+          0.582,
+          0.447,
+          0.818
+        ],
+        [
+          "2025-11-03T00:00:00Z",
+          0.693,
+          0.546,
+          0.429,
+          0.734
+        ],
+        [
+          "2025-11-10T00:00:00Z",
+          0.65,
+          0.54,
+          0.436,
+          0.784
+        ],
+        [
+          "2025-11-17T00:00:00Z",
+          0.64,
+          0.485,
+          0.456,
+          0.778
+        ],
+        [
+          "2025-11-24T00:00:00Z",
+          0.711,
+          0.636,
+          0.609,
+          0.693
+        ],
+        [
+          "2025-12-01T00:00:00Z",
+          0.797,
+          0.693,
+          0.614,
+          0.813
+        ],
+        [
+          "2025-12-08T00:00:00Z",
+          0.834,
+          0.753,
+          0.747,
+          0.795
+        ],
+        [
+          "2025-12-15T00:00:00Z",
+          0.931,
+          0.893,
+          0.72,
+          0.826
+        ],
+        [
+          "2025-12-22T00:00:00Z",
+          0.894,
+          0.908,
+          0.628,
+          0.817
+        ],
+        [
+          "2025-12-29T00:00:00Z",
+          0.89,
+          0.866,
+          0.605,
+          0.767
+        ],
+        [
+          "2026-01-05T00:00:00Z",
+          0.901,
+          0.862,
+          0.599,
+          0.632
+        ],
+        [
+          "2026-01-12T00:00:00Z",
+          0.911,
+          0.842,
+          0.623,
+          0.643
+        ],
+        [
+          "2026-01-19T00:00:00Z",
+          0.961,
+          0.861,
+          0.651,
+          0.642
+        ],
+        [
+          "2026-01-26T00:00:00Z",
+          0.906,
+          0.873,
+          0.787,
+          0.612
+        ],
+        [
+          "2026-02-02T00:00:00Z",
+          0.97,
+          0.763,
+          0.879,
+          0.635
+        ],
+        [
+          "2026-02-09T00:00:00Z",
+          1.148,
+          0.73,
+          0.871,
+          0.534
+        ],
+        [
+          "2026-02-16T00:00:00Z",
+          1.138,
+          0.8,
+          0.89,
+          0.533
+        ],
+        [
+          "2026-02-23T00:00:00Z",
+          1.138,
+          0.91,
+          1.091,
+          0.629
+        ],
+        [
+          "2026-03-02T00:00:00Z",
+          1.197,
+          1.007,
+          1.12,
+          0.632
+        ],
+        [
+          "2026-03-09T00:00:00Z",
+          1.401,
+          1.163,
+          1.287,
+          0.745
+        ],
+        [
+          "2026-03-16T00:00:00Z",
+          1.414,
+          1.146,
+          1.134,
+          0.821
+        ],
+        [
+          "2026-03-23T00:00:00Z",
+          1.423,
+          1.257,
+          0.984,
+          0.758
+        ],
+        [
+          "2026-03-30T00:00:00Z",
+          1.562,
+          1.418,
+          0.999,
+          0.875
+        ],
+        [
+          "2026-04-06T00:00:00Z",
+          1.625,
+          1.496,
+          1.085,
+          0.967
+        ],
+        [
+          "2026-04-13T00:00:00Z",
+          1.614,
+          1.512,
+          1.112,
+          1.001
+        ],
+        [
+          "2026-04-20T00:00:00Z",
+          1.612,
+          1.552,
+          1.064,
+          0.987
+        ],
+        [
+          "2026-04-27T00:00:00Z",
+          1.621,
+          1.567,
+          1.226,
+          0.971
+        ],
+        [
+          "2026-05-04T00:00:00Z",
+          1.664,
+          1.725,
+          1.414,
+          0.953
+        ],
+        [
+          "2026-05-11T00:00:00Z",
+          1.691,
+          1.691,
+          1.415,
+          0.869
+        ],
+        [
+          "2026-05-18T00:00:00Z",
+          1.706,
+          1.678,
+          1.522,
+          0.836
+        ],
+        [
+          "2026-05-25T00:00:00Z",
+          2.097,
+          1.781,
+          1.769,
+          0.824
+        ],
+        [
+          "2026-06-01T00:00:00Z",
+          2.038,
+          1.635,
+          1.641,
+          0.761
+        ],
+        [
+          "2026-06-08T00:00:00Z",
+          2.022,
+          1.593,
+          1.615,
+          0.752
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-policy-price",
+    "metric": "paprika_example_shorted_housing_feature_policy_price",
+    "records": {
+      "columns": [
+        {
+          "key": "year",
+          "type": "number"
+        },
+        {
+          "key": "house_price_index",
+          "type": "number",
+          "unit": "2010=100"
+        },
+        {
+          "key": "investor_share",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "negatively_geared_landlords",
+          "type": "number",
+          "unit": "count"
+        }
+      ],
+      "rows": [
+        [
+          1980,
+          39.04,
+          null,
+          null
+        ],
+        [
+          1981,
+          41.02,
+          null,
+          null
+        ],
+        [
+          1982,
+          38.23,
+          null,
+          null
+        ],
+        [
+          1983,
+          36.68,
+          null,
+          null
+        ],
+        [
+          1984,
+          39.35,
+          null,
+          null
+        ],
+        [
+          1985,
+          40.63,
+          null,
+          null
+        ],
+        [
+          1986,
+          39.39,
+          null,
+          null
+        ],
+        [
+          1987,
+          37.81,
+          null,
+          null
+        ],
+        [
+          1988,
+          43.15,
+          null,
+          null
+        ],
+        [
+          1989,
+          50.1,
+          null,
+          null
+        ],
+        [
+          1990,
+          47.43,
+          null,
+          null
+        ],
+        [
+          1991,
+          47.11,
+          null,
+          null
+        ],
+        [
+          1992,
+          47.42,
+          null,
+          null
+        ],
+        [
+          1993,
+          47.77,
+          null,
+          null
+        ],
+        [
+          1994,
+          48.57,
+          null,
+          null
+        ],
+        [
+          1995,
+          47.0,
+          null,
+          null
+        ],
+        [
+          1996,
+          46.15,
+          null,
+          null
+        ],
+        [
+          1997,
+          47.87,
+          null,
+          null
+        ],
+        [
+          1998,
+          50.95,
+          null,
+          null
+        ],
+        [
+          1999,
+          53.85,
+          null,
+          null
+        ],
+        [
+          2000,
+          55.86,
+          null,
+          631435.0
+        ],
+        [
+          2001,
+          59.48,
+          null,
+          null
+        ],
+        [
+          2002,
+          68.57,
+          null,
+          null
+        ],
+        [
+          2003,
+          78.77,
+          41.6,
+          null
+        ],
+        [
+          2004,
+          81.8,
+          null,
+          897019.0
+        ],
+        [
+          2005,
+          81.13,
+          37.2,
+          null
+        ],
+        [
+          2006,
+          83.75,
+          null,
+          null
+        ],
+        [
+          2007,
+          90.43,
+          37.1,
+          null
+        ],
+        [
+          2008,
+          90.14,
+          null,
+          1151601.0
+        ],
+        [
+          2009,
+          92.09,
+          31.7,
+          null
+        ],
+        [
+          2010,
+          100.0,
+          null,
+          null
+        ],
+        [
+          2011,
+          94.66,
+          36.1,
+          null
+        ],
+        [
+          2012,
+          92.75,
+          null,
+          1243212.0
+        ],
+        [
+          2013,
+          96.52,
+          40.3,
+          null
+        ],
+        [
+          2014,
+          102.71,
+          43.3,
+          null
+        ],
+        [
+          2015,
+          110.32,
+          null,
+          null
+        ],
+        [
+          2016,
+          114.92,
+          37.8,
+          1280452.0
+        ],
+        [
+          2017,
+          122.15,
+          null,
+          null
+        ],
+        [
+          2018,
+          118.13,
+          31.5,
+          null
+        ],
+        [
+          2019,
+          111.53,
+          null,
+          1305002.0
+        ],
+        [
+          2020,
+          116.56,
+          25.1,
+          1195145.0
+        ],
+        [
+          2021,
+          133.0,
+          null,
+          1056951.0
+        ],
+        [
+          2022,
+          135.21,
+          34.0,
+          949519.0
+        ],
+        [
+          2023,
+          127.67,
+          34.7,
+          1117175.0
+        ],
+        [
+          2024,
+          133.5,
+          37.7,
+          null
+        ],
+        [
+          2025,
+          136.75,
+          39.0,
+          null
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-policy-landlords",
+    "metric": "paprika_example_shorted_housing_feature_policy_landlords",
+    "records": {
+      "columns": [
+        {
+          "key": "year",
+          "type": "number"
+        },
+        {
+          "key": "house_price_index",
+          "type": "number",
+          "unit": "2010=100"
+        },
+        {
+          "key": "investor_share",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "negatively_geared_landlords",
+          "type": "number",
+          "unit": "count"
+        }
+      ],
+      "rows": [
+        [
+          1980,
+          39.04,
+          null,
+          null
+        ],
+        [
+          1981,
+          41.02,
+          null,
+          null
+        ],
+        [
+          1982,
+          38.23,
+          null,
+          null
+        ],
+        [
+          1983,
+          36.68,
+          null,
+          null
+        ],
+        [
+          1984,
+          39.35,
+          null,
+          null
+        ],
+        [
+          1985,
+          40.63,
+          null,
+          null
+        ],
+        [
+          1986,
+          39.39,
+          null,
+          null
+        ],
+        [
+          1987,
+          37.81,
+          null,
+          null
+        ],
+        [
+          1988,
+          43.15,
+          null,
+          null
+        ],
+        [
+          1989,
+          50.1,
+          null,
+          null
+        ],
+        [
+          1990,
+          47.43,
+          null,
+          null
+        ],
+        [
+          1991,
+          47.11,
+          null,
+          null
+        ],
+        [
+          1992,
+          47.42,
+          null,
+          null
+        ],
+        [
+          1993,
+          47.77,
+          null,
+          null
+        ],
+        [
+          1994,
+          48.57,
+          null,
+          null
+        ],
+        [
+          1995,
+          47.0,
+          null,
+          null
+        ],
+        [
+          1996,
+          46.15,
+          null,
+          null
+        ],
+        [
+          1997,
+          47.87,
+          null,
+          null
+        ],
+        [
+          1998,
+          50.95,
+          null,
+          null
+        ],
+        [
+          1999,
+          53.85,
+          null,
+          null
+        ],
+        [
+          2000,
+          55.86,
+          null,
+          631435.0
+        ],
+        [
+          2001,
+          59.48,
+          null,
+          null
+        ],
+        [
+          2002,
+          68.57,
+          null,
+          null
+        ],
+        [
+          2003,
+          78.77,
+          41.6,
+          null
+        ],
+        [
+          2004,
+          81.8,
+          null,
+          897019.0
+        ],
+        [
+          2005,
+          81.13,
+          37.2,
+          null
+        ],
+        [
+          2006,
+          83.75,
+          null,
+          null
+        ],
+        [
+          2007,
+          90.43,
+          37.1,
+          null
+        ],
+        [
+          2008,
+          90.14,
+          null,
+          1151601.0
+        ],
+        [
+          2009,
+          92.09,
+          31.7,
+          null
+        ],
+        [
+          2010,
+          100.0,
+          null,
+          null
+        ],
+        [
+          2011,
+          94.66,
+          36.1,
+          null
+        ],
+        [
+          2012,
+          92.75,
+          null,
+          1243212.0
+        ],
+        [
+          2013,
+          96.52,
+          40.3,
+          null
+        ],
+        [
+          2014,
+          102.71,
+          43.3,
+          null
+        ],
+        [
+          2015,
+          110.32,
+          null,
+          null
+        ],
+        [
+          2016,
+          114.92,
+          37.8,
+          1280452.0
+        ],
+        [
+          2017,
+          122.15,
+          null,
+          null
+        ],
+        [
+          2018,
+          118.13,
+          31.5,
+          null
+        ],
+        [
+          2019,
+          111.53,
+          null,
+          1305002.0
+        ],
+        [
+          2020,
+          116.56,
+          25.1,
+          1195145.0
+        ],
+        [
+          2021,
+          133.0,
+          null,
+          1056951.0
+        ],
+        [
+          2022,
+          135.21,
+          34.0,
+          949519.0
+        ],
+        [
+          2023,
+          127.67,
+          34.7,
+          1117175.0
+        ],
+        [
+          2024,
+          133.5,
+          37.7,
+          null
+        ],
+        [
+          2025,
+          136.75,
+          39.0,
+          null
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-buying-power",
+    "metric": "paprika_example_shorted_housing_feature_buying_power",
+    "records": {
+      "columns": [
+        {
+          "key": "year",
+          "type": "number"
+        },
+        {
+          "key": "debt_to_income",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "price_to_income",
+          "type": "number",
+          "unit": "2015=100"
+        }
+      ],
+      "rows": [
+        [
+          1990,
+          67.2,
+          65.5
+        ],
+        [
+          1995,
+          86.1,
+          null
+        ],
+        [
+          2000,
+          114.5,
+          67.8
+        ],
+        [
+          2002,
+          133.2,
+          null
+        ],
+        [
+          2005,
+          157.3,
+          88.4
+        ],
+        [
+          2010,
+          164.3,
+          94.3
+        ],
+        [
+          2015,
+          174.1,
+          100.0
+        ],
+        [
+          2017,
+          186.5,
+          null
+        ],
+        [
+          2018,
+          187.4,
+          null
+        ],
+        [
+          2020,
+          180.1,
+          100.4
+        ],
+        [
+          2021,
+          null,
+          112.3
+        ],
+        [
+          2022,
+          183.8,
+          null
+        ],
+        [
+          2023,
+          null,
+          117.2
+        ],
+        [
+          2024,
+          178.6,
+          120.1
+        ],
+        [
+          2025,
+          177.0,
+          119.5
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-borrowing-power",
+    "metric": "paprika_example_shorted_housing_feature_borrowing_power",
+    "records": {
+      "columns": [
+        {
+          "key": "rate",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "aggressive",
+          "type": "number",
+          "unit": "index"
+        },
+        {
+          "key": "conservative",
+          "type": "number",
+          "unit": "index"
+        },
+        {
+          "key": "aggressive_change",
+          "type": "number",
+          "unit": "%"
+        },
+        {
+          "key": "conservative_change",
+          "type": "number",
+          "unit": "%"
+        }
+      ],
+      "rows": [
+        [
+          3.0,
+          184.0,
+          151.0,
+          84.0,
+          51.0
+        ],
+        [
+          3.1,
+          181.2,
+          149.3,
+          81.2,
+          49.3
+        ],
+        [
+          3.2,
+          178.4,
+          147.6,
+          78.4,
+          47.6
+        ],
+        [
+          3.3,
+          175.6,
+          145.9,
+          75.6,
+          45.9
+        ],
+        [
+          3.4,
+          172.8,
+          144.2,
+          72.8,
+          44.2
+        ],
+        [
+          3.5,
+          170.0,
+          142.5,
+          70.0,
+          42.5
+        ],
+        [
+          3.6,
+          167.2,
+          140.8,
+          67.2,
+          40.8
+        ],
+        [
+          3.7,
+          164.4,
+          139.1,
+          64.4,
+          39.1
+        ],
+        [
+          3.8,
+          161.6,
+          137.4,
+          61.6,
+          37.4
+        ],
+        [
+          3.9,
+          158.8,
+          135.7,
+          58.8,
+          35.7
+        ],
+        [
+          4.0,
+          156.0,
+          134.0,
+          56.0,
+          34.0
+        ],
+        [
+          4.1,
+          153.2,
+          132.3,
+          53.2,
+          32.3
+        ],
+        [
+          4.2,
+          150.4,
+          130.6,
+          50.4,
+          30.6
+        ],
+        [
+          4.3,
+          147.6,
+          128.9,
+          47.6,
+          28.9
+        ],
+        [
+          4.4,
+          144.8,
+          127.2,
+          44.8,
+          27.2
+        ],
+        [
+          4.5,
+          142.0,
+          125.5,
+          42.0,
+          25.5
+        ],
+        [
+          4.6,
+          139.2,
+          123.8,
+          39.2,
+          23.8
+        ],
+        [
+          4.7,
+          136.4,
+          122.1,
+          36.4,
+          22.1
+        ],
+        [
+          4.8,
+          133.6,
+          120.4,
+          33.6,
+          20.4
+        ],
+        [
+          4.9,
+          130.8,
+          118.7,
+          30.8,
+          18.7
+        ],
+        [
+          5.0,
+          128.0,
+          117.0,
+          28.0,
+          17.0
+        ],
+        [
+          5.1,
+          125.2,
+          115.3,
+          25.2,
+          15.3
+        ],
+        [
+          5.2,
+          122.4,
+          113.6,
+          22.4,
+          13.6
+        ],
+        [
+          5.3,
+          119.6,
+          111.9,
+          19.6,
+          11.9
+        ],
+        [
+          5.4,
+          116.8,
+          110.2,
+          16.8,
+          10.2
+        ],
+        [
+          5.5,
+          114.0,
+          108.5,
+          14.0,
+          8.5
+        ],
+        [
+          5.6,
+          111.2,
+          106.8,
+          11.2,
+          6.8
+        ],
+        [
+          5.7,
+          108.4,
+          105.1,
+          8.4,
+          5.1
+        ],
+        [
+          5.8,
+          105.6,
+          103.4,
+          5.6,
+          3.4
+        ],
+        [
+          5.9,
+          102.8,
+          101.7,
+          2.8,
+          1.7
+        ],
+        [
+          6.0,
+          100.0,
+          100.0,
+          0.0,
+          0.0
+        ],
+        [
+          6.1,
+          97.2,
+          98.3,
+          -2.8,
+          -1.7
+        ],
+        [
+          6.2,
+          94.4,
+          96.6,
+          -5.6,
+          -3.4
+        ],
+        [
+          6.3,
+          91.6,
+          94.9,
+          -8.4,
+          -5.1
+        ],
+        [
+          6.4,
+          88.8,
+          93.2,
+          -11.2,
+          -6.8
+        ],
+        [
+          6.5,
+          86.0,
+          91.5,
+          -14.0,
+          -8.5
+        ],
+        [
+          6.6,
+          83.2,
+          89.8,
+          -16.8,
+          -10.2
+        ],
+        [
+          6.7,
+          80.4,
+          88.1,
+          -19.6,
+          -11.9
+        ],
+        [
+          6.8,
+          77.6,
+          86.4,
+          -22.4,
+          -13.6
+        ],
+        [
+          6.9,
+          74.8,
+          84.7,
+          -25.2,
+          -15.3
+        ],
+        [
+          7.0,
+          72.0,
+          83.0,
+          -28.0,
+          -17.0
+        ],
+        [
+          7.1,
+          69.2,
+          81.3,
+          -30.8,
+          -18.7
+        ],
+        [
+          7.2,
+          66.4,
+          79.6,
+          -33.6,
+          -20.4
+        ],
+        [
+          7.3,
+          63.6,
+          77.9,
+          -36.4,
+          -22.1
+        ],
+        [
+          7.4,
+          60.8,
+          76.2,
+          -39.2,
+          -23.8
+        ],
+        [
+          7.5,
+          58.0,
+          74.5,
+          -42.0,
+          -25.5
+        ],
+        [
+          7.6,
+          55.2,
+          72.8,
+          -44.8,
+          -27.2
+        ],
+        [
+          7.7,
+          52.4,
+          71.1,
+          -47.6,
+          -28.9
+        ],
+        [
+          7.8,
+          49.6,
+          69.4,
+          -50.4,
+          -30.6
+        ],
+        [
+          7.9,
+          46.8,
+          67.7,
+          -53.2,
+          -32.3
+        ],
+        [
+          8.0,
+          44.0,
+          66.0,
+          -56.0,
+          -34.0
+        ],
+        [
+          8.1,
+          41.2,
+          64.3,
+          -58.8,
+          -35.7
+        ],
+        [
+          8.2,
+          38.4,
+          62.6,
+          -61.6,
+          -37.4
+        ],
+        [
+          8.3,
+          35.6,
+          60.9,
+          -64.4,
+          -39.1
+        ],
+        [
+          8.4,
+          32.8,
+          59.2,
+          -67.2,
+          -40.8
+        ],
+        [
+          8.5,
+          30.0,
+          57.5,
+          -70.0,
+          -42.5
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-international-corrections",
+    "metric": "paprika_example_shorted_housing_feature_international_corrections",
+    "records": {
+      "columns": [
+        {
+          "key": "year",
+          "type": "number"
+        },
+        {
+          "key": "AUS",
+          "type": "number",
+          "unit": "2010=100"
+        },
+        {
+          "key": "JPN",
+          "type": "number",
+          "unit": "2010=100"
+        },
+        {
+          "key": "USA",
+          "type": "number",
+          "unit": "2010=100"
+        },
+        {
+          "key": "CHN",
+          "type": "number",
+          "unit": "2010=100"
+        }
+      ],
+      "rows": [
+        [
+          1980,
+          null,
+          119.37,
+          null,
+          null
+        ],
+        [
+          1981,
+          null,
+          126.13,
+          null,
+          null
+        ],
+        [
+          1982,
+          null,
+          132.36,
+          null,
+          null
+        ],
+        [
+          1983,
+          null,
+          136.25,
+          null,
+          null
+        ],
+        [
+          1984,
+          null,
+          137.57,
+          null,
+          null
+        ],
+        [
+          1985,
+          null,
+          138.21,
+          null,
+          null
+        ],
+        [
+          1986,
+          null,
+          140.99,
+          null,
+          null
+        ],
+        [
+          1987,
+          null,
+          151.28,
+          null,
+          null
+        ],
+        [
+          1988,
+          null,
+          159.04,
+          null,
+          null
+        ],
+        [
+          1989,
+          null,
+          167.53,
+          null,
+          null
+        ],
+        [
+          1990,
+          null,
+          184.64,
+          null,
+          null
+        ],
+        [
+          1991,
+          null,
+          186.46,
+          null,
+          null
+        ],
+        [
+          1992,
+          null,
+          176.21,
+          null,
+          null
+        ],
+        [
+          1993,
+          null,
+          166.46,
+          null,
+          null
+        ],
+        [
+          1994,
+          null,
+          161.44,
+          null,
+          null
+        ],
+        [
+          1995,
+          47.0,
+          159.11,
+          82.48,
+          null
+        ],
+        [
+          1996,
+          46.15,
+          156.0,
+          82.42,
+          null
+        ],
+        [
+          1997,
+          47.87,
+          151.4,
+          83.39,
+          null
+        ],
+        [
+          1998,
+          50.95,
+          147.89,
+          87.46,
+          null
+        ],
+        [
+          1999,
+          53.85,
+          143.78,
+          91.91,
+          null
+        ],
+        [
+          2000,
+          55.86,
+          139.27,
+          97.31,
+          null
+        ],
+        [
+          2001,
+          59.48,
+          134.09,
+          102.94,
+          null
+        ],
+        [
+          2002,
+          68.57,
+          128.15,
+          109.89,
+          null
+        ],
+        [
+          2003,
+          78.77,
+          120.49,
+          117.88,
+          null
+        ],
+        [
+          2004,
+          81.8,
+          113.13,
+          131.06,
+          null
+        ],
+        [
+          2005,
+          81.13,
+          107.96,
+          146.89,
+          89.07
+        ],
+        [
+          2006,
+          83.75,
+          104.48,
+          150.55,
+          91.04
+        ],
+        [
+          2007,
+          90.43,
+          103.34,
+          137.96,
+          92.74
+        ],
+        [
+          2008,
+          90.14,
+          100.34,
+          113.73,
+          92.87
+        ],
+        [
+          2009,
+          92.09,
+          97.85,
+          103.06,
+          94.71
+        ],
+        [
+          2010,
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        [
+          2011,
+          94.66,
+          100.34,
+          94.27,
+          98.65
+        ],
+        [
+          2012,
+          92.75,
+          99.51,
+          96.7,
+          95.49
+        ],
+        [
+          2013,
+          96.52,
+          100.79,
+          104.68,
+          98.62
+        ],
+        [
+          2014,
+          102.71,
+          99.62,
+          109.51,
+          99.13
+        ],
+        [
+          2015,
+          110.32,
+          101.22,
+          115.17,
+          93.92
+        ],
+        [
+          2016,
+          114.92,
+          103.6,
+          119.82,
+          98.03
+        ],
+        [
+          2017,
+          122.15,
+          105.72,
+          124.19,
+          103.3
+        ],
+        [
+          2018,
+          118.13,
+          106.71,
+          127.96,
+          106.72
+        ],
+        [
+          2019,
+          111.53,
+          107.93,
+          130.65,
+          109.78
+        ],
+        [
+          2020,
+          116.56,
+          108.03,
+          137.79,
+          109.65
+        ],
+        [
+          2021,
+          133.0,
+          114.71,
+          151.55,
+          111.82
+        ],
+        [
+          2022,
+          135.21,
+          121.33,
+          158.25,
+          107.16
+        ],
+        [
+          2023,
+          127.67,
+          121.06,
+          158.05,
+          103.45
+        ],
+        [
+          2024,
+          133.5,
+          121.16,
+          160.18,
+          95.56
+        ],
+        [
+          2025,
+          136.75,
+          122.62,
+          158.6,
+          89.48
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-housing-feature-international-corrections-aligned",
+    "metric": "paprika_example_shorted_housing_feature_international_corrections_aligned",
+    "records": {
+      "columns": [
+        {
+          "key": "years_since_peak",
+          "type": "number"
+        },
+        {
+          "key": "AUS",
+          "type": "number",
+          "unit": "peak=100"
+        },
+        {
+          "key": "JPN",
+          "type": "number",
+          "unit": "peak=100"
+        },
+        {
+          "key": "USA",
+          "type": "number",
+          "unit": "peak=100"
+        },
+        {
+          "key": "CHN",
+          "type": "number",
+          "unit": "peak=100"
+        }
+      ],
+      "rows": [
+        [
+          -37,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -36,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -35,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -34,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -33,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -32,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -31,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -30,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -29,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -28,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -27,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -26,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -25,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -24,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -23,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          -22,
+          38.47728203,
+          null,
+          null,
+          null
+        ],
+        [
+          -21,
+          37.78141629,
+          null,
+          null,
+          null
+        ],
+        [
+          -20,
+          39.18952108,
+          null,
+          null,
+          null
+        ],
+        [
+          -19,
+          41.71101105,
+          null,
+          null,
+          null
+        ],
+        [
+          -18,
+          44.08514122,
+          null,
+          null,
+          null
+        ],
+        [
+          -17,
+          45.73065903,
+          null,
+          null,
+          null
+        ],
+        [
+          -16,
+          48.69422841,
+          null,
+          null,
+          79.65480236
+        ],
+        [
+          -15,
+          56.13589849,
+          null,
+          null,
+          81.41656233
+        ],
+        [
+          -14,
+          64.48628735,
+          null,
+          null,
+          82.93686282
+        ],
+        [
+          -13,
+          66.96684404,
+          null,
+          null,
+          83.05312109
+        ],
+        [
+          -12,
+          66.41833811,
+          null,
+          null,
+          84.69862279
+        ],
+        [
+          -11,
+          68.56324192,
+          64.01909257,
+          54.78578545,
+          89.42944017
+        ],
+        [
+          -10,
+          74.03192796,
+          67.64453502,
+          54.74593158,
+          88.22214273
+        ],
+        [
+          -9,
+          73.79451494,
+          70.98573421,
+          55.3902358,
+          85.39617242
+        ],
+        [
+          -8,
+          75.39091281,
+          73.07197254,
+          58.09365659,
+          88.1953139
+        ],
+        [
+          -7,
+          81.86655751,
+          73.77989917,
+          61.04948522,
+          88.65140404
+        ],
+        [
+          -6,
+          77.49488334,
+          74.12313633,
+          64.63633344,
+          83.99213021
+        ],
+        [
+          -5,
+          75.93123209,
+          75.61407272,
+          68.37595483,
+          87.6676802
+        ],
+        [
+          -4,
+          79.01760131,
+          81.13268261,
+          72.99236134,
+          92.3806117
+        ],
+        [
+          -3,
+          84.08514122,
+          85.29443312,
+          78.29956825,
+          95.43909855
+        ],
+        [
+          -2,
+          90.31518625,
+          89.84768851,
+          87.05413484,
+          98.17563942
+        ],
+        [
+          -1,
+          94.08104789,
+          99.02391934,
+          97.56891398,
+          98.05938115
+        ],
+        [
+          0,
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        [
+          1,
+          96.70896439,
+          94.50284243,
+          91.63732979,
+          95.83258809
+        ],
+        [
+          2,
+          91.30577159,
+          89.27383889,
+          75.54300897,
+          92.51475586
+        ],
+        [
+          3,
+          95.42365944,
+          86.58157246,
+          68.45566257,
+          85.45877303
+        ],
+        [
+          4,
+          108.88252149,
+          85.33197469,
+          66.42311524,
+          80.02146307
+        ],
+        [
+          5,
+          110.69177241,
+          83.66405663,
+          62.61707074,
+          null
+        ],
+        [
+          6,
+          104.51903397,
+          81.19703958,
+          64.23115244,
+          null
+        ],
+        [
+          7,
+          109.29185428,
+          79.31459831,
+          69.53171704,
+          null
+        ],
+        [
+          8,
+          111.9525174,
+          77.1103722,
+          72.7399535,
+          null
+        ],
+        [
+          9,
+          null,
+          74.69162287,
+          76.49950183,
+          null
+        ],
+        [
+          10,
+          null,
+          71.91354714,
+          79.58817669,
+          null
+        ],
+        [
+          11,
+          null,
+          68.72787729,
+          82.49086682,
+          null
+        ],
+        [
+          12,
+          null,
+          64.61975759,
+          84.99501827,
+          null
+        ],
+        [
+          13,
+          null,
+          60.6725303,
+          86.78180007,
+          null
+        ],
+        [
+          14,
+          null,
+          57.89981766,
+          91.52441049,
+          null
+        ],
+        [
+          15,
+          null,
+          56.03346562,
+          100.66423115,
+          null
+        ],
+        [
+          16,
+          null,
+          55.42207444,
+          105.11457987,
+          null
+        ],
+        [
+          17,
+          null,
+          53.81315027,
+          104.98173364,
+          null
+        ],
+        [
+          18,
+          null,
+          52.47774322,
+          106.396546,
+          null
+        ],
+        [
+          19,
+          null,
+          53.63080553,
+          105.34706078,
+          null
+        ],
+        [
+          20,
+          null,
+          53.81315027,
+          null,
+          null
+        ],
+        [
+          21,
+          null,
+          53.36801459,
+          null,
+          null
+        ],
+        [
+          22,
+          null,
+          54.0544889,
+          null,
+          null
+        ],
+        [
+          23,
+          null,
+          53.42700847,
+          null,
+          null
+        ],
+        [
+          24,
+          null,
+          54.28510136,
+          null,
+          null
+        ],
+        [
+          25,
+          null,
+          55.56151453,
+          null,
+          null
+        ],
+        [
+          26,
+          null,
+          56.69848761,
+          null,
+          null
+        ],
+        [
+          27,
+          null,
+          57.22943259,
+          null,
+          null
+        ],
+        [
+          28,
+          null,
+          57.88372841,
+          null,
+          null
+        ],
+        [
+          29,
+          null,
+          57.93735922,
+          null,
+          null
+        ],
+        [
+          30,
+          null,
+          61.51989703,
+          null,
+          null
+        ],
+        [
+          31,
+          null,
+          65.07025636,
+          null,
+          null
+        ],
+        [
+          32,
+          null,
+          64.92545318,
+          null,
+          null
+        ],
+        [
+          33,
+          null,
+          64.97908399,
+          null,
+          null
+        ],
+        [
+          34,
+          null,
+          65.76209375,
+          null,
+          null
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-industry-intelligence-tax-environment",
+    "metric": "paprika_example_shorted_industry_intelligence_tax_environment",
+    "records": {
+      "columns": [
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "signal_kind",
+          "type": "string"
+        },
+        {
+          "key": "metric_key",
+          "type": "string"
+        },
+        {
+          "key": "metric_label",
+          "type": "string"
+        },
+        {
+          "key": "unit",
+          "type": "string"
+        },
+        {
+          "key": "bucket_label",
+          "type": "string"
+        },
+        {
+          "key": "bucket_start",
+          "type": "timestamp"
+        },
+        {
+          "key": "total_value",
+          "type": "number"
+        },
+        {
+          "key": "record_count",
+          "type": "number"
+        },
+        {
+          "key": "entity_count",
+          "type": "number"
+        },
+        {
+          "key": "zero_value_count",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "Banks",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "tax_environment",
+          "tax_payable",
+          "Tax Environment",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-industry-intelligence-public-money",
+    "metric": "paprika_example_shorted_industry_intelligence_public_money",
+    "records": {
+      "columns": [
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "signal_kind",
+          "type": "string"
+        },
+        {
+          "key": "metric_key",
+          "type": "string"
+        },
+        {
+          "key": "metric_label",
+          "type": "string"
+        },
+        {
+          "key": "unit",
+          "type": "string"
+        },
+        {
+          "key": "bucket_label",
+          "type": "string"
+        },
+        {
+          "key": "bucket_start",
+          "type": "timestamp"
+        },
+        {
+          "key": "total_value",
+          "type": "number"
+        },
+        {
+          "key": "record_count",
+          "type": "number"
+        },
+        {
+          "key": "entity_count",
+          "type": "number"
+        },
+        {
+          "key": "zero_value_count",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "Banks",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "public_money",
+          "contract_value",
+          "Public Money",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-industry-intelligence-emissions",
+    "metric": "paprika_example_shorted_industry_intelligence_emissions",
+    "records": {
+      "columns": [
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "signal_kind",
+          "type": "string"
+        },
+        {
+          "key": "metric_key",
+          "type": "string"
+        },
+        {
+          "key": "metric_label",
+          "type": "string"
+        },
+        {
+          "key": "unit",
+          "type": "string"
+        },
+        {
+          "key": "bucket_label",
+          "type": "string"
+        },
+        {
+          "key": "bucket_start",
+          "type": "timestamp"
+        },
+        {
+          "key": "total_value",
+          "type": "number"
+        },
+        {
+          "key": "record_count",
+          "type": "number"
+        },
+        {
+          "key": "entity_count",
+          "type": "number"
+        },
+        {
+          "key": "zero_value_count",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "Banks",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "emissions",
+          "scope_1_2_emissions",
+          "Emissions",
+          "tonnes",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-industry-intelligence-trade-exposure",
+    "metric": "paprika_example_shorted_industry_intelligence_trade_exposure",
+    "records": {
+      "columns": [
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "signal_kind",
+          "type": "string"
+        },
+        {
+          "key": "metric_key",
+          "type": "string"
+        },
+        {
+          "key": "metric_label",
+          "type": "string"
+        },
+        {
+          "key": "unit",
+          "type": "string"
+        },
+        {
+          "key": "bucket_label",
+          "type": "string"
+        },
+        {
+          "key": "bucket_start",
+          "type": "timestamp"
+        },
+        {
+          "key": "total_value",
+          "type": "number"
+        },
+        {
+          "key": "record_count",
+          "type": "number"
+        },
+        {
+          "key": "entity_count",
+          "type": "number"
+        },
+        {
+          "key": "zero_value_count",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "Banks",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "trade_exposure",
+          "export_value",
+          "Trade Exposure",
+          "AUD",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-industry-intelligence-policy-footprint",
+    "metric": "paprika_example_shorted_industry_intelligence_policy_footprint",
+    "records": {
+      "columns": [
+        {
+          "key": "industry",
+          "type": "string"
+        },
+        {
+          "key": "signal_kind",
+          "type": "string"
+        },
+        {
+          "key": "metric_key",
+          "type": "string"
+        },
+        {
+          "key": "metric_label",
+          "type": "string"
+        },
+        {
+          "key": "unit",
+          "type": "string"
+        },
+        {
+          "key": "bucket_label",
+          "type": "string"
+        },
+        {
+          "key": "bucket_start",
+          "type": "timestamp"
+        },
+        {
+          "key": "total_value",
+          "type": "number"
+        },
+        {
+          "key": "record_count",
+          "type": "number"
+        },
+        {
+          "key": "entity_count",
+          "type": "number"
+        },
+        {
+          "key": "zero_value_count",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "Banks",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Banks",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Materials",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2022-23",
+          "2022-07-01T00:00:00Z",
+          3200000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2023-24",
+          "2023-07-01T00:00:00Z",
+          3500000,
+          120,
+          8,
+          2
+        ],
+        [
+          "Health Care",
+          "policy_footprint",
+          "declared_receipt_value",
+          "Policy Footprint",
+          "metric-dependent AUD/count",
+          "2024-25",
+          "2024-07-01T00:00:00Z",
+          3900000,
+          120,
+          8,
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-industry-intelligence-sources",
+    "metric": "paprika_example_shorted_industry_intelligence_sources",
+    "records": {
+      "columns": [
+        {
+          "key": "source_key",
+          "type": "string"
+        },
+        {
+          "key": "display_name",
+          "type": "string"
+        },
+        {
+          "key": "publisher",
+          "type": "string"
+        },
+        {
+          "key": "licence",
+          "type": "string"
+        },
+        {
+          "key": "source_url",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "ato",
+          "Illustrative source register",
+          "Australian Taxation Office",
+          "Consult the source licence",
+          "https://www.ato.gov.au/"
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-admin-dashboard-fleet-health",
+    "metric": "paprika_example_shorted_admin_dashboard_fleet_health",
+    "records": {
+      "columns": [
+        {
+          "key": "status",
+          "type": "string"
+        },
+        {
+          "key": "active_jobs",
+          "type": "number"
+        },
+        {
+          "key": "critical_jobs",
+          "type": "number"
+        },
+        {
+          "key": "overdue_jobs",
+          "type": "number"
+        },
+        {
+          "key": "warning_jobs",
+          "type": "number"
+        },
+        {
+          "key": "retired_jobs",
+          "type": "number"
+        },
+        {
+          "key": "stale",
+          "type": "boolean"
+        }
+      ],
+      "rows": [
+        [
+          "degraded",
+          4,
+          0,
+          0,
+          1,
+          1,
+          false
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-admin-dashboard-needs-attention",
+    "metric": "paprika_example_shorted_admin_dashboard_needs_attention",
+    "records": {
+      "columns": [
+        {
+          "key": "name",
+          "type": "string"
+        },
+        {
+          "key": "display_name",
+          "type": "string"
+        },
+        {
+          "key": "health",
+          "type": "string"
+        },
+        {
+          "key": "last_run_status",
+          "type": "string"
+        },
+        {
+          "key": "schedule_human",
+          "type": "string"
+        },
+        {
+          "key": "duration_seconds",
+          "type": "number"
+        },
+        {
+          "key": "retired",
+          "type": "boolean"
+        },
+        {
+          "key": "stale",
+          "type": "boolean"
+        }
+      ],
+      "rows": [
+        [
+          "sample-sync",
+          "Market sync",
+          "warning",
+          "succeeded",
+          "Daily",
+          42.5,
+          false,
+          false
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-admin-dashboard-jobs-overview",
+    "metric": "paprika_example_shorted_admin_dashboard_jobs_overview",
+    "records": {
+      "columns": [
+        {
+          "key": "name",
+          "type": "string"
+        },
+        {
+          "key": "display_name",
+          "type": "string"
+        },
+        {
+          "key": "health",
+          "type": "string"
+        },
+        {
+          "key": "last_run_status",
+          "type": "string"
+        },
+        {
+          "key": "schedule_human",
+          "type": "string"
+        },
+        {
+          "key": "duration_seconds",
+          "type": "number"
+        },
+        {
+          "key": "retired",
+          "type": "boolean"
+        },
+        {
+          "key": "stale",
+          "type": "boolean"
+        }
+      ],
+      "rows": [
+        [
+          "sample-sync",
+          "Market sync",
+          "warning",
+          "succeeded",
+          "Daily",
+          42.5,
+          false,
+          false
+        ]
+      ]
+    }
+  },
+  {
+    "id": "shorted-admin-dashboard-market-data-sync",
+    "metric": "paprika_example_shorted_admin_dashboard_market_data_sync",
+    "records": {
+      "columns": [
+        {
+          "key": "run_id",
+          "type": "string"
+        },
+        {
+          "key": "status",
+          "type": "string"
+        },
+        {
+          "key": "started_at",
+          "type": "timestamp"
+        },
+        {
+          "key": "total_duration_seconds",
+          "type": "number"
+        },
+        {
+          "key": "shorts_records_updated",
+          "type": "number"
+        },
+        {
+          "key": "prices_records_updated",
+          "type": "number"
+        },
+        {
+          "key": "environment",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "sample-run",
+          "success",
+          "2026-10-27T01:00:00Z",
+          42.5,
+          2400,
+          1900,
+          "production"
+        ],
+        [
+          "sample-dev-run",
+          "success",
+          "2026-10-27T00:00:00Z",
+          12.5,
+          200,
+          100,
+          "development"
+        ]
+      ]
+    },
+    "allFilterValues": {
+      "environment": ""
+    }
+  },
+  {
+    "id": "uptime-overview-services",
+    "metric": "paprika_example_uptime_overview_services",
+    "series": [
+      {
+        "name": "Services",
+        "labels": {},
+        "base": 3,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-overview-configured-monitors",
+    "metric": "paprika_example_uptime_overview_configured_monitors",
+    "series": [
+      {
+        "name": "Configured monitors",
+        "labels": {},
+        "base": 6,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-overview-active-alerts",
+    "metric": "paprika_example_uptime_overview_active_alerts",
+    "series": [
+      {
+        "name": "Active alerts",
+        "labels": {},
+        "base": 1,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-overview-loaded-security-results",
+    "metric": "paprika_example_uptime_overview_loaded_security_results",
+    "series": [
+      {
+        "name": "Loaded security results",
+        "labels": {},
+        "base": 2,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-overview-service-signals",
+    "metric": "paprika_example_uptime_overview_service_signals",
+    "records": {
+      "columns": [
+        {
+          "key": "serviceId",
+          "type": "string"
+        },
+        {
+          "key": "serviceName",
+          "type": "string"
+        },
+        {
+          "key": "availability",
+          "type": "string"
+        },
+        {
+          "key": "enabledMonitorCount",
+          "type": "number"
+        },
+        {
+          "key": "responseTimeMs",
+          "type": "number"
+        },
+        {
+          "key": "securityScore",
+          "type": "number"
+        },
+        {
+          "key": "securityRisk",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "svc-api",
+          "Public API",
+          "Healthy",
+          3,
+          84,
+          92,
+          "Low"
+        ],
+        [
+          "svc-web",
+          "Web app",
+          "Needs attention",
+          2,
+          410,
+          65,
+          "Medium"
+        ],
+        [
+          "svc-worker",
+          "Worker",
+          "Waiting for data",
+          1,
+          null,
+          null,
+          null
+        ]
+      ]
+    }
+  },
+  {
+    "id": "uptime-overview-needs-attention",
+    "metric": "paprika_example_uptime_overview_needs_attention",
+    "records": {
+      "columns": [
+        {
+          "key": "alertName",
+          "type": "string"
+        },
+        {
+          "key": "status",
+          "type": "string"
+        },
+        {
+          "key": "triggeredAt",
+          "type": "timestamp"
+        }
+      ],
+      "rows": [
+        [
+          "Web response latency",
+          "ALERT_EVENT_STATUS_TRIGGERED",
+          "2026-10-27T01:00:00Z"
+        ]
+      ]
+    }
+  },
+  {
+    "id": "uptime-slo-total-services",
+    "metric": "paprika_example_uptime_slo_total_services",
+    "series": [
+      {
+        "name": "Total Services",
+        "labels": {},
+        "base": 3,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-slo-average-uptime",
+    "metric": "paprika_example_uptime_slo_average_uptime",
+    "series": [
+      {
+        "name": "Average Uptime",
+        "labels": {},
+        "base": 99.73,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-slo-sla-status",
+    "metric": "paprika_example_uptime_slo_sla_status",
+    "series": [
+      {
+        "name": "SLA Status",
+        "labels": {},
+        "base": 1,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-slo-burn-alerts",
+    "metric": "paprika_example_uptime_slo_burn_alerts",
+    "series": [
+      {
+        "name": "Burn Rate Alerts",
+        "labels": {},
+        "base": 1,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-slo-sla-breaches",
+    "metric": "paprika_example_uptime_slo_sla_breaches",
+    "records": {
+      "columns": [
+        {
+          "key": "serviceId",
+          "type": "string"
+        },
+        {
+          "key": "serviceName",
+          "type": "string"
+        },
+        {
+          "key": "uptime",
+          "type": "number"
+        },
+        {
+          "key": "slaTarget",
+          "type": "number"
+        },
+        {
+          "key": "errorBudgetPercentage",
+          "type": "number"
+        },
+        {
+          "key": "errorBudgetRemaining",
+          "type": "number"
+        },
+        {
+          "key": "burnRate",
+          "type": "number"
+        },
+        {
+          "key": "burnStatus",
+          "type": "string"
+        },
+        {
+          "key": "slaBreached",
+          "type": "boolean"
+        },
+        {
+          "key": "totalChecks",
+          "type": "number"
+        },
+        {
+          "key": "failedChecks",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "svc-web",
+          "Web app",
+          99.5,
+          99.9,
+          0,
+          0,
+          300,
+          "Critical",
+          true,
+          10000,
+          50
+        ]
+      ]
+    }
+  },
+  {
+    "id": "uptime-slo-burn-rates",
+    "metric": "paprika_example_uptime_slo_burn_rates",
+    "records": {
+      "columns": [
+        {
+          "key": "serviceId",
+          "type": "string"
+        },
+        {
+          "key": "serviceName",
+          "type": "string"
+        },
+        {
+          "key": "uptime",
+          "type": "number"
+        },
+        {
+          "key": "slaTarget",
+          "type": "number"
+        },
+        {
+          "key": "errorBudgetPercentage",
+          "type": "number"
+        },
+        {
+          "key": "errorBudgetRemaining",
+          "type": "number"
+        },
+        {
+          "key": "burnRate",
+          "type": "number"
+        },
+        {
+          "key": "burnStatus",
+          "type": "string"
+        },
+        {
+          "key": "slaBreached",
+          "type": "boolean"
+        },
+        {
+          "key": "totalChecks",
+          "type": "number"
+        },
+        {
+          "key": "failedChecks",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "svc-api",
+          "Public API",
+          99.97,
+          99.9,
+          70,
+          30,
+          30,
+          "Sustainable",
+          false,
+          10000,
+          3
+        ],
+        [
+          "svc-web",
+          "Web app",
+          99.5,
+          99.9,
+          0,
+          0,
+          300,
+          "Critical",
+          true,
+          10000,
+          50
+        ],
+        [
+          "svc-worker",
+          "Worker",
+          null,
+          99.9,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0,
+          0
+        ]
+      ]
+    }
+  },
+  {
+    "id": "uptime-slo-service-slos",
+    "metric": "paprika_example_uptime_slo_service_slos",
+    "records": {
+      "columns": [
+        {
+          "key": "serviceId",
+          "type": "string"
+        },
+        {
+          "key": "serviceName",
+          "type": "string"
+        },
+        {
+          "key": "uptime",
+          "type": "number"
+        },
+        {
+          "key": "slaTarget",
+          "type": "number"
+        },
+        {
+          "key": "errorBudgetPercentage",
+          "type": "number"
+        },
+        {
+          "key": "errorBudgetRemaining",
+          "type": "number"
+        },
+        {
+          "key": "burnRate",
+          "type": "number"
+        },
+        {
+          "key": "burnStatus",
+          "type": "string"
+        },
+        {
+          "key": "slaBreached",
+          "type": "boolean"
+        },
+        {
+          "key": "totalChecks",
+          "type": "number"
+        },
+        {
+          "key": "failedChecks",
+          "type": "number"
+        }
+      ],
+      "rows": [
+        [
+          "svc-api",
+          "Public API",
+          99.97,
+          99.9,
+          70,
+          30,
+          30,
+          "Sustainable",
+          false,
+          10000,
+          3
+        ],
+        [
+          "svc-web",
+          "Web app",
+          99.5,
+          99.9,
+          0,
+          0,
+          300,
+          "Critical",
+          true,
+          10000,
+          50
+        ],
+        [
+          "svc-worker",
+          "Worker",
+          null,
+          99.9,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0,
+          0
+        ]
+      ]
+    }
+  },
+  {
+    "id": "uptime-reliability-health-score",
+    "metric": "paprika_example_uptime_reliability_health_score",
+    "series": [
+      {
+        "name": "Health Score",
+        "labels": {},
+        "base": 84,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-reliability-critical-issues",
+    "metric": "paprika_example_uptime_reliability_critical_issues",
+    "series": [
+      {
+        "name": "Critical Issues",
+        "labels": {},
+        "base": 0,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-reliability-warnings",
+    "metric": "paprika_example_uptime_reliability_warnings",
+    "series": [
+      {
+        "name": "Warnings",
+        "labels": {},
+        "base": 1,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-reliability-informational",
+    "metric": "paprika_example_uptime_reliability_informational",
+    "series": [
+      {
+        "name": "Informational",
+        "labels": {},
+        "base": 2,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "uptime-reliability-executive-summary",
+    "metric": "paprika_example_uptime_reliability_executive_summary",
+    "records": {
+      "columns": [
+        {
+          "key": "reportId",
+          "type": "string"
+        },
+        {
+          "key": "summary",
+          "type": "string"
+        },
+        {
+          "key": "periodEnd",
+          "type": "timestamp"
+        }
+      ],
+      "rows": [
+        [
+          "Sample report",
+          "Illustrative stored reliability summary. One service needs latency investigation.",
+          "2026-10-27T00:00:00Z"
+        ]
+      ]
+    }
+  },
+  {
+    "id": "uptime-reliability-recommendations",
+    "metric": "paprika_example_uptime_reliability_recommendations",
+    "records": {
+      "columns": [
+        {
+          "key": "title",
+          "type": "string"
+        },
+        {
+          "key": "description",
+          "type": "string"
+        },
+        {
+          "key": "recommendation",
+          "type": "string"
+        },
+        {
+          "key": "affectedServices",
+          "type": "string"
+        },
+        {
+          "key": "severity",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "Investigate latency",
+          "Illustrative warning only.",
+          "Inspect the slowest requests and their downstream traces.",
+          "Web app",
+          "warning"
+        ]
+      ]
+    }
+  },
+  {
+    "id": "paprika-signal-features-requests",
+    "metric": "paprika_example_paprika_signal_features_requests",
+    "series": [
+      {
+        "name": "Request rate · api",
+        "labels": {
+          "service": "api"
+        },
+        "base": 25.0,
+        "variation": 1.25,
+        "trend": 0
+      },
+      {
+        "name": "Request rate · worker",
+        "labels": {
+          "service": "worker"
+        },
+        "base": 28.000000000000004,
+        "variation": 1.25,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "paprika-signal-features-errors",
+    "metric": "paprika_example_paprika_signal_features_errors",
+    "series": [
+      {
+        "name": "Error ratio · api",
+        "labels": {
+          "service": "api"
+        },
+        "base": 0.25,
+        "variation": 0.0125,
+        "trend": 0
+      },
+      {
+        "name": "Error ratio · worker",
+        "labels": {
+          "service": "worker"
+        },
+        "base": 0.28,
+        "variation": 0.0125,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "paprika-signal-features-latency",
+    "metric": "paprika_example_paprika_signal_features_latency",
+    "series": [
+      {
+        "name": "Latency · api",
+        "labels": {
+          "service": "api"
+        },
+        "base": 82.0,
+        "variation": 4.1000000000000005,
+        "trend": 0
+      },
+      {
+        "name": "Latency · worker",
+        "labels": {
+          "service": "worker"
+        },
+        "base": 91.84,
+        "variation": 4.1000000000000005,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "paprika-signal-features-states",
+    "metric": "paprika_example_paprika_signal_features_states",
+    "series": [
+      {
+        "name": "Service status · api",
+        "labels": {
+          "service": "api"
+        },
+        "base": 1.0,
+        "variation": 0,
+        "trend": 0
+      },
+      {
+        "name": "Service status · worker",
+        "labels": {
+          "service": "worker"
+        },
+        "base": 1.12,
+        "variation": 0,
+        "trend": 0
+      }
+    ]
+  },
+  {
+    "id": "paprika-signal-features-traces",
+    "metric": "paprika_example_paprika_signal_features_traces",
+    "traces": [
+      {
+        "traceId": "11111111111111111111111111111111",
+        "service": "api",
+        "operation": "GET /orders",
+        "durationMs": 82.25,
+        "status": "ok",
+        "offsetSeconds": 5
+      },
+      {
+        "traceId": "22222222222222222222222222222222",
+        "service": "worker",
+        "operation": "process job",
+        "durationMs": 142.75,
+        "status": "error",
+        "offsetSeconds": 20
+      }
+    ]
+  }
+]

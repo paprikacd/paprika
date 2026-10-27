@@ -312,7 +312,7 @@ export function PortableImportPanel({
     () =>
       activeBundle
         ? requiredImportProviders(activeBundle, new Set(keptQueries.keys()))
-        : new Map<string, Set<"metrics" | "traces">>(),
+        : new Map<string, Set<"metrics" | "traces" | "records">>(),
     [activeBundle, keptQueries],
   );
   const mapped = useMemo(() => {

@@ -9,6 +9,7 @@ import {
   type SavedQueryEntry,
 } from "./schema"
 import { validateSavedQueryTemplate } from "./saved-queries"
+import { parseRecordFrame } from "./record-data"
 
 export interface ProviderConfig {
   id: string
@@ -230,13 +231,18 @@ export function createInsightsClient(
     },
     query: async (body, signal) => {
       if (body.queryRef) throw new Error("Resolve the saved query through the Insights workspace before executing it.")
-      return (
+      const result: QueryResult = await (
         await request("/query", {
           method: "POST",
           body: JSON.stringify(body),
           signal,
         })
       ).json()
+      if (body.kind === "records") {
+        const records = parseRecordFrame(result.records)
+        return { records, truncated: result.truncated || records.truncated }
+      }
+      return result
     },
   }
 }

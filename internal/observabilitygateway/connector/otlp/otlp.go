@@ -72,6 +72,8 @@ func (OTLP) Query(ctx context.Context, req connector.QueryRequest) (*connector.Q
 		path = pathMetrics
 	case connector.SignalTraces:
 		path = pathTraces
+	case connector.SignalRecords:
+		return unsupported("otlp connector does not serve the requested signal")
 	default:
 		return unsupported("otlp connector does not serve the requested signal")
 	}

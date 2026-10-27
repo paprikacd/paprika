@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { assertProviderQueryTemplate } from "./provider-query-template";
 import { resolveTooltipQuery } from "./tooltip-context";
 import {
   tooltipViewSchema,
@@ -69,6 +70,8 @@ export function buildTooltipRequest(
     type: kind === "traces" ? "traces" : "timeseries",
     source,
   }).source as typeof source;
+  const template = checked.type === "saved" ? library?.queries.find(query => query.id === checked.ref.id) : checked;
+  if (template) assertProviderQueryTemplate(environment.providers.find(provider => provider.id === template.providerId)?.type, template.query);
   const resolved =
     checked.type === "saved"
       ? resolveSavedQueryReference(

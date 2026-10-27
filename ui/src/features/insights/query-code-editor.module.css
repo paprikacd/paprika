@@ -1,11 +1,18 @@
 .editor { min-width: 0; color: var(--gamma-ink); font-weight: 400; }
+.sqlEditor { min-width: 0; display: grid; gap: 10px; }
+.sqlEditor > .editor[data-language="sql"] { --query-editor-min-height: 72px; --query-editor-max-height: 120px; }
+.sqlTools { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 10px; }
+.sqlTools > div { min-width: 0; }
+.bindingLabel { display: block; margin-bottom: 5px; color: var(--gamma-muted); font-size: 11px; }
+.bindingEditor { --query-editor-min-height: 52px; --query-editor-max-height: 96px; }
+.bindingEditor .shortcut { display: none; }
 .surface { min-width: 0; overflow: hidden; border: 1px solid var(--gamma-border); border-radius: var(--gamma-radius-control, 6px); background: var(--gamma-surface); }
 .surface:focus-within { border-color: var(--gamma-accent); box-shadow: 0 0 0 2px var(--gamma-accent-soft); }
 .surface :global(.cm-editor) { background: transparent; color: var(--gamma-ink); font-size: 12px; }
 .surface :global(.cm-editor.cm-focused) { outline: none; }
 .surface :global(.cm-scroller) { font-family: var(--gamma-font-code); min-height: var(--query-editor-min-height, 132px); max-height: var(--query-editor-max-height, 220px); overflow: auto; line-height: 1.8; }
 .surface :global(.cm-content) { min-width: 0; padding: 12px 0; caret-color: var(--gamma-ink); }
-.surface :global(.cm-line) { padding: 0 12px 0 6px; }
+.surface :global(.cm-line) { color: var(--gamma-ink); padding: 0 12px 0 6px; }
 .surface :global(.cm-gutters) { background: var(--gamma-surface); border-right: 1px solid var(--gamma-border); color: var(--gamma-muted); font-size: 10px; }
 .surface :global(.cm-gutterElement) { padding-left: 8px; }
 .surface :global(.cm-activeLine), .surface :global(.cm-activeLineGutter) { background: var(--gamma-surface-2); }

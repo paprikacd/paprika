@@ -1,0 +1,197 @@
+{
+  "inventoryVersion": 1,
+  "repository": {
+    "name": "uptime",
+    "path": "/Users/benebsworth/projects/uptime",
+    "revision": "d2fb0dd85129049c39e64fef4f9620d298ae0371",
+    "workingTree": "clean at inspection",
+    "applicableAgentInstructions": []
+  },
+  "status": "source inventory only; example conversion and sample-versus-live data strategy are pending",
+  "scope": {
+    "primaryApplicationDashboards": 3,
+    "portableObservabilityDashboards": 0,
+    "grafanaDashboardDefinitions": 0,
+    "persistedDashboardIds": [],
+    "existingPromQLExpressions": [],
+    "existingTraceQLExpressions": [],
+    "searched": ["tracked and hidden source", "JSON", "YAML", "Helm", "Terraform", "embedded configuration"],
+    "excludedDuplicates": [".worktrees/**", ".claude/worktrees/**", "frontend/.vercel/output/**"],
+    "notes": [
+      "Application route identities below are not persisted dashboard IDs.",
+      "Additional monitoring view families are feature references, not an instruction to reproduce every CRUD screen.",
+      "deploy/kubernetes/telesis-platform-monitoring.spec.json contains four HTTP checks, not a dashboard."
+    ]
+  },
+  "primaryDashboards": [
+    {
+      "key": "Overview",
+      "proposedExampleId": "uptime-overview",
+      "title": "Overview",
+      "route": "/dashboard",
+      "sources": [
+        "frontend/app/(dashboard)/dashboard/page.tsx",
+        "frontend/components/dashboard/overview-page.tsx",
+        "frontend/components/dashboard/overview-service-signals.tsx",
+        "frontend/components/dashboard/overview-service-signal-rows.tsx",
+        "frontend/components/dashboard/overview-active-alerts.tsx"
+      ],
+      "readRPCs": [
+        {"method": "ServiceService.ListServices", "arguments": ["orgId"], "cacheStaleSeconds": 30},
+        {"method": "AlertService.ListAlertEvents", "arguments": ["orgId"], "refreshSeconds": 30},
+        {"method": "CheckService.ListCheckSummaries", "arguments": ["orgId", "page.pageSize=100", "page.pageToken"], "cacheStaleSeconds": 30},
+        {"method": "CheckResultService.ListSecuritySummaries", "arguments": ["orgId", "page.pageSize=100", "page.pageToken"], "cacheStaleSeconds": 30}
+      ],
+      "range": {"mode": "latest recorded state", "timeWindowControl": false},
+      "filters": [{"name": "organization", "source": "authenticated organization context"}],
+      "panels": [
+        {"id": "services", "title": "Services", "type": "stat", "fields": ["services.length"], "unit": "count", "paprika": "stat"},
+        {"id": "configured-monitors", "title": "Configured monitors", "type": "stat", "fields": ["checkSummaries.pageInfo.totalCount", "checkSummaries.length", "latestResultAt"], "unit": "count", "paprika": "stat", "semantics": "Prefer server totalCount; details distinguish loaded and ever-reporting monitors."},
+        {"id": "active-alerts", "title": "Active alerts", "type": "stat", "fields": ["alertEvents.status"], "unit": "count", "paprika": "stat", "semantics": "Count only TRIGGERED alert events."},
+        {"id": "loaded-security-results", "title": "Loaded security results", "type": "stat", "fields": ["securitySummaries.latestResultAt"], "unit": "count", "paprika": "stat", "semantics": "Count loaded summaries with a recorded result; do not imply an organization-wide total."},
+        {"id": "service-signals", "title": "Service signals", "type": "record table", "fields": ["service.id", "service.name", "service.slug", "check.type", "check.enabled", "latestStatus", "latestResultAt", "latestResponseTimeMs", "securitySummary"], "unit": "mixed; response time in ms", "rowLimit": 8, "paprika": "proposed structured-records plugin", "semantics": "Availability includes UPTIME, BROWSER and PLAYWRIGHT. Displayed duration is the maximum latest response time among reporting enabled availability checks, not a global average."},
+        {"id": "needs-attention", "title": "Needs attention", "type": "event list", "fields": ["alert.name", "status", "triggeredAt"], "rowLimit": 5, "paprika": "proposed structured-records plugin in feed mode"}
+      ],
+      "panelCount": {"fixed": 6, "repeated": 0},
+      "drilldowns": ["service row to /services/{slug}", "active alert to /incidents", "View all services", "View all alerts"],
+      "stateDistinctions": [
+        "No services configured",
+        "No availability monitors",
+        "Monitoring paused",
+        "Waiting for data",
+        "Needs attention",
+        "Loaded signals only when pagination is incomplete",
+        "Partial data when some enabled checks have never reported",
+        "Healthy only for a complete reporting scope",
+        "No active alert events",
+        "One failed upstream request suppresses all overview summary values"
+      ],
+      "managementControlsExcluded": ["Add service"]
+    },
+    {
+      "key": "SLODashboard",
+      "proposedExampleId": "uptime-slo",
+      "title": "SLO Dashboard",
+      "route": "/slo",
+      "sources": [
+        "frontend/app/(dashboard)/slo/page.tsx",
+        "frontend/components/dashboard/slo-summary-cards.tsx",
+        "frontend/components/dashboard/slo-breach-table.tsx",
+        "frontend/components/dashboard/slo-burn-rates.tsx",
+        "frontend/components/dashboard/slo-card.tsx",
+        "backend/internal/api/service.go",
+        "backend/internal/db/querier_impl.go"
+      ],
+      "readRPCs": [{"method": "ServiceService.GetSLODashboard", "arguments": ["orgId", "windowDays"], "refreshSeconds": 60}],
+      "range": {"mode": "aggregate over selected window", "defaultDays": 30, "optionsDays": [7, 14, 30, 60, 90]},
+      "filters": [{"name": "organization", "source": "authenticated organization context"}, {"name": "windowDays", "type": "number", "options": [7, 14, 30, 60, 90]}],
+      "dataFields": ["serviceId", "serviceName", "serviceSlug", "slaTarget", "currentUptime", "errorBudgetTotal", "errorBudgetRemaining", "errorBudgetPercentage", "slaBreached", "totalChecks", "failedChecks"],
+      "panels": [
+        {"id": "total-services", "title": "Total Services", "type": "stat", "fields": ["services.length"], "unit": "count", "paprika": "stat"},
+        {"id": "average-uptime", "title": "Average Uptime", "type": "stat", "fields": ["currentUptime"], "unit": "%", "decimals": 3, "paprika": "stat", "semantics": "Unweighted arithmetic mean across returned services; source colors change at 99 and 99.9 percent."},
+        {"id": "sla-status", "title": "SLA Status", "type": "paired counts", "fields": ["slaBreached"], "unit": "count", "paprika": "stat for on-track and breached counts"},
+        {"id": "burn-alerts", "title": "Burn Rate Alerts", "type": "stat", "fields": ["errorBudgetPercentage", "windowDays"], "unit": "count", "paprika": "stat", "semantics": "Count services whose normalized 30-day budget consumption exceeds 200 percent."},
+        {"id": "sla-breaches", "title": "Active SLA Breaches", "type": "record table", "fields": ["serviceName", "currentUptime", "slaTarget", "totalChecks", "failedChecks"], "unit": "uptime/target/gap in %; checks in count", "paprika": "proposed structured-records plugin", "semantics": "Filter slaBreached; uptime uses two decimals and target gap uses three."},
+        {"id": "burn-rates", "title": "Error Budget Burn Rates", "type": "ranked progress bars", "fields": ["serviceName", "errorBudgetPercentage", "windowDays"], "unit": "%", "decimals": 0, "paprika": "bar for service comparison plus threshold-gauge for selected service", "semantics": "Descending rate = (100 - errorBudgetPercentage) / windowDays * 30. Sustainable <=100; Elevated <=200; Critical >200. Source progress track is capped at100 while the number remains uncapped."},
+        {"id": "service-slos", "title": "Service SLOs", "type": "repeated service cards", "fields": ["serviceId", "serviceName", "serviceSlug", "currentUptime", "slaTarget", "errorBudgetPercentage", "errorBudgetRemaining", "errorBudgetTotal", "totalChecks", "failedChecks", "slaBreached"], "unit": "uptime/budget in %; budget duration in min; checks in count", "paprika": "existing threshold-gauge and stat widgets with explicit service binding", "semantics": "Uptime two decimals; remaining budget percentage and minutes one decimal. Budget thresholds >50 healthy, >20 warning, <=20 critical. Selected-service drilldown can replace a dynamic repeated grid without dropping its values."}
+      ],
+      "panelCount": {"fixed": 6, "repeated": "one service card per returned service"},
+      "sourceFormulas": {
+        "database": "GetServiceSLOStats groups services/checks/check_results by org and since. SLA target is MAX(check.sla_target_percentage); failed statuses are failure, timeout or error.",
+        "uptimePercentage": "100 * (totalChecks - failedChecks) / totalChecks when totalChecks > 0",
+        "errorBudgetTotalMinutes": "windowDays * 24 * 60 * (1 - slaTarget / 100)",
+        "errorBudgetUsedMinutes": "failedChecks / max(totalChecks, 1) * windowDays * 24 * 60",
+        "errorBudgetRemainingMinutes": "max(0, errorBudgetTotalMinutes - errorBudgetUsedMinutes)",
+        "errorBudgetPercentage": "100 * errorBudgetRemainingMinutes / errorBudgetTotalMinutes when total budget > 0"
+      },
+      "drilldowns": ["service card to /services/{serviceSlug}"],
+      "stateDistinctions": ["No SLOs configured", "On Track", "Breached", "Sustainable", "Elevated", "Critical"],
+      "limitations": [
+        "Paprika custom/provider query ranges currently stop at 31 days; 60/90-day parity needs an explicit design.",
+        "Current Uptime backend initializes currentUptime to 0 when totalChecks is 0 and can mark that service breached. A new example must label absent observations explicitly rather than imply a measured outage.",
+        "Do not relabel the source normalized budget-consumption formula as a multiwindow SRE burn-rate calculation."
+      ],
+      "managementControlsExcluded": []
+    },
+    {
+      "key": "ReliabilityInsights",
+      "proposedExampleId": "uptime-reliability",
+      "title": "Reliability Insights",
+      "route": "/insights",
+      "sources": [
+        "frontend/app/(dashboard)/insights/page.tsx",
+        "frontend/lib/api/hooks.ts",
+        "backend/internal/api/reliability_insights.go",
+        "proto/uptimetypes/v1/types.proto"
+      ],
+      "readRPCs": [{"method": "ReliabilityInsightsService.GetReliabilityInsights", "arguments": ["orgId"], "cacheStaleSeconds": 300}],
+      "range": {"mode": "latest stored report", "fields": ["periodStart", "periodEnd", "generatedAt"], "generationPeriodOptionsDays": [7, 14, 30], "generationPeriodIsReadFilter": false},
+      "filters": [{"name": "organization", "source": "authenticated organization context"}],
+      "dataFields": ["report.id", "summary", "overallHealthScore", "periodStart", "periodEnd", "generatedAt", "insights.id", "insights.category", "insights.severity", "insights.title", "insights.description", "insights.recommendation", "insights.affectedServices"],
+      "panels": [
+        {"id": "health-score", "title": "Health Score", "type": "radial gauge", "fields": ["overallHealthScore"], "unit": "score", "decimals": 0, "paprika": "existing threshold-gauge; optional radial presentation in plugin config", "semantics": "0–100. Excellent >=90, Good >=70, Fair >=50, Needs Attention below50."},
+        {"id": "critical-issues", "title": "Critical Issues", "type": "stat", "fields": ["insights.severity=critical"], "unit": "count", "paprika": "stat"},
+        {"id": "warnings", "title": "Warnings", "type": "stat", "fields": ["insights.severity=warning"], "unit": "count", "paprika": "stat"},
+        {"id": "informational", "title": "Informational", "type": "stat", "fields": ["insights.severity=info"], "unit": "count", "paprika": "stat"},
+        {"id": "executive-summary", "title": "Executive Summary", "type": "narrative", "fields": ["summary", "periodStart", "periodEnd"], "paprika": "proposed structured-records plugin in details mode"},
+        {"id": "recommendations", "title": "Insights & Recommendations", "type": "repeated narrative cards", "fields": ["id", "category", "severity", "title", "description", "recommendation", "affectedServices"], "paprika": "proposed structured-records plugin in feed mode", "semantics": "Categories: performance, availability, trends, capacity, security. Severity and affected-service tags are data, not dashboard authoring metadata."}
+      ],
+      "panelCount": {"fixed": 5, "repeated": "one card per stored insight"},
+      "drilldowns": [],
+      "stateDistinctions": ["Loading report", "No reliability report yet", "Stored report period differs from its generation time"],
+      "managementControlsExcluded": ["Generate Report", "Generate First Report", "ReliabilityInsightsService.GenerateReliabilityInsights mutation"],
+      "limitations": ["No existing Paprika narrative/record result type", "The source period selector triggers generation; it must not be represented as a working read filter without a new data API"]
+    }
+  ],
+  "featureInspiration": [
+    {"family": "services", "sources": ["frontend/components/services/services-portfolio-page.tsx"], "routes": ["/services"], "features": ["searchable portfolio", "status", "navigation"], "readRPCs": ["ListServices", "ListCheckSummaries"], "mapping": ["structured-records table", "service drilldown"], "status": "possible additional example"},
+    {"family": "service-detail", "sources": ["frontend/components/services/service-detail-view.tsx", "frontend/components/services/service-detail-data.ts", "frontend/components/services/service-detail-overview.tsx", "frontend/components/services/service-result-history.tsx"], "routes": ["/services/{slug}"], "features": ["latest status", "availability %", "average latency ms", "active monitor count", "monitor/result tables", "security", "incidents", "dependencies"], "readRPCs": ["GetServiceOverview", "ListChecks", "ListCheckResults", "ListCheckSummaries", "ListSecuritySummaries", "ListStatusPageIncidents", "GetDependencyGraph"], "filters": ["service", "explicitly selected monitor"], "rangeDays": 30, "mapping": ["stat", "threshold-gauge", "structured-records", "dependency graph"], "stateNotes": ["Service aggregate excludes unsupported check types", "Never infer result history from the first configured monitor"], "status": "possible additional example"},
+    {"family": "monitors", "sources": ["frontend/app/(dashboard)/checks/page.tsx", "frontend/components/checks/monitors-page.tsx"], "routes": ["/checks"], "features": ["type/search filters", "pagination", "latest state"], "readRPCs": ["ListCheckSummaries"], "mapping": ["structured-records table"], "status": "feature inspiration"},
+    {"family": "check-detail", "sources": ["frontend/app/(dashboard)/services/[slug]/checks/[checkId]/page.tsx"], "routes": ["/services/{slug}/checks/{checkId}"], "features": ["uptime %", "average response ms", "total/failed checks", "response time chart", "status history", "result table", "optional screenshot"], "readRPCs": ["GetCheckStatusHistory", "ListCheckResults"], "filters": ["checkId", "date", "status"], "mapping": ["stat", "timeseries", "status-history plugin", "structured-records", "safe attachment preview if explicitly supported"], "status": "possible additional example"},
+    {"family": "result-detail", "sources": ["frontend/app/(dashboard)/services/[slug]/checks/[checkId]/results/[resultId]/page.tsx"], "routes": ["/services/{slug}/checks/{checkId}/results/{resultId}"], "features": ["timing breakdown", "request/response summary", "result summary", "execution trace"], "readRPCs": ["GetCheckResultDetail"], "filters": ["resultId"], "mapping": ["bar for timing phases", "structured-records details/feed"], "stateNotes": ["A check execution log is not automatically a Tempo distributed trace", "Do not include raw headers, bodies or diagnostic payloads in generic fixtures"], "status": "feature inspiration"},
+    {"family": "cron-monitoring", "sources": ["frontend/components/cron/cron-list-page.tsx", "frontend/components/cron/cron-detail-page.tsx", "frontend/lib/api/cron-query-hooks.ts"], "routes": ["/cron", "/cron/{id}"], "features": ["monitor/healthy/attention/paused counts", "search/status filters", "expected/started/ended timestamps", "duration ms", "exit code", "run history"], "readRPCs": ["ListCronMonitors", "GetCronMonitor", "ListCronRuns"], "mapping": ["stat", "status-history", "structured-records"], "stateNotes": ["Feature-flagged route", "Distinguish paused, unarmed, overdue, running and completed states"], "excludedFields": ["token_prefix", "diagnostic_excerpt"], "status": "possible additional example"},
+    {"family": "security", "sources": ["frontend/components/console/security-overview-page.tsx", "frontend/components/security/detail/security-detail-view.tsx"], "routes": ["/security", "/security/{serviceSlug}", "/services/{slug}/checks/{checkId}/security"], "aliases": [["/security/{serviceSlug}", "/services/{slug}/checks/{checkId}/security"]], "features": ["average score", "monitored/scanned/high-risk counts", "posture table", "findings and remediation", "score and critical/high trends"], "readRPCs": ["ListSecuritySummaries", "GetSecurityReport", "GetSecurityTrend"], "filters": ["service", "search", "pagination"], "rangeDays": 90, "mapping": ["stat", "threshold-gauge", "timeseries", "structured-records"], "stateNotes": ["Missing optional score is not score0", "Disabled/unconfigured/no scan differ", "Keep observed versus supported signal counts distinct"], "excludedFields": ["raw security export_json", "raw response payloads"], "status": "possible additional example"},
+    {"family": "dependencies", "sources": ["frontend/app/(dashboard)/dependencies/page.tsx", "frontend/app/(dashboard)/services/map/page.tsx"], "routes": ["/dependencies", "/services/map"], "aliases": [["/services/map", "/dependencies"]], "features": ["service/dependency/relationship counts", "node map", "relationship/confidence/source/target table"], "readRPCs": ["GetDependencyGraph"], "dataFields": ["node.id", "node.type", "node.name", "node.serviceId", "node.currentStatus", "edge.sourceId", "edge.targetId", "edge.relationship", "edge.confidence"], "mapping": ["stat", "dependency-graph plugin", "structured-records table"], "status": "possible additional example"},
+    {"family": "incidents", "sources": ["frontend/app/(dashboard)/incidents/page.tsx", "frontend/app/(dashboard)/incidents/[incidentId]/page.tsx"], "routes": ["/incidents", "/incidents/{incidentId}"], "features": ["active/resolved/total counts", "status/impact/service/started queue", "timeline"], "readRPCs": ["ListStatusPageIncidents", "GetStatusPageIncident", "GetIncidentTimeline"], "mapping": ["stat", "structured-records table/feed"], "status": "possible additional example"},
+    {"family": "public-status", "sources": ["frontend/app/status/[org]/page.tsx", "frontend/app/status/[org]/[service]/page.tsx", "frontend/components/status/status-heatmap.tsx"], "routes": ["/status/{org}", "/status/{org}/{service}"], "features": ["overall status", "grouped service cards", "incident feed", "24h uptime", "average response ms", "90-day history", "regional result table"], "readRPCs": ["GetPublicStatusOverview", "GetPublicServiceStatus", "GetPublicCheckResults", "ListPublicStatusIncidents"], "filters": ["organization slug", "service slug", "selected day"], "rangeDays": 90, "mapping": ["stat", "status-history plugin", "structured-records"], "stateNotes": ["No observation is not successful uptime", "Group collapse and service links are presentation/navigation"], "status": "possible additional example"},
+    {"family": "status-page-administration", "sources": ["frontend/components/status/admin/status-page-admin.tsx"], "routes": ["/status-page"], "features": ["public page sharing and administration"], "mapping": ["reuse public-status family for analytical content"], "status": "management screen; not a separate dashboard clone"}
+  ],
+  "providerBoundary": {
+    "source": "organization-authorized ConnectRPC backed by PostgreSQL",
+    "existingPaprikaIntegration": "none for Uptime product records or SQL",
+    "existingInsightsDirectKinds": ["metrics", "traces"],
+    "existingInsightsDirectProviders": ["prometheus", "tempo"],
+    "safeNumericSeries": ["counts", "rates", "durations", "percentages", "scores", "status samples with documented state codes"],
+    "requiresStructuredRecords": ["operational rows with multiple typed fields", "narrative reports", "findings/remediation", "dependency nodes and edges", "incident/run events"],
+    "rules": [
+      "Use labels for bounded identity/dimensions, not serialized JSON, prose or arrays.",
+      "Source IDs and query-template parameters must remain explicit across saved queries and drilldowns.",
+      "The host owns querying; trusted plugin renderers must not fetch arbitrary endpoints.",
+      "A sample provider must be clearly isolated and never substitute for failed live data.",
+      "Fixture observations, window and provenance must be explicit and deterministic.",
+      "No tokens, token prefixes, raw security reports, raw headers, raw bodies or secret diagnostic excerpts belong in the fixtures."
+    ]
+  },
+  "featureGaps": [
+    {"feature": "progress", "existing": "threshold-gauge plugin already renders a bounded progress track with value, unit, thresholds and precision", "proposal": "reuse; radial variant is optional presentation, not a new global widget type"},
+    {"feature": "operational records and narrative", "existing": "metrics table only shows Series/Latest valid/Min/Max", "proposal": "one bounded additive records result contract plus trusted structured-records plugin with table/details/feed modes"},
+    {"feature": "dependency graph", "existing": "no registered graph renderer", "proposal": "trusted dependency-graph plugin over typed bounded nodes/edges; reuse host selection/drilldowns"},
+    {"feature": "status over time", "existing": "heatmap displays latest state per series", "proposal": "trusted status-history plugin with observed-time cells, missing-data gaps and state codebook; do not claim existing heatmap is a time history"},
+    {"feature": "60/90-day windows", "existing": "customTimeRange and provider/dashboard query range are capped at 31 days", "proposal": "explicit bounded aggregate/record window design or coordinated range-policy change; no silent shortening"},
+    {"feature": "machine-readable record widgets", "existing": "query_dashboard summarizes metric series and traces", "proposal": "if records are introduced, extend compact MCP summaries with bounded rows/field metadata and honest truncation"}
+  ],
+  "platformTelemetrySeparateFromProductDashboards": {
+    "sources": ["backend/pkg/observability/metrics.go", "backend/pkg/observability/tracing.go", "backend/pkg/middleware/metrics.go", "backend/cmd/api/main.go", "deploy/kubernetes/chart/templates/servicemonitor.yaml"],
+    "declaredInstrumentCount": 11,
+    "recordedRequestInstruments": ["http.request.count", "http.request.errors", "http.request.duration"],
+    "requestDimensions": ["method", "path", "status_code"],
+    "requestDurationUnit": "ms",
+    "requestErrorDefinition": "HTTP status >=500",
+    "metricMeterScope": "uptime-api",
+    "traceServiceDefault": "uptime-api; OTEL_SERVICE_NAME may override",
+    "metricEndpoint": "/metrics",
+    "serviceMonitorDefaultEnabled": false,
+    "declaredButNoRecordingCallSites": ["check.execution.duration", "check.execution.count", "check.execution.success", "check.execution.failure", "alerts.triggered", "alerts.resolved", "system.active_checks", "system.active_agents"],
+    "notes": ["Discover actual exported metric names/labels before creating queries", "Request rate/errors/latency/traces would be a new platform example, not an imported repository dashboard", "Product SLOs, inventories, findings and stored report text cannot be inferred from request telemetry"]
+  }
+}

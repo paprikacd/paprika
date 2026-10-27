@@ -18,7 +18,7 @@ import (
 // MCP tool runner. Authoring tools and provider mutations never reach widgets.
 var observeDataTools = map[string]bool{
 	"list_observability_providers": true,
-	"query_metrics":                true, "query_traces": true,
+	"query_metrics":                true, "query_traces": true, "query_records": true,
 	"list_metric_names": true, "list_label_names": true, "list_label_values": true,
 	"list_metric_series": true, "get_metric_metadata": true, "list_trace_services": true,
 }

@@ -110,7 +110,7 @@ export const savedQuerySchema = z.strictObject({
   tags: z.array(savedQueryTagSchema).max(MAX_SAVED_QUERY_TAGS).optional(),
   metadata: savedQueryMetadataSchema.optional(),
   providerId: identifier,
-  kind: z.enum(["metrics", "traces"]),
+  kind: z.enum(["metrics", "traces", "records"]),
   query: z.string().trim().min(1).max(8192),
   parameters: z.array(savedQueryParameterSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
 }).superRefine((query, context) => {
@@ -301,7 +301,7 @@ export const tooltipViewSchema = z.strictObject({
   decimals: z.number().int().min(0).max(8).optional(),
   source: tooltipSourceSchema.optional(),
   pluginId: identifier.optional(),
-  dataKind: z.enum(["metrics", "traces"]).optional(),
+  dataKind: z.enum(["metrics", "traces", "records"]).optional(),
   config: pluginConfigSchema.optional(),
 }).superRefine((view, context) => {
   if (view.type === "plugin") {
@@ -311,7 +311,7 @@ export const tooltipViewSchema = z.strictObject({
     for (const field of ["pluginId", "dataKind", "config"] as const)
       if (view[field] !== undefined) context.addIssue({ code: "custom", path: [field], message: "This field is only available to tooltip plugins" })
   }
-  if ((view.type === "traces" || (view.type === "plugin" && view.dataKind === "traces")) && (!view.source || view.source.type === "series"))
+  if ((view.type === "traces" || (view.type === "plugin" && (view.dataKind === "traces" || view.dataKind === "records"))) && (!view.source || view.source.type === "series"))
     context.addIssue({ code: "custom", path: ["source"], message: "Trace tooltip widgets require a query data source" })
 })
 
@@ -377,7 +377,7 @@ export const widgetSchema = z
     color: hexColor.optional(),
     options: widgetOptionsSchema.optional(),
     pluginId: identifier.optional(),
-    dataKind: z.enum(["metrics", "traces"]).optional(),
+    dataKind: z.enum(["metrics", "traces", "records"]).optional(),
     config: pluginConfigSchema.optional(),
     drilldowns: z.array(drilldownSchema).max(8).optional(),
     layout: z
@@ -494,7 +494,7 @@ export type Threshold = z.infer<typeof thresholdSchema>
 export type DashboardVariable = z.infer<typeof dashboardVariableSchema>
 export type Drilldown = z.infer<typeof drilldownSchema>
 export type DrilldownBinding = z.infer<typeof drilldownBindingSchema>
-export type DataKind = "metrics" | "traces"
+export type DataKind = "metrics" | "traces" | "records"
 
 export function widgetKind(widget: Pick<Widget, "type" | "dataKind">): DataKind {
   return widget.type === "plugin"
@@ -511,20 +511,32 @@ export interface Provider {
   id: string
   name: string
   managed?: boolean
-  type: "prometheus" | "tempo"
-  capabilities: ("metrics" | "traces")[]
+  type: "prometheus" | "tempo" | "postgresql" | "shorted" | "uptime"
+  capabilities: DataKind[]
 }
 export interface QueryRequest {
   providerId: string
   query: string
-  kind: "metrics" | "traces"
+  kind: DataKind
   start: number
   end: number
   step: number
   /** Authoring reference; the host resolves and removes this before transport. */
   queryRef?: DashboardQueryReference
 }
+export interface RecordColumn {
+  key: string
+  label?: string
+  type: "string" | "number" | "boolean" | "timestamp"
+  unit?: string
+}
+export interface RecordFrame {
+  columns: RecordColumn[]
+  rows: (string | number | boolean | null)[][]
+  truncated?: boolean
+}
 export interface QueryResult {
+  records?: RecordFrame
   truncated?: boolean
   series?: {
     name: string

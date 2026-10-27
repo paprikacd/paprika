@@ -3,7 +3,7 @@ import { CompletionContext, type CompletionResult, type CompletionSource } from 
 import { EditorState } from "@codemirror/state"
 import { PostgreSQL } from "@codemirror/lang-sql"
 import type { InsightsClient } from "./client"
-import { createMetadataDiscovery, createQueryLanguage, maskQueryParameters, parameterCompletion, queryDiagnostics } from "./query-editor-language"
+import { createMetadataDiscovery, createQueryLanguage, maskQueryParameters, parameterCompletion, providerQueryLanguage, queryDiagnostics } from "./query-editor-language"
 
 async function suggestions(language: ReturnType<typeof createQueryLanguage>, doc: string) {
   const state = EditorState.create({ doc, extensions: language.extensions })
@@ -13,6 +13,24 @@ async function suggestions(language: ReturnType<typeof createQueryLanguage>, doc
 }
 
 describe("provider query languages", () => {
+  it("selects the native language and completes only the chosen application operations", async () => {
+    const metadata = vi.fn()
+    for (const type of ["shorted", "uptime", "postgresql"] as const) {
+      const provider = { id: type, name: type, type, capabilities: ["records" as const, "metrics" as const] }
+      expect(providerQueryLanguage(provider, "records")).toBe(type === "postgresql" ? "sql" : "json")
+      const language = createQueryLanguage({ language: type === "postgresql" ? "sql" : "json", providerId: type, providerType: type, client: { metadata } as unknown as InsightsClient })
+      if (type !== "postgresql") {
+        const labels = (await suggestions(language, '{"operation":"')).flatMap(result => result.options.map(option => option.label))
+        expect(labels).toContain(type === "shorted" ? "stock_history" : "overview")
+        expect(labels).not.toContain(type === "shorted" ? "overview" : "stock_history")
+      }
+      language.destroy()
+    }
+    expect(metadata).not.toHaveBeenCalled()
+    expect(queryDiagnostics("json", '{"operation":"overview","args":{"serviceId":{{service}}}}', [{ name: "service", type: "string" }])).toEqual([])
+    expect(queryDiagnostics("json", '{"operation":')).toHaveLength(1)
+  })
+
   it("uses Prometheus syntax and semantic diagnostics without modifying templates", () => {
     const query = "sum(rate(http_requests_total{service={{service}},region={{region}}}[5m])) / {{divisor}}"
     const parameters = [{ name: "service" }, { name: "region" }, { name: "divisor", type: "number" }]

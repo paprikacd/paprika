@@ -142,7 +142,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeProviderError(w, err)
 		return
 	}
-	if p.public.Capabilities[0] != q.Kind {
+	if !p.public.supports(q.Kind) {
 		writeError(w, 400, "provider does not support this query kind")
 		return
 	}

@@ -1,13 +1,13 @@
 ---
 name: paprika-observe
-description: Query logs, metrics, and traces through the Paprika observability gateway's MCP surface using provider-backed connectors (Prometheus, Loki, Tempo, OTLP, GCP, AWS). Use for investigating errors, slow requests, stale telemetry, or deployment health when an observability gateway endpoint is connected.
+description: Query logs, metrics, traces and typed application records through Paprika Observe MCP, and read or author shared dashboards and saved queries. Providers include Prometheus, Loki, Tempo, OTLP, GCP, AWS, Shorted, Uptime and read-only PostgreSQL.
 ---
 
 # Paprika observability gateway
 
 The observability gateway is a second MCP surface at
 `https://<paprika-host>/observe/mcp`, separate from the fleet surface at `/mcp`.
-The fourteen telemetry tools are read-only and require `paprika:observe`.
+The fifteen provider tools are read-only and require `paprika:observe`.
 When Insights is configured, separate document authoring tools additionally
 require `paprika:insights:write` and the user's Insights write permission. A
 token minted for the fleet or console surface is not replayable here: the
@@ -39,7 +39,8 @@ explains empty or refused results; report it rather than retrying the same
 query. An `OK` state does not prove the data you need exists.
 
 Match the tool to the signal: `query_logs` for log providers, `query_metrics`
-for metrics providers, `query_traces` for trace providers. One connector can
+for metrics providers, `query_traces` for trace providers, and `query_records`
+for typed application or SQL rows. One connector can
 serve several signals; check the provider's descriptor, not its name.
 
 ## Explore before you query
@@ -71,7 +72,8 @@ example; `namespace` on the three list tools only scopes AWS CloudWatch.
 
 ## Write the query in the connector's language
 
-`query` is always the backend's native language — there is no gateway dialect.
+`query` uses the provider's language. Application adapters expose a bounded JSON
+operation envelope instead of accepting arbitrary RPC names or HTTP paths.
 Check the provider type and use its language:
 
 | Provider type | Tool | `query` language |
@@ -88,6 +90,9 @@ Check the provider type and use its language:
 | `aws-xray` | `query_traces` | `trace_id`, or an X-Ray filter expression |
 | `aws-cloudtrail` | `query_logs` | comma-separated `Key=Value` lookup attributes |
 | `vultr-monitoring` | `query_metrics` | one catalog metric name (`account_bandwidth`, `instance_bandwidth_in`, `instance_bandwidth_outgoing_bytes`) |
+| `shorted` | `query_records`, `query_metrics` | JSON `{operation,args,projection?}`; fixed public and separately authorized admin reads |
+| `uptime` | `query_records`, `query_metrics` | JSON `{operation,args,projection?}`; organization pinned in provider config |
+| `postgresql` | `query_records`, `query_metrics` | read-only SQL, or `{sql,parameters,projection?}` with driver-bound scalar values |
 
 ```json
 {"tool":"query_metrics","arguments":{"provider":"monitoring/prometheus","query":"sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"checkout\"}[5m]))","start":"2026-10-18T06:00:00Z","end":"2026-10-18T07:00:00Z"}}
@@ -101,6 +106,19 @@ them explicitly when investigating an incident, and keep identical bounds when
 comparing windows. Metrics queries with both bounds run as range queries;
 without them, instant. `query_logs` `limit` defaults to 100 (1000 max). A
 capped result is a sample, not a count — say so.
+
+`query_records` returns bounded `columns` and `rows`, preserving null, zero,
+timestamps and partial-result status. Its `limit` defaults to 100 (maximum 1000);
+application adapters may impose a lower cap. Dashboard compact responses retain
+only a bounded row preview and report truncation separately. Inventory counts
+are snapshots, not historical trends. Application time windows use their
+explicit operation arguments; dashboard time ranges do not rewrite SQL.
+
+For SQL saved queries, use `$1` in fixed SQL text and place unquoted
+`{{service}}` in the JSON `parameters` array. Never interpolate into SQL text.
+Use `get_insights_schema` for record widget examples and available plugin config
+shapes. Credentials remain in provider Secrets; do not copy source application
+writer credentials into a PostgreSQL provider.
 
 On the cloud connectors an **empty `query` is the health probe** — one cheap
 read the backend accepts. That is what `validate_provider` runs; it is also a

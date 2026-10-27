@@ -83,6 +83,36 @@ describe("guided PromQL construction", () => {
 })
 
 describe("query editor", () => {
+  it("runs a records operation through MCP without starting Prometheus metadata discovery", async () => {
+    const query = vi.fn().mockResolvedValue({ records: { columns: [{ key: "name", type: "string" }], rows: [["Example"]] } })
+    const metadata = vi.fn()
+    const provider = { id: "app", name: "Uptime", type: "uptime" as const, capabilities: ["records" as const, "metrics" as const], transport: "mcp" as const }
+    render(<QueryBuilder widget={{ ...widget, type: "plugin", pluginId: "record-table", dataKind: "records", providerId: "app", query: '{"operation":"overview"}' }} client={{ query, metadata } as unknown as InsightsClient} provider={provider} onChange={vi.fn()} compact defaultExpanded />)
+    expect(screen.getByRole("textbox", { name: "JSON query" })).toBeInTheDocument()
+    expect(screen.getByText("query_records")).toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Builder" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Guided query builder")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    await waitFor(() => expect(query).toHaveBeenCalledWith(expect.objectContaining({ kind: "records", query: '{"operation":"overview"}' }), expect.any(AbortSignal)))
+    expect(metadata).not.toHaveBeenCalled()
+  })
+
+  it("blocks SQL preview until a fixed SQL body has valid bindings, then preserves the envelope", async () => {
+    const query = vi.fn().mockResolvedValue({ series: [] }), metadata = vi.fn()
+    function SQLPreview() {
+      const [source, setSource] = useState("SELECT {{service}}")
+      return <QueryBuilder widget={{ ...widget, providerId: "pg", query: source }} provider={{ id: "pg", name: "SQL", type: "postgresql", capabilities: ["metrics"] }} client={{ query, metadata } as unknown as InsightsClient} onChange={setSource} compact defaultExpanded />
+    }
+    render(<SQLPreview />)
+    expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled()
+    changeQueryEditor(screen.getByRole("textbox", { name: "SQL query" }), "SELECT $1 AS value")
+    changeQueryEditor(screen.getByRole("textbox", { name: "SQL parameters" }), "[2.5]")
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(query.mock.calls[0][0].query)).toEqual({ sql: "SELECT $1 AS value", parameters: [2.5] })
+    expect(metadata).not.toHaveBeenCalled()
+  })
+
   it("identifies the MCP tool and automatic bindings without replacing the language editor", () => {
     const provider = { id: "prod", name: "Shared metrics", type: "prometheus" as const, capabilities: ["metrics" as const], transport: "mcp" as const }
     const { rerender } = render(<QueryBuilder widget={widget} provider={provider} onChange={vi.fn()} compact />)

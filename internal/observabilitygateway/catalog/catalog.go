@@ -100,11 +100,12 @@ const (
 
 // Category vocabulary for the library view.
 const (
-	categoryLogs    = "logs"
-	categoryMetrics = "metrics"
-	categoryTraces  = "traces"
-	categoryAudit   = "audit"
-	categoryTest    = "test"
+	categoryLogs        = "logs"
+	categoryMetrics     = "metrics"
+	categoryTraces      = "traces"
+	categoryAudit       = "audit"
+	categoryTest        = "test"
+	categoryApplication = "application"
 )
 
 // Credential kinds, shared by every entry's CredentialInfo.Kind.
@@ -284,6 +285,9 @@ func applyStep(yaml string) Step {
 // catalog is the authoritative provider-type library, authored once at
 // build time. All and Summaries project it; nothing mutates it at runtime.
 var catalog = []TypeInfo{
+	shortedProvider(),
+	uptimeProvider(),
+	postgresqlProvider(),
 	{
 		Type:         connector.ProviderAWSCloudTrail,
 		DisplayName:  "AWS CloudTrail",
