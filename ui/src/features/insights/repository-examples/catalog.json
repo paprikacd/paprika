@@ -11589,7 +11589,7 @@
           "schemaVersion": 1,
           "id": "shorted-per-stock",
           "title": "per stock",
-          "description": "Live provider reads. per stock",
+          "description": "Live provider reads. per stock. History charts show the latest 100 source observations. Source date filters apply; the dashboard time range does not rewrite this SQL.",
           "folder": "Repository examples/Shorted",
           "timeRange": "6h",
           "refreshInterval": 0,
@@ -11599,7 +11599,7 @@
               "title": "short positions for $stocks",
               "type": "timeseries",
               "providerId": "source-shorted-postgresql",
-              "query": "{\"sql\":\"SELECT\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
+              "query": "{\"sql\":\"SELECT * FROM (\\n  SELECT * FROM (\\nSELECT\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\\n  ) AS source_history\\n  ORDER BY \\\"time\\\" DESC NULLS LAST\\n  LIMIT 100\\n) AS recent_history\\nORDER BY \\\"time\\\" ASC NULLS LAST\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
               "queryRef": {
                 "id": "src-shorted-per-stock-p2-t0",
                 "bindings": [
@@ -11633,7 +11633,7 @@
               "title": "shares shorted for $stocks",
               "type": "bar",
               "providerId": "source-shorted-postgresql",
-              "query": "{\"sql\":\"SELECT\\n  \\\"REPORTED_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
+              "query": "{\"sql\":\"SELECT * FROM (\\n  SELECT * FROM (\\nSELECT\\n  \\\"REPORTED_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\\n  ) AS source_history\\n  ORDER BY \\\"time\\\" DESC NULLS LAST\\n  LIMIT 100\\n) AS recent_history\\nORDER BY \\\"time\\\" ASC NULLS LAST\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
               "queryRef": {
                 "id": "src-shorted-per-stock-p3-t0",
                 "bindings": [
@@ -11692,7 +11692,7 @@
           "schemaVersion": 1,
           "id": "src-shorted-per-stock-p2-t0",
           "name": "short positions for $stocks",
-          "description": "Source query for per stock",
+          "description": "Latest 100 source observations for per stock. Source stock/date filters apply; the dashboard time range does not rewrite this SQL.",
           "tags": [
             "repository-example",
             "shorted",
@@ -11707,7 +11707,7 @@
           },
           "providerId": "source-shorted-postgresql",
           "kind": "metrics",
-          "query": "{\"sql\":\"SELECT\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
+          "query": "{\"sql\":\"SELECT * FROM (\\n  SELECT * FROM (\\nSELECT\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\\n  ) AS source_history\\n  ORDER BY \\\"time\\\" DESC NULLS LAST\\n  LIMIT 100\\n) AS recent_history\\nORDER BY \\\"time\\\" ASC NULLS LAST\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
           "parameters": [
             {
               "name": "stocks",
@@ -11720,7 +11720,7 @@
           "schemaVersion": 1,
           "id": "src-shorted-per-stock-p3-t0",
           "name": "shares shorted for $stocks",
-          "description": "Source query for per stock",
+          "description": "Latest 100 source observations for per stock. Source stock/date filters apply; the dashboard time range does not rewrite this SQL.",
           "tags": [
             "repository-example",
             "shorted",
@@ -11735,7 +11735,7 @@
           },
           "providerId": "source-shorted-postgresql",
           "kind": "metrics",
-          "query": "{\"sql\":\"SELECT\\n  \\\"REPORTED_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
+          "query": "{\"sql\":\"SELECT * FROM (\\n  SELECT * FROM (\\nSELECT\\n  \\\"REPORTED_SHORT_POSITIONS\\\" AS \\\"value\\\",\\n  \\\"PRODUCT_CODE\\\" || ' - ' || \\\"PRODUCT\\\" AS metric,\\n  \\\"DATE\\\" AS \\\"time\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\nORDER BY\\n  \\\"DATE\\\"\\n  ) AS source_history\\n  ORDER BY \\\"time\\\" DESC NULLS LAST\\n  LIMIT 100\\n) AS recent_history\\nORDER BY \\\"time\\\" ASC NULLS LAST\",\"parameters\":[{{stocks}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
           "parameters": [
             {
               "name": "stocks",
@@ -11800,7 +11800,8 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+          "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
+          "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
         ],
         "sourcePointer": "/panels/2/targets/0",
         "language": "sql-postgresql",
@@ -11818,7 +11819,8 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+          "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
+          "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
         ],
         "sourcePointer": "/panels/3/targets/0",
         "language": "sql-postgresql",
@@ -11849,6 +11851,7 @@
       "SQL stock timeseries has no dashboard time-filter macro.",
       "Variable stocks: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
       "Variable top10shorts: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+      "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
       "Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust."
     ]
   },
@@ -12018,7 +12021,7 @@
           "schemaVersion": 1,
           "id": "shorted-shorts-overview",
           "title": "percentage short positions by stock v2",
-          "description": "Live provider reads. percentage short positions by stock v2",
+          "description": "Live provider reads. percentage short positions by stock v2. History charts show the latest 100 source observations. Source date filters apply; the dashboard time range does not rewrite this SQL.",
           "folder": "Repository examples/Shorted",
           "timeRange": "6h",
           "refreshInterval": 0,
@@ -12055,7 +12058,7 @@
               "title": "top 10 shorted",
               "type": "timeseries",
               "providerId": "source-shorted-postgresql",
-              "query": "{\"sql\":\"SELECT\\n  \\\"DATE\\\" AS \\\"time\\\",\\n  \\\"PRODUCT_CODE\\\" AS \\\"metric\\\",\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\n  AND \\\"DATE\\\" > CURRENT_DATE - INTERVAL '12 month'\\nORDER BY\\n  \\\"DATE\\\" ASC\",\"parameters\":[{{top10shorts}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
+              "query": "{\"sql\":\"SELECT * FROM (\\n  SELECT * FROM (\\nSELECT\\n  \\\"DATE\\\" AS \\\"time\\\",\\n  \\\"PRODUCT_CODE\\\" AS \\\"metric\\\",\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\n  AND \\\"DATE\\\" > CURRENT_DATE - INTERVAL '12 month'\\nORDER BY\\n  \\\"DATE\\\" ASC\\n  ) AS source_history\\n  ORDER BY \\\"time\\\" DESC NULLS LAST\\n  LIMIT 100\\n) AS recent_history\\nORDER BY \\\"time\\\" ASC NULLS LAST\",\"parameters\":[{{top10shorts}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
               "queryRef": {
                 "id": "src-shorted-shorts-overview-p1-t0",
                 "bindings": [
@@ -12135,7 +12138,7 @@
           "schemaVersion": 1,
           "id": "src-shorted-shorts-overview-p1-t0",
           "name": "top 10 shorted",
-          "description": "Source query for percentage short positions by stock v2",
+          "description": "Latest 100 source observations for percentage short positions by stock v2. Source stock/date filters apply; the dashboard time range does not rewrite this SQL.",
           "tags": [
             "repository-example",
             "shorted",
@@ -12150,7 +12153,7 @@
           },
           "providerId": "source-shorted-postgresql",
           "kind": "metrics",
-          "query": "{\"sql\":\"SELECT\\n  \\\"DATE\\\" AS \\\"time\\\",\\n  \\\"PRODUCT_CODE\\\" AS \\\"metric\\\",\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\n  AND \\\"DATE\\\" > CURRENT_DATE - INTERVAL '12 month'\\nORDER BY\\n  \\\"DATE\\\" ASC\",\"parameters\":[{{top10shorts}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
+          "query": "{\"sql\":\"SELECT * FROM (\\n  SELECT * FROM (\\nSELECT\\n  \\\"DATE\\\" AS \\\"time\\\",\\n  \\\"PRODUCT_CODE\\\" AS \\\"metric\\\",\\n  \\\"PERCENT_OF_TOTAL_PRODUCT_IN_ISSUE_REPORTED_AS_SHORT_POSITIONS\\\" AS \\\"value\\\"\\nFROM\\n  shorts\\nWHERE\\n  \\\"PRODUCT_CODE\\\" IN ($1)\\n  AND \\\"DATE\\\" > CURRENT_DATE - INTERVAL '12 month'\\nORDER BY\\n  \\\"DATE\\\" ASC\\n  ) AS source_history\\n  ORDER BY \\\"time\\\" DESC NULLS LAST\\n  LIMIT 100\\n) AS recent_history\\nORDER BY \\\"time\\\" ASC NULLS LAST\",\"parameters\":[{{top10shorts}}],\"projection\":{\"value\":\"value\",\"time\":\"time\",\"labels\":[\"metric\"]}}",
           "parameters": [
             {
               "name": "top10shorts",
@@ -12204,7 +12207,8 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+          "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
+          "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
         ],
         "sourcePointer": "/panels/1/targets/0",
         "language": "sql-postgresql",
@@ -12219,6 +12223,7 @@
       "Top-ten RANK query may return duplicate stock codes on tied maxima.",
       "Variable stocks: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
       "Variable top10shorts: explicit single-value control replaces Grafana dynamic/multi-select discovery; original query and options retained in inventory.",
+      "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
       "Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust."
     ]
   },

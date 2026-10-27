@@ -355,6 +355,22 @@ curl -s https://paprika.benebsworth.com/.well-known/oauth-protected-resource/obs
 # The authoring scope is present only when Insights is configured.
 ```
 
+For providers signed by a CA outside the system trust bundle, configure
+`observabilityGateway.additionalCACertificates` as a map of `.crt` or `.pem`
+filenames to public PEM CA certificates (one certificate per file). The chart
+creates a ConfigMap, mounts it read-only at
+`/etc/paprika/additional-ca-certificates`, and includes its contents in the
+gateway pod checksum so certificate updates roll out automatically. This is
+gateway-wide trust for all its connectors; include only CAs approved for that
+scope. Provider hostname verification remains enabled.
+
+`SSL_CERT_DIR` includes `/etc/ssl/certs`, `/etc/pki/tls/certs`, and the added
+directory. The default system certificate file is unchanged. Do not also set
+`SSL_CERT_DIR` in `observabilityGateway.extraEnv`; the chart rejects ambiguous
+configuration. Private keys and provider credentials belong in their existing
+Secret references, never in this public certificate map. Omitting the map leaves
+the gateway's default trust configuration unchanged.
+
 ## Autodiscovery from in-cluster Services
 
 Backends running in the same cluster can register themselves without anyone

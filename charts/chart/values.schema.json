@@ -40,6 +40,25 @@
         }
       }
     },
+    "observabilityGateway": {
+      "type": "object",
+      "properties": {
+        "additionalCACertificates": {
+          "description": "Additional public CA certificates, one PEM certificate per filename; never private keys or credentials.",
+          "type": ["object", "null"],
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 253,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.(crt|pem)$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 32768,
+            "pattern": "^-----BEGIN CERTIFICATE-----[\\r\\n]+[A-Za-z0-9+/=\\r\\n]+[\\r\\n]-----END CERTIFICATE-----[\\r\\n]*$"
+          }
+        }
+      }
+    },
     "metrics": {
       "type": "object",
       "properties": {

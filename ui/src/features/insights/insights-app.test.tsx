@@ -48,6 +48,13 @@ async function importCopies(count = 1) {
   await waitFor(() => expect(button).toBeEnabled())
   fireEvent.click(button)
 }
+async function queryWorkbench() {
+  // Explorer is lazy-loaded. Wait for the rendered workspace, not a cold
+  // module import to finish within Testing Library's default one second.
+  const workbench = await screen.findByRole("region", { name: "Query workbench" }, { timeout: 5000 })
+  expect(workbench).toBeVisible()
+  return workbench
+}
 function viewport(mobile: boolean) {
   vi.spyOn(window, "matchMedia").mockReturnValue({
     matches: mobile,
@@ -77,15 +84,17 @@ describe("Insights application state", () => {
     render(<InsightsApp client={api} />)
     await screen.findByRole("heading", { name: "Dashboard A" })
     fireEvent.click(screen.getByRole("button", { name: /^Explore \d+$/ }))
-    const name = await screen.findByLabelText("Query name")
+    await queryWorkbench()
+    const name = screen.getByLabelText("Query name")
     fireEvent.change(name, { target: { value: "A retained draft" } })
     fireEvent.click(screen.getByRole("button", { name: "Dashboard" }))
     await screen.findByRole("heading", { name: "Dashboard A" })
     fireEvent.click(screen.getByRole("button", { name: /^Explore \d+$/ }))
+    await queryWorkbench()
     await waitFor(() => expect(api.listSavedQueries).toHaveBeenCalledTimes(3))
     expect(await screen.findByLabelText("Query name")).toHaveValue("A retained draft")
     expect(api.query).not.toHaveBeenCalled()
-  })
+  }, 10000) // Includes a cold lazy import and two complete workspace transitions.
 
   it("preserves an unapplied widget editor draft when returning from Explore through sidebar Dashboards", async () => {
     const api=client();
@@ -123,7 +132,7 @@ describe("Insights application state", () => {
     fireEvent.change(screen.getByLabelText("Tooltip title"), { target: { value: "Retained tooltip draft" } })
     fireEvent.click(await screen.findByRole("button", { name: "Create saved query" }))
 
-    const workbench = await screen.findByRole("region", { name: "Query workbench" })
+    const workbench = await queryWorkbench()
     fireEvent.change(screen.getByLabelText("Query name"), { target: { value: "Created from tooltip" } })
     fireEvent.click(within(workbench).getByRole("tab", { name: "Code" }))
     changeQueryEditor(within(workbench).getByRole("textbox", { name: /PromQL query/ }), "sum(rate(http_requests_total[5m]))")
@@ -151,7 +160,7 @@ describe("Insights application state", () => {
       source: { type: "saved", ref: { id: savedQuery!.id } },
     })
     expect(api.query).not.toHaveBeenCalled()
-  })
+  }, 10000) // The full edit/save/return workflow exceeds five seconds on contended CI.
 
   it("protects unsaved explorer changes when leaving Insights or the browser page", async () => {
     const api = client(), onBack = vi.fn()

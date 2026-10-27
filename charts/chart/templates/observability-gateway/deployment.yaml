@@ -13,12 +13,28 @@
 {{- end }}
 {{- $gwHasTokenSecret := false }}
 {{- $gwHasRBACRules := and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+{{- $gwCACertificates := .Values.observabilityGateway.additionalCACertificates }}
 {{- range .Values.observabilityGateway.extraEnv }}
+{{- if and $gwCACertificates (eq .name "SSL_CERT_DIR") }}
+{{- fail "SSL_CERT_DIR must not be set in observabilityGateway.extraEnv when additionalCACertificates is configured" }}
+{{- end }}
 {{- if and $gwHasRBACRules (eq .name "PAPRIKA_AUTH_RBAC_RULES") }}
 {{- fail "PAPRIKA_AUTH_RBAC_RULES must not be set in observabilityGateway.extraEnv when auth.rbac is configured" }}
 {{- end }}
 {{- if eq .name "PAPRIKA_AUTH_TOKEN_SECRET" }}
 {{- $gwHasTokenSecret = true }}
+{{- end }}
+{{- end }}
+{{- if $gwCACertificates }}
+{{- range .Values.observabilityGateway.extraVolumes }}
+{{- if eq .name "observability-ca" }}
+{{- fail "observabilityGateway.extraVolumes must not use the reserved observability-ca name when additionalCACertificates is configured" }}
+{{- end }}
+{{- end }}
+{{- range .Values.observabilityGateway.extraVolumeMounts }}
+{{- if or (eq .name "observability-ca") (eq .mountPath "/etc/paprika/additional-ca-certificates") }}
+{{- fail "observabilityGateway.extraVolumeMounts must not overlap the additionalCACertificates mount" }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- if and (not $gwHasTokenSecret) (eq (len .Values.observabilityGateway.extraEnvFrom) 0) }}
@@ -59,6 +75,10 @@ spec:
       app.kubernetes.io/component: observability-gateway
   template:
     metadata:
+      {{- if $gwCACertificates }}
+      annotations:
+        checksum/additional-ca-certificates: {{ $gwCACertificates | toJson | sha256sum | quote }}
+      {{- end }}
       labels:
         app.kubernetes.io/name: {{ include "paprika.name" . }}
         helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
@@ -174,19 +194,33 @@ spec:
           {{- else }}
           {}
           {{- end }}
+        {{- if or .Values.observabilityGateway.extraVolumeMounts .Values.mtls.enabled $gwCACertificates }}
         volumeMounts:
-          {{- toYaml .Values.observabilityGateway.extraVolumeMounts | nindent 10 }}
+          {{- with .Values.observabilityGateway.extraVolumeMounts }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+          {{- if $gwCACertificates }}
+          - name: observability-ca
+            mountPath: /etc/paprika/additional-ca-certificates
+            readOnly: true
+          {{- end }}
           {{- if .Values.mtls.enabled }}
           - name: mtls-cert
             mountPath: /etc/paprika/tls
             readOnly: true
           {{- end }}
+        {{- end }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.insightsEnv" . | nindent 8 }}
         {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}
+        {{- if $gwCACertificates }}
+        # Keep Go's Linux trust directories and its default certificate file.
+        - name: SSL_CERT_DIR
+          value: /etc/ssl/certs:/etc/pki/tls/certs:/etc/paprika/additional-ca-certificates
+        {{- end }}
         {{- if $gwHasRBACRules }}
         # Rules are nonsecret configuration. Inline JSON keeps the standalone
         # add-on independent of the main release's auth ConfigMap.
@@ -215,11 +249,20 @@ spec:
       {{- if $pc }}
       priorityClassName: {{ $pc | quote }}
       {{- end }}
+      {{- if or .Values.observabilityGateway.extraVolumes .Values.mtls.enabled $gwCACertificates }}
       volumes:
-        {{- toYaml .Values.observabilityGateway.extraVolumes | nindent 8 }}
+        {{- with .Values.observabilityGateway.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if $gwCACertificates }}
+        - name: observability-ca
+          configMap:
+            name: {{ include "paprika.resourceName" (dict "suffix" "observability-ca" "context" .) }}
+        {{- end }}
         {{- if .Values.mtls.enabled }}
         - name: mtls-cert
           secret:
             secretName: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway-mtls" "context" $) }}
         {{- end }}
+      {{- end }}
 {{- end }}

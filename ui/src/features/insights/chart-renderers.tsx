@@ -1002,7 +1002,23 @@ function TraceList({
         </thead>
         <tbody>
           {traces.slice(0, MAX_ROWS).map((trace, index) => {
-            const failed = /error|fail/i.test(trace.status);
+            const status = trace.status.trim().toLowerCase();
+            const failed = /^(error|fail|failed|failure|status_code_error)$/.test(
+              status,
+            );
+            const successful = /^(ok|success|succeeded|status_code_ok)$/.test(
+              status,
+            );
+            const statusClass = failed
+              ? styles.statusError
+              : successful
+                ? styles.statusSuccess
+                : styles.statusNeutral;
+            const barClass = failed
+              ? styles.traceError
+              : successful
+                ? styles.traceSuccess
+                : "";
             return (
               <tr
                 key={`${trace.traceId}-${index}`}
@@ -1109,7 +1125,7 @@ function TraceList({
                       widget.options?.decimals,
                     )}
                     <span
-                      className={`${styles.traceBar} ${failed ? styles.traceError : ""}`}
+                      className={`${styles.traceBar} ${barClass}`}
                       style={{
                         width: `${Number.isFinite(trace.durationMs) ? Math.max(0, (trace.durationMs / maximum) * 100) : 0}%`,
                       }}
@@ -1118,7 +1134,7 @@ function TraceList({
                 </td>
                 <td>
                   <span
-                    className={`${styles.status} ${failed ? styles.statusError : ""}`}
+                    className={`${styles.status} ${statusClass}`}
                   >
                     {trace.status || "Unknown"}
                   </span>
