@@ -162,4 +162,65 @@ for invalid in auth.enabled=false mcp.publicURL= deploymentMode=monolith observa
     echo "Unsafe gateway configuration unexpectedly rendered: $invalid" >&2; exit 1
   fi
 done
-printf 'Observability chart auth, identity, discovery routing and egress checks passed.\n'
+python3 - "$root" "$work" <<'PY'
+import hashlib, json, pathlib, re, ssl, subprocess, sys
+root, work = map(pathlib.Path, sys.argv[1:])
+certificate = '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n'
+def render_ca(overlay, success=True, omega=False):
+    values = work / 'ca-values.json'
+    values.write_text(json.dumps(overlay))
+    command = ['helm', 'template', 'paprika', str(root / 'charts/chart'), '-n', 'paprika-system']
+    if omega:
+        for path in ('deploy/test-values.yaml', 'deploy/omega-values.yaml', 'deploy/insights-omega-values.yaml'):
+            command += ['-f', str(root / path)]
+    else:
+        command += ['-f', str(work / 'values.yaml')]
+    result = subprocess.run(command + ['-f', str(values)], capture_output=True, text=True)
+    assert (result.returncode == 0) == success, result.stderr or 'Expected CA configuration rejection'
+    return result.stdout
+def configured(certs=None, **values):
+    return {'observabilityGateway': {'additionalCACertificates': certs or {'trusted.crt': certificate}, **values}}
+def checksum(text):
+    values = re.findall(r'checksum/additional-ca-certificates: "([0-9a-f]{64})"', text)
+    assert len(values) == 1
+    return values[0]
+plain = render_ca({})
+for marker in ('SSL_CERT_DIR', 'additional-ca-certificates', 'name: paprika-observability-ca'):
+    assert marker not in plain, 'Default gateway trust unexpectedly changed'
+rendered = render_ca(configured())
+assert rendered.count('name: SSL_CERT_DIR') == 1
+assert 'value: /etc/ssl/certs:/etc/pki/tls/certs:/etc/paprika/additional-ca-certificates' in rendered
+assert 'SSL_CERT_FILE' not in rendered, 'Default system certificate file must remain available'
+assert re.search(r'- name: observability-ca\n\s+mountPath: /etc/paprika/additional-ca-certificates\n\s+readOnly: true', rendered)
+assert re.search(r'- name: observability-ca\n\s+configMap:\n\s+name: paprika-observability-ca', rendered)
+assert '"trusted.crt": |\n    -----BEGIN CERTIFICATE-----' in rendered
+assert checksum(rendered) == checksum(render_ca(configured())), 'CA checksum is not deterministic'
+changed = {'trusted.crt': certificate.replace('QUJD', 'REVG')}
+assert checksum(rendered) != checksum(render_ca(configured(changed))), 'CA content update must roll the gateway'
+assert checksum(rendered) != checksum(render_ca(configured({'renamed.pem': certificate}))), 'CA filename update must roll the gateway'
+multiple = render_ca(configured({'one.crt': certificate, 'two.pem': certificate}))
+assert '"one.crt": |' in multiple and '"two.pem": |' in multiple
+for disabled in ({'observabilityGateway': {'enabled': False, 'additionalCACertificates': {'trusted.crt': certificate}}}, {'observabilityGateway': {'additionalCACertificates': None}}):
+    output = render_ca(disabled)
+    assert 'SSL_CERT_DIR' not in output and 'additional-ca-certificates' not in output
+environment = [{'name': 'PAPRIKA_AUTH_TOKEN_SECRET', 'valueFrom': {'secretKeyRef': {'name': 'preexisting-auth', 'key': 'token-secret'}}}, {'name': 'SSL_CERT_DIR', 'value': '/custom/trust'}]
+render_ca(configured(extraEnv=environment), success=False)
+assert re.search(r'value: "?/custom/trust"?', render_ca({'observabilityGateway': {'extraEnv': environment}}))
+render_ca(configured(extraVolumes=[{'name': 'observability-ca', 'emptyDir': {}}]), success=False)
+render_ca(configured(extraVolumeMounts=[{'name': 'observability-ca', 'mountPath': '/other'}]), success=False)
+render_ca(configured(extraVolumeMounts=[{'name': 'other', 'mountPath': '/etc/paprika/additional-ca-certificates'}]), success=False)
+combined = configured(extraVolumes=[{'name': 'fixture-data', 'emptyDir': {}}], extraVolumeMounts=[{'name': 'fixture-data', 'mountPath': '/fixture-data'}])
+combined['mtls'] = {'enabled': True}
+output = render_ca(combined)
+assert 'name: fixture-data' in output and 'name: mtls-cert' in output and 'name: observability-ca' in output
+for invalid in ('not-a-map', ['not-a-map'], {'../escape.crt': certificate}, {'.hidden.crt': certificate}, {'private.key': certificate}, {'trusted.crt': 123}, {'trusted.crt': '-----BEGIN PRIVATE KEY-----\nQUJD\n-----END PRIVATE KEY-----'}, {'trusted.crt': certificate + 'unexpected suffix'}, {f'ca-{i}.crt': certificate for i in range(17)}, {'trusted.crt': certificate.replace('QUJD', 'A' * 32768)}):
+    render_ca({'observabilityGateway': {'additionalCACertificates': invalid}}, success=False)
+omega = render_ca({}, omega=True)
+public_ca = re.search(r'  "supabase-prod-ca-2021.crt": \|\n((?:    .+\n)+)', omega).group(1)
+public_ca = '\n'.join(line[4:] for line in public_ca.splitlines()) + '\n'
+assert hashlib.sha256(ssl.PEM_cert_to_DER_cert(public_ca)).hexdigest() == '807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa', 'Omega public CA fingerprint changed without review'
+assert 'SSL_CERT_FILE' not in omega
+checksum(omega)
+print('Observability CA defaults, mounting, checksum, conflicts, validation and Omega fingerprint checks passed.')
+PY
+printf 'Observability chart auth, identity, discovery routing, egress and CA checks passed.\n'

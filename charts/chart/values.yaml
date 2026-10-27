@@ -743,6 +743,13 @@ observabilityGateway:
   # Empty does not grant access to nonstandard backend ports.
   additionalEgress: []
 
+  # Additional public CA certificates for provider TLS verification, keyed by
+  # filename (.crt or .pem; one PEM certificate per file). Helm mounts these
+  # read-only and restarts the gateway when they change. System trust remains
+  # available; do not also set SSL_CERT_DIR in extraEnv when using this map.
+  # Never put private keys or provider credentials here.
+  additionalCACertificates: {}
+
   image:
     repository: controller
     ## Image tag (defaults to Chart.appVersion if not set)
