@@ -2,6 +2,8 @@
 // INSIGHTS_SERVICE_OVERVIEW_CONFIG points to private JSON with baseURL, mcpURL,
 // tokenFile, mcpTokenFile, dashboardId and services. Optional expectedDocument,
 // expectedSavedQueries and expectations[service][widgetId] strengthen assertions.
+// Every configured service must return data; state: "empty" explicitly opts a
+// widget into a negative missing-data case. Sparklines require real history.
 // Native provider responses are observed, never replaced or mocked.
 import assert from "node:assert/strict"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
@@ -9,6 +11,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
+import { assertCoverage, finitePoints } from "./service-overview-coverage.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 assert.ok(process.env.INSIGHTS_SERVICE_OVERVIEW_CONFIG, "Set INSIGHTS_SERVICE_OVERVIEW_CONFIG to private configuration")
@@ -33,7 +36,6 @@ let browser, context, page, dashboard, variable, initialDashboard, usageBefore, 
 const dashboardURL = `${baseURL}/dashboard/insights/?dashboard=${encodeURIComponent(config.dashboardId)}`
 const snapshotVersion = response => response.headers.get("x-paprika-document-etag") ?? response.headers.get("etag")
 const compact = value => value.replace(/\s+/g, "")
-const finitePoints = series => (series.points ?? []).filter(point => Number.isFinite(point.timestamp) && typeof point.value === "number" && Number.isFinite(point.value)).sort((a, b) => a.timestamp - b.timestamp)
 const seriesName = (series, index) => series.name || Object.entries(series.labels ?? {}).map(([key, value]) => `${key}=${value}`).join(", ") || `Series ${index + 1}`
 
 async function until(predicate, message, timeout = 45_000) {
@@ -148,9 +150,7 @@ async function inspectWidget(widget, service) {
   const response = matchingResponse(widget, service)
   assert.equal(response.status, 200, `${widget.id} query failed for ${service}`)
   const body = response.body, expected = config.expectations?.[service]?.[widget.id] ?? {}
-  const nonempty = response.request.kind === "traces" ? !!body.traces?.length : (body.series ?? []).some(series => finitePoints(series).length)
-  if (expected.state === "data") assert.equal(nonempty, true, `${widget.id} must have data for ${service}`)
-  if (expected.state === "empty") assert.equal(nonempty, false, `${widget.id} must accurately represent no traffic for ${service}`)
+  const nonempty = assertCoverage({ kind: response.request.kind, body, widget, service, expected })
   if (!nonempty) {
     await target.getByText("No data in this time range", { exact: true }).waitFor()
     assert.equal(await target.locator("[data-stat-sparkline], [data-metric-value], tbody tr").count(), 0, "An empty result must clear the preceding service's observations")
