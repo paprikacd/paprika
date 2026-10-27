@@ -614,7 +614,8 @@
                     "type": "string",
                     "enum": [
                       "metrics",
-                      "traces"
+                      "traces",
+                      "records"
                     ]
                   },
                   "config": {
@@ -710,7 +711,8 @@
             "type": "string",
             "enum": [
               "metrics",
-              "traces"
+              "traces",
+              "records"
             ]
           },
           "config": {

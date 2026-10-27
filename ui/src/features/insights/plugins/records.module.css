@@ -1,0 +1,230 @@
+.wrapper {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--widget-text, var(--gamma-ink));
+  font-size: 12px;
+  --record-color-0: #c7dccd;
+  --record-color-1: #c5d6e0;
+  --record-color-2: #e0d9bb;
+  --record-color-3: #e2c9c2;
+  --record-color-4: #d1cee3;
+  --record-color-5: #c7dcd9;
+}
+.scroll {
+  overflow: auto;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  scrollbar-width: thin;
+}
+.wrapper table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.wrapper th {
+  position: sticky;
+  top: 0;
+  background: var(--widget-background, var(--gamma-bg));
+  color: var(--gamma-muted);
+  font-size: 11px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.wrapper td,
+.wrapper th {
+  border-bottom: 1px solid var(--gamma-border);
+  padding: 9px 10px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+.wrapper td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wrapper button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+}
+.wrapper button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gamma-ink) 7%, transparent);
+}
+.wrapper button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.wrapper :is(button, input, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--gamma-ink);
+  outline-offset: 2px;
+}
+.toolbar,
+.note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--gamma-muted);
+}
+.toolbar input {
+  width: 160px;
+  min-width: 60px;
+  max-width: 100%;
+  border: 1px solid var(--gamma-border);
+  border-radius: 4px;
+  background: var(--gamma-bg);
+  padding: 5px 8px;
+  font: inherit;
+  color: var(--gamma-ink);
+}
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.list li {
+  border-bottom: 1px solid var(--gamma-border);
+  padding: 10px 2px;
+  overflow-wrap: anywhere;
+}
+.list strong {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 550;
+}
+.list a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.list small {
+  display: block;
+  color: var(--gamma-muted);
+  margin-top: 4px;
+}
+.list p {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  margin: 6px 0 0;
+}
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin: 0 8px;
+}
+.treemap {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  --record-color-0: #c7dccd;
+  --record-color-1: #c5d6e0;
+  --record-color-2: #e0d9bb;
+  --record-color-3: #e2c9c2;
+  --record-color-4: #d1cee3;
+  --record-color-5: #c7dcd9;
+}
+.treemap g[role="button"] {
+  cursor: pointer;
+}
+.tileText {
+  font: 12px var(--gamma-font-ui);
+  fill: #23332c;
+  pointer-events: none;
+}
+.matrix th {
+  max-width: 100px;
+  font-size: 10px;
+}
+.matrix td {
+  text-align: center;
+  min-width: 54px;
+  font-size: 11px;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  max-height: 80px;
+  overflow: auto;
+  font-size: 11px;
+}
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.legend b {
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+.history {
+  display: grid;
+  gap: 10px;
+  min-width: 240px;
+}
+.historyRow {
+  display: grid;
+  gap: 5px;
+}
+.historyRow > strong {
+  font-size: 11px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.historyCells {
+  display: flex;
+  gap: 2px;
+  min-height: 24px;
+}
+.historyCells > button {
+  flex: 1;
+  min-width: 3px;
+  padding: 0;
+  border-radius: 2px;
+}
+.recordChart {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+}
+.recordChart text {
+  font: 10px var(--gamma-font-ui);
+  fill: var(--gamma-muted);
+}
+.recordChart [role="button"] {
+  cursor: pointer;
+}
+@media (forced-colors: active) {
+  .treemap rect {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+  .tileText {
+    fill: CanvasText;
+  }
+  .matrix td {
+    border: 1px solid CanvasText;
+  }
+}

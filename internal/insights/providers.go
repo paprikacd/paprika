@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/dataframe"
 )
 
 const (
@@ -79,8 +81,8 @@ func newProvider(config *ProviderConfig) (*providerClient, error) {
 }
 
 func validateQuery(q Query) error {
-	if q.Kind != "metrics" && q.Kind != "traces" {
-		return errors.New("query kind must be metrics or traces")
+	if q.Kind != "metrics" && q.Kind != "traces" && q.Kind != "records" {
+		return errors.New("query kind must be metrics, traces or records")
 	}
 	if strings.TrimSpace(q.Query) == "" || len(q.Query) > 16384 {
 		return errors.New("query must contain between 1 and 16384 bytes")
@@ -91,7 +93,7 @@ func validateQuery(q Query) error {
 func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 
 func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error) {
-	if p.public.Capabilities[0] != q.Kind {
+	if !p.public.supports(q.Kind) {
 		return QueryResult{}, errors.New("provider does not support this query kind")
 	}
 	if p.remote != nil {
@@ -99,10 +101,7 @@ func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error
 		if err != nil {
 			return QueryResult{}, err
 		}
-		if q.Kind == "metrics" {
-			return decodePrometheus(body)
-		}
-		return decodeTempo(body)
+		return decodeObserveQuery(q.Kind, body)
 	}
 	params := url.Values{"start": {strconv.FormatFloat(q.Start, 'f', -1, 64)}, "end": {strconv.FormatFloat(q.End, 'f', -1, 64)}}
 	path := "/api/v1/query_range"
@@ -127,6 +126,21 @@ func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error
 		return decodePrometheus(body)
 	}
 	return decodeTempo(body)
+}
+
+func decodeObserveQuery(kind string, body []byte) (QueryResult, error) {
+	switch kind {
+	case "metrics":
+		return decodePrometheus(body)
+	case "records":
+		frame, err := dataframe.Decode(body)
+		if err != nil {
+			return QueryResult{}, errUpstream
+		}
+		return QueryResult{Records: frame, Truncated: frame.Truncated}, nil
+	default:
+		return decodeTempo(body)
+	}
 }
 
 func (p *providerClient) fetch(ctx context.Context, path string, params url.Values, limit int64) ([]byte, error) {

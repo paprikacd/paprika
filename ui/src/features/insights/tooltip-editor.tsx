@@ -25,6 +25,7 @@ import {
 import { tooltipMappingSuggestions, type QueryFields } from "./query-connections";
 import { GraphDataFields, GraphLabelPicker } from "./query-connection-controls";
 import { QueryCodeEditor } from "./query-code-editor";
+import { providerQueryLanguage, queryLanguageNames } from "./query-editor-language";
 import type { InsightsClient } from "./client";
 
 export interface TooltipEditorProps {
@@ -78,10 +79,7 @@ export function TooltipEditor({
           ? "bar"
           : "cell";
   const kind: DataKind =
-    view?.type === "traces" ||
-    (view?.type === "plugin" && view.dataKind === "traces")
-      ? "traces"
-      : "metrics";
+    view?.type === "traces" ? "traces" : view?.type === "plugin" ? view.dataKind ?? "metrics" : "metrics";
   const selected = view
     ? getWidgetDefinition(view.type, view.pluginId)
     : undefined;
@@ -101,6 +99,8 @@ export function TooltipEditor({
   const knownRenderer = view?.type !== "plugin" || gauge;
   const sourceProvider =
     source && compatible.find((provider) => provider.id === source.providerId);
+  const language = providerQueryLanguage(sourceProvider || undefined, kind);
+  const languageName = queryLanguageNames[language];
   const mappingSuggestions = source ? tooltipMappingSuggestions(source, parentFields) : [];
   const parentSavedQuery = library.queries.find((query) => query.id === parentQueryRef?.id);
   const parentBindings = parentQueryRef ? [
@@ -174,7 +174,7 @@ export function TooltipEditor({
     if (definition.dataKind !== kind)
       next.source =
         savedDrafts.current[definition.dataKind] ??
-        (definition.dataKind === "traces" || queryDrafts.current.metrics
+        (definition.dataKind !== "metrics" || queryDrafts.current.metrics
           ? queryDraft(definition.dataKind)
           : undefined);
     onChange(next);
@@ -256,13 +256,13 @@ export function TooltipEditor({
                   value: "series",
                   label: "Hovered series",
                   icon: <QuerySourceIcon kind="series" />,
-                  disabled: kind === "traces",
+                  disabled: kind !== "metrics",
                 },
                 {
                   value: "widget",
                   label: "Existing widget query data",
                   icon: <QuerySourceIcon kind="widget" />,
-                  disabled: kind === "traces",
+                  disabled: kind !== "metrics",
                 },
                 { value: "query", label: "Provider query", icon: <QuerySourceIcon kind="provider" /> },
                 { value: "saved", label: "Saved query", icon: <QuerySourceIcon kind="saved" /> },
@@ -311,7 +311,7 @@ export function TooltipEditor({
               )}
               {!libraryLoading && !libraryError && !hasSavedQueries && (
                 <p className={styles.hint}>
-                  No saved {kind === "traces" ? "trace" : "metrics"} queries yet. Create one in Explore, then select it here.
+                  No saved {kind === "records" ? "record" : kind === "traces" ? "trace" : "metrics"} queries yet. Create one in Explore, then select it here.
                 </p>
               )}
               {(library.onOpenExplorer || library.onRefresh) && (
@@ -412,21 +412,18 @@ export function TooltipEditor({
               </div>
               {!sourceProvider && (
                 <p className={styles.error} role="alert">
-                  Choose a connected {kind === "traces" ? "trace" : "metrics"}{" "}
+                  Choose a connected {kind === "records" ? "record" : kind === "traces" ? "trace" : "metrics"}{" "}
                   provider. Your query stays here while you configure it.
                 </p>
               )}
               <div className={styles.field}>
                 <span>
-                  {kind === "traces" ? "TraceQL query" : "PromQL query"}
+                  {languageName} query
                 </span>
                 <QueryCodeEditor
-                  label={
-                    kind === "traces"
-                      ? "Tooltip TraceQL query"
-                      : "Tooltip PromQL query"
-                  }
-                  language={kind === "traces" ? "traceql" : "promql"}
+                  label={`Tooltip ${languageName} query`}
+                  language={language}
+                  kind={kind}
                   provider={sourceProvider || undefined}
                   providerId={source.providerId}
                   client={client}
@@ -447,7 +444,11 @@ export function TooltipEditor({
                 surrounding quotes.
               </p>
               <p className={styles.hint}>
-                {kind === "metrics" ? (
+                {language === "sql" ? (
+                  <>Keep SQL fixed with <code>$1</code> and put mapped values in its parameter array.</>
+                ) : language === "json" ? (
+                  <>Put mapped values in operation arguments, such as <code>{sourceProvider?.type === "shorted" ? '"product_code": {{ticker}}' : '"serviceId": {{service}}'}</code>.</>
+                ) : kind === "metrics" ? (
                   <>
                     Label matcher: <code>{"service={{service}}"}</code>. Numeric
                     filter: <code>{"> {{value}}"}</code>. Time:{" "}

@@ -94,6 +94,7 @@ export function buildTooltipContext(
     points: [],
   };
   const bounded: QueryResult = {
+    ...(result.records ? { records: { columns: result.records.columns.map(c => ({ ...c })), rows: result.records.rows.slice(0, 10).map(r => [...r]), truncated: result.records.truncated || result.records.rows.length > 10 } } : {}),
     ...(result.truncated ? { truncated: true } : {}),
     ...(result.series
       ? {
@@ -302,11 +303,7 @@ export const TooltipSubWidget = memo(function TooltipSubWidget({
     getTooltipRenderers,
   );
   const definition = definitions.find((entry) => entry.id === view.type);
-  const kind: DataKind =
-    view.type === "traces" ||
-    (view.type === "plugin" && view.dataKind === "traces")
-      ? "traces"
-      : "metrics";
+  const kind: DataKind = view.type === "plugin" ? view.dataKind ?? "metrics" : view.type === "traces" ? "traces" : "metrics";
   const query = useTooltipQuery(
     view.source,
     series,
@@ -347,8 +344,8 @@ export const TooltipSubWidget = memo(function TooltipSubWidget({
     query.error ??
     (view.source?.type === "widget" && (!parentData || parentData.kind !== kind)
       ? "The existing widget data is unavailable or incompatible with this visualization."
-      : kind === "traces" && (!view.source || view.source.type === "series")
-        ? "Trace tooltips require a configured query."
+      : kind !== "metrics" && (!view.source || view.source.type === "series")
+        ? "Trace and record tooltips require a configured query."
         : null);
   return (
     <section

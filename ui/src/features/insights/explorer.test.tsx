@@ -19,8 +19,8 @@ import type {
 } from "./schema";
 
 vi.mock("./charts", () => ({
-  WidgetVisualization: ({ widget }: { widget: { query: string } }) => (
-    <div data-testid="result">{widget.query}</div>
+  WidgetVisualization: ({ widget }: { widget: { query: string; type?: string; pluginId?: string; dataKind?: string; config?: unknown } }) => (
+    <div data-testid="result" data-widget={widget.pluginId ?? widget.type} data-kind={widget.dataKind} data-config={JSON.stringify(widget.config)}>{widget.query}</div>
   ),
 }));
 const providers: Provider[] = [
@@ -123,6 +123,56 @@ function deferred<T>() {
 }
 
 describe("Explore query workspace", () => {
+  it("requires explicit result columns for record chart previews without requerying the provider", async () => {
+    const api = client()
+    vi.mocked(api.query).mockResolvedValue({ records: { columns: [{ key: "service", type: "string" }, { key: "count", type: "number" }], rows: [["api", 10]] } })
+    render(<Explorer client={api} providers={[{ id: "app", name: "Uptime", type: "uptime", capabilities: ["records"] }]} queries={[]} onQueriesChange={vi.fn()} onUse={vi.fn()} onClose={vi.fn()} />)
+    edit("JSON query", '{"operation":"services"}')
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    await screen.findByTestId("result")
+    fireEvent.click(screen.getByRole("combobox", { name: "Explore record visualization" }))
+    fireEvent.click(screen.getByRole("option", { name: "Record bar chart" }))
+    expect(screen.getByText("Choose the result columns to preview this visualization.")).toBeInTheDocument()
+    expect(screen.queryByTestId("result")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("combobox", { name: "Preview x column" }))
+    fireEvent.click(screen.getByRole("option", { name: "service" }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Preview value column" }))
+    expect(screen.queryByRole("option", { name: "service" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("option", { name: "count" }))
+    expect(screen.getByTestId("result")).toHaveAttribute("data-widget", "records-bar")
+    expect(JSON.parse(screen.getByTestId("result").getAttribute("data-config")!)).toEqual({ x: "service", y: ["count"] })
+    expect(api.query).toHaveBeenCalledTimes(1)
+  })
+
+  it("runs and saves a PostgreSQL records template with hostile filter data bound outside SQL", async () => {
+    const api = client(), onQueriesChange = vi.fn()
+    const pg: Provider = { id: "pg", name: "Application database", type: "postgresql", capabilities: ["records", "metrics"], transport: "mcp" }
+    const stored: SavedQueryEntry = { schemaVersion: 1, id: "sql-records", name: "SQL records", providerId: "pg", kind: "records", query: '{"sql":"SELECT name FROM events WHERE service=$1","parameters":[{{service}}]}', parameters: [{ name: "service", type: "string", defaultValue: "api" }], etag: '"pg-v1"' }
+    render(<Explorer client={api} providers={[pg]} queries={[stored]} onQueriesChange={onQueriesChange} onUse={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole("combobox", { name: "Open saved query" }))
+    fireEvent.click(await screen.findByRole("option", { name: /SQL records/ }))
+    await screen.findByDisplayValue("SQL records")
+    expect(screen.getByText("query_records")).toBeInTheDocument()
+    expect(screen.queryByRole("textbox", { name: "PromQL query" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("textbox", { name: "SQL metric projection" })).not.toBeInTheDocument()
+    const hostile = "api'); DROP TABLE events; --"
+    edit("Test value for service", hostile)
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    await waitFor(() => expect(api.query).toHaveBeenCalledTimes(1))
+    const request = vi.mocked(api.query).mock.calls[0][0]
+    expect(request.kind).toBe("records")
+    expect(JSON.parse(request.query)).toEqual({ sql: "SELECT name FROM events WHERE service=$1", parameters: [hostile] })
+    expect(screen.getByTestId("result")).toHaveAttribute("data-widget", "record-table")
+    expect(screen.getByTestId("result")).toHaveAttribute("data-kind", "records")
+    edit("Query description", "Rows from the selected service")
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }))
+    await waitFor(() => expect(api.saveSavedQuery).toHaveBeenCalledWith(expect.objectContaining({ query: stored.query, description: "Rows from the selected service" }), stored.etag))
+    edit("SQL query", "SELECT {{service}}")
+    expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Save query" })).toBeDisabled()
+    expect(api.metadata).not.toHaveBeenCalled()
+  })
+
   it("edits description, tags and typed parameters in separate tabs without hiding the query or running it", async () => {
     const api = client();
     render(<Harness api={api} initial={[saved]} />);

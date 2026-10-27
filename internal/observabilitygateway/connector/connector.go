@@ -24,6 +24,8 @@ const (
 	SignalMetrics Signal = "metrics"
 	// SignalTraces is the distributed-trace data plane.
 	SignalTraces Signal = "traces"
+	// SignalRecords is a bounded frame of typed scalar application or SQL data.
+	SignalRecords Signal = "records"
 )
 
 // State is the outcome vocabulary of one query, in the values a caller can
@@ -57,6 +59,9 @@ const (
 	ProviderLoki       = "loki"
 	ProviderTempo      = "tempo"
 	ProviderOTLP       = "otlp"
+	ProviderShorted    = "shorted"
+	ProviderUptime     = "uptime"
+	ProviderPostgreSQL = "postgresql"
 
 	// Google Cloud connectors. Credentials are a Google credential JSON
 	// (service_account, external_account or impersonated_service_account —

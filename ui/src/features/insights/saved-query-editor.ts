@@ -12,7 +12,7 @@ export function validateLinkedTooltip(
   if (library.loading) throw new Error("The saved query library is loading.");
   if (library.error) throw new Error(library.error);
   const kind =
-    view.type === "traces" || view.dataKind === "traces" ? "traces" : "metrics";
+    view.type === "traces" ? "traces" : view.type === "plugin" ? view.dataKind ?? "metrics" : "metrics";
   const labels: Record<string, string> = Object.create(null);
   for (const binding of view.source.ref.bindings ?? []) {
     if (binding.source === "label") labels[binding.label] = "1";

@@ -2,7 +2,12 @@
 // query and dashboard service. Provider credentials never cross its HTTP API.
 package insights
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+
+	"github.com/benebsworth/paprika/internal/dataframe"
+)
 
 // ProviderConfig stores endpoint and credential references, never secret values.
 // Provisioned providers come from startup configuration; managed providers may
@@ -34,6 +39,8 @@ type ProviderConfigView struct {
 	Managed bool   `json:"managed"`
 	ETag    string `json:"etag"`
 }
+
+func (p *Provider) supports(kind string) bool { return slices.Contains(p.Capabilities, kind) }
 
 type MetadataResult struct {
 	Values    []string              `json:"values"`
@@ -92,9 +99,10 @@ type Trace struct {
 }
 
 type QueryResult struct {
-	Series    []Series `json:"series,omitempty"`
-	Traces    []Trace  `json:"traces,omitempty"`
-	Truncated bool     `json:"truncated,omitempty"`
+	Series    []Series         `json:"series,omitempty"`
+	Traces    []Trace          `json:"traces,omitempty"`
+	Records   *dataframe.Frame `json:"records,omitempty"`
+	Truncated bool             `json:"truncated,omitempty"`
 }
 
 // Dashboard documents follow the strict versioned contract shared with the UI.

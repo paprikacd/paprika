@@ -12,6 +12,44 @@ if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] a
 if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect()
 
 describe("query code editor", () => {
+  it("edits native SQL and typed bindings separately, preserving projection and undo", async () => {
+    const changed = vi.fn(), validity = vi.fn()
+    const initial = '{"sql":"SELECT value FROM events WHERE service=$1","parameters":[{{service}}],"projection":{"value":"value"}}'
+    function SQLWorkspace() {
+      const [value, setValue] = useState(initial)
+      return <QueryCodeEditor value={value} onChange={next => { changed(next); setValue(next) }} onValidityChange={validity} parameters={[{ name: "service", type: "string" }]} kind="metrics" provider={{ id: "pg", name: "PostgreSQL", type: "postgresql", capabilities: ["metrics", "records"] }} />
+    }
+    render(<SQLWorkspace />)
+    const sql = screen.getByRole("textbox", { name: "SQL query" })
+    const bindings = screen.getByRole("textbox", { name: "SQL parameters" })
+    expect(readQueryEditor(sql)).toBe("SELECT value FROM events WHERE service=$1")
+    expect(readQueryEditor(bindings)).toBe("[{{service}}]")
+    expect(validity).toHaveBeenLastCalledWith(true)
+    expect(changed).not.toHaveBeenCalled()
+    changeQueryEditor(sql, "SELECT value FROM events WHERE service=$1 ORDER BY value")
+    expect(changed.mock.lastCall?.[0]).toContain('"parameters": [{{service}}]')
+    expect(readQueryEditor(screen.getByRole("textbox", { name: "SQL metric projection" }))).toBe('{"value":"value"}')
+    act(() => { undo(queryEditorView(sql)) })
+    expect(readQueryEditor(sql)).toBe("SELECT value FROM events WHERE service=$1")
+    changeQueryEditor(bindings, "[{{service}}")
+    expect(validity).toHaveBeenLastCalledWith(false)
+    expect(screen.getByRole("alert")).toHaveTextContent(/parameters array|Complete the SQL parameter/)
+    expect(screen.getByRole("textbox", { name: "SQL query" })).toBe(sql)
+    changeQueryEditor(bindings, "[{{service}}, 2.5]")
+    expect(validity).toHaveBeenLastCalledWith(true)
+    changeQueryEditor(sql, "SELECT {{service}}")
+    expect(validity).toHaveBeenLastCalledWith(false)
+    expect(screen.getByRole("alert")).toHaveTextContent("Use $1")
+  })
+
+  it("repairs malformed saved SQL envelopes and hides metric projection for records", () => {
+    const change = vi.fn()
+    render(<QueryCodeEditor value={'{"sql":'} kind="records" onChange={change} provider={{ id: "pg", name: "PostgreSQL", type: "postgresql", capabilities: ["records"] }} />)
+    changeQueryEditor(screen.getByRole("textbox", { name: "SQL query envelope" }), '{"sql":"SELECT 1","parameters":[]}')
+    expect(readQueryEditor(screen.getByRole("textbox", { name: "SQL query" }))).toBe("SELECT 1")
+    expect(screen.queryByRole("textbox", { name: "SQL metric projection" })).not.toBeInTheDocument()
+  })
+
   it("edits the actual accessible document, keeps undo/redo, and reflects external value changes", () => {
     const onChange = vi.fn()
     const { rerender } = render(<QueryCodeEditor value="up" onChange={onChange} />)

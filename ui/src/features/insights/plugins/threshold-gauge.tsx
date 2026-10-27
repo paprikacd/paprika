@@ -1,6 +1,9 @@
 "use client";
 
 import { z } from "zod";
+import { registerRecordWidgetPlugins } from "./records";
+import { registerMetricDistributionPlugins } from "./metric-distributions";
+import { registerRecordChartPlugins } from "./record-charts";
 import {
   registerWidgetPlugin,
   getWidgetDefinition,
@@ -150,6 +153,9 @@ export function ThresholdGauge({
 
 /** Example of a bundled, trusted extension. Hosts can register others in the same way. */
 export function registerDefaultWidgetPlugins() {
+  registerRecordWidgetPlugins();
+  registerMetricDistributionPlugins();
+  registerRecordChartPlugins();
   if (getWidgetDefinition("plugin", "threshold-gauge")) return;
   registerWidgetPlugin({
     id: "threshold-gauge",

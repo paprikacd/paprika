@@ -609,11 +609,7 @@ export function WidgetEditor({
     const tooltip = parsed.data.options?.tooltipView;
     if (tooltip?.source?.type === "query") {
       const source = tooltip.source;
-      const kind =
-        tooltip.type === "traces" ||
-        (tooltip.type === "plugin" && tooltip.dataKind === "traces")
-          ? "traces"
-          : "metrics";
+      const kind = widgetKind(tooltip);
       if (
         !providers.some(
           (provider) =>
@@ -644,8 +640,7 @@ export function WidgetEditor({
     }
     if (
       tooltip?.source?.type === "widget" &&
-      (tooltip.type === "traces" || tooltip.dataKind === "traces") !==
-        (widgetKind(draft) === "traces")
+      widgetKind(tooltip) !== widgetKind(draft)
     ) {
       throw new Error(
         "The existing widget data is incompatible with this tooltip visualization.",

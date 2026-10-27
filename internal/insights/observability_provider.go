@@ -153,23 +153,35 @@ func (c *observeMCPConnection) providers() ([]Provider, error) {
 	result := make([]Provider, 0, len(catalog))
 	seen := make(map[string]bool)
 	for _, p := range catalog {
-		if p.Type != "prometheus" && p.Type != "tempo" {
+		capabilities := observeCapabilities(p.Type)
+		if len(capabilities) == 0 {
 			continue
 		}
 		if !validObserveCatalogProvider(p) || seen[p.Name] {
 			return nil, errUpstream
 		}
 		seen[p.Name] = true
-		capability, tool := "metrics", "query_metrics"
-		if p.Type == "tempo" {
-			capability, tool = "traces", "query_traces"
+		for _, capability := range capabilities {
+			if err := c.requireTool("query_" + capability); err != nil {
+				return nil, err
+			}
 		}
-		if err := c.requireTool(tool); err != nil {
-			return nil, err
-		}
-		result = append(result, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: []string{capability}, Source: "observability", ProviderRef: p.Name, Transport: "mcp"})
+		result = append(result, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: capabilities, Source: "observability", ProviderRef: p.Name, Transport: "mcp"})
 	}
 	return result, nil
+}
+
+func observeCapabilities(providerType string) []string {
+	switch providerType {
+	case "prometheus":
+		return []string{"metrics"}
+	case "tempo":
+		return []string{"traces"}
+	case "shorted", "uptime", "postgresql":
+		return []string{"metrics", "records"}
+	default:
+		return nil
+	}
 }
 
 func decodeObserveCatalog(body []byte, failed bool) ([]observeCatalogProvider, error) {
@@ -245,16 +257,16 @@ func observeTime(seconds float64) string {
 
 func (p *observeProvider) query(ctx context.Context, q Query) ([]byte, error) {
 	input := map[string]any{"provider": p.reference, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
-	if q.Kind == "metrics" {
+	switch q.Kind {
+	case "metrics":
 		input["step_seconds"] = q.Step
 		input["limit"] = maxSeries
-	} else {
+	case "records":
+		input["limit"] = 1000
+	default:
 		input["limit"] = maxTraces
 	}
-	tool := "query_metrics"
-	if q.Kind == "traces" {
-		tool = "query_traces"
-	}
+	tool := "query_" + q.Kind
 	return p.data(ctx, tool, input, maxResponseBytes)
 }
 

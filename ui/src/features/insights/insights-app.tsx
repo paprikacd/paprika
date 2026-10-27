@@ -53,16 +53,17 @@ import {
 } from "./schema"
 import {
   exampleDashboard,
-  exampleProviders,
-  exampleQuery,
-  exampleMetadata,
 } from "./example"
 import {
   createExampleDashboardImportClient,
-  readExampleWorkspace,
+  EXAMPLE_STORAGE_KEY,
   saveExampleWorkspace,
   writeExampleWorkspace,
 } from "./example-storage"
+import { assertProviderQueryTemplate } from "./provider-query-template"
+import { repositoryExamples } from "./repository-examples"
+import { RepositoryGallery } from "./repository-gallery"
+import { readRepositoryExampleWorkspace as readExampleWorkspace, repositoryWorkspaceProviders as exampleProviders, repositoryWorkspaceQuery as exampleQuery, repositoryWorkspaceMetadata as exampleMetadata, repositoryWorkspaceQueries } from "./repository-workspace"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey, type QueryFieldSnapshot } from "./query-connections"
 import { createExampleSavedQueryClient } from "./saved-query-storage"
@@ -183,7 +184,7 @@ export default function InsightsApp({
     // A draft must not hide a dependency that still exists in saved storage.
     const currentDocuments = () => [...readExampleWorkspace(localStorage).dashboards, latestDocument.current]
     const scoped = mode === "example" && typeof window !== "undefined"
-      ? { ...client, ...createExampleSavedQueryClient(localStorage, currentDocuments), metadata: exampleMetadata, query: exampleQuery }
+      ? { ...client, ...createExampleSavedQueryClient(localStorage, currentDocuments, repositoryWorkspaceQueries.filter(query => currentDocuments().some(document => dashboardUsesSavedQuery(document, query.id)))), metadata: exampleMetadata, query: exampleQuery }
       : client
     return { ...scoped, removeSavedQuery: async (id, etag) => {
       if (dashboardUsesSavedQuery(latestDocument.current, id))
@@ -209,7 +210,7 @@ export default function InsightsApp({
   const [editing, setEditing] = useState(false)
   const [widgetDraftValid, setWidgetDraftValid] = useState(true)
   const [panel, setPanel] = useState<
-    "add" | "source" | "ai" | "providers" | "widget" | "manage" | null
+    "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | null
   >(null)
   const [selected, setSelected] = useState<string>()
   const [message, setMessage] = useState("")
@@ -313,6 +314,7 @@ export default function InsightsApp({
 
   const enterExample = useCallback(() => {
     const workspace = readExampleWorkspace(localStorage)
+    if (localStorage.getItem(EXAMPLE_STORAGE_KEY) === null) writeExampleWorkspace(localStorage, workspace.dashboards, workspace.activeId)
     const fallback =
       workspace.dashboards.find((item) => item.id === workspace.activeId) ??
       newDashboard()
@@ -465,11 +467,14 @@ export default function InsightsApp({
     if (queryRef) {
       if (queriesLoading) throw new Error("Loading the saved-query library…")
       if (queriesError) throw new Error(queriesError)
+      const authored = savedQueries.find(query => query.id === queryRef.id)
+      if (authored) assertProviderQueryTemplate(providers.find(provider => provider.id === authored.providerId)?.type, authored.query)
       const definition = resolveSavedQueryReference(queryRef, savedQueries, variableValues, request.kind)
       if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
         throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
       return scheduledFetcher({ ...resolved, ...definition }, signal)
     }
+    assertProviderQueryTemplate(providers.find(provider => provider.id === request.providerId)?.type, request.query)
     return scheduledFetcher({ ...resolved, query: interpolateQuery(request.query, variableValues) }, signal)
   }, [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers])
   const range = dashboardRange(viewDashboard, end)
@@ -568,7 +573,8 @@ export default function InsightsApp({
     }
     if (variables.length > MAX_DASHBOARD_VARIABLES) throw new Error("This query would exceed the dashboard’s 20-variable limit. Add a widget and bind some parameters to constants instead.")
     const widget = {
-      ...newWidget(query.kind === "traces" ? "traces" : "timeseries", providers.filter(provider => provider.id === query.providerId), dashboard.widgets),
+      ...newWidget(query.kind === "records" ? "plugin" : query.kind === "traces" ? "traces" : "timeseries", providers.filter(provider => provider.id === query.providerId), dashboard.widgets,
+        query.kind === "records" ? { id: "record-table", label: "Records table", dataKind: "records" } : undefined),
       title: query.name, providerId: query.providerId,
       queryRef: { id: query.id, bindings: (query.parameters ?? []).map(parameter => ({ parameter: parameter.name, source: "variable" as const, variable: parameter.name })) },
     }
@@ -1155,6 +1161,7 @@ export default function InsightsApp({
           >
             <Database size={16} /> Data sources <span>{providers.length}</span>
           </GammaButton>
+          <GammaButton size="sm" variant="quiet" className={styles.sideLink} disabled={importingBundle} onClick={() => { setExploring(false); setPanel("examples"); setMobileSidebar(false) }}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
           <div className={styles.sideSection}>
             <span className={styles.sideLabel}>YOUR DASHBOARDS</span>
             <GammaButton iconOnly size="sm" variant="quiet"
@@ -1543,9 +1550,10 @@ export default function InsightsApp({
             <aside
               ref={builderPanel}
               tabIndex={-1}
-              className={`${styles.panel} ${panel === "source" ? styles.widePanel : ""}`}
+              className={`${styles.panel} ${(panel === "source" || panel === "examples") ? styles.widePanel : ""}`}
               aria-label="Builder panel"
             >
+              {panel === "examples" && <RepositoryGallery entries={repositoryExamples} mode={mode === "example" ? "example" : "live"} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} onRefreshQueries={refreshSavedQueries} onClose={close} />}
               {panel === "source" && (
                 <DocumentEditor
                   key={dashboard.id}

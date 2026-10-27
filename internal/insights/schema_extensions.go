@@ -105,8 +105,8 @@ func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
 	if json.Unmarshal(widget["pluginId"], &id) != nil || !validID.MatchString(id) {
 		return errors.New("plugin widgets require a valid pluginId")
 	}
-	if json.Unmarshal(widget["dataKind"], &dataKind) != nil || !slices.Contains([]string{"metrics", "traces"}, dataKind) {
-		return errors.New("plugin widgets require metrics or traces dataKind")
+	if json.Unmarshal(widget["dataKind"], &dataKind) != nil || !slices.Contains([]string{"metrics", "traces", "records"}, dataKind) {
+		return errors.New("plugin widgets require metrics, traces or records dataKind")
 	}
 	if raw, ok := widget["config"]; ok {
 		return validatePluginConfig(raw)
@@ -172,7 +172,7 @@ func validateTooltipSourceCompatibility(kind string, view map[string]json.RawMes
 			return errors.New("tooltip dataKind must be a string")
 		}
 	}
-	if (kind == "traces" || (kind == "plugin" && dataKind == "traces")) && !slices.Contains([]string{"query", "saved", "widget"}, source) {
+	if (kind == "traces" || (kind == "plugin" && (dataKind == "traces" || dataKind == "records"))) && !slices.Contains([]string{"query", "saved", "widget"}, source) {
 		return errors.New("trace tooltip widgets require a query, saved query, or widget result source")
 	}
 	return nil

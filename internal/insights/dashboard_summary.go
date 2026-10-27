@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"unicode/utf8"
+
+	"github.com/benebsworth/paprika/internal/dataframe"
 )
 
 // DashboardSummaryOptions controls output volume, never provider query semantics.
@@ -28,10 +30,39 @@ type DashboardSignal struct {
 	Error             *DashboardQueryError     `json:"error,omitempty"`
 	Series            []DashboardSeriesSummary `json:"series,omitempty"`
 	Traces            *DashboardTraceSummary   `json:"traces,omitempty"`
+	Records           *DashboardRecordSummary  `json:"records,omitempty"`
 	PrimarySeries     *int                     `json:"primarySeries,omitempty"`
 	Truncated         bool                     `json:"truncated,omitempty"`
 	ProviderTruncated bool                     `json:"providerTruncated,omitempty"`
 	SeriesTruncated   bool                     `json:"seriesTruncated,omitempty"`
+}
+
+// Records are bounded column/row tuples, shared with the UI. Returned describes
+// only the fetched page; it is never presented as the source's total row count.
+type DashboardRecordSummary struct {
+	Returned          int                `json:"returned"`
+	Columns           []dataframe.Column `json:"columns"`
+	Rows              [][]any            `json:"rows"`
+	RowsTruncated     bool               `json:"rowsTruncated,omitempty"`
+	ColumnsOmitted    int                `json:"columnsOmitted,omitempty"`
+	MetadataTruncated bool               `json:"metadataTruncated,omitempty"`
+}
+
+func summarizeDashboardRecords(frame *dataframe.Frame) DashboardRecordSummary {
+	columns := min(len(frame.Columns), 12)
+	summary := DashboardRecordSummary{Returned: len(frame.Rows), Columns: append([]dataframe.Column{}, frame.Columns[:columns]...), Rows: make([][]any, 0, min(len(frame.Rows), 3)), RowsTruncated: len(frame.Rows) > 3, ColumnsOmitted: len(frame.Columns) - columns}
+	for _, row := range frame.Rows[:min(len(frame.Rows), 3)] {
+		cells := append([]any{}, row[:columns]...)
+		for i, cell := range cells {
+			if text, ok := cell.(string); ok {
+				value, truncated := dashboardText(text, 160)
+				cells[i] = value
+				summary.MetadataTruncated = summary.MetadataTruncated || truncated
+			}
+		}
+		summary.Rows = append(summary.Rows, cells)
+	}
+	return summary
 }
 
 // All timestamps are Unix milliseconds, matching the UI's normalized results.
@@ -104,15 +135,35 @@ func summarizeDashboardResult(result QueryResult, options DashboardSummaryOption
 		signal.Truncated = signal.Truncated || summary.MetadataTruncated || summary.HistoryTruncated
 		signal.Series = append(signal.Series, summary)
 	}
-	if result.Traces != nil {
-		traces := summarizeDashboardTraces(result.Traces, options.MaxTraces)
-		signal.Traces = &traces
-		signal.Truncated = signal.Truncated || traces.ExamplesTruncated || traces.MetadataTruncated
-		if traces.Returned > 0 {
-			signal.State = "ok"
-		}
-	}
+	appendDashboardTraces(&signal, result.Traces, options.MaxTraces)
+	appendDashboardRecords(&signal, result.Records)
+
 	return signal
+}
+
+func appendDashboardTraces(signal *DashboardSignal, entries []Trace, limit int) {
+	if entries == nil {
+		return
+	}
+	traces := summarizeDashboardTraces(entries, limit)
+	signal.Traces = &traces
+	signal.Truncated = signal.Truncated || traces.ExamplesTruncated || traces.MetadataTruncated
+	if traces.Returned > 0 {
+		signal.State = "ok"
+	}
+}
+
+func appendDashboardRecords(signal *DashboardSignal, frame *dataframe.Frame) {
+	if frame == nil {
+		return
+	}
+	records := summarizeDashboardRecords(frame)
+	signal.Records = &records
+	signal.ProviderTruncated = signal.ProviderTruncated || frame.Truncated
+	signal.Truncated = signal.Truncated || frame.Truncated || records.RowsTruncated || records.ColumnsOmitted > 0 || records.MetadataTruncated
+	if records.Returned > 0 {
+		signal.State = "ok"
+	}
 }
 
 func boundedDashboardSummaryOptions(options DashboardSummaryOptions) DashboardSummaryOptions {

@@ -102,6 +102,7 @@ func DashboardQueryHandler(backend Backend, usage *UsageTracker) http.Handler {
 		if result == nil {
 			return errors.New("provider returned no result")
 		}
+		result = boundedRecordResult(input.Signal, result)
 		if err := writeDashboardJSON(w, queryToolResponse(input.Provider, string(input.Signal), result)); err != nil {
 			return err
 		}
@@ -203,7 +204,7 @@ func (in *DashboardQueryRequest) connectorRequest() (connector.QueryRequest, err
 
 func (in *DashboardQueryRequest) validSignalQuery() bool {
 	switch in.Signal {
-	case connector.SignalMetrics, connector.SignalLogs:
+	case connector.SignalMetrics, connector.SignalLogs, connector.SignalRecords:
 		return strings.TrimSpace(in.Query) != "" && in.TraceID == ""
 	case connector.SignalTraces:
 		return strings.TrimSpace(in.Query) != "" || in.TraceID != ""

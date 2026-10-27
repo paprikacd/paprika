@@ -90,6 +90,8 @@ try {
     "e2e/insights-portable.e2e.mjs",
     "e2e/insights-import-review.e2e.mjs",
     "e2e/insights-dashboard-query.e2e.mjs",
+    "e2e/insights-repository-examples.e2e.mjs",
+    "e2e/insights-record-charts.e2e.mjs",
   ]
   for (const script of scripts) await run(script, baseURL)
 } catch (error) {

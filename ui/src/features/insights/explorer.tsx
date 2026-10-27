@@ -32,6 +32,7 @@ import {
   validateSavedQueryTemplate,
 } from "./saved-queries";
 import { QueryBuilder } from "./query-builder";
+import { assertProviderQueryTemplate } from "./provider-query-template";
 import { WidgetVisualization } from "./charts";
 import { dashboardRange, TimeRangeControl } from "./time-range";
 import { GammaButton } from "./gamma/button";
@@ -106,7 +107,7 @@ function newQuery(provider?: Provider): SavedQuery {
     id: `query-${crypto.randomUUID()}`,
     name: "",
     providerId: provider?.id ?? "",
-    kind: provider?.capabilities.includes("metrics") ? "metrics" : "traces",
+    kind: provider?.capabilities.includes("records") ? "records" : provider?.capabilities.includes("metrics") ? "metrics" : "traces",
     query: "",
     parameters: [],
   };
@@ -125,13 +126,25 @@ function message(error: unknown) {
     ? error.message
     : "The request failed. Try again.";
 }
-function resultWidget(query: SavedQuery, type: Widget["type"]): Widget {
+function recordPreviewFields(type: string): { key: string; label: string; numeric?: boolean }[] {
+  switch (type) {
+    case "record-list": return [{ key: "title", label: "Title column" }];
+    case "record-treemap": return [{ key: "label", label: "Label column" }, { key: "value", label: "Value column", numeric: true }];
+    case "record-matrix": return [{ key: "x", label: "X column" }, { key: "y", label: "Y column" }, { key: "value", label: "Value column", numeric: true }];
+    case "records-line":
+    case "records-bar": return [{ key: "x", label: "X column" }, { key: "y", label: "Value column", numeric: true }];
+    default: return [];
+  }
+}
+function isRecordView(type: string) { return /^(record-|records-)/.test(type); }
+function resultWidget(query: SavedQuery, type: string, config?: Widget["config"]): Widget {
   return {
     id: "explore-preview",
     title: query.name || "Query results",
     providerId: query.providerId,
     query: query.query,
-    type: query.kind === "traces" ? "traces" : type,
+    type: query.kind === "traces" ? "traces" : query.kind === "records" ? "plugin" : type as Widget["type"],
+    ...(query.kind === "records" ? { pluginId: isRecordView(type) ? type : "record-table", dataKind: "records" as const, config } : {}),
     unit: "",
     layout: { x: 0, y: 0, w: 12, h: 6 },
   };
@@ -178,7 +191,9 @@ export function Explorer({
     refreshInterval: 0,
     widgets: [],
   });
-  const [view, setView] = useState<Widget["type"]>("timeseries");
+  const [view, setView] = useState<string>("timeseries");
+  const [queryValid, setQueryValid] = useState(true);
+  const [recordMappings, setRecordMappings] = useState<Record<string, Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -243,6 +258,11 @@ export function Explorer({
     time.customTimeRange,
   ]);
   const stale = !!executed && executed.key !== executionKey;
+  const previewFields = recordPreviewFields(view);
+  const previewColumns = executed?.result.records?.columns ?? [];
+  const previewMapping = recordMappings[view] ?? {};
+  const previewReady = previewFields.every(field => previewColumns.some(column => column.key === previewMapping[field.key] && (!field.numeric || column.type === "number")));
+  const previewConfig = Object.fromEntries(previewFields.map(field => [field.key, field.key === "y" && view.startsWith("records-") ? [previewMapping[field.key]] : previewMapping[field.key]]));
   function cancel() {
     controller.current?.abort();
     controller.current = null;
@@ -257,6 +277,7 @@ export function Explorer({
     setNotice("");
   }
   function updateQuery(patch: Partial<SavedQuery>) {
+    if (patch.kind && patch.kind !== draft.query.kind) setView(patch.kind === "records" ? "record-table" : "timeseries");
     change({ ...draft, query: { ...draft.query, ...patch } });
   }
   function updateParameter(index: number, patch: Partial<ParameterDraft>) {
@@ -281,6 +302,7 @@ export function Explorer({
   function load(query: SavedQuery, entry?: SavedQueryEntry) {
     cancel();
     setDetailsTab("overview");
+    setView(query.kind === "records" ? "record-table" : "timeseries");
     const next = fromQuery(query);
     setDraft(next);
     setBaseline(fingerprint(next));
@@ -309,11 +331,12 @@ export function Explorer({
     onQueriesChange(next);
   }
   async function save(copy = false) {
-    if (busy) return;
+    if (busy || !queryValid) return;
     setSaveRecovery(false);
     let query: SavedQuery;
     try {
       query = readDraft(draft);
+      assertProviderQueryTemplate(provider?.type, query.query);
     } catch (error) {
       setError(message(error));
       return;
@@ -425,7 +448,7 @@ export function Explorer({
     }
   }
   async function run() {
-    if (!active) return;
+    if (!active || !queryValid) return;
     cancel();
     setRunError("");
     let request: AbortController | undefined;
@@ -442,6 +465,7 @@ export function Explorer({
         throw new Error(
           "Choose an available data source that supports this query.",
         );
+      assertProviderQueryTemplate(provider?.type, query.query);
       const values = Object.fromEntries(
         (query.parameters ?? [])
           .filter((parameter) => Object.hasOwn(testValues, parameter.name))
@@ -560,7 +584,7 @@ export function Explorer({
                       disabled={busy || !!persisted}
                       options={provider.capabilities.map((value) => ({
                         value,
-                        label: value === "metrics" ? "Metrics" : "Traces",
+                        label: value === "records" ? "Records" : value === "metrics" ? "Metrics" : "Traces",
                       }))}
                       onValueChange={(kind) =>
                         updateQuery({
@@ -577,6 +601,7 @@ export function Explorer({
                 client={provider ? client : undefined}
                 provider={provider}
                 parameters={draft.parameters}
+                onValidityChange={setQueryValid}
                 onChange={(query) => updateQuery({ query })}
                 showRunControl={false}
                 defaultExpanded={!persisted && !draft.query.query}
@@ -598,7 +623,7 @@ export function Explorer({
                 <GammaButton
                   variant="primary"
                   disabled={
-                    running || busy || !provider || !draft.query.query.trim()
+                    running || busy || !provider || !draft.query.query.trim() || !queryValid
                   }
                   loading={running}
                   onClick={run}
@@ -634,6 +659,19 @@ export function Explorer({
                   onValueChange={(value) => setView(value as Widget["type"])}
                 />
               )}
+              {draft.query.kind === "records" && <GammaSelect
+                aria-label="Explore record visualization"
+                value={isRecordView(view) ? view : "record-table"}
+                options={[
+                  { value: "record-table", label: "Records table" },
+                  { value: "record-list", label: "Record cards" },
+                  { value: "record-treemap", label: "Treemap" },
+                  { value: "record-matrix", label: "Matrix" },
+                  { value: "records-line", label: "Record line chart" },
+                  { value: "records-bar", label: "Record bar chart" },
+                ]}
+                onValueChange={setView}
+              />}
             </div>
             </div>
             <div className={styles.resultsBody}>
@@ -705,11 +743,19 @@ export function Explorer({
             )}
             {executed ? (
               <>
+                {executed.query.kind === "records" && !!previewFields.length && <div className={styles.testValues} aria-label="Record preview columns">
+                  {previewFields.map(field => <label className={styles.field} key={field.key}>
+                    <span>{field.label}</span>
+                    <GammaSelect aria-label={`Preview ${field.label.toLowerCase()}`} value={previewMapping[field.key] ?? ""}
+                      options={[{ value: "", label: "Choose a column" }, ...previewColumns.filter(column => !field.numeric || column.type === "number").map(column => ({ value: column.key, label: column.label || column.key }))]}
+                      onValueChange={value => setRecordMappings(current => ({ ...current, [view]: { ...current[view], [field.key]: value } }))} />
+                  </label>)}
+                </div>}
                 <div className={styles.resultView}>
-                  <WidgetVisualization
-                    widget={resultWidget(executed.query, view)}
+                  {executed.query.kind === "records" && !previewReady ? <p role="status" className={styles.resultMeta}>Choose the result columns to preview this visualization.</p> : <WidgetVisualization
+                    widget={resultWidget(executed.query, view, previewConfig)}
                     result={executed.result}
-                  />
+                  />}
                 </div>
                 <details className={styles.executedQuery}>
                   <summary>Executed query</summary>
@@ -727,7 +773,7 @@ export function Explorer({
                 <p>
                   {running
                     ? "You can cancel this request while it runs."
-                    : "Choose a metric or write a query, then select Run query to see results."}
+                    : "Write a query, then select Run query to see results."}
                 </p>
               </div>
             )}
@@ -940,7 +986,7 @@ export function Explorer({
                     </GammaButton>
                     <GammaButton
                       size="sm"
-                      disabled={busy}
+                      disabled={busy || !queryValid}
                       onClick={() => save(true)}
                     >
                       <Copy size={14} />
@@ -970,7 +1016,7 @@ export function Explorer({
               <div className={styles.actions}>
                 <GammaButton
                   variant="primary"
-                  disabled={busy || !provider}
+                  disabled={busy || !provider || !queryValid}
                   loading={busy}
                   onClick={() => save()}
                 >

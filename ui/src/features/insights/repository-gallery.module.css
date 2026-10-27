@@ -1,0 +1,122 @@
+.gallery {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.intro,
+.detail p {
+  color: var(--gamma-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 0;
+  max-width: 70ch;
+}
+.count,
+.project {
+  color: var(--gamma-muted);
+  font-size: 11px;
+}
+.entries {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.entries > li {
+  min-width: 0;
+}
+.entries button {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: start;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid var(--gamma-border);
+  background: var(--gamma-bg);
+  color: var(--gamma-ink);
+  border-radius: 6px;
+  height: 100%;
+  width: 100%;
+}
+.entries button:hover {
+  background: var(--gamma-surface);
+  border-color: var(--gamma-muted);
+}
+.entries strong {
+  font-weight: 570;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.entries button > span:not(.project) {
+  font-size: 11px;
+  color: var(--gamma-muted);
+  line-height: 1.6;
+}
+.entries small {
+  font-size: 10px;
+  color: var(--gamma-muted);
+  margin-top: auto;
+  padding-top: 6px;
+}
+.entries em {
+  display: block;
+  font-style: normal;
+  margin-top: 5px;
+  color: var(--gamma-ink);
+}
+.back {
+  align-self: start;
+}
+.detail {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 12px;
+}
+.detail h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 570;
+  letter-spacing: -0.025em;
+}
+.detail details {
+  width: 100%;
+  border-top: 1px solid var(--gamma-border);
+  padding-top: 10px;
+  font-size: 11px;
+  color: var(--gamma-muted);
+}
+.detail summary {
+  color: var(--gamma-ink);
+  cursor: pointer;
+}
+.detail ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 7px;
+  line-height: 1.6;
+}
+.detail code {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.unavailable {
+  padding: 16px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 5px;
+  color: var(--gamma-muted);
+  line-height: 1.7;
+}
+@media (max-width: 600px) {
+  .gallery {
+    padding: 16px;
+  }
+  .entries {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

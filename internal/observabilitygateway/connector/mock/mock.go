@@ -151,6 +151,8 @@ func (Mock) Query(ctx context.Context, req connector.QueryRequest) (*connector.Q
 		return &connector.QueryResult{State: connector.StateOK, Data: logPayload(rng, cfg, start, end, req.Limit)}, nil
 	case connector.SignalTraces:
 		return &connector.QueryResult{State: connector.StateOK, Data: tracePayload(rng, cfg, start, end, req.Limit)}, nil
+	case connector.SignalRecords:
+		fallthrough // Record fixtures require a typed application frame, not synthetic telemetry.
 	default:
 		return &connector.QueryResult{
 			State:  connector.StateNotAvailable,

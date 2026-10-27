@@ -116,7 +116,7 @@ func TestCatalogHandlerListsSummaries(t *testing.T) {
 		Types []catalog.TypeSummary `json:"types"`
 	}
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
-	require.Len(t, body.Types, 13)
+	require.Len(t, body.Types, 16)
 	// The catalog's deterministic order is Vendor then DisplayName: AWS
 	// sorts before Google Cloud and Open source, and "AWS CloudTrail"
 	// before "AWS X-Ray".

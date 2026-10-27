@@ -1,8 +1,8 @@
 import { CompletionContext, type Completion, type CompletionResult } from "@codemirror/autocomplete"
 import { EditorState, type Extension } from "@codemirror/state"
-import { LRLanguage, syntaxTree } from "@codemirror/language"
+import { LRLanguage, StreamLanguage, syntaxTree } from "@codemirror/language"
 import type { Diagnostic } from "@codemirror/lint"
-import { sql, type SQLConfig } from "@codemirror/lang-sql"
+import { PostgreSQL, sql, type SQLConfig } from "@codemirror/lang-sql"
 import { styleTags, tags } from "@lezer/highlight"
 import { parser as traceParser } from "@grafana/lezer-traceql"
 // Select the ESM distribution consistently: mixing the package's legacy CJS
@@ -11,10 +11,53 @@ import { LanguageType, PromQLExtension, promQLLanguage, type PrometheusClient } 
 // The upstream package exposes its parser submodule for standalone static analysis.
 import { Parser as PromQLParser } from "@prometheus-io/codemirror-promql/dist/esm/parser/parser"
 import type { InsightsClient, ProviderMetadata } from "./client"
+import type { DataKind, Provider } from "./schema"
 
-export type QueryLanguage = "promql" | "traceql" | "sql"
+export type QueryLanguage = "promql" | "traceql" | "sql" | "json"
 export interface QueryEditorParameter { name: string; type?: string; label?: string }
-export const queryLanguageNames = { promql: "PromQL", traceql: "TraceQL", sql: "SQL" } as const
+export const queryLanguageNames = { promql: "PromQL", traceql: "TraceQL", sql: "SQL", json: "JSON" } as const
+
+export function providerQueryLanguage(provider?: Provider, kind: DataKind = "metrics"): QueryLanguage {
+  if (provider?.type === "postgresql") return "sql"
+  if (provider?.type === "shorted" || provider?.type === "uptime") return "json"
+  if (!provider && kind === "records") return "json"
+  return provider?.type === "tempo" || kind === "traces" ? "traceql" : "promql"
+}
+
+const jsonLanguage = StreamLanguage.define({
+  token(stream) {
+    if (stream.eatSpace()) return null
+    if (stream.match(/^"(?:[^"\\]|\\.)*"?/)) return "string"
+    if (stream.match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)) return "number"
+    if (stream.match(/^(?:true|false|null)\b/)) return "atom"
+    if (stream.match(/^\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}/)) return "variableName.special"
+    stream.next()
+    return null
+  },
+  languageData: { closeBrackets: { brackets: ["[", "{", '"'] } },
+})
+
+const applicationOperations = {
+  shorted: ["top_shorts", "industry_treemap", "stock_history", "stock_prices", "stock_details", "market_quotes", "market_history", "market_correlations", "market_news", "industry_records", "industry_time_buckets", "industry_entity_totals", "industry_sources"],
+  uptime: ["overview", "services", "check_summaries", "security_summaries", "alert_events", "service_signals", "slo", "slo_summary", "reliability_insights", "reliability_summary"],
+} as const
+
+export function operationCompletion(context: CompletionContext, providerType?: Provider["type"]): CompletionResult | null {
+  if (providerType !== "shorted" && providerType !== "uptime") return null
+  const before = context.state.sliceDoc(0, context.pos)
+  const operation = before.match(/"operation"\s*:\s*"([a-z_]*)$/)
+  if (operation) return {
+    from: context.pos - operation[1].length,
+    options: applicationOperations[providerType].map(label => ({ label, type: "function", detail: `${providerType === "shorted" ? "Shorted" : "Uptime"} read operation` })),
+    validFor: /^[a-z_]*$/,
+  }
+  const property = before.match(/(?:\{|,)\s*"([a-zA-Z_]*)$/)
+  if (!property) return null
+  const keys = providerType === "shorted"
+    ? ["operation", "args", "projection", "value", "time", "labels", "product_code", "product_codes", "stock_code", "stock_codes", "period", "limit", "offset", "from", "to", "max_points", "industry", "record_limit", "summary_only"]
+    : ["operation", "args", "projection", "value", "time", "labels", "serviceId", "limit", "windowDays"]
+  return { from: context.pos - property[1].length, options: keys.map(label => ({ label, type: "property" })), validFor: /^[a-zA-Z_]*$/ }
+}
 
 const traceLanguage = LRLanguage.define({
   parser: traceParser.configure({ props: [styleTags({
@@ -69,6 +112,10 @@ export function maskQueryParameters(query: string, parameters: readonly QueryEdi
 export function queryDiagnostics(language: QueryLanguage, query: string, parameters: readonly QueryEditorParameter[] = []): Diagnostic[] {
   if (!query.trim() || language === "sql") return []
   const masked = maskQueryParameters(query, parameters)
+  if (language === "json") {
+    try { JSON.parse(masked); return [] }
+    catch { return [{ from: 0, to: query.length, severity: "error", message: "Invalid JSON syntax. Use parameter placeholders as complete values without quotes." }] }
+  }
   if (language === "promql") {
     const state = EditorState.create({ doc: masked, extensions: [promQLLanguage(LanguageType.PromQL)] })
     const parser = new PromQLParser(state)
@@ -201,15 +248,17 @@ function traceCompletion(discovery: ReturnType<typeof createMetadataDiscovery>) 
   }
 }
 
-export function createQueryLanguage({ language, client, providerId, parameters = [], sqlConfig, onDiscoveryStatus }: {
+export function createQueryLanguage({ language, client, providerId, providerType, parameters = [], sqlConfig, onDiscoveryStatus }: {
   language: QueryLanguage; client?: InsightsClient; providerId: string;
+  providerType?: Provider["type"];
   parameters?: readonly QueryEditorParameter[]; sqlConfig?: SQLConfig; onDiscoveryStatus?: (message: string) => void;
 }) {
   const discovery = createMetadataDiscovery(client, providerId, onDiscoveryStatus)
   const promql = language === "promql" ? new PromQLExtension().activateLinter(false).setComplete({ remote: discovery.remote }) : undefined
   const extensions: Extension = language === "promql" ? promql!.asExtension() : language === "traceql"
     ? [traceLanguage, traceLanguage.data.of({ autocomplete: traceCompletion(discovery) })]
-    : sql(sqlConfig)
+    : language === "json" ? [jsonLanguage, jsonLanguage.data.of({ autocomplete: (context: CompletionContext) => operationCompletion(context, providerType) })]
+      : sql({ dialect: PostgreSQL, ...sqlConfig })
   // Completion source identity must remain stable between editor transactions.
   const parameterSource = (context: CompletionContext) => parameterCompletion(context, parameters)
   return {

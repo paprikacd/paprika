@@ -11,9 +11,10 @@ import { linter, lintGutter } from "@codemirror/lint"
 import type { SQLConfig } from "@codemirror/lang-sql"
 import { tags } from "@lezer/highlight"
 import type { InsightsClient } from "./client"
-import type { Provider } from "./schema"
+import type { DataKind, Provider } from "./schema"
 import { inheritGammaTheme } from "./gamma/inherit-theme"
-import { createQueryLanguage, queryDiagnostics, queryLanguageNames, type QueryEditorParameter, type QueryLanguage } from "./query-editor-language"
+import { createQueryLanguage, providerQueryLanguage, queryDiagnostics, queryLanguageNames, type QueryEditorParameter, type QueryLanguage } from "./query-editor-language"
+import { readSQLQuery, sqlQueryIssue, writeSQLQuery, type SQLQueryDraft } from "./query-sql-envelope"
 import styles from "./query-code-editor.module.css"
 
 const externalUpdate = Annotation.define<boolean>()
@@ -44,24 +45,76 @@ export interface QueryCodeEditorProps {
   language?: QueryLanguage
   provider?: Provider
   providerId?: string
+  kind?: DataKind
   client?: InsightsClient
   parameters?: readonly QueryEditorParameter[]
-  /** SQL dialect/schema completion is ready for a future configured SQL provider. */
+  /** Optional host-supplied SQL schema completion. PostgreSQL is the default dialect. */
   sqlConfig?: SQLConfig
   label?: string
   disabled?: boolean
   className?: string
+  onValidityChange?: (valid: boolean) => void
 }
 
-export function QueryCodeEditor({ value, onChange, language: requestedLanguage, provider, providerId, client, parameters = noParameters, sqlConfig, label, disabled = false, className = "" }: QueryCodeEditorProps) {
-  const language = requestedLanguage ?? (provider?.type === "tempo" ? "traceql" : "promql")
+export function QueryCodeEditor(props: QueryCodeEditorProps) {
+  const language = props.language ?? providerQueryLanguage(props.provider, props.kind)
+  return language === "sql" && props.provider?.type === "postgresql"
+    ? <SQLQueryEditor {...props} />
+    : <PlainQueryCodeEditor {...props} language={language} />
+}
+
+function SQLQueryEditor(props: QueryCodeEditorProps) {
+  const { value, onChange, parameters = noParameters, onValidityChange, disabled, kind } = props
+  const [draft, setDraft] = useState(() => readSQLQuery(value, parameters))
+  const emitted = useRef(value)
+  const issue = sqlQueryIssue(draft, parameters, kind === "records")
+  useEffect(() => { onValidityChange?.(!issue) }, [issue, onValidityChange])
+  useEffect(() => {
+    if (value !== emitted.current) {
+      emitted.current = value
+      setDraft(readSQLQuery(value, parameters))
+    }
+  }, [value, parameters])
+  function update(patch: Partial<SQLQueryDraft>) {
+    const next = { ...draft, ...patch }
+    const source = writeSQLQuery(next)
+    emitted.current = source
+    setDraft(next)
+    onValidityChange?.(!sqlQueryIssue(next, parameters, kind === "records"))
+    onChange(source)
+  }
+  if (draft.raw !== undefined) return <div>
+    <PlainQueryCodeEditor {...props} language="json" label="SQL query envelope" onValidityChange={undefined} onChange={source => {
+      emitted.current = source
+      setDraft(readSQLQuery(source, parameters))
+      onChange(source)
+    }} />
+    <p className={styles.notice} role="alert">{issue}</p>
+  </div>
+  return <div className={styles.sqlEditor}>
+    <PlainQueryCodeEditor {...props} language="sql" parameters={noParameters} onValidityChange={undefined} value={draft.sql} onChange={sql => update({ sql })} />
+    <div className={styles.sqlTools}>
+      <div><span className={styles.bindingLabel}>Bound parameters</span>
+        <PlainQueryCodeEditor value={draft.parameters} language="json" label="SQL parameters" parameters={parameters} disabled={disabled} className={styles.bindingEditor} onChange={parameters => update({ parameters, envelope: true })} />
+      </div>
+      {(kind !== "records" || draft.projection.trim()) && <div><span className={styles.bindingLabel}>Metric projection (optional)</span>
+        <PlainQueryCodeEditor value={draft.projection} language="json" label="SQL metric projection" disabled={disabled} className={styles.bindingEditor} onChange={projection => update({ projection, envelope: true })} />
+      </div>}
+    </div>
+    <p className={styles.notice}>Use <code>$1</code>, <code>$2</code> in SQL and ordered values such as <code>{"[{{service}}, 30]"}</code> below. Values are bound separately; keep placeholders out of SQL.</p>
+    {issue && <p className={styles.syntaxIssue} role="alert">{issue}</p>}
+  </div>
+}
+
+function PlainQueryCodeEditor({ value, onChange, language: requestedLanguage, provider, providerId, kind, client, parameters = noParameters, sqlConfig, label, disabled = false, className = "", onValidityChange }: QueryCodeEditorProps) {
+  const language = requestedLanguage ?? providerQueryLanguage(provider, kind)
   const name = queryLanguageNames[language]
   const accessibleLabel = label ?? `${name} query`
   const helpId = useId()
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
-  const latest = useRef({ value, onChange, disabled, accessibleLabel })
-  useLayoutEffect(() => { latest.current = { value, onChange, disabled, accessibleLabel } }, [value, onChange, disabled, accessibleLabel])
+  const latest = useRef({ value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters })
+  useLayoutEffect(() => { latest.current = { value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters } }, [value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters])
   const editable = useRef(new Compartment())
   const languageConfig = useRef(new Compartment())
   const accessibility = useRef(new Compartment())
@@ -105,7 +158,9 @@ export function QueryCodeEditor({ value, onChange, language: requestedLanguage, 
           EditorView.updateListener.of(update => {
             if (update.docChanged && !update.transactions.some(transaction => transaction.annotation(externalUpdate))) {
               setLimitReached(false)
-              latest.current.onChange(update.state.doc.toString())
+              const source = update.state.doc.toString()
+              latest.current.onValidityChange?.(!queryDiagnostics(latest.current.language, source, latest.current.parameters).length)
+              latest.current.onChange(source)
             }
           }),
         ],
@@ -128,11 +183,14 @@ export function QueryCodeEditor({ value, onChange, language: requestedLanguage, 
     languageCleanup.current?.()
     let active = true
     const parsedParameters: QueryEditorParameter[] = JSON.parse(parameterKey)
-    const configuration = createQueryLanguage({ language, providerId: providerId ?? provider?.id ?? "", client, parameters: parsedParameters, sqlConfig, onDiscoveryStatus: status => { if (active) setDiscoveryStatus(status) } })
+    const configuration = createQueryLanguage({ language, providerId: providerId ?? provider?.id ?? "", providerType: provider?.type, client, parameters: parsedParameters, sqlConfig, onDiscoveryStatus: status => { if (active) setDiscoveryStatus(status) } })
     setDiscoveryStatus("")
     const validate = (text: string) => {
       const diagnostics = queryDiagnostics(language, text, parsedParameters)
-      if (active) setSyntaxStatus(diagnostics.length ? `${diagnostics.length} syntax ${diagnostics.length === 1 ? "issue" : "issues"}: ${diagnostics[0].message}` : language === "sql" ? "SQL language completion" : text.trim() ? "Syntax checked" : "Ready to write a query")
+      if (active) {
+        setSyntaxStatus(diagnostics.length ? `${diagnostics.length} syntax ${diagnostics.length === 1 ? "issue" : "issues"}: ${diagnostics[0].message}` : language === "sql" ? "SQL language completion" : text.trim() ? "Syntax checked" : "Ready to write a query")
+        latest.current.onValidityChange?.(!diagnostics.length)
+      }
       return diagnostics
     }
     validate(editor.state.doc.toString())
@@ -142,7 +200,7 @@ export function QueryCodeEditor({ value, onChange, language: requestedLanguage, 
     ]) })
     languageCleanup.current = () => { active = false; configuration.destroy() }
     return languageCleanup.current
-  }, [language, provider?.id, providerId, client, parameterKey, sqlConfig])
+  }, [language, provider?.id, provider?.type, providerId, client, parameterKey, sqlConfig])
 
   useEffect(() => {
     const editor = view.current

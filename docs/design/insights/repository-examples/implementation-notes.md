@@ -1,0 +1,38 @@
+# Repository examples and live source mappings
+
+The runnable catalog is `ui/src/features/insights/repository-examples/index.ts`. It exports 16 library entries: all 14 canonical source dashboards/collections, one supplemental collection covering Shorted's 11 registered widget kinds, and one explicitly synthetic Paprika interaction example. These supplemental collections are not presented as additional checked-in source dashboards.
+
+`catalog.json` contains importable dashboard/saved-query bundles with exact closure. Each sample bundle uses only `example-prometheus`, `example-tempo` or `example-records`. Live bundles reference placeholder providers that the import review maps to installed providers of the correct type. A live bundle never falls back to an example query or provider. Imports still use the normal review, conflict and persistence paths. A `ready` live status means the query bundle has an implemented adapter; it does not assert that the destination has configured credentials, source metrics, database access or matching source versions.
+
+`fixtures.json` is an explicit local selector catalog, not an evaluator for PromQL, SQL, TraceQL or arbitrary JSON expressions. Synthetic queries are named `paprika_example_*`; unsupported expressions fail. Records use exact scalar equality filters. The portfolio fixture implements only its declared quantity-times-quote calculation. Provider errors are not replaced with sample data.
+
+## Source fidelity
+
+- All 96 Grafana targets are accounted for, including 95 exact source expressions and the source's one synthetic test-data target. Source pointers, panel types, target languages, expressions and resulting widget IDs are in `source-coverage.json`.
+- Multi-target Grafana panels are split into separate widgets/saved queries. Source panel membership remains explicit. Rows are retained as source structure in the inventory rather than blank data widgets. Grafana-specific reducers, hidden-field styles, shared cursors, annotations and legacy overrides remain documented; native Paprika latest-sample behavior is an adaptation, not an assertion of identical rendering.
+- PromQL expressions retain source selectors and calculations. Grafana interval macros are explicitly changed to bounded `5m`/`1m` windows and noted per target. Provider variables become import mappings. Stock SQL lists become PostgreSQL `$1` parameters with typed saved-query bindings; single-value controls replace dynamic/multiple source selectors. The original SQL is preserved next to its adaptation.
+- Shorted's checked-in `My Dashboard` remains its two-widget preset. The extra widget collection covers all 11 source widget kinds without pretending those were 11 persisted dashboards. Native Shorted RPCs supply top shorts, treemaps, histories, quotes, screening, industry records, news and correlations. Explicit holdings plus quotes supply portfolio calculations; the exact representative stock baskets supply current sector changes.
+- Housing copies the actual authored annual and bank-basket values. `housing-static-provenance.json` records their source revision and hashes. Historical axes and missing points remain intact; no values are shifted into a recent dashboard time range. Source toggle alternatives become sibling charts. The rate curve enumerates the exact source illustrative formula for both elasticities. It is not a forecast or a live provider metric. The optional HousingService live-tail override is not implemented.
+- Shorted industry channels share an industry variable and select exact signal/metric identifiers before row limits. Tables retain source bucket, unit, count and value fields. The source's full derived-counter and crowding-story compositions remain adaptations documented in the inventory.
+- Shorted administrative reads use a separately supplied `adminToken` on two fixed GET paths. Public credentials never authorize those paths. Job execution and cache mutations are excluded; backend error text, log URLs and hostnames are omitted. Retired jobs and stale data remain explicit.
+- Uptime uses one provider-pinned organization and native SLO window inputs. Active SLA breaches filter to observed breached services. Stored reliability reports remain stored reads; generating a report is not represented as a filter. Missing check observations remain unknown, and incomplete inventories do not claim exact aggregate counts.
+
+## Live access prerequisites
+
+PostgreSQL imports require a dedicated unprivileged reader with SELECT access to the source `shorts` tables/views. The connector rejects privileged roles and requires `verify-full` TLS for remote servers. The source certificate authority must be trusted by the gateway runtime; a missing private CA must be installed through the deployment configuration, not bypassed with weaker TLS. Selecting a provider during import does not create database roles, credentials or CA trust. See [postgresql-provider.md](../../../guides/postgresql-provider.md).
+
+Shorted public reads were validated against the configured real API and market origins. Administrative panels additionally require the source's authorized internal identity as a separate `adminToken` secret; they have protocol/auth-isolation tests but this catalog does not claim an authenticated live admin acceptance run. Uptime requires organization membership through its pinned provider identity. All credentials stay in labelled Kubernetes Secrets, never the bundles or inventories.
+
+Authored housing datasets are source-backed static examples; live collection does not apply to the baked histories. Optional source live-tail refresh is an explicit remaining adapter difference, not an anonymous public data substitution.
+
+## Remaining presentation differences
+
+The source inventories retain every setting and feature, including controls the adapted view does not reproduce. This includes stock autocomplete/row sparklines, moving-average/oscillator tools, chart brushes, dynamic Grafana multi-select discovery, legacy reducers and field overrides, nested treemap layout, source-specific repeated cards and original housing slider/toggle composition. These are visible adaptation limits, not hidden query substitutions. The Paprika interaction example separately demonstrates shared service filters, saved-query tooltips bound to hovered labels, two-decimal stat sparklines, status history and traces.
+
+## Validation and regeneration
+
+Run `python3 ui/src/features/insights/repository-examples/generate.py` from the repository root. It reads the sanitized inventories and checked-in housing data; it never modifies or reads credentials from the source repositories. It asserts unique IDs, all96 source targets, widget limits and bounded saved-query sizes. JSON artifacts are committed outputs so builds do not require the source repositories.
+
+The catalog tests validate portable JSON round trips, saved-query closure, provider requirements, typed binding resolution, live/sample separation, exact source-target coverage, execution of every sample widget, historical housing points and portfolio recalculation. Fixture-engine tests cover scalar filters, null/zero/gap semantics, bounds, rejected syntax and independent result snapshots. Connector tests exercise the actual allowlisted native HTTP protocols, credential separation, limits, redirects, cancellations, missing values and derived calculations.
+
+`TestLiveShortedPublicReads` is opt-in through `SHORTED_TEST_ENDPOINT` and `SHORTED_TEST_MARKET_ENDPOINT`; it performs seven bounded anonymous reads and reports only row/column counts. Admin acceptance requires explicitly supplied authorized credentials. UI end-to-end validation is maintained by the repository example browser suite.

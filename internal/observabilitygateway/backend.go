@@ -105,7 +105,7 @@ func (b *k8sBackend) executionBudget() *executionBudget {
 	return b.budget
 }
 
-// NewConnectorRegistry registers the twelve built-in connectors. It is the
+// NewConnectorRegistry registers the built-in connectors. It is the
 // wiring used by cmd/webhook (which validates spec.config with the same
 // per-type switch New uses) and by unit tests; the query path itself goes
 // through New per call rather than through this registry.
@@ -116,6 +116,9 @@ func NewConnectorRegistry() *connector.Registry {
 		connector.ProviderLoki,
 		connector.ProviderTempo,
 		connector.ProviderOTLP,
+		connector.ProviderShorted,
+		connector.ProviderUptime,
+		connector.ProviderPostgreSQL,
 		connector.ProviderGCPCloudLogging,
 		connector.ProviderGCPCloudMonitoring,
 		connector.ProviderGCPCloudTrace,
@@ -132,7 +135,7 @@ func NewConnectorRegistry() *connector.Registry {
 			panic(fmt.Sprintf("observabilitygateway: built-in connector %q: %v", providerType, err))
 		}
 		if err := reg.Register(conn); err != nil {
-			// Unreachable: the twelve built-ins advertise distinct names.
+			// Unreachable: the built-ins advertise distinct names.
 			panic(fmt.Sprintf("observabilitygateway: register built-in connector %q: %v", providerType, err))
 		}
 	}
@@ -216,6 +219,7 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 	if contextErr := contextError(ctx); contextErr != nil {
 		return nil, contextErr
 	}
+	result = boundedRecordResult(req.Signal, result)
 	return finishQuery(log, provider, cr.Spec.Type, result, err)
 }
 

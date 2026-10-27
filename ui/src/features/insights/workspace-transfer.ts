@@ -413,7 +413,7 @@ export function remapBundleProviders(
 }
 
 export function requiredProviders(documents: Dashboard[]) {
-  const result = new Map<string, Set<"metrics" | "traces">>();
+  const result = new Map<string, Set<"metrics" | "traces" | "records">>();
   for (const document of documents)
     for (const widget of document.widgets) {
       if (!widget.queryRef) {

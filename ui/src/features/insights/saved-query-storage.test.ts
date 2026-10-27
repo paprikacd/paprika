@@ -54,6 +54,26 @@ const dashboard = (reference: "parent" | "tooltip"): Dashboard => ({
 });
 
 describe("example saved-query storage", () => {
+  it("persists seed queries independently of dashboards and honors an explicitly empty library", async () => {
+    const store = storage();
+    const seeded = createExampleSavedQueryClient(store, () => [dashboard("parent")], [query]);
+    const [entry] = await seeded.listSavedQueries();
+    expect(store.setItem).toHaveBeenCalledTimes(1);
+    const afterDashboardRemoval = createExampleSavedQueryClient(store, () => []);
+    expect(await afterDashboardRemoval.getSavedQuery(query.id)).toEqual({query, etag:entry.etag});
+    expect(store.setItem).toHaveBeenCalledTimes(1);
+    await afterDashboardRemoval.removeSavedQuery(query.id, entry.etag);
+    expect(await createExampleSavedQueryClient(store, () => [], [query]).listSavedQueries()).toEqual([]);
+  });
+  it("validates the complete seed before persisting and reports a failed initial write", async () => {
+    const store = storage();
+    const invalid = {...query, id:"invalid", query:'requests{service="{{service}}"}'};
+    await expect(createExampleSavedQueryClient(store, () => [], [query,invalid]).listSavedQueries()).rejects.toThrow(/quotes/);
+    expect(store.setItem).not.toHaveBeenCalled();
+    store.setItem.mockImplementationOnce(() => { throw new Error("Storage full"); });
+    await expect(createExampleSavedQueryClient(store, () => [], [query]).listSavedQueries()).rejects.toThrow(/Storage full/);
+    expect(store.getItem()).toBeNull();
+  });
   it("persists create/read/update/delete across client reload with opaque fresh revision tags", async () => {
     const store = storage();
     const client = createExampleSavedQueryClient(store, () => []);
@@ -247,6 +267,7 @@ describe("example saved-query storage", () => {
     expect(store.setItem).not.toHaveBeenCalled();
   });
   it.each([
+    "",
     "not-json",
     "null",
     "{}",

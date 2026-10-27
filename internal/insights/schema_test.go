@@ -33,7 +33,7 @@ func TestAuthoringSchemaReadOnlyCanonicalContract(t *testing.T) {
 			expected, schemaErr := insightsschema.Document(kind)
 			require.NoError(t, schemaErr)
 			require.JSONEq(t, string(expected), string(response.Schema))
-			require.Len(t, response.Examples, 1)
+			require.NotEmpty(t, response.Examples)
 			require.NotEmpty(t, response.Notes)
 			switch kind {
 			case "dashboard":
@@ -52,6 +52,15 @@ func TestAuthoringSchemaReadOnlyCanonicalContract(t *testing.T) {
 	require.Empty(t, store.List())
 	require.Empty(t, s.savedQueries.list(""))
 	require.Zero(t, providerCalls.Load(), "schema reads must not execute provider queries")
+}
+
+func TestRecordAuthoringSchemaExamples(t *testing.T) {
+	require.NoError(t, validateDashboardWidgetShape(json.RawMessage(schemaRecordWidgetExample)))
+	query, err := validateSavedQuery("service-records", json.RawMessage(schemaRecordQueryExample))
+	require.NoError(t, err)
+	require.NoError(t, validateSQLTemplate("postgresql", query.Query))
+	require.Len(t, authoringSchemaExamples("widget"), 2)
+	require.Len(t, authoringSchemaExamples("saved_query"), 2)
 }
 
 func TestAuthoringSchemaExamplesCanBeSavedTogether(t *testing.T) {

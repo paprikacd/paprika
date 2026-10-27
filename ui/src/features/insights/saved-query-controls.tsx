@@ -24,7 +24,7 @@ export function SavedQueryPicker({
 }: {
   queries: SavedQueryEntry[];
   providerId?: string;
-  kind: "metrics" | "traces";
+  kind: "metrics" | "traces" | "records";
   value?: string;
   onChange: (id: string) => void;
   disabled?: boolean;
