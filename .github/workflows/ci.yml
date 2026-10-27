@@ -496,6 +496,10 @@ jobs:
       - name: Verify service queries with Prometheus and enforce live coverage
         run: node --test hack/service-overview/*.test.mjs ui/e2e/service-overview-coverage.test.mjs
 
+      - name: Verify independent source requirements in the example gallery
+        run: node e2e/run-insights.mjs e2e/insights-source-provenance.e2e.mjs
+        working-directory: ui
+
       - name: Verify authenticated application records through MCP and the browser
         env:
           PAPRIKA_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
@@ -508,7 +512,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: application-records-integration
-          path: artifacts/insights/application-records
+          path: |
+            artifacts/insights/application-records
+            artifacts/insights/source-provenance
           if-no-files-found: warn
           retention-days: 14
 
