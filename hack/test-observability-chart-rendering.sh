@@ -41,6 +41,62 @@ networkPolicy:
   enabled: true
 YAML
 render() { helm template paprika "$root/charts/chart" -n paprika-system -f "$work/values.yaml" "$@"; }
+# The release controller applies workload NetworkPolicies (including the metrics
+# gateway's boundary). Network isolation must not make a managed release fail
+# because its applying identity lacks the exact policy lifecycle permissions.
+for scope in false true; do
+  render --set rbac.namespaced="$scope" --show-only templates/rbac/manager-role.yaml > "$work/manager-role-$scope.yaml"
+  render --set rbac.namespaced="$scope" --show-only templates/rbac/manager-rolebinding.yaml > "$work/manager-binding-$scope.yaml"
+  render --set rbac.namespaced="$scope" --show-only templates/manager/manager.yaml > "$work/manager-deployment-$scope.yaml"
+done
+python3 - "$root" "$work" <<'PY'
+import pathlib, re, sys
+root, work = map(pathlib.Path, sys.argv[1:])
+
+def networking_rule(text):
+    # Parse only the block-list RBAC shape emitted by this chart/controller-gen,
+    # using the standard library just like the other render checks in this file.
+    def field(block, name):
+        match = re.search(r'(?m)^(?:- |  )' + name + r':\n((?:  - .+\n)+)', block)
+        return {line[4:].strip().strip('"\'') for line in match[1].splitlines()} if match else set()
+    rules = []
+    for block in re.findall(r'(?ms)^- apiGroups:\n.*?(?=^- apiGroups:|\Z)', text):
+        groups = field(block, 'apiGroups')
+        if groups & {'networking.k8s.io', '*'}:
+            rules.append({name: field(block, name) for name in ('apiGroups', 'resources', 'verbs', 'resourceNames')})
+    assert len(rules) == 1, 'Controller must have one explicit networking rule, without wildcard API grants'
+    expected = {
+        'apiGroups': {'networking.k8s.io'},
+        'resources': {'ingresses', 'networkpolicies'},
+        'verbs': {'create', 'delete', 'get', 'list', 'patch', 'update', 'watch'},
+        'resourceNames': set(),
+    }
+    assert rules[0] == expected, 'Controller networking permissions must include the exact NetworkPolicy lifecycle, without wildcard expansion: ' + repr(rules[0])
+    return rules[0]
+
+generated = networking_rule((root / 'config/rbac/role.yaml').read_text())
+for namespaced in (False, True):
+    suffix = str(namespaced).lower()
+    role = (work / f'manager-role-{suffix}.yaml').read_text()
+    binding = (work / f'manager-binding-{suffix}.yaml').read_text()
+    deployment = (work / f'manager-deployment-{suffix}.yaml').read_text()
+    assert networking_rule(role) == generated, 'Rendered and generated controller permissions differ'
+    kind = 'Role' if namespaced else 'ClusterRole'
+    assert re.search(r'^kind: ' + kind + r'$', role, re.M)
+    assert re.search(r'^kind: ' + kind + r'Binding$', binding, re.M)
+    name = re.search(r'^  name: (\S+)$', role, re.M)[1]
+    role_ref = re.search(r'(?ms)^roleRef:\n(.*?)(?=^subjects:)', binding)[1]
+    assert re.search(r'^  apiGroup: rbac.authorization.k8s.io$', role_ref, re.M)
+    assert re.search(r'^  kind: ' + kind + r'$', role_ref, re.M)
+    assert re.search(r'^  name: ' + re.escape(name) + r'$', role_ref, re.M)
+    accounts = re.findall(r'^\s+serviceAccountName: (\S+)$', deployment, re.M)
+    assert len(accounts) == 1, 'Expected one applying controller identity'
+    subjects = binding.split('\nsubjects:\n', 1)[1].strip()
+    assert subjects == '- kind: ServiceAccount\n  name: ' + accounts[0] + '\n  namespace: paprika-system', 'Controller role must bind only the deployed controller ServiceAccount'
+    if namespaced:
+        assert '  namespace: paprika-system\n' in role and '  namespace: paprika-system\n' in binding.split('\nroleRef:', 1)[0]
+print('Controller NetworkPolicy permissions, generated-role equivalence and scoped ServiceAccount bindings passed.')
+PY
 render --show-only templates/mcp-client-registries.yaml > "$work/client-registries.yaml"
 python3 - "$work/client-registries.yaml" <<'PY'
 import pathlib, re, sys
