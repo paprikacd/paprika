@@ -1,0 +1,92 @@
+{
+  "src-shorted-operations-p1-t0": {
+    "id": "shorted-grafana-operations-p1-t0",
+    "query": "sum(rate(rpc_server_duration_milliseconds_count{job=~{{service}}}[5m])) by (job, rpc_method)",
+    "description": "Completed RPC calls per second over five minutes, counted by the observed RPC duration histogram. Each duration observation represents one completed RPC call, not the number of messages within an RPC. The shared service filter selects the job.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-operations-p1-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use the observed rpc_server_duration_milliseconds_count; rpc_server_requests_total was absent during native discovery on 2026-10-27."
+    }
+  },
+  "src-shorted-operations-p5-t0": {
+    "id": "shorted-grafana-operations-p5-t0",
+    "query": "sum(increase(rpc_server_duration_milliseconds_count{job=~{{service}}}[24h]))",
+    "description": "Estimated completed RPC calls over 24 hours from the observed RPC duration histogram count. Prometheus increase accounts for counter resets and extrapolates across the range. This counts completed RPC calls, not messages within an RPC; insufficient history remains empty.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-operations-p5-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use the observed rpc_server_duration_milliseconds_count; the 24-hour source window is preserved and does not assert complete 24-hour telemetry coverage."
+    }
+  },
+  "src-shorted-stealth-scraping-p2-t0": {
+    "id": "shorted-grafana-stealth-p2-t0",
+    "query": "sum without (status) (increase(shorted_stealth_fetch_errors_total[1h])) / (sum without (status) (increase(shorted_stealth_fetch_total[1h])) > 0)",
+    "description": "Stealth fetch error fraction over one hour. The total counter's status dimension is removed from both sides before division; host, engine and workload labels remain distinct. Missing error telemetry and zero observed fetches remain empty, without a synthetic zero fallback.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-stealth-scraping-p2-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use observed shorted_stealth_fetch_errors_total and match numerator/denominator labels by aggregating without status."
+    }
+  },
+  "src-shorted-stealth-scraping-p3-t0": {
+    "id": "shorted-grafana-stealth-p3-t0",
+    "query": "histogram_quantile(0.95, rate(shorted_stealth_fetch_duration_seconds_bucket[5m]))",
+    "description": "Estimated p95 stealth fetch duration in seconds from the observed seconds histogram over five minutes. Source series dimensions are retained. No observations leave the quantile undefined; no unit conversion is applied.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-stealth-scraping-p3-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use the observed shorted_stealth_fetch_duration_seconds_bucket, including the OTel seconds unit suffix."
+    }
+  },
+  "src-shorted-stealth-scraping-p4-t0": {
+    "id": "shorted-grafana-stealth-p4-t0",
+    "query": "increase(shorted_stealth_fetch_bytes_total[1h])",
+    "description": "Estimated successful-fetch bytes over one hour using the observed cumulative byte counter. Source labels and window are retained. Insufficient counter history remains empty.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-stealth-scraping-p4-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use observed shorted_stealth_fetch_bytes_total, including the counter suffix."
+    }
+  },
+  "src-shorted-stealth-scraping-p5-t0": {
+    "id": "shorted-grafana-stealth-p5-t0",
+    "query": "histogram_quantile(0.50, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_seconds_bucket[5m])))",
+    "description": "Estimated p50 stealth fetch duration in seconds by host over five minutes. Source grouping is retained; the observed histogram includes the seconds suffix.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-stealth-scraping-p5-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use observed shorted_stealth_fetch_duration_seconds_bucket; preserve the source host aggregation and time window."
+    }
+  },
+  "src-shorted-stealth-scraping-p5-t1": {
+    "id": "shorted-grafana-stealth-p5-t1",
+    "query": "histogram_quantile(0.95, sum by(le, http_host) (rate(shorted_stealth_fetch_duration_seconds_bucket[5m])))",
+    "description": "Estimated p95 stealth fetch duration in seconds by host over five minutes. Source grouping is retained; the observed histogram includes the seconds suffix.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-stealth-scraping-p5-t1",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use observed shorted_stealth_fetch_duration_seconds_bucket; preserve the source host aggregation and time window."
+    }
+  },
+  "src-shorted-stealth-scraping-p7-t0": {
+    "id": "shorted-grafana-stealth-p7-t0",
+    "query": "sum by(http_host) (rate(shorted_stealth_fetch_errors_total[5m]))",
+    "description": "Stealth fetch errors per second by host over five minutes using the observed error counter. An absent error series remains empty.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-stealth-scraping-p7-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use observed shorted_stealth_fetch_errors_total; preserve the source host aggregation and time window."
+    }
+  },
+  "src-shorted-stealth-scraping-p8-t0": {
+    "id": "shorted-grafana-stealth-p8-t0",
+    "query": "sum by(stealth_engine) (rate(shorted_stealth_fetch_bytes_total[5m]))",
+    "description": "Successful-fetch bytes per second by stealth engine over five minutes using the observed byte counter. Insufficient history remains empty.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-stealth-scraping-p8-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use observed shorted_stealth_fetch_bytes_total; preserve the source engine aggregation and time window."
+    }
+  }
+}
