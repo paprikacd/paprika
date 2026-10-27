@@ -92,6 +92,7 @@ func (v *ApplicationCustomValidator) ValidateDelete(_ context.Context, obj *pipe
 func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, app *pipelinesv1alpha1.Application) error {
 	allErrs := v.validateSource(app)
 	allErrs = append(allErrs, validateApplicationOperations(app)...)
+	allErrs = append(allErrs, validateApplicationSelfHeal(app)...)
 	allErrs = append(allErrs, v.validateApplicationTrigger(ctx, app)...)
 
 	if len(app.Spec.Stages) == 0 {

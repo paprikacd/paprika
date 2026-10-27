@@ -2,6 +2,25 @@ package engine
 
 import "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+// ServiceSpec serializes publishNotReadyAddresses with omitempty. An explicit
+// false therefore matches the omitted live field. Only this core Service field
+// is normalized; true, custom resources, and other false fields remain visible.
+func normalizeServicePublishNotReadyAddresses(desired, live unstructured.Unstructured) unstructured.Unstructured {
+	if desired.GetAPIVersion() != "v1" || desired.GetKind() != "Service" || live.GetAPIVersion() != "v1" || live.GetKind() != "Service" {
+		return desired
+	}
+	value, found, err := unstructured.NestedBool(desired.Object, "spec", "publishNotReadyAddresses")
+	if err != nil || !found || value {
+		return desired
+	}
+	if _, present, readErr := unstructured.NestedFieldNoCopy(live.Object, "spec", "publishNotReadyAddresses"); readErr != nil || present {
+		return desired
+	}
+	normalized := desired.DeepCopy()
+	unstructured.RemoveNestedField(normalized.Object, "spec", "publishNotReadyAddresses")
+	return *normalized
+}
+
 // PriorityClass serializes globalDefault with omitempty: an absent value means
 // false. Normalize both copies so a live true value still reports drift.
 func normalizePriorityClassDefaults(obj unstructured.Unstructured) unstructured.Unstructured {

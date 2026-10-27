@@ -2820,6 +2820,12 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	logger := log.FromContext(ctx)
 	logger.Info("Release auto-retry budget exhausted; holding terminal release and polling source",
 		"release", release.Name, "retries", releaseAutoRetryCount(release))
+	// Holding delivery must not freeze observations of the running rollback.
+	// Keep this read-only: analysis and self-heal must not resurrect the release.
+	diff := r.evaluateDiff(ctx, app)
+	r.evaluateResourceHealth(ctx, app, diff)
+	r.recordDeploymentObservation(ctx, app, diff)
+
 	if promotionTriggered(app) || manualTriggered(app) {
 		setReleaseRetriesExhaustedCondition(app, release)
 		if err := r.patchAppStatus(ctx, app); err != nil {
@@ -3221,12 +3227,13 @@ func configuredHealthResultFresh(check paprikav1.HealthCheck, previous *paprikav
 
 func observationResult(check paprikav1.HealthCheck, prev *paprikav1.HealthCheckResult, result health.EvalResult, now metav1.Time, duration time.Duration) paprikav1.HealthCheckResult {
 	hcr := paprikav1.HealthCheckResult{
-		Name:              result.Name,
-		Status:            result.Status,
-		Message:           result.Message,
-		CheckedAt:         &now,
-		ConfigurationHash: health.MeasurementHash(check),
-		DurationMillis:    duration.Milliseconds(),
+		Name:                result.Name,
+		Status:              result.Status,
+		Message:             result.Message,
+		CheckedAt:           &now,
+		ConfigurationHash:   health.MeasurementHash(check),
+		ConsecutiveFailures: nextHealthFailureCount(check, prev, result.Status, now.Time),
+		DurationMillis:      duration.Milliseconds(),
 	}
 	health.CaptureEvidence(check, prev, result, &hcr)
 	if check.SLO != nil {

@@ -18,7 +18,10 @@ package pipelines
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -30,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/health"
 )
 
 var _ = ginkgo.Describe("Application Controller Self-Heal Envtest", ginkgo.Serial, func() {
@@ -168,6 +172,53 @@ var _ = ginkgo.Describe("Application Controller Self-Heal Envtest", ginkgo.Seria
 		cond := meta.FindStatusCondition(app.Status.Conditions, selfHealConditionType)
 		gomega.Expect(cond).NotTo(gomega.BeNil())
 		gomega.Expect(cond.Reason).To(gomega.Equal("HealthDegraded"))
+	})
+
+	ginkgo.It("should persist distinct HTTP failures before threshold rollback and reset after recovery", func() {
+		var calls, responseStatus atomic.Int32
+		responseStatus.Store(http.StatusServiceUnavailable)
+		endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls.Add(1)
+			w.WriteHeader(int(responseStatus.Load()))
+		}))
+		defer endpoint.Close()
+		release := createCompleteRelease(&pipelinesv1alpha1.FailureAction{Action: "rollback"})
+		app := &pipelinesv1alpha1.Application{}
+		gomega.Expect(k8sClient.Get(ctx, appKey, app)).To(gomega.Succeed())
+		app.Spec.SelfHeal.HealthFailureThreshold = 3
+		app.Spec.HealthChecks = []pipelinesv1alpha1.HealthCheck{{Name: "ready", Interval: "30s", Expression: "http.statusCode == 200", HTTPProbe: &pipelinesv1alpha1.HTTPProbe{URL: endpoint.URL, Timeout: 1}}}
+		gomega.Expect(k8sClient.Update(ctx, app)).To(gomega.Succeed())
+		app.Status.Phase = pipelinesv1alpha1.ApplicationHealthy
+		app.Status.ReleaseRef = release.Name
+		gomega.Expect(k8sClient.Status().Update(ctx, app)).To(gomega.Succeed())
+		now := fixedNow
+		observe := func(wantCount int32, wantRollback bool) {
+			// Construct a new reconciler each time: status in the real API server
+			// is the only place that can retain the previous observation count.
+			r := &ApplicationReconciler{client: k8sClient, Scheme: k8sClient.Scheme(), HealthEval: health.NewCELEvaluator(), now: func() time.Time { return now }}
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: appKey})
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			gomega.Expect(k8sClient.Get(ctx, appKey, app)).To(gomega.Succeed())
+			gomega.Expect(app.Spec.SelfHeal.HealthFailureThreshold).To(gomega.Equal(int32(3)))
+			gomega.Expect(app.Status.HealthChecks).To(gomega.HaveLen(1))
+			gomega.Expect(app.Status.HealthChecks[0].ConsecutiveFailures).To(gomega.Equal(wantCount))
+			var current pipelinesv1alpha1.Release
+			gomega.Expect(k8sClient.Get(ctx, releaseKey, &current)).To(gomega.Succeed())
+			gomega.Expect(current.Annotations[rollbackAnnotation] != "").To(gomega.Equal(wantRollback))
+		}
+		observe(1, false)
+		now = now.Add(time.Second)
+		observe(1, false)
+		gomega.Expect(calls.Load()).To(gomega.Equal(int32(1)))
+		responseStatus.Store(http.StatusOK)
+		now = fixedNow.Add(30 * time.Second)
+		observe(0, false)
+		responseStatus.Store(http.StatusServiceUnavailable)
+		for count := int32(1); count <= 3; count++ {
+			now = now.Add(30 * time.Second)
+			observe(count, count == 3)
+		}
+		gomega.Expect(calls.Load()).To(gomega.Equal(int32(5)))
 	})
 
 	ginkgo.It("should not act within cooldown", func() {
