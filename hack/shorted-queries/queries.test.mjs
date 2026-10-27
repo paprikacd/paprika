@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -8,9 +8,10 @@ import test from "node:test"
 const patches = JSON.parse(await readFile(new URL("./queries.json", import.meta.url), "utf8"))
 const catalog = JSON.parse(await readFile(new URL("../../ui/src/features/insights/repository-examples/catalog.json", import.meta.url), "utf8"))
 const sourceQueries = new Map(catalog.slice(0, 2).flatMap(entry => entry.live.savedQueries).map(query => [query.id, query]))
-const image = "prom/prometheus@sha256:6927e0919a144aa7616fd0137d4816816d42f6b816de3af269ab065250859a62"
+// Match Omega's native OTLP receiver (Prometheus 3.1).
+const image = "prom/prometheus@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218"
 const expectedIDs = [
-  "src-shorted-operations-p1-t0", "src-shorted-operations-p5-t0",
+  "src-shorted-operations-p1-t0", "src-shorted-operations-p3-t0", "src-shorted-operations-p5-t0", "src-shorted-operations-p6-t0",
   "src-shorted-stealth-scraping-p2-t0", "src-shorted-stealth-scraping-p3-t0", "src-shorted-stealth-scraping-p4-t0",
   "src-shorted-stealth-scraping-p5-t0", "src-shorted-stealth-scraping-p5-t1", "src-shorted-stealth-scraping-p7-t0", "src-shorted-stealth-scraping-p8-t0",
 ]
@@ -35,8 +36,11 @@ test("only confirmed native metrics receive replacements with new saved-query id
 const promSeries = (name, labels, increment) => ({ series: `${name}{${Object.entries(labels).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(",")}}`, values: `0+${increment}x1440` })
 const sample = (value, labels = "{}") => ({ labels, value })
 const resource = { job: "news-aggregator", http_host: "example.test", stealth_engine: "native" }
+const rpcResource = { deployment_environment: "production", job: "shorted-api", service_name: "shorted-api", rpc_method: "GetTopShorts", rpc_service: "shorts.v1alpha1.ShortService", rpc_system: "connect_rpc" }
 const metricInput = [
-  promSeries("rpc_server_duration_milliseconds_count", { deployment_environment: "production", job: "shorted-api", service_name: "shorted-api", rpc_method: "GetTopShorts", rpc_service: "shorts.v1alpha1.ShortService", rpc_system: "connect_rpc" }, 60),
+  // otelconnect v0.9.0 omits the error attribute for successful Connect calls.
+  promSeries("rpc_server_duration_milliseconds_count", rpcResource, 60),
+  promSeries("rpc_server_duration_milliseconds_count", { ...rpcResource, rpc_connect_rpc_error_code: "not_found" }, 6),
   promSeries("shorted_stealth_fetch_total", { ...resource, status: "success" }, 48),
   promSeries("shorted_stealth_fetch_total", { ...resource, status: "error" }, 12),
   promSeries("shorted_stealth_fetch_errors_total", resource, 12),
@@ -45,8 +49,10 @@ const metricInput = [
 ]
 const resourceLabels = '{http_host="example.test",job="news-aggregator",stealth_engine="native"}'
 const expected = {
-  "src-shorted-operations-p1-t0": [sample(1, '{job="shorted-api",rpc_method="GetTopShorts"}')],
-  "src-shorted-operations-p5-t0": [sample(86400)],
+  "src-shorted-operations-p1-t0": [sample(1.1, '{job="shorted-api",rpc_method="GetTopShorts"}')],
+  "src-shorted-operations-p3-t0": [sample(.1, '{job="shorted-api",rpc_connect_rpc_error_code="not_found"}')],
+  "src-shorted-operations-p5-t0": [sample(95040)],
+  "src-shorted-operations-p6-t0": [sample(8640)],
   "src-shorted-stealth-scraping-p2-t0": [sample(.2, resourceLabels)],
   "src-shorted-stealth-scraping-p3-t0": [sample(.19, resourceLabels)],
   "src-shorted-stealth-scraping-p4-t0": [sample(360000, resourceLabels)],
@@ -62,17 +68,25 @@ test("native Prometheus evaluates confirmed Shorted metrics, units, matching and
   assert.deepEqual(Object.keys(patches).sort(), expectedIDs.sort())
   const directory = await mkdtemp(join(tmpdir(), "paprika-shorted-promql-"))
   try {
-    // The Linux Prometheus container runs as nobody; only synthetic fixtures
-    // live here, and its bind-mounted input must be readable across host UIDs.
-    await chmod(directory, 0o755)
     const empty = Object.fromEntries(expectedIDs.map(id => [id, []]))
     const secondWorkload = { ...resource, job: "other-news-worker" }
+    const errorIDs = ["src-shorted-operations-p3-t0", "src-shorted-operations-p6-t0"]
     const document = { evaluation_interval: "1m", tests: [
       { name: "Confirmed native metrics and label matching", interval: "1m", input_series: metricInput, promql_expr_test: expressions() },
       { name: "Absent metrics remain empty", interval: "1m", input_series: [], promql_expr_test: expressions(empty) },
       { name: "Insufficient samples do not invent rates or increases", interval: "1m", input_series: metricInput.map(series => ({ ...series, values: "10" })), promql_expr_test: expressions(empty, { evalTime: "0m" }) },
       { name: "Expired range history stays empty", interval: "1m", input_series: metricInput, promql_expr_test: expressions(empty, { evalTime: "49h" }) },
       { name: "RPC service filter excludes unrelated services", interval: "1m", input_series: metricInput, promql_expr_test: expressions(empty, { service: "missing-api", ids: expectedIDs.filter(id => id.includes("operations")) }) },
+      { name: "Successful RPCs with missing or empty error labels are not errors", interval: "1m", input_series: [
+        promSeries("rpc_server_duration_milliseconds_count", rpcResource, 60),
+        promSeries("rpc_server_duration_milliseconds_count", { ...rpcResource, rpc_method: "OtherMethod", rpc_connect_rpc_error_code: "" }, 60),
+      ], promql_expr_test: expressions(empty, { ids: errorIDs }) },
+      { name: "RPC error codes remain distinct and successful traffic stays excluded", interval: "1m", input_series: [...metricInput,
+        promSeries("rpc_server_duration_milliseconds_count", { ...rpcResource, rpc_connect_rpc_error_code: "internal" }, 12),
+      ], promql_expr_test: expressions({
+        "src-shorted-operations-p3-t0": [...expected["src-shorted-operations-p3-t0"], sample(.2, '{job="shorted-api",rpc_connect_rpc_error_code="internal"}')],
+        "src-shorted-operations-p6-t0": [sample(25920)],
+      }, { ids: errorIDs }) },
       { name: "Stealth error metric absence remains empty even when fetch counts exist", interval: "1m", input_series: metricInput.filter(series => !series.series.startsWith("shorted_stealth_fetch_errors_total")), promql_expr_test: expressions(empty, { ids: ["src-shorted-stealth-scraping-p2-t0", "src-shorted-stealth-scraping-p7-t0"] }) },
       { name: "No fetches leave the error ratio undefined", interval: "1m", input_series: metricInput.map(series => ({ ...series, values: "0+0x1440" })), promql_expr_test: expressions(empty, { ids: ["src-shorted-stealth-scraping-p2-t0"] }) },
       { name: "Error ratios retain independent workload identity at a shared host", interval: "1m", input_series: [...metricInput,
@@ -81,10 +95,12 @@ test("native Prometheus evaluates confirmed Shorted metrics, units, matching and
         promSeries("shorted_stealth_fetch_errors_total", secondWorkload, 6),
       ], promql_expr_test: expressions({ "src-shorted-stealth-scraping-p2-t0": [...expected["src-shorted-stealth-scraping-p2-t0"], sample(.05, '{http_host="example.test",job="other-news-worker",stealth_engine="native"}')] }, { ids: ["src-shorted-stealth-scraping-p2-t0"] }) },
     ] }
-    await writeFile(join(directory, "test.json"), JSON.stringify(document), { mode: 0o644 })
+    const input = JSON.stringify(document)
+    await writeFile(join(directory, "test.json"), input, { mode: 0o600 })
     const result = process.env.PROMTOOL
       ? spawnSync(process.env.PROMTOOL, ["test", "rules", join(directory, "test.json")], { encoding: "utf8" })
-      : spawnSync("docker", ["run", "--rm", "--network=none", "--entrypoint=/bin/promtool", "-v", `${directory}:/tests:ro`, image, "test", "rules", "/tests/test.json"], { encoding: "utf8" })
+      // Stdin works with remote Docker engines and needs no host bind mount.
+      : spawnSync("docker", ["run", "--rm", "-i", "--network=none", "--entrypoint=/bin/promtool", image, "test", "rules", "/dev/stdin"], { encoding: "utf8", input })
     assert.equal(result.status, 0, result.error?.message ?? `${result.stdout}\n${result.stderr}`)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
