@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { createExampleCatalogQuery } from "../example-catalog-query"
-import { parseDashboardBundle, serializeDashboardBundle, requiredBundleProviders } from "../workspace-transfer"
+import { parseDashboardBundle, serializeDashboardBundle, requiredBundleProviders, remapBundleProviders } from "../workspace-transfer"
 import { resolveSavedQueryReference } from "../saved-queries"
 import { widgetKind } from "../schema"
 import { repositoryExamples, repositoryExampleFixtures, repositoryExampleProviders } from "."
@@ -16,6 +16,27 @@ describe("source-derived repository example library", () => {
     expect(repositoryExamples.filter(entry => entry.project === "shorted")).toHaveLength(12)
     expect(repositoryExamples.filter(entry => entry.project === "uptime")).toHaveLength(3)
     expect(repositoryExamples.filter(entry => entry.project === "paprika")).toHaveLength(1)
+  })
+
+  it("requires independent mappings for Shorted production telemetry and each local analysis workload", () => {
+    const entries = repositoryExamples.slice(0, 5)
+    const bundle = {
+      dashboards: entries.flatMap(entry => entry.live!.dashboards),
+      savedQueries: entries.flatMap(entry => entry.live!.savedQueries!),
+    }
+    const production = entries[0].providers[0]
+    const installed = { ...production, id: "cuttlefish", name: "Cuttlefish Prometheus" }
+
+    // One working Prometheus must not silently satisfy every source repository's telemetry.
+    expect(() => remapBundleProviders(bundle, { [production.id]: installed.id }, [installed])).toThrow(/Choose a compatible data source/)
+    expect([...requiredBundleProviders(bundle).keys()]).toEqual([
+      "source-shorted-grafana-cloud-prometheus",
+      "source-shorted-analysis-grafana",
+      "source-shorted-analysis-postgres",
+      "source-shorted-analysis-prometheus",
+    ])
+    expect(entries[1].providers[0].id).toBe(production.id)
+    expect(entries.flatMap(entry => entry.providers).every(provider => provider.name !== "Shorted source Prometheus")).toBe(true)
   })
 
   it("accounts for all source Grafana targets, including the synthetic target and row-only panels", () => {

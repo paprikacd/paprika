@@ -111,6 +111,26 @@ function connect(name = "Production Prometheus") {
 }
 
 describe("portable dashboard import review", () => {
+  it("shows the expected source workload at the mapping control without selecting a compatible provider automatically", () => {
+    render(
+      <SavedQueryLibraryProvider queries={[]} variables={[]} values={{}}>
+        <PortableImportPanel
+          providers={providers}
+          sourceProviders={[{
+            id: "source",
+            name: "Shorted production metrics · Grafana Cloud",
+            description: "Requires Shorted application telemetry from skunkworq.grafana.net. A cluster Prometheus is not a substitute.",
+          }]}
+          initialDocument={{ source: serializeDashboardBundle(bundle, "json"), format: "json" }}
+        />
+      </SavedQueryLibraryProvider>,
+    );
+    const mapping = screen.getByRole("combobox", { name: "Connect Shorted production metrics · Grafana Cloud" });
+    expect(mapping).toHaveTextContent("Choose a data source");
+    expect(mapping).toHaveAccessibleDescription(/Requires Shorted application telemetry from skunkworq.grafana.net/);
+    expect(screen.getByRole("button", { name: "Import 1 as new" })).toBeDisabled();
+  });
+
   it("reviews query providers and preserves new query IDs without silently choosing copy", async () => {
     const { onImportBundle } = renderPanel();
     expect(
