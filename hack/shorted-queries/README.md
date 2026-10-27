@@ -23,6 +23,16 @@ substitute for the call count. The existing service parameter and source windows
 are preserved. A 24-hour `increase` with partial history is an estimate, not proof
 of complete history coverage.
 
+Native Grafana discovery over 24 hours also confirmed the actual Connect error
+label, `rpc_connect_rpc_error_code`, with `internal`, `invalid_argument`,
+`not_found`, `permission_denied` and `resource_exhausted` series. The pinned
+otelconnect v0.9.0 interceptor records this attribute only on errors, before
+recording the duration histogram. A real Connect HTTP/OTLP probe verified the
+same contract for successful and failed calls. The error adaptations therefore
+select `rpc_connect_rpc_error_code!=""`; success series with an absent or empty
+label are excluded. They retain the original five-minute and 24-hour windows,
+with no synthetic zero when error history is absent.
+
 Stealth errors and byte counters use their observed `_total` suffix. Duration
 buckets use `_seconds_bucket`; output stays in seconds. Error ratios aggregate
 both sides `without(status)`, because the total counter adds a status label that
@@ -32,15 +42,15 @@ empty, and a zero-fetch denominator is filtered out.
 
 ## Remaining evidence requirements
 
-- Observed RPC duration series have no `rpc_connect_status_code` or
-  `grpc_status_code` label. RPC error rate and 24-hour errors therefore need a
-  separately verified error signal or an instrumentation change. Never replace
-  their source metric with the duration count while retaining
-  `rpc_connect_status_code!="ok"`: that matcher also selects absent labels and
-  would misclassify every RPC as an error.
+- The RPC error adaptations cover Connect's verified error label. They do not
+  infer gRPC status or classify absent telemetry as successful requests. Never
+  use the old `rpc_connect_status_code!="ok"` matcher: it selects absent labels
+  and would misclassify successful Connect calls as errors.
 - No `shorted_logo*` series were found in the observed hour. Logo metric renames
   are intentionally absent until native discovery establishes them.
-- Sync metrics were absent in that hour; longer-window availability is unverified.
+- Sync families were absent in the observed hour but present in a later 24-hour
+  inventory. Their status labels remain unverified; historical presence alone
+  does not establish current ingestion or success/failure coverage.
 - Short batch jobs may export only one observation. `rate` and `increase` need
   multiple samples; the adapters do not invent history or turn absent data into zero.
 - The remaining HTTP metrics and existing source queries are not changed by this
@@ -78,5 +88,6 @@ node --test hack/shorted-queries/queries.test.mjs
 The tests use the pinned official Prometheus image with networking disabled, or
 `PROMTOOL=/absolute/path/to/promtool`. Fixtures cover native names, completed-RPC
 count semantics, seconds and bytes, vector matching, independent workload labels,
-missing metrics, insufficient samples, expired windows and zero denominators.
+actual Connect error labels, exclusion of successful calls, missing metrics,
+insufficient samples, expired windows and zero denominators.
 They validate expressions, not live provider availability.

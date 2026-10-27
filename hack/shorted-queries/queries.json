@@ -9,6 +9,16 @@
       "adaptation": "Use the observed rpc_server_duration_milliseconds_count; rpc_server_requests_total was absent during native discovery on 2026-10-27."
     }
   },
+  "src-shorted-operations-p3-t0": {
+    "id": "shorted-grafana-operations-p3-t0",
+    "query": "sum(rate(rpc_server_duration_milliseconds_count{job=~{{service}},rpc_connect_rpc_error_code!=\"\"}[5m])) by (job, rpc_connect_rpc_error_code)",
+    "description": "Completed Connect-RPC errors per second over five minutes, grouped by service and observed error code. Successful calls omit the error label and are excluded by the nonempty matcher. Missing error series or insufficient history remain empty.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-operations-p3-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Native discovery on 2026-10-27 confirmed rpc_connect_rpc_error_code on the RPC duration count, including internal, invalid_argument, not_found, permission_denied and resource_exhausted."
+    }
+  },
   "src-shorted-operations-p5-t0": {
     "id": "shorted-grafana-operations-p5-t0",
     "query": "sum(increase(rpc_server_duration_milliseconds_count{job=~{{service}}}[24h]))",
@@ -17,6 +27,16 @@
       "sourceSavedQuery": "src-shorted-operations-p5-t0",
       "sourceProvider": "Shorted Grafana Cloud",
       "adaptation": "Use the observed rpc_server_duration_milliseconds_count; the 24-hour source window is preserved and does not assert complete 24-hour telemetry coverage."
+    }
+  },
+  "src-shorted-operations-p6-t0": {
+    "id": "shorted-grafana-operations-p6-t0",
+    "query": "sum(increase(rpc_server_duration_milliseconds_count{job=~{{service}},rpc_connect_rpc_error_code!=\"\"}[24h]))",
+    "description": "Estimated completed Connect-RPC errors over 24 hours from duration observations with a nonempty error code. Successful calls omit this label and are excluded. Prometheus increase accounts for counter resets and extrapolates; missing or insufficient history remains empty.",
+    "metadata": {
+      "sourceSavedQuery": "src-shorted-operations-p6-t0",
+      "sourceProvider": "Shorted Grafana Cloud",
+      "adaptation": "Use the verified rpc_connect_rpc_error_code label with a nonempty matcher; the source's rpc_connect_status_code!=ok would also match successful calls lacking that old label."
     }
   },
   "src-shorted-stealth-scraping-p2-t0": {
