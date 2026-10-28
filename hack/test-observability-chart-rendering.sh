@@ -74,6 +74,28 @@ def networking_rule(text):
     assert rules[0] == expected, 'Controller networking permissions must include the exact NetworkPolicy lifecycle, without wildcard expansion: ' + repr(rules[0])
     return rules[0]
 
+def telemetry_rules(text):
+    expected = {
+        ('', 'nodes/proxy'): {'get'},
+        ('', 'replicationcontrollers'): {'get', 'list', 'watch'},
+        ('apps', 'daemonsets'): {'get', 'list', 'watch'},
+        ('autoscaling', 'horizontalpodautoscalers'): {'get', 'list', 'watch'},
+    }
+    def field(block, name):
+        match = re.search(r'(?m)^(?:- |  )' + name + r':\n((?:  - .+\n)+)', block)
+        return {line[4:].strip().strip('"\'') for line in match[1].splitlines()} if match else set()
+    found = {key: set() for key in expected}
+    for block in re.findall(r'(?ms)^- apiGroups:\n.*?(?=^- apiGroups:|\Z)', text):
+        groups, resources = field(block, 'apiGroups'), field(block, 'resources')
+        for key in expected:
+            if key[0] in groups and key[1] in resources:
+                assert not field(block, 'resourceNames'), 'Collector discovery needs all matching resources'
+                found[key] |= field(block, 'verbs')
+    assert found == expected, 'Telemetry delegation must grant only the exact required reads: ' + repr(found)
+    return found
+
+generated_telemetry = telemetry_rules((root / 'config/rbac/role.yaml').read_text())
+
 generated = networking_rule((root / 'config/rbac/role.yaml').read_text())
 for namespaced in (False, True):
     suffix = str(namespaced).lower()
@@ -81,6 +103,7 @@ for namespaced in (False, True):
     binding = (work / f'manager-binding-{suffix}.yaml').read_text()
     deployment = (work / f'manager-deployment-{suffix}.yaml').read_text()
     assert networking_rule(role) == generated, 'Rendered and generated controller permissions differ'
+    assert telemetry_rules(role) == generated_telemetry, 'Rendered and generated telemetry delegation differ'
     kind = 'Role' if namespaced else 'ClusterRole'
     assert re.search(r'^kind: ' + kind + r'$', role, re.M)
     assert re.search(r'^kind: ' + kind + r'Binding$', binding, re.M)
