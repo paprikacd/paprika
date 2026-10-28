@@ -213,6 +213,9 @@ func newAppHandler(proxy http.Handler, fixture *telemetryFixture, uiURL, uiDir s
 	}
 	appMux := http.NewServeMux()
 	appMux.Handle("/api/insights/", proxy)
+	// Tests inject signed bearer tokens; this fixture has no interactive login
+	// or refresh-cookie endpoint. Keep session bootstrap out of the UI fallback.
+	appMux.HandleFunc("/auth/config", auth.PublicConfigHandler(auth.Config{}, nil))
 	appMux.HandleFunc("GET /__test/requests", func(w http.ResponseWriter, _ *http.Request) {
 		fixture.mu.Lock()
 		defer fixture.mu.Unlock()

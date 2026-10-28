@@ -2,7 +2,7 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding: 14px 17px 12px;
+  padding: 9px 14px 8px;
   border-top: 1px solid var(--gamma-border, #dfe4db);
   color: var(--gamma-ink, #27332e);
   background: transparent;

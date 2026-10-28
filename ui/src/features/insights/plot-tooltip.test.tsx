@@ -9,11 +9,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WidgetVisualization } from "./charts";
+import { placePlotTooltip } from "./chart-renderers";
 import { TooltipQueryProvider } from "./tooltip-query";
-import { observationFocus } from "./plot-tooltip";
 import type { Provider, QueryResult, TooltipView, Widget } from "./schema";
 import type { Series } from "./chart-data";
-import type { ChartPoint } from "@tanstack/charts";
 
 const providers: Provider[] = [
   {
@@ -100,6 +99,32 @@ function Host({
     </TooltipQueryProvider>
   );
 }
+
+function hoverLine(chart: HTMLElement, lineIndex: number, fraction = 0.5, offsetY = 0) {
+  const [x, y, width, height] = chart
+    .getAttribute("viewBox")!
+    .split(" ")
+    .map(Number);
+  vi.spyOn(chart, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(x, y, width, height),
+  );
+  const line = chart.querySelectorAll('path[stroke-width="1.8"]')[lineIndex];
+  const coordinates = [
+    ...line.getAttribute("d")!.matchAll(/[ML]([\d.e+-]+),([\d.e+-]+)/g),
+  ];
+  expect(coordinates.length).toBeGreaterThanOrEqual(2);
+  const clientX =
+    Number(coordinates[0][1]) * (1 - fraction) +
+    Number(coordinates[1][1]) * fraction;
+  const clientY =
+    Number(coordinates[0][2]) * (1 - fraction) +
+    Number(coordinates[1][2]) * fraction + offsetY;
+  fireEvent(
+    chart,
+    new MouseEvent("pointermove", { clientX, clientY, bubbles: true }),
+  );
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -107,10 +132,125 @@ afterEach(() => {
 });
 
 describe("point and row tooltip hosts", () => {
-  it("queries exact historical values and fractional timestamps through real keyboard navigation without changing dashboard drilldown selection", async () => {
+  it.each([true, false])("chooses the nearby lower series outside the narrow stroke hit target (rich tooltip: %s)", async (rich) => {
+    const fetcher = vi.fn().mockResolvedValue(child);
+    render(
+      <Host
+        value={{
+          ...widget,
+          options: { tooltipView: rich ? tooltipView : undefined, min: 0, max: 100 },
+        }}
+        response={{
+          series: [
+            {
+              name: "api",
+              labels: { service: "api" },
+              points: [{ timestamp: 0, value: 90 }, { timestamp: 100, value: 90 }],
+            },
+            {
+              name: "worker",
+              labels: { service: "worker" },
+              points: [{ timestamp: 0, value: 10 }, { timestamp: 100, value: 10 }],
+            },
+          ],
+        }}
+        fetcher={fetcher}
+      />,
+    );
+    hoverLine(screen.getByRole("img", { name: widget.title }), 1, 0.05, 6);
+    const tip = await screen.findByRole(rich ? "tooltip" : "status");
+    expect(tip).toHaveTextContent("worker");
+    if (rich) {
+      await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+      expect(fetcher.mock.calls[0][0].query).toBe(
+        'metric{service="worker",signal="worker"} > 10 @ 0',
+      );
+    }
+  });
+  it.each(["line", "area"] as const)("hits a sparse %s segment instead of another series with a nearer timestamp", async (display) => {
+    const fetcher = vi.fn().mockResolvedValue(child);
+    render(
+      <Host
+        value={{
+          ...widget,
+          options: { tooltipView, display, min: 0, max: 100 },
+        }}
+        response={{
+          series: [
+            {
+              name: "api",
+              labels: { service: "api" },
+              points: [
+                { timestamp: 0, value: 10 },
+                { timestamp: 100, value: 10 },
+              ],
+            },
+            {
+              name: "worker",
+              labels: { service: "worker" },
+              points: [
+                { timestamp: 50, value: 90 },
+                { timestamp: 100, value: 90 },
+              ],
+            },
+          ],
+        }}
+        fetcher={fetcher}
+      />,
+    );
+    hoverLine(screen.getByRole("img", { name: widget.title }), 0, 0.45);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(fetcher.mock.calls[0][0]).toMatchObject({
+      query: 'metric{service="api",signal="api"} > 10 @ 0',
+    });
+    expect(
+      screen.getByRole("tooltip").querySelector('[data-observation-value="10"]'),
+    ).toBeInTheDocument();
+  });
+
+  it("inspects the visible lower line through an overlapping area fill in a details-only chart", async () => {
+    render(
+      <Host
+        value={{ ...widget, options: { display: "area", min: 0, max: 100 } }}
+        response={{
+          series: [
+            {
+              name: "api",
+              labels: {},
+              points: [
+                { timestamp: 0, value: 10 },
+                { timestamp: 100, value: 10 },
+              ],
+            },
+            {
+              name: "worker",
+              labels: {},
+              points: [
+                { timestamp: 0, value: 90 },
+                { timestamp: 100, value: 90 },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+    hoverLine(screen.getByRole("img", { name: widget.title }), 0);
+    const tip = await screen.findByRole("status");
+    expect(tip).toHaveTextContent("api");
+    expect(tip).toHaveTextContent("10 ms");
+    expect(tip).not.toHaveTextContent("worker");
+  });
+
+  it.each(["line", "area"] as const)("visits each %s observation once with exact values and fractional timestamps through real keyboard navigation without changing dashboard drilldown selection", async (display) => {
     const fetcher = vi.fn().mockResolvedValue(child);
     const selected = vi.fn();
-    render(<Host fetcher={fetcher} onContextChange={selected} />);
+    render(
+      <Host
+        value={{ ...widget, options: { tooltipView, display } }}
+        fetcher={fetcher}
+        onContextChange={selected}
+      />,
+    );
     const chart = screen.getByRole("img", { name: widget.title });
     act(() => chart.focus());
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
@@ -209,6 +349,75 @@ describe("point and row tooltip hosts", () => {
     fireEvent.click(chart, { clientX, clientY });
     expect(screen.queryByRole("tooltip")).toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("keeps isolated samples visible and visits each once across null gaps in an area chart", async () => {
+    const fetcher = vi.fn().mockResolvedValue(child);
+    render(
+      <Host
+        value={{ ...widget, options: { tooltipView, display: "area" } }}
+        response={{
+          series: [{
+            name: "api",
+            labels: { service: "api" },
+            points: [
+              { timestamp: 1000, value: 10 },
+              { timestamp: 2000, value: null },
+              { timestamp: 3000, value: 20 },
+            ],
+          }],
+        }}
+        fetcher={fetcher}
+      />,
+    );
+    const chart = screen.getByRole("img", { name: widget.title });
+    expect(chart.querySelectorAll(".ts-chart__line circle")).toHaveLength(2);
+    act(() => chart.focus());
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(fetcher.mock.calls[0][0].query).toContain("> 10 @ 1");
+    fireEvent.keyDown(chart, { key: "ArrowRight" });
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    expect(fetcher.mock.calls[1][0].query).toContain("> 20 @ 3");
+    expect(
+      screen.getByRole("tooltip").querySelector('[data-observation-value="20"]'),
+    ).toBeInTheDocument();
+  });
+  it("visits both series at shared timestamps once when area and line paint the same observations", async () => {
+    const fetcher = vi.fn().mockResolvedValue(child);
+    render(
+      <Host
+        value={{ ...widget, options: { tooltipView, display: "area" } }}
+        response={{
+          series: [
+            {
+              name: "api",
+              labels: { service: "api" },
+              points: [{ timestamp: 1000, value: 10 }, { timestamp: 2000, value: 11 }],
+            },
+            {
+              name: "worker",
+              labels: { service: "worker" },
+              points: [{ timestamp: 1000, value: 90 }, { timestamp: 2000, value: 91 }],
+            },
+          ],
+        }}
+        fetcher={fetcher}
+      />,
+    );
+    const chart = screen.getByRole("img", { name: widget.title });
+    act(() => chart.focus());
+    // At a shared timestamp TanStack visits the upper line, then the lower one.
+    for (const [index, [name, value, at]] of [
+      ["worker", 90, 1],
+      ["api", 10, 1],
+      ["worker", 91, 2],
+      ["api", 11, 2],
+    ].entries()) {
+      if (index > 0) fireEvent.keyDown(chart, { key: "ArrowRight" });
+      await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(index + 1));
+      expect(fetcher.mock.calls[index][0].query).toBe(
+        `metric{service="${name}",signal="${name}"} > ${value} @ ${at}`,
+      );
+    }
   });
   it("invalidates a pinned point on a result refresh and aborts its pending child query", async () => {
     const fetcher = vi
@@ -383,40 +592,34 @@ describe("point and row tooltip hosts", () => {
   });
 });
 
-describe("historical observation navigation", () => {
-  it("visits each series at the same time and deduplicates area/line mark representations", () => {
-    const point = (seriesIndex: number, timestamp: number, markId: string) =>
-      ({
-        key: `${markId}:${seriesIndex}:${timestamp}`,
-        markId,
-        x: timestamp,
-        y: seriesIndex,
-        group: seriesIndex,
-        datum: { seriesIndex, timestamp, value: seriesIndex },
-      }) as unknown as ChartPoint<{
-        seriesIndex: number;
-        timestamp: number;
-        value: number;
-      }>;
-    const order = observationFocus.navigation([
-      point(1, 1000, "line"),
-      point(0, 1000, "area"),
-      point(0, 1000, "line"),
-      point(1, 2000, "line"),
-    ]);
-    expect(
-      order.map((point) => [point.datum.seriesIndex, point.datum.timestamp]),
-    ).toEqual([
-      [0, 1000],
-      [1, 1000],
-      [1, 2000],
-    ]);
-    const first = point(0, 1000, "line");
-    const second = {
-      ...first,
-      key: "different-value",
-      datum: { ...first.datum, value: 7 },
-    };
-    expect(observationFocus.navigation([first, second])).toHaveLength(2);
+describe("plot tooltip placement", () => {
+  it("keeps vertical movement between lines clear by preferring the side of the sample", () => {
+    const position = placePlotTooltip(
+      { left: 337, right: 343, top: 495, bottom: 501 },
+      { width: 330, height: 463 },
+      { width: 1920, height: 1080 },
+    );
+    expect(position.placement).toBe("right");
+    expect(position.left).toBe(359);
+    expect(position.top).toBe(266.5);
+  });
+
+  it("flips left near the viewport edge and clamps height within an offset viewport", () => {
+    const position = placePlotTooltip(
+      { left: 950, right: 956, top: 700, bottom: 706 },
+      { width: 330, height: 463 },
+      { width: 1000, height: 700, left: 50, top: 100 },
+    );
+    expect(position).toEqual({ left: 604, top: 325, placement: "left" });
+    expect(position.left + 330).toBeLessThan(950);
+  });
+
+  it("falls back to the existing vertical placement when neither side has room", () => {
+    const position = placePlotTooltip(
+      { left: 157, right: 163, top: 490, bottom: 496 },
+      { width: 296, height: 300 },
+      { width: 320, height: 720 },
+    );
+    expect(position).toEqual({ left: 12, top: 180, placement: "top" });
   });
 });

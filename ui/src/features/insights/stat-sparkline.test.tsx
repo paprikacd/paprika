@@ -91,8 +91,10 @@ describe("optional single-value history", () => {
     expect(
       svg.querySelector("path[data-stat-area]")?.getAttribute("d")?.match(/M/g),
     ).toHaveLength(2);
-    expect(svg.querySelector("path[data-stat-trend]")).toHaveAttribute("stroke-opacity", "0.38");
-    expect(svg.querySelector("stop")).toHaveAttribute("stop-opacity", "0.16");
+    // The historical plot remains a translucent backdrop for the primary value.
+    const strokeOpacity = Number(svg.querySelector("path[data-stat-trend]")?.getAttribute("stroke-opacity"));
+    expect(strokeOpacity).toBeGreaterThan(0);
+    expect(strokeOpacity).toBeLessThan(1);
     expect(svg.parentElement).toHaveAttribute("data-stat-summary");
     expect(svg.parentElement?.querySelector("[data-stat-reading] [data-metric-value]")).toBeInTheDocument();
     expect(

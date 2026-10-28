@@ -13,9 +13,10 @@ import {
 import { createPortal } from "react-dom";
 import { areaY } from "@tanstack/charts/area";
 import { barY } from "@tanstack/charts/bar";
-import { focusGroupX } from "@tanstack/charts/focus";
-import { observationFocus, usePlotTooltip } from "./plot-tooltip";
+import { focusGroupX, focusNearestX } from "@tanstack/charts/focus";
+import { usePlotTooltip } from "./plot-tooltip";
 import { lineY } from "@tanstack/charts/line";
+import { decorative } from "@tanstack/charts/mark/decorative";
 import { Chart } from "@tanstack/charts/react";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
@@ -97,8 +98,8 @@ const themedPortal: typeof portal = {
 
 const chartTheme = {
   foreground: "var(--gamma-ink, #27332e)",
-  muted: "var(--gamma-muted, #626e65)",
-  grid: "var(--gamma-border, #dfe4db)",
+  muted: "var(--gamma-chart-axis, var(--gamma-muted, #626e65))",
+  grid: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
   background: "transparent",
   palette: PALETTE,
 };
@@ -234,6 +235,7 @@ function TimeSeriesChart({
     () =>
       series.slice(0, MAX_SERIES).map((entry, index) => ({
         name: seriesName(entry, index),
+        latest: latestPoint(entry),
         color:
           index === 0 && widget.color
             ? widget.color
@@ -261,20 +263,25 @@ function TimeSeriesChart({
         marks: data.flatMap((entry, index) => [
           ...(options.display === "area"
             ? [
-                areaY(entry.points, {
-                  id: `area-${index}`,
-                  x: "timestamp",
-                  y: "value",
-                  fill: entry.color,
-                  fillOpacity: options.fillOpacity ?? 0.12,
-                  curve: CURVES[options.curve ?? "linear"],
-                }),
+                // Fills paint behind observations; only the line owns hit testing.
+                decorative(
+                  areaY(entry.points, {
+                    id: `area-${index}`,
+                    x: "timestamp",
+                    y: "value",
+                    fill: entry.color,
+                    fillOpacity: options.fillOpacity ?? 0.06,
+                    curve: CURVES[options.curve ?? "linear"],
+                  }),
+                ),
               ]
             : []),
           lineY(entry.points, {
             id: `line-${index}`,
             x: "timestamp",
             y: "value",
+            // Shared timestamps still need distinct groups for nearest-line focus.
+            z: "seriesIndex",
             stroke: entry.color,
             strokeWidth: options.lineWidth ?? 1.8,
             curve: CURVES[options.curve ?? "linear"],
@@ -305,7 +312,7 @@ function TimeSeriesChart({
                   },
                   tickLabels: {
                     opacity: 1,
-                    fontSize: 10,
+                    fontSize: 11,
                     thin: { minGap: 12, priority: "ends" },
                   },
                 },
@@ -317,8 +324,7 @@ function TimeSeriesChart({
               options.showGrid === false
                 ? false
                 : {
-                    stroke: "var(--gamma-border, #dfe4db)",
-                    strokeDasharray: "3 4",
+                    stroke: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
                   },
             axis: !showAxis
               ? false
@@ -335,7 +341,7 @@ function TimeSeriesChart({
                   },
                   tickLabels: {
                     opacity: 1,
-                    fontSize: 10,
+                    fontSize: 11,
                     thin: { minGap: 12, priority: "ends" },
                   },
                 },
@@ -347,14 +353,15 @@ function TimeSeriesChart({
               top: height < 130 ? 4 : 10,
               right: 12,
               bottom: options.xAxisLabel ? 47 : 29,
-              left: options.yAxisLabel ? 67 : 47,
+              left: options.yAxisLabel ? 74 : 54,
             },
         clip: true,
         theme: configuredTheme(options),
+        // Built-in strategy identity preserves TanStack's segment hit testing.
         focus: embedded
           ? false
           : tooltipEnabled
-            ? observationFocus
+            ? focusNearestX
             : focusGroupX,
         svgAnimation: false,
         tooltip:
@@ -416,18 +423,35 @@ function TimeSeriesChart({
         />
       </div>
       {options.showLegend !== false && (
-        <div className={styles.legend}>
+        <div className={styles.legend} role="list" aria-label="Latest values by series">
           {data.map((entry, index) => (
             <span
               className={styles.legendItem}
+              role="listitem"
               key={`${entry.name}-${index}`}
               title={options.showTooltip === false ? undefined : entry.name}
             >
               <span
                 className={styles.swatch}
+                aria-hidden="true"
                 style={{ background: entry.color }}
               />
-              <span>{entry.name}</span>
+              <span className={styles.legendName}>{entry.name}</span>
+              <span
+                className={styles.legendValue}
+                title={options.showTooltip === false ? undefined : entry.latest
+                  ? `Latest valid sample · ${fullDateTimeFormat.format(new Date(entry.latest.timestamp))}`
+                  : "No valid sample"}
+                aria-label={entry.latest
+                  ? `${entry.name}, latest valid sample: ${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
+                  : `${entry.name}: no valid sample`}
+                data-legend-value={entry.latest?.value}
+                data-legend-timestamp={entry.latest?.timestamp}
+              >
+                {entry.latest
+                  ? formatMetric(entry.latest.value, widget.unit, false, options.decimals)
+                  : "—"}
+              </span>
             </span>
           ))}
         </div>
@@ -536,7 +560,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
                   },
                   tickLabels: {
                     opacity: 1,
-                    fontSize: 10,
+                    fontSize: 11,
                     thin: { minGap: 12, priority: "ends" },
                   },
                 },
@@ -548,8 +572,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
               options.showGrid === false
                 ? false
                 : {
-                    stroke: "var(--gamma-border, #dfe4db)",
-                    strokeDasharray: "3 4",
+                    stroke: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
                   },
             axis: !showAxis
               ? false
@@ -566,7 +589,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
                   },
                   tickLabels: {
                     opacity: 1,
-                    fontSize: 10,
+                    fontSize: 11,
                     thin: { minGap: 12, priority: "ends" },
                   },
                 },
@@ -578,12 +601,12 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
               top: height < 130 ? 4 : 12,
               right: 10,
               bottom: options.xAxisLabel ? 47 : 28,
-              left: options.yAxisLabel ? 67 : 47,
+              left: options.yAxisLabel ? 74 : 54,
             },
         clip: true,
         theme: configuredTheme(options),
         svgAnimation: false,
-        focus: embedded ? false : tooltipEnabled ? observationFocus : undefined,
+        focus: embedded ? false : tooltipEnabled ? focusNearestX : undefined,
         tooltip:
           options.showTooltip === false
             ? false
@@ -669,6 +692,7 @@ function Stat({
   series: Series[];
   onContextChange?: (context: DrilldownContext) => void;
 }) {
+  const embedded = useEmbeddedWidget();
   const entries = series
     .map((entry, index) => ({
       entry,
@@ -684,7 +708,7 @@ function Stat({
     thresholdForValue(first.point.value, widget.options?.thresholds)?.color ??
     widget.color;
   return (
-    <div className={styles.stat}>
+    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`}>
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""
@@ -733,7 +757,7 @@ function Stat({
             series={first.entry}
             name={first.name}
             unit={widget.unit}
-            color={color}
+            color={color ?? PALETTE[0]}
           />
         )}
       </div>
@@ -1227,6 +1251,36 @@ export function placeHeatmapTooltip(
   };
 }
 
+/** Leave the sample's vertical track exposed while inspecting adjacent lines. */
+export function placePlotTooltip(
+  anchor: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+  size: { width: number; height: number },
+  viewport: TooltipViewport,
+) {
+  const margin = 12;
+  const gap = 16;
+  const leftEdge = (viewport.left ?? 0) + margin;
+  const rightEdge = (viewport.left ?? 0) + viewport.width - margin;
+  const right = anchor.right + gap;
+  const left = anchor.left - gap - size.width;
+  const fitsRight = right >= leftEdge && right + size.width <= rightEdge;
+  const fitsLeft = left >= leftEdge && left + size.width <= rightEdge;
+  if (!fitsRight && !fitsLeft) return placeHeatmapTooltip(anchor, size, viewport);
+  const topEdge = (viewport.top ?? 0) + margin;
+  const bottomEdge = (viewport.top ?? 0) + viewport.height - margin;
+  return {
+    left: fitsRight ? right : left,
+    top: Math.max(
+      topEdge,
+      Math.min(
+        (anchor.top + anchor.bottom - size.height) / 2,
+        bottomEdge - size.height,
+      ),
+    ),
+    placement: fitsRight ? "right" : "left",
+  };
+}
+
 export function balancedHeatmapColumns(
   count: number,
   width: number,
@@ -1254,6 +1308,7 @@ export function ObservationTooltip({
   id,
   anchor,
   anchorRect,
+  preferSide = false,
   onDismiss,
   onEnter,
   onLeave,
@@ -1262,6 +1317,7 @@ export function ObservationTooltip({
   id: string;
   anchor: Element;
   anchorRect?: () => DOMRect;
+  preferSide?: boolean;
   onDismiss: () => void;
   onEnter: () => void;
   onLeave: () => void;
@@ -1286,12 +1342,27 @@ export function ObservationTooltip({
       };
       const anchorBounds = anchorRect?.() ?? anchor.getBoundingClientRect();
       const limits = heatmapTooltipSizeLimit(anchorBounds, visibleViewport);
-      // Keep the trigger exposed: a long panel must scroll instead of moving
-      // over the cell and intercepting the click that pins or dismisses it.
       element.style.maxWidth = `${limits.width}px`;
-      element.style.maxHeight = `${limits.height}px`;
+      const candidate = preferSide
+        ? placePlotTooltip(
+            anchorBounds,
+            element.getBoundingClientRect(),
+            visibleViewport,
+          )
+        : null;
+      const useSide =
+        candidate?.placement === "left" || candidate?.placement === "right";
+      // Side panels leave neighboring lines reachable; vertical panels must
+      // scroll before they can overlap the trigger that pins or dismisses them.
+      element.style.maxHeight = `${
+        useSide
+          ? Math.max(0, Math.min(560, visibleViewport.height - 24))
+          : limits.height
+      }px`;
       const bounds = element.getBoundingClientRect();
-      const next = placeHeatmapTooltip(anchorBounds, bounds, visibleViewport);
+      const next = useSide
+        ? placePlotTooltip(anchorBounds, bounds, visibleViewport)
+        : placeHeatmapTooltip(anchorBounds, bounds, visibleViewport);
       setPosition((previous) =>
         previous?.left === next.left &&
         previous?.top === next.top &&
@@ -1324,7 +1395,7 @@ export function ObservationTooltip({
       window.visualViewport?.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("scroll", schedule);
     };
-  }, [anchor, anchorRect]);
+  }, [anchor, anchorRect, preferSide]);
   useEffect(() => {
     const pointer = (event: PointerEvent) => {
       if (

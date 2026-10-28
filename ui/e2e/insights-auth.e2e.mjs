@@ -41,12 +41,13 @@ try {
     assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), target)
   })
   await check("An authenticated login returns to the saved dashboard and service", async () => {
-    // Match persistAuth's two records after a successful authentication. A bare
-    // bearer token authorizes API calls but does not restore the console user.
+    // Match successful authentication, including clearing the prior signed-out
+    // tombstone. The validation credential has no browser refresh grant.
     const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString())
     await page.evaluate(({ token, user }) => {
       localStorage.setItem("paprika_id_token", token)
       localStorage.setItem("paprika_auth_user", JSON.stringify(user))
+      localStorage.setItem("paprika_session_state", JSON.stringify({ loggedOut: false, refreshAvailable: false, revision: crypto.randomUUID() }))
     }, { token, user: { sub: claims.sub, email: claims.email ?? "", name: claims.name ?? "" } })
     await page.reload({ waitUntil: "domcontentloaded" })
     await page.waitForURL(new URL(target, origin).href)

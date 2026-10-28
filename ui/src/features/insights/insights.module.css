@@ -299,7 +299,7 @@
 }
 .heading p {
   color: var(--gamma-muted);
-  font-size: 11px;
+  font-size: 12px;
   margin: 4px 0 0;
   line-height: 1.4;
 }
@@ -372,7 +372,7 @@
   gap: 12px;
   align-items: center;
   margin: 0 24px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--gamma-border);
   padding: 8px 0 10px;
   flex-wrap: wrap;
 }
@@ -523,9 +523,9 @@
 .tileHeader {
   display: flex;
   align-items: flex-start;
-  gap: 5px;
-  padding: 12px 14px 0;
-  min-height: 34px;
+  gap: 8px;
+  padding: 12px 16px 4px;
+  min-height: 38px;
   flex-shrink: 0;
 }
 .tileTitle {
@@ -534,15 +534,15 @@
 }
 .tileTitle h3 {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--gamma-ink);
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.4;
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 .tileTitle p {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   color: var(--gamma-muted);
   font-size: 11px;
   line-height: 1.5;
@@ -568,8 +568,14 @@
 .visualization {
   flex: 1;
   min-height: 0;
-  padding: 6px 10px 10px;
+  padding: 6px 12px 12px;
   overflow: hidden;
+}
+.tile[data-widget-type="stat"] .tileHeader {
+  padding-bottom: 0;
+}
+.tile[data-widget-type="stat"] .visualization {
+  padding-inline: 16px;
 }
 .canvas :global(.react-grid-item.react-grid-placeholder) {
   background: var(--gamma-surface-2);
@@ -594,7 +600,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--gamma-muted);
-  font-size: 9px;
+  font-size: 10px;
   padding: 12px 0 8px;
 }
 .canvasFooter > span:last-child {

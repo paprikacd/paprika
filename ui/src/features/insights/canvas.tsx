@@ -156,6 +156,7 @@ const Tile = memo(function Tile({
       ref={element}
       className={`${styles.tile} ${selected ? styles.selectedTile : ""}`}
       data-widget-id={widget.id}
+      data-widget-type={widget.type}
       aria-label={widget.title}
       style={
         {

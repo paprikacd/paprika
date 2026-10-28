@@ -1,6 +1,6 @@
 import { CompletionContext, type Completion, type CompletionResult } from "@codemirror/autocomplete"
 import { EditorState, type Extension } from "@codemirror/state"
-import { LRLanguage, StreamLanguage, syntaxTree } from "@codemirror/language"
+import { ensureSyntaxTree, LRLanguage, StreamLanguage, syntaxTree } from "@codemirror/language"
 import type { Diagnostic } from "@codemirror/lint"
 import { PostgreSQL, sql, type SQLConfig } from "@codemirror/lang-sql"
 import { styleTags, tags } from "@lezer/highlight"
@@ -117,7 +117,13 @@ export function queryDiagnostics(language: QueryLanguage, query: string, paramet
     catch { return [{ from: 0, to: query.length, severity: "error", message: "Invalid JSON syntax. Use parameter placeholders as complete values without quotes." }] }
   }
   if (language === "promql") {
-    const state = EditorState.create({ doc: masked, extensions: [promQLLanguage(LanguageType.PromQL)] })
+    let state = EditorState.create({ doc: masked, extensions: [promQLLanguage(LanguageType.PromQL)] })
+    // Editor initialization only parses a 20 ms / 3000-character slice. Static
+    // validation must finish the bounded query, or a partial tree invents errors
+    // and misses semantic problems beyond that slice. Publish the completed
+    // parse via a transaction so the upstream semantic parser sees it too.
+    const tree = ensureSyntaxTree(state, masked.length, Number.POSITIVE_INFINITY)
+    if (tree !== syntaxTree(state)) state = state.update({}).state
     const parser = new PromQLParser(state)
     parser.analyze()
     const diagnostics = parser.getDiagnostics()

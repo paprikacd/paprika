@@ -10,25 +10,25 @@
 .surface:focus-within { border-color: var(--gamma-accent); box-shadow: 0 0 0 2px var(--gamma-accent-soft); }
 .surface :global(.cm-editor) { background: transparent; color: var(--gamma-ink); font-size: 12px; }
 .surface :global(.cm-editor.cm-focused) { outline: none; }
-.surface :global(.cm-scroller) { font-family: var(--gamma-font-code); min-height: var(--query-editor-min-height, 132px); max-height: var(--query-editor-max-height, 220px); overflow: auto; line-height: 1.8; }
-.surface :global(.cm-content) { min-width: 0; padding: 12px 0; caret-color: var(--gamma-ink); }
-.surface :global(.cm-line) { color: var(--gamma-ink); padding: 0 12px 0 6px; }
-.surface :global(.cm-gutters) { background: var(--gamma-surface); border-right: 1px solid var(--gamma-border); color: var(--gamma-muted); font-size: 10px; }
-.surface :global(.cm-gutterElement) { padding-left: 8px; }
-.surface :global(.cm-activeLine), .surface :global(.cm-activeLineGutter) { background: var(--gamma-surface-2); }
+.surface :global(.cm-scroller) { font-family: var(--gamma-font-code); min-height: var(--query-editor-min-height, 132px); max-height: var(--query-editor-max-height, 220px); overflow: auto; line-height: 1.7; }
+.surface :global(.cm-content) { min-width: 0; padding: 10px 0; caret-color: var(--gamma-ink); }
+.surface :global(.cm-line) { color: var(--gamma-ink); padding: 0 12px 0 10px; }
+.surface :global(.cm-gutters) { background: var(--gamma-surface); border-right: 1px solid var(--gamma-border); color: var(--gamma-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.surface :global(.cm-gutterElement) { padding-inline: 8px; }
+.surface :global(.cm-activeLine), .surface :global(.cm-activeLineGutter) { background: color-mix(in srgb, var(--gamma-accent) 6%, var(--gamma-surface)); }
 .surface :global(.cm-cursor) { border-left-color: var(--gamma-ink); }
 .surface :global(.cm-selectionBackground), .surface :global(.cm-focused .cm-selectionBackground) { background: var(--gamma-accent-soft) !important; }
 .surface :global(.cm-selectionMatch), .surface :global(.cm-matchingBracket) { background: var(--gamma-accent-soft); color: var(--gamma-ink); }
 .surface :global(.cm-content[aria-disabled="true"]) { opacity: .6; cursor: not-allowed; }
 .surface :global(.cm-panels) { background: var(--gamma-surface-2); color: var(--gamma-ink); border-color: var(--gamma-border); }
 .surface :global(.cm-textfield), .surface :global(.cm-button) { background: var(--gamma-bg); border: 1px solid var(--gamma-border); color: var(--gamma-ink); border-radius: 4px; }
-.footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; margin-top: 7px; font: 10px/1.5 var(--gamma-font-ui, inherit); color: var(--gamma-muted); }
+.footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; margin-top: 7px; font: 11px/1.4 var(--gamma-font-ui, inherit); color: var(--gamma-muted); }
 .footer > :first-child { min-width: 0; flex: 1 1 180px; overflow-wrap: anywhere; }
 .shortcut { white-space: nowrap; }
 .syntaxIssue { color: var(--gamma-warning, #956124); }
 .notice { margin: 6px 0 0; color: var(--gamma-muted); font-size: 11px; line-height: 1.5; }
 .portal { position: fixed; inset: 0; z-index: 1000; pointer-events: none; color: var(--gamma-ink); font: 12px/1.6 var(--gamma-font-code); }
-.portal :global(.cm-tooltip) { pointer-events: auto; max-width: min(520px, calc(100vw - 24px)); background: var(--gamma-bg); border: 1px solid var(--gamma-border); border-radius: 6px; color: var(--gamma-ink); box-shadow: var(--gamma-shadow-popover, 0 8px 24px #0002); overflow: hidden; }
+.portal :global(.cm-tooltip) { pointer-events: auto; max-width: min(520px, calc(100vw - 24px)); background: var(--gamma-bg); border: 1px solid var(--gamma-border); border-radius: var(--gamma-radius-panel, 6px); color: var(--gamma-ink); box-shadow: var(--gamma-shadow-mid); overflow: hidden; }
 .portal :global(.cm-tooltip-autocomplete > ul) { font-family: var(--gamma-font-code); max-height: min(260px, 40vh); }
 .portal :global(.cm-tooltip-autocomplete > ul > li) { padding: 5px 10px; min-height: 27px; }
 .portal :global(.cm-tooltip-autocomplete > ul > li[aria-selected]) { background: var(--gamma-accent-soft); color: var(--gamma-ink); }

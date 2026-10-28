@@ -31,8 +31,9 @@ describe("Insights login handoff", () => {
     localStorage.setItem("paprika_auth_user", JSON.stringify({ sub: "previous-user" }))
     redirectInsightsToLogin()
     expect(window.location.href).toBe("/login/")
-    expect(localStorage.getItem("paprika_id_token")).toBeNull()
-    expect(localStorage.getItem("paprika_auth_user")).toBeNull()
+    // Navigation is independent of session invalidation, which is conditional
+    // on the rejected bearer in the shared session manager.
+    expect(localStorage.getItem("paprika_id_token")).toBe("expired-or-revoked-token")
     const resumed = authReturnDestination(consumeReturnTo())
     expect(resumed).toBe(destination)
     expect(parseDashboardURL(new URL(resumed, "https://paprika.example.test").search)).toEqual(navigation)
@@ -44,6 +45,6 @@ describe("Insights login handoff", () => {
     localStorage.setItem("paprika_return_to", "//stale.example/")
     redirectInsightsToLogin()
     expect(localStorage.getItem("paprika_return_to")).toBeNull()
-    expect(window.location.href).toBe("/login/")
+    expect(window.location.href).toBe(pathname === "/login/" ? "" : "/login/")
   })
 })

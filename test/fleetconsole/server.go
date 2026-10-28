@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	apiserver "github.com/benebsworth/paprika/internal/api"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
 
@@ -54,6 +55,8 @@ func newFixtureHandler(
 
 	mux := http.NewServeMux()
 	mux.Handle(procedurePrefix, connectHandler)
+	// The session bootstrap must see the fixture's explicit auth-disabled mode.
+	mux.HandleFunc("/auth/config", auth.PublicConfigHandler(auth.Config{}, nil))
 	// Keep this exact legacy stream route fail-closed so the UI fallback cannot
 	// turn an unsupported EventSource request into a misleading 200 response.
 	mux.Handle("/events", http.NotFoundHandler())

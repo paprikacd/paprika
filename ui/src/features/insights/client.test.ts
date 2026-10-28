@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createInsightsClient } from "./client"
+import { createInsightsClient, type InsightsSession } from "./client"
 import type { Dashboard, SavedQuery } from "./schema"
 
 const dashboard: Dashboard = {
@@ -23,6 +23,107 @@ function mockFetch(...responses: Response[]) {
   return fetcher
 }
 afterEach(() => vi.unstubAllGlobals())
+
+describe("Insights renewable sessions", () => {
+  function host() {
+    let bearer: string | null = "initial"
+    let principal = "account-a:1"
+    const session: InsightsSession = {
+      ensureToken: vi.fn(async () => bearer),
+      identity: () => principal,
+      recoverUnauthorized: vi.fn(async () => { bearer = "renewed"; return bearer }),
+      clearRejectedSession: vi.fn((rejected) => { if (rejected === bearer) { bearer = null; principal = "anonymous:2" } }),
+    }
+    const onUnauthorized = vi.fn()
+    return {
+      session, onUnauthorized,
+      rotate: () => { bearer = "rotated" },
+      switchAccount: () => { bearer = "other"; principal = "account-b:2" },
+      api: createInsightsClient("/api/insights", () => bearer, onUnauthorized, session),
+    }
+  }
+
+  it("waits for bootstrap and replays a read once with its exact ETag after renewal", async () => {
+    const { api, session } = host()
+    const fetcher = mockFetch(response({ dashboards: [dashboard] }, 200, { ETag: '"v1"' }), response({}, 401), new Response(null, { status: 304 }))
+    const first = await api.list()
+    expect(await api.list()).toBe(first)
+    expect(session.ensureToken).toHaveBeenCalledTimes(2)
+    expect(session.recoverUnauthorized).toHaveBeenCalledWith("initial")
+    expect(fetcher.mock.calls[2][1].headers.get("Authorization")).toBe("Bearer renewed")
+    expect(fetcher.mock.calls[2][1].headers.get("If-None-Match")).toBe('"v1"')
+  })
+
+  it("keeps same-account snapshots across token rotation and discards them on account change", async () => {
+    const { api, rotate, switchAccount } = host()
+    const fetcher = mockFetch(response({ dashboards: [dashboard] }, 200, { ETag: '"private"' }), new Response(null, { status: 304 }), response({ dashboards: [] }))
+    const first = await api.list()
+    rotate()
+    expect(await api.list()).toBe(first)
+    switchAccount()
+    expect(await api.list()).toEqual([])
+    expect(fetcher.mock.calls[2][1].headers.has("If-None-Match")).toBe(false)
+  })
+
+  it("never replays a dashboard write even after successful renewal", async () => {
+    const { api, session, onUnauthorized } = host()
+    const fetcher = mockFetch(response({}, 401))
+    await expect(api.save(dashboard, '"v1"')).rejects.toThrow(/renewed.*retry/)
+    expect(session.recoverUnauthorized).toHaveBeenCalledOnce()
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fetcher.mock.calls[0][1].headers.get("If-Match")).toBe('"v1"')
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it("replays read-only provider queries with their cancellation signal", async () => {
+    const { api } = host()
+    const fetcher = mockFetch(response({}, 401), response({ series: [] }))
+    const signal = new AbortController().signal
+    await api.query({ providerId: "metrics", query: "up", kind: "metrics", start: 1, end: 2, step: 1 }, signal)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[1][1].signal).toBe(signal)
+  })
+
+  it("retains the session and avoids login redirects during temporary renewal failure", async () => {
+    const { api, session, onUnauthorized } = host()
+    vi.mocked(session.recoverUnauthorized).mockRejectedValue(new Error("Session service temporarily unavailable"))
+    mockFetch(response({}, 401))
+    await expect(api.providers()).rejects.toThrow(/temporarily unavailable/)
+    expect(session.clearRejectedSession).not.toHaveBeenCalled()
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it("stops after a second unauthorized response instead of looping", async () => {
+    const { api, session, onUnauthorized } = host()
+    const fetcher = mockFetch(response({}, 401), response({}, 401))
+    await expect(api.providers()).rejects.toThrow(/Sign in/)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(session.clearRejectedSession).toHaveBeenCalledWith("renewed")
+    expect(onUnauthorized).toHaveBeenCalledOnce()
+  })
+
+  it("does not replay a request after the user changes accounts during renewal", async () => {
+    const { api, session, switchAccount, onUnauthorized } = host()
+    vi.mocked(session.recoverUnauthorized).mockImplementation(async () => { switchAccount(); return "other" })
+    const fetcher = mockFetch(response({}, 401))
+    await expect(api.providers()).rejects.toThrow(/session changed/)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it("rejects provider data when an account changes while its response body loads", async () => {
+    const { api, switchAccount } = host()
+    let finish!: (value: unknown) => void
+    const result = response({})
+    const json = vi.spyOn(result, "json").mockReturnValue(new Promise(resolve => { finish = resolve }))
+    mockFetch(result)
+    const pending = api.providers()
+    await vi.waitFor(() => expect(json).toHaveBeenCalled())
+    switchAccount()
+    finish({ providers: [{ id: "private-provider" }] })
+    await expect(pending).rejects.toThrow(/session changed/)
+  })
+})
 
 describe("Insights HTTP client", () => {
   it("discovers the authenticated Observe MCP connection and keeps cancellation wired", async () => {

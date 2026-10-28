@@ -1,211 +1,95 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { AUTH_TOKEN_KEY, AUTH_USER_KEY, AuthProvider, consumeReturnTo, persistAuth, useAuth } from "./auth-context"
+import { resetBrowserSessionForTests } from "./browser-session"
 
-import {
-  AUTH_TOKEN_KEY,
-  AUTH_USER_KEY,
-  AuthProvider,
-  consumeReturnTo,
-  persistAuth,
-  useAuth,
-} from "@/lib/auth-context"
-
-// base64url-encodes a JWT payload object into a minimally-shaped
-// header.payload.signature string — enough for parseJWT (auth-context.tsx's
-// internal decoder) to read, without needing a real signing key.
-function makeToken(payload: Record<string, unknown>): string {
-  const encode = (obj: Record<string, unknown>) =>
-    btoa(JSON.stringify(obj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-  return `${encode({ alg: "none" })}.${encode(payload)}.sig`
+function token(exp = Math.floor(Date.now() / 1000) + 3600) {
+  return `e30.${btoa(JSON.stringify({ sub: "u1", email: "ada@example.test", name: "Ada", exp }))}.sig`
 }
-
-function AuthProbe() {
-  const { user, idToken, isLoading } = useAuth()
-  return (
-    <div>
-      <span data-testid="loading">{String(isLoading)}</span>
-      <span data-testid="user">{user ? user.email : "none"}</span>
-      <span data-testid="token">{idToken ?? "none"}</span>
-    </div>
-  )
-}
-
-describe("persistAuth", () => {
-  afterEach(() => {
-    localStorage.clear()
-  })
-
-  it("stores the token and the decoded user payload", () => {
-    const token = makeToken({
-      sub: "u1",
-      email: "ben@shorted.com.au",
-      name: "Ben",
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    })
-
-    persistAuth(token)
-
-    expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBe(token)
-    expect(JSON.parse(localStorage.getItem(AUTH_USER_KEY) as string)).toEqual({
-      sub: "u1",
-      email: "ben@shorted.com.au",
-      name: "Ben",
-      picture: undefined,
-    })
-  })
-
-  it("stores nothing for a token that doesn't decode as a JWT", () => {
-    persistAuth("not-a-jwt")
-
-    expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull()
-    expect(localStorage.getItem(AUTH_USER_KEY)).toBeNull()
-  })
+const originalLocation = window.location
+const config = { oidc: { enabled: true, provider: "google", label: "Google" }, basic: { enabled: true }, session: { refreshEnabled: false } }
+let fetchMock: ReturnType<typeof vi.fn>
+beforeEach(() => {
+  resetBrowserSessionForTests(); localStorage.clear(); sessionStorage.clear()
+  Object.defineProperty(window, "location", { value: { origin: "https://console.example", href: "", pathname: "/login/", search: "", hash: "" }, configurable: true, writable: true })
+  fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => url === "/auth/config" ? config : { url: "https://accounts.example/authorize", codeVerifier: "verifier", state: "state123" } }))
+  vi.stubGlobal("fetch", fetchMock)
 })
-
-describe("consumeReturnTo", () => {
-  afterEach(() => {
-    localStorage.clear()
+afterEach(() => {
+  // Remove focus/reconnect handlers before restoring the real browser globals.
+  cleanup()
+  resetBrowserSessionForTests(); localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks()
+  Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true })
+})
+function Probe() {
+  const { user, idToken, isLoading, login, logout } = useAuth()
+  return <div><span data-testid="loading">{String(isLoading)}</span><span data-testid="user">{user?.email ?? "none"}</span><span data-testid="token">{idToken ?? "none"}</span><button onClick={() => void login()}>login</button><button onClick={() => void login({ switchAccount: true })}>switch</button><button onClick={() => void logout()}>logout</button></div>
+}
+describe("authentication context", () => {
+  it("persists credentials and derives the display profile from the token", () => {
+    const value = token(); expect(persistAuth(value)).toBe(true)
+    expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBe(value)
+    expect(JSON.parse(localStorage.getItem(AUTH_USER_KEY) ?? "{}")).toEqual({ sub: "u1", email: "ada@example.test", name: "Ada" })
   })
-
-  it("returns and removes the stored return-to path", () => {
+  it("ignores malformed and expired tokens", () => {
+    expect(persistAuth("not-a-jwt")).toBe(false)
+    expect(persistAuth(token(1))).toBe(false)
+    expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull()
+  })
+  it("consumes return-to once", () => {
     localStorage.setItem("paprika_return_to", "/dashboard/pipelines")
-
     expect(consumeReturnTo()).toBe("/dashboard/pipelines")
     expect(consumeReturnTo()).toBeNull()
   })
-
-  it("returns null when nothing was stored", () => {
-    expect(consumeReturnTo()).toBeNull()
+  it("restores a valid bearer without waiting for login configuration", async () => {
+    localStorage.setItem(AUTH_TOKEN_KEY, token())
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await waitFor(() => expect(screen.getByTestId("loading")).toHaveTextContent("false"))
+    expect(screen.getByTestId("user")).toHaveTextContent("ada@example.test")
+    expect(fetchMock).not.toHaveBeenCalled()
   })
-})
-
-describe("AuthProvider", () => {
-  afterEach(() => {
-    localStorage.clear()
-  })
-
-  it("restores a valid, non-expired token from localStorage", async () => {
-    const token = makeToken({
-      sub: "u1",
-      email: "ben@shorted.com.au",
-      name: "Ben",
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    })
-    persistAuth(token)
-
-    render(
-      <AuthProvider>
-        <AuthProbe />
-      </AuthProvider>
-    )
-
-    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-    expect(screen.getByTestId("user").textContent).toBe("ben@shorted.com.au")
-    expect(screen.getByTestId("token").textContent).toBe(token)
-  })
-
-  it("discards an expired token rather than restoring it", async () => {
-    const token = makeToken({
-      sub: "u1",
-      email: "ben@shorted.com.au",
-      name: "Ben",
-      exp: Math.floor(Date.now() / 1000) - 3600,
-    })
-    persistAuth(token)
-
-    render(
-      <AuthProvider>
-        <AuthProbe />
-      </AuthProvider>
-    )
-
-    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-    expect(screen.getByTestId("user").textContent).toBe("none")
+  it.each(["missing", "expired"])("finishes with an anonymous session when the token is %s and refresh is disabled", async (kind) => {
+    if (kind === "expired") localStorage.setItem(AUTH_TOKEN_KEY, token(1))
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await waitFor(() => expect(screen.getByTestId("loading")).toHaveTextContent("false"))
+    expect(screen.getByTestId("user")).toHaveTextContent("none")
     expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull()
   })
-
-  it("starts with no session when localStorage is empty", async () => {
-    render(
-      <AuthProvider>
-        <AuthProbe />
-      </AuthProvider>
-    )
-
-    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-    expect(screen.getByTestId("user").textContent).toBe("none")
-    expect(screen.getByTestId("token").textContent).toBe("none")
-  })
-})
-
-describe("login", () => {
-  const originalLocation = window.location
-
-  beforeEach(() => {
-    Object.defineProperty(window, "location", {
-      value: { origin: "https://console.example", href: "", pathname: "/mcp/consent", search: "?x=1" },
-      writable: true,
-      configurable: true,
-    })
-  })
-
-  afterEach(() => {
-    Object.defineProperty(window, "location", {
-      value: originalLocation,
-      writable: true,
-      configurable: true,
-    })
-    vi.unstubAllGlobals()
-    sessionStorage.clear()
-    localStorage.clear()
-  })
-
-  function LoginProbe() {
-    const { login } = useAuth()
-    return (
-      <button type="button" onClick={() => void login()}>
-        login
-      </button>
-    )
-  }
-
-  it("saves PKCE state and the current path, then navigates to the login URL", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        url: "https://accounts.example/authorize",
-        codeVerifier: "verifier",
-        state: "state123",
-      }),
-    })
-    vi.stubGlobal("fetch", fetchMock)
-
-    render(
-      <AuthProvider>
-        <LoginProbe />
-      </AuthProvider>
-    )
-
-    screen.getByText("login").click()
-
-    await waitFor(() =>
-      expect(window.location.href).toBe("https://accounts.example/authorize")
-    )
+  it("saves PKCE and the full current route before OIDC navigation", async () => {
+    window.location.pathname = "/mcp/consent"; window.location.search = "?rid=opaque"; window.location.hash = "#grant"
+    render(<AuthProvider><Probe /></AuthProvider>); fireEvent.click(screen.getByText("login"))
+    await waitFor(() => expect(window.location.href).toBe("https://accounts.example/authorize"))
     expect(sessionStorage.getItem("paprika_code_verifier")).toBe("verifier")
     expect(sessionStorage.getItem("paprika_expected_state")).toBe("state123")
-    expect(localStorage.getItem("paprika_return_to")).toBe("/mcp/consent?x=1")
+    expect(sessionStorage.getItem("paprika_login_provider")).toBe("google")
+    expect(localStorage.getItem("paprika_return_to")).toBe("/mcp/consent/?rid=opaque#grant")
   })
-  it("preserves Observe consent while starting Google login from the login page", async () => {
-    window.location.pathname = "/login/"
-    window.location.search = ""
-    localStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque-request")
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ url: "https://accounts.example/authorize", codeVerifier: "v", state: "s" }),
-    }))
-    render(<AuthProvider><LoginProbe /></AuthProvider>)
-    screen.getByText("login").click()
+  it("preserves a pending Observe request through account switching", async () => {
+    localStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque")
+    render(<AuthProvider><Probe /></AuthProvider>); fireEvent.click(screen.getByText("switch"))
     await waitFor(() => expect(window.location.href).toBe("https://accounts.example/authorize"))
-    expect(localStorage.getItem("paprika_return_to")).toBe("/observe/consent?rid=opaque-request")
+    expect(localStorage.getItem("paprika_return_to")).toBe("/observe/consent?rid=opaque")
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("switchAccount=true"))).toBe(true)
   })
-
+  it("uses the last successful account as a login hint", async () => {
+    persistAuth(token(), { method: "oidc", provider: "google" })
+    render(<AuthProvider><Probe /></AuthProvider>); fireEvent.click(screen.getByText("login"))
+    await waitFor(() => expect(window.location.href).toBe("https://accounts.example/authorize"))
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("login_hint=ada%40example.test"))).toBe(true)
+  })
+  it("logs out locally even when cookie cleanup is temporarily unavailable", async () => {
+    persistAuth(token(), { method: "oidc", provider: "google", sessionRefreshAvailable: true })
+    fetchMock.mockImplementation(async (url: string) => url === "/auth/config" ? { ok: true, json: async () => ({ ...config, session: { refreshEnabled: true } }) } : { ok: false })
+    render(<AuthProvider><Probe /></AuthProvider>); fireEvent.click(screen.getByText("logout"))
+    await waitFor(() => expect(window.location.href).toBe("/login/"))
+    expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull()
+  })
+  it("does not bootstrap or refresh on focus while the callback owns the exchange", async () => {
+    window.location.pathname = "/auth/callback/"
+    render(<AuthProvider><Probe /></AuthProvider>)
+    fireEvent.focus(window)
+    window.dispatchEvent(new Event("online"))
+    await Promise.resolve()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })

@@ -1,92 +1,46 @@
 "use client"
 
-import { useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useRef, useState } from "react"
+import { EntryFrame, EntryProgress } from "@/components/auth/entry-frame"
 import { authReturnDestination } from "@/lib/auth-return-to"
-import { persistAuth, consumeReturnTo } from "@/lib/auth-context"
+import { consumeReturnTo } from "@/lib/auth-context"
+import { exchangeAuthorizationCode } from "@/lib/browser-session"
 
 function CallbackHandler() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const processed = useRef(false)
-
   useEffect(() => {
     if (processed.current) return
     processed.current = true
-
     const fail = (message: string) => queueMicrotask(() => setError(message))
     const code = searchParams.get("code")
-    const returnedState = searchParams.get("state")
-
-    if (!code || !returnedState) {
-      fail("Missing authorization code or state")
-      return
-    }
-
-    const expectedState = sessionStorage.getItem("paprika_expected_state")
-    const codeVerifier = sessionStorage.getItem("paprika_code_verifier")
-    const redirectURI = sessionStorage.getItem("paprika_redirect_uri")
-
-    if (!expectedState || !codeVerifier || !redirectURI) {
-      fail("Login session not found. Please try signing in again.")
-      return
-    }
-
-    if (returnedState !== expectedState) {
-      fail("State mismatch. This may be a CSRF attack.")
-      return
-    }
-
-    sessionStorage.removeItem("paprika_expected_state")
-    sessionStorage.removeItem("paprika_code_verifier")
-    sessionStorage.removeItem("paprika_redirect_uri")
-
-    fetch("/auth/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, codeVerifier, redirectUri: redirectURI }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("token exchange failed")
-        return res.json()
-      })
-      .then((data: { idToken: string }) => {
-        persistAuth(data.idToken)
-        window.location.href = authReturnDestination(consumeReturnTo())
-      })
-      .catch((err: Error) => {
-        setError(err.message || "Token exchange failed")
-      })
-  }, [searchParams])
-
-  if (error) {
-    return (
-      <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center p-4">
-        <div className="w-full max-w-sm space-y-4 rounded-[2px] bg-card p-8 text-center ring-1 ring-foreground/10">
-          <h1 className="text-xl font-bold text-destructive text-balance">Authentication failed</h1>
-          <p className="text-sm text-muted-foreground text-pretty">{error}</p>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center p-4">
-      <p className="text-muted-foreground">Signing you in...</p>
-    </div>
-  )
+    const state = searchParams.get("state")
+    if (!code || !state) { fail(searchParams.get("error") ? "Sign-in was cancelled. You can try again when you’re ready." : "Missing authorization code or state"); return }
+    let expectedState, codeVerifier, redirectUri, provider: "google" | "oidc"
+    try {
+      expectedState = sessionStorage.getItem("paprika_expected_state")
+      codeVerifier = sessionStorage.getItem("paprika_code_verifier")
+      redirectUri = sessionStorage.getItem("paprika_redirect_uri")
+      provider = sessionStorage.getItem("paprika_login_provider") === "google" ? "google" : "oidc"
+      if (!expectedState || !codeVerifier || !redirectUri) { fail("Login session not found. Please try signing in again."); return }
+      if (state !== expectedState) { fail("State mismatch. Please start a new sign-in from this browser."); return }
+      for (const key of ["paprika_expected_state", "paprika_code_verifier", "paprika_redirect_uri", "paprika_login_provider"]) sessionStorage.removeItem(key)
+    } catch { fail("Your browser is blocking sign-in storage. Allow site storage and try again."); return }
+    void exchangeAuthorizationCode({ code, codeVerifier, redirectUri }, provider).then(() => {
+      const destination = authReturnDestination(consumeReturnTo())
+      if (destination.startsWith("/dashboard/")) router.replace(destination)
+      else window.location.href = destination
+    }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : "Couldn’t complete sign-in. Please try again."))
+  }, [searchParams, router])
+  return <EntryFrame title={error ? "Couldn’t sign you in" : "Welcome to Paprika"}>
+    {error ? <div className="space-y-4"><p role="alert" className="text-note leading-relaxed text-status-failed-text">{error}</p><Link href="/login/" className="inline-flex min-h-10 items-center border border-rule px-3 text-console hover:bg-inset focus-visible:outline-2 focus-visible:outline-ring">Back to sign in</Link></div> : <EntryProgress message="Signing you in…" />}
+  </EntryFrame>
 }
 
 export default function CallbackPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center">
-          <p className="text-muted-foreground">Signing you in...</p>
-        </div>
-      }
-    >
-      <CallbackHandler />
-    </Suspense>
-  )
+  return <Suspense fallback={<EntryFrame><EntryProgress message="Signing you in…" /></EntryFrame>}><CallbackHandler /></Suspense>
 }

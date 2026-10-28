@@ -57,6 +57,18 @@ const widget: Widget = {
 };
 
 describe("bounded tooltip rendering", () => {
+  it("preserves trusted series colors through themed tooltips and honors an authored override", () => {
+    for (const color of ["var(--gamma-chart-2)", "var(--gamma-chart-3, #597a98)", "#336699"]) {
+      expect(buildTooltipContext(series, view, "ms", color).color).toBe(color);
+      expect(buildTooltipContext(series, { ...view, color: "#123456" }, "ms", color).color).toBe("#123456");
+    }
+    const fallback = buildTooltipContext(series, view, "ms").color;
+    expect(fallback).toBe("var(--gamma-chart-1, #b65332)");
+    for (const color of ["var(--arbitrary)", "var(--gamma-chart-9)", "var(--gamma-chart-3, url(https://example.com))", "red; color: white"]) {
+      expect(buildTooltipContext(series, view, "ms", color).color).toBe(fallback);
+    }
+  });
+
   it("reuses the full parent widget result without requests, preserves legacy hovered-series behavior and updates with the parent", async () => {
     const fetcher = vi.fn();
     const other: Series = {

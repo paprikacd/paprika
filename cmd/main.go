@@ -1276,16 +1276,21 @@ func buildAuthHandlers(ctx context.Context, authCfg auth.Config, cfg *cliConfig)
 		mux.Handle(apiserver.InsightsPrefix+"/", insightsHandler)
 	})
 
-	if authCfg.OIDC != nil {
-		oidcAuth, err := auth.NewOIDCAuthenticator(ctx, authCfg.OIDC)
-		if err != nil {
-			return nil, fmt.Errorf("create OIDC authenticator: %w", err)
-		}
+	oidcAuth, err := buildConsoleOIDCAuthenticator(ctx, authCfg)
+	if err != nil {
+		return nil, err
+	}
+	if oidcAuth != nil {
 		handlers = append(handlers, func(mux *http.ServeMux) {
 			mux.HandleFunc("/auth/login", oidcAuth.LoginHandler())
 			mux.HandleFunc("/auth/token", oidcAuth.TokenHandler())
+			mux.HandleFunc("/auth/refresh", oidcAuth.RefreshHandler())
+			mux.HandleFunc("/auth/logout", oidcAuth.LogoutHandler())
 		})
 	}
+	handlers = append(handlers, func(mux *http.ServeMux) {
+		mux.HandleFunc("/auth/config", auth.PublicConfigHandler(authCfg, oidcAuth))
+	})
 
 	if authCfg.BasicAuth != nil && authCfg.Enabled && len(authCfg.TokenSecret) > 0 {
 		secret := authCfg.TokenSecret
@@ -1296,6 +1301,20 @@ func buildAuthHandlers(ctx context.Context, authCfg auth.Config, cfg *cliConfig)
 	}
 
 	return handlers, nil
+}
+
+func buildConsoleOIDCAuthenticator(ctx context.Context, authCfg auth.Config) (*auth.OIDCAuthenticator, error) {
+	if authCfg.OIDC == nil {
+		return nil, nil
+	}
+	oidcAuth, err := auth.NewOIDCAuthenticator(ctx, authCfg.OIDC)
+	if err != nil {
+		return nil, fmt.Errorf("create OIDC authenticator: %w", err)
+	}
+	if err := oidcAuth.EnableBrowserSessions(authCfg.TokenSecret); err != nil {
+		return nil, fmt.Errorf("configure browser sessions: %w", err)
+	}
+	return oidcAuth, nil
 }
 
 func buildGitHubActionsTokenExchangeHandlers(ctx context.Context, cfg *cliConfig, k8sClient kubernetes.Interface) ([]func(*http.ServeMux), error) {
