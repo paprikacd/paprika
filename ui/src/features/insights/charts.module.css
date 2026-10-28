@@ -23,35 +23,49 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 7px 20px;
   min-height: 0;
-  max-height: 54px;
+  max-height: 58px;
   overflow: auto;
   scrollbar-width: thin;
   flex-shrink: 0;
-  padding: 4px 6px 0;
+  padding: 9px 4px 2px;
+  border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border));
   font-size: 11px;
   line-height: 1.35;
   color: var(--widget-text, var(--gamma-muted, #626e65));
 }
 .legendItem {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 210px;
+  gap: 8px;
+  flex: 1 1 180px;
+  max-width: 360px;
   min-width: 0;
 }
-.legendItem span:last-child {
+.legendName {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.legendValue {
+  flex-shrink: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--widget-text, var(--gamma-ink));
+  font-weight: 500;
+}
 .swatch {
   display: inline-block;
-  height: 6px;
-  width: 6px;
+  height: 2px;
+  width: 14px;
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: 1px;
 }
 .notice {
   font-size: 11px;
@@ -145,9 +159,9 @@
 }
 .statValue {
   font-variant-numeric: tabular-nums;
-  font-size: clamp(28px, 11cqw, 46px);
+  font-size: clamp(28px, 10cqw, 44px);
   font-weight: 600;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.035em;
   line-height: 1.15;
   color: var(--widget-text, var(--gamma-ink, #27332e));
   overflow-wrap: anywhere;
@@ -157,7 +171,7 @@
   color: var(--widget-text, var(--gamma-muted, #626e65));
   margin-left: 7px;
   letter-spacing: 0;
-  font-weight: 400;
+  font-weight: 450;
 }
 .statMeta {
   font-size: 11px;
@@ -187,6 +201,27 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+.stat.embeddedStat {
+  padding: 0;
+  gap: 6px;
+}
+.stat.embeddedStat .statValue {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 550;
+  letter-spacing: -0.025em;
+}
+.stat.embeddedStat .statUnit {
+  font-size: 12px;
+  margin-left: 5px;
+}
+.stat.embeddedStat [data-stat-summary] {
+  align-items: start;
+}
+.stat.embeddedStat [data-stat-reading] {
+  padding-block: 2px;
+  gap: 4px;
+}
 .tableWrap {
   width: 100%;
   height: 100%;
@@ -210,12 +245,13 @@
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
-  padding: 5px 8px 10px;
+  padding: 7px 8px 9px;
+  border-bottom: 1px solid var(--gamma-chart-grid, var(--gamma-border));
   white-space: nowrap;
 }
 .table td {
   padding: 8px;
-  border-top: 1px solid var(--gamma-border, #dfe4db);
+  border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border, #dfe4db));
   color: var(--widget-text, var(--gamma-ink, #27332e));
   vertical-align: middle;
 }
@@ -307,7 +343,8 @@
     padding-inline: 2px;
   }
   .legendItem {
-    max-width: min(140px, 46cqw);
+    flex-basis: 100%;
+    max-width: 100%;
   }
   .table th,
   .table td {

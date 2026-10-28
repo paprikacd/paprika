@@ -28,13 +28,15 @@ try {
     page = await context.newPage()
     page.on("pageerror", error => errors.push(error.message))
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
-    // Keep Next's development assets on their own origin; only API traffic is
-    // forwarded to the durable Go fixture, with its response preserved verbatim.
-    await page.route("**/api/insights/**", async route => {
+    // Keep Next's development assets on their own origin; API and console auth
+    // discovery go to the durable fixture host, with responses kept verbatim.
+    const bridge = async route => {
       const url = new URL(route.request().url())
       const response = await route.fetch({ url: `${destination.gatewayURL}${url.pathname}${url.search}` })
       await route.fulfill({ response })
-    })
+    }
+    await page.route("**/api/insights/**", bridge)
+    await page.route("**/auth/config", bridge)
     await page.goto(`${base}/dashboard/insights/?dashboard=welcome`)
     await page.getByRole("heading", { name: welcome.title, exact: true }).waitFor()
     await page.getByRole("button", { name: new RegExp(`^Examples ${catalog.length}$`) }).click()

@@ -282,6 +282,10 @@ func buildCloudRunMux(
 	// a catch-all, so omitting this exact route would incorrectly return 200.
 	mux.Handle("/events", http.NotFoundHandler())
 	mux.Handle("/webhook", webhookHandler)
+	// This legacy entrypoint can validate API credentials, but does not expose
+	// interactive console login or configure a UI callback/session secret. Report
+	// that explicitly so the UI can issue anonymous reads when API auth is off.
+	mux.HandleFunc("/auth/config", auth.PublicConfigHandler(auth.Config{}, nil))
 	mux.HandleFunc("/healthz", healthzHandler(setupLog))
 	mux.HandleFunc("/readyz", healthzHandler(setupLog))
 	mux.Handle("/", uiHandler)

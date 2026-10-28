@@ -79,12 +79,17 @@ export interface TooltipRendererDefinition {
   render: ComponentType<TooltipRendererProps>;
 }
 
+const DEFAULT_TOOLTIP_COLOR = "var(--gamma-chart-1, #b65332)";
+// Only host-owned chart tokens may pass through the renderer boundary. Keep
+// arbitrary CSS out while preserving series identity across themed portals.
+const chartTokenColor = /^var\(--gamma-chart-[1-8](?:,\s*#[0-9a-f]{6})?\)$/i;
+
 /** Normalize once per active series. No provider, widget or query API is exposed. */
 export function buildTooltipContext(
   series: Series,
   view: TooltipView,
   unit: string,
-  color = "#c46146",
+  color = DEFAULT_TOOLTIP_COLOR,
   result: QueryResult = { series: [series] },
   observation?: Point,
 ): TooltipRendererContext {
@@ -160,7 +165,7 @@ export function buildTooltipContext(
           entry.points.length > (bounded.series?.[index]?.points.length ?? 0),
       ),
     unit: view.unit ?? unit,
-    color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) ? color : "#c46146"),
+    color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) || chartTokenColor.test(color) ? color : DEFAULT_TOOLTIP_COLOR),
     height: [120, 160, 200, 320].includes(view.height ?? 160)
       ? (view.height ?? 160)
       : 160,

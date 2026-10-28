@@ -1,3 +1,4 @@
+import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
 import { verifyProviderEditor } from "./query-editor-scenarios.mjs"
 // Real Go storage/adapters + deterministic Prometheus/Tempo providers. The local
@@ -70,6 +71,7 @@ const upstream = createServer((request, response) => {
   json(response, 404, { error: "unexpected fixture path" })
 })
 const gateway = createServer((request, response) => {
+  if (serveAnonymousAuthConfiguration(request, response)) return
   if (request.url === "/query-cover.svg") {
     response.writeHead(200, { "content-type": "image/svg+xml" }); response.end('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#bd512d"/><path d="M10 40L24 22L38 34L54 12" stroke="#fff" fill="none" stroke-width="5"/></svg>'); return
   }
@@ -247,16 +249,19 @@ async function assertSparkline(scope) {
     const range = document.createRange(); range.selectNodeContents(reading.firstChild)
     const numberRects = [...range.getClientRects()].map(rect => rect.toJSON())
     const valueBox = reading.getBoundingClientRect(), plotBox = plot.getBoundingClientRect(), stat = plot.parentElement.parentElement
-    return { numberRects, value: valueBox.toJSON(), plot: plotBox.toJSON(), valueText: reading.textContent, fontSize: getComputedStyle(reading).fontSize,
+    return { numberRects, value: valueBox.toJSON(), reading: element.querySelector("[data-stat-reading]").getBoundingClientRect().toJSON(), plot: plotBox.toJSON(), valueText: reading.textContent, fontSize: getComputedStyle(reading).fontSize,
       valueLayer: getComputedStyle(element.querySelector("[data-stat-reading]")).zIndex, plotLayer: getComputedStyle(plot).zIndex,
-      plotPointerEvents: getComputedStyle(plot).pointerEvents, lineOpacity: plot.querySelector("[data-stat-trend]").getAttribute("stroke-opacity"),
+      plotPointerEvents: getComputedStyle(plot).pointerEvents, plotMask: getComputedStyle(plot).maskImage, lineOpacity: plot.querySelector("[data-stat-trend]").getAttribute("stroke-opacity"),
       container: stat.getBoundingClientRect().toJSON(), clientHeight: stat.clientHeight, scrollHeight: stat.scrollHeight }
   })
   assert.equal(geometry.numberRects.length, 1, `Stat digits must stay on one readable line: ${JSON.stringify(geometry)}`)
   const digits = geometry.numberRects[0]
-  assert.ok(digits.x >= geometry.plot.x - 1 && digits.right <= geometry.plot.right + 1 && digits.top >= geometry.plot.top - 1 && digits.bottom <= geometry.plot.bottom + 1, `History must fill the background behind the readable value: ${JSON.stringify(geometry)}`)
+  assert.ok(digits.x >= geometry.container.x - 1 && digits.right <= geometry.container.right + 1 && digits.top >= geometry.container.top - 1 && digits.bottom <= geometry.container.bottom + 1, `The readable value must remain inside the stat: ${JSON.stringify(geometry)}`)
+  assert.ok(geometry.plot.x >= geometry.container.x - 1 && geometry.plot.right <= geometry.container.right + 1 && geometry.plot.top >= geometry.container.top - 1 && geometry.plot.bottom <= geometry.container.bottom + 1, `History must stay inside the stat: ${JSON.stringify(geometry)}`)
+  assert.ok(geometry.reading.bottom > geometry.plot.top && geometry.reading.top < geometry.plot.bottom && geometry.reading.right > geometry.plot.x && geometry.reading.x < geometry.plot.right, `The lower history backdrop must overlap the reading block: ${JSON.stringify(geometry)}`)
   assert.ok(Number(geometry.valueLayer) > Number(geometry.plotLayer) && geometry.plotPointerEvents === "none", "The number and its inspection interaction must stay above the non-interactive history")
-  assert.ok(Number(geometry.lineOpacity) > 0 && Number(geometry.lineOpacity) <= 0.4, "Background trend must remain quiet enough for a legible reading")
+  assert.ok(Number(geometry.lineOpacity) > 0 && Number(geometry.lineOpacity) < 1, "Background trend must remain translucent")
+  assert.ok(geometry.plotMask && geometry.plotMask !== "none", "The history mask must reduce visual interference behind the reading")
   assert.ok(geometry.value.x >= geometry.container.x - 1 && geometry.value.right <= geometry.container.right + 1, `The complete value and unit must stay within the stat: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.scrollHeight <= geometry.clientHeight + 1 && geometry.plot.bottom <= geometry.container.bottom + 1, `A single-series compact stat must show its value and history without internal clipping: ${JSON.stringify(geometry)}`)
   return { sampleCount: Number(attributes["data-sample-count"]), renderedSamples: Number(attributes["data-rendered-samples"]), start: end - 240_000, end, minimum: -7.25, maximum: 1234.5678, latestValidTime: end - 60_000, geometry }
@@ -437,24 +442,38 @@ async function controlContrast(locator) {
   })
 }
 async function visiblePlot(locator) {
-  const geometry = await locator.evaluate(element => {
-    const clipRect = element.querySelector("clipPath rect"), matrix = clipRect?.getScreenCTM()
-    if (!clipRect || !matrix) throw new Error("Expected the rendered SVG plot clipping rectangle")
-    const start = new DOMPoint(clipRect.x.baseVal.value, clipRect.y.baseVal.value).matrixTransform(matrix)
-    const end = new DOMPoint(clipRect.x.baseVal.value + clipRect.width.baseVal.value, clipRect.y.baseVal.value + clipRect.height.baseVal.value).matrixTransform(matrix)
-    const plot = { left: start.x, top: start.y, right: end.x, bottom: end.y, width: end.x - start.x, height: end.y - start.y }
-    let left = 0, top = 0, right = innerWidth, bottom = innerHeight
-    const clippingAncestors = []
-    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-      const style = getComputedStyle(parent), rect = parent.getBoundingClientRect()
-      if (/auto|scroll|hidden|clip/.test(style.overflowX)) { left = Math.max(left, rect.left + parent.clientLeft); right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth) }
-      if (/auto|scroll|hidden|clip/.test(style.overflowY)) {
-        top = Math.max(top, rect.top + parent.clientTop); bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight)
-        clippingAncestors.push({ overflowY: style.overflowY, top: rect.top, bottom: rect.bottom, scrollTop: parent.scrollTop })
+  const geometry = await locator.evaluate(async element => {
+    const started = performance.now()
+    let previous, last, samples = 0
+    // ResizeObserver schedules chart sizing on the next animation frame. Wait
+    // for SVG and plot geometry to settle together before checking usable area.
+    do {
+      const clipRect = element.querySelector("clipPath rect"), matrix = clipRect?.getScreenCTM()
+      if (!clipRect || !matrix) throw new Error("Expected the rendered SVG plot clipping rectangle")
+      const start = new DOMPoint(clipRect.x.baseVal.value, clipRect.y.baseVal.value).matrixTransform(matrix)
+      const end = new DOMPoint(clipRect.x.baseVal.value + clipRect.width.baseVal.value, clipRect.y.baseVal.value + clipRect.height.baseVal.value).matrixTransform(matrix)
+      const plot = { left: start.x, top: start.y, right: end.x, bottom: end.y, width: end.x - start.x, height: end.y - start.y }
+      let left = 0, top = 0, right = innerWidth, bottom = innerHeight
+      const clippingAncestors = []
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent), rect = parent.getBoundingClientRect()
+        if (/auto|scroll|hidden|clip/.test(style.overflowX)) { left = Math.max(left, rect.left + parent.clientLeft); right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth) }
+        if (/auto|scroll|hidden|clip/.test(style.overflowY)) {
+          top = Math.max(top, rect.top + parent.clientTop); bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight)
+          clippingAncestors.push({ overflowY: style.overflowY, top: rect.top, bottom: rect.bottom, scrollTop: parent.scrollTop })
+        }
       }
-    }
-    return { svg: element.getBoundingClientRect().toJSON(), plot, clip: { left, top, right, bottom }, visibleHeight: Math.max(0, Math.min(plot.bottom, bottom) - Math.max(plot.top, top)), visibleWidth: Math.max(0, Math.min(plot.right, right) - Math.max(plot.left, left)), clippingAncestors }
+      const svg = element.getBoundingClientRect().toJSON()
+      const current = [svg.x, svg.y, svg.width, svg.height, ...Object.values(plot), left, top, right, bottom, ...clippingAncestors.flatMap(parent => [parent.top, parent.bottom, parent.scrollTop])]
+      const stable = previous?.length === current.length && current.every((value, index) => Math.abs(value - previous[index]) < .5)
+      last = { svg, plot, clip: { left, top, right, bottom }, visibleHeight: Math.max(0, Math.min(plot.bottom, bottom) - Math.max(plot.top, top)), visibleWidth: Math.max(0, Math.min(plot.right, right) - Math.max(plot.left, left)), clippingAncestors, stable, samples: ++samples }
+      if (stable && last.visibleHeight >= 100 && last.visibleWidth >= plot.width * .8) return last
+      previous = current
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    } while (performance.now() - started < 2000)
+    return last
   })
+  assert.ok(geometry.stable, `Rendered SVG and plot geometry must settle within two seconds: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.visibleHeight >= 100, `At least 100px of the actual data plot, excluding axes, must be visible: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.visibleWidth >= geometry.plot.width * .8, `The plotted series must remain horizontally visible: ${JSON.stringify(geometry)}`)
   return geometry

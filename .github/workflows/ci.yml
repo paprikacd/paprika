@@ -413,6 +413,13 @@ jobs:
         run: npm run test:e2e -- fleet-console.spec.ts
         working-directory: ui
 
+      - name: Run real console session browser smoke
+        timeout-minutes: 5
+        run: npm run test:e2e:session
+        working-directory: ui
+        env:
+          SESSION_E2E_STATIC: "1"
+
       - name: Run Insights MCP and dashboard browser smoke
         timeout-minutes: 15
         run: >-

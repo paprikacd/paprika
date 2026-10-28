@@ -12,7 +12,7 @@ export function Nav() {
   // The dashboard owns its shell, and the login page owns its identity frame.
   // A second brand bar above either one reads as a different product.
   const path = pathname.replace(/\/+$/, "")
-  if (path === "" || path.startsWith("/dashboard") || path === "/login") {
+  if (path === "" || path.startsWith("/dashboard") || path === "/login" || path === "/auth/callback") {
     return null
   }
 

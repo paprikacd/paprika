@@ -128,9 +128,8 @@
 .tooltipHeader {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 15px 17px 12px;
-  border-bottom: 1px solid var(--gamma-border, #dfe4db);
+  gap: 3px;
+  padding: 11px 14px 0;
 }
 .tooltipEyebrow {
   color: var(--gamma-muted, #626e65);
@@ -150,15 +149,15 @@
   line-height: 1.4;
 }
 .tooltipReading {
-  padding: 14px 17px;
+  padding: 5px 14px 9px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .tooltipReading > strong {
   font-size: 24px;
   line-height: 1.15;
-  font-weight: 550;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.6px;
   color: var(--gamma-ink, #27332e);
@@ -180,18 +179,18 @@
   font-size: 11px;
 }
 .tooltipLabels {
-  margin: 0 17px;
-  padding: 10px 0 12px;
+  margin: 0 14px;
+  padding: 6px 0 8px;
   border-top: 1px solid var(--gamma-border, #dfe4db);
 }
 .tooltipLabels dl {
-  margin: 7px 0 0;
+  margin: 0;
 }
 .tooltipLabels dl > div {
   display: grid;
   grid-template-columns: minmax(70px, 0.7fr) minmax(0, 1.3fr);
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 .tooltipLabels dt {
   color: var(--gamma-muted, #626e65);
@@ -206,13 +205,11 @@
 }
 .tooltipFooter {
   border-top: 1px solid var(--gamma-border, #dfe4db);
-  background: var(--gamma-surface, #fafaf7);
-  padding: 10px 17px 12px;
+  background: transparent;
+  padding: 7px 14px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-radius: 0 0 var(--gamma-radius-panel, 12px)
-    var(--gamma-radius-panel, 12px);
 }
 .tooltipFooter > span {
   color: var(--gamma-muted, #626e65);
@@ -222,11 +219,13 @@
   color: var(--gamma-muted, #626e65);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  line-height: 1.35;
 }
 .tooltipFooter small {
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.4;
   color: var(--gamma-muted, #626e65);
-  margin-top: 5px;
+  margin-top: 0;
 }
 .gauge {
   height: 100%;

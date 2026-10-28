@@ -3,19 +3,19 @@ version: alpha
 name: Paprika Insights
 description: A compact Gamma workspace for reading telemetry and building observability dashboards.
 colors:
-  primary: "#bd512d"
-  background: "#ffffff"
-  surface: "#fafaf7"
-  ink: "#27332e"
+  primary: "#b65332"
+  background: "#fffefd"
+  surface: "#f7f8fa"
+  ink: "#202936"
 typography:
   sans:
     fontFamily: "var(--font-sans), system-ui, sans-serif"
   mono:
     fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace"
 rounded:
-  control: "9px"
-  panel: "12px"
-  small: "6px"
+  control: "5px"
+  panel: "6px"
+  small: "4px"
 omitted:
   - section: spacing
     reason: Layout geometry belongs to the responsive canvas and scoped component styles, not a second generated token set.
@@ -35,7 +35,7 @@ Runtime ownership: `ui/src/features/insights/gamma/gamma-theme.module.css` is th
 
 ## Colors
 
-Keep the light Insights island intact when embedded in Paprika. Warm white surfaces and restrained borders separate controls and plots. Paprika orange identifies primary actions and focus; sage supports data series. Status colors must have text or accessible context, especially on heatmaps and gauges. Normal text needs 4.5:1 contrast. Custom backgrounds receive readable default text; explicit text/background choices are preserved with a warning when they fail the contrast target. Provider identity belongs in the editor or an actionable connection error, not ordinary widget chrome.
+Insights supports Light, Dark and System independently of the main shell. Warm white and charcoal surfaces use the same hierarchy, with restrained borders separating controls and plots. Paprika orange identifies primary actions and focus; sage, blue and the remaining chart palette distinguish data series. Axis text has its own legible token, separate from the quieter chart grid. Status colors must have text or accessible context, especially on heatmaps and gauges. Normal text needs 4.5:1 contrast and default series strokes need 3:1 against the plot surface. Custom backgrounds receive readable default text; explicit text/background choices are preserved with a warning when they fail the contrast target. Provider identity belongs in the editor or an actionable connection error, not ordinary widget chrome.
 
 ## Typography
 
@@ -51,13 +51,15 @@ Use quiet borders for resting data tiles. Menus and tooltips may use Gamma's off
 
 ## Shapes
 
-Gamma defines 9px controls, 12px panels and 6px small surfaces. Keep these as tokens rather than restating radii on each control. Use Lucide icons consistently; icon-only actions need accessible names and a clear focus state.
+Paprika's compact Gamma adapter uses 5px controls, 6px panels and 4px small surfaces. Keep these as tokens rather than restating radii on each control. Use Lucide icons consistently; icon-only actions need accessible names and a clear focus state.
 
 ## Components
 
 Reuse `GammaButton`, `GammaInput`, `GammaTextarea`, `GammaSelect`, `GammaSearchCombobox`, `GammaSwitch`, `GammaTabs` and `GammaActionMenu`. Selects use authored listboxes; actions use menus. Focus, disabled, busy and selected treatment belong to these shared owners. Use scoped scrollbar, caret and selection tokens on product-owned scroll surfaces, including portals.
 
 Charts receive normalized data through the host. A legend describes data; it must not become a source badge. Missing data, empty results, failures and result limits must stay distinct. A status heatmap shows the latest sample per series; it is not a histogram. A trace list must not imply a waterfall. Plugin rendering and emitted drilldown context must agree.
+
+The October 2026 component studies in `output/imagegen/` guide presentation, not dashboard schema or invented data. Prefer thin readable lines, low-opacity areas, quiet horizontal grids, compact aligned legends and tabular values. An observation card should remain beside the selected track where space permits. Its history keeps the selected series' color in both themes; an explicit authored color takes priority. The selected observation and latest history value remain separately labelled. Never invent deltas or combine incompatible units just to reproduce a concept image.
 
 Keep motion brief and functional, using Gamma's standard or exponential deceleration. Do not use overshoot or elastic easing. Reduced motion retains visible pending/selected/focus feedback without moving effects. The historic spring token is an alias to the emphasized easing for compatibility.
 

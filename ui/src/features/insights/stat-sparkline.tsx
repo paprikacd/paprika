@@ -141,8 +141,8 @@ export function StatSparkline({
       <desc id={descriptionId}>{summary}</desc>
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="0.16" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0.035" />
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.13" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.015" />
         </linearGradient>
       </defs>
       <path
@@ -157,7 +157,7 @@ export function StatSparkline({
         fill="none"
         stroke="currentColor"
         strokeWidth="1.8"
-        strokeOpacity="0.38"
+        strokeOpacity="0.65"
         strokeLinejoin="round"
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
@@ -169,7 +169,7 @@ export function StatSparkline({
           d={`M${history.x(point)},${history.y(point)}h0`}
           fill="none"
           stroke="currentColor"
-          strokeOpacity="0.55"
+          strokeOpacity="0.8"
           strokeWidth="4"
           strokeLinecap="round"
           vectorEffect="non-scaling-stroke"

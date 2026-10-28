@@ -56,6 +56,35 @@ const result: QueryResult = {
 };
 
 describe("bounded chart data", () => {
+  it("keeps legend values and timestamps tied to the latest valid original sample", () => {
+    const response: QueryResult = {
+      series: [
+        {
+          name: "api",
+          labels: { service: "api" },
+          points: [
+            { timestamp: 5000, value: 0 },
+            { timestamp: 1000, value: 12 },
+            { timestamp: 6000, value: null },
+            { timestamp: 1e100, value: 999 },
+          ],
+        },
+        { name: "worker", labels: {}, points: [{ timestamp: 6000, value: null }] },
+      ],
+    };
+    const host = (data: QueryResult) => <WidgetVisualization widget={{ ...widget, options: { decimals: 2 } }} result={data} />;
+    const { rerender } = render(host(response));
+    const legend = screen.getByRole("list", { name: "Latest values by series" });
+    const value = within(legend).getByLabelText("api, latest valid sample: 0.00 ms at 1970-01-01T00:00:05.000Z");
+    expect(value).toHaveTextContent("0.00 ms");
+    expect(value).toHaveAttribute("data-legend-timestamp", "5000");
+    expect(within(legend).getByLabelText("worker: no valid sample")).toHaveTextContent("—");
+    rerender(host({ series: [{ ...response.series![0], points: [{ timestamp: 7000, value: 9.876 }] }] }));
+    expect(within(legend).getByLabelText("api, latest valid sample: 9.88 ms at 1970-01-01T00:00:07.000Z")).toHaveTextContent("9.88 ms");
+    expect(within(legend).queryByText("0.00 ms")).not.toBeInTheDocument();
+    expect(within(legend).queryByLabelText("worker: no valid sample")).not.toBeInTheDocument();
+  });
+
   it("preserves short spikes, negative troughs, endpoints and input order", () => {
     const points = Array.from({ length: 50_000 }, (_, index) => ({
       timestamp: index,

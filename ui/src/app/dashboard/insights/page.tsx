@@ -1,10 +1,11 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { createInsightsClient } from "@/features/insights/client"
 import { redirectInsightsToLogin } from "./auth"
+import { clearRejectedSession, ensureValidSession, getServerSessionSnapshot, getSessionSnapshot, recoverUnauthorized, subscribeSession } from "@/lib/browser-session"
 
 const InsightsApp = dynamic(() => import("@/features/insights/insights-app"), {
   ssr: false,
@@ -12,12 +13,19 @@ const InsightsApp = dynamic(() => import("@/features/insights/insights-app"), {
 })
 const client = createInsightsClient(
   "/api/insights",
-  () => localStorage.getItem("paprika_id_token"),
+  () => getSessionSnapshot().idToken,
   redirectInsightsToLogin,
+  {
+    ensureToken: ensureValidSession,
+    recoverUnauthorized,
+    clearRejectedSession,
+    identity: () => JSON.stringify([getSessionSnapshot().identityKey, getSessionSnapshot().identityEpoch]),
+  },
 )
 
 export default function InsightsPage() {
   const router = useRouter()
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot)
   const [example, setExample] = useState<boolean | null>(null)
   useEffect(() => {
     queueMicrotask(() =>
@@ -27,6 +35,7 @@ export default function InsightsPage() {
   if (example === null) return null
   return (
     <InsightsApp
+      key={JSON.stringify([session.identityKey, session.identityEpoch])}
       client={client}
       initialExample={example}
       onBack={() => router.push("/dashboard/")}

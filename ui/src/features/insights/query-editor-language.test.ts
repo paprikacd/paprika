@@ -54,6 +54,27 @@ describe("provider query languages", () => {
     expect(masked).toHaveLength(query.length)
   })
 
+  it("finishes validation when the editor's initial parse time slice expires", () => {
+    // CodeMirror yields after 20 ms while constructing a new editor state.
+    // Simulate contention deterministically instead of relying on machine load.
+    let clock = 0
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock += 25)
+    try {
+      const query = "sum(rate(http_requests_total{service={{service}}}[5m]))"
+      expect(queryDiagnostics("promql", query, [{ name: "service" }])).toEqual([])
+      expect(queryDiagnostics("promql", "rate(up)").length).toBeGreaterThan(0)
+    } finally { now.mockRestore() }
+  })
+
+  it("checks PromQL beyond the editor's initial parsing viewport", () => {
+    const prefix = `up{service="${"x".repeat(3100)}"} + `
+    const query = `${prefix}sum(rate(up[5m]))`
+    expect(query.length).toBeGreaterThan(3000)
+    expect(queryDiagnostics("promql", query)).toEqual([])
+    expect(queryDiagnostics("promql", `${prefix}rate(up)`).length).toBeGreaterThan(0)
+    expect(queryDiagnostics("promql", `${query} + )`).some(issue => issue.from >= query.length)).toBe(true)
+  })
+
   it("completes PromQL functions, provider metrics, metric-scoped labels and label values", async () => {
     const metadata = vi.fn<InsightsClient["metadata"]>().mockImplementation(async (_id, options) => ({ values: options.kind === "metrics" ? ["http_requests_total", "up"] : options.kind === "labels" ? ["service", "region"] : ["worker", "api"] }))
     const client = { metadata, query: vi.fn() } as unknown as InsightsClient

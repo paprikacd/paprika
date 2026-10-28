@@ -1,3 +1,4 @@
+import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Renderer/editor audit using deterministic normalized API responses. Real Go
 // adapters and durable persistence are exercised by the separate live suites.
 import assert from "node:assert/strict"
@@ -142,6 +143,7 @@ async function openFixture(state, width = 1512, links = false, extra = {}, trans
   const target = { ...source, id: "audit-target", title: "Audit destination", variables: [{ name: "service", defaultValue: "unset" }, { name: "value", defaultValue: "unset" }], widgets: [{ ...source.widgets[2], id: "target-stat", query: "audit_target{service={{service}},value={{value}}}", drilldowns: undefined }] }
   const documents = new Map([[source.id, source], [target.id, target]])
   let version = 1
+  await routeAnonymousAuthConfiguration(page)
   await page.route("**/api/insights/**", async route => {
     const request = route.request(), url = new URL(request.url())
     let body, status = 200

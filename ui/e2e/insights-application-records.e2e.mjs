@@ -245,6 +245,36 @@ try {
     await selectQuery(postgres, /Database service SLO/)
     const sqlEditor = explorer().getByRole("textbox", { name: "SQL query", exact: true })
     const bindings = explorer().getByRole("textbox", { name: "SQL parameters", exact: true })
+    async function expectSQLTheme(theme, viewport = "desktop") {
+      let appearance
+      await until(async () => {
+        appearance = await sqlEditor.evaluate(element => {
+          const line = element.querySelector(".cm-line")
+          if (!line) return null
+          // Resolve CSS colors, including color-mix on the active line, through
+          // the browser so this checks contrast rather than an old palette.
+          const canvas = document.createElement("canvas")
+          canvas.width = canvas.height = 1
+          const context = canvas.getContext("2d", { willReadFrequently: true })
+          const rgba = value => {
+            context.clearRect(0, 0, 1, 1)
+            context.fillStyle = value
+            context.fillRect(0, 0, 1, 1)
+            return [...context.getImageData(0, 0, 1, 1).data]
+          }
+          const style = getComputedStyle(line)
+          const foreground = rgba(style.color), ink = rgba(style.getPropertyValue("--gamma-ink").trim())
+          const backgrounds = []
+          for (let current = line; current; current = current.parentElement) backgrounds.push(rgba(getComputedStyle(current).backgroundColor))
+          const background = backgrounds.reverse().reduce((below, above) => above.slice(0, 3).map((value, index) => value * above[3] / 255 + below[index] * (1 - above[3] / 255)), [255, 255, 255])
+          const luminance = color => color.slice(0, 3).map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0)
+          const levels = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+          return { theme: line.closest("[data-insights-theme]")?.getAttribute("data-insights-theme"), matchesInk: foreground.every((value, index) => value === ink[index]), contrast: (levels[0] + .05) / (levels[1] + .05), color: style.color }
+        })
+        return appearance?.theme === theme.toLowerCase() && appearance.matchesInk && appearance.contrast >= 4.5
+      }, `${viewport} SQL theme must resolve to ${theme}, use theme ink and retain 4.5:1 contrast`)
+      return appearance
+    }
     assert.equal(await bindings.innerText(), "[{{service}}]")
     assert.equal(await explorer().getByRole("textbox", { name: "SQL metric projection", exact: true }).count(), 0)
     assert.equal(await explorer().getByRole("textbox", { name: "PromQL query", exact: true }).count(), 0)
@@ -273,8 +303,7 @@ try {
     assert.deepEqual(savedSQL.document.parameters, params)
     for (const theme of ["Light", "Dark"]) {
       await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
-      const expectedInk = theme === "Light" ? "rgb(28, 36, 48)" : "rgb(242, 244, 247)"
-      await until(async () => await sqlEditor.evaluate(element => getComputedStyle(element.querySelector('.cm-line')).color) === expectedInk, `SQL theme did not settle in ${theme}`)
+      const appearance = await expectSQLTheme(theme)
       const geometry = await bindings.evaluate(element => {
         const editor = element.closest('[data-query-code-editor]')
         const card = editor.closest('section')
@@ -282,13 +311,13 @@ try {
         return { bindingBottom: editor.getBoundingClientRect().bottom, cardBottom: card.getBoundingClientRect().bottom, color: getComputedStyle(line).color, ink: getComputedStyle(line).getPropertyValue('--gamma-ink').trim() }
       })
       assert.ok(geometry.bindingBottom <= geometry.cardBottom, `SQL bindings must remain visible in ${theme}`)
-      assert.equal(geometry.color, expectedInk, "SQL identifiers use readable theme ink")
+      assert.equal(geometry.color, appearance.color, "SQL identifiers retain the validated theme ink")
       await page.screenshot({ path: join(output, `sql-editor-${theme.toLowerCase()}.png`), fullPage: false })
     }
     await page.setViewportSize({ width: 390, height: 844 })
     for (const theme of ["Light", "Dark"]) {
       await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
-      await until(async () => await sqlEditor.evaluate(element => getComputedStyle(element.querySelector('.cm-line')).color) === (theme === "Light" ? "rgb(28, 36, 48)" : "rgb(242, 244, 247)"), `Mobile SQL theme did not settle in ${theme}`)
+      await expectSQLTheme(theme, "mobile")
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "SQL workspace must not overflow horizontally on mobile")
       await sqlEditor.scrollIntoViewIfNeeded()
       await page.screenshot({ path: join(output, `sql-editor-mobile-${theme.toLowerCase()}.png`), fullPage: true })

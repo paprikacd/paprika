@@ -1,184 +1,58 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-
-const navigation = vi.hoisted(() => ({ search: "" }))
-
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(navigation.search),
-}))
-
-const authMock = vi.hoisted(() => ({
-  persistAuth: vi.fn(),
-  consumeReturnTo: vi.fn<() => string | null>(),
-}))
-
-vi.mock("@/lib/auth-context", () => ({
-  persistAuth: authMock.persistAuth,
-  consumeReturnTo: authMock.consumeReturnTo,
-}))
-
+const navigation = vi.hoisted(() => ({ search: "", router: { replace: vi.fn() } }))
+const auth = vi.hoisted(() => ({ consumeReturnTo: vi.fn<() => string | null>(), exchange: vi.fn() }))
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(navigation.search), useRouter: () => navigation.router }))
+vi.mock("@/lib/auth-context", () => ({ consumeReturnTo: auth.consumeReturnTo }))
+vi.mock("@/lib/browser-session", () => ({ exchangeAuthorizationCode: auth.exchange }))
 import CallbackPage from "./page"
-
-function stubLocation() {
-  const location = { href: "" }
-  Object.defineProperty(window, "location", {
-    value: location,
-    writable: true,
-    configurable: true,
-  })
-  return location
-}
-
+const originalLocation = window.location
 beforeEach(() => {
-  navigation.search = "code=auth-code&state=expected-state"
-  sessionStorage.setItem("paprika_expected_state", "expected-state")
-  sessionStorage.setItem("paprika_code_verifier", "verifier")
-  sessionStorage.setItem("paprika_redirect_uri", "https://console.example/auth/callback")
-  authMock.persistAuth.mockReset()
-  authMock.consumeReturnTo.mockReset().mockReturnValue(null)
-  stubLocation()
+  navigation.search = "code=auth-code&state=expected-state"; navigation.router.replace.mockReset()
+  sessionStorage.setItem("paprika_expected_state", "expected-state"); sessionStorage.setItem("paprika_code_verifier", "verifier"); sessionStorage.setItem("paprika_redirect_uri", "https://console.example/auth/callback"); sessionStorage.setItem("paprika_login_provider", "google")
+  auth.consumeReturnTo.mockReset().mockReturnValue(null); auth.exchange.mockReset().mockResolvedValue(undefined)
+  Object.defineProperty(window, "location", { value: { href: "" }, configurable: true, writable: true })
 })
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
-  sessionStorage.clear()
-})
-
-describe("auth callback page", () => {
-  it("exchanges the code, persists the token, and redirects to /dashboard/ by default", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ idToken: "id-token" }),
-    })
-    vi.stubGlobal("fetch", fetchMock)
-
+afterEach(() => { vi.restoreAllMocks(); sessionStorage.clear(); Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true }) })
+describe("callback", () => {
+  it("hands PKCE to the serialized browser session exchange and replaces the route", async () => {
     render(<CallbackPage />)
-
-    await waitFor(() => expect(authMock.persistAuth).toHaveBeenCalledWith("id-token"))
-    await waitFor(() => expect(window.location.href).toBe("/dashboard/"))
-
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe("/auth/token")
-    const body = JSON.parse(init.body as string)
-    expect(body).toEqual({
-      code: "auth-code",
-      codeVerifier: "verifier",
-      redirectUri: "https://console.example/auth/callback",
-    })
+    await waitFor(() => expect(auth.exchange).toHaveBeenCalledWith({ code: "auth-code", codeVerifier: "verifier", redirectUri: "https://console.example/auth/callback" }, "google"))
+    await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith("/dashboard/"))
+    expect(sessionStorage.getItem("paprika_code_verifier")).toBeNull()
   })
-
-  // Fix round 1, Finding 4: returnTo used to be parsed with
-  // returnTo.split("?"), which silently drops everything after a second
-  // literal "?" in the query component (legal in a query string). This
-  // asserts the indexOf-based rewrite preserves it intact.
-  it("preserves a literal second '?' inside the return-to query string", async () => {
-    authMock.consumeReturnTo.mockReturnValue("/dashboard/search?q=a?b=c")
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "id-token" }) })
-    )
-
-    render(<CallbackPage />)
-
-    await waitFor(() =>
-      expect(window.location.href).toBe("/dashboard/search/?q=a?b=c")
-    )
+  it.each([
+    ["/dashboard/search?q=a?b=c", "/dashboard/search/?q=a?b=c"],
+    ["/dashboard/pipelines", "/dashboard/pipelines/"],
+    ["//evil.example/x", "/dashboard/"], ["/login?x=1", "/dashboard/"],
+  ])("safely restores return destination %s", async (saved, expected) => {
+    auth.consumeReturnTo.mockReturnValue(saved); render(<CallbackPage />)
+    await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith(expected))
   })
-
-  it("redirects to a return-to path with no query untouched other than a trailing slash", async () => {
-    authMock.consumeReturnTo.mockReturnValue("/dashboard/pipelines")
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "id-token" }) })
-    )
-
-    render(<CallbackPage />)
-
-    await waitFor(() => expect(window.location.href).toBe("/dashboard/pipelines/"))
+  it("preserves Go-served Observe consent exactly", async () => {
+    auth.consumeReturnTo.mockReturnValue("/observe/consent?rid=opaque"); render(<CallbackPage />)
+    await waitFor(() => expect(window.location.href).toBe("/observe/consent?rid=opaque"))
   })
-
-  // Fix round 2, Fold-in 3: a protocol-relative return-to
-  // ("//evil.example/x") does not start with "/login", so the pre-fix guard
-  // would have let it through — a browser resolves a leading "//" as
-  // same-scheme navigation to a different host. Not reachable via the only
-  // real writer of this value today, but the guard must reject it
-  // structurally rather than rely on that caller's discipline.
-  it("falls back to /dashboard/ when the stored return-to is protocol-relative", async () => {
-    authMock.consumeReturnTo.mockReturnValue("//evil.example/x")
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "id-token" }) })
-    )
-
-    render(<CallbackPage />)
-
-    await waitFor(() => expect(window.location.href).toBe("/dashboard/"))
+  it("rejects a callback missing its code", async () => {
+    navigation.search = "state=expected-state"; render(<CallbackPage />)
+    expect(await screen.findByRole("alert")).toHaveTextContent(/missing authorization code or state/i)
+    expect(auth.exchange).not.toHaveBeenCalled()
+    expect(screen.getByRole("link", { name: "Back to sign in" })).toBeVisible()
   })
-
-  it("falls back to /dashboard/ when the stored return-to points at /login", async () => {
-    authMock.consumeReturnTo.mockReturnValue("/login?x=1")
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "id-token" }) })
-    )
-
-    render(<CallbackPage />)
-
-    await waitFor(() => expect(window.location.href).toBe("/dashboard/"))
+  it("rejects a state mismatch without exchanging credentials", async () => {
+    navigation.search = "code=code&state=wrong"; render(<CallbackPage />)
+    expect(await screen.findByRole("alert")).toHaveTextContent(/state mismatch/i)
+    expect(auth.exchange).not.toHaveBeenCalled()
   })
-
-  it("shows an error and never calls fetch when code or state is missing", async () => {
-    navigation.search = "state=expected-state"
-    const fetchMock = vi.fn()
-    vi.stubGlobal("fetch", fetchMock)
-
-    render(<CallbackPage />)
-
-    expect(
-      await screen.findByText(/missing authorization code or state/i)
-    ).toBeInTheDocument()
-    expect(fetchMock).not.toHaveBeenCalled()
+  it("rejects a callback without its browser PKCE session", async () => {
+    sessionStorage.clear(); render(<CallbackPage />)
+    expect(await screen.findByRole("alert")).toHaveTextContent(/login session not found/i)
+    expect(auth.exchange).not.toHaveBeenCalled()
   })
-
-  it("shows a CSRF error and never calls fetch on state mismatch", async () => {
-    navigation.search = "code=auth-code&state=wrong-state"
-    const fetchMock = vi.fn()
-    vi.stubGlobal("fetch", fetchMock)
-
-    render(<CallbackPage />)
-
-    expect(await screen.findByText(/state mismatch/i)).toBeInTheDocument()
-    expect(fetchMock).not.toHaveBeenCalled()
+  it("keeps the return destination and provides recovery on exchange failure", async () => {
+    auth.exchange.mockRejectedValue(new Error("Token exchange failed. Please sign in again.")); render(<CallbackPage />)
+    expect(await screen.findByRole("alert")).toHaveTextContent(/token exchange failed/i)
+    expect(auth.consumeReturnTo).not.toHaveBeenCalled()
+    expect(navigation.router.replace).not.toHaveBeenCalled()
   })
-
-  it("shows an error when the login session was never started", async () => {
-    sessionStorage.clear()
-    const fetchMock = vi.fn()
-    vi.stubGlobal("fetch", fetchMock)
-
-    render(<CallbackPage />)
-
-    expect(
-      await screen.findByText(/login session not found/i)
-    ).toBeInTheDocument()
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it("shows an error and never redirects when the token exchange fails", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }))
-
-    render(<CallbackPage />)
-
-    expect(await screen.findByText(/token exchange failed/i)).toBeInTheDocument()
-    expect(window.location.href).toBe("")
-    expect(authMock.persistAuth).not.toHaveBeenCalled()
-  })
-  it("returns to the exact gateway consent handler without adding a slash", async () => {
-    authMock.consumeReturnTo.mockReturnValue("/observe/consent?rid=opaque-request")
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "id-token" }) }))
-    render(<CallbackPage />)
-    await waitFor(() => expect(window.location.href).toBe("/observe/consent?rid=opaque-request"))
-  })
-
 })

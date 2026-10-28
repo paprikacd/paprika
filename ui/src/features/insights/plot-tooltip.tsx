@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { focusNearestX } from "@tanstack/charts/focus";
 import type {
   ChartPoint,
   ChartRenderContext,
@@ -25,21 +24,6 @@ export interface PlotDatum extends Point {
   seriesIndex: number;
 }
 type PlotPoint = ChartPoint<PlotDatum>;
-/** Area and line marks can represent the same observation; visit it only once. */
-export const observationFocus = {
-  resolve: focusNearestX.resolve,
-  group: focusNearestX.group,
-  navigation<T extends PlotDatum, X extends ChartValue, Y extends ChartValue>(
-    points: readonly ChartPoint<T, X, Y>[],
-  ) {
-    const observations = new Map<string, ChartPoint<T, X, Y>>();
-    for (const point of focusNearestX.navigation(points)) {
-      const key = `${point.datum.seriesIndex}:${point.datum.timestamp}:${point.datum.value}`;
-      if (!observations.has(key)) observations.set(key, point);
-    }
-    return [...observations.values()];
-  },
-};
 interface PlotScene {
   svg: SVGSVGElement;
   width: number;
@@ -213,6 +197,7 @@ export function usePlotTooltip(
           id={id}
           anchor={current.anchor}
           anchorRect={anchorRect}
+          preferSide
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.panel = true;

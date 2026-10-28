@@ -10,6 +10,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:session": "node e2e/console-session.e2e.mjs",
     "test:watch": "vitest",
     "generate": "cd .. && buf generate",
     "test:e2e:insights": "node e2e/run-insights.mjs",
