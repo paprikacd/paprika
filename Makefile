@@ -1,5 +1,9 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/paprikacd/paprika:latest
+# Freeze caller input before any $(shell ...) call. GNU Make 4.4 exports
+# variables to those parse-time shells, before target-specific assignments run.
+# IMG is a literal image reference, never a recursive Make expression.
+override IMG := $(value IMG)
 export IMG
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
@@ -183,9 +187,6 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-# Preserve IMG as literal data for this target. In particular, do not recursively
-# expand make syntax such as $(shell ...) from a command-line variable.
-docker-build: override IMG := $(value IMG)
 docker-build: ## Build docker image with the manager.
 	go run ./hack/validate-image-ref.go
 	$(CONTAINER_TOOL) build -t "$${IMG}" \
@@ -198,7 +199,6 @@ docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
 .PHONY: docker-build-fast
-docker-build-fast: override IMG := $(value IMG)
 docker-build-fast: ## Build Go-only docker image (skips UI, uses cache mounts).
 	$(CONTAINER_TOOL) buildx build -f Dockerfile.fast --platform linux/amd64 -t "$${IMG}" \
 	  --build-arg VERSION="$$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
