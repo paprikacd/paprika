@@ -442,24 +442,38 @@ async function controlContrast(locator) {
   })
 }
 async function visiblePlot(locator) {
-  const geometry = await locator.evaluate(element => {
-    const clipRect = element.querySelector("clipPath rect"), matrix = clipRect?.getScreenCTM()
-    if (!clipRect || !matrix) throw new Error("Expected the rendered SVG plot clipping rectangle")
-    const start = new DOMPoint(clipRect.x.baseVal.value, clipRect.y.baseVal.value).matrixTransform(matrix)
-    const end = new DOMPoint(clipRect.x.baseVal.value + clipRect.width.baseVal.value, clipRect.y.baseVal.value + clipRect.height.baseVal.value).matrixTransform(matrix)
-    const plot = { left: start.x, top: start.y, right: end.x, bottom: end.y, width: end.x - start.x, height: end.y - start.y }
-    let left = 0, top = 0, right = innerWidth, bottom = innerHeight
-    const clippingAncestors = []
-    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-      const style = getComputedStyle(parent), rect = parent.getBoundingClientRect()
-      if (/auto|scroll|hidden|clip/.test(style.overflowX)) { left = Math.max(left, rect.left + parent.clientLeft); right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth) }
-      if (/auto|scroll|hidden|clip/.test(style.overflowY)) {
-        top = Math.max(top, rect.top + parent.clientTop); bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight)
-        clippingAncestors.push({ overflowY: style.overflowY, top: rect.top, bottom: rect.bottom, scrollTop: parent.scrollTop })
+  const geometry = await locator.evaluate(async element => {
+    const started = performance.now()
+    let previous, last, samples = 0
+    // ResizeObserver schedules chart sizing on the next animation frame. Wait
+    // for SVG and plot geometry to settle together before checking usable area.
+    do {
+      const clipRect = element.querySelector("clipPath rect"), matrix = clipRect?.getScreenCTM()
+      if (!clipRect || !matrix) throw new Error("Expected the rendered SVG plot clipping rectangle")
+      const start = new DOMPoint(clipRect.x.baseVal.value, clipRect.y.baseVal.value).matrixTransform(matrix)
+      const end = new DOMPoint(clipRect.x.baseVal.value + clipRect.width.baseVal.value, clipRect.y.baseVal.value + clipRect.height.baseVal.value).matrixTransform(matrix)
+      const plot = { left: start.x, top: start.y, right: end.x, bottom: end.y, width: end.x - start.x, height: end.y - start.y }
+      let left = 0, top = 0, right = innerWidth, bottom = innerHeight
+      const clippingAncestors = []
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent), rect = parent.getBoundingClientRect()
+        if (/auto|scroll|hidden|clip/.test(style.overflowX)) { left = Math.max(left, rect.left + parent.clientLeft); right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth) }
+        if (/auto|scroll|hidden|clip/.test(style.overflowY)) {
+          top = Math.max(top, rect.top + parent.clientTop); bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight)
+          clippingAncestors.push({ overflowY: style.overflowY, top: rect.top, bottom: rect.bottom, scrollTop: parent.scrollTop })
+        }
       }
-    }
-    return { svg: element.getBoundingClientRect().toJSON(), plot, clip: { left, top, right, bottom }, visibleHeight: Math.max(0, Math.min(plot.bottom, bottom) - Math.max(plot.top, top)), visibleWidth: Math.max(0, Math.min(plot.right, right) - Math.max(plot.left, left)), clippingAncestors }
+      const svg = element.getBoundingClientRect().toJSON()
+      const current = [svg.x, svg.y, svg.width, svg.height, ...Object.values(plot), left, top, right, bottom, ...clippingAncestors.flatMap(parent => [parent.top, parent.bottom, parent.scrollTop])]
+      const stable = previous?.length === current.length && current.every((value, index) => Math.abs(value - previous[index]) < .5)
+      last = { svg, plot, clip: { left, top, right, bottom }, visibleHeight: Math.max(0, Math.min(plot.bottom, bottom) - Math.max(plot.top, top)), visibleWidth: Math.max(0, Math.min(plot.right, right) - Math.max(plot.left, left)), clippingAncestors, stable, samples: ++samples }
+      if (stable && last.visibleHeight >= 100 && last.visibleWidth >= plot.width * .8) return last
+      previous = current
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    } while (performance.now() - started < 2000)
+    return last
   })
+  assert.ok(geometry.stable, `Rendered SVG and plot geometry must settle within two seconds: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.visibleHeight >= 100, `At least 100px of the actual data plot, excluding axes, must be visible: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.visibleWidth >= geometry.plot.width * .8, `The plotted series must remain horizontally visible: ${JSON.stringify(geometry)}`)
   return geometry
