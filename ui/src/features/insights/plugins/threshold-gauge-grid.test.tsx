@@ -37,6 +37,23 @@ describe("multi-series threshold gauges", () => {
     expect(screen.getByRole("tooltip").querySelector('[data-metric-value="31.718"]')).toBeInTheDocument();
     expect(screen.getByRole("tooltip")).toHaveTextContent("31.72 GB");
   });
+  it("exposes the configured density without changing exact segmented progress or unknown values", () => {
+    const values = [0, 12.5, 55.25, 100, null];
+    const { container } = render(<ThresholdGauge widget={{ ...widget, unit: "%", config: { seriesMode: "all", display: "segmented", segments: 60, maxSeries: 6 } }}
+      result={{ series: values.map((value, index) => ({ name: `host-${index}`, labels: {}, points: [{ timestamp: 2000, value }] })) }} />);
+    const tracks = [...container.querySelectorAll<HTMLElement>('[data-gauge-display="segmented"]')];
+    expect(tracks).toHaveLength(values.length);
+    tracks.forEach((track, index) => {
+      expect(track).toHaveStyle({ "--meter-segments": "60" });
+      const segments = [...track.querySelectorAll<HTMLElement>("span")];
+      expect(segments).toHaveLength(60);
+      const filled = segments.reduce((sum, segment) => sum + Number(segment.style.getPropertyValue("--meter-fraction")), 0);
+      expect(filled / 60).toBeCloseTo((values[index] ?? 0) / 100, 10);
+    });
+    expect(screen.getAllByRole("meter")).toHaveLength(4);
+    expect(screen.getByRole("meter", { name: "Free disk space: host-2" })).toHaveAttribute("aria-valuetext", "55.25%");
+    expect(screen.getByText("Unknown · latest sample has no finite value")).toBeInTheDocument();
+  });
   it("keeps a missing latest scrape unknown without falling back to an older or neighboring series", () => {
     const select = vi.fn();
     const missing: QueryResult = { series: [result.series![0], { ...result.series![1], points: [{ timestamp: 3000, value: null }, { timestamp: 1000, value: 72 }] }, result.series![2]] };

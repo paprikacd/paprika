@@ -164,6 +164,7 @@ function GaugeItem({
       <div
         className={display === "linear" ? styles.gaugeTrack : display === "radial" ? meterStyles.radial : meterStyles.segmented}
         data-gauge-display={display}
+        style={display === "segmented" ? { "--meter-segments": segments } as CSSProperties : undefined}
         role={value === undefined ? undefined : "meter"}
         aria-label={value === undefined ? undefined : title}
         aria-valuemin={value === undefined ? undefined : min}

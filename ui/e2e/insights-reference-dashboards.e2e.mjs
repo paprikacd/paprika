@@ -56,6 +56,23 @@ async function renderEveryPanel(board) {
       assert.equal(await bank.locator("[data-gauge-series]").count(),widget.config.maxSeries,"Reference capacity panels must display every distinct series")
       const measurements=await bank.evaluate(node=>({height:node.clientHeight,content:node.scrollHeight}))
       if(page.viewportSize().width>=1200)assert.ok(measurements.content<=measurements.height+1,`${widget.title}: all gauges must fit their panel without scrolling`)
+      if(widget.config.display==="segmented") {
+        const tracks=await bank.locator('[data-gauge-display="segmented"]').evaluateAll(nodes=>nodes.map(track=>{
+          const bounds=track.getBoundingClientRect(),cells=[...track.children],rects=cells.map(cell=>cell.getBoundingClientRect())
+          const widths=rects.reduce((sum,rect)=>sum+rect.width,0)
+          return {width:bounds.width,minCell:Math.min(...rects.map(rect=>rect.width)),gap:Math.max(...rects.slice(1).map((rect,index)=>rect.left-rects[index].right)),
+            first:rects[0].left-bounds.left,last:rects.at(-1).right-bounds.right,occupied:widths,
+            filled:cells.reduce((sum,cell,index)=>sum+rects[index].width*Number(cell.style.getPropertyValue("--meter-fraction")),0)/widths,
+            expected:track.hasAttribute("aria-valuenow")?(Number(track.getAttribute("aria-valuenow"))-Number(track.getAttribute("aria-valuemin")))/(Number(track.getAttribute("aria-valuemax"))-Number(track.getAttribute("aria-valuemin"))):0}
+        }))
+        assert.ok(tracks.length>0,`${widget.title}: segmented tracks must render`)
+        for(const track of tracks) {
+          assert.ok(track.first>=-.5&&track.last<=.5,`${widget.title}: segments must stay inside their actual track`)
+          if(track.gap>.05)assert.ok(track.minCell>=3.95,`${widget.title}: separated cells must retain at least 4px of visible width`)
+          else assert.ok(Math.abs(track.occupied-track.width)<=1,`${widget.title}: constrained tracks must form a continuous bar`)
+          assert.ok(Math.abs(track.filled-track.expected)<.005,`${widget.title}: responsive fill must preserve the observed proportion`)
+        }
+      }
     }
     if(widget.pluginId==="status-history" && page.viewportSize().width>=1200) {
       const lanes=await element.locator("[data-history-series]").evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect(),p=node.closest('[role="region"]').getBoundingClientRect();return{top:r.top,bottom:r.bottom,clipTop:p.top,clipBottom:p.bottom}}))
