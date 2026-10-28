@@ -19,10 +19,10 @@
 }
 .withSparkline .plot {
   position: absolute;
-  inset: 18% 0 0;
+  inset: min(18%, 36px) 0 0;
   z-index: 0;
   width: 100%;
-  height: 82%;
+  height: calc(100% - min(18%, 36px));
   pointer-events: none;
   mask-image: linear-gradient(90deg, rgb(0 0 0 / 10%), rgb(0 0 0 / 25%) 36%, #000 78%);
 }

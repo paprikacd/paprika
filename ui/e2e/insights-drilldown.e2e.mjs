@@ -1,3 +1,4 @@
+import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Real Insights service + deterministic Prometheus, bridged into the static UI.
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
@@ -78,6 +79,7 @@ try {
   page = await context.newPage(); page.setDefaultTimeout(15000)
   page.on("pageerror", error => errors.push(error.message))
   page.on("dialog", dialog => { errors.push(`Unexpected native dialog: ${dialog.message()}`); void dialog.dismiss() })
+  await routeAnonymousAuthConfiguration(page)
   await page.route("**/api/insights/**", async route => {
     const url = new URL(route.request().url())
     const response = await route.fetch({ url: `${api}${url.pathname.replace(/^\/api\/insights/, "/api")}${url.search}`, maxRedirects: 0 })

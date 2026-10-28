@@ -1,4 +1,5 @@
-import { queryEditorValue } from "./query-editor.mjs"
+import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
+import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
 // Builder surface review. Deterministic normalized API fixtures isolate authored
 // controls; insights-live.e2e.mjs exercises the real Go provider lifecycle.
 import assert from "node:assert/strict"
@@ -31,6 +32,7 @@ async function open(width, configure = value => value, series = data) {
   const configs = [{ ...providers[0], url: "https://prometheus.example.internal", etag: '"provisioned"' }]
   const queries = [], calls = [], gates = { test: null }, faults = { query: false, test: false }
   page.on("pageerror", error => pageErrors.push({ width, message: error.message }))
+  await routeAnonymousAuthConfiguration(page)
   await page.route("**/api/insights/**", async route => {
     const request = route.request(), url = new URL(request.url())
     calls.push({ method: request.method(), pathname: url.pathname })
@@ -246,7 +248,8 @@ async function queryAudit(width) {
     await panel.getByLabel("Group by labels", { exact: true }).fill("service")
     const generated = 'sum by (service) (rate(http_requests_total{service="api-east"}[5m]))'
     assert.equal(await queryEditorValue(raw), generated)
-    assert.ok((await raw.boundingBox()).height >= 96, "PromQL editor needs a readable multiline working area")
+    assert.ok(await raw.isVisible(), "PromQL editing surface must remain visible")
+    assert.ok((await queryEditorGeometry(raw)).height >= 96, "PromQL editor needs a readable multiline working area")
     assert.equal(await raw.evaluate(element => getComputedStyle(element).resize), "none")
     faults.query = true
     await panel.getByRole("button", { name: "Run query", exact: true }).click()

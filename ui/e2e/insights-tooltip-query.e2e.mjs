@@ -1,3 +1,4 @@
+import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry } from "./query-editor.mjs"
 // Run from ui/: INSIGHTS_E2E_URL=http://127.0.0.1:3015 node e2e/insights-tooltip-query.e2e.mjs
 // Real Go adapters + deterministic providers. A test-owned same-origin gateway
@@ -68,6 +69,7 @@ const upstream = createServer((request, response) => {
 })
 
 const gateway = createServer((request, response) => {
+  if (serveAnonymousAuthConfiguration(request, response)) return
   const incoming = new URL(request.url, "http://localhost")
   const api = incoming.pathname.startsWith("/api/insights/")
   const target = new URL(api ? `${incoming.pathname.replace(/^\/api\/insights/, "/api")}${incoming.search}` : request.url, api ? serviceURL : baseURL)

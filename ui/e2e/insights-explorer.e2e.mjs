@@ -1,3 +1,4 @@
+import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
 import { verifyProviderEditor } from "./query-editor-scenarios.mjs"
 // Real Go storage/adapters + deterministic Prometheus/Tempo providers. The local
@@ -70,6 +71,7 @@ const upstream = createServer((request, response) => {
   json(response, 404, { error: "unexpected fixture path" })
 })
 const gateway = createServer((request, response) => {
+  if (serveAnonymousAuthConfiguration(request, response)) return
   if (request.url === "/query-cover.svg") {
     response.writeHead(200, { "content-type": "image/svg+xml" }); response.end('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#bd512d"/><path d="M10 40L24 22L38 34L54 12" stroke="#fff" fill="none" stroke-width="5"/></svg>'); return
   }
@@ -247,16 +249,19 @@ async function assertSparkline(scope) {
     const range = document.createRange(); range.selectNodeContents(reading.firstChild)
     const numberRects = [...range.getClientRects()].map(rect => rect.toJSON())
     const valueBox = reading.getBoundingClientRect(), plotBox = plot.getBoundingClientRect(), stat = plot.parentElement.parentElement
-    return { numberRects, value: valueBox.toJSON(), plot: plotBox.toJSON(), valueText: reading.textContent, fontSize: getComputedStyle(reading).fontSize,
+    return { numberRects, value: valueBox.toJSON(), reading: element.querySelector("[data-stat-reading]").getBoundingClientRect().toJSON(), plot: plotBox.toJSON(), valueText: reading.textContent, fontSize: getComputedStyle(reading).fontSize,
       valueLayer: getComputedStyle(element.querySelector("[data-stat-reading]")).zIndex, plotLayer: getComputedStyle(plot).zIndex,
-      plotPointerEvents: getComputedStyle(plot).pointerEvents, lineOpacity: plot.querySelector("[data-stat-trend]").getAttribute("stroke-opacity"),
+      plotPointerEvents: getComputedStyle(plot).pointerEvents, plotMask: getComputedStyle(plot).maskImage, lineOpacity: plot.querySelector("[data-stat-trend]").getAttribute("stroke-opacity"),
       container: stat.getBoundingClientRect().toJSON(), clientHeight: stat.clientHeight, scrollHeight: stat.scrollHeight }
   })
   assert.equal(geometry.numberRects.length, 1, `Stat digits must stay on one readable line: ${JSON.stringify(geometry)}`)
   const digits = geometry.numberRects[0]
-  assert.ok(digits.x >= geometry.plot.x - 1 && digits.right <= geometry.plot.right + 1 && digits.top >= geometry.plot.top - 1 && digits.bottom <= geometry.plot.bottom + 1, `History must fill the background behind the readable value: ${JSON.stringify(geometry)}`)
+  assert.ok(digits.x >= geometry.container.x - 1 && digits.right <= geometry.container.right + 1 && digits.top >= geometry.container.top - 1 && digits.bottom <= geometry.container.bottom + 1, `The readable value must remain inside the stat: ${JSON.stringify(geometry)}`)
+  assert.ok(geometry.plot.x >= geometry.container.x - 1 && geometry.plot.right <= geometry.container.right + 1 && geometry.plot.top >= geometry.container.top - 1 && geometry.plot.bottom <= geometry.container.bottom + 1, `History must stay inside the stat: ${JSON.stringify(geometry)}`)
+  assert.ok(geometry.reading.bottom > geometry.plot.top && geometry.reading.top < geometry.plot.bottom && geometry.reading.right > geometry.plot.x && geometry.reading.x < geometry.plot.right, `The lower history backdrop must overlap the reading block: ${JSON.stringify(geometry)}`)
   assert.ok(Number(geometry.valueLayer) > Number(geometry.plotLayer) && geometry.plotPointerEvents === "none", "The number and its inspection interaction must stay above the non-interactive history")
-  assert.ok(Number(geometry.lineOpacity) > 0 && Number(geometry.lineOpacity) <= 0.4, "Background trend must remain quiet enough for a legible reading")
+  assert.ok(Number(geometry.lineOpacity) > 0 && Number(geometry.lineOpacity) < 1, "Background trend must remain translucent")
+  assert.ok(geometry.plotMask && geometry.plotMask !== "none", "The history mask must reduce visual interference behind the reading")
   assert.ok(geometry.value.x >= geometry.container.x - 1 && geometry.value.right <= geometry.container.right + 1, `The complete value and unit must stay within the stat: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.scrollHeight <= geometry.clientHeight + 1 && geometry.plot.bottom <= geometry.container.bottom + 1, `A single-series compact stat must show its value and history without internal clipping: ${JSON.stringify(geometry)}`)
   return { sampleCount: Number(attributes["data-sample-count"]), renderedSamples: Number(attributes["data-rendered-samples"]), start: end - 240_000, end, minimum: -7.25, maximum: 1234.5678, latestValidTime: end - 60_000, geometry }

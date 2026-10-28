@@ -1,3 +1,4 @@
+import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Real Go storage/adapters + deterministic Prometheus/Tempo providers. The local
 // gateway serves the final static UI and forwards API disconnects; production
 // proxy auth/RBAC is verified independently by Go integration tests.
@@ -65,6 +66,7 @@ const upstream = createServer((request, response) => {
   json(response, 404, { error: "unexpected fixture path" })
 })
 const gateway = createServer((request, response) => {
+  if (serveAnonymousAuthConfiguration(request, response)) return
   if (request.url === "/query-cover.svg") {
     response.writeHead(200, { "content-type": "image/svg+xml" }); response.end('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#bd512d"/><path d="M10 40L24 22L38 34L54 12" stroke="#fff" fill="none" stroke-width="5"/></svg>'); return
   }

@@ -1,3 +1,4 @@
+import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorValue } from "./query-editor.mjs"
 // Run from ui/ with a local Next development server already running:
 // INSIGHTS_E2E_URL=http://localhost:3015 node e2e/insights-live.e2e.mjs
@@ -40,6 +41,15 @@ let serviceURL
 function json(response, status, data) {
   response.writeHead(status, { "content-type": "application/json" })
   response.end(JSON.stringify(data))
+}
+
+async function until(predicate, message, timeout = 15_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await predicate()) return
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  assert.fail(message)
 }
 
 const providers = createServer((request, response) => {
@@ -162,6 +172,7 @@ async function restartAndReload() {
   await drainBridge()
   await stopService()
   await startService()
+  await routeAnonymousAuthConfiguration(page)
   await page.route("**/api/insights/**", bridge)
   await page.goto(currentURL, { waitUntil: "networkidle" })
 }
@@ -215,6 +226,7 @@ try {
     if (dialog.type() === "beforeunload" && discardDraftOnReload) { void dialog.accept(); return }
     pageErrors.push(`Unexpected native ${dialog.type()} dialog: ${dialog.message()}`); void dialog.dismiss()
   })
+  await routeAnonymousAuthConfiguration(page)
   await page.route("**/api/insights/**", bridge)
 
   await check("live provider registry opens an empty server-backed workspace", async () => {
@@ -363,6 +375,7 @@ try {
   })
 
   await check("guided builder discovers metrics and labels from the real provider", async () => {
+    const persistedBefore = (await getSavedDashboards())[0]
     await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
     await page.getByRole("button", { name: "Edit Live requests", exact: true }).click()
     const editor = page.getByRole("region", { name: "Widget editor" })
@@ -381,19 +394,22 @@ try {
     await selectGammaOption(page, editor.getByRole("combobox", { name: /^Aggregation/ }), "sum")
     await editor.getByLabel("Group by labels", { exact: true }).fill("service")
     const query = 'sum by (service) (rate(live_requests_total{service="test-api"}[5m]))'
-    assert.equal(await queryEditorValue(editor.getByRole("textbox", { name: /^PromQL query/ })), "live_requests", "Guided construction must preserve the current query until explicitly applied")
-    await editor.getByRole("button", { name: "Use generated query", exact: true }).click()
-    assert.equal(await queryEditorValue(editor.getByRole("textbox", { name: /^PromQL query/ })), query)
+    assert.equal(await queryEditorValue(editor.getByRole("textbox", { name: /^PromQL query/ })), query, "Valid guided changes must update the widget draft immediately")
+    await until(() => providerRequests.some(item => item.path === "/prometheus/api/v1/query_range" && item.query.query === query && item.authenticated), "The widget must query its guided draft before applying or saving it")
+    assert.deepEqual((await getSavedDashboards())[0], persistedBefore, "Live preview must not persist draft changes")
     await editor.getByRole("button", { name: "Run query", exact: true }).click()
     await editor.getByLabel("Query preview", { exact: true }).getByText("42.5", { exact: false }).waitFor()
-    await editor.getByRole("button", { name: "Apply widget", exact: true }).click()
     await editor.getByRole("button", { name: "Close widget editor" }).click()
+    assert.deepEqual((await getSavedDashboards())[0], persistedBefore, "Closing the editor must not persist draft changes")
+    await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
+    await until(async () => (await getSavedDashboards())[0].widgets.find(widget => widget.type === "stat").query === query, "Explicit dashboard Save must persist the generated query")
+    await page.getByText("All changes saved", { exact: true }).waitFor()
     for (const path of ["/prometheus/api/v1/label/__name__/values", "/prometheus/api/v1/labels", "/prometheus/api/v1/label/service/values"]) {
       assert.ok(providerRequests.some((item) => item.path === path && item.authenticated && item.tenantPresent), `Missing authenticated discovery request: ${path}`)
     }
     assert.ok(providerRequests.some((item) => item.path === "/prometheus/api/v1/label/service/values" && item.query["match[]"] === "live_requests_total"))
     assert.ok(providerRequests.some((item) => item.path === "/prometheus/api/v1/query_range" && item.query.query === query && item.authenticated))
-    return { generatedQuery: query, discoveryPathsVerified: 3 }
+    return { generatedQuery: query, discoveryPathsVerified: 3, livePreviewBeforeSave: true, persistedOnlyOnSave: true }
   })
 
   await check("custom time range reaches metric and trace adapters and survives reload", async () => {
@@ -412,7 +428,7 @@ try {
     }
     for (const path of expected) assert.ok(providerRequests.slice(requestStart).some((item) => item.path === path && Number(item.query.start) === start && Number(item.query.end) === end), `Missing exact custom time range for ${path}`)
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-    await page.getByText("Dashboard saved.", { exact: true }).waitFor()
+    await page.getByText("All changes saved", { exact: true }).waitFor()
     const document = (await getSavedDashboards())[0]
     assert.deepEqual(document.customTimeRange, { from: `${from}:00.000Z`, to: `${to}:00.000Z` })
     assert.equal(document.widgets.find((widget) => widget.type === "stat").providerId, managedID)
