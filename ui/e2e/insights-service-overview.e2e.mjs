@@ -30,7 +30,7 @@ const services = [...new Set(config.services)], variableName = config.variableNa
 assert.ok(services.length >= 2)
 const output = config.outputDir ? resolve(config.outputDir) : join(repository, "artifacts/insights/service-overview", config.dashboardId)
 const reports = [], pageErrors = [], responses = [], writes = [], requests = [], completedRequests = []
-const pendingQueries = new Set()
+const pendingQueries = new Map()
 const queries = new Map()
 let browser, context, page, dashboard, variable, initialDashboard, usageBefore, usageAfter, rpcId = 0, contextId = 0, loadTime = 0
 const dashboardURL = `${baseURL}/dashboard/insights/?dashboard=${encodeURIComponent(config.dashboardId)}`
@@ -102,7 +102,7 @@ async function open(width) {
   const owner = contextId
   page.on("request", request => {
     const path = new URL(request.url()).pathname
-    if (path === "/api/insights/query") { requests.push({ contextId: owner, request: JSON.parse(request.postData() || "{}"), at: Date.now() }); pendingQueries.add(request) }
+    if (path === "/api/insights/query") { requests.push({ contextId: owner, request: JSON.parse(request.postData() || "{}"), at: Date.now() }); pendingQueries.set(request, owner) }
     if (/^\/api\/insights\/(dashboards|saved-queries)(\/|$)/.test(path) && !["GET", "HEAD"].includes(request.method())) writes.push({ path, method: request.method() })
   })
   page.on("response", response => {
@@ -256,7 +256,7 @@ try {
     await selectService(services[0]); await inspectService(services[0])
     await selectService(services[1]); await selectService(services[0])
     const evidence = await inspectService(services[0])
-    await until(() => pendingQueries.size === 0, "Requests from rapid service changes did not settle")
+    await until(() => ![...pendingQueries.values()].includes(contextId), "Requests from rapid service changes did not settle")
     await inspectService(services[0])
     return { finalService: services[0], evidence, finalServiceVerifiedAfterRequestsSettled: true }
   })

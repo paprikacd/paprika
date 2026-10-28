@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "output/imagegen/dashboard-artboards/index.html"
+        ],
+        "createdAt": "2026-10-28T16:50:59.185Z",
+        "reason": "Agent reviewed rendered desktop/mobile gallery: the only remaining padding finding is the structural dialog shell. Header, image stage and detail pane provide their own insets; shell padding would duplicate them. Text controls have 10-12px padding."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "output/imagegen/dashboard-artboards/index.html"
+        ],
+        "createdAt": "2026-10-28T16:50:59.258Z",
+        "reason": "Agent: this standalone artboard review gallery presents user-requested new visual directions using its own neutral light/dark palette. DESIGN.md explicitly scopes its palette to the production dashboard and does not govern this local presentation artifact."
+      }
+    ]
+  }
+}

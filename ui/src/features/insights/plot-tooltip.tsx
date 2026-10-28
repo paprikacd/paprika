@@ -19,6 +19,7 @@ import { TooltipSubWidget } from "./tooltip-widgets";
 import type { Point, Series } from "./chart-data";
 import type { Widget } from "./schema";
 import styles from "./chart-styles.module.css";
+import { useChartCursorPublisher } from "./chart-cursor";
 
 export interface PlotDatum extends Point {
   seriesIndex: number;
@@ -45,6 +46,7 @@ export function usePlotTooltip(
   enabled: boolean,
 ) {
   const id = useId();
+  const cursor = useChartCursorPublisher();
   const revision = useMemo(
     () => ({ series, view: widget.options?.tooltipView, unit: widget.unit }),
     [series, widget.options?.tooltipView, widget.unit],
@@ -121,6 +123,14 @@ export function usePlotTooltip(
     [enabled, active, revision, series, dismiss, clearHide],
   );
   const current = enabled && active?.revision === revision ? active : null;
+  const selectedTimestamp = current?.point.datum.timestamp;
+  const pinned = current?.pinned ?? false;
+  useEffect(() => {
+    if (widget.type !== "timeseries") return;
+    if (selectedTimestamp !== undefined) cursor.publish(widget.id, selectedTimestamp, pinned);
+    else cursor.clear(widget.id);
+    return () => cursor.clear(widget.id);
+  }, [cursor, widget.id, widget.type, selectedTimestamp, pinned]);
   const anchorRect = useCallback(() => {
     if (!current) return new DOMRect();
     const chart = scene.current;
@@ -192,7 +202,7 @@ export function usePlotTooltip(
       scheduleHide();
     },
     panel:
-      current && entry && point && widget.options?.tooltipView ? (
+      current && entry && point ? (
         <ObservationTooltip
           id={id}
           anchor={current.anchor}
@@ -227,14 +237,14 @@ export function usePlotTooltip(
                   : "Selected observation"
               }
             />
-            <TooltipSubWidget
+            {widget.options?.tooltipView && <TooltipSubWidget
               view={widget.options.tooltipView}
               series={entry}
               seriesIndex={current.point.datum.seriesIndex}
               point={point}
               unit={widget.unit}
               color={current.point.color || widget.color}
-            />
+            />}
             <div className={styles.tooltipFooter}>
               <small>Page Up/Down to scroll · Esc to close</small>
               <small>

@@ -67,7 +67,8 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const positions=[...new Set(xs)].sort((a,b)=>a-b), minX=positions[0], maxX=positions.at(-1)!
   const spacing=positions.length>1?Math.min(...positions.slice(1).map((value,index)=>value-positions[index])):1
   const plotLeft=52,plotRight=Math.max(plotLeft+20,bounds.width-52),plotWidth=plotRight-plotLeft
-  const plotTop=34,plotBottom=Math.max(plotTop+20,bounds.height-46),plotHeight=plotBottom-plotTop
+  const plotTop=22,plotBottom=Math.max(plotTop+20,bounds.height-26),plotHeight=plotBottom-plotTop
+  const yTicks=plotHeight<90?[0,.5,1]:[0,.25,.5,.75,1]
   // Each bar group has its own band, including the first and last category.
   // Padding the domain keeps complete bars inside the plot's clip rectangle.
   const padding=bar?spacing/2:0, domainMin=minX-padding, domainMax=maxX+padding
@@ -79,10 +80,10 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const ticks=(data.category?[minX,positions[Math.floor((positions.length-1)/2)],maxX]:[minX,minX+(maxX-minX)/2,maxX]).filter((x,i,list)=>list.indexOf(x)===i)
   const select=(entry:PlotSeries,point:Datum)=>onContextChange?.({series:entry.name,value:point.value,labels:Object.fromEntries(frame.columns.flatMap((column,i)=>point.row[i]===null?[]:[[column.key,String(point.row[i])]]))})
   return <div className={styles.wrapper}><svg ref={plot} className={styles.recordChart} viewBox={`0 0 ${bounds.width} ${bounds.height}`} role="group" aria-label={widget.title}>
-    <defs><clipPath id={unique}><rect x={plotLeft-2} y={plotTop-6} width={plotWidth+4} height={plotHeight+8}/></clipPath></defs>
-    {[0,.25,.5,.75,1].map(fraction=><g key={fraction}><line x1={plotLeft} x2={plotRight} y1={plotBottom-fraction*plotHeight} y2={plotBottom-fraction*plotHeight} stroke="var(--gamma-border)"/><text x={plotLeft-6} y={plotBottom+4-fraction*plotHeight} textAnchor="end">{formatMetric(left.min+fraction*(left.max-left.min),"",true,widget.options?.decimals)}</text>{series.some(s=>s.right)&&<text x={plotRight+6} y={plotBottom+4-fraction*plotHeight}>{formatMetric(right.min+fraction*(right.max-right.min),"",true,widget.options?.decimals)}</text>}</g>)}
+    <defs><clipPath id={unique}><rect data-record-plot-height={plotHeight} x={plotLeft-2} y={plotTop-6} width={plotWidth+4} height={plotHeight+8}/></clipPath></defs>
+    {yTicks.map(fraction=><g key={fraction}><line x1={plotLeft} x2={plotRight} y1={plotBottom-fraction*plotHeight} y2={plotBottom-fraction*plotHeight} stroke="var(--gamma-border)"/><text x={plotLeft-6} y={plotBottom+4-fraction*plotHeight} textAnchor="end">{formatMetric(left.min+fraction*(left.max-left.min),"",true,widget.options?.decimals)}</text>{series.some(s=>s.right)&&<text x={plotRight+6} y={plotBottom+4-fraction*plotHeight}>{formatMetric(right.min+fraction*(right.max-right.min),"",true,widget.options?.decimals)}</text>}</g>)}
     {ticks.map(x=><text key={x} x={xScale(x)} y={plotBottom+20} textAnchor="middle">{xText(x)}</text>)}
-    <text x={plotLeft} y={16}>{series.filter(s=>!s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text><text x={plotRight} y={16} textAnchor="end">{series.filter(s=>s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text>
+    <text x={plotLeft} y={12}>{series.filter(s=>!s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text><text x={plotRight} y={12} textAnchor="end">{series.filter(s=>s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text>
     <g clipPath={`url(#${unique})`}>{config.annotations?.map((annotation,i)=>{const at=data.position(annotation.x);return Number.isFinite(at)&&at>=minX&&at<=maxX?<g key={i}><title>{annotation.label}</title><line x1={xScale(at)} x2={xScale(at)} y1={plotTop-4} y2={plotBottom} stroke="var(--gamma-muted)" strokeDasharray="3 3"/><text x={xScale(at)+4} y={plotTop+10+i%3*12}>{annotation.label.slice(0,bounds.width<480?20:30)}</text></g>:null})}
     {series.map((entry,index)=>{
       let connected=false
@@ -96,7 +97,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
       })}</g>
     })}</g>
   </svg>{widget.options?.showLegend!==false&&<div className={styles.legend}>{series.map((entry,index)=><span key={index}><i style={{background:colors[index%colors.length]}}/>{entry.name}{entry.right?" (right axis)":""}</span>)}</div>}
-  <div className={styles.note}>{frame.truncated&&<span>Partial source response</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div></div>
+  {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{frame.truncated&&<span>Partial source response</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
 }
 export const RecordLine=(props:WidgetRendererProps)=><RecordChart {...props}/>
 export const RecordBar=(props:WidgetRendererProps)=><RecordChart {...props} bar/>

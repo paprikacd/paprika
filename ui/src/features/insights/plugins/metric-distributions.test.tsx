@@ -48,4 +48,20 @@ describe("metric distributions",()=>{
     expect(screen.getByText("Sampled view · 1 of 2 series")).toBeInTheDocument()
     expect(screen.getByText("Partial source response")).toBeInTheDocument()
   })
+  it("keeps all six compact lanes individually labeled and selects the final lane's exact observation",()=>{
+    const select=vi.fn()
+    const names=["Backend-ops-01","Backend-ops-02","Backend-ops-03","Backend-ops-04","Frontend-web-01","Frontend-web-02"]
+    const {container}=render(<StatusHistory widget={widget} result={{series:names.map(name=>series(name,[1,2.125,null]))}} onContextChange={select}/>)
+    const lanes=container.querySelectorAll("[data-history-series]")
+    expect(lanes).toHaveLength(6)
+    for(const [index,lane] of [...lanes].entries()) {
+      expect(lane).toHaveAttribute("data-history-series",names[index])
+      expect(lane.querySelector("strong")).toHaveAttribute("title",names[index])
+      expect(lane.querySelectorAll("button")).toHaveLength(3)
+    }
+    fireEvent.click(screen.getByRole("button",{name:/Frontend-web-02 .*2.13/}))
+    expect(select).toHaveBeenLastCalledWith({labels:{service:"Frontend-web-02"},value:2.125,series:"Frontend-web-02"})
+    fireEvent.click(screen.getByRole("button",{name:/Frontend-web-02 .*No data/}))
+    expect(select).toHaveBeenLastCalledWith({labels:{service:"Frontend-web-02"},value:null,series:"Frontend-web-02"})
+  })
 })

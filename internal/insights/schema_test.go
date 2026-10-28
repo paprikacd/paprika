@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -39,7 +40,9 @@ func TestAuthoringSchemaReadOnlyCanonicalContract(t *testing.T) {
 			case "dashboard":
 				require.NoError(t, validateDashboard("service-overview", response.Examples[0]))
 			case "widget":
-				require.NoError(t, validateDashboardWidgetShape(response.Examples[0]))
+				for _, example := range response.Examples {
+					require.NoError(t, validateDashboardWidgetShape(example), string(example))
+				}
 			case "saved_query":
 				_, validationErr := validateSavedQuery("service-request-rate", response.Examples[0])
 				require.NoError(t, validationErr)
@@ -59,8 +62,45 @@ func TestRecordAuthoringSchemaExamples(t *testing.T) {
 	query, err := validateSavedQuery("service-records", json.RawMessage(schemaRecordQueryExample))
 	require.NoError(t, err)
 	require.NoError(t, validateSQLTemplate("postgresql", query.Query))
-	require.Len(t, authoringSchemaExamples("widget"), 2)
+	require.Len(t, authoringSchemaExamples("widget"), 6)
 	require.Len(t, authoringSchemaExamples("saved_query"), 2)
+}
+
+func TestAuthoringSchemaDiscoversRichChartContracts(t *testing.T) {
+	s, _ := testService(t)
+	for _, kind := range []string{"dashboard", "widget"} {
+		t.Run(kind, func(t *testing.T) {
+			w := request(t, s.Handler(), http.MethodGet, "/api/schemas/"+kind, nil, nil)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var response authoringSchemaResponse
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			notes := strings.Join(response.Notes, "\n")
+			for _, plugin := range []string{"stacked-timeseries", "directional-traffic", "distribution-heatmap", "threshold-gauge", "connection-map", "pipeline-topology", "incident-calendar"} {
+				require.Contains(t, notes, plugin, "MCP authors must discover each installed rich plugin without inspecting UI code")
+			}
+			for _, contract := range []string{"legendDisplay?:compact|table", "legendPosition?:bottom|right", "seriesMode?:first|all", "columns?:1..4", "maxSeries?:1..12", "maxColumns?:8..120", "density?:compact|comfortable", "showSearch?:boolean", "arithmetic mean", "query-side rates", "nonnegative", "numeric degrees", "Cycles remain explicit", "Days without observations stay unknown"} {
+				require.Contains(t, notes, contract)
+			}
+			require.LessOrEqual(t, w.Body.Len(), maxSchemaResponseBytes)
+		})
+	}
+}
+
+func TestRichMetricAuthoringExamplesCanBeSavedTogether(t *testing.T) {
+	s, _ := testService(t, ProviderConfig{ID: "metrics-provider-id", Name: "Metrics", Type: "prometheus", URL: "http://127.0.0.1:1"})
+	body, err := json.Marshal(map[string]any{
+		"schemaVersion": 1, "id": "rich-chart-overview", "title": "Rich chart overview",
+		"timeRange": "1h", "refreshInterval": 0,
+		"widgets": []json.RawMessage{json.RawMessage(schemaStackedWidgetExample), json.RawMessage(schemaGaugeBankExample), json.RawMessage(schemaDistributionExample)},
+	})
+	require.NoError(t, err)
+	require.NoError(t, validateDashboard("rich-chart-overview", body))
+	w := request(t, s.Handler(), http.MethodPut, "/api/dashboards/rich-chart-overview", body, map[string]string{"If-None-Match": "*"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.NotEmpty(t, w.Header().Get("ETag"))
+	loaded := request(t, s.Handler(), http.MethodGet, "/api/dashboards/rich-chart-overview", nil, nil)
+	require.Equal(t, http.StatusOK, loaded.Code, loaded.Body.String())
+	require.JSONEq(t, string(body), loaded.Body.String(), "rich widget configuration must survive document persistence")
 }
 
 func TestAuthoringSchemaExamplesCanBeSavedTogether(t *testing.T) {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Dashboard, Drilldown, QueryResult, Widget } from "./schema";
@@ -51,16 +51,18 @@ const series = (name: string, value: number) => ({
 });
 function Canvas({
   current = widget,
+  dashboardId = "overview",
   active = true,
   onDrilldown = vi.fn(),
 }: {
   current?: Widget;
+  dashboardId?: string;
   active?: boolean;
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
 }) {
   const dashboard: Dashboard = {
     schemaVersion: 1,
-    id: "overview",
+    id: dashboardId,
     title: "Overview",
     timeRange: "1h",
     refreshInterval: 0,
@@ -100,6 +102,40 @@ afterEach(() => {
 });
 
 describe("signal-specific dashboard drilldowns", () => {
+  it("keeps the measured canvas attached when switching dashboards and resets pinned chart cursors", () => {
+    query.data = {
+      series: [{
+        ...series("api", 7),
+        points: [{ timestamp: 1000, value: 7 }, { timestamp: 2000, value: 9 }],
+      }],
+    };
+    const current: Widget = { ...widget, type: "timeseries", drilldowns: undefined };
+    const { container, rerender } = render(<Canvas current={current} />);
+    const measuredCanvas = screen.getByTestId("dashboard-canvas");
+    const firstChart = screen.getByRole("img", { name: "Requests" });
+    act(() => firstChart.focus());
+    fireEvent.keyDown(firstChart, { key: "Enter" });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
+    expect(container.querySelector('[data-chart-cursor-source="requests"]')).not.toBeNull();
+
+    rerender(<Canvas dashboardId="next-overview" current={{ ...current, id: "errors", title: "Errors" }} />);
+
+    // useContainerWidth observes this exact node. Remounting it beneath an
+    // unchanged hook leaves the observer on a detached, zero-width element.
+    expect(screen.getByTestId("dashboard-canvas")).toBe(measuredCanvas);
+    expect(measuredCanvas.isConnected).toBe(true);
+    expect(screen.queryByRole("article", { name: "Requests" })).not.toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Errors" })).toBeInTheDocument();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(container.querySelector("[data-chart-cursor-time]")).toBeNull();
+
+    const nextChart = screen.getByRole("img", { name: "Errors" });
+    act(() => nextChart.focus());
+    fireEvent.keyDown(nextChart, { key: "Enter" });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
+    expect(container.querySelector('[data-chart-cursor-source="errors"]')).not.toBeNull();
+  });
+
   it.each([
     "Saved query “missing” is unavailable. Choose a saved query or switch to a custom query.",
     "Saved query “Trace query” does not provide metrics. Choose a compatible query.",

@@ -15,6 +15,7 @@ import { areaY } from "@tanstack/charts/area";
 import { barY } from "@tanstack/charts/bar";
 import { focusGroupX, focusNearestX } from "@tanstack/charts/focus";
 import { usePlotTooltip } from "./plot-tooltip";
+import { useChartCursor } from "./chart-cursor";
 import { lineY } from "@tanstack/charts/line";
 import { decorative } from "@tanstack/charts/mark/decorative";
 import { Chart } from "@tanstack/charts/react";
@@ -215,6 +216,7 @@ function TimeSeriesChart({
   series: Series[];
 }) {
   const { ref, width, height } = usePlotSize();
+  const cursor = useChartCursor();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
   const associateDescription = useCallback(
     ({ svg }: { svg: SVGSVGElement }) => {
@@ -225,7 +227,7 @@ function TimeSeriesChart({
   const ticks = responsiveChartTicks(width, height);
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
-    !embedded && options.showTooltip !== false && !!options.tooltipView;
+    !embedded && options.showTooltip !== false;
   const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
   const domain = useMemo(
     () => resolveChartDomain(series.slice(0, MAX_SERIES), options),
@@ -256,6 +258,12 @@ function TimeSeriesChart({
     );
     return bounds.length ? Math.max(...bounds) - Math.min(...bounds) : 0;
   }, [data]);
+  const cursorBounds = data.flatMap(entry => entry.points.length ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp] : []);
+  const cursorStart = Math.min(...cursorBounds), cursorEnd = Math.max(...cursorBounds);
+  const cursorLeft = !showAxis ? 8 : options.yAxisLabel ? 74 : 54;
+  const cursorX = cursor && !embedded && cursor.timestamp >= cursorStart && cursor.timestamp <= cursorEnd && cursorEnd > cursorStart
+    ? cursorLeft + (cursor.timestamp - cursorStart) / (cursorEnd - cursorStart) * Math.max(0, width - cursorLeft - 12)
+    : undefined;
 
   const definition = useMemo(
     () =>
@@ -337,7 +345,7 @@ function TimeSeriesChart({
                     count: ticks.y,
                     line: false,
                     format: (value: number) =>
-                      formatMetric(value, widget.unit, true, options.decimals),
+                      formatMetric(value, widget.unit.length > 6 ? "" : widget.unit, true, options.decimals),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -350,7 +358,7 @@ function TimeSeriesChart({
         margin: !showAxis
           ? { top: 8, right: 8, bottom: 8, left: 8 }
           : {
-              top: height < 130 ? 4 : 10,
+              top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 10,
               right: 12,
               bottom: options.xAxisLabel ? 47 : 29,
               left: options.yAxisLabel ? 74 : 54,
@@ -409,6 +417,7 @@ function TimeSeriesChart({
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
+        {showAxis && widget.unit.length > 6 && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
         <Chart
           definition={definition}
           height={height}
@@ -421,7 +430,11 @@ function TimeSeriesChart({
           onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
           ariaDescription={`${data.length} time series.${embedded ? "" : " Use arrow keys to explore individual values."}`}
         />
+        {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
+          data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
+          style={{ left: cursorX, top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
       </div>
+      {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series">
           {data.map((entry, index) => (
@@ -456,8 +469,9 @@ function TimeSeriesChart({
           ))}
         </div>
       )}
-      {plotTooltip.panel}
       {!embedded && <ChartDataInspector widget={widget} series={series} />}
+      </div>}
+      {plotTooltip.panel}
       {series.length > MAX_SERIES && (
         <span className={styles.notice} role="status">
           First {MAX_SERIES} of {series.length} series
@@ -479,7 +493,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
   const ticks = responsiveChartTicks(width, height);
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
-    !embedded && options.showTooltip !== false && !!options.tooltipView;
+    !embedded && options.showTooltip !== false;
   const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
   const rows = useMemo(
     () =>
@@ -585,7 +599,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
                     count: ticks.y,
                     line: false,
                     format: (value: number) =>
-                      formatMetric(value, widget.unit, true, options.decimals),
+                      formatMetric(value, widget.unit.length > 6 ? "" : widget.unit, true, options.decimals),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -598,7 +612,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
         margin: !showAxis
           ? { top: 8, right: 8, bottom: 8, left: 8 }
           : {
-              top: height < 130 ? 4 : 12,
+              top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 12,
               right: 10,
               bottom: options.xAxisLabel ? 47 : 28,
               left: options.yAxisLabel ? 74 : 54,
@@ -650,6 +664,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
+        {showAxis && widget.unit.length > 6 && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
         <Chart
           definition={definition}
           height={height}
@@ -667,13 +682,15 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
           }
         />
       </div>
+      {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {options.showLegend !== false && (
         <div className={styles.legend}>
           <span>Latest valid sample per series</span>
         </div>
       )}
-      {plotTooltip.panel}
       {!embedded && <ChartDataInspector widget={widget} series={series} />}
+      </div>}
+      {plotTooltip.panel}
       {series.length > MAX_SERIES && (
         <span className={styles.notice} role="status">
           First {MAX_SERIES} of {series.length} series
@@ -1406,7 +1423,9 @@ export function ObservationTooltip({
     };
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        event.stopPropagation();
+        // A fading hover card must not swallow Escape from another chart.
+        if (anchor.contains(event.target as Node) || ref.current?.contains(event.target as Node))
+          event.stopPropagation();
         onDismiss();
         return;
       }

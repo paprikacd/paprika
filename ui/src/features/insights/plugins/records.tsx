@@ -16,6 +16,8 @@ const key = z.string().min(1).max(128)
 const tableConfig = z.strictObject({
   columns: z.array(key).min(1).max(64).optional(),
   pageSize: z.number().int().min(5).max(100).optional(),
+  density: z.enum(["compact", "comfortable"]).default("comfortable"),
+  showSearch: z.boolean().default(true),
 })
 const listConfig = z.strictObject({
   title: key,
@@ -108,13 +110,14 @@ export function RecordTable({
   } | null>(null)
   const frame = result.records
   const config = tableConfig.parse(widget.config ?? {})
+  const activeSearch = !embedded && config.showSearch ? search : ""
   const rows = useMemo(() => {
     if (!frame) return []
     const selected = frame.rows.filter(
       (row) =>
-        !search ||
+        !activeSearch ||
         row.some((v) =>
-          text(v).toLocaleLowerCase().includes(search.toLocaleLowerCase()),
+          text(v).toLocaleLowerCase().includes(activeSearch.toLocaleLowerCase()),
         ),
     )
     if (sort)
@@ -130,7 +133,7 @@ export function RecordTable({
         return sort.descending ? -order : order
       })
     return selected
-  }, [frame, search, sort])
+  }, [frame, activeSearch, sort])
   if (!frame?.rows.length) return <EmptyState />
   const indexes =
     config.columns?.map((name) => column(frame, name)) ??
@@ -141,8 +144,8 @@ export function RecordTable({
     Math.max(0, Math.ceil(rows.length / pageSize) - 1),
   )
   return (
-    <div className={styles.wrapper}>
-      {!embedded && (
+    <div className={`${styles.wrapper}${config.density === "compact" ? ` ${styles.compactTable}` : ""}`} data-table-density={config.density}>
+      {!embedded && config.showSearch && (
         <div className={styles.toolbar}>
           <input
             aria-label={`Filter ${widget.title}`}
@@ -232,7 +235,7 @@ export function RecordTable({
           <p className={styles.note}>No records match this filter.</p>
         )}
       </div>
-      <Note frame={frame}>
+      {(frame.truncated || !embedded && rows.length > pageSize) && <Note frame={frame}>
         {!embedded && rows.length > pageSize && (
           <>
             <button
@@ -254,7 +257,7 @@ export function RecordTable({
             </button>
           </>
         )}
-      </Note>
+      </Note>}
     </div>
   )
 }
@@ -609,5 +612,13 @@ export function registerRecordWidgetPlugins() {
         render: entry.render,
         dataKind: "records",
         parseConfig: (config) => entry.schema.parse(config ?? {}),
+        ...(entry.id === "record-table" ? {
+          defaultConfig: { density: "comfortable", showSearch: true },
+          configFields: [
+            { key: "density", label: "Row density", kind: "select" as const, options: [{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }] },
+            { key: "showSearch", label: "Show search", kind: "boolean" as const, help: "Show a filter for the loaded records. Hiding it restores every loaded row." },
+            { key: "pageSize", label: "Rows per page", kind: "number" as const, min: 5, max: 100, placeholder: "Default: 20" },
+          ],
+        } : {}),
       })
 }

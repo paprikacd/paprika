@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { RecordTable, RecordList, RecordTreemap, RecordMatrix } from "./records"
+import { RecordTable, RecordList, RecordTreemap, RecordMatrix, registerRecordWidgetPlugins } from "./records"
+import { getWidgetDefinition } from "../widget-registry"
+import { PluginConfigEditor } from "../plugin-config-editor"
 import { parseRecordFrame } from "../record-data"
 import type { QueryResult, Widget } from "../schema"
 
@@ -34,6 +36,59 @@ const result: QueryResult = {
 }
 
 describe("record widgets", () => {
+  it("keeps comfortable searchable defaults and validates compact table controls", () => {
+    registerRecordWidgetPlugins()
+    const definition = getWidgetDefinition("plugin", "record-table")!
+    expect(definition.parseConfig?.({})).toEqual({ density: "comfortable", showSearch: true })
+    expect(definition.parseConfig?.({ density: "compact", showSearch: false, columns: ["service"], pageSize: 5 })).toEqual({ density: "compact", showSearch: false, columns: ["service"], pageSize: 5 })
+    expect(() => definition.parseConfig?.({ density: "tiny" })).toThrow()
+    expect(() => definition.parseConfig?.({ showSearch: "false" })).toThrow()
+    expect(() => definition.parseConfig?.({ density: "compact", unsupported: true })).toThrow()
+    const { container } = render(<RecordTable widget={widget} result={result} />)
+    expect(container.querySelector('[data-table-density="comfortable"]')).not.toBeNull()
+    expect(screen.getByRole("textbox", { name: "Filter Service records" })).toBeInTheDocument()
+  })
+  it("hiding search restores filtered rows while compact sorting and exact selection remain available", () => {
+    const select = vi.fn()
+    const { rerender, container } = render(<RecordTable widget={widget} result={result} onContextChange={select} />)
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Service records" }), { target: { value: "worker" } })
+    expect(screen.queryByText("api")).not.toBeInTheDocument()
+    rerender(<RecordTable widget={{ ...widget, config: { density: "compact", showSearch: false } }} result={result} onContextChange={select} />)
+    expect(container.querySelector('[data-table-density="compact"]')).not.toBeNull()
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument()
+    expect(screen.queryByText(/loaded rows/)).not.toBeInTheDocument()
+    expect(screen.getByText("api")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "uptime" }))
+    fireEvent.click(screen.getByRole("button", { name: "uptime ↑" }))
+    expect(screen.getByRole("columnheader", { name: "uptime ↓" })).toHaveAttribute("aria-sort", "descending")
+    fireEvent.click(screen.getByRole("button", { name: "Select row 1" }))
+    expect(select).toHaveBeenCalledWith({ labels: { service: "web", uptime: "99.9876", active: "true" } })
+    expect(screen.getByText("—")).toBeInTheDocument()
+    expect(screen.getByText(/Partial result/)).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Service records records" })).toHaveAttribute("tabindex", "0")
+  })
+  it("exposes guided density and search controls without discarding explicit columns", () => {
+    registerRecordWidgetPlugins()
+    const onChange = vi.fn()
+    render(<PluginConfigEditor definition={getWidgetDefinition("plugin", "record-table")} value={'{"columns":["service"],"pageSize":5}'} onChange={onChange} />)
+    expect(screen.getByRole("switch", { name: /^Show search/ })).toBeChecked()
+    fireEvent.click(screen.getByRole("switch", { name: /^Show search/ }))
+    expect(JSON.parse(onChange.mock.calls.at(-1)![0])).toEqual({ columns: ["service"], pageSize: 5, showSearch: false })
+    fireEvent.click(screen.getByRole("combobox", { name: "Row density" }))
+    fireEvent.click(screen.getByRole("option", { name: "Compact" }))
+    expect(JSON.parse(onChange.mock.calls.at(-1)![0])).toEqual({ columns: ["service"], pageSize: 5, density: "compact" })
+  })
+  it("keeps paging available without search and removes an empty footer from small tables", () => {
+    const compact = { ...widget, config: { density: "compact", showSearch: false, pageSize: 5 } }
+    const { rerender } = render(<RecordTable widget={compact} result={{ records: { ...result.records!, truncated: false } }} />)
+    expect(screen.queryByRole("status")).not.toBeInTheDocument()
+    const rows = Array.from({ length: 6 }, (_, i) => [`service-${i}`, i, true]) as NonNullable<QueryResult["records"]>["rows"]
+    rerender(<RecordTable widget={compact} result={{ records: { ...result.records!, rows, truncated: false } }} />)
+    expect(screen.getByRole("status")).toHaveTextContent("Page 1 of 2")
+    fireEvent.click(screen.getByRole("button", { name: "Next" }))
+    expect(screen.getByText("service-5")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
+  })
   it("preserves zero, missing and boolean values, filters, and sends row dimensions to drilldowns", () => {
     const select = vi.fn()
     render(

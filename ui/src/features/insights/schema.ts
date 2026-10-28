@@ -601,6 +601,7 @@ export function newWidget(
     label: string
     dataKind: DataKind
     defaultOptions?: WidgetOptions
+    defaultConfig?: Widget["config"]
   },
 ): Widget {
   if (type === "plugin" && !plugin)
@@ -639,6 +640,7 @@ export function newWidget(
           pluginId: plugin!.id,
           dataKind: plugin!.dataKind,
           options: plugin!.defaultOptions,
+          ...(plugin!.defaultConfig ? { config: structuredClone(plugin!.defaultConfig) } : {}),
         }
       : {}),
     layout: {

@@ -349,7 +349,7 @@ async function editingAudit() {
     await query.fill(edited)
     await page.waitForLoadState("networkidle")
     assert.equal(requests.filter(request => request.query === edited).length, beforeDraft, "Query drafts must wait for explicit Run query or Apply")
-    if (kind === "gauge") await editor(page).getByLabel(/^Plugin configuration/).fill('{"label":"Edited capacity"}')
+    if (kind === "gauge") await editor(page).getByRole("textbox", { name: "Meter label", exact: true }).fill("Edited capacity")
     const previewRequest = page.waitForRequest(request => request.url().endsWith("/api/insights/query") && request.postDataJSON()?.query === edited)
     await editor(page).getByRole("button", { name: "Run query", exact: true }).click()
     await previewRequest

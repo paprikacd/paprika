@@ -19,6 +19,14 @@
   min-width: 0;
   position: relative;
 }
+.sharedCursor {
+  position: absolute;
+  width: 0;
+  border-left: 1px dashed var(--gamma-chart-axis);
+  opacity: .7;
+  pointer-events: none;
+  z-index: 1;
+}
 .legend {
   display: flex;
   align-items: center;
@@ -35,6 +43,18 @@
   line-height: 1.35;
   color: var(--widget-text, var(--gamma-muted, #626e65));
 }
+.chartFooter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  min-width: 0;
+  border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border));
+  padding-top: 4px;
+}
+.chartFooter > .legend { flex: 1; border-top: 0; padding: 2px 0; gap: 4px 16px; }
+.chartFooter .legendItem { flex-basis: 140px; max-width: none; }
+.chartFooter > :only-child { margin-left: auto; }
 .legendItem {
   display: flex;
   align-items: center;
@@ -361,4 +381,20 @@
   .table td {
     padding-block: 14px;
   }
+}
+
+/* Long units are stated once above the plot, keeping numeric ticks legible. */
+.axisUnit {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 54px;
+  max-width: calc(100% - 66px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--widget-text, var(--gamma-chart-axis, var(--gamma-muted)));
+  pointer-events: none;
 }

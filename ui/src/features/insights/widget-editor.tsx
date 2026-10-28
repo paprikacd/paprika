@@ -22,6 +22,7 @@ import {
   type WidgetOptions,
 } from "./schema";
 import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
+import { PluginConfigEditor } from "./plugin-config-editor";
 import type { InsightsClient } from "./client";
 import { QueryBuilder, type QueryFetcher } from "./query-builder";
 import { GammaTabs } from "./gamma/tabs";
@@ -100,7 +101,9 @@ function StyleEditor({
   const chart = widget.type === "timeseries" || widget.type === "bar";
   const gauge =
     widget.type === "plugin" && widget.pluginId === "threshold-gauge";
-  const knownRenderer = widget.type !== "plugin" || gauge;
+  const pluginControls = getWidgetDefinition(widget)?.styleControls ?? [];
+  const hasStyleControl = (control: (typeof pluginControls)[number]) =>
+    widget.type !== "plugin" || pluginControls.includes(control);
   const foreground = widgetTextColor(options) ?? DEFAULT_WIDGET_TEXT;
   const background = options.background ?? DEFAULT_WIDGET_BACKGROUND;
   const textContrast = contrastRatio(foreground, background);
@@ -138,9 +141,9 @@ function StyleEditor({
           </GammaButton>
         </div>
       )}
-      {knownRenderer && (
+      {(hasStyleControl("unit") || hasStyleControl("decimals")) && (
         <div className={styles.row}>
-          {widget.type !== "traces" && (
+          {widget.type !== "traces" && hasStyleControl("unit") && (
             <label className={styles.field}>
               Unit
               <GammaInput
@@ -153,10 +156,10 @@ function StyleEditor({
               />
             </label>
           )}
-          {numeric("Decimal places", "decimals", 0, 8)}
+          {hasStyleControl("decimals") && numeric("Decimal places", "decimals", 0, 8)}
         </div>
       )}
-      {knownRenderer && (
+      {hasStyleControl("decimals") && (
         <p className={styles.hint}>
           Decimal places apply to displayed values and tooltip details. Leave
           blank for Auto, or choose 0–8 places.
@@ -167,7 +170,7 @@ function StyleEditor({
           Trace duration is displayed in milliseconds.
         </p>
       )}
-      {(["timeseries", "bar", "stat"].includes(widget.type) || gauge) && (
+      {(["timeseries", "bar", "stat"].includes(widget.type) || pluginControls.includes("color")) && (
         <div className={styles.row}>
           <label className={styles.field}>
             Series color
@@ -305,7 +308,10 @@ function StyleEditor({
           onChange={(showSparkline) => update({ showSparkline })}
         />
       )}
-      {(["timeseries", "bar", "heatmap"].includes(widget.type) || gauge) && (
+      {!chart && pluginControls.includes("grid") && (
+        <GammaSwitch label="Show grid" checked={options.showGrid !== false} onChange={(showGrid) => update({ showGrid })} />
+      )}
+      {(["timeseries", "bar", "heatmap"].includes(widget.type) || pluginControls.includes("legend")) && (
         <GammaSwitch
           label="Show legend"
           checked={options.showLegend !== false}
@@ -326,7 +332,7 @@ function StyleEditor({
           />
         </>
       )}
-      {knownRenderer && !supportsTooltipView(widget.type) && (
+      {hasStyleControl("tooltips") && !supportsTooltipView(widget.type) && (
         <GammaSwitch
           label="Show tooltips"
           checked={options.showTooltip !== false}
@@ -778,8 +784,8 @@ export function WidgetEditor({
             if (type === "plugin") {
               next.pluginId = definition.id;
               next.dataKind = capability;
-              next.config = undefined;
-              setPluginConfig("{}");
+              next.config = definition.defaultConfig ? structuredClone(definition.defaultConfig) : undefined;
+              setPluginConfig(JSON.stringify(next.config ?? {}, null, 2));
               next.options = definition.defaultOptions ?? next.options;
             } else {
               delete next.pluginId;
@@ -946,16 +952,7 @@ export function WidgetEditor({
                   </>
                 )}
                 {draft.type === "plugin" && (
-                  <label className={styles.field}>
-                    Plugin configuration
-                    <GammaTextarea
-                      aria-label="Plugin configuration"
-                      className={styles.codeInput}
-                      rows={6}
-                      value={pluginConfig}
-                      onChange={(event) => setPluginConfig(event.target.value)}
-                    />
-                  </label>
+                  <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} />
                 )}
               </div>
             ),

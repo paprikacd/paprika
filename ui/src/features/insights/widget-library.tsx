@@ -12,6 +12,13 @@ import {
   Sparkles,
   Table2,
   X,
+  CalendarDays,
+  Gauge,
+  Globe2,
+  Network,
+  ChartNoAxesCombined,
+  Layers,
+  ArrowDownUp,
 } from "lucide-react"
 import { useWidgetDefinitions, type WidgetDefinition } from "./widget-registry"
 import styles from "./insights.module.css"
@@ -28,6 +35,16 @@ const icons = {
   heatmap: Grid2X2,
   plugin: Puzzle,
 }
+const pluginIcons = {
+  "distribution-heatmap": Grid2X2,
+  "stacked-timeseries": Layers,
+  "directional-traffic": ArrowDownUp,
+  "connection-map": Globe2,
+  "pipeline-topology": Network,
+  "incident-calendar": CalendarDays,
+  "threshold-gauge": Gauge,
+  "status-history": ChartNoAxesCombined,
+}
 
 export function WidgetLibrary({
   onAdd,
@@ -42,7 +59,7 @@ export function WidgetLibrary({
 }) {
   const definitions = useWidgetDefinitions()
   const [search, setSearch] = useState("")
-  const [category, setCategory] = useState<"all" | "metrics" | "traces" | "plugins">("all")
+  const [category, setCategory] = useState<"all" | "metrics" | "traces" | "records" | "plugins">("all")
   const visible = definitions.filter(
     (item) =>
       (category === "all" ||
@@ -53,7 +70,6 @@ export function WidgetLibrary({
     <section className={styles.inspector} aria-label="Widget library">
       <div className={styles.panelHeading}>
         <div>
-          <span className={styles.eyebrow}>WIDGET LIBRARY</span>
           <h2>Find your perspective</h2>
         </div>
         <GammaButton iconOnly size="sm" variant="quiet" className={styles.iconButton} aria-label="Close widget library" onClick={onClose}>
@@ -73,7 +89,7 @@ export function WidgetLibrary({
         />
       </label>
       <div className={tools.categoryTabs} aria-label="Widget categories">
-        {(["all", "metrics", "traces", "plugins"] as const).map((value) => (
+        {(["all", "metrics", "traces", "records", "plugins"] as const).map((value) => (
           <GammaButton size="sm" variant="quiet" key={value} aria-pressed={category === value} onClick={() => setCategory(value)}>
             {value[0].toUpperCase() + value.slice(1)}
           </GammaButton>
@@ -81,7 +97,7 @@ export function WidgetLibrary({
       </div>
       <div className={styles.widgetLibrary}>
         {visible.map((definition) => {
-          const Icon = icons[definition.type]
+          const Icon = pluginIcons[definition.id as keyof typeof pluginIcons] ?? icons[definition.type]
           return (
             <GammaButton size="sm" variant="quiet" key={definition.id} disabled={disabled} onClick={() => onAdd(definition)}>
               <Icon size={23} strokeWidth={1.5} />
