@@ -52,6 +52,13 @@ const upstream = createServer((request, response) => {
 })
 const gateway = createServer((request, response) => {
   const incoming = new URL(request.url, "http://localhost"), api = incoming.pathname.startsWith("/api/insights/")
+  // The loopback --dev service is anonymous; the static/dev asset server has no
+  // console auth routes, so this test host owns its session-discovery contract.
+  if (incoming.pathname === "/auth/config") {
+    response.setHeader("Cache-Control", "no-store")
+    json(response, 200, { oidc: { enabled: false, provider: "oidc", label: "Single sign-on" }, basic: { enabled: false }, session: { refreshEnabled: false } })
+    return
+  }
   const target = new URL(api ? `${incoming.pathname.replace(/^\/api\/insights/, "/api")}${incoming.search}` : request.url, api ? serviceURL : baseURL)
   const forward = httpRequest(target, { method: request.method, headers: { ...request.headers, host: target.host } }, result => { response.writeHead(result.statusCode, result.headers); result.pipe(response) })
   forward.on("error", () => { if (!response.destroyed && !response.headersSent) json(response, 502, { error: "Fixture upstream unavailable" }); else response.destroy() })

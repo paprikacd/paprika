@@ -85,6 +85,14 @@ export async function portableEnvironment(repository, staticURL) {
     }
     const gateway = createServer(async (request, response) => {
       const incoming = new URL(request.url, "http://localhost")
+      // This console host fronts a loopback --dev Insights service. Report its
+      // actual anonymous-session contract instead of forwarding auth discovery
+      // to the UI asset server, which intentionally has no auth handlers.
+      if (incoming.pathname === "/auth/config") {
+        response.setHeader("Cache-Control", "no-store")
+        json(response, 200, { oidc: { enabled: false, provider: "oidc", label: "Single sign-on" }, basic: { enabled: false }, session: { refreshEnabled: false } })
+        return
+      }
       const api = incoming.pathname.startsWith("/api/insights/")
       const target = new URL(api ? `${incoming.pathname.replace(/^\/api\/insights/, "/api")}${incoming.search}` : request.url, api ? serviceURL : staticURL)
       const body = []
