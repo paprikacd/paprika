@@ -50,12 +50,15 @@ COPY --from=mcp-ui-builder /mcp-ui/dist/console.html internal/api/mcp/ui/dist/co
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -a -o manager ./cmd
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w" -o insights ./cmd/paprika-insights
 
-# Alpine: runtime needs ca-certificates for outbound TLS and tar (busybox)
-# for S3 archives. All git/helm work is in-process (go-git, Helm SDK) — no
-# binaries are exec'd.
+# Alpine: runtime needs ca-certificates for outbound TLS and tar (busybox) for
+# S3 archives. Helm rendering is in-process (Helm SDK).
+# git: the repo server fetches git sources with the git CLI as a blobless
+# partial clone, so only the files under a source's path are downloaded
+# (internal/source/gitcli.go). Without it Paprika falls back to go-git, which
+# downloads every blob of the tip tree.
 FROM alpine:3.24
 WORKDIR /
-RUN apk add --no-cache ca-certificates && \
+RUN apk add --no-cache ca-certificates git && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager .

@@ -61,7 +61,26 @@ type GitSource struct {
 	// is the clock. 0 always fetches (previous behaviour). Pinned commit
 	// SHAs are immutable and always skip the remote once mirrored.
 	FetchTTL time.Duration
+	// Backend selects the fetch implementation; empty is the process default
+	// (DefaultGitBackend).
+	Backend GitBackend
 }
+
+// GitBackend names a git fetch implementation.
+type GitBackend string
+
+// Git fetch implementations.
+const (
+	// GitBackendAuto picks the git CLI when a usable git binary is installed,
+	// else go-git.
+	GitBackendAuto GitBackend = "auto"
+	// GitBackendCLI is the git CLI: a blobless partial clone that downloads
+	// only the blobs under Path.
+	GitBackendCLI GitBackend = "cli"
+	// GitBackendGoGit is the in-process go-git mirror, which downloads every
+	// blob of the fetched tree.
+	GitBackendGoGit GitBackend = "go-git"
+)
 
 var (
 	repoLocks  = make(map[string]*sync.Mutex)
@@ -101,11 +120,17 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	if g.RepoURL == "" {
 		return nil, errors.New("repoURL is required")
 	}
+	if g.backend() == GitBackendCLI {
+		return g.resolveCLI(ctx)
+	}
 	key := RepoCacheKey(g.RepoURL, g.credentialID())
 	mirrorDir := filepath.Join(g.WorkDir, "git-mirrors", key)
 	worktreeDir := filepath.Join(g.WorkDir, "git-clones", key)
 
-	lock := repoLock(key)
+	// Keyed by the mirror's directory, not the repository: two work dirs (the
+	// controller's release and application renderers) hold two mirrors that
+	// never contend.
+	lock := repoLock(mirrorDir)
 	lock.Lock()
 	defer lock.Unlock()
 	// A request can wait here behind a detached fetch for up to
