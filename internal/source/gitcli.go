@@ -43,14 +43,14 @@ import (
 // reading is ever rewritten in place.
 const gitCacheDirName = "git-cache"
 
-// maxMirrorRefs bounds the commit refs one mirror keeps. Older commits'
-// trees become unreachable and gc prunes them; a commit needed again is
-// fetched again, at the cost of one commit's trees.
+// maxMirrorRefs bounds the commit refs one mirror keeps, so listing them stays
+// cheap. It does not bound the mirror's size: gc never prunes an object of a
+// promisor pack (every pack this mirror receives is one), so an older
+// commit's trees stay after its ref is dropped (measured: refs removed,
+// "gc --prune=now" merged six packs into one and kept every commit). The
+// mirror's size is bounded by evicting it whole (PAPRIKA_GIT_CACHE_MAX_BYTES),
+// which costs the next resolve one commit's trees.
 const maxMirrorRefs = 64
-
-// lsRemoteJoinWindow lets a request with fetchTtl 0 share an ls-remote of
-// the same revision that began at most this long before it arrived.
-const lsRemoteJoinWindow = time.Second
 
 // commitRefPrefix holds one ref per commit the mirror has fetched.
 const commitRefPrefix = "refs/paprika/c/"
@@ -119,7 +119,7 @@ func (l *lazyCred) get(ctx context.Context) (*gitCred, error) {
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse repository URL: %w", parseErr)
 		}
-		l.cred = &gitCred{host: u.Host, username: basic.Username, password: basic.Password}
+		l.cred = &gitCred{protocol: u.Scheme, host: u.Host, username: basic.Username, password: basic.Password}
 	}
 	l.done = true
 	return l.cred, nil
@@ -149,7 +149,7 @@ func (g *GitSource) resolveCLI(ctx context.Context) (*ResolveResult, error) {
 		return result, err
 	}
 	// The mirror could not be read. It costs one commit's trees to rebuild.
-	if resetErr := repo.reset(); resetErr != nil {
+	if resetErr := repo.reset(ctx); resetErr != nil {
 		return nil, errors.Join(err, resetErr)
 	}
 	return g.resolveCLIOnce(ctx, repo, filepath.Join(root, "checkouts", key), srcPath, creds)
@@ -174,7 +174,7 @@ func (g *GitSource) resolveCLIOnce(ctx context.Context, repo *cliRepo, checkoutD
 	if err != nil {
 		return nil, err
 	}
-	co, err := ensureCheckout(ctx, repo, checkoutDir, tree, srcPath, creds)
+	co, err := ensureCheckout(ctx, repo, checkoutDir, tree, srcPath, commitSource{sha: sha, ref: ref, depth: g.cliDepth()}, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +183,7 @@ func (g *GitSource) resolveCLIOnce(ctx context.Context, repo *cliRepo, checkoutD
 		LocalPath: co.localPath,
 		Hash:      sha[:16] + ":" + co.dirHash[:16],
 		Revision:  sha,
+		release:   co.release,
 	}, nil
 }
 
@@ -234,7 +235,12 @@ func (g *GitSource) cliRevision(ctx context.Context, repo *cliRepo, rev string, 
 	if isHexSHA(rev) {
 		return strings.ToLower(rev), "", nil
 	}
-	notBefore := time.Now().Add(-max(g.FetchTTL, lsRemoteJoinWindow))
+	// fetchTtl 0 reuses no answer from before the request arrived (a sync
+	// trigger sends that): only an ls-remote that begins after it can serve it.
+	notBefore := time.Now()
+	if g.FetchTTL > 0 {
+		notBefore = notBefore.Add(-g.FetchTTL)
+	}
 	answer, result, err := repo.revisions.lookup(ctx, rev, notBefore, func() (string, string, error) {
 		lsCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), currentGitSettings().lsRemoteTimeout)
 		defer cancel()
@@ -379,26 +385,55 @@ func (r *cliRepo) ensureInit(ctx context.Context) error {
 }
 
 // mirrorLayoutMarker marks a mirror this backend created.
-const mirrorLayoutMarker = "[paprika]\n\tlayout = 1\n"
+// mirrorLayoutMarker marks a mirror this backend created with the current
+// config; a mirror without it (an older layout) is rebuilt.
+const mirrorLayoutMarker = "[paprika]\n\tlayout = 2\n"
 
 // mirrorConfig is a mirror's git config. Packs are kept as received
 // (unpackLimit 1), so a fetch's size is the size of the packs it adds, and gc
 // runs in the foreground, under the fetch's deadline, never detached.
+//
+// Every fetched object is checked (fetch.fsckObjects): a malformed tree, a
+// ".git" or ".." entry, or a bad .gitmodules fails the fetch instead of
+// reaching a checkout. fsck is strict there, so its warnings fail too; a
+// zero-padded file mode, which old tools wrote and GitHub still serves, is
+// harmless and ignored.
 func mirrorConfig(repoURL string) string {
 	quoted := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(repoURL)
 	return "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n\tlogallrefupdates = false\n" +
 		"[remote \"origin\"]\n\turl = \"" + quoted + "\"\n\tpromisor = true\n\tpartialclonefilter = blob:none\n" +
-		"[transfer]\n\tunpackLimit = 1\n[fetch]\n\tunpackLimit = 1\n" +
+		"[transfer]\n\tunpackLimit = 1\n[fetch]\n\tunpackLimit = 1\n\tfsckObjects = true\n" +
+		"[fetch \"fsck\"]\n\tzeroPaddedFilemode = ignore\n" +
 		"[gc]\n\tautoDetach = false\n[maintenance]\n\tautoDetach = false\n" + mirrorLayoutMarker
 }
 
-// reset removes the mirror; the next resolve rebuilds it.
-func (r *cliRepo) reset() error {
-	r.life.Lock()
+// reset removes the mirror; the next resolve rebuilds it. It waits for the
+// mirror's other users no longer than ctx allows.
+func (r *cliRepo) reset(ctx context.Context) error {
+	if err := r.lockLife(ctx); err != nil {
+		return err
+	}
 	defer r.life.Unlock()
 	r.inited.Store(false)
 	if err := os.RemoveAll(r.dir); err != nil {
 		return fmt.Errorf("remove git mirror: %w", err)
+	}
+	return nil
+}
+
+// lockLife takes the mirror's life lock for writing, waiting no longer than
+// ctx allows. It polls TryLock instead of blocking in Lock: a writer blocked
+// in Lock holds off every new reader, so a rebuild waiting out a 10-minute
+// fetch would stall every other resolve of the repository for as long.
+func (r *cliRepo) lockLife(ctx context.Context) error {
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for !r.life.TryLock() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("rebuild git mirror %s: wait for its other users: %w", redactURL(r.url), ctx.Err())
+		case <-tick.C:
+		}
 	}
 	return nil
 }
@@ -527,6 +562,9 @@ func (r *cliRepo) fetchUnderRef(ctx context.Context, cred *gitCred, sha, ref str
 // fetchOpts are the options of one git fetch.
 type fetchOpts struct {
 	depth int
+	// refetch fetches every object the specs reach, unfiltered, as if the
+	// mirror held none of them.
+	refetch bool
 	// objects are fetched by ID (blobs), with no negotiation: the mirror's
 	// commits say nothing about which blobs it holds.
 	objects []string
@@ -540,8 +578,15 @@ func (r *cliRepo) fetch(ctx context.Context, op string, cred *gitCred, o fetchOp
 		return err
 	}
 	defer release()
-	args := []string{"fetch", "--quiet", "--filter=blob:none", "--no-tags", "--no-write-fetch-head",
+	filter := "--filter=blob:none"
+	if o.refetch {
+		filter = "--refetch"
+	}
+	args := []string{"fetch", "--quiet", filter, "--no-tags", "--no-write-fetch-head",
 		"--no-auto-maintenance", "--no-recurse-submodules"}
+	if o.refetch {
+		args = append(args, "--no-filter")
+	}
 	if o.depth > 0 {
 		args = append(args, "--depth="+strconv.Itoa(o.depth))
 	}

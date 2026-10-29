@@ -15,21 +15,22 @@ import (
 	"time"
 )
 
-// gitCred is the HTTP credential for one repository host.
+// gitCred is the HTTP credential for one repository's protocol and host.
 type gitCred struct {
+	protocol string
 	host     string
 	username string
 	password string
 }
 
 // credentialHelper answers git's credential requests from the environment,
-// and only for the repository's own host: git asks again, naming the new
-// host, after a redirect to another one, and gets nothing. The secret stays
-// out of argv, out of the mirror's config and out of every other host's
-// requests.
-const credentialHelper = `!f() { test "$1" = get || exit 0; h=; ` +
-	`while IFS= read -r l; do test -n "$l" || break; case "$l" in host=*) h=${l#host=};; esac; done; ` +
-	`test -n "$h" && test "$h" = "$PAPRIKA_GIT_CRED_HOST" || exit 0; ` +
+// and only for the repository's own protocol and host: git asks again, naming
+// the new host, after a redirect to another one, or to http:// on the same
+// host, and gets nothing. The secret stays out of argv, out of the mirror's
+// config and out of every other origin's requests.
+const credentialHelper = `!f() { test "$1" = get || exit 0; h=; p=; ` +
+	`while IFS= read -r l; do test -n "$l" || break; case "$l" in host=*) h=${l#host=};; protocol=*) p=${l#protocol=};; esac; done; ` +
+	`test -n "$h" && test "$h" = "$PAPRIKA_GIT_CRED_HOST" && test "$p" = "$PAPRIKA_GIT_CRED_PROTOCOL" || exit 0; ` +
 	`printf 'username=%s\npassword=%s\n' "$PAPRIKA_GIT_CRED_USERNAME" "$PAPRIKA_GIT_CRED_PASSWORD"; }; f`
 
 // gitRun is one git invocation.
@@ -78,19 +79,35 @@ func execGit(ctx context.Context, r gitRun) ([]byte, error) {
 		hook(r.args, cmd.Process.Pid)
 	}
 	streamErr := streamGitOutput(cmd, pipe, r.stdout)
-	waitErr := cmd.Wait()
-	if ctx.Err() != nil {
-		// Reap anything git started that outlived it.
-		_ = killProcessGroup(cmd.Process.Pid) //nolint:errcheck // the group may be gone already
-		return nil, fmt.Errorf("git %s: %w", op, ctx.Err())
-	}
-	if waitErr != nil {
-		return nil, &gitCommandError{op: op, err: waitErr, stderr: redactGitText(stderr.String(), r.cred)}
-	}
-	if streamErr != nil {
-		return nil, fmt.Errorf("git %s: read output: %w", op, streamErr)
+	if err := finishGit(ctx, cmd, op, streamErr, stderr, r.cred); err != nil {
+		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// finishGit waits for git and reports how it ended. A git that was cancelled,
+// or whose output could not be read, has its group killed and reaped.
+func finishGit(ctx context.Context, cmd *exec.Cmd, op string, streamErr error, stderr *tailBuffer, cred *gitCred) error {
+	waitErr := cmd.Wait()
+	if ctx.Err() != nil || streamErr != nil {
+		killAndReap(cmd.Process.Pid)
+	}
+	switch {
+	case ctx.Err() != nil:
+		return fmt.Errorf("git %s: %w", op, ctx.Err())
+	case waitErr != nil:
+		return &gitCommandError{op: op, err: waitErr, stderr: redactGitText(stderr.String(), cred)}
+	case streamErr != nil:
+		return fmt.Errorf("git %s: read output: %w", op, streamErr)
+	}
+	return nil
+}
+
+// killAndReap kills anything the git process leading group pgid started that
+// outlived it, and reaps what was reparented to this process.
+func killAndReap(pgid int) {
+	_ = killProcessGroup(pgid) //nolint:errcheck // the group may be gone already
+	go reapProcessGroup(pgid)
 }
 
 // newGitCmd builds the git command for r in its own process group, with its
@@ -154,7 +171,7 @@ func gitEnv(dir string, cred *gitCred) []string {
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_NO_LAZY_FETCH=1",
 		"GIT_NO_REPLACE_OBJECTS=1",
-		"GIT_ALLOW_PROTOCOL=https:http:file",
+		"GIT_ALLOW_PROTOCOL="+allowedGitProtocols(),
 	)
 	config := [][2]string{
 		{"credential.helper", ""},
@@ -170,6 +187,7 @@ func gitEnv(dir string, cred *gitCred) []string {
 	if cred != nil {
 		config = append(config, [2]string{"credential.helper", credentialHelper})
 		env = append(env,
+			"PAPRIKA_GIT_CRED_PROTOCOL="+cred.protocol,
 			"PAPRIKA_GIT_CRED_HOST="+cred.host,
 			"PAPRIKA_GIT_CRED_USERNAME="+cred.username,
 			"PAPRIKA_GIT_CRED_PASSWORD="+cred.password,
@@ -182,6 +200,15 @@ func gitEnv(dir string, cred *gitCred) []string {
 			"GIT_CONFIG_VALUE_"+strconv.Itoa(i)+"="+kv[1])
 	}
 	return env
+}
+
+// allowedGitProtocols is GIT_ALLOW_PROTOCOL: HTTP(S), and file only where
+// tests allow local repositories.
+func allowedGitProtocols() string {
+	if allowLocalGitRepos {
+		return "https:http:file"
+	}
+	return "https:http"
 }
 
 // gitCommandError is a git command that exited unsuccessfully.

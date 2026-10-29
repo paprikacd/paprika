@@ -145,7 +145,6 @@ func TestCLIResolve_UnchangedBranchFetchesNothing(t *testing.T) {
 	first := mustResolve(t, src)
 	before := ops.snapshot()
 
-	time.Sleep(lsRemoteJoinWindow + 50*time.Millisecond)
 	again := mustResolve(t, src)
 	after := ops.snapshot()
 	if again.Hash != first.Hash || again.LocalPath != first.LocalPath {
@@ -174,7 +173,6 @@ func TestCLIResolve_PushFetchesOnlyWhatChanged(t *testing.T) {
 	tip := pushAll(t, work, "bump")
 	before, beforeOps := srv.counts(), ops.snapshot()
 
-	time.Sleep(lsRemoteJoinWindow + 50*time.Millisecond)
 	res := mustResolve(t, src)
 
 	c, o := srv.counts(), ops.snapshot()
@@ -242,8 +240,8 @@ func hasObjectIn(mirror, oid string) bool {
 	return err == nil
 }
 
-// N concurrent resolves of one source share one ls-remote, one commit fetch
-// and one blob fetch.
+// N concurrent resolves of one source with a fetchTtl share one ls-remote, one
+// commit fetch and one blob fetch.
 func TestCLIResolve_ConcurrentResolvesShareOneFetch(t *testing.T) {
 	srv, _, tip := chartFixture(t)
 	srv.lsRefsDelay = 200 * time.Millisecond
@@ -257,7 +255,10 @@ func TestCLIResolve_ConcurrentResolvesShareOneFetch(t *testing.T) {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
-			results[i], errs[i] = cliSource(srv.repoURL("origin.git"), "main", "deploy/chart", workDir).Resolve(ctx)
+			src := cliSource(srv.repoURL("origin.git"), "main", "deploy/chart", workDir)
+			src.FetchTTL = 45 * time.Second
+			results[i], errs[i] = src.Resolve(ctx)
+			results[i].Release()
 		})
 	}
 	wg.Wait()
@@ -281,12 +282,23 @@ func TestCLIResolve_RequestGivingUpLeavesItsFetchToFinish(t *testing.T) {
 	srv.hold = make(chan struct{})
 	ops := countGitOps(t)
 	workDir := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := cliSource(srv.repoURL("origin.git"), "main", "deploy/chart", workDir).Resolve(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("resolve = %v, want the request's deadline", err)
+	resolved := make(chan error, 1)
+	go func() {
+		_, err := cliSource(srv.repoURL("origin.git"), tip, "deploy/chart", workDir).Resolve(ctx)
+		resolved <- err
+	}()
+	waitHeld(t, srv) // the fetch reached the server and is waiting
+	cancel()         // the request gives up
+	select {
+	case err := <-resolved:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("resolve = %v, want the request's cancellation", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a cancelled request waited for its fetch")
 	}
-	<-srv.held // the fetch reached the server and is waiting
 	close(srv.hold)
 
 	res := mustResolve(t, cliSource(srv.repoURL("origin.git"), tip, "deploy/chart", workDir))
@@ -322,12 +334,42 @@ func TestCLIResolve_SlowRepositoryDoesNotBlockAnother(t *testing.T) {
 	}()
 	// Registered last, so it runs before workDir is removed.
 	t.Cleanup(func() { close(slow.hold); <-done })
-	<-slow.held
+	waitHeld(t, slow)
 
 	start := time.Now()
 	mustResolve(t, cliSource(fast.repoURL("fast.git"), "main", "chart", workDir))
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Fatalf("fast repository took %s behind a hung one", elapsed)
+	}
+}
+
+// waitHeld waits for a fetch to reach srv's hold, failing the test rather than
+// waiting for go test's timeout.
+func waitHeld(t *testing.T, srv *cliTestServer) {
+	t.Helper()
+	select {
+	case <-srv.held:
+	case <-time.After(30 * time.Second):
+		t.Fatal("no fetch reached the server in 30s")
+	}
+}
+
+// A request with fetchTtl 0 (a sync trigger) never takes an ls-remote answer
+// from before it arrived, however recent.
+func TestCLIResolve_FetchTTLZeroReusesNoEarlierAnswer(t *testing.T) {
+	srv, work, _ := chartFixture(t)
+	ops := countGitOps(t)
+	src := cliSource(srv.repoURL("origin.git"), "main", "deploy/chart", t.TempDir())
+	mustResolve(t, src).Release()
+	writeRepoFile(t, work, "deploy/chart/values.yaml", "replicas: 2\n")
+	next := pushAll(t, work, "bump")
+	res := mustResolve(t, src)
+	res.Release()
+	if res.Revision != next {
+		t.Fatalf("resolve right after a push = %s, want the push %s", res.Revision, next)
+	}
+	if o := ops.snapshot(); o.lsRemote != 2 {
+		t.Fatalf("started %d ls-remotes, want one per fetchTtl-0 resolve", o.lsRemote)
 	}
 }
 

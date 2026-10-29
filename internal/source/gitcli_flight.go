@@ -11,10 +11,11 @@ import (
 // mirror. Every answer comes from an ls-remote and is as fresh as the moment
 // that ls-remote began. A lookup states how stale an answer it accepts
 // (notBefore): a cached answer or an ls-remote already in flight that began at
-// or after notBefore serves it; anything older starts a new ls-remote. N
-// requests for one revision therefore share one ls-remote, while a request
-// that must see the remote as it is now (fetchTtl 0, a sync trigger) never
-// takes an answer from before it arrived.
+// or after notBefore serves it; anything older starts a new ls-remote.
+// Requests with a fetchTtl therefore share one ls-remote (and its answer for
+// the TTL), while a request with fetchTtl 0 (a sync trigger) passes the moment
+// it arrived and never takes an answer from before it: it shares only an
+// ls-remote that another request starts after it arrived.
 type revisionCache struct {
 	mu       sync.Mutex
 	entries  map[string]revisionAnswer

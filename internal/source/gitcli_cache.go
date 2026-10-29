@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,7 +86,7 @@ func evictCache(ctx context.Context, root string, maxBytes int64, minAge time.Du
 				"bytes", e.size, "lastUsed", e.lastUsed.UTC().Format(time.RFC3339))
 		}
 	}
-	paprikametrics.GitCacheSize.Record(ctx, total)
+	paprikametrics.GitCacheSize.Record(ctx, total, metric.WithAttributes(attribute.String("dir", root)))
 	return total
 }
 
@@ -126,6 +127,11 @@ func scanCache(ctx context.Context, root string) (entries []cacheEntry, total in
 // instead when it is an interrupted write old enough to be abandoned.
 func checkoutEntry(ctx context.Context, dir, name string) (cacheEntry, bool) {
 	path := filepath.Join(dir, name)
+	if strings.Contains(name, checkoutEvictInfix) {
+		// Moved out of place by an eviction that did not finish deleting it.
+		_ = os.RemoveAll(path) //nolint:errcheck // retried by the next scan
+		return cacheEntry{}, false
+	}
 	marker := path + checkoutMarkerSuffix
 	if used := modTime(marker); !used.IsZero() && !strings.Contains(name, checkoutTempInfix) {
 		return cacheEntry{kind: "checkout", path: path, marker: marker, size: dirSize(path), lastUsed: used}, true
@@ -138,18 +144,19 @@ func checkoutEntry(ctx context.Context, dir, name string) (cacheEntry, bool) {
 	return cacheEntry{}, false
 }
 
-// removeCacheEntry removes e, reporting whether it did. A checkout used since
-// the scan is kept, and loses its marker first, so no resolve takes it while
-// it is removed; a mirror is removed only when no resolve holds it.
+// removeCacheEntry removes e, reporting whether it did. A checkout that is
+// leased, or was used since the scan, is kept. Otherwise, under the lease
+// lock, it loses its marker and is renamed out of place, so a resolve that
+// leases it afterwards finds nothing and writes it again rather than reading
+// a directory being deleted. A mirror is removed only when no resolve holds
+// it.
 func removeCacheEntry(e *cacheEntry, minAge time.Duration) bool {
 	if e.kind == "checkout" {
-		if time.Since(modTime(e.marker)) < minAge {
+		trash, ok := retireCheckout(e, minAge)
+		if !ok {
 			return false
 		}
-		if err := os.Remove(e.marker); err != nil && !os.IsNotExist(err) {
-			return false
-		}
-		return os.RemoveAll(e.path) == nil
+		return os.RemoveAll(trash) == nil
 	}
 	repo := cliRepoFor(e.path, "")
 	if !repo.life.TryLock() {
@@ -158,6 +165,27 @@ func removeCacheEntry(e *cacheEntry, minAge time.Duration) bool {
 	defer repo.life.Unlock()
 	repo.inited.Store(false)
 	return os.RemoveAll(e.path) == nil
+}
+
+// checkoutEvictInfix marks a checkout moved out of place to be deleted.
+const checkoutEvictInfix = ".evict-"
+
+// retireCheckout takes an unleased checkout out of use and returns where it
+// now is.
+func retireCheckout(e *cacheEntry, minAge time.Duration) (string, bool) {
+	checkoutLeases.Lock()
+	defer checkoutLeases.Unlock()
+	if checkoutLeases.n[e.path] > 0 || time.Since(modTime(e.marker)) < minAge {
+		return "", false
+	}
+	if err := os.Remove(e.marker); err != nil && !os.IsNotExist(err) {
+		return "", false
+	}
+	trash := e.path + checkoutEvictInfix + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if err := os.Rename(e.path, trash); err != nil {
+		return "", false
+	}
+	return trash, true
 }
 
 // dirSize is the apparent size of the files under dir.

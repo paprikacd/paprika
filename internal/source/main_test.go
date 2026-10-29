@@ -9,6 +9,8 @@ import (
 // GitSource without a Backend, to that backend. The CLI backend's tests name
 // it on each source.
 func TestMain(m *testing.M) {
+	// The tests' origins are local repositories.
+	allowLocalGitRepos = true
 	s := defaultGitSettings()
 	s.backend = GitBackendGoGit
 	installGitSettings(s)
@@ -39,4 +41,17 @@ func forgetCLIState() {
 	cliRepos.Lock()
 	cliRepos.m = map[string]*cliRepo{}
 	cliRepos.Unlock()
+}
+
+// withGitBinary makes the CLI backend look for git under name, for one test.
+func withGitBinary(t *testing.T, name string) {
+	t.Helper()
+	reprobe := func(bin string) {
+		gitCLIProbe.Lock()
+		gitBinary, gitCLIProbe.done = bin, false
+		gitCLIProbe.Unlock()
+	}
+	before := gitBinary
+	reprobe(name)
+	t.Cleanup(func() { reprobe(before) })
 }

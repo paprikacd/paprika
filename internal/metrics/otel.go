@@ -125,7 +125,8 @@ var (
 	GitCacheLookups = mustCounter(meter, "paprika.git.cache.lookups",
 		"Git cache lookups by layer and result")
 
-	// GitCacheSize is the git cache's size on disk after its last scan.
+	// GitCacheSize is the git cache's size on disk after its last scan, per
+	// work dir (dir): the manager's fallback renderer has two.
 	GitCacheSize = mustSyncGauge(meter, "paprika.git.cache.size", "By",
 		"Bytes on disk in the git cache")
 

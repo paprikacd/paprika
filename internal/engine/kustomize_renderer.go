@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/source"
 )
 
 // renderKustomize renders a Kustomize template. If previousOutput is non-empty and
@@ -32,7 +33,8 @@ func (r *HelmSDKRenderer) renderKustomize(ctx context.Context, tmpl *paprika.Tem
 		return r.renderWithOverlay(kust, "", previousOutput)
 	}
 
-	path, err := r.resolveKustomizePath(ctx, tmpl)
+	path, release, err := r.resolveKustomizePath(ctx, tmpl)
+	defer release()
 	if err != nil {
 		return nil, fmt.Errorf("resolve kustomize path: %w", err)
 	}
@@ -53,34 +55,30 @@ func kustomizeHasTransformations(kust *paprika.KustomizeSourceSpec) bool {
 		len(kust.CommonAnnotations) > 0
 }
 
-func (r *HelmSDKRenderer) resolveKustomizePath(ctx context.Context, tmpl *paprika.Template) (string, error) {
+// resolveKustomizePath returns the kustomization's directory and a release
+// to call once the build has read it.
+func (r *HelmSDKRenderer) resolveKustomizePath(ctx context.Context, tmpl *paprika.Template) (dir string, release func(), err error) {
 	kust := tmpl.Spec.Kustomize
 	if kust.Path != "" {
-		return kust.Path, nil
+		return kust.Path, func() {}, nil
 	}
 
+	var resolve func(context.Context, *paprika.Template) (*source.ResolveResult, error)
 	switch tmpl.Spec.Type {
 	case sourceTypeGit:
-		result, resolveErr := r.resolveGitSource(ctx, tmpl)
-		if resolveErr != nil {
-			return "", resolveErr
-		}
-		return result.LocalPath, nil
+		resolve = r.resolveGitSource
 	case sourceTypeS3:
-		result, resolveErr := r.resolveS3Source(ctx, tmpl)
-		if resolveErr != nil {
-			return "", resolveErr
-		}
-		return result.LocalPath, nil
+		resolve = r.resolveS3Source
 	case sourceTypeOCI:
-		result, resolveErr := r.resolveOCISource(ctx, tmpl)
-		if resolveErr != nil {
-			return "", resolveErr
-		}
-		return result.LocalPath, nil
+		resolve = r.resolveOCISource
 	default:
-		return "", errors.New("kustomize path or git/s3/oci source is required")
+		return "", func() {}, errors.New("kustomize path or git/s3/oci source is required")
 	}
+	result, err := resolve(ctx, tmpl)
+	if err != nil {
+		return "", func() {}, err
+	}
+	return result.LocalPath, result.Release, nil
 }
 
 func (r *HelmSDKRenderer) renderWithOverlay(kust *paprika.KustomizeSourceSpec, basePath string, baseContent []byte) ([]byte, error) {

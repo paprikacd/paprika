@@ -31,6 +31,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/source"
 )
 
 var applicationlog = logf.Log.WithName("application-resource")
@@ -145,6 +146,13 @@ func validateInlineSource(source *pipelinesv1alpha1.InlineSourceSpec, path *fiel
 func (v *ApplicationCustomValidator) validateGitSource(app *pipelinesv1alpha1.Application, sourcePath *field.Path) field.ErrorList {
 	if app.Spec.Source.RepoURL == "" && app.Spec.Source.RepoRef == "" {
 		return field.ErrorList{field.Required(sourcePath.Child("repoUrl"), "repoUrl or repoRef is required for git sources")}
+	}
+	if app.Spec.Source.RepoURL != "" {
+		// A file:// URL or local path would render another repository cached
+		// on the repo server, or any directory it can read.
+		if err := source.ValidateGitRepoURL(app.Spec.Source.RepoURL); err != nil {
+			return field.ErrorList{field.Invalid(sourcePath.Child("repoUrl"), app.Spec.Source.RepoURL, err.Error())}
+		}
 	}
 	return nil
 }

@@ -179,25 +179,37 @@ const (
 	minGitMinor = 44
 )
 
-var (
-	gitCLIOnce sync.Once
-	gitCLIPath string
-	errGitCLI  error
-)
+// gitBinary is the git the CLI backend looks up on PATH.
+var gitBinary = "git"
+
+// gitCLIProbe remembers the result of looking for a usable git.
+var gitCLIProbe struct {
+	sync.Mutex
+	done bool
+	path string
+	err  error
+}
 
 var gitVersionRe = regexp.MustCompile(`git version (\d+)\.(\d+)`)
 
 // gitCLI returns the git binary the CLI backend runs, once it has checked
 // that it is new enough.
 func gitCLI() (string, error) {
-	gitCLIOnce.Do(func() {
-		gitCLIPath, errGitCLI = probeGitCLI()
-	})
-	return gitCLIPath, errGitCLI
+	gitCLIProbe.Lock()
+	defer gitCLIProbe.Unlock()
+	if !gitCLIProbe.done {
+		gitCLIProbe.path, gitCLIProbe.err = gitCLIProber()
+		gitCLIProbe.done = true
+	}
+	return gitCLIProbe.path, gitCLIProbe.err
 }
 
+// gitCLIProber looks for a usable git. The probe runs once per process, under
+// its own 10-second bound, not under the request that first needs it.
+var gitCLIProber = probeGitCLI
+
 func probeGitCLI() (string, error) {
-	path, err := exec.LookPath("git")
+	path, err := exec.LookPath(gitBinary)
 	if err != nil {
 		return "", fmt.Errorf("git CLI backend: %w", err)
 	}
@@ -241,21 +253,46 @@ func (g *GitSource) backend() GitBackend {
 	return GitBackendCLI
 }
 
-// cliServesURL reports whether the CLI backend fetches raw: HTTP(S), file://
-// and local paths. These are the transports the go-git backend authenticates
-// too; SSH keys were never wired to either.
+// cliServesURL reports whether the CLI backend fetches raw: HTTP(S), and local
+// repositories only where tests allow them.
 func cliServesURL(raw string) bool {
-	if filepath.IsAbs(raw) {
+	if isLocalRepoURL(raw) {
+		return allowLocalGitRepos
+	}
+	return ValidateGitRepoURL(raw) == nil
+}
+
+// allowLocalGitRepos lets file:// URLs and local paths resolve. Only tests set
+// it: in a repo server, a local URL would let an Application render another
+// repository's cached files, or any directory the process can read.
+var allowLocalGitRepos = false
+
+// ValidateGitRepoURL accepts an http:// or https:// URL with a host: the only
+// git sources Paprika fetches. It rejects file:// URLs and local paths (which
+// would read the server's own disk), SSH and scp-style addresses (no SSH
+// credentials are wired) and git://. The Application, Template and Repository
+// webhooks call it, and every resolve checks it again.
+func ValidateGitRepoURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return fmt.Errorf("git repository URL %q must be an http:// or https:// URL", redactURL(raw))
+	}
+	return nil
+}
+
+// isLocalRepoURL reports whether raw names a repository on the local disk.
+func isLocalRepoURL(raw string) bool {
+	if filepath.IsAbs(raw) || strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "../") {
 		return true
 	}
 	u, err := url.Parse(raw)
-	if err != nil {
-		return false
+	return err == nil && u.Scheme == "file"
+}
+
+// checkRepoURL refuses a repository the process must not fetch.
+func (g *GitSource) checkRepoURL() error {
+	if allowLocalGitRepos && isLocalRepoURL(g.RepoURL) {
+		return nil
 	}
-	switch u.Scheme {
-	case "https", "http", "file":
-		return true
-	default:
-		return false
-	}
+	return ValidateGitRepoURL(g.RepoURL)
 }

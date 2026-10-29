@@ -33,6 +33,8 @@ type cliTestServer struct {
 	// hold, when set, blocks each fetch until it is closed or the client
 	// goes away.
 	hold chan struct{}
+	// v0 serves only protocol v0, as servers that predate v2 do.
+	v0 bool
 
 	mu          sync.Mutex
 	lsRefs      int
@@ -67,6 +69,9 @@ func (s *cliTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+	}
+	if s.v0 {
+		r.Header.Del("Git-Protocol")
 	}
 	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
 		if !s.inspect(w, r) {

@@ -328,3 +328,41 @@ func TestApplicationCustomValidator_Quota(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+// A git source must be fetched over HTTP(S): a file:// URL or a local path
+// would render another repository cached on the repo server, or any directory
+// the repo server can read.
+func TestApplicationCustomValidator_RejectsNonHTTPGitURLs(t *testing.T) {
+	v := &ApplicationCustomValidator{}
+	for _, url := range []string{"file:///tmp/paprika-repo/git-cache/mirrors/x.git", "/tmp/paprika-repo", "git@github.com:org/repo.git", "ssh://git@github.com/org/repo.git", "git://github.com/org/repo"} {
+		app := &pipelinesv1alpha1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+			Spec: pipelinesv1alpha1.ApplicationSpec{
+				Project: "default",
+				Source:  pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeGit, RepoURL: url},
+			},
+		}
+		errs := v.validateSource(app)
+		require.Len(t, errs, 1, url)
+		assert.Contains(t, errs[0].Error(), "http:// or https://", url)
+	}
+	for _, url := range []string{"https://github.com/org/repo", "http://gitea.gitea.svc:3000/org/repo.git"} {
+		app := &pipelinesv1alpha1.Application{Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeGit, RepoURL: url},
+		}}
+		assert.Empty(t, v.validateSource(app), url)
+	}
+}
+
+func TestTemplateCustomValidator_RejectsNonHTTPGitURLs(t *testing.T) {
+	v := &TemplateCustomValidator{}
+	tmpl := &pipelinesv1alpha1.Template{Spec: pipelinesv1alpha1.TemplateSpec{
+		Type: "git",
+		Git:  &pipelinesv1alpha1.GitSourceSpec{RepoURL: "file:///etc"},
+	}}
+	errs := v.validateTemplateCreate(tmpl)
+	require.Len(t, errs, 1)
+	assert.Contains(t, errs[0].Error(), "spec.git.repoUrl")
+	tmpl.Spec.Git.RepoURL = "https://github.com/org/repo"
+	assert.Empty(t, v.validateTemplateCreate(tmpl))
+}

@@ -9,3 +9,5 @@ import "os/exec"
 func isolateProcessGroup(*exec.Cmd) {}
 
 func killProcessGroup(int) error { return nil }
+
+func reapProcessGroup(int) {}
