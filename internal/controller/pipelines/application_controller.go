@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -3202,7 +3203,9 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
-		For(&paprikav1.Application{}).
+		// Observation-only status writes are this controller's own echo; the
+		// reconcile that wrote them already scheduled the next one.
+		For(&paprikav1.Application{}, builder.WithPredicates(applicationUpdateFilter())).
 		Owns(&paprikav1.Template{}).
 		Owns(&paprikav1.Pipeline{}).
 		Owns(&paprikav1.Stage{}).
