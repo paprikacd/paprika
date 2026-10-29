@@ -106,3 +106,16 @@ func TestRepositoryCustomDefaulter_Default(t *testing.T) {
 	repo := &corev1alpha1.Repository{ObjectMeta: metav1.ObjectMeta{Name: "repo"}}
 	require.NoError(t, d.Default(context.Background(), repo))
 }
+
+func TestRepositoryCustomValidator_RejectsNonHTTPGitURLs(t *testing.T) {
+	v := &RepositoryCustomValidator{}
+	for _, url := range []string{"file:///tmp/paprika-repo", "/srv/git/repo.git", "git@github.com:org/repo.git"} {
+		repo := &corev1alpha1.Repository{
+			ObjectMeta: metav1.ObjectMeta{Name: "repo"},
+			Spec:       corev1alpha1.RepositorySpec{Type: corev1alpha1.RepositoryTypeGit, URL: url},
+		}
+		err := v.validateRepository(repo)
+		require.Error(t, err, url)
+		assert.Contains(t, err.Error(), "http:// or https://", url)
+	}
+}

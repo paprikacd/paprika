@@ -50,12 +50,17 @@ COPY --from=mcp-ui-builder /mcp-ui/dist/console.html internal/api/mcp/ui/dist/co
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -a -o manager ./cmd
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w" -o insights ./cmd/paprika-insights
 
-# Alpine: runtime needs ca-certificates for outbound TLS and tar (busybox)
-# for S3 archives. All git/helm work is in-process (go-git, Helm SDK) — no
-# binaries are exec'd.
+# Alpine: runtime needs ca-certificates for outbound TLS and tar (busybox) for
+# S3 archives. Helm rendering is in-process (Helm SDK).
+# git (the 2.54 series; the CLI backend needs >= 2.44): the cluster image's repo
+# server and manager fetch git sources with the git CLI as a blobless partial
+# clone, so only the files under a source's path are downloaded
+# (internal/source/gitcli.go). Without it they fall back to go-git, which
+# downloads every blob of the tip tree. The release image (Dockerfile.goreleaser)
+# deliberately ships no git and uses go-git.
 FROM alpine:3.24
 WORKDIR /
-RUN apk add --no-cache ca-certificates && \
+RUN apk add --no-cache ca-certificates "git~2.54" && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager .
