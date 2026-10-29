@@ -80,6 +80,12 @@ manager:
     ## triggers always bypass the cache.
     ##
     sourceResolveTTL: ""
+    ## Upper bound on each repo-server call the Application controller makes
+    ## (binary default 1m). A timed-out call is retried on a later reconcile,
+    ## never repeated with a local clone. Release rendering keeps
+    ## repoServer.clientTimeout.
+    ##
+    repoServerTimeout: ""
     ## Full resync period for the manager's informer cache.
     ##
     cacheResyncPeriod: ""

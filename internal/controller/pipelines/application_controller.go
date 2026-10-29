@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -671,11 +672,14 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
+// syncTriggerAnnotations are the annotations that request an immediate sync.
+var syncTriggerAnnotations = []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation}
+
 func syncTriggerPresent(annotations map[string]string) bool {
 	if annotations == nil {
 		return false
 	}
-	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
+	for _, key := range syncTriggerAnnotations {
 		if _, ok := annotations[key]; ok {
 			return true
 		}
@@ -691,28 +695,122 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 	log := log.FromContext(ctx)
 	log.Info("Sync trigger detected")
 	manualOverride := app.Annotations[manualSyncAnnotation] != ""
-	patch := client.MergeFrom(app.DeepCopy())
-	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
-		delete(app.Annotations, key)
+	handled := syncTriggerValues(app.Annotations)
+
+	refresh := r.syncTriggerRefreshesSource(app)
+	var refreshed syncSourceRefresh
+	if refresh {
+		// Bypass the resolve cache: a sync trigger means the operator wants the
+		// latest commit now, not a result up to SourceResolveTTL stale.
+		//
+		// Resolve before consuming the trigger. A repo server that could not
+		// answer in time (a cold mirror of a large repository, fetching
+		// detached) will answer a later try; clearing the annotation first
+		// dropped the request and left the commit to a later poll.
+		refreshed.hash, refreshed.revision, refreshed.err = r.resolveSourceHash(ctx, app, true)
+		if errors.Is(refreshed.err, engine.ErrRepoServerTimeout) {
+			log.Info("Source refresh for sync trigger timed out; keeping the trigger to retry", "error", refreshed.err.Error())
+			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+		}
 	}
-	if err := r.client.Patch(ctx, app, patch); err != nil {
+
+	if err := r.consumeSyncTrigger(ctx, app, handled); err != nil {
 		log.Error(err, "Failed to clear sync trigger annotation")
 		return ctrl.Result{}, fmt.Errorf("clearing sync trigger annotation: %w", err)
 	}
 
-	if r.syncTriggerRefreshesSource(app) {
-		// Bypass the resolve cache: a sync trigger means the operator wants the
-		// latest commit now, not a result up to SourceResolveTTL stale.
-		sourceChanged, err := r.checkSourceChanged(ctx, app, true)
-		if err != nil {
-			log.Error(err, "Failed to refresh source after sync trigger")
-			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
-		}
-		if sourceChanged {
-			return r.startNewReleaseFlow(ctx, app, manualOverride, "SourceChanged", "source hash changed, creating a new release")
+	if refresh {
+		return r.finishSyncTriggerRefresh(ctx, app, refreshed, manualOverride)
+	}
+	return r.finishSyncTrigger(ctx, app, manualOverride)
+}
+
+// syncTriggerValues returns the sync trigger annotations present and their
+// values: the requests this reconcile handles.
+func syncTriggerValues(annotations map[string]string) map[string]string {
+	values := make(map[string]string, len(syncTriggerAnnotations))
+	for _, key := range syncTriggerAnnotations {
+		if value, ok := annotations[key]; ok {
+			values[key] = value
 		}
 	}
+	return values
+}
 
+// consumeSyncTrigger removes the sync trigger annotations this reconcile
+// handled, and only while they still hold the values it handled. The refresh
+// runs before the trigger is consumed, so a deploy can set a new value
+// (paprika.io/sync=<sha>-<attempt>) while it resolves: that is a new request
+// for a commit this resolve may not have seen, and is left for the next
+// reconcile. The write is a merge patch under the read resourceVersion, retried
+// on a conflict against a fresh read. On return app is the stored object, as a
+// Patch leaves it.
+func (r *ApplicationReconciler) consumeSyncTrigger(ctx context.Context, app *paprikav1.Application, handled map[string]string) error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Application
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(app), &fresh); err != nil {
+			return fmt.Errorf("fetching application to clear sync trigger: %w", err)
+		}
+		base := fresh.DeepCopy()
+		cleared := false
+		for key, value := range handled {
+			current, ok := fresh.Annotations[key]
+			if !ok {
+				continue
+			}
+			if current != value {
+				log.FromContext(ctx).Info("A newer sync trigger arrived during the refresh; leaving it for the next reconcile",
+					"annotation", key, "handled", value, "current", current)
+				continue
+			}
+			delete(fresh.Annotations, key)
+			cleared = true
+		}
+		if cleared {
+			if err := r.client.Patch(ctx, &fresh, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+				return fmt.Errorf("patching sync trigger annotation: %w", err)
+			}
+		}
+		fresh.DeepCopyInto(app)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("consume sync trigger: %w", err)
+	}
+	return nil
+}
+
+// syncSourceRefresh is the forced source resolve a sync trigger runs.
+type syncSourceRefresh struct {
+	hash, revision string
+	err            error
+}
+
+// finishSyncTriggerRefresh records the refreshed source of a consumed sync
+// trigger and starts a release when the managed content changed. The source is
+// recorded only after the trigger is consumed: a recorded hash with the trigger
+// still present would make the retry see no change and never start the release.
+func (r *ApplicationReconciler) finishSyncTriggerRefresh(ctx context.Context, app *paprikav1.Application, refreshed syncSourceRefresh, manualOverride bool) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	if refreshed.err != nil {
+		log.Error(refreshed.err, "Failed to refresh source after sync trigger")
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+	}
+	sourceChanged, err := r.recordResolvedSource(ctx, app, refreshed.hash, refreshed.revision)
+	if err != nil {
+		log.Error(err, "Failed to refresh source after sync trigger")
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+	}
+	if sourceChanged {
+		return r.startNewReleaseFlow(ctx, app, manualOverride, "SourceChanged", "source hash changed, creating a new release")
+	}
+	return r.finishSyncTrigger(ctx, app, manualOverride)
+}
+
+// finishSyncTrigger completes a consumed sync trigger that started no release:
+// a manual sync resyncs the current release.
+func (r *ApplicationReconciler) finishSyncTrigger(ctx context.Context, app *paprikav1.Application, manualOverride bool) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
 	if manualOverride {
 		if err := r.requestCurrentReleaseResync(ctx, app); err != nil {
 			log.Error(err, "Failed to request current release resync")
@@ -1860,7 +1958,6 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 }
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (bool, error) {
-	log := log.FromContext(ctx)
 	if promotionSourceSelectionPending(app) {
 		return false, nil
 	}
@@ -1868,7 +1965,14 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	if err != nil {
 		return false, err
 	}
+	return r.recordResolvedSource(ctx, app, newHash, newRevision)
+}
 
+// recordResolvedSource compares a resolved source identity with the one the
+// Application last recorded, records it when the managed content changed, and
+// reports whether it did.
+func (r *ApplicationReconciler) recordResolvedSource(ctx context.Context, app *paprikav1.Application, newHash, newRevision string) (bool, error) {
+	log := log.FromContext(ctx)
 	usable, err := validateResolvedSourceIdentity(ctx, app, newHash, newRevision)
 	if err != nil {
 		return false, err
@@ -1984,7 +2088,11 @@ func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *
 		}
 	}
 
-	result, resolveErr := renderer.ResolveSource(ctx, &tmpl)
+	resolveTmpl := &tmpl
+	if forceRefresh {
+		resolveTmpl = templateFetchingNow(&tmpl)
+	}
+	result, resolveErr := renderer.ResolveSource(ctx, resolveTmpl)
 	if resolveErr != nil {
 		return "", "", fmt.Errorf("resolve source: %w", resolveErr)
 	}
@@ -1996,6 +2104,21 @@ func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *
 	}
 	hash, err = r.remoteRenderSourceHash(ctx, app, &tmpl, result.Hash)
 	return hash, result.Revision, err
+}
+
+// templateFetchingNow returns tmpl with its Git fetch TTL removed, so the
+// resolve fetches the branch from the remote instead of answering from a mirror
+// fetched within spec.git.fetchTtl. A sync trigger is usually set seconds after
+// the push it is for (BrandBrain's deploy pushes its chart bump, then annotates
+// three seconds later), which a 45s TTL would otherwise answer with the
+// previous commit. tmpl itself is not modified.
+func templateFetchingNow(tmpl *paprikav1.Template) *paprikav1.Template {
+	if tmpl.Spec.Git == nil || tmpl.Spec.Git.FetchTTL == "" {
+		return tmpl
+	}
+	out := tmpl.DeepCopy()
+	out.Spec.Git.FetchTTL = ""
+	return out
 }
 
 func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprikav1.Application) {
@@ -2224,13 +2347,53 @@ func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *papri
 	}
 
 	renderCtx := r.desiredManifestRenderContext(ctx, app)
-	stampTemplateSourceIdentity(&tmpl, renderCtx.sourceHash, renderCtx.sourceRevision)
+	revision := r.driftRenderRevision(ctx, app, &tmpl, renderCtx)
+	stampTemplateSourceIdentity(&tmpl, renderCtx.sourceHash, revision)
 
 	manifests, err := renderer.Render(ctx, &tmpl, renderCtx.params)
 	if err != nil {
 		return nil, fmt.Errorf("render template for diff: %w", err)
 	}
 	return manifests, nil
+}
+
+// driftRenderRevision is the commit the drift render pins: the active
+// release's, unless the poll's last resolve (still in the resolve cache) found
+// another commit whose managed content is identical by the test
+// checkSourceChanged applies before it declines to start a release. Both
+// commits render the same manifests, and the resolved one is in the repo
+// server's mirror, while the release's may not be.
+//
+// After a repo-server restart the mirror holds only the branch tip, at depth
+// 1. In a monorepo the active release's commit is usually an ancestor of that
+// tip (later commits did not touch the chart), and fetching a commit below the
+// shallow boundary brings its whole tree: on omega-ha (2026-10-29) the
+// brandbrain-api drift render pinned to e5e9b6d48, one commit behind the
+// mirrored 29a3f4074 with an identical chart, took about 20 minutes on the repo
+// server (brandbrain's tip tree is 10 GB, its chart 102 KB) and held the
+// repository lock that every brandbrain resolve, sync triggers included,
+// waits on.
+func (r *ApplicationReconciler) driftRenderRevision(ctx context.Context, app *paprikav1.Application, tmpl *paprikav1.Template, renderCtx desiredManifestRenderContext) string {
+	pinned := renderCtx.sourceRevision
+	if !r.driftRenderMayReuseResolve(tmpl, renderCtx) {
+		return pinned
+	}
+	cachedHash, cachedRevision, ok := r.sourceResolveCache().get(sourceResolveKey(tmpl))
+	if !ok || cachedRevision == "" || cachedRevision == pinned {
+		return pinned
+	}
+	resolvedHash, err := r.remoteRenderSourceHash(ctx, app, tmpl, cachedHash)
+	if err != nil || sourceContentHash(resolvedHash) != sourceContentHash(renderCtx.sourceHash) {
+		return pinned
+	}
+	return cachedRevision
+}
+
+// driftRenderMayReuseResolve reports whether a drift render has a pinned Git
+// source identity to compare a cached resolve against.
+func (r *ApplicationReconciler) driftRenderMayReuseResolve(tmpl *paprikav1.Template, renderCtx desiredManifestRenderContext) bool {
+	return renderCtx.sourceRevision != "" && renderCtx.sourceHash != "" && r.SourceResolveTTL > 0 &&
+		tmpl.Spec.Type == paprikav1.SourceTypeGit && tmpl.Spec.Git != nil
 }
 
 type desiredManifestRenderContext struct {
@@ -3202,7 +3365,9 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
-		For(&paprikav1.Application{}).
+		// Observation-only status writes are this controller's own echo; the
+		// reconcile that wrote them already scheduled the next one.
+		For(&paprikav1.Application{}, builder.WithPredicates(applicationUpdateFilter())).
 		Owns(&paprikav1.Template{}).
 		Owns(&paprikav1.Pipeline{}).
 		Owns(&paprikav1.Stage{}).

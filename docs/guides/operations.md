@@ -263,6 +263,7 @@ Helm values — the same names rendered as args). Defaults are tuned for a
 |---|---|---|---|
 | `transientRequeue` | `--application-transient-requeue` | `5s` | In-flight Application states (pending/building/releasing) and the steady-state poll fallback. |
 | `sourceResolveTTL` | `--application-source-resolve-ttl` | `1m` | How long a source resolve (git fetch) is reused by the steady-state poll. `0s` resolves every poll; sync triggers bypass the cache. |
+| `repoServerTimeout` | `--application-repo-server-timeout` | `1m` | Upper bound on each repo-server call (source resolve, drift render) the Application controller makes. A timed-out call is retried on a later reconcile and never repeated with the local renderer, because the repo server finishes its fetch after the client gives up. Release rendering keeps `repoServer.clientTimeout`. |
 | `cacheResyncPeriod` | `--cache-resync-period` | `1h` | Full informer resync. Rarely worth lowering; explicit `RequeueAfter` values drive the real cadence. |
 | `maxConcurrentReconciles.application` | `--application-max-concurrent-reconciles` | `8` | Application worker pool. Raise when queue delay grows under a burst. |
 | `maxConcurrentReconciles.release` | `--release-max-concurrent-reconciles` | `5` | Release worker pool. |
