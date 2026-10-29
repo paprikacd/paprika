@@ -11,7 +11,8 @@ import {
 import { EmptyState, formatMetric } from "../chart-renderers"
 import type { RecordFrame } from "../schema"
 import styles from "./records.module.css"
-import { StyledRecordCell, tableCellStyleError, tableCellStylesSchema } from "./record-table-cells"
+import { StyledRecordCell, tableCellStyleError, tableCellStylesSchema, tableTextPalette } from "./record-table-cells"
+import { useInsightsTheme } from "../insights-theme"
 
 const key = z.string().min(1).max(128)
 const tableConfig = z.strictObject({
@@ -104,6 +105,9 @@ export function RecordTable({
   embedded,
   onContextChange,
 }: WidgetRendererProps) {
+  const { resolvedTheme } = useInsightsTheme()
+  const textColors = useMemo(() => tableTextPalette(resolvedTheme, widget.options?.background, widget.options?.thresholds, widget.color),
+    [resolvedTheme, widget.options?.background, widget.options?.thresholds, widget.color])
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
   const [sort, setSort] = useState<{
@@ -221,7 +225,7 @@ export function RecordTable({
                     const formatted = cell(frame, row, index, widget.options?.decimals)
                     return <td key={index} title={text(row[index])} data-numeric={field.type === "number" || undefined} data-styled-cell={style?.display}>
                       {style ? <StyledRecordCell value={row[index]} formatted={formatted} column={field} style={style}
-                        thresholds={widget.options?.thresholds} color={widget.color} /> : formatted}
+                        thresholds={widget.options?.thresholds} color={widget.color} textColors={textColors} /> : formatted}
                     </td>
                   })}
                   {onContextChange && !embedded && (

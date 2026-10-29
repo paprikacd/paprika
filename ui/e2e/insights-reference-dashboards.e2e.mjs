@@ -148,6 +148,18 @@ async function renderEveryPanel(board) {
         if(style.display==="bar") {
           const bars=await cells.locator('[data-bar-start]').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{width:r.width,height:r.height,start:Number(node.dataset.barStart),end:Number(node.dataset.barEnd)}}))
           assert.ok(bars.every(bar=>bar.width>bar.height*2 && bar.start>=0 && bar.end<=1 && bar.end>=bar.start),`${widget.title}: in-cell bars have bounded horizontal geometry`)
+        } else {
+          const contrasts=await cells.evaluateAll(nodes=>{
+            const channels=color=>{const values=color.match(/[\d.]+/g)?.map(Number)??[];return color.startsWith("color(srgb")?values.slice(0,3).map(value=>value*255):values.slice(0,3)}
+            const luminance=color=>channels(color).map(value=>{const channel=value/255;return channel<=.04045?channel/12.92:((channel+.055)/1.055)**2.4}).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0)
+            return nodes.map(node=>{
+              let parent=node,background=""
+              while(parent){background=getComputedStyle(parent).backgroundColor;if(background!=="transparent"&&background!=="rgba(0, 0, 0, 0)")break;parent=parent.parentElement}
+              const foreground=getComputedStyle(node).color,a=luminance(foreground),b=luminance(background)
+              return{foreground,background,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
+            })
+          })
+          assert.ok(contrasts.every(entry=>entry.ratio>=4.5),`${widget.title}: colored numeric text remains readable in this theme: ${JSON.stringify(contrasts)}`)
         }
       }
       if(page.viewportSize().width<600) {
@@ -318,6 +330,25 @@ try {
     const reloaded=await environment.api(`dashboards/${before.dashboards[0].id}`);assert.equal(reloaded.etag,receipt.etag)
     persisted=after
     return{dashboards:after.dashboards.length,savedQueries:after.queries.length,etagPreserved:true}
+  })
+  await check("Saved-query library loading stays a loading state until definitions arrive",async()=>{
+    let release, blocked=false
+    const pending=new Promise(resolve=>{release=resolve})
+    const pattern="**/api/insights/saved-queries"
+    const hold=async route=>{blocked=true;await pending;await route.fallback()}
+    await page.route(pattern,hold)
+    try {
+      const board=persisted.dashboards.find(item=>item.title==="Service overview")
+      await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${board.id}`,{waitUntil:"domcontentloaded"})
+      await page.getByRole("heading",{name:board.title,exact:true}).waitFor()
+      await until(()=>blocked,"Saved-query list must be held for the loading-state check")
+      await page.getByRole("status",{name:"Loading widget",exact:true}).first().waitFor()
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+      assert.deepEqual(await page.getByRole("alert").allTextContents(),[],"Loading saved definitions must not flash a query failure")
+      release()
+      await renderEveryPanel(board)
+      return{delayedLibrary:true,loadingBeforeDefinitions:true,queriesRenderAfterRelease:true}
+    } finally {release();await page.unroute(pattern,hold)}
   })
   await page.setViewportSize({width:390,height:844})
   for(const reference of referenceDashboards)for(const theme of ["Dark","Light"])await check(`${reference.title}: ${theme} generated dashboard remains usable on mobile`,async()=>{

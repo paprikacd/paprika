@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
 import { exactMetric } from "../chart-data"
 import { thresholdForValue } from "../chart-renderers"
-import { readableTextColor } from "../appearance"
+import { contrastRatio, readableTextColor } from "../appearance"
 import type { RecordFrame, Threshold } from "../schema"
 import styles from "./records.module.css"
 
@@ -27,6 +27,36 @@ export const tableCellStylesSchema = z.array(cellStyle).max(16).superRefine((ent
   })
 })
 export type TableCellStyle = z.infer<typeof cellStyle>
+
+// Match the scoped Gamma panel/chart tokens (guarded by the palette test).
+const tableThemes = {
+  light: { background: "#ffffff", color: "#bb5037" },
+  dark: { background: "#182127", color: "#ed8d70" },
+}
+
+/** Retain an authored hue, changing only its rendered text tone when needed. */
+export function tableTextColor(color: string, background: string) {
+  if (contrastRatio(color, background) >= 4.5) return color
+  const target = contrastRatio("#000000", background) > contrastRatio("#ffffff", background) ? 0 : 255
+  const channels = [1, 3, 5].map(offset => Number.parseInt(color.slice(offset, offset + 2), 16))
+  const mix = (amount: number) => `#${channels.map(channel => Math.round(channel + (target - channel) * amount).toString(16).padStart(2, "0")).join("")}`
+  let low = 0, high = 1
+  // Test rounded channel values, so the returned CSS color itself meets WCAG.
+  for (let step = 0; step < 16; step++) {
+    const middle = (low + high) / 2
+    if (contrastRatio(mix(middle), background) >= 4.5) high = middle
+    else low = middle
+  }
+  return mix(high)
+}
+
+/** One small palette per table/theme, rather than observing each rendered cell. */
+export function tableTextPalette(theme: "light" | "dark", background?: string, thresholds?: readonly Threshold[], color?: string) {
+  const surface = background ?? tableThemes[theme].background
+  const colors = new Map((thresholds ?? []).map(threshold => [threshold.color, tableTextColor(threshold.color, surface)]))
+  colors.set(color ?? "var(--gamma-chart-3)", tableTextColor(color ?? tableThemes[theme].color, surface))
+  return colors
+}
 
 function positionOnScale(value: number, min: number, max: number) {
   const width = max - min
@@ -69,13 +99,14 @@ export function tableCellStyleError(frame: RecordFrame, cellStyles: TableCellSty
   }
 }
 
-export function StyledRecordCell({ value, formatted, column, style, thresholds, color }: {
+export function StyledRecordCell({ value, formatted, column, style, thresholds, color, textColors }: {
   value: unknown
   formatted: ReactNode
   column: RecordFrame["columns"][number]
   style: TableCellStyle
   thresholds?: readonly Threshold[]
   color?: string
+  textColors: ReadonlyMap<string, string>
 }) {
   const finite = typeof value === "number" && Number.isFinite(value)
   const unit = column.unit === "percent" ? "%" : column.unit ?? ""
@@ -88,7 +119,7 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   const background = finite && style.display === "color-background"
     ? /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
     : undefined
-  const foreground = finite && style.display === "color-text" ? fill
+  const foreground = finite && style.display === "color-text" ? textColors.get(fill)
     : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background) : undefined
   return <span className={styles.visualCell} data-cell-display={style.display} data-cell-missing={!finite || undefined}
     role="img" aria-label={label} title={label}

@@ -1,8 +1,9 @@
 import { useState } from "react"
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { readFileSync } from "node:fs"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordTable, registerRecordWidgetPlugins } from "./records"
-import { tableBarGeometry, tableCellStylesSchema } from "./record-table-cells"
+import { tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
 import { PluginConfigEditor } from "../plugin-config-editor"
 import { getWidgetDefinition } from "../widget-registry"
 import { contrastRatio } from "../appearance"
@@ -10,8 +11,9 @@ import type { QueryResult, Widget } from "../schema"
 import { dashboardSchema } from "../schema"
 import { dashboardToOpenUI, parseOpenUIDashboard } from "../openui"
 import { parseDashboardBundle, serializeDashboardBundle } from "../workspace-transfer"
+import { INSIGHTS_THEME_KEY } from "../insights-theme"
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals() })
 const widget: Widget = {
   id: "capacity", title: "Resource capacity", type: "plugin", pluginId: "record-table", dataKind: "records",
   providerId: "records", query: "capacity", unit: "", layout: { x: 0, y: 0, w: 6, h: 3 },
@@ -24,6 +26,58 @@ const result: QueryResult = { records: {
 } }
 
 describe("table visual cells", () => {
+  it("keeps threshold text readable against the actual Gamma panel tokens and custom backgrounds", () => {
+    const css = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8")
+    for (const theme of ["light", "dark"] as const) {
+      const block = theme === "light" ? css.split('.scope[data-insights-theme="dark"]')[0] : css.split('.scope[data-insights-theme="dark"]')[1].split("}")[0]
+      const background = block.match(/--gamma-bg:\s*(#[\da-f]{6})/)![1]
+      const fallback = block.match(/--gamma-chart-3:\s*(#[\da-f]{6})/)![1]
+      const thresholds = ["#f2cc0c", "#73bf69", "#c5b749", "#74b367", background].map((color, value) => ({ color, value }))
+      const palette = tableTextPalette(theme, undefined, thresholds)
+      for (const { color } of thresholds) {
+        expect(palette.get(color)).toBe(tableTextColor(color, background))
+        expect(contrastRatio(palette.get(color)!, background)).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(palette.get("var(--gamma-chart-3)")).toBe(tableTextColor(fallback, background))
+      expect(contrastRatio(palette.get("var(--gamma-chart-3)")!, background)).toBeGreaterThanOrEqual(4.5)
+      for (const custom of ["#ffffff", "#182127", "#777777", "#fff2c8", "#144b39"]) {
+        const palette = tableTextPalette(theme, custom, thresholds, "#eab839")
+        for (const color of palette.values()) expect(contrastRatio(color, custom)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+    expect(tableTextColor("#f2cc0c", "#182127")).toBe("#f2cc0c")
+    expect(tableTextColor("#73bf69", "#182127")).toBe("#73bf69")
+    expect(tableTextColor("#f2cc0c", "#ffffff")).not.toBe("#f2cc0c")
+    expect(tableTextColor("#73bf69", "#ffffff")).not.toBe("#73bf69")
+  })
+
+  it("updates colored text with the shared theme while preserving authored colors and exact readings", () => {
+    localStorage.setItem(INSIGHTS_THEME_KEY, "light")
+    const thresholds = [{ value: 0, color: "#73bf69", label: "Normal" }, { value: 50, color: "#f2cc0c", label: "Warning" }]
+    const styledWidget: Widget = { ...widget, options: { decimals: 2, thresholds }, config: { cellStyles: [{ column: "usage", display: "color-text" }] } }
+    const view = render(<RecordTable widget={styledWidget} result={result} />)
+    const reading = screen.getByRole("img", { name: "Usage: 72.1234% · Warning" })
+    const normal = screen.getByRole("img", { name: "Usage: 0% · Normal" })
+    const light = reading.style.color
+    expect(contrastRatio(light, "#ffffff")).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(normal.style.color, "#ffffff")).toBeGreaterThanOrEqual(4.5)
+    expect(reading.style.getPropertyValue("--cell-color")).toBe("#f2cc0c")
+    expect(reading).toHaveTextContent("72.12%")
+    act(() => {
+      localStorage.setItem(INSIGHTS_THEME_KEY, "dark")
+      window.dispatchEvent(new Event("paprika-insights-theme-change"))
+    })
+    expect(reading.style.color).toBe("#f2cc0c")
+    expect(normal.style.color).toBe("#73bf69")
+    expect(contrastRatio(reading.style.color, "#182127")).toBeGreaterThanOrEqual(4.5)
+    expect(reading).toHaveAttribute("title", "Usage: 72.1234% · Warning")
+    view.rerender(<RecordTable widget={{ ...styledWidget, options: { ...styledWidget.options, background: "#ffffff" } }} result={result} />)
+    expect(reading.style.color).toBe(light)
+    expect(contrastRatio(reading.style.color, "#ffffff")).toBeGreaterThanOrEqual(4.5)
+    expect(styledWidget.options?.thresholds).toEqual(thresholds)
+    expect(screen.getByRole("img", { name: "Usage: No data" }).style.color).toBe("")
+  })
+
   it("preserves column rules through JSON/YAML bundles and OpenUI", () => {
     const dashboard = dashboardSchema.parse({ schemaVersion: 1, id: "capacity", title: "Capacity", timeRange: "1h", refreshInterval: 0, widgets: [widget] })
     const bundle = { dashboards: [dashboard] }
