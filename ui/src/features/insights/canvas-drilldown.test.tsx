@@ -7,6 +7,7 @@ import { WidgetVisualization } from "./charts";
 import { registerWidgetPlugin } from "./widget-registry";
 import { contextKey, metricContext } from "./widget-context";
 import type { DrilldownContext } from "./drilldown";
+import { SavedQueryLibraryProvider } from "./saved-query-context";
 
 const query = vi.hoisted(() => ({
   data: {} as QueryResult,
@@ -102,6 +103,65 @@ afterEach(() => {
 });
 
 describe("signal-specific dashboard drilldowns", () => {
+  it("waits for the saved-query library without flashing an error, then exposes genuine failures", () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const saved = { ...widget, queryRef: { id: "saved-requests" } };
+    query.data = {};
+    query.error = "Loading the saved-query library…";
+    const view = (loading: boolean, error?: string) => <SavedQueryLibraryProvider queries={[]} variables={[]} values={{}} loading={loading} error={error}><Canvas current={saved} /></SavedQueryLibraryProvider>;
+    const { rerender } = render(view(true));
+    expect(query.enabled).toBe(false);
+    expect(screen.getByRole("status", { name: "Loading widget" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    query.error = null;
+    query.data = { series: [series("api", 12)] };
+    rerender(view(false));
+    expect(query.enabled).toBe(true);
+    expect(screen.queryByRole("status", { name: "Loading widget" })).not.toBeInTheDocument();
+    expect(screen.getByRole("table")).toHaveTextContent("api");
+    expect(screen.getByRole("table")).toHaveTextContent("12");
+    query.error = "Saved-query service is unavailable";
+    rerender(view(false, query.error));
+    expect(screen.getByRole("alert")).toHaveTextContent(query.error);
+  });
+
+  it("keeps direct provider queries enabled while the unrelated saved-query library loads", () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    query.data = {};
+    render(<SavedQueryLibraryProvider queries={[]} variables={[]} values={{}} loading><Canvas /></SavedQueryLibraryProvider>);
+    expect(query.enabled).toBe(true);
+    expect(screen.queryByRole("status", { name: "Loading widget" })).not.toBeInTheDocument();
+  });
+
+  it("uses the latest batched visibility observation when a responsive layout moves a tile", () => {
+    let notify: IntersectionObserverCallback;
+    let observed: Element;
+    const disconnect = vi.fn();
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(callback: IntersectionObserverCallback) { notify = callback; }
+      observe(target: Element) { observed = target; }
+      disconnect = disconnect;
+    });
+    query.data = {};
+    const { rerender, unmount } = render(<Canvas />);
+    const report = (...states: boolean[]) => act(() => notify(states.map((isIntersecting, time) => ({ target: observed, isIntersecting, time } as IntersectionObserverEntry)), {} as IntersectionObserver));
+    expect(query.enabled).toBe(false);
+    // Chromium can batch the old desktop position and the final mobile one.
+    report(false, true);
+    expect(query.enabled).toBe(true);
+    report(true, false);
+    expect(query.enabled).toBe(false);
+    report();
+    expect(query.enabled).toBe(false);
+    report(true);
+    expect(query.enabled).toBe(true);
+    rerender(<Canvas active={false} />);
+    expect(query.enabled).toBe(false);
+    rerender(<Canvas active />);
+    expect(query.enabled).toBe(true);
+    unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
   it("keeps the measured canvas attached when switching dashboards and resets pinned chart cursors", () => {
     query.data = {
       series: [{

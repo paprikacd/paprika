@@ -8,7 +8,7 @@ const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => utcDay(va
 
 export const connectionMapConfig = z.strictObject({
   latitude: field.default("latitude"), longitude: field.default("longitude"), label: field.default("label"),
-  value: field.optional(), status: field.optional(), maxPoints: z.number().int().min(1).max(500).default(120),
+  value: field.optional(), status: field.optional(), showLocations: z.boolean().optional(), maxPoints: z.number().int().min(1).max(500).default(120),
 })
 export const pipelineTopologyConfig = z.strictObject({
   source: field.default("source"), target: field.default("target"), value: field.optional(), status: field.optional(),

@@ -61,7 +61,7 @@ export function StatSparkline({
     const x = (point: Point) =>
       start === end
         ? 120
-        : 4 + ((point.timestamp - start) / (end - start)) * 232;
+        : 1 + ((point.timestamp - start) / (end - start)) * 238;
     const magnitude = Math.max(Math.abs(min), Math.abs(max), 1);
     const y = (point: Point) =>
       min === max
@@ -141,8 +141,8 @@ export function StatSparkline({
       <desc id={descriptionId}>{summary}</desc>
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="0.13" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0.015" />
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.24" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.06" />
         </linearGradient>
       </defs>
       <path

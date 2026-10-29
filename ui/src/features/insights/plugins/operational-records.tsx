@@ -77,10 +77,9 @@ export function ConnectionMap(props: WidgetRendererProps) {
     <dl className={styles.labels}>{Object.entries(location.context.labels ?? {}).filter(([key]) => ![config.latitude, config.longitude, config.label, config.value, config.status].includes(key)).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
   </Detail>
   return <div className={styles.wrapper} data-operational-chart="connection-map">
-    <div className={styles.caption}><span>Geographic coordinates</span><span>Equirectangular · WGS84</span></div>
     {data.locations.length ? <>
-      <div className={styles.mapPlot}><div className={styles.mapCoordinates}>
-        <svg viewBox="0 0 720 360" preserveAspectRatio="none" aria-hidden="true">
+      <div className={styles.mapPlot}><div className={styles.mapCoordinates} data-map-plane="" role="group" aria-label="Geographic map · WGS84 equirectangular projection">
+        <svg viewBox="0 0 720 360" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
           <path d={worldLandPath} fillRule="evenodd" className={styles.land} data-geographic-land="natural-earth-110m" />
           {[-180,-120,-60,0,60,120,180].map(longitude => <line key={longitude} x1={(longitude+180)*2} x2={(longitude+180)*2} y1={0} y2={360} className={longitude===0 ? styles.axis : styles.gridLine}/>)}
           {[-90,-60,-30,0,30,60,90].map(latitude => <line key={latitude} x1={0} x2={720} y1={(90-latitude)*2} y2={(90-latitude)*2} className={latitude===0 ? styles.axis : styles.gridLine}/>)}
@@ -94,15 +93,15 @@ export function ConnectionMap(props: WidgetRendererProps) {
           </Inspect>
         </div>)}
       </div></div>
-      <div className={styles.locationList} aria-label="Location observations">
+      {config.showLocations !== false && <div className={styles.locationList} aria-label="Location observations">
         {data.locations.map(location => <Inspect key={location.key} props={props} label={`Inspect location ${location.label}`} context={location.context} details={details(location)} className={styles.locationRow}>
           <span className={styles.name}>{location.label}<small>{location.latitude.toFixed(2)}°, {location.longitude.toFixed(2)}°</small></span>
           {config.value && <span className={styles.value}>{metric(location.value, unit, decimals)}</span>}
           {location.status && <Status value={location.status}/>}
         </Inspect>)}
-      </div>
+      </div>}
     </> : <EmptyState/>}
-    <Notes truncated={data.frame.truncated}><span>{data.locations.length} supplied locations · no inferred coordinates</span>{config.value && widget.options?.showLegend !== false && <span>Marker size: absolute observed value</span>}{data.invalid > 0 && <span>{data.invalid} records have missing or invalid coordinates</span>}{data.omitted > 0 && <span>{data.omitted} additional locations omitted by the point limit</span>}</Notes>
+    <Notes truncated={data.frame.truncated}>{config.value && widget.options?.showLegend !== false && <span>Marker size: absolute observed value</span>}{data.invalid > 0 && <span>{data.invalid} records have missing or invalid coordinates</span>}{data.omitted > 0 && <span>{data.omitted} additional locations omitted by the point limit</span>}</Notes>
   </div>
 }
 
@@ -176,9 +175,9 @@ export function IncidentCalendar(props: WidgetRendererProps) {
 export function registerOperationalRecordPlugins() {
   const entries: Omit<WidgetPlugin, "dataKind">[] = [
     {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with exact record inspection",render:ConnectionMap,parseConfig:(config:unknown)=>connectionMapConfig.parse(config??{}),
-      defaultConfig:{latitude:"latitude",longitude:"longitude",label:"label"},
+      defaultConfig:{latitude:"latitude",longitude:"longitude",label:"label",showLocations:true},
       styleControls:["unit","decimals","legend","tooltips"],
-      configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field; marker size represents its absolute value."},{key:"status",label:"Status field",kind:"text" as const},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},
+      configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field; marker size represents its absolute value."},{key:"status",label:"Status field",kind:"text" as const},{key:"showLocations",label:"Show location list",kind:"boolean" as const,help:"Hide the list to give the map more room. Points still expose exact observations."},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},
     {id:"pipeline-topology",label:"Pipeline topology",description:"Follow recorded directed connections, including cycles and missing values",render:PipelineTopology,parseConfig:(config:unknown)=>pipelineTopologyConfig.parse(config??{}),
       defaultConfig:{source:"source",target:"target"},
       styleControls:["unit","decimals","tooltips"],

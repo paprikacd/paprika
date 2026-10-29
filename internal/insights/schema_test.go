@@ -78,9 +78,11 @@ func TestAuthoringSchemaDiscoversRichChartContracts(t *testing.T) {
 			for _, plugin := range []string{"stacked-timeseries", "directional-traffic", "distribution-heatmap", "threshold-gauge", "connection-map", "pipeline-topology", "incident-calendar"} {
 				require.Contains(t, notes, plugin, "MCP authors must discover each installed rich plugin without inspecting UI code")
 			}
-			for _, contract := range []string{"legendDisplay?:compact|table", "legendPosition?:bottom|right", "seriesMode?:first|all", "columns?:1..4", "maxSeries?:1..12", "maxColumns?:8..120", "density?:compact|comfortable", "showSearch?:boolean", "arithmetic mean", "query-side rates", "nonnegative", "numeric degrees", "Cycles remain explicit", "Days without observations stay unknown"} {
+			for _, contract := range []string{"legendDisplay?:compact|table", "legendPosition?:bottom|right", "seriesMode?:first|all", "columns?:1..12", "orientation?:horizontal|vertical", "maxSeries?:1..12", "maxColumns?:8..120", "density?:compact|comfortable", "showSearch?:boolean", "arithmetic mean", "query-side rates", "nonnegative", "numeric degrees", "Cycles remain explicit", "Days without observations stay unknown"} {
 				require.Contains(t, notes, contract)
 			}
+			require.Contains(t, notes, "cellStyles?:[{column:string,display:bar|color-text|color-background")
+			require.Contains(t, notes, "filtering never rescales bars")
 			require.LessOrEqual(t, w.Body.Len(), maxSchemaResponseBytes)
 		})
 	}

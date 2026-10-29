@@ -5,6 +5,7 @@ import { GammaSelect } from "./gamma/select";
 import { GammaSwitch } from "./gamma/switch";
 import type { WidgetDefinition } from "./widget-registry";
 import styles from "./editor.module.css";
+import { RecordTableStyleEditor } from "./plugins/record-table-style-editor";
 
 /** Keep raw JSON and guided fields on the same draft; invalid JSON stays editable. */
 export function PluginConfigEditor({ definition, value, onChange }: {
@@ -56,6 +57,7 @@ export function PluginConfigEditor({ definition, value, onChange }: {
         </label>;
       })}
     </section>}
+    {definition?.id === "record-table" && config && <RecordTableStyleEditor config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}
     <details open={fields.length === 0}>
       <summary>Advanced configuration</summary>
       <label className={styles.field}>

@@ -76,13 +76,20 @@ const Tile = memo(function Tile({
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
 }) {
   const element = useRef<HTMLDivElement>(null);
+  const library = useSavedQueryLibrary();
+  const savedQueryLoading = !!widget.queryRef && !!library.loading;
   const [visible, setVisible] = useState(
     () => typeof IntersectionObserver === "undefined",
   );
   useEffect(() => {
     if (!element.current || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
-      ([entry]) => setVisible(entry.isIntersecting),
+      (entries) => {
+        // A responsive layout can queue both the old and new tile position in
+        // one callback. The final observation owns whether queries should run.
+        const entry = entries.at(-1);
+        if (entry) setVisible(entry.isIntersecting);
+      },
       {
         rootMargin: "200px",
       },
@@ -95,7 +102,7 @@ const Tile = memo(function Tile({
     start,
     end,
     step: Math.max(1, Math.ceil((end - start) / 300)),
-    enabled: active && visible && (!!widget.queryRef || !!provider),
+    enabled: active && visible && !savedQueryLoading && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
   });
   const connectionKey = queryConnectionKey(widget, { start, end });
@@ -158,6 +165,7 @@ const Tile = memo(function Tile({
       className={`${styles.tile} ${selected ? styles.selectedTile : ""}`}
       data-widget-id={widget.id}
       data-widget-type={widget.type}
+      data-widget-sparkline={widget.type === "stat" && widget.options?.showSparkline || undefined}
       aria-label={widget.title}
       style={
         {
@@ -251,10 +259,10 @@ const Tile = memo(function Tile({
         {active && (
           <WidgetVisualization
             widget={widget}
-            result={data}
-            loading={loading}
+            result={savedQueryLoading ? undefined : data}
+            loading={savedQueryLoading || loading}
             error={
-              error ??
+              savedQueryLoading ? null : error ??
               (!provider && !widget.queryRef
                 ? `Provider “${widget.providerId}” is not configured.`
                 : null)

@@ -49,29 +49,66 @@ async function renderEveryPanel(board) {
     await element.scrollIntoViewIfNeeded()
     await until(async()=>!(await element.locator('[aria-busy="true"]').count()) && !/Querying data source|No data in this time range/.test(await element.innerText()),`${widget.title} did not render`,20000)
     assert.deepEqual(await element.getByRole("alert").allTextContents(),[],widget.title)
-    if(widget.type==="stat")assert.ok(await element.locator("[data-metric-value]").count(),`${widget.title} needs a real observed value`)
+    if(widget.type==="stat") {
+      assert.ok(await element.locator("[data-metric-value]").count(),`${widget.title} needs a real observed value`)
+      if(widget.options?.showSparkline) {
+        const margins=await element.evaluate(tile=>{const frame=tile.getBoundingClientRect(),plot=tile.querySelector('[data-stat-sparkline]').getBoundingClientRect(),reading=tile.querySelector('[data-metric-value]').getBoundingClientRect();return{left:plot.left-frame.left,right:frame.right-plot.right,bottom:frame.bottom-plot.bottom,reading:reading.left-frame.left}})
+        assert.ok(margins.left<=2&&margins.right<=2&&margins.bottom<=2&&margins.reading>=12,`${widget.title}: sparkline reaches the panel edges without losing reading padding: ${JSON.stringify(margins)}`)
+      }
+    }
     else assert.ok(await element.locator("svg,table,[role=region]").count(),`${widget.title} needs a rendered chart or table`)
     if(widget.config?.seriesMode==="all") {
       const bank=element.locator("[data-gauge-bank-display]")
       assert.equal(await bank.locator("[data-gauge-series]").count(),widget.config.maxSeries,"Reference capacity panels must display every distinct series")
       const measurements=await bank.evaluate(node=>({height:node.clientHeight,content:node.scrollHeight}))
+      const textBounds=await bank.evaluate(node=>{const tile=node.closest('[data-widget-id]').getBoundingClientRect(),bank=node.getBoundingClientRect();return [...node.querySelectorAll('[data-gauge-label], [data-gauge-value] > span')].map(text=>{const r=text.getBoundingClientRect();return{text:text.textContent,top:r.top,bottom:r.bottom,left:r.left,right:r.right,clipTop:Math.max(tile.top,bank.top),clipBottom:Math.min(tile.bottom,bank.bottom),clipLeft:Math.max(tile.left,bank.left),clipRight:Math.min(tile.right,bank.right),scroll:text.scrollWidth,client:text.clientWidth,height:text.scrollHeight,available:text.clientHeight}})})
+      for(const text of textBounds) {
+        if(page.viewportSize().width>=1200)assert.ok(text.top>=text.clipTop-.5&&text.bottom<=text.clipBottom+.5&&text.left>=text.clipLeft-.5&&text.right<=text.clipRight+.5,`${widget.title}: reading/label clipped ${JSON.stringify(text)}`)
+        assert.ok(text.scroll<=text.client+1&&text.height<=text.available+1,`${widget.title}: fixture label/value must remain readable ${JSON.stringify(text)}`)
+      }
       if(page.viewportSize().width>=1200)assert.ok(measurements.content<=measurements.height+1,`${widget.title}: all gauges must fit their panel without scrolling`)
-      if(widget.config.display==="segmented") {
-        const tracks=await bank.locator('[data-gauge-display="segmented"]').evaluateAll(nodes=>nodes.map(track=>{
-          const bounds=track.getBoundingClientRect(),cells=[...track.children],rects=cells.map(cell=>cell.getBoundingClientRect())
-          const widths=rects.reduce((sum,rect)=>sum+rect.width,0)
-          return {width:bounds.width,minCell:Math.min(...rects.map(rect=>rect.width)),gap:Math.max(...rects.slice(1).map((rect,index)=>rect.left-rects[index].right)),
-            first:rects[0].left-bounds.left,last:rects.at(-1).right-bounds.right,occupied:widths,
-            filled:cells.reduce((sum,cell,index)=>sum+rects[index].width*Number(cell.style.getPropertyValue("--meter-fraction")),0)/widths,
-            expected:track.hasAttribute("aria-valuenow")?(Number(track.getAttribute("aria-valuenow"))-Number(track.getAttribute("aria-valuemin")))/(Number(track.getAttribute("aria-valuemax"))-Number(track.getAttribute("aria-valuemin"))):0}
+      if(measurements.content>measurements.height+1) {
+        await element.getByText(/^Scroll to see all gauges/).waitFor()
+        assert.equal(await bank.getAttribute("tabindex"),"0","Overflowing gauges must be keyboard reachable")
+        await bank.hover()
+        await page.mouse.wheel(0,1000)
+        await until(()=>bank.evaluate(node=>node.scrollTop>0),"Pointer scrolling must reach more gauges")
+        await bank.focus()
+        await bank.press("End")
+        await until(()=>bank.evaluate(node=>{const bounds=node.getBoundingClientRect(),label=node.querySelector('[data-gauge-series]:last-child [data-gauge-label]').getBoundingClientRect();return label.top>=bounds.top&&label.bottom<=bounds.bottom+1}),"Keyboard scrolling must reveal the last gauge label")
+        await page.screenshot({path:join(output,`${widget.id}-last-gauge-${page.viewportSize().width}.png`)})
+        await bank.press("Home")
+        await until(()=>bank.evaluate(node=>node.scrollTop===0),"Gauge bank must return to the first row")
+      }
+      const vertical=widget.config.orientation==="vertical" && widget.config.display!=="radial"
+      if(widget.config.display!=="radial") {
+        const tracks=await bank.locator('[data-gauge-display]').evaluateAll(nodes=>nodes.map(track=>{
+          const bounds=track.getBoundingClientRect(),vertical=track.dataset.gaugeOrientation==="vertical"
+          const item=track.closest('[data-gauge-series]'),label=item.querySelector('[data-gauge-label]').getBoundingClientRect(),reading=item.querySelector('[data-gauge-value]').getBoundingClientRect()
+          const cells=[...track.querySelectorAll('[data-filled]')],rects=cells.map(cell=>cell.getBoundingClientRect())
+          return {vertical,width:bounds.width,height:bounds.height,top:bounds.top,bottom:bounds.bottom,rendering:track.dataset.gaugeRendering,
+            label:{left:label.left,right:label.right,top:label.top,bottom:label.bottom},reading:{left:reading.left,right:reading.right,top:reading.top,bottom:reading.bottom},left:bounds.left,right:bounds.right,
+            cells:rects.map(rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,width:rect.width,height:rect.height})),
+            fill:cells.reduce((sum,cell,index)=>sum+(vertical?rects[index].height:rects[index].width)*Number(cell.style.getPropertyValue("--meter-fraction")),0),
+            occupied:rects.reduce((sum,rect)=>sum+(vertical?rect.height:rect.width),0),
+            progress:Number(track.dataset.gaugeProgress),expected:track.hasAttribute("aria-valuenow")?(Number(track.getAttribute("aria-valuenow"))-Number(track.getAttribute("aria-valuemin")))/(Number(track.getAttribute("aria-valuemax"))-Number(track.getAttribute("aria-valuemin"))):0}
         }))
-        assert.ok(tracks.length>0,`${widget.title}: segmented tracks must render`)
+        assert.ok(tracks.length>0,`${widget.title}: tracks must render`)
         for(const track of tracks) {
-          assert.ok(track.first>=-.5&&track.last<=.5,`${widget.title}: segments must stay inside their actual track`)
-          if(track.gap>.05)assert.ok(track.minCell>=3.95,`${widget.title}: separated cells must retain at least 4px of visible width`)
-          else assert.ok(Math.abs(track.occupied-track.width)<=1,`${widget.title}: constrained tracks must form a continuous bar`)
-          assert.ok(Math.abs(track.filled-track.expected)<.005,`${widget.title}: responsive fill must preserve the observed proportion`)
+          assert.equal(track.vertical,vertical)
+          assert.ok(Math.abs(track.progress-track.expected)<.005,`${widget.title}: responsive fill must preserve the observed proportion`)
+          if(vertical) {
+            assert.ok(track.height>track.width*1.5,`${widget.title}: vertical meters must have useful height`)
+          } else {
+            assert.ok(track.width>track.height,`${widget.title}: horizontal meters must have useful width`)
+            assert.ok(track.label.right<=track.left+1 && track.right<=track.reading.left+1,`${widget.title}: label, bar and value must be aligned horizontally`)
+          }
+          if(track.rendering==="segmented") {
+            assert.ok(track.cells.every(cell=>(vertical?cell.height:cell.width)>=3.95),`${widget.title}: separated cells must retain at least 4px of visible length`)
+            assert.ok(Math.abs(track.fill/track.occupied-track.expected)<.005,`${widget.title}: segment fill preserves the observation`)
+          }
         }
+        if(vertical && page.viewportSize().width>=1200)assert.ok(Math.max(...tracks.map(track=>track.top))-Math.min(...tracks.map(track=>track.top))<1,`${widget.title}: all six host columns share one plot row`)
       }
     }
     if(widget.pluginId==="status-history" && page.viewportSize().width>=1200) {
@@ -92,10 +129,56 @@ async function renderEveryPanel(board) {
     }
     if(widget.pluginId==="distribution-heatmap") {
       const ticks=await element.locator("text[data-value-axis]").evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{top:r.top,bottom:r.bottom}}).sort((a,b)=>a.top-b.top))
+      const coverage=await element.locator('svg').first().evaluate(svg=>{const r=svg.getBoundingClientRect(),cells=[...svg.querySelectorAll('[data-bucket-value]')].map(cell=>cell.getBoundingClientRect());return{height:r.height,filled:Math.max(...cells.map(cell=>cell.bottom))-Math.min(...cells.map(cell=>cell.top))}})
+      assert.ok(coverage.filled>=coverage.height-30,"Histogram buckets use the available plot height")
       assert.ok(ticks.length>=2,"Heatmap retains a useful bucket axis")
       for(let index=1;index<ticks.length;index++)assert.ok(ticks[index].top>=ticks[index-1].bottom,"Heatmap bucket labels must not overlap")
     }
-    if(widget.pluginId==="connection-map")assert.equal(await element.locator("[data-geographic-land]").count(),1,"Map needs geographic context, not only coordinates")
+    if(widget.pluginId==="connection-map") {
+      assert.equal(await element.locator("[data-geographic-land]").count(),1,"Map needs geographic context, not only coordinates")
+      const plane=await element.locator('[data-map-plane]').evaluate(node=>{const r=node.getBoundingClientRect(),matrix=node.querySelector('svg').getScreenCTM();return{ratio:r.width/r.height,height:r.height,scaleX:matrix.a,scaleY:matrix.d}})
+      assert.ok(Math.abs(plane.ratio-2)<.01 && Math.abs(plane.scaleX-plane.scaleY)<.001,`Map must preserve geographic proportions: ${JSON.stringify(plane)}`)
+      assert.ok(plane.height>=80,"Map retains a useful world projection at this panel size")
+    }
+    if(widget.pluginId==="record-table" && widget.config.cellStyles?.length) {
+      for(const style of widget.config.cellStyles) {
+        const cells=element.locator(`[data-cell-display="${style.display}"]`)
+        assert.ok(await cells.count()>0,`${widget.title}: ${style.display} cells render`)
+        assert.ok((await cells.first().getAttribute('aria-label'))?.includes(':'),"Styled cells retain exact accessible readings")
+        if(style.display==="bar") {
+          const bars=await cells.locator('[data-bar-start]').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{width:r.width,height:r.height,start:Number(node.dataset.barStart),end:Number(node.dataset.barEnd)}}))
+          assert.ok(bars.every(bar=>bar.width>bar.height*2 && bar.start>=0 && bar.end<=1 && bar.end>=bar.start),`${widget.title}: in-cell bars have bounded horizontal geometry`)
+        } else {
+          const contrasts=await cells.evaluateAll(nodes=>{
+            const channels=color=>{const values=color.match(/[\d.]+/g)?.map(Number)??[];return color.startsWith("color(srgb")?values.slice(0,3).map(value=>value*255):values.slice(0,3)}
+            const luminance=color=>channels(color).map(value=>{const channel=value/255;return channel<=.04045?channel/12.92:((channel+.055)/1.055)**2.4}).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0)
+            return nodes.map(node=>{
+              let parent=node,background=""
+              while(parent){background=getComputedStyle(parent).backgroundColor;if(background!=="transparent"&&background!=="rgba(0, 0, 0, 0)")break;parent=parent.parentElement}
+              const foreground=getComputedStyle(node).color,a=luminance(foreground),b=luminance(background)
+              return{foreground,background,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
+            })
+          })
+          assert.ok(contrasts.every(entry=>entry.ratio>=4.5),`${widget.title}: colored numeric text remains readable in this theme: ${JSON.stringify(contrasts)}`)
+        }
+      }
+      if(page.viewportSize().width<600) {
+        const region=element.getByRole("region",{name:`${widget.title} records`,exact:true})
+        const overflow=await region.evaluate(node=>node.scrollWidth>node.clientWidth+1)
+        if(overflow) {
+          assert.equal(await region.getAttribute("tabindex"),"0","Wide tables must be keyboard reachable")
+          await region.hover()
+          await page.mouse.wheel(3000,0)
+          await until(()=>region.evaluate(node=>node.scrollLeft>0 && node.scrollLeft+node.clientWidth>=node.scrollWidth-1),"Pointer scrolling must reveal every table column")
+          const before=await region.evaluate(node=>node.scrollLeft)
+          await page.screenshot({path:join(output,`${widget.id}-last-column-390.png`)})
+          await region.focus()
+          await region.press("ArrowLeft")
+          await until(()=>region.evaluate((node,before)=>node.scrollLeft<before,before),"Table columns must also respond to keyboard scrolling")
+          await region.evaluate(node=>{node.scrollLeft=0})
+        }
+      }
+    }
   }
 }
 async function geometry(board,oneScreen) {
@@ -132,6 +215,19 @@ async function captureBoard(spec,board,theme) {
   }while(index<5)
   comparisons.push({id:spec.id,title:spec.title,referenceKey:spec.referenceKey,theme,width,shots,approximations:spec.approximations})
   return shots
+}
+async function captureMobileComponents(board,theme) {
+  const screenshots=[]
+  for(const widget of board.widgets.filter(widget=>widget.options?.showSparkline || ["connection-map","threshold-gauge","distribution-heatmap","status-history","record-table"].includes(widget.pluginId))) {
+    const element=tile(widget.id)
+    await element.scrollIntoViewIfNeeded()
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+    const filename=`${widget.id}-${theme.toLowerCase()}-390-component.png`
+    // Native viewport capture leaves IntersectionObserver visibility unchanged.
+    await page.screenshot({path:join(output,filename)})
+    screenshots.push(filename)
+  }
+  return screenshots
 }
 async function snapshotStore(){return{dashboards:(await environment.api("dashboards")).document.dashboards,queries:(await environment.api("saved-queries")).document.queries}}
 function withoutETag(document){const value={...document};delete value.etag;return value}
@@ -191,6 +287,41 @@ try {
     await selectGammaOption(page,control,variable.options[0])
     return{panels:board.widgets.length,shape,screenshots,approximations:reference.approximations}
   })
+  await check("Table column scales preview, save and reload without changing saved queries",async()=>{
+    const board=persisted.dashboards.find(item=>item.title==="Service overview")
+    const widget=board.widgets.find(item=>item.id==="reference-service-overview-flow-readings")
+    const original=await environment.api(`dashboards/${board.id}`)
+    const originalQueries=(await snapshotStore()).queries
+    const editScale=async maximum=>{
+      await loadBoard(board,"Light")
+      await page.getByRole("button",{name:"Edit dashboard",exact:true}).click()
+      await tile(widget.id).getByRole("button",{name:`Edit ${widget.title}`,exact:true}).click()
+      const editor=page.getByRole("region",{name:"Widget editor",exact:true})
+      await editor.getByRole("tab",{name:"Query",exact:true}).click()
+      await editor.getByRole("spinbutton",{name:"Column 1 maximum",exact:true}).fill(String(maximum))
+      await until(async()=> (await tile(widget.id).locator('[data-cell-display="bar"]').first().getAttribute("aria-label"))?.includes(`to ${maximum}%`),"Column scale must preview in the widget before Apply")
+      await editor.getByRole("button",{name:"Apply widget",exact:true}).click()
+      await editor.getByRole("button",{name:"Close widget editor",exact:true}).click()
+    }
+    await editScale(200)
+    assert.equal((await environment.api(`dashboards/${board.id}`)).etag,original.etag,"Draft changes must not persist before Save")
+    await page.getByRole("button",{name:"Save dashboard",exact:true}).click()
+    await page.getByText("All changes saved",{exact:true}).waitFor()
+    await page.reload({waitUntil:"networkidle"})
+    const changed=await environment.api(`dashboards/${board.id}`)
+    const savedWidget=changed.document.widgets.find(item=>item.id===widget.id)
+    assert.equal(savedWidget.config.cellStyles[0].max,200)
+    assert.deepEqual(savedWidget.queryRef,widget.queryRef)
+    assert.notEqual(changed.etag,original.etag)
+    await editScale(100)
+    await page.getByRole("button",{name:"Save dashboard",exact:true}).click()
+    await page.getByText("All changes saved",{exact:true}).waitFor()
+    const restored=await environment.api(`dashboards/${board.id}`)
+    assert.deepEqual(restored.document.widgets.find(item=>item.id===widget.id).config,widget.config)
+    assert.deepEqual((await snapshotStore()).queries,originalQueries,"Cell presentation must not alter saved query documents")
+    assert.ok(writes.some(write=>write.path===`/api/insights/dashboards/${board.id}`&&write.conditional===original.etag),"Saving uses the current dashboard ETag")
+    return{previewBeforeSave:true,maximum:200,restoredMaximum:100,savedQueryUnchanged:true,etagProtected:true}
+  })
   await check("Generated dashboards and saved queries survive a real process restart",async()=>{
     const before=await snapshotStore();const receipt=await environment.api(`dashboards/${before.dashboards[0].id}`)
     await context.close();context=undefined;await environment.restart();await newPage()
@@ -200,14 +331,34 @@ try {
     persisted=after
     return{dashboards:after.dashboards.length,savedQueries:after.queries.length,etagPreserved:true}
   })
+  await check("Saved-query library loading stays a loading state until definitions arrive",async()=>{
+    let release, blocked=false
+    const pending=new Promise(resolve=>{release=resolve})
+    const pattern="**/api/insights/saved-queries"
+    const hold=async route=>{blocked=true;await pending;await route.fallback()}
+    await page.route(pattern,hold)
+    try {
+      const board=persisted.dashboards.find(item=>item.title==="Service overview")
+      await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${board.id}`,{waitUntil:"domcontentloaded"})
+      await page.getByRole("heading",{name:board.title,exact:true}).waitFor()
+      await until(()=>blocked,"Saved-query list must be held for the loading-state check")
+      await page.getByRole("status",{name:"Loading widget",exact:true}).first().waitFor()
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+      assert.deepEqual(await page.getByTestId("dashboard-canvas").getByRole("alert").allTextContents(),[],"Loading saved definitions must not flash a query failure")
+      release()
+      await renderEveryPanel(board)
+      return{delayedLibrary:true,loadingBeforeDefinitions:true,queriesRenderAfterRelease:true}
+    } finally {release();await page.unroute(pattern,hold)}
+  })
   await page.setViewportSize({width:390,height:844})
-  for(const reference of referenceDashboards)await check(`${reference.title}: generated dashboard remains usable on mobile`,async()=>{
+  for(const reference of referenceDashboards)for(const theme of ["Dark","Light"])await check(`${reference.title}: ${theme} generated dashboard remains usable on mobile`,async()=>{
     const board=persisted.dashboards.find(item=>item.title===reference.title)
-    await loadBoard(board);await renderEveryPanel(board)
+    await loadBoard(board,theme);await renderEveryPanel(board)
     const shape=await geometry(board,false)
-    await captureBoard(reference,board,"Dark")
+    await captureBoard(reference,board,theme)
+    const componentScreenshots=await captureMobileComponents(board,theme)
     assert.deepEqual((await environment.api(`dashboards/${board.id}`)).document.widgets.map(w=>w.layout),board.widgets.map(w=>w.layout),"Responsive reflow must not mutate the saved layout")
-    return{panels:board.widgets.length,shape}
+    return{panels:board.widgets.length,shape,componentScreenshots}
   })
   assert.deepEqual(errors,[]);assert.deepEqual(environment.failures,[])
 } finally {

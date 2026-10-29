@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ConnectionMap, IncidentCalendar, PipelineTopology } from "./operational-records"
+import { ConnectionMap, IncidentCalendar, PipelineTopology, registerOperationalRecordPlugins } from "./operational-records"
+import { getWidgetDefinition } from "../widget-registry"
+import { PluginConfigEditor } from "../plugin-config-editor"
 import type { QueryResult, Widget } from "../schema"
 
 afterEach(cleanup)
@@ -9,6 +11,40 @@ const locations: QueryResult={records:{columns:[{key:"label",type:"string"},{key
 const edges: QueryResult={records:{columns:[{key:"source",type:"string"},{key:"target",type:"string"},{key:"value",type:"number"}],rows:[["source","collector",1.111],["source","collector",2.222]]}}
 
 describe("operational record renderers",()=>{
+  it("keeps map markers in the same geographic plane as the preserved world projection",()=>{
+    const {container}=render(<ConnectionMap widget={widget} result={locations}/>)
+    const plane=container.querySelector("[data-map-plane]")!
+    expect(plane.querySelector("svg")).toHaveAttribute("preserveAspectRatio","xMidYMid meet")
+    const marker=screen.getByRole("button",{name:/Melbourne · -37.81°, 144.96°/}).parentElement!
+    expect(marker.parentElement).toBe(plane)
+    expect(parseFloat(marker.style.left)).toBeCloseTo((144.96+180)/360*100)
+    expect(parseFloat(marker.style.top)).toBeCloseTo((90+37.81)/180*100)
+  })
+  it("keeps exact marker inspection and selection when the location list is hidden",()=>{
+    const select=vi.fn()
+    render(<ConnectionMap widget={{...widget,config:{value:"value",showLocations:false}}} result={locations} onContextChange={select}/>)
+    expect(screen.queryByLabelText("Location observations")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button",{name:"Inspect location Melbourne"})).not.toBeInTheDocument()
+    const marker=screen.getByRole("button",{name:"Melbourne · -37.81°, 144.96° · 123.46"})
+    fireEvent.focus(marker)
+    expect(screen.getByRole("tooltip")).toHaveTextContent("144.9600°")
+    expect(screen.getByRole("tooltip")).toHaveTextContent("api")
+    expect(select).toHaveBeenLastCalledWith({series:"Melbourne",value:123.456,labels:{label:"Melbourne",latitude:"-37.81",longitude:"144.96",value:"123.456",service:"api"}})
+    fireEvent.click(marker)
+    expect(marker).toHaveAttribute("aria-pressed","true")
+    fireEvent.keyDown(document,{key:"Escape"})
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    expect(screen.getByText("1 records have missing or invalid coordinates")).toBeInTheDocument()
+  })
+  it("shows the location-list switch checked for legacy maps whose list is visible",()=>{
+    registerOperationalRecordPlugins()
+    const change=vi.fn()
+    render(<PluginConfigEditor definition={getWidgetDefinition("plugin","connection-map")} value="{}" onChange={change}/>)
+    const toggle=screen.getByRole("switch",{name:/Show location list/})
+    expect(toggle).toBeChecked()
+    fireEvent.click(toggle)
+    expect(JSON.parse(change.mock.calls.at(-1)![0])).toEqual({showLocations:false})
+  })
   it("offers explicit navigation only when the pipeline overflows and preserves keyboard access",()=>{
     render(<PipelineTopology widget={{...widget,pluginId:"pipeline-topology",config:{value:"value"}}} result={edges}/>)
     const viewport=screen.getByRole("region",{name:"Pipeline diagram"})
