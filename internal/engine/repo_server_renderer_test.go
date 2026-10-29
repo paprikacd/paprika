@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/httpx"
+	"github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/source"
 )
 
@@ -158,24 +163,42 @@ func TestRepoServerRenderer_RenderAllFallsBackPerTemplate(t *testing.T) {
 	assert.False(t, local.renderAllCalled)
 }
 
+// repoServerSafetyTimeout ends a blocked fake repo-server call that its
+// context did not end, so a missing call timeout fails the test in seconds
+// rather than at Go's 10-minute test timeout.
+const repoServerSafetyTimeout = 3 * time.Second
+
 // blockingRepoServerClient answers only when its context ends, like a repo
-// server waiting on a repository lock held by a detached cold-clone fetch.
+// server waiting on a repository lock held by a detached cold-clone fetch. A
+// call its context never ends returns Unavailable after the safety timeout,
+// which the renderer would fall back on.
 type blockingRepoServerClient struct {
 	resolveCalls, renderCalls int
+	deadlines                 []time.Duration
 }
 
 func (*blockingRepoServerClient) Enabled() bool { return true }
 
+func (c *blockingRepoServerClient) block(ctx context.Context) error {
+	if deadline, ok := ctx.Deadline(); ok {
+		c.deadlines = append(c.deadlines, time.Until(deadline))
+	}
+	select {
+	case <-ctx.Done():
+		return connect.NewError(connect.CodeDeadlineExceeded, ctx.Err())
+	case <-time.After(repoServerSafetyTimeout):
+		return connect.NewError(connect.CodeUnavailable, errors.New("call was not bounded by its context"))
+	}
+}
+
 func (c *blockingRepoServerClient) ResolveSource(ctx context.Context, _ *paprikav1.Template) (*source.ResolveResult, error) {
 	c.resolveCalls++
-	<-ctx.Done()
-	return nil, connect.NewError(connect.CodeDeadlineExceeded, ctx.Err())
+	return nil, c.block(ctx)
 }
 
 func (c *blockingRepoServerClient) Render(ctx context.Context, _ *paprikav1.Template, _ map[string]string) ([]byte, error) {
 	c.renderCalls++
-	<-ctx.Done()
-	return nil, connect.NewError(connect.CodeDeadlineExceeded, ctx.Err())
+	return nil, c.block(ctx)
 }
 
 func TestRepoServerRenderer_TimeoutDoesNotFallBackLocally(t *testing.T) {
@@ -193,7 +216,11 @@ func TestRepoServerRenderer_TimeoutDoesNotFallBackLocally(t *testing.T) {
 	_, err = r.Render(context.Background(), tmpl, nil)
 	require.ErrorIs(t, err, ErrRepoServerTimeout)
 
-	assert.Less(t, time.Since(start), 5*time.Second, "each call must end at the call timeout, not the client's 5 minutes")
+	assert.Less(t, time.Since(start), repoServerSafetyTimeout, "each call must end at the call timeout, not the client's 5 minutes")
+	require.Len(t, repoServer.deadlines, 2, "each call carries a deadline")
+	for _, remaining := range repoServer.deadlines {
+		assert.LessOrEqual(t, remaining, 20*time.Millisecond, "the deadline is the call timeout")
+	}
 	assert.Equal(t, 1, repoServer.resolveCalls)
 	assert.Equal(t, 1, repoServer.renderCalls)
 	assert.False(t, local.resolveSourceCalled, "a timed-out resolve must not start a second clone locally")
@@ -246,4 +273,61 @@ func TestRepoServerRenderer_DefaultStillFallsBackOnTimeout(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("local"), out)
 	assert.True(t, local.renderCalled)
+}
+
+// TestRepoServerRenderer_CallTimeoutBoundsTheRealClient runs the real
+// repo-server client, with its 5-minute client timeout, against a repo server
+// that holds every request, as one waiting on a cold clone's repository lock
+// does. Each call must end at the renderer's call timeout, cancel the request
+// on the server, and not fall back to a local clone. The server gives up after
+// repoServerSafetyTimeout, so a missing bound fails the test in seconds.
+func TestRepoServerRenderer_CallTimeoutBoundsTheRealClient(t *testing.T) {
+	t.Parallel()
+
+	const callTimeout = 150 * time.Millisecond
+	var cancelled, unbounded atomic.Int32
+	handled := make(chan struct{}, 2)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() { handled <- struct{}{} }()
+		select {
+		case <-r.Context().Done():
+			cancelled.Add(1)
+		case <-time.After(repoServerSafetyTimeout):
+			unbounded.Add(1)
+			http.Error(w, "held past the safety timeout", http.StatusServiceUnavailable)
+		}
+	}))
+	httpx.WithH2C(srv.Config) // the client speaks prior-knowledge h2c to http:// repo servers
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	local := &stubRenderer{renderResult: []byte("local"), resolveResult: &source.ResolveResult{Hash: "local"}}
+	r := NewRepoServerRenderer(reposerverclient.NewWithTimeout(srv.URL, 5*time.Minute), local,
+		WithRepoServerCallTimeout(callTimeout), WithoutLocalFallbackOnTimeout())
+	tmpl := &paprikav1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "brandbrain-api-template", Namespace: "brandbrain"},
+		Spec:       paprikav1.TemplateSpec{Type: "git", Git: &paprikav1.GitSourceSpec{RepoURL: "https://example.com/repo.git", Revision: "main"}},
+	}
+
+	calls := map[string]func() error{
+		"resolve": func() error { _, err := r.ResolveSource(context.Background(), tmpl); return err },
+		"render":  func() error { _, err := r.Render(context.Background(), tmpl, map[string]string{"k": "v"}); return err },
+	}
+	for name, call := range calls {
+		start := time.Now()
+		err := call()
+		elapsed := time.Since(start)
+		require.ErrorIs(t, err, ErrRepoServerTimeout, "%s", name)
+		assert.GreaterOrEqual(t, elapsed, callTimeout, "%s returned before its timeout", name)
+		assert.Less(t, elapsed, repoServerSafetyTimeout/2, "%s was not bounded by the call timeout", name)
+		select {
+		case <-handled:
+		case <-time.After(repoServerSafetyTimeout + time.Second):
+			t.Fatalf("%s: the repo server never saw the request end", name)
+		}
+	}
+	assert.EqualValues(t, 2, cancelled.Load(), "each timed-out call cancels its request on the repo server")
+	assert.Zero(t, unbounded.Load())
+	assert.False(t, local.resolveSourceCalled, "a timed-out resolve must not start a local clone")
+	assert.False(t, local.renderCalled, "a timed-out render must not start a local clone")
 }
