@@ -63,17 +63,15 @@ apiServer:
           name: paprika-auth-token
           key: token-secret
 
-# Git fetching rollout, step 1 of 2 (PR #165). This release makes go-git check
-# out executable (100755) files, which changes the source hash once for the
-# apps whose chart path holds one (brandbrain-api, cuttlefish-controlplane,
-# flaggr-api, greenveil-cloudflared, telesis-api, shorted-jobs): one Release of
-# the same commit each. Pinning go-git (repo server and the manager's fallback)
-# takes that change on its own. Step 2, once those Releases have settled: set
-# backend to auto (the git CLI blobless fetch, whose hashes match go-git's) in
-# a separate upgrade. See charts/chart/values.yaml repoServer.git.
+# Git fetching: the git CLI blobless fetch (PR #165, step 2 of 2). Step 1 pinned
+# go-git so the one-off source-hash change for charts holding executable files
+# landed on its own; it shipped in Helm revision 69. auto uses the git CLI,
+# whose hashes match go-git's, so this upgrade creates no Releases. To roll
+# back without an image change, set repoServer.git.backend: go-git here.
+# See charts/chart/values.yaml repoServer.git.
 repoServer:
   git:
-    backend: go-git
+    backend: auto
 
 observabilityGateway:
   # Public Supabase Root 2021 CA; verified against the database pooler's TLS
