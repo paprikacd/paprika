@@ -65,10 +65,11 @@ type Report struct {
 	// credential, which is what makes pools visible for a cluster the control
 	// plane cannot dial.
 	NodePools []clustersv1alpha1.ClusterNodePool `json:"nodePools,omitempty"`
-	// Policies is the management-policy ceiling the satellite is enforcing, with
-	// the wildcard expanded. The control plane records it so an operator can see
-	// what a satellite will refuse before a release tries to write.
-	Policies []clustersv1alpha1.ManagementPolicy `json:"policies,omitempty"`
+	// Policies is the satellite's local policy claim. It is reported so an
+	// operator can compare it with the Cluster ceiling; it does not grant or
+	// enforce permissions. An omitted legacy value means the default wildcard,
+	// while an explicitly empty array is retained as an empty claim.
+	Policies []clustersv1alpha1.ManagementPolicy `json:"policies"`
 	// Autonomy is the satellite's own autonomy mode, reported so the control
 	// plane can distinguish "connected" from "should be autonomous but cannot".
 	Autonomy clustersv1alpha1.AutonomyMode `json:"autonomy,omitempty"`
