@@ -344,7 +344,7 @@ try {
       await until(()=>blocked,"Saved-query list must be held for the loading-state check")
       await page.getByRole("status",{name:"Loading widget",exact:true}).first().waitFor()
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
-      assert.deepEqual(await page.getByRole("alert").allTextContents(),[],"Loading saved definitions must not flash a query failure")
+      assert.deepEqual(await page.getByTestId("dashboard-canvas").getByRole("alert").allTextContents(),[],"Loading saved definitions must not flash a query failure")
       release()
       await renderEveryPanel(board)
       return{delayedLibrary:true,loadingBeforeDefinitions:true,queriesRenderAfterRelease:true}
