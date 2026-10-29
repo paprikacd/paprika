@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
+import { chartFixtures } from "./fixtures/rich-chart-data.ts"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const base = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -117,6 +118,71 @@ async function inspectMetric(id) {
   assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1, "Metric inspection must fit the viewport")
   await page.keyboard.press("Escape")
   return { keyboard: true, pinned: true, pointer: true }
+}
+async function inspectScrollableMetric() {
+  const board = fixtureAPI.documents.get("example-artboard-edge-watch")
+  const widget = board.widgets.find(widget => widget.id === "flow")
+  const query = fixtureAPI.savedQueries.get(widget.queryRef.id).query
+  const fixture = chartFixtures.find(fixture => fixture.metric === query.slice(0, query.indexOf("{")))
+  assert.ok(fixture?.series?.length, "The scroll regression must use a saved-query metric fixture")
+  const original = fixture.series, expectedValue = 42.123456789
+  const longLabels = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`resource_${index}`, `cluster/omega/namespace/observability/deployment/ingestion-worker-${index}/instance/long-label-regression`]))
+  // Enrich only this HTTP fixture for the scroll test; never alter renderer DOM or styles.
+  fixture.series = original.map(source => ({ ...source, labels: { ...source.labels, ...longLabels }, base: expectedValue, variation: 0, trend: 0, gaps: undefined }))
+  try {
+    await open(studies[2])
+    const element = await ready(widget), plot = element.locator('svg[role="group"]').first()
+    await plot.focus()
+    const details = element.getByRole("region", { name: "Observation details", exact: true })
+    await details.waitFor()
+    assert.equal(await details.getAttribute("tabindex"), null, "Transient inspection must not gain a tab stop")
+    await plot.press("Enter")
+    await details.getByText("Pinned observation", { exact: true }).waitFor()
+    assert.equal(await details.getAttribute("tabindex"), "0", "Pinned inspection must be keyboard focusable")
+    await page.keyboard.press("Tab")
+    assert.equal(await details.evaluate(node => document.activeElement === node), true, "Tab from the chart must reach its pinned scroll surface")
+    const geometry = await details.evaluate(node => ({ client: node.clientHeight, scroll: node.scrollHeight, containment: getComputedStyle(node).overscrollBehaviorY }))
+    assert.ok(geometry.scroll > geometry.client + 100, "Long label metadata must force real inspector overflow")
+    assert.equal(geometry.containment, "contain")
+    await details.getByText(longLabels.resource_11, { exact: true }).waitFor({ state: "attached" })
+    const reading = details.locator("[data-metric-value]")
+    const exactReading = async () => {
+      assert.equal(Number(await reading.getAttribute("data-metric-value")), expectedValue, "Scrolling must preserve the exact selected sample")
+      assert.equal(await reading.evaluate(node => {
+        const value = node.getBoundingClientRect(), panel = node.closest('[aria-label="Observation details"]').getBoundingClientRect()
+        return value.top >= panel.top && value.bottom <= panel.bottom && value.left >= panel.left && value.right <= panel.right
+      }), true, "The selected sample must remain visible after returning to the top")
+    }
+    const documentScroll = () => page.evaluate(() => ({ x: scrollX, y: scrollY }))
+    await exactReading()
+    const initialPage = await documentScroll()
+    await page.keyboard.press("PageDown")
+    await until(async () => await details.evaluate(node => node.scrollTop) > 0, "PageDown must scroll the focused inspector")
+    const afterPageDown = await details.evaluate(node => node.scrollTop)
+    assert.deepEqual(await documentScroll(), initialPage, "PageDown must not scroll the dashboard")
+    await page.keyboard.press("End")
+    await until(async () => await details.evaluate(node => node.scrollTop >= node.scrollHeight - node.clientHeight - 1), "End must reach the inspector's final metadata")
+    const bottom = await details.evaluate(node => node.scrollTop)
+    await details.hover()
+    const beforeWheel = await documentScroll()
+    const pageRoom = await page.evaluate(() => ({ above: scrollY, below: document.documentElement.scrollHeight - innerHeight - scrollY }))
+    assert.ok(pageRoom.above > 100 && pageRoom.below > 100, "The dashboard must have room to scroll so containment is tested at both boundaries")
+    await page.mouse.wheel(0, 700)
+    await page.waitForTimeout(200)
+    assert.deepEqual(await documentScroll(), beforeWheel, "Wheel at the inspector's bottom must not propagate to the dashboard")
+    assert.ok(await details.evaluate(node => node.scrollTop >= node.scrollHeight - node.clientHeight - 1))
+    await page.keyboard.press("Home")
+    await until(async () => await details.evaluate(node => node.scrollTop <= 1), "Home must return to the selected sample")
+    await page.mouse.wheel(0, -700)
+    await page.waitForTimeout(200)
+    assert.deepEqual(await documentScroll(), beforeWheel, "Wheel at the inspector's top must not propagate to the dashboard")
+    await exactReading()
+    await page.screenshot({ path: join(output, "pinned-inspector-mobile-keyboard-scroll.png"), fullPage: false, animations: "disabled" })
+    await page.keyboard.press("Escape")
+    await details.waitFor({ state: "hidden" })
+    assert.equal(await plot.evaluate(node => document.activeElement === node), true, "Escape must return focus to the chart without reopening its inspector")
+    return { mobileWidth: 390, savedQuery: widget.queryRef.id, exactValue: expectedValue, labelCount: Object.keys(longLabels).length, tabFocus: true, afterPageDown, bottom, wheelContainedBothBoundaries: true, escapeClosed: true, focusRestored: true }
+  } finally { fixture.series = original }
 }
 async function inspectRecord(id, name) {
   const element = tile(id)
@@ -300,6 +366,7 @@ try {
         return { existingTimeSeriesConverted: true, stackedBarsRendered: true, gaugePreviewModes: ["linear", "segmented", "radial"], queryBindingsPreserved: true, savedAndReloaded: true, sharedFilterRetained: true }
       })
     }
+    if (width === 390) await check("Pinned mobile metric inspector supports native keyboard scrolling and contains wheel gestures", inspectScrollableMetric)
     assert.deepEqual(fixtureAPI.failures, [], "No test API contract failures")
     await writeFile(join(output, `api-calls-${width}.json`), JSON.stringify(fixtureAPI.calls, null, 2))
     await context.close(); context = undefined
