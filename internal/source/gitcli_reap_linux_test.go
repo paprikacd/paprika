@@ -3,6 +3,7 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -79,7 +80,7 @@ func groupMembers(t *testing.T, pgid int) []string {
 			continue // exited
 		}
 		// pid (comm) state ppid pgrp ...; comm may hold spaces.
-		fields := strings.Fields(string(raw[strings.LastIndexByte(string(raw), ')')+1:]))
+		fields := strings.Fields(string(raw[bytes.LastIndexByte(raw, ')')+1:]))
 		if len(fields) < 3 {
 			continue
 		}
