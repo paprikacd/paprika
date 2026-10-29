@@ -92,7 +92,7 @@ func TestReportPoliciesIntersectCeilingAndRetainClaim(t *testing.T) {
 				t.Fatal(err)
 			}
 			var report satellite.Report
-			if err := json.Unmarshal(encoded, &report); err != nil {
+			if err = json.Unmarshal(encoded, &report); err != nil {
 				t.Fatal(err)
 			}
 			state := &clusters.SatelliteStatus{LastSeen: &metav1.Time{Time: time.Unix(1_700_000_000, 0)}}
@@ -106,7 +106,7 @@ func TestReportPoliciesIntersectCeilingAndRetainClaim(t *testing.T) {
 				t.Fatal(err)
 			}
 			var persisted clusters.SatelliteStatus
-			if err := json.Unmarshal(statusJSON, &persisted); err != nil {
+			if err = json.Unmarshal(statusJSON, &persisted); err != nil {
 				t.Fatal(err)
 			}
 			if persisted.ReportedPolicies == nil || !slices.Equal(*persisted.ReportedPolicies, *state.ReportedPolicies) {
