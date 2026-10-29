@@ -84,9 +84,6 @@ serviceAccount:
   name: ""
   annotations: {}
 
-rbac:
-  create: true
-
 nameOverride: ""
 fullnameOverride: ""
 podAnnotations: {}

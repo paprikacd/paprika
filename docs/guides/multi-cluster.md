@@ -19,6 +19,62 @@ The `Cluster` CR supports three connection modes:
 | `direct` | The operator connects to a remote API server using a kubeconfig stored in a Secret. |
 | `agent` | A satellite reports observed state through an outbound connection. Deployment through the existing apply agent additionally requires a reachable agent endpoint. |
 
+### Direct access to GKE with Workload Identity
+
+The Paprika manager image includes a client-go credential helper. It obtains
+short-lived Google application-default credentials from the manager pod's
+Workload Identity and does not require `gke-gcloud-auth-plugin` or a service
+account key. Bind the manager's Kubernetes service account to a dedicated Google
+service account, then grant that identity only the GKE discovery and target
+Kubernetes RBAC permissions needed for the registered cluster. Ensure the
+manager can reach the target API endpoint and that the kubeconfig contains its
+verified CA certificate. This is separate from `spec.provider` cloud inventory
+credentials and from satellite authentication.
+
+Place a kubeconfig in the direct Cluster's referenced Secret, with the usual
+cluster, CA, context and user entries. Its user authentication block is:
+
+```yaml
+exec:
+  apiVersion: client.authentication.k8s.io/v1
+  command: /manager
+  args: [gke-exec-credential]
+  interactiveMode: Never
+```
+
+Client-go refreshes the short-lived token before expiry. Restrict who can write
+the Cluster and its kubeconfig Secret: a kubeconfig exec entry is executable
+configuration in the manager pod, not merely a credential. Verify target RBAC,
+network reachability, remote reads and a migration hook before using the
+connection for production promotions. Satellite reports alone do not prove
+that this direct deployment transport works.
+
+For a live, read-only check from the manager pod, obtain the expected target
+endpoint and namespace UID independently from the cloud provider and target
+cluster, then run:
+
+```sh
+kubectl -n paprika-system exec deployment/paprika-controller-manager -c manager -- \
+  /manager fleet-direct-probe --cluster-namespace paprika-system \
+  --cluster-name vocus-prod --target-namespace sfh-vocus-prod \
+  --expected-server https://EXAMPLE.gke.goog --system-ca \
+  --expected-namespace-uid EXPECTED_UID
+```
+
+Use the actual manager deployment, Cluster name, target endpoint and namespace
+UID for the installation. The DNS endpoint mode uses the image's system CA
+roots; it refuses custom CA files, proxies and insecure TLS. For an endpoint
+using a pinned private CA, replace `--system-ca` with
+`--expected-ca-sha256` and the SHA-256 of its CA bytes. The command uses the
+registered kubeconfig and the same client-go configuration path as release
+reconciliation, reads the target namespace, and returns JSON containing the
+registration and Secret identities, the target namespace UID and observation
+time. It rejects a registration or Secret changed during the read. Its output
+does not include tokens, kubeconfig contents or credential errors. Compare the
+identities and resource versions with fresh management-cluster reads before
+using the result; successful observation does not authorize a deployment or
+prove write permissions, migration hooks or ongoing connectivity.
+
 ## Satellite Onboarding
 
 Install the central chart and CRDs from a build containing satellite support.
