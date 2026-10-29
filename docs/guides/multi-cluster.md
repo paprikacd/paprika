@@ -241,9 +241,14 @@ failing it: the Release stays in `Promoting` with a `PromotionPolicyWithheld`
 condition naming the refused action, and rechecks every five minutes. Widening
 the ceiling lets it proceed without a retry.
 
-`status.satellite.effectivePolicies` reports the resolved set with `*` expanded,
-so `kubectl get cluster` answers "what will Paprika actually do here" without
-re-deriving it from two specs.
+`status.satellite.reportedPolicies` records the satellite's last reported local
+claim. `status.satellite.effectivePolicies` intersects that claim with the
+Cluster ceiling and expands `*`; it is unknown until the first report. The
+claim is an observation, not an authorization check or grant. The satellite's
+actual Kubernetes permissions still apply. A direct connection uses the Cluster and Stage ceilings
+separately, so it can have different permissions from an Observe-only satellite.
+A spec change recomputes the satellite's effective set from its last claim even
+while the satellite is disconnected.
 
 ### Autonomy and Disconnection
 

@@ -1,6 +1,8 @@
 package satellitecontrol
 
 import (
+	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -70,25 +72,71 @@ func TestApplyReportStatusCapacityIsIndependentOfTheReport(t *testing.T) {
 	}
 }
 
-func TestReportedPoliciesPrefersTheClusterCeiling(t *testing.T) {
+func TestReportPoliciesIntersectCeilingAndRetainClaim(t *testing.T) {
 	t.Parallel()
-
-	report := &satellite.Report{Policies: []clusters.ManagementPolicy{clusters.ManagementPolicyAll}}
-	withCeiling := &clusters.Cluster{Spec: clusters.ClusterSpec{
-		ManagementPolicies: []clusters.ManagementPolicy{clusters.ManagementPolicyObserve},
-	}}
-	if got := reportedPolicies(withCeiling, report); len(got) != 1 || got[0] != clusters.ManagementPolicyObserve {
-		t.Errorf("cluster ceiling was not authoritative: %v", got)
+	for _, tc := range []struct {
+		name                 string
+		ceiling, claim, want []clusters.ManagementPolicy
+	}{
+		{"narrow satellite", []clusters.ManagementPolicy{clusters.ManagementPolicyObserve, clusters.ManagementPolicyApply}, []clusters.ManagementPolicy{clusters.ManagementPolicyObserve}, []clusters.ManagementPolicy{clusters.ManagementPolicyObserve}},
+		{"narrow cluster", []clusters.ManagementPolicy{clusters.ManagementPolicyObserve}, []clusters.ManagementPolicy{clusters.ManagementPolicyAll}, []clusters.ManagementPolicy{clusters.ManagementPolicyObserve}},
+		{"legacy omitted claim defaults full", nil, nil, paprikav1.AllManagementPolicies()},
+		{"explicit empty claim", nil, []clusters.ManagementPolicy{}, []clusters.ManagementPolicy{}},
+		{"explicit empty ceiling", []clusters.ManagementPolicy{}, []clusters.ManagementPolicy{clusters.ManagementPolicyAll}, []clusters.ManagementPolicy{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Exercise the real wire representation: an explicit empty claim must
+			// survive transport instead of becoming an omitted/defaulted value.
+			encoded, err := json.Marshal(&satellite.Report{Policies: tc.claim})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var report satellite.Report
+			if err := json.Unmarshal(encoded, &report); err != nil {
+				t.Fatal(err)
+			}
+			state := &clusters.SatelliteStatus{LastSeen: &metav1.Time{Time: time.Unix(1_700_000_000, 0)}}
+			cluster := &clusters.Cluster{Spec: clusters.ClusterSpec{ManagementPolicies: tc.ceiling}}
+			applyReportStatus(cluster, &report, state)
+			if state.ReportedPolicies == nil {
+				t.Fatal("report claim was not recorded")
+			}
+			statusJSON, err := json.Marshal(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var persisted clusters.SatelliteStatus
+			if err := json.Unmarshal(statusJSON, &persisted); err != nil {
+				t.Fatal(err)
+			}
+			if persisted.ReportedPolicies == nil || !slices.Equal(*persisted.ReportedPolicies, *state.ReportedPolicies) {
+				t.Fatalf("status round-trip lost the claim: %s", statusJSON)
+			}
+			if !slices.Equal(state.EffectivePolicies, tc.want) {
+				t.Fatalf("effective = %v, want %v", state.EffectivePolicies, tc.want)
+			}
+			if !slices.Equal(*state.ReportedPolicies, paprikav1.NormalizeManagementPolicies(tc.claim)) {
+				t.Fatalf("claim = %v, want %v", *state.ReportedPolicies, tc.claim)
+			}
+			// Copying the claim prevents a caller from changing persisted status.
+			if len(report.Policies) > 0 {
+				report.Policies[0] = "unexpected"
+				if (*state.ReportedPolicies)[0] == "unexpected" {
+					t.Fatal("claim aliases report")
+				}
+			}
+		})
 	}
+}
 
-	silent := &clusters.Cluster{}
-	if got := reportedPolicies(silent, report); len(got) != len(paprikav1.AllManagementPolicies()) {
-		t.Errorf("a satellite's own claim must fill in when the spec is silent: %v", got)
+func TestLegacyReportWithoutPoliciesKeepsDefault(t *testing.T) {
+	t.Parallel()
+	var report satellite.Report
+	if err := json.Unmarshal([]byte(`{}`), &report); err != nil {
+		t.Fatal(err)
 	}
-
-	skip := &clusters.Cluster{Spec: clusters.ClusterSpec{ManagementPolicies: paprikav1.ManagementPolicySet{}}}
-	if got := reportedPolicies(skip, report); len(got) != 0 {
-		t.Errorf("an explicitly empty ceiling must record nothing, got %v", got)
+	if got := reportedPolicies(&report); !slices.Equal(got, paprikav1.DefaultManagementPolicies()) {
+		t.Fatalf("legacy omitted claim = %v, want wildcard", got)
 	}
 }
 
