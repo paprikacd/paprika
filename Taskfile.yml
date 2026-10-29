@@ -714,6 +714,15 @@ tasks:
               echo "FAIL[$name]: both API and gateway must receive the namespace bound"; rc=1
             fi
           fi
+          case "$name" in
+            omega-git-step1|omega-git-step2)
+              want=go-git; if [ "$name" = omega-git-step2 ]; then want=auto; fi
+              count="$(printf '%s\n' "$out" | grep -A1 -- '- name: PAPRIKA_GIT_BACKEND' | grep -c "value: \"$want\"")"
+              if [ "$count" -ne 2 ]; then
+                echo "FAIL[$name]: repo server and manager must both render PAPRIKA_GIT_BACKEND=$want (got $count)"; rc=1
+              fi
+              ;;
+          esac
           if [ "$name" = repo-server-cache ]; then
             rs="$(printf '%s\n' "$out" | awk 'BEGIN { RS="---" } /component: repo-server/ && (/kind: Deployment/ || /kind: PersistentVolumeClaim/) { print }')"
             for want in 'kind: PersistentVolumeClaim' 'type: Recreate' '--repo-workdir=/tmp/paprika-repo' 'claimName: paprika-repo-server-git-cache' 'name: PAPRIKA_GIT_CACHE_MAX_BYTES'; do
@@ -797,6 +806,9 @@ tasks:
           --set manager.reconcile.sourceResolveTTL=45s \
           --set manager.reconcile.rateLimit.appRate=25
         check_render test-values -f deploy/test-values.yaml
+        check_render omega-git-step1 -f deploy/test-values.yaml -f deploy/omega-values.yaml
+        check_render omega-git-step2 -f deploy/test-values.yaml -f deploy/omega-values.yaml \
+          --set repoServer.git.backend=auto
         check_render repo-server-cache --set repoServer.enabled=true --set repoServer.replicas=1 \
           --set repoServer.cache.persistence.enabled=true
         check_render repo-server-cache-omega -f deploy/test-values.yaml -f deploy/omega-values.yaml \

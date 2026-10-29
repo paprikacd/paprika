@@ -63,6 +63,18 @@ apiServer:
           name: paprika-auth-token
           key: token-secret
 
+# Git fetching rollout, step 1 of 2 (PR #165). This release makes go-git check
+# out executable (100755) files, which changes the source hash once for the
+# apps whose chart path holds one (brandbrain-api, cuttlefish-controlplane,
+# flaggr-api, greenveil-cloudflared, telesis-api, shorted-jobs): one Release of
+# the same commit each. Pinning go-git (repo server and the manager's fallback)
+# takes that change on its own. Step 2, once those Releases have settled: set
+# backend to auto (the git CLI blobless fetch, whose hashes match go-git's) in
+# a separate upgrade. See charts/chart/values.yaml repoServer.git.
+repoServer:
+  git:
+    backend: go-git
+
 observabilityGateway:
   # Public Supabase Root 2021 CA; verified against the database pooler's TLS
   # certificate and hostname. Expires 2031-04-26T10:56:53Z.

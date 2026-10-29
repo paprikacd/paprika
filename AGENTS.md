@@ -124,22 +124,37 @@ helm upgrade paprika-e2e charts/chart/ \
 - Git resolve has two backends (`internal/source`, `GitSource.backend`,
   `PAPRIKA_GIT_BACKEND=auto|cli|go-git`, chart `repoServer.git.backend`).
   `auto` uses the git CLI (`gitcli*.go`) when git >= 2.44 is installed (the
-  published Alpine images ship it) and the URL is HTTP(S), `file://` or a
-  local path; everything else uses go-git (`git.go`).
+  cluster image built from `Dockerfile` ships the pinned 2.54 series; the
+  release image `Dockerfile.goreleaser` deliberately ships none, see
+  `hack/test-cli-release-contract.sh`) and go-git (`git.go`) otherwise. Only
+  `http(s)://` repositories resolve: `source.ValidateGitRepoURL` is enforced
+  by the Application, Template and Repository webhooks and again on every
+  resolve, because a `file://` URL or local path would render another
+  repository cached on the repo server (tests opt in with
+  `allowLocalGitRepos`).
   - CLI: one bare blobless partial clone per repository and credential at
     `<workdir>/git-cache/mirrors/<key>.git`. A branch/tag/default resolves
     with `ls-remote` (protocol v2, one round trip, shared by concurrent
-    requests; `fetchTtl` bounds how old an answer may be, 0 = an ls-remote
-    begun at most 1s before the request); the commit is fetched by SHA at
+    requests; `fetchTtl` bounds how old an answer may be, and 0, as a sync
+    trigger sends, reuses no answer from before the request); the commit is
+    fetched by SHA at
     depth 1 with `--filter=blob:none` (commit + trees, about 1 MB for
     brandbrain's 22,795-file tip), then only the blobs under `path` that the
     mirror lacks, in one `fetch --stdin`. Checkouts are immutable and
     content-addressed (`git-cache/checkouts/<key>/<tree>-<pathhash>/<path>`,
     complete once a `.done` marker holds the dir hash), so nothing a render
-    is reading is rewritten. Fetches of one commit and checkouts of one tree
+    is reading is rewritten; a resolve leases its checkout until the caller
+    calls `ResolveResult.Release()` (the engine does after loading the chart
+    or building the kustomization), and eviction skips leased checkouts.
+    Every fetched object is fsck-checked; checkouts refuse symlinks that
+    resolve outside the source path and entries beneath a symlink, in both
+    backends. A server that refuses objects by ID (protocol v0 without
+    `allowAnySHA1InWant`) gets the ref, or for a pinned SHA every branch,
+    refetched unfiltered. Fetches of one commit and checkouts of one tree
     are single-flight and run detached from the request (bounded by
     `PAPRIKA_GIT_FETCH_TIMEOUT`, default 10m; the git process group is
-    killed at it); writes to one mirror are serialized and hold one of
+    killed at it, and its orphans are reaped in-process because `/manager`
+    is PID 1 with no init); writes to one mirror are serialized and hold one of
     `PAPRIKA_GIT_MAX_CONCURRENT_FETCHES` (default 4) process-wide slots, so
     a slow repository never blocks another. `PAPRIKA_GIT_CACHE_MAX_BYTES`
     bounds the cache with LRU eviction (entries used within
@@ -157,11 +172,16 @@ helm upgrade paprika-e2e charts/chart/ \
     `checkoutTree` materializes the `path` subtree into `git-clones/` in
     place. `fetchTtl` uses a `.lastfetch` clock. Corruption during object
     reads triggers the protected rebuild (`isRecoverableGitCacheError`).
+  - Rollout: go-git now checks out executable files, so a deploy of this code
+    changes the source hash once for apps with a 100755 file in their path.
+    Take that on `repoServer.git.backend: go-git` first (omega pins it in
+    `deploy/omega-values.yaml`), then flip to `auto` in a separate upgrade:
+    the CLI's hashes match go-git's.
   - Metrics: `paprika_git_fetch_duration_seconds{op,result}`,
     `paprika_git_fetch_received_bytes_total{op}`,
     `paprika_git_fetch_inflight`, `paprika_git_fetch_waiting`,
     `paprika_git_cache_lookups_total{layer,result}`,
-    `paprika_git_cache_size_bytes`, `paprika_git_cache_evictions_total{kind}`.
+    `paprika_git_cache_size_bytes{dir}`, `paprika_git_cache_evictions_total{kind}`.
 - All Kubernetes clients share `negotiateProtobuf` (cmd/protobuf.go), which
   composes `kube.WithProtobufResponses` + `kube.WithRetryTransport`: GET/
   HEAD/OPTIONS retry up to 3 attempts on connection resets / mid-response
