@@ -4,9 +4,9 @@ name: Paprika Insights
 description: A compact Gamma workspace for reading telemetry and building observability dashboards.
 colors:
   primary: "#b65332"
-  background: "#fffefd"
-  surface: "#f7f8fa"
-  ink: "#202936"
+  background: "#ffffff"
+  surface: "#f5f7f7"
+  ink: "#223139"
 typography:
   sans:
     fontFamily: "var(--font-sans), system-ui, sans-serif"
@@ -27,9 +27,9 @@ omitted:
 
 ## Overview
 
-This document covers `/dashboard/insights` and its independently scoped component. It does not replace the dark main-app direction in `.impeccable.md`. The user requested a clean, smooth, performant dashboard builder, maintained Gamma components, detailed telemetry controls, JSON/YAML/OpenUI authoring, and no routine source metadata on widgets. This is a refinement of that existing workspace, not a new visual direction.
+This document covers `/dashboard/insights` and its independently scoped component. It does not replace the dark main-app direction in `.impeccable.md`. The user requested a clean, smooth, performant dashboard builder, maintained Gamma components, detailed telemetry controls, JSON/YAML/OpenUI authoring, and no routine source metadata on widgets. The approved October artboards extend the chart vocabulary and visual detail of this workspace. They are references for reusable chart components, not a requirement to ship dashboard templates.
 
-The audience is DevOps and platform engineers, as recorded in `.impeccable.md`. Their job here is to scan telemetry, understand an observation, and follow it into a related dashboard. Treat this as an **Operate** product surface. The reference is Gamma's maintained controls inside Paprika's paper, paprika and sage palette. Dense information should remain legible; decoration must not compete with data. English is the current interface language. Market-specific behavior and additional locales are not established by this feature.
+The audience is DevOps and platform engineers, as recorded in `.impeccable.md`. Their job here is to scan telemetry, understand an observation, and follow it into a related dashboard. Treat this as an **Operate** product surface. Gamma's maintained controls frame crisp paper or deep slate plots; blue, teal and coral distinguish signals, while paprika identifies actions. Dense information should remain legible; decoration must not compete with data. English is the current interface language. Market-specific behavior and additional locales are not established by this feature.
 
 Runtime ownership: `ui/src/features/insights/gamma/gamma-theme.module.css` is the canonical scoped token adapter. It maps the maintained Gamma semantic names to Paprika values; `gamma/controls.module.css` and `gamma/gamma.module.css` consume those names. Widget CSS consumes that same theme. This file records intent and selected values; it does not generate another token system. Source provenance lives in `gamma/README.md` and `docs/design/insights/gamma-source-catalogue.json`.
 
@@ -58,6 +58,10 @@ Paprika's compact Gamma adapter uses 5px controls, 6px panels and 4px small surf
 Reuse `GammaButton`, `GammaInput`, `GammaTextarea`, `GammaSelect`, `GammaSearchCombobox`, `GammaSwitch`, `GammaTabs` and `GammaActionMenu`. Selects use authored listboxes; actions use menus. Focus, disabled, busy and selected treatment belong to these shared owners. Use scoped scrollbar, caret and selection tokens on product-owned scroll surfaces, including portals.
 
 Charts receive normalized data through the host. A legend describes data; it must not become a source badge. Missing data, empty results, failures and result limits must stay distinct. A status heatmap shows the latest sample per series; it is not a histogram. A trace list must not imply a waterfall. Plugin rendering and emitted drilldown context must agree.
+
+The richer chart vocabulary includes stacked areas/bars, mirrored directional traffic, bucket distribution heatmaps, segmented and radial capacity meters, supplied-coordinate maps, directed pipeline diagrams and UTC incident calendars. Each is a configurable renderer in the existing builder. Distribution color represents bucket density; thresholds represent explicit limits; meter fills represent the measured fraction. Never substitute a status heatmap for a distribution or fabricate coordinates, missing observations or healthy days. Guided settings expose only capabilities the renderer implements, with advanced JSON retained.
+
+Time-based plots share the exact observation timestamp through a dashboard-scoped cursor. Hover remains transient; click/tap or Enter pins the inspector; Escape dismisses it. A result refresh clears stale observations and cursors. Details-only charts do not launch extra queries. Query-backed tooltip widgets remain an explicit authoring choice.
 
 The October 2026 component studies in `output/imagegen/` guide presentation, not dashboard schema or invented data. Prefer thin readable lines, low-opacity areas, quiet horizontal grids, compact aligned legends and tabular values. An observation card should remain beside the selected track where space permits. Its history keeps the selected series' color in both themes; an explicit authored color takes priority. The selected observation and latest history value remain separately labelled. Never invent deltas or combine incompatible units just to reproduce a concept image.
 

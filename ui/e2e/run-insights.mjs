@@ -91,6 +91,8 @@ try {
     "e2e/insights-import-review.e2e.mjs",
     "e2e/insights-dashboard-query.e2e.mjs",
     "e2e/insights-repository-examples.e2e.mjs",
+    "e2e/insights-rich-charts.e2e.mjs",
+    "e2e/insights-reference-dashboards.e2e.mjs",
     "e2e/insights-source-provenance.e2e.mjs",
     "e2e/insights-record-charts.e2e.mjs",
   ]

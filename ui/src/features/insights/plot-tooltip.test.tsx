@@ -9,10 +9,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WidgetVisualization } from "./charts";
-import { placePlotTooltip } from "./chart-renderers";
+import { ObservationTooltip, placePlotTooltip } from "./chart-renderers";
 import { TooltipQueryProvider } from "./tooltip-query";
 import type { Provider, QueryResult, TooltipView, Widget } from "./schema";
 import type { Series } from "./chart-data";
+import { ChartCursorProvider } from "./chart-cursor";
 
 const providers: Provider[] = [
   {
@@ -132,6 +133,46 @@ afterEach(() => {
 });
 
 describe("point and row tooltip hosts", () => {
+  it("dismisses a lingering hover card without swallowing Escape from another chart", () => {
+    const dismiss = vi.fn(), ownKey = vi.fn(), otherKey = vi.fn();
+    render(<><button onKeyDown={ownKey}>Hovered chart</button><button onKeyDown={otherKey}>Focused chart</button></>);
+    const anchor = screen.getByRole("button", { name: "Hovered chart" });
+    render(<ObservationTooltip id="lingering" anchor={anchor} onDismiss={dismiss} onEnter={() => {}} onLeave={() => {}}>Observation</ObservationTooltip>);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Focused chart" }), { key: "Escape" });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(otherKey).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(anchor, { key: "Escape" });
+    expect(dismiss).toHaveBeenCalledTimes(2);
+    expect(ownKey).not.toHaveBeenCalled();
+  });
+  it("pins details without a child query and shares the exact timestamp with sibling charts", async () => {
+    const fetcher = vi.fn().mockResolvedValue(child);
+    const { container, rerender } = render(<ChartCursorProvider>
+      <Host value={{ ...widget, options: { decimals: 2 } }} fetcher={fetcher} />
+      <Host value={{ ...widget, id: "sibling", title: "Sibling", options: {} }} />
+    </ChartCursorProvider>);
+    const chart = screen.getByRole("img", { name: widget.title });
+    act(() => chart.focus());
+    expect(screen.getByRole("tooltip")).toHaveTextContent("-7.25 ms");
+    expect(container.querySelectorAll('[data-chart-cursor-time="1000.25"]')).toHaveLength(2);
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
+    fireEvent.pointerLeave(chart);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
+    expect(fetcher).not.toHaveBeenCalled();
+    fireEvent.keyDown(chart, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(container.querySelectorAll("[data-chart-cursor-time]")).toHaveLength(0);
+    act(() => chart.blur());
+    act(() => chart.focus());
+    fireEvent.keyDown(chart, { key: "Enter" });
+    rerender(<ChartCursorProvider>
+      <Host value={{ ...widget, options: { decimals: 2 } }} response={{ series: structuredClone(series) }} fetcher={fetcher} />
+      <Host value={{ ...widget, id: "sibling", title: "Sibling", options: {} }} />
+    </ChartCursorProvider>);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(container.querySelectorAll("[data-chart-cursor-time]")).toHaveLength(0);
+  });
   it.each([true, false])("chooses the nearby lower series outside the narrow stroke hit target (rich tooltip: %s)", async (rich) => {
     const fetcher = vi.fn().mockResolvedValue(child);
     render(
@@ -158,7 +199,7 @@ describe("point and row tooltip hosts", () => {
       />,
     );
     hoverLine(screen.getByRole("img", { name: widget.title }), 1, 0.05, 6);
-    const tip = await screen.findByRole(rich ? "tooltip" : "status");
+    const tip = await screen.findByRole("tooltip");
     expect(tip).toHaveTextContent("worker");
     if (rich) {
       await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
@@ -235,7 +276,7 @@ describe("point and row tooltip hosts", () => {
       />,
     );
     hoverLine(screen.getByRole("img", { name: widget.title }), 0);
-    const tip = await screen.findByRole("status");
+    const tip = await screen.findByRole("tooltip");
     expect(tip).toHaveTextContent("api");
     expect(tip).toHaveTextContent("10 ms");
     expect(tip).not.toHaveTextContent("worker");
@@ -576,7 +617,8 @@ describe("point and row tooltip hosts", () => {
       <Host value={{ ...widget, options: {} }} fetcher={fetcher} />,
     );
     act(() => screen.getByRole("img", { name: widget.title }).focus());
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Selected observation");
+    expect(screen.getByRole("tooltip").querySelector("[data-tooltip-widget]")).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
     rerender(
       <Host

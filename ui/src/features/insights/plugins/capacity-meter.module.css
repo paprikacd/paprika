@@ -1,0 +1,100 @@
+.segmented {
+  display: flex;
+  /* Keep separated cells at least 4px wide. In narrower tracks the gaps
+     close entirely, giving an honest continuous threshold-colored meter. */
+  gap: clamp(0px, calc((100% - var(--meter-segments) * 4px) / (var(--meter-segments) - 1)), 3px);
+  width: 100%;
+  border-radius: 2px;
+  overflow: hidden;
+  min-height: 22px;
+  flex-shrink: 0;
+}
+.segment {
+  flex: 1;
+  min-width: 0;
+  background: var(--gamma-surface-2);
+  position: relative;
+  overflow: hidden;
+}
+.segment::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--meter-fraction) * 100%);
+  background: var(--meter-fill);
+}
+.body { display: contents; }
+.radialBody {
+  display: grid;
+  width: min(100%, 240px);
+  flex-shrink: 0;
+  align-self: center;
+  aspect-ratio: 200 / 114;
+}
+.radial {
+  grid-area: 1 / 1;
+  width: 100%;
+  align-self: stretch;
+}
+.radialReading.radialReading {
+  grid-area: 1 / 1;
+  z-index: 1;
+  align-self: end;
+  justify-self: center;
+  align-items: center;
+  text-align: center;
+  margin: 0 0 18px;
+  padding: 6px;
+  max-width: 80%;
+}
+.radialValue.radialValue {
+  justify-content: center;
+  font-size: clamp(20px, 9cqw, 32px);
+}
+.arc { width: 100%; height: 100%; overflow: visible; }
+.arcTrack, .arcFill { fill: none; stroke-width: 12px; }
+.arcTrack { stroke: var(--gamma-surface-2); }
+.arc text { font: 10px var(--gamma-font-ui); fill: var(--widget-text, var(--gamma-muted)); }
+.thresholds { display: flex; flex-wrap: wrap; gap: 5px 14px; color: var(--widget-text, var(--gamma-muted)); font-size: 11px; }
+.thresholds span { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.thresholds i { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.bankContainer { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+.bank {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(132px, calc((100% - (var(--gauge-columns) - 1) * 12px) / var(--gauge-columns)))), 1fr));
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+}
+.bank:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; border-radius: 4px; }
+.bank:not([data-gauge-bank-display="radial"]) { gap: 4px 12px; }
+.bankGauge.bankGauge { height: auto; min-width: 0; overflow: visible; gap: 6px; padding: 6px; }
+.bankGauge[data-gauge-kind="radial"] { text-align: center; }
+.bankGauge[data-gauge-kind="radial"] .radialBody { width: min(100%, 200px); }
+.bankGauge[data-gauge-kind="radial"] .radialReading { margin-bottom: 14px; padding: 2px; min-height: 34px; }
+.bankGauge[data-gauge-kind="radial"] .radialValue { font-size: clamp(18px, 7cqw, 26px); }
+.bankGauge[data-gauge-kind="segmented"], .bankGauge[data-gauge-kind="linear"] {
+  display: grid;
+  grid-template-columns: minmax(48px, .65fr) minmax(64px, 2fr) minmax(50px, auto);
+  align-items: center;
+  gap: 6px 12px;
+  padding: 0 4px;
+}
+.bankGauge:not([data-gauge-kind="radial"]) .body > :first-child { grid-column: 3; grid-row: 1; margin: 0; padding: 2px 0; min-height: 22px; }
+.bankGauge:not([data-gauge-kind="radial"]) .body > :last-child { grid-column: 2; grid-row: 1; }
+.bankGauge:not([data-gauge-kind="radial"]) .body > :first-child > span:first-child { font-size: 15px; gap: 4px; }
+.bankGauge:not([data-gauge-kind="radial"]) .bankLabel { grid-column: 1; grid-row: 1; }
+.bankGauge:not([data-gauge-kind="radial"]) > :not(.body):not(.bankLabel) { grid-column: 2 / -1; }
+.bankLabel { min-width: 0; color: var(--widget-text, var(--gamma-ink)); font-size: 11px; line-height: 1.4; }
+.bankUnknown { color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
+.bankNotice { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 6px 0; color: var(--widget-text, var(--gamma-muted)); font-size: 11px; line-height: 1.4; }
+@media (forced-colors: active) {
+  .segment { border: 1px solid CanvasText; }
+  .segment::after { background: Highlight; }
+  .arcTrack { stroke: GrayText; }
+  .arcFill { stroke: Highlight; }
+}

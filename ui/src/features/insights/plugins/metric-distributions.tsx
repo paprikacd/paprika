@@ -38,11 +38,11 @@ export function StatusHistory({ widget,result,onContextChange }: WidgetRendererP
   const series = result.series ?? []
   if (!series.length) return <EmptyState />
   let sampled = false
-  return <div className={styles.wrapper}><div className={styles.scroll} tabIndex={0} role="region" aria-label={`${widget.title} history`}><div className={styles.history}>{series.slice(0,maxSeries).map((entry,index) => {
+  return <div className={`${styles.wrapper} ${styles.historyWrapper}`}><div className={styles.scroll} tabIndex={0} role="region" aria-label={`${widget.title} history`}><div className={styles.history}>{series.slice(0,maxSeries).map((entry,index) => {
     const name = seriesName(entry,index), ordered = entry.points.filter(point => validTimestamp(point.timestamp)).toSorted((a,b)=>a.timestamp-b.timestamp)
     const points = downsamplePoints(ordered,maxPoints)
     sampled ||= points.length < ordered.length
-    return <div key={index} className={styles.historyRow}><strong>{name}</strong><div className={styles.historyCells}>{points.map((point,i) => {
+    return <div key={index} className={styles.historyRow} data-history-series={name}><strong title={name}>{name}</strong><div className={styles.historyCells}>{points.map((point,i) => {
       const finite = typeof point.value === "number" && Number.isFinite(point.value), threshold = finite ? thresholdForValue(point.value!,widget.options?.thresholds) : undefined
       const title = `${name} · ${new Date(point.timestamp).toLocaleString()} · ${finite ? formatMetric(point.value!,widget.unit,false,widget.options?.decimals) : "No data"}${threshold?.label ? ` · ${threshold.label}` : ""}`
       return <button key={i} type="button" aria-label={title} title={title} style={{background:finite ? threshold?.color ?? widget.color ?? "var(--gamma-accent, #53876a)" : "var(--gamma-border)"}} onClick={()=>onContextChange?.({labels:entry.labels,value:finite ? point.value : null,series:name})} />

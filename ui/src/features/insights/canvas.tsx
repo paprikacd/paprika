@@ -16,6 +16,7 @@ import { ArrowUpRight, Grip, Settings2 } from "lucide-react";
 import { WidgetVisualization } from "./charts";
 import { useWidgetQuery } from "./query";
 import { TooltipQueryProvider } from "./tooltip-query";
+import { ChartCursorProvider } from "./chart-cursor";
 import type {
   Dashboard,
   Drilldown,
@@ -326,6 +327,7 @@ export function DashboardCanvas({
         data-testid="dashboard-canvas"
         data-layout-mode={mode}
       >
+        <ChartCursorProvider key={dashboard.id}>
         {mounted && (
           <ReactGridLayout
             width={width}
@@ -378,6 +380,7 @@ export function DashboardCanvas({
             ))}
           </ReactGridLayout>
         )}
+        </ChartCursorProvider>
       </div>
     </TooltipQueryProvider>
   );

@@ -10,6 +10,38 @@ metadata:
 {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "manager-role" "context" $) }}
 rules:
+# Allow managed telemetry collectors to receive these exact read permissions.
+# Kubernetes forbids applying a ClusterRole that the release controller cannot delegate.
+- apiGroups:
+  - ""
+  resources:
+  - nodes/proxy
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - replicationcontrollers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - get
+  - list
+  - watch
 {{- if .Values.githubActionsTokenExchange.enabled }}
 - apiGroups:
   - ""

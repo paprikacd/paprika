@@ -56,6 +56,35 @@ const result: QueryResult = {
 };
 
 describe("bounded chart data", () => {
+  it.each(["timeseries", "bar"] as const)("states long units once beside %s axes while retaining exact inspection units", (type) => {
+    const { container } = render(<WidgetVisualization widget={{ ...widget, type, unit: "connections" }} result={result} />);
+    expect(container.querySelector("[data-chart-axis-unit]")).toHaveTextContent("connections");
+    const ticks = [...container.querySelectorAll('[data-ts-key^="y-tick-label:"]')].map(node => node.textContent);
+    expect(ticks.length).toBeGreaterThan(1);
+    expect(ticks.every(value => /^[-+\d.,KM]+$/.test(value ?? ""))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Inspect chart data for API latency" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("12 connections");
+  });
+
+  it("shares one compact footer for the series legend and data inspection without losing the data dialog", () => {
+    const { container } = render(<WidgetVisualization widget={widget} result={result} />);
+    const footer = container.querySelector("[data-chart-footer]")!;
+    expect(footer).toContainElement(screen.getByRole("list", { name: "Latest values by series" }));
+    const inspect = screen.getByRole("button", { name: "Inspect chart data for API latency" });
+    expect(footer).toContainElement(inspect);
+    expect(container.querySelectorAll("[data-chart-footer]")).toHaveLength(1);
+    fireEvent.click(inspect);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toHaveTextContent("api");
+  });
+
+  it("keeps data inspection available in the same footer when legends are disabled", () => {
+    const { container } = render(<WidgetVisualization widget={{ ...widget, type: "bar", options: { showLegend: false } }} result={result} />);
+    const footer = container.querySelector("[data-chart-footer]")!;
+    expect(footer).toContainElement(screen.getByRole("button", { name: "Inspect chart data for API latency" }));
+    expect(screen.queryByText("Latest valid sample per series")).not.toBeInTheDocument();
+  });
+
   it("keeps legend values and timestamps tied to the latest valid original sample", () => {
     const response: QueryResult = {
       series: [

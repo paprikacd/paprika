@@ -81,6 +81,38 @@ function documentETag(response: Response): string | undefined {
   return response.headers.get("X-Paprika-Document-ETag") ?? response.headers.get("ETag") ?? undefined
 }
 
+function documentCapacityRetry(path: string, init: RequestInit): boolean {
+  if (!/^\/(dashboards|saved-queries)(\/[^/?]+)?$/.test(path)) return false
+  if (!init.method || init.method === "GET") return true
+  const headers = new Headers(init.headers)
+  return (init.method === "PUT" || init.method === "DELETE") &&
+    (headers.has("If-Match") || headers.get("If-None-Match") === "*")
+}
+
+function capacityRetryDelay(response: Response, attempt: number): number | undefined {
+  const header = response.headers.get("Retry-After")?.trim()
+  let delay = 1000 * 2 ** attempt
+  if (header) {
+    const requested = /^\d+$/.test(header) ? Number(header) * 1000 :
+      /^[A-Za-z]{3}, /.test(header) ? Date.parse(header) - Date.now() : NaN
+    if (!Number.isNaN(requested)) delay = Math.max(100, requested)
+  }
+  // A long server cooldown should surface the error, never retry prematurely.
+  return delay <= 10_000 ? delay : undefined
+}
+
+function waitForCapacity(delay: number, signal?: AbortSignal | null): Promise<void> {
+  signal?.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); reject(signal!.reason) }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort)
+      resolve()
+    }, delay)
+    signal?.addEventListener("abort", abort, { once: true })
+  })
+}
+
 /** The embedding host owns authentication; standalone Insights needs no session implementation. */
 export interface InsightsSession {
   ensureToken(): Promise<string | null>
@@ -113,12 +145,27 @@ export function createInsightsClient(
   async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false) {
     const current = context ?? requestContext(session ? await session.ensureToken() : token?.() ?? null)
     let bearer = current.bearer
-    const send = () => {
+    const send = async () => {
       const headers = new Headers(init.headers)
       headers.set("Content-Type", "application/json")
       if (bearer) headers.set("Authorization", `Bearer ${bearer}`)
       else headers.delete("Authorization")
-      return fetch(`${baseURL}${path}`, { ...init, headers })
+      let response = await fetch(`${baseURL}${path}`, { ...init, headers })
+      // Shared-provider validation can reject a document before its write when
+      // Observe reaches capacity. Replay only explicit 429 rejections, keeping
+      // the exact body and conditional revision. Lost responses, 5xx errors and
+      // conflicts remain with the importer's read-back reconciliation.
+      for (let attempt = 0; response.status === 429 && attempt < 3 && documentCapacityRetry(path, init); attempt++) {
+        if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
+        const delay = capacityRetryDelay(response, attempt)
+        if (delay === undefined) break
+        await response.body?.cancel()
+        await waitForCapacity(delay, init.signal)
+        if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
+        init.signal?.throwIfAborted()
+        response = await fetch(`${baseURL}${path}`, { ...init, headers })
+      }
+      return response
     }
     let response = await send()
     if (response.status === 401 && session && identity() === current.principal) {

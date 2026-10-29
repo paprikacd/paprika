@@ -26,6 +26,7 @@ rules:
   - ""
   resources:
   - configmaps/status
+  - nodes/proxy
   verbs:
   - get
 - apiGroups:
@@ -33,6 +34,7 @@ rules:
   resources:
   - nodes
   - pods
+  - replicationcontrollers
   - secrets
   verbs:
   - get
@@ -68,6 +70,14 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
   - deployments
   - replicasets
   - statefulsets
@@ -78,6 +88,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - batch

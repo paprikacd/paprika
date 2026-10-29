@@ -231,6 +231,14 @@ func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
+// The release controller must hold the exact read permissions delegated to
+// managed Kubernetes telemetry collectors; Kubernetes rejects escalation when
+// applying their ClusterRoles. The collector reads kubelet resource metrics
+// through the TLS-verified API proxy and watches workload scheduling state.
+// +kubebuilder:rbac:groups=core,resources=nodes/proxy,verbs=get
+// +kubebuilder:rbac:groups=core,resources=replicationcontrollers,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
 
 // Reconcile handles Release reconciliation.
 //

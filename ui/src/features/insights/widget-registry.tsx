@@ -27,7 +27,23 @@ export interface WidgetDefinition {
   dataKind: DataKind;
   render: ComponentType<WidgetRendererProps>;
   defaultOptions?: WidgetOptions;
+  defaultConfig?: Widget["config"];
+  /** Trusted host-owned field descriptions; persisted documents carry values only. */
+  configFields?: readonly WidgetConfigField[];
+  /** Only expose controls the renderer actually implements. */
+  styleControls?: readonly ("unit" | "decimals" | "color" | "legend" | "grid" | "tooltips")[];
   parseConfig?: (config: Widget["config"]) => Widget["config"];
+}
+export interface WidgetConfigField {
+  key: string;
+  label: string;
+  kind: "text" | "number" | "boolean" | "select";
+  placeholder?: string;
+  help?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: readonly { value: string; label: string }[];
 }
 export type WidgetPlugin = Omit<WidgetDefinition, "type">;
 

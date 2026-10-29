@@ -9,6 +9,7 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
+import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const output = resolve(fileURLToPath(new URL("../../", import.meta.url)), "artifacts/insights")
@@ -193,7 +194,9 @@ const tooltipDashboard = {
 async function diagnosticPage(options) {
   const diagnosticContext = await browser.newContext({ reducedMotion: "reduce", timezoneId: "UTC", ...options })
   const target = await diagnosticContext.newPage()
+  activePage = target
   observe(target)
+  await routeAnonymousAuthConfiguration(target)
   await target.route("**/api/insights/**", async (route) => {
     const url = new URL(route.request().url())
     let body
@@ -365,7 +368,18 @@ try {
     assert.ok(focus.panelTop >= -1 && focus.panelTop < focus.viewportHeight - 50, "Mobile editor must scroll into view after editing a lower widget")
     assert.ok(focus.panelLeft >= -1 && focus.panelLeft + focus.panelWidth <= focus.viewportWidth + 1)
     assert.ok(focus.focusTop >= 0 && focus.focusBottom <= focus.viewportHeight, "Focused editor field must be visible")
-    await page.screenshot({ path: resolve(output, "dashboard-responsive-mobile-editor.png"), fullPage: true })
+    // Capture the real viewport: Chromium full-page capture can paint off-screen
+    // transformed grid items as narrow strips even when their geometry is valid.
+    await page.screenshot({ path: resolve(output, "dashboard-responsive-mobile-editor.png"), fullPage: false })
+    await page.locator('[data-widget-id="health"]').scrollIntoViewIfNeeded()
+    await stableGeometry()
+    assert.ok(await page.locator('[data-testid="dashboard-canvas"]').evaluate((canvas) => {
+      const width = canvas.getBoundingClientRect().width
+      return [...canvas.querySelectorAll(".react-grid-item")].every(tile => Math.abs(tile.getBoundingClientRect().width - width) <= 1)
+    }), "Mobile widgets must retain their full canvas width while the editor is open")
+    await page.mouse.move(2, 422)
+    await page.getByRole("tooltip").waitFor({ state: "hidden" })
+    await page.screenshot({ path: resolve(output, "dashboard-responsive-mobile-editor-canvas.png"), fullPage: false })
     await editor().getByRole("button", { name: "Close widget editor" }).click()
     await page.setViewportSize({ width: 1512, height: 1050 })
     return focus
@@ -415,7 +429,14 @@ try {
     await cell.tap()
     assert.equal(await cell.getAttribute("aria-pressed"), "true")
     await completeTooltip(target, cell)
-    await target.touchscreen.tap(5, 5)
+    // The top-left corner contains the mobile navigation toggle. Use the page
+    // gutter so dismissal does not also open a dialog over the next target.
+    const outside = { x: 2, y: Math.floor(target.viewportSize().height / 2) }
+    assert.ok(await target.evaluate(({ x, y }) => {
+      const hit = document.elementFromPoint(x, y)
+      return hit && !hit.closest('[role="tooltip"], button, input, a, [role="button"]')
+    }, outside), "Outside tap must hit a noninteractive area beyond the tooltip")
+    await target.touchscreen.tap(outside.x, outside.y)
     await target.getByRole("tooltip").waitFor({ state: "hidden" })
     assert.equal(await cell.getAttribute("aria-pressed"), "false")
     await cell.tap()
