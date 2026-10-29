@@ -44,18 +44,20 @@ func applicationUpdateFilter() predicate.Predicate {
 
 // observationOnlyUpdate reports whether newApp differs from oldApp only in when
 // and how an unchanged observation was recorded: the write's resourceVersion
-// and managed fields, each health check's checkedAt, durationMillis and
-// response body, and the deployment observation's observedAt. The outcome of a
-// check (status, message, reason, HTTP code, failure count, recent failures,
-// SLO history) is not bookkeeping, nor is anything outside status.
+// and managed fields, each health check's checkedAt, durationMillis, response
+// body and its truncation flag, and the deployment observation's observedAt.
+// The outcome of a check (status, message, reason, HTTP code, failure count,
+// recent failures, SLO history) is not bookkeeping, nor is anything outside
+// status. TestApplicationUpdateFilterReconcilesEveryOtherField enumerates the
+// API types by reflection and fails when this list grows or a new field is
+// left out of the comparison.
 func observationOnlyUpdate(oldApp, newApp *paprikav1.Application) bool {
 	if oldApp.ResourceVersion == newApp.ResourceVersion {
 		// An informer resync, not a write.
 		return false
 	}
-	if oldApp.Generation != newApp.Generation {
-		return false
-	}
+	// Everything else, metadata (generation included) and spec, is compared
+	// whole: only the fields cleared below may differ.
 	return equality.Semantic.DeepEqual(withoutObservationBookkeeping(oldApp), withoutObservationBookkeeping(newApp))
 }
 

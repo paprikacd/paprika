@@ -4,11 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
@@ -266,4 +269,193 @@ func TestStableApplicationDoesNotReconcileInAHotLoop(t *testing.T) {
 	t.Logf("without it: %d reconciles, %d probes", unfiltered, unfilteredProbes)
 	require.Equal(t, 12, unfilteredProbes)
 	require.GreaterOrEqual(t, unfiltered, 2*unfilteredProbes, "each observation's status write echoed into a second reconcile")
+}
+
+// The fields observationOnlyUpdate may ignore, by the struct they belong to.
+// Adding one here is the deliberate act that lets the filter drop an update.
+var (
+	ignoredHealthCheckResultFields = map[string]bool{
+		"CheckedAt": true, "DurationMillis": true, "HTTPBody": true, "BodyTruncated": true,
+	}
+	ignoredDeploymentObservationFields = map[string]bool{"ObservedAt": true}
+	// ResourceVersion differs on every write; ManagedFields is server
+	// bookkeeping.
+	ignoredObjectMetaFields = map[string]bool{"ResourceVersion": true, "ManagedFields": true}
+)
+
+var (
+	reflectTimeType     = reflect.TypeOf(time.Time{})
+	reflectQuantityType = reflect.TypeOf(resource.Quantity{})
+)
+
+// nonZeroValue builds a value of t with every exported field it can reach set,
+// so it differs from both the zero value and the fixture's values. ok is false
+// for a type it cannot populate (an interface, a func, a struct of unexported
+// fields it does not know).
+func nonZeroValue(t reflect.Type, depth int) (reflect.Value, bool) {
+	if depth > 12 {
+		return reflect.Value{}, false
+	}
+	switch t {
+	case reflectTimeType:
+		return reflect.ValueOf(time.Unix(1700000123, 0).UTC()), true
+	case reflectQuantityType:
+		return reflect.ValueOf(resource.MustParse("7")), true
+	}
+	if v, ok := nonZeroScalar(t); ok {
+		return v, true
+	}
+	return nonZeroComposite(t, depth)
+}
+
+// nonZeroScalar sets a string, bool or number of type t.
+func nonZeroScalar(t reflect.Type) (reflect.Value, bool) {
+	v := reflect.New(t).Elem()
+	switch {
+	case t.Kind() == reflect.String:
+		v.SetString("mutated")
+	case t.Kind() == reflect.Bool:
+		v.SetBool(true)
+	case v.CanInt():
+		v.SetInt(7)
+	case v.CanUint() && t.Kind() != reflect.Uintptr:
+		v.SetUint(7)
+	case v.CanFloat():
+		v.SetFloat(7.5)
+	default:
+		return v, false
+	}
+	return v, true
+}
+
+// nonZeroComposite builds a pointer, slice, map or struct of type t whose
+// elements nonZeroValue can populate. Arrays, channels, funcs, interfaces and
+// complex numbers are not used by the Application API: a field of one of those
+// kinds fails the test until this builder learns it.
+func nonZeroComposite(t reflect.Type, depth int) (reflect.Value, bool) {
+	v := reflect.New(t).Elem()
+	switch t.Kind() { //nolint:exhaustive // every other kind is unsupported, see above
+	case reflect.Pointer:
+		elem, ok := nonZeroValue(t.Elem(), depth+1)
+		if !ok {
+			return v, false
+		}
+		ptr := reflect.New(t.Elem())
+		ptr.Elem().Set(elem)
+		return ptr, true
+	case reflect.Slice:
+		elem, ok := nonZeroValue(t.Elem(), depth+1)
+		if !ok {
+			return v, false
+		}
+		slice := reflect.MakeSlice(t, 1, 1)
+		slice.Index(0).Set(elem)
+		return slice, true
+	case reflect.Map:
+		key, okKey := nonZeroValue(t.Key(), depth+1)
+		elem, okElem := nonZeroValue(t.Elem(), depth+1)
+		if !okKey || !okElem {
+			return v, false
+		}
+		m := reflect.MakeMap(t)
+		m.SetMapIndex(key, elem)
+		return m, true
+	case reflect.Struct:
+		populated := false
+		for i := range t.NumField() {
+			if !t.Field(i).IsExported() {
+				continue
+			}
+			if fv, ok := nonZeroValue(t.Field(i).Type, depth+1); ok {
+				v.Field(i).Set(fv)
+				populated = true
+			}
+		}
+		return v, populated
+	default:
+		return v, false
+	}
+}
+
+// assertEveryFieldReconciles sets each exported field of the struct target
+// returns, one at a time and except those in ignored, and requires the filter
+// to pass the update.
+func assertEveryFieldReconciles(t *testing.T, structType reflect.Type, ignored map[string]bool,
+	target func(*paprikav1.Application) reflect.Value,
+) {
+	t.Helper()
+	filter := applicationUpdateFilter()
+	for i := range structType.NumField() {
+		field := structType.Field(i)
+		if !field.IsExported() || ignored[field.Name] {
+			continue
+		}
+		t.Run(structType.Name()+"."+field.Name, func(t *testing.T) {
+			oldApp := observedApplication()
+			newApp := oldApp.DeepCopy()
+			newApp.ResourceVersion = "27472718"
+			fv := target(newApp).FieldByName(field.Name)
+			value, ok := nonZeroValue(field.Type, 0)
+			require.True(t, ok, "cannot build a value of %s for %s.%s; teach nonZeroValue this type", field.Type, structType.Name(), field.Name)
+			require.False(t, equality.Semantic.DeepEqual(fv.Interface(), value.Interface()), "the mutation must change %s", field.Name)
+			fv.Set(value)
+			require.True(t, filter.Update(event.UpdateEvent{ObjectOld: oldApp, ObjectNew: newApp}),
+				"an update changing only %s.%s was dropped; add it to the ignored fields only on purpose", structType.Name(), field.Name)
+		})
+	}
+}
+
+func TestApplicationUpdateFilterReconcilesEveryOtherField(t *testing.T) {
+	t.Parallel()
+
+	assertEveryFieldReconciles(t, reflect.TypeOf(metav1.ObjectMeta{}), ignoredObjectMetaFields,
+		func(a *paprikav1.Application) reflect.Value { return reflect.ValueOf(&a.ObjectMeta).Elem() })
+	assertEveryFieldReconciles(t, reflect.TypeOf(paprikav1.ApplicationSpec{}), nil,
+		func(a *paprikav1.Application) reflect.Value { return reflect.ValueOf(&a.Spec).Elem() })
+	assertEveryFieldReconciles(t, reflect.TypeOf(paprikav1.ApplicationStatus{}), nil,
+		func(a *paprikav1.Application) reflect.Value { return reflect.ValueOf(&a.Status).Elem() })
+	assertEveryFieldReconciles(t, reflect.TypeOf(paprikav1.HealthCheckResult{}), ignoredHealthCheckResultFields,
+		func(a *paprikav1.Application) reflect.Value { return reflect.ValueOf(&a.Status.HealthChecks[0]).Elem() })
+	assertEveryFieldReconciles(t, reflect.TypeOf(paprikav1.ApplicationDeploymentObservation{}), ignoredDeploymentObservationFields,
+		func(a *paprikav1.Application) reflect.Value {
+			return reflect.ValueOf(a.Status.DeploymentObservation).Elem()
+		})
+}
+
+// The converse: each ignored field changed on its own is dropped, so the
+// ignore list holds exactly what the filter ignores.
+func TestApplicationUpdateFilterDropsEachIgnoredField(t *testing.T) {
+	t.Parallel()
+
+	filter := applicationUpdateFilter()
+	cases := map[string]struct {
+		structType reflect.Type
+		ignored    map[string]bool
+		target     func(*paprikav1.Application) reflect.Value
+	}{
+		"HealthCheckResult": {reflect.TypeOf(paprikav1.HealthCheckResult{}), ignoredHealthCheckResultFields,
+			func(a *paprikav1.Application) reflect.Value { return reflect.ValueOf(&a.Status.HealthChecks[0]).Elem() }},
+		"ApplicationDeploymentObservation": {reflect.TypeOf(paprikav1.ApplicationDeploymentObservation{}), ignoredDeploymentObservationFields,
+			func(a *paprikav1.Application) reflect.Value {
+				return reflect.ValueOf(a.Status.DeploymentObservation).Elem()
+			}},
+		"ObjectMeta": {reflect.TypeOf(metav1.ObjectMeta{}), map[string]bool{"ManagedFields": true},
+			func(a *paprikav1.Application) reflect.Value { return reflect.ValueOf(&a.ObjectMeta).Elem() }},
+	}
+	for name, tc := range cases {
+		for field := range tc.ignored {
+			t.Run(name+"."+field, func(t *testing.T) {
+				oldApp := observedApplication()
+				newApp := oldApp.DeepCopy()
+				newApp.ResourceVersion = "27472718"
+				fv := tc.target(newApp).FieldByName(field)
+				require.True(t, fv.IsValid(), "%s has no field %s", name, field)
+				value, ok := nonZeroValue(fv.Type(), 0)
+				require.True(t, ok)
+				fv.Set(value)
+				require.False(t, filter.Update(event.UpdateEvent{ObjectOld: oldApp, ObjectNew: newApp}),
+					"an update changing only %s.%s must be dropped", name, field)
+			})
+		}
+	}
 }
