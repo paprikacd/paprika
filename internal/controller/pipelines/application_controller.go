@@ -692,6 +692,24 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 	log := log.FromContext(ctx)
 	log.Info("Sync trigger detected")
 	manualOverride := app.Annotations[manualSyncAnnotation] != ""
+
+	refresh := r.syncTriggerRefreshesSource(app)
+	var refreshed syncSourceRefresh
+	if refresh {
+		// Bypass the resolve cache: a sync trigger means the operator wants the
+		// latest commit now, not a result up to SourceResolveTTL stale.
+		//
+		// Resolve before consuming the trigger. A repo server that could not
+		// answer in time (a cold mirror of a large repository, fetching
+		// detached) will answer a later try; clearing the annotation first
+		// dropped the request and left the commit to a later poll.
+		refreshed.hash, refreshed.revision, refreshed.err = r.resolveSourceHash(ctx, app, true)
+		if errors.Is(refreshed.err, engine.ErrRepoServerTimeout) {
+			log.Info("Source refresh for sync trigger timed out; keeping the trigger to retry", "error", refreshed.err.Error())
+			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+		}
+	}
+
 	patch := client.MergeFrom(app.DeepCopy())
 	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
 		delete(app.Annotations, key)
@@ -701,19 +719,43 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 		return ctrl.Result{}, fmt.Errorf("clearing sync trigger annotation: %w", err)
 	}
 
-	if r.syncTriggerRefreshesSource(app) {
-		// Bypass the resolve cache: a sync trigger means the operator wants the
-		// latest commit now, not a result up to SourceResolveTTL stale.
-		sourceChanged, err := r.checkSourceChanged(ctx, app, true)
-		if err != nil {
-			log.Error(err, "Failed to refresh source after sync trigger")
-			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
-		}
-		if sourceChanged {
-			return r.startNewReleaseFlow(ctx, app, manualOverride, "SourceChanged", "source hash changed, creating a new release")
-		}
+	if refresh {
+		return r.finishSyncTriggerRefresh(ctx, app, refreshed, manualOverride)
 	}
+	return r.finishSyncTrigger(ctx, app, manualOverride)
+}
 
+// syncSourceRefresh is the forced source resolve a sync trigger runs.
+type syncSourceRefresh struct {
+	hash, revision string
+	err            error
+}
+
+// finishSyncTriggerRefresh records the refreshed source of a consumed sync
+// trigger and starts a release when the managed content changed. The source is
+// recorded only after the trigger is consumed: a recorded hash with the trigger
+// still present would make the retry see no change and never start the release.
+func (r *ApplicationReconciler) finishSyncTriggerRefresh(ctx context.Context, app *paprikav1.Application, refreshed syncSourceRefresh, manualOverride bool) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	if refreshed.err != nil {
+		log.Error(refreshed.err, "Failed to refresh source after sync trigger")
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+	}
+	sourceChanged, err := r.recordResolvedSource(ctx, app, refreshed.hash, refreshed.revision)
+	if err != nil {
+		log.Error(err, "Failed to refresh source after sync trigger")
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+	}
+	if sourceChanged {
+		return r.startNewReleaseFlow(ctx, app, manualOverride, "SourceChanged", "source hash changed, creating a new release")
+	}
+	return r.finishSyncTrigger(ctx, app, manualOverride)
+}
+
+// finishSyncTrigger completes a consumed sync trigger that started no release:
+// a manual sync resyncs the current release.
+func (r *ApplicationReconciler) finishSyncTrigger(ctx context.Context, app *paprikav1.Application, manualOverride bool) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
 	if manualOverride {
 		if err := r.requestCurrentReleaseResync(ctx, app); err != nil {
 			log.Error(err, "Failed to request current release resync")
@@ -1861,7 +1903,6 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 }
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (bool, error) {
-	log := log.FromContext(ctx)
 	if promotionSourceSelectionPending(app) {
 		return false, nil
 	}
@@ -1869,7 +1910,14 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	if err != nil {
 		return false, err
 	}
+	return r.recordResolvedSource(ctx, app, newHash, newRevision)
+}
 
+// recordResolvedSource compares a resolved source identity with the one the
+// Application last recorded, records it when the managed content changed, and
+// reports whether it did.
+func (r *ApplicationReconciler) recordResolvedSource(ctx context.Context, app *paprikav1.Application, newHash, newRevision string) (bool, error) {
+	log := log.FromContext(ctx)
 	usable, err := validateResolvedSourceIdentity(ctx, app, newHash, newRevision)
 	if err != nil {
 		return false, err
@@ -1985,7 +2033,11 @@ func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *
 		}
 	}
 
-	result, resolveErr := renderer.ResolveSource(ctx, &tmpl)
+	resolveTmpl := &tmpl
+	if forceRefresh {
+		resolveTmpl = templateFetchingNow(&tmpl)
+	}
+	result, resolveErr := renderer.ResolveSource(ctx, resolveTmpl)
 	if resolveErr != nil {
 		return "", "", fmt.Errorf("resolve source: %w", resolveErr)
 	}
@@ -1997,6 +2049,21 @@ func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *
 	}
 	hash, err = r.remoteRenderSourceHash(ctx, app, &tmpl, result.Hash)
 	return hash, result.Revision, err
+}
+
+// templateFetchingNow returns tmpl with its Git fetch TTL removed, so the
+// resolve fetches the branch from the remote instead of answering from a mirror
+// fetched within spec.git.fetchTtl. A sync trigger is usually set seconds after
+// the push it is for (BrandBrain's deploy pushes its chart bump, then annotates
+// three seconds later), which a 45s TTL would otherwise answer with the
+// previous commit. tmpl itself is not modified.
+func templateFetchingNow(tmpl *paprikav1.Template) *paprikav1.Template {
+	if tmpl.Spec.Git == nil || tmpl.Spec.Git.FetchTTL == "" {
+		return tmpl
+	}
+	out := tmpl.DeepCopy()
+	out.Spec.Git.FetchTTL = ""
+	return out
 }
 
 func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprikav1.Application) {
