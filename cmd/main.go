@@ -273,6 +273,12 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if len(args) == 1 && args[0] == "gke-exec-credential" {
+		return runGKEExecCredential(ctx, os.Getenv("KUBERNETES_EXEC_INFO"), stdout, googleGKEToken)
+	}
+	if len(args) > 0 && args[0] == "fleet-direct-probe" {
+		return runFleetDirectProbe(ctx, args[1:], stdout)
+	}
 	//nolint:contextcheck // ctx reaches start via ExecuteContext -> cmd.Context()
 	cmd, _, _ := newManagerCommand(startManager)
 	cmd.SetArgs(args)
