@@ -74,7 +74,11 @@ func TestGKEExecCredentialClientGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.Get(server.URL)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}

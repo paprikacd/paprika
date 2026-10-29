@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -16,14 +17,20 @@ import (
 func googleGKEToken(ctx context.Context) (*oauth2.Token, error) {
 	source, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load Google credentials: %w", err)
 	}
-	return source.Token()
+	token, err := source.Token()
+	if err != nil {
+		return nil, fmt.Errorf("obtain Google credentials: %w", err)
+	}
+	return token, nil
 }
 
 // runGKEExecCredential implements the client-go exec-credential protocol.
 // client-go caches this credential until its expiration and re-executes the
 // helper, allowing long-running controller clients to renew without key files.
+//
+//nolint:cyclop // Each protocol and token property must be checked independently.
 func runGKEExecCredential(ctx context.Context, info string, out io.Writer, tokenFn func(context.Context) (*oauth2.Token, error)) error {
 	var request struct {
 		APIVersion string `json:"apiVersion"`
@@ -51,5 +58,8 @@ func runGKEExecCredential(ctx context.Context, info string, out io.Writer, token
 	}{APIVersion: request.APIVersion, Kind: "ExecCredential"}
 	response.Status.Token = token.AccessToken
 	response.Status.ExpirationTimestamp = token.Expiry.UTC()
-	return json.NewEncoder(out).Encode(response)
+	if err := json.NewEncoder(out).Encode(response); err != nil {
+		return fmt.Errorf("write Kubernetes credential response: %w", err)
+	}
+	return nil
 }

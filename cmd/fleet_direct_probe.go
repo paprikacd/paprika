@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
-	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,6 +23,9 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	"github.com/benebsworth/paprika/internal/controller/pipelines"
 )
 
 type fleetProbeOptions struct {
@@ -68,13 +69,17 @@ func runFleetDirectProbe(ctx context.Context, args []string, out io.Writer) erro
 	if err != nil {
 		return errors.New("fleet probe: management client unavailable")
 	}
-	evidence, err := probeFleetDirect(ctx, reader, cfg, opts)
+	evidence, err := probeFleetDirect(ctx, reader, cfg, &opts)
 	if err != nil {
 		return err
 	}
-	return json.NewEncoder(out).Encode(evidence)
+	if err := json.NewEncoder(out).Encode(evidence); err != nil {
+		return fmt.Errorf("fleet probe: write evidence: %w", err)
+	}
+	return nil
 }
 
+//nolint:gocyclo,cyclop // Each independently validated argument fails closed.
 func parseFleetProbeOptions(args []string) (fleetProbeOptions, error) {
 	var o fleetProbeOptions
 	flags := flag.NewFlagSet("fleet-direct-probe", flag.ContinueOnError)
@@ -106,11 +111,12 @@ func parseFleetProbeOptions(args []string) (fleetProbeOptions, error) {
 	return o, nil
 }
 
-func probeFleetDirect(ctx context.Context, reader client.Client, management *rest.Config, o fleetProbeOptions) (*fleetProbeEvidence, error) {
+func probeFleetDirect(ctx context.Context, reader client.Client, management *rest.Config, o *fleetProbeOptions) (*fleetProbeEvidence, error) {
 	return probeFleetDirectWith(ctx, reader, management, o, readFleetProbeNamespace)
 }
 
-func probeFleetDirectWith(ctx context.Context, reader client.Client, management *rest.Config, o fleetProbeOptions, readNamespace func(context.Context, *rest.Config, string) (string, error)) (*fleetProbeEvidence, error) {
+//nolint:gocyclo,cyclop // Each registration and credential invariant is independently required.
+func probeFleetDirectWith(ctx context.Context, reader client.Client, management *rest.Config, o *fleetProbeOptions, readNamespace func(context.Context, *rest.Config, string) (string, error)) (*fleetProbeEvidence, error) {
 	var cluster clustersv1alpha1.Cluster
 	if err := reader.Get(ctx, client.ObjectKey{Namespace: o.clusterNamespace, Name: o.clusterName}, &cluster); err != nil {
 		return nil, errors.New("fleet probe: registration unavailable")
@@ -146,23 +152,27 @@ func probeFleetDirectWith(ctx context.Context, reader client.Client, management 
 	if reader.Get(ctx, client.ObjectKeyFromObject(&cluster), &currentCluster) != nil || reader.Get(ctx, client.ObjectKeyFromObject(&secret), &currentSecret) != nil || cluster.UID != currentCluster.UID || cluster.Generation != currentCluster.Generation || !reflect.DeepEqual(cluster.Spec, currentCluster.Spec) || secret.UID != currentSecret.UID || secret.ResourceVersion != currentSecret.ResourceVersion {
 		return nil, errors.New("fleet probe: registration or credential changed during probe")
 	}
-	hostname, _ := os.Hostname()
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		return nil, errors.New("fleet probe: manager identity unavailable")
+	}
 	return &fleetProbeEvidence{ClusterNamespace: cluster.Namespace, ClusterName: cluster.Name, ClusterUID: string(cluster.UID), ClusterGeneration: cluster.Generation, SecretNamespace: secret.Namespace, SecretName: secret.Name, SecretUID: string(secret.UID), SecretResourceVersion: secret.ResourceVersion, TargetNamespace: o.targetNamespace, TargetNamespaceUID: uid, Server: o.expectedServer, ObservedAt: time.Now().UTC(), ManagerPod: hostname}, nil
 }
 
 func readFleetProbeNamespace(ctx context.Context, cfg *rest.Config, namespace string) (string, error) {
 	remote, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create remote client: %w", err)
 	}
 	ns, err := remote.Resource(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}).Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read target namespace: %w", err)
 	}
 	return string(ns.GetUID()), nil
 }
 
-func fleetProbeConfigMatches(cfg *rest.Config, o fleetProbeOptions) bool {
+//nolint:gocyclo,cyclop // Reject each unsafe credential or TLS override explicitly.
+func fleetProbeConfigMatches(cfg *rest.Config, o *fleetProbeOptions) bool {
 	if cfg == nil || strings.TrimSuffix(cfg.Host, "/") != strings.TrimSuffix(o.expectedServer, "/") || cfg.Insecure || cfg.ServerName != "" || cfg.CAFile != "" || cfg.CertFile != "" || len(cfg.CertData) != 0 || cfg.KeyFile != "" || len(cfg.KeyData) != 0 || cfg.BearerToken != "" || cfg.BearerTokenFile != "" || cfg.Username != "" || cfg.Password != "" || cfg.Proxy != nil || cfg.AuthProvider != nil {
 		return false
 	}

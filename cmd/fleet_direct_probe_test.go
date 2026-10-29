@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -15,6 +14,8 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 )
 
 const probeKubeconfig = `apiVersion: v1
@@ -56,7 +57,7 @@ func probeFixture(t *testing.T) (client.Client, fleetProbeOptions) {
 func TestFleetDirectProbeProvesRegisteredTransport(t *testing.T) {
 	reader, opts := probeFixture(t)
 	called := false
-	evidence, err := probeFleetDirectWith(context.Background(), reader, &rest.Config{}, opts, func(_ context.Context, cfg *rest.Config, ns string) (string, error) {
+	evidence, err := probeFleetDirectWith(context.Background(), reader, &rest.Config{}, &opts, func(_ context.Context, cfg *rest.Config, ns string) (string, error) {
 		called = true
 		if ns != "sfh-vocus-prod" || cfg.Host != opts.expectedServer || cfg.ExecProvider == nil || cfg.ExecProvider.Command != "/manager" {
 			t.Fatal("wrong target or credentials")
@@ -105,7 +106,7 @@ func TestFleetDirectProbeFailsClosed(t *testing.T) {
 			if read == nil {
 				read = func(context.Context, *rest.Config, string) (string, error) { return "ns-uid", nil }
 			}
-			evidence, err := probeFleetDirectWith(context.Background(), reader, &rest.Config{}, opts, read)
+			evidence, err := probeFleetDirectWith(context.Background(), reader, &rest.Config{}, &opts, read)
 			if err == nil || evidence != nil || strings.Contains(err.Error(), "secret endpoint detail") {
 				t.Fatalf("must fail safely: %+v %v", evidence, err)
 			}
@@ -116,7 +117,7 @@ func TestFleetDirectProbeFailsClosed(t *testing.T) {
 func TestFleetProbeRejectsUnsafeKubeconfig(t *testing.T) {
 	_, o := probeFixture(t)
 	base := &rest.Config{Host: o.expectedServer, ExecProvider: &clientcmdExecForTest}
-	if !fleetProbeConfigMatches(base, o) {
+	if !fleetProbeConfigMatches(base, &o) {
 		t.Fatal("expected trusted config")
 	}
 	for _, tc := range []struct {
@@ -134,7 +135,7 @@ func TestFleetProbeRejectsUnsafeKubeconfig(t *testing.T) {
 			exec := *base.ExecProvider
 			c.ExecProvider = &exec
 			tc.mutate(c)
-			if fleetProbeConfigMatches(c, o) {
+			if fleetProbeConfigMatches(c, &o) {
 				t.Fatal("accepted unsafe config")
 			}
 		})
