@@ -35,6 +35,7 @@
   font-size: 11px;
   font-weight: 550;
   white-space: nowrap;
+  z-index: 1;
 }
 .wrapper td,
 .wrapper th {
@@ -48,6 +49,44 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.wrapper :is(th, td)[data-numeric] { text-align: right; }
+.wrapper td[data-styled-cell] { padding-block: 3px; }
+.visualCell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 64px;
+  min-height: 24px;
+  padding: 3px 6px;
+  border-radius: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.visualCell[data-cell-display="bar"] { min-width: 130px; padding-inline: 0; }
+.cellBar {
+  position: relative;
+  flex: 1 1 80px;
+  min-width: 48px;
+  height: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--gamma-ink) 9%, transparent);
+  border-radius: 1px;
+}
+.cellBarFill { position: absolute; inset: 0; }
+.cellBarZero {
+  position: absolute;
+  inset-block: 0;
+  width: 1px;
+  background: var(--gamma-ink);
+  opacity: .65;
+}
+.cellReading { flex: 0 0 auto; min-width: 4ch; text-align: right; }
+.cellOverflow { color: var(--gamma-muted); font-size: 10px; }
+.visualCell[data-cell-missing] { color: var(--gamma-muted); }
+.compactTable td[data-styled-cell] { padding-block: 1px; }
+.compactTable .visualCell { min-height: 20px; padding-block: 2px; }
+.compactTable .cellBar { height: 10px; }
 .wrapper button {
   border: 0;
   background: transparent;
@@ -249,6 +288,10 @@
   cursor: pointer;
 }
 @media (forced-colors: active) {
+  .cellBar { border: 1px solid CanvasText; }
+  .cellBarFill { background: Highlight !important; }
+  .cellBarZero { background: CanvasText; }
+  .visualCell[data-cell-display="color-background"] { border: 1px solid CanvasText; }
   .treemap rect {
     fill: Canvas;
     stroke: CanvasText;

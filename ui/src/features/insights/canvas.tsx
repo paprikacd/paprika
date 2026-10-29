@@ -82,7 +82,12 @@ const Tile = memo(function Tile({
   useEffect(() => {
     if (!element.current || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
-      ([entry]) => setVisible(entry.isIntersecting),
+      (entries) => {
+        // A responsive layout can queue both the old and new tile position in
+        // one callback. The final observation owns whether queries should run.
+        const entry = entries.at(-1);
+        if (entry) setVisible(entry.isIntersecting);
+      },
       {
         rootMargin: "200px",
       },
@@ -158,6 +163,7 @@ const Tile = memo(function Tile({
       className={`${styles.tile} ${selected ? styles.selectedTile : ""}`}
       data-widget-id={widget.id}
       data-widget-type={widget.type}
+      data-widget-sparkline={widget.type === "stat" && widget.options?.showSparkline || undefined}
       aria-label={widget.title}
       style={
         {

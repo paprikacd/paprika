@@ -570,6 +570,22 @@ describe("widget inspector", () => {
     );
   });
 
+  it("offers record-table colors, precision and thresholds without plot-only controls", () => {
+    registerDefaultWidgetPlugins();
+    const callbacks = props();
+    const config = { cellStyles: [{ column: "usage", display: "bar", min: 0, max: 100 }] };
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId: "record-table", dataKind: "records", providerId: "records", config }}
+      providers={[{ id: "records", name: "Application records", type: "uptime", capabilities: ["records"] }]} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    expect(screen.getByLabelText("Series color")).toBeInTheDocument();
+    expect(screen.getByLabelText("Decimal places")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Y minimum")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Show grid" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ config: expect.objectContaining(config), options: expect.objectContaining({ thresholds: [{ value: 0, color: "#c46146" }] }) }));
+  });
+
   it("restores registered gauge defaults when resetting its appearance", () => {
     registerDefaultWidgetPlugins();
     const callbacks = props();

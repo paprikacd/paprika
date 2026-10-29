@@ -11,6 +11,7 @@ import {
 import { EmptyState, formatMetric } from "../chart-renderers"
 import type { RecordFrame } from "../schema"
 import styles from "./records.module.css"
+import { StyledRecordCell, tableCellStyleError, tableCellStylesSchema } from "./record-table-cells"
 
 const key = z.string().min(1).max(128)
 const tableConfig = z.strictObject({
@@ -18,6 +19,7 @@ const tableConfig = z.strictObject({
   pageSize: z.number().int().min(5).max(100).optional(),
   density: z.enum(["compact", "comfortable"]).default("comfortable"),
   showSearch: z.boolean().default(true),
+  cellStyles: tableCellStylesSchema.optional(),
 })
 const listConfig = z.strictObject({
   title: key,
@@ -135,6 +137,9 @@ export function RecordTable({
     return selected
   }, [frame, activeSearch, sort])
   if (!frame?.rows.length) return <EmptyState />
+  const cellStyleError = tableCellStyleError(frame, config.cellStyles ?? [])
+  if (cellStyleError) return <p role="alert" className={styles.note}>{cellStyleError}</p>
+  const cellStyles = new Map((config.cellStyles ?? []).map(style => [style.column, style]))
   const indexes =
     config.columns?.map((name) => column(frame, name)) ??
     frame.columns.map((_, i) => i)
@@ -171,6 +176,7 @@ export function RecordTable({
               {indexes.map((index) => (
                 <th
                   key={frame.columns[index].key}
+                  data-numeric={frame.columns[index].type === "number" || undefined}
                   aria-sort={
                     sort?.index === index
                       ? sort.descending
@@ -209,11 +215,15 @@ export function RecordTable({
               .slice(current * pageSize, (current + 1) * pageSize)
               .map((row, i) => (
                 <tr key={i}>
-                  {indexes.map((index) => (
-                    <td key={index} title={text(row[index])}>
-                      {cell(frame, row, index, widget.options?.decimals)}
+                  {indexes.map((index) => {
+                    const field = frame.columns[index]
+                    const style = cellStyles.get(field.key)
+                    const formatted = cell(frame, row, index, widget.options?.decimals)
+                    return <td key={index} title={text(row[index])} data-numeric={field.type === "number" || undefined} data-styled-cell={style?.display}>
+                      {style ? <StyledRecordCell value={row[index]} formatted={formatted} column={field} style={style}
+                        thresholds={widget.options?.thresholds} color={widget.color} /> : formatted}
                     </td>
-                  ))}
+                  })}
                   {onContextChange && !embedded && (
                     <td>
                       <button
@@ -614,6 +624,7 @@ export function registerRecordWidgetPlugins() {
         parseConfig: (config) => entry.schema.parse(config ?? {}),
         ...(entry.id === "record-table" ? {
           defaultConfig: { density: "comfortable", showSearch: true },
+          styleControls: ["decimals", "color"] as const,
           configFields: [
             { key: "density", label: "Row density", kind: "select" as const, options: [{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }] },
             { key: "showSearch", label: "Show search", kind: "boolean" as const, help: "Show a filter for the loaded records. Hiding it restores every loaded row." },

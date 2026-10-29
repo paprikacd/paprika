@@ -205,7 +205,7 @@ describe("optional single-value history", () => {
     );
     expect(screen.getByRole("img").querySelector("path[data-stat-trend]")).toHaveAttribute(
       "d",
-      "M4,32L236,32",
+      "M1,32L239,32",
     );
     rerender(
       <WidgetVisualization
@@ -225,7 +225,7 @@ describe("optional single-value history", () => {
     );
     expect(screen.getByRole("img").querySelector("path[data-stat-trend]")).toHaveAttribute(
       "d",
-      "M4,60L236,4",
+      "M1,60L239,4",
     );
   });
 

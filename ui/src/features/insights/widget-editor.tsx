@@ -339,7 +339,7 @@ function StyleEditor({
           onChange={(showTooltip) => update({ showTooltip })}
         />
       )}
-      {(["heatmap", "stat", "bar"].includes(widget.type) || gauge) && (
+      {(["heatmap", "stat", "bar"].includes(widget.type) || gauge || widget.pluginId === "record-table") && (
         <fieldset className={styles.thresholds}>
           <legend>Value thresholds</legend>
           <p className={styles.hint}>

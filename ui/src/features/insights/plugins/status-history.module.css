@@ -1,0 +1,7 @@
+.lanes {
+  min-height: 100%;
+  grid-auto-rows: minmax(18px, 1fr);
+}
+.cells {
+  height: 100%;
+}

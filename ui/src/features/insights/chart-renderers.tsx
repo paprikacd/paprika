@@ -725,7 +725,7 @@ function Stat({
     thresholdForValue(first.point.value, widget.options?.thresholds)?.color ??
     widget.color;
   return (
-    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`}>
+    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined}>
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""

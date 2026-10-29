@@ -102,6 +102,35 @@ afterEach(() => {
 });
 
 describe("signal-specific dashboard drilldowns", () => {
+  it("uses the latest batched visibility observation when a responsive layout moves a tile", () => {
+    let notify: IntersectionObserverCallback;
+    let observed: Element;
+    const disconnect = vi.fn();
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(callback: IntersectionObserverCallback) { notify = callback; }
+      observe(target: Element) { observed = target; }
+      disconnect = disconnect;
+    });
+    query.data = {};
+    const { rerender, unmount } = render(<Canvas />);
+    const report = (...states: boolean[]) => act(() => notify(states.map((isIntersecting, time) => ({ target: observed, isIntersecting, time } as IntersectionObserverEntry)), {} as IntersectionObserver));
+    expect(query.enabled).toBe(false);
+    // Chromium can batch the old desktop position and the final mobile one.
+    report(false, true);
+    expect(query.enabled).toBe(true);
+    report(true, false);
+    expect(query.enabled).toBe(false);
+    report();
+    expect(query.enabled).toBe(false);
+    report(true);
+    expect(query.enabled).toBe(true);
+    rerender(<Canvas active={false} />);
+    expect(query.enabled).toBe(false);
+    rerender(<Canvas active />);
+    expect(query.enabled).toBe(true);
+    unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
   it("keeps the measured canvas attached when switching dashboards and resets pinned chart cursors", () => {
     query.data = {
       series: [{

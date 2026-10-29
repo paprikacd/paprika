@@ -96,7 +96,7 @@ describe("reference screenshot dashboard acceptance fixtures", () => {
     for (const signal of ["cpu", "temperature", "power", "memory"]) {
       const id = `reference-network-hosts-${signal}-current`
       const widget = board.widgets.find(widget => widget.id === id)!
-      expect(widget.config).toMatchObject({ display: "segmented", seriesMode: "all", columns: 1, maxSeries: 6 })
+      expect(widget.config).toMatchObject({ display: "segmented", orientation: "vertical", seriesMode: "all", maxSeries: 6 })
       for (const service of board.variables![0].options!) {
         const current = execute(entry, id, service).series!
         const plot = execute(entry, `reference-network-hosts-${signal}-hosts`, service).series!

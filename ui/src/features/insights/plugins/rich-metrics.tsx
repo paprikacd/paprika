@@ -166,13 +166,14 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
   const unit = config.bucketUnit || widget.unit, densityUnit = config.densityUnit ?? "observations/s";
   const tickLabels = data.rows.map(row => cellLabel(row.lower, row.upper, unit));
   const gutter = useAxisGutter(tickLabels, ref, width);
-  const left = showAxis ? gutter : 4, top = showAxis ? 14 : 4, bottom = showAxis ? 28 : 4, plotWidth = Math.max(1, width - left - 10), plotHeight = Math.max(1, height - top - bottom);
+  const left = showAxis ? gutter : 4, top = 4, bottom = showAxis ? 24 : 4, plotWidth = Math.max(1, width - left - 10), plotHeight = Math.max(1, height - top - bottom);
   const cellWidth = plotWidth / Math.max(1, data.timestamps.length), cellHeight = plotHeight / Math.max(1, data.rows.length);
   // Keep every bucket cell inspectable while thinning labels to the actual
   // available height. Short panels must not stack text over adjacent rows.
-  const axisLabelCount = Math.min(data.rows.length, Math.max(1, Math.floor(plotHeight / 14)));
-  const axisRows = new Set(Array.from({ length: axisLabelCount }, (_, index) =>
-    Math.round(index * (data.rows.length - 1) / Math.max(1, axisLabelCount - 1))));
+  // Use an integer bucket stride: rounding evenly-spaced indices can put two
+  // adjacent labels on rows closer than the typography's minimum spacing.
+  const axisStride = Math.max(1, Math.ceil(16 / cellHeight));
+  const axisRows = new Set(data.rows.map((_, index) => index).filter(index => index % axisStride === 0));
   const timeStart = data.timestamps[0] ?? 0, timeSpan = (data.timestamps.at(-1) ?? timeStart) - timeStart;
   const columnX = (timestamp: number) => left + cellWidth / 2 + (timeSpan ? (timestamp - timeStart) / timeSpan : .5) * Math.max(0, plotWidth - cellWidth);
   const cursorTime = inspection.enabled && sharedCursor && sharedCursor.timestamp >= timeStart && sharedCursor.timestamp <= timeStart + timeSpan ? sharedCursor.timestamp : undefined;
@@ -218,8 +219,10 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
       </svg>
       {inspection.active && inspection.detailsEnabled && <Inspector id={id} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
+    <div className={styles.heatmapFooter}>
     {widget.options?.showLegend !== false && <div className={styles.densityLegend} aria-label={`Color encodes bucket ${densityUnit}`}><span>0</span><div>{densityPalette.map(color => <i key={color} style={{ background: color }} />)}</div><span>{formatMetric(data.max, densityUnit, false, widget.options?.decimals)}</span><span className={styles.unknownKey}>Missing</span></div>}
     <Notices truncated={result.truncated}>{data.groups > 1 && <span>Sum of {data.groups} compatible histograms</span>}{data.invalidCells > 0 && <span>{data.invalidCells} non-monotonic or negative bucket observations omitted</span>}{data.omittedBuckets > 0 && <span>{data.omittedBuckets} higher buckets not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}</Notices>
+    </div>
   </div>;
 }
 

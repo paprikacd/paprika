@@ -577,6 +577,10 @@
 .tile[data-widget-type="stat"] .visualization {
   padding-inline: 16px;
 }
+.tile[data-widget-sparkline="true"] .visualization {
+  padding: 0;
+  --stat-reading-inset: 16px;
+}
 .canvas :global(.react-grid-item.react-grid-placeholder) {
   background: var(--gamma-surface-2);
   border: 1px dashed var(--gamma-border);

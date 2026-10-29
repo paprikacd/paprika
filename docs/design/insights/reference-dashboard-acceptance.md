@@ -69,36 +69,36 @@ Source: `codex-clipboard-39e37762-0d41-4e67-bccb-e64bb369e081.png` (518 × 590).
 | Firewall block events | 2/0/4/3 | timeseries | Compact event-rate area plot with narrow irregular spikes. |
 | Top connection destinations | 6/0/3/3 | bar | Five ranked destination counts replace the original horizontal list with the existing comparison bars. |
 | UPS battery capacity | 9/0/3/3 | threshold-gauge | Two short green capacity rows echo the reference's UPS status strip. |
-| Firewall event origins | 0/3/4/3 | connection-map | Location-weighted dots use actual supplied coordinates; geographic outline is visual context only. |
-| WAN traffic | 4/3/4/3 | directional-traffic | Spiky bandwidth with inbound above/outbound below the shared baseline. |
-| Protocol observations | 8/3/4/3 | record-table | Dense protocol table balances the network plots. |
-| DHCP clients | 0/6/4/3 | record-table | The first of three compact operational tables uses documentation-range addresses. |
-| Firewall rule counters | 4/6/4/3 | record-table | Numeric rule counters replace the reference's embedded colored mini-bars, which are not currently table features. |
-| Recent flows | 8/6/4/3 | record-table | A third table preserves the network dashboard's lower-row density. |
-| host-01 | 0/9/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
-| host-02 | 2/9/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
-| host-03 | 4/9/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
-| host-04 | 6/9/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
-| host-05 | 8/9/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
-| host-06 | 10/9/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
-| CPU usage · now | 0/11/2/3 | threshold-gauge | Six current-value host meters align with all six series in the neighboring host telemetry plot. |
-| CPU usage · hosts | 2/11/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
-| CPU usage · GPUs | 7/11/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
-| Temperature · now | 0/14/2/3 | threshold-gauge | Six current-value host meters align with all six series in the neighboring host telemetry plot. |
-| Temperature · hosts | 2/14/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
-| Temperature · GPUs | 7/14/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
-| Power draw · now | 0/17/2/3 | threshold-gauge | Six current-value host meters align with all six series in the neighboring host telemetry plot. |
-| Power draw · hosts | 2/17/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
-| Fan speed · devices | 7/17/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
-| Memory used · now | 0/20/2/3 | threshold-gauge | Six current-value host meters align with all six series in the neighboring host telemetry plot. |
-| Memory used · hosts | 2/20/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
-| Memory used · GPUs | 7/20/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
+| Firewall event origins | 0/3/4/4 | connection-map | Location-weighted dots use actual supplied coordinates; geographic outline is visual context only. |
+| WAN traffic | 4/3/4/4 | directional-traffic | Spiky bandwidth with inbound above/outbound below the shared baseline. |
+| Protocol observations | 8/3/4/4 | record-table | Dense protocol table balances the network plots. |
+| DHCP clients | 0/7/4/3 | record-table | The first of three compact operational tables uses documentation-range addresses. |
+| Firewall rule counters | 4/7/4/3 | record-table | Horizontal in-cell magnitude bars retain exact counts on a fixed 0–15,000 scale. |
+| Recent flows | 8/7/4/3 | record-table | A third table preserves the network dashboard's lower-row density. |
+| host-01 | 0/10/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
+| host-02 | 2/10/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
+| host-03 | 4/10/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
+| host-04 | 6/10/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
+| host-05 | 8/10/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
+| host-06 | 10/10/2/2 | stat | Compact top-line numeric card; authored color conveys the signal family. |
+| CPU usage · now | 0/12/2/3 | threshold-gauge | Six vertical current-value host meters align with all six series in the neighboring host telemetry plot. |
+| CPU usage · hosts | 2/12/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
+| CPU usage · GPUs | 7/12/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
+| Temperature · now | 0/15/2/3 | threshold-gauge | Six vertical current-value host meters align with all six series in the neighboring host telemetry plot. |
+| Temperature · hosts | 2/15/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
+| Temperature · GPUs | 7/15/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
+| Power draw · now | 0/18/2/3 | threshold-gauge | Six vertical current-value host meters align with all six series in the neighboring host telemetry plot. |
+| Power draw · hosts | 2/18/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
+| Fan speed · devices | 7/18/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
+| Memory used · now | 0/21/2/3 | threshold-gauge | Six vertical current-value host meters align with all six series in the neighboring host telemetry plot. |
+| Memory used · hosts | 2/21/5/3 | timeseries | Six thin host series form the center column of the original hardware matrix. |
+| Memory used · GPUs | 7/21/5/3 | timeseries | Six related device series form the right column; flat memory bands contrast with bursty utilization. |
 
 Documented approximations:
 
 - The supplied image combines two separate dashboards. This composition intentionally preserves both as a vertically scrolling network block and host matrix.
 - Snapshot clocks are source records and do not tick in the browser.
-- The reference's horizontal destination bars and per-cell table meters use existing vertical bars and numeric record cells.
+- The top destination comparison uses vertical bars; host meters use vertical columns while UPS meters remain horizontal. Table magnitude bars retain explicit source scales.
 - Location markers represent supplied coordinates; no location or connection is inferred from an IP address.
 
 Data contracts:
@@ -170,13 +170,13 @@ Source: `codex-clipboard-8e02f56f-0d25-4739-8b42-d10f263f027b.png` (1280 × 640)
 | Server requests / s | 0/3/8/4 | stacked-timeseries | The broad middle-left traffic chart is the visual anchor with four jagged stacked layers. |
 | Free disk space · volumes | 8/3/4/4 | threshold-gauge | Six radial gauges in a three-by-two bank; low space is red, middle yellow and ample space green. |
 | Server CPU usage | 0/7/8/3 | status-history | Six continuous horizontal state lanes with abrupt green/yellow/red transitions and an explicit unknown interval. |
-| Flow readings | 8/7/4/3 | record-table | Five exact timestamped flow rows complete the lower-right table. |
+| Flow readings | 8/7/4/3 | record-table | Five exact timestamped flow rows with in-cell gauge, threshold text and heat backgrounds. |
 
 Documented approximations:
 
 - Radial and segmented capacities are multi-series components rather than six independent dashboard tiles.
 - The original free-space panels show different readings, so the two banks use separately named saved queries.
-- Per-cell table coloring and a fixed-right tabular series legend are not yet part of record-table; values and units remain exact.
+- The flow table supports per-column bars, colored values and heat backgrounds while retaining exact values and units.
 
 Data contracts:
 
@@ -201,3 +201,12 @@ All five reference record tables use the reusable `density: "compact"` and `show
 On 29 October 2026, the UI imported all four dashboards and 56 saved queries into empty real Go storage. All 14 generation/theme/restart/mobile checks passed. Conditional writes retained ETags and no browser or query-fixture errors were observed. An earlier successful run also recovered from a rate-limit rejection. The suite produced 14 screenshot captures. Desktop assertions cover every state lane and gauge, all five flow rows, nonoverlapping bucket-axis labels, meaningful plot height, tile geometry and the specified one-screen compositions.
 
 The comparison gallery and generated portable bundle are in `artifacts/insights/reference-dashboards/`. The gallery can switch between light and dark captures beside the supplied reference images. The fixtures demonstrate the component vocabulary and authoring contract; their expressions are test data and are not deployable live-provider queries. Independent visual review records the remaining deliberate approximations.
+
+
+## Chart fidelity follow-up
+
+The map now keeps the geographic SVG and hit targets on the same 2:1 projection plane. Optional location details can be hidden to dedicate the panel to the map. Gauge banks support explicit horizontal rows or vertical columns, responsive segmented tracks, complete vertical readings and separately reserved radial labels. Overflowing banks expose a named keyboard scroll region and a visible hint; fitting desktop banks do not add a footer.
+
+Stat sparklines reach the panel edges while the reading retains its own inset. Histogram buckets and state-history lanes use the available panel height; bucket-axis labels thin by integer row stride to avoid overlap. Numeric record columns support fixed-scale bars, threshold-colored text and heat backgrounds through the guided column editor or widget configuration. Exact values, units, missing observations, out-of-scale readings and saved-query bindings remain intact.
+
+The extended acceptance harness covers both themes at desktop and mobile sizes, including lower-panel screenshots, pointer/keyboard access to overflowing gauges and table columns, and live preview → conditional save → reload of table scales. A regression also covers batched IntersectionObserver updates so a visible widget is not left idle after responsive layout changes.

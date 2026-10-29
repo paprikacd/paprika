@@ -177,6 +177,12 @@
 .stat > * {
   flex-shrink: 0;
 }
+.stat[data-stat-sparkline-enabled="true"] {
+  padding: 0;
+}
+.stat[data-stat-sparkline-enabled="true"] .statExtra {
+  padding-inline: var(--stat-reading-inset, 0px);
+}
 .statValue {
   font-variant-numeric: tabular-nums;
   font-size: clamp(28px, 10cqw, 44px);

@@ -14,6 +14,17 @@ const result: QueryResult = { series: [
 ] };
 
 describe("rich metric renderers", () => {
+  it.each([104, 128, 146, 180])("keeps bucket labels separated in a %ipx plot without dropping data cells", (height) => {
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height, top: 0, left: 0, right: 600, bottom: height, toJSON: () => ({}) });
+    try {
+      const histogram = { series: Array.from({length: 9}, (_, index) => ({name: "Bucket", labels: {le: String((index + 1) * 10)}, points: [{timestamp: 1000, value: index + 1}]})) };
+      const {container} = render(<DistributionHeatmap widget={widget} result={histogram} />);
+      const centers = [...container.querySelectorAll("text[data-value-axis]")].map(label => Number(label.getAttribute("y"))).sort((a,b) => a-b);
+      expect(centers.length).toBeGreaterThanOrEqual(2);
+      for (let index = 1; index < centers.length; index++) expect(centers[index] - centers[index - 1]).toBeGreaterThanOrEqual(16);
+      expect(container.querySelectorAll("[data-bucket-value]")).toHaveLength(9);
+    } finally { bounds.mockRestore(); }
+  });
   it("registers bounded reusable metrics plugins with guided defaults", () => {
     registerRichMetricPlugins(); registerRichMetricPlugins();
     for (const id of ["distribution-heatmap", "stacked-timeseries", "directional-traffic"]) {
