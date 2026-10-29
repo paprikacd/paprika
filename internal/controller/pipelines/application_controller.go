@@ -2292,13 +2292,53 @@ func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *papri
 	}
 
 	renderCtx := r.desiredManifestRenderContext(ctx, app)
-	stampTemplateSourceIdentity(&tmpl, renderCtx.sourceHash, renderCtx.sourceRevision)
+	revision := r.driftRenderRevision(ctx, app, &tmpl, renderCtx)
+	stampTemplateSourceIdentity(&tmpl, renderCtx.sourceHash, revision)
 
 	manifests, err := renderer.Render(ctx, &tmpl, renderCtx.params)
 	if err != nil {
 		return nil, fmt.Errorf("render template for diff: %w", err)
 	}
 	return manifests, nil
+}
+
+// driftRenderRevision is the commit the drift render pins: the active
+// release's, unless the poll's last resolve (still in the resolve cache) found
+// another commit whose managed content is identical by the test
+// checkSourceChanged applies before it declines to start a release. Both
+// commits render the same manifests, and the resolved one is in the repo
+// server's mirror, while the release's may not be.
+//
+// After a repo-server restart the mirror holds only the branch tip, at depth
+// 1. In a monorepo the active release's commit is usually an ancestor of that
+// tip (later commits did not touch the chart), and fetching a commit below the
+// shallow boundary brings its whole tree: on omega-ha (2026-10-29) the
+// brandbrain-api drift render pinned to e5e9b6d48, one commit behind the
+// mirrored 29a3f4074 with an identical chart, took about 20 minutes on the repo
+// server (brandbrain's tip tree is 10 GB, its chart 102 KB) and held the
+// repository lock that every brandbrain resolve, sync triggers included,
+// waits on.
+func (r *ApplicationReconciler) driftRenderRevision(ctx context.Context, app *paprikav1.Application, tmpl *paprikav1.Template, renderCtx desiredManifestRenderContext) string {
+	pinned := renderCtx.sourceRevision
+	if !r.driftRenderMayReuseResolve(tmpl, renderCtx) {
+		return pinned
+	}
+	cachedHash, cachedRevision, ok := r.sourceResolveCache().get(sourceResolveKey(tmpl))
+	if !ok || cachedRevision == "" || cachedRevision == pinned {
+		return pinned
+	}
+	resolvedHash, err := r.remoteRenderSourceHash(ctx, app, tmpl, cachedHash)
+	if err != nil || sourceContentHash(resolvedHash) != sourceContentHash(renderCtx.sourceHash) {
+		return pinned
+	}
+	return cachedRevision
+}
+
+// driftRenderMayReuseResolve reports whether a drift render has a pinned Git
+// source identity to compare a cached resolve against.
+func (r *ApplicationReconciler) driftRenderMayReuseResolve(tmpl *paprikav1.Template, renderCtx desiredManifestRenderContext) bool {
+	return renderCtx.sourceRevision != "" && renderCtx.sourceHash != "" && r.SourceResolveTTL > 0 &&
+		tmpl.Spec.Type == paprikav1.SourceTypeGit && tmpl.Spec.Git != nil
 }
 
 type desiredManifestRenderContext struct {
