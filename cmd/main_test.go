@@ -899,6 +899,7 @@ func TestValidateControllerTuning(t *testing.T) {
 			StageMaxConcurrentReconciles:    3,
 			PipelineMaxConcurrentReconciles: 3,
 			AppTransientRequeue:             5 * time.Second,
+			AppRepoServerTimeout:            time.Minute,
 			CacheResyncPeriod:               time.Hour,
 			ReconcileGlobalRate:             100,
 			ReconcileGlobalBurst:            200,
@@ -922,6 +923,14 @@ func TestValidateControllerTuning(t *testing.T) {
 		cfg := valid()
 		cfg.AppTransientRequeue = 100 * time.Millisecond
 		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("unbounded or sub-second repo-server timeout rejected", func(t *testing.T) {
+		for _, timeout := range []time.Duration{0, 500 * time.Millisecond, 2 * time.Hour} {
+			cfg := valid()
+			cfg.AppRepoServerTimeout = timeout
+			require.Error(t, validateControllerTuning(cfg), "timeout %s", timeout)
+		}
 	})
 
 	t.Run("global rate <= 0 disables limiting and relaxes app rate", func(t *testing.T) {

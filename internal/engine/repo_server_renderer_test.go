@@ -3,8 +3,11 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -153,4 +156,94 @@ func TestRepoServerRenderer_RenderAllFallsBackPerTemplate(t *testing.T) {
 	assert.Equal(t, []string{"api"}, repoServer.renderCalls)
 	assert.True(t, local.renderCalled)
 	assert.False(t, local.renderAllCalled)
+}
+
+// blockingRepoServerClient answers only when its context ends, like a repo
+// server waiting on a repository lock held by a detached cold-clone fetch.
+type blockingRepoServerClient struct {
+	resolveCalls, renderCalls int
+}
+
+func (*blockingRepoServerClient) Enabled() bool { return true }
+
+func (c *blockingRepoServerClient) ResolveSource(ctx context.Context, _ *paprikav1.Template) (*source.ResolveResult, error) {
+	c.resolveCalls++
+	<-ctx.Done()
+	return nil, connect.NewError(connect.CodeDeadlineExceeded, ctx.Err())
+}
+
+func (c *blockingRepoServerClient) Render(ctx context.Context, _ *paprikav1.Template, _ map[string]string) ([]byte, error) {
+	c.renderCalls++
+	<-ctx.Done()
+	return nil, connect.NewError(connect.CodeDeadlineExceeded, ctx.Err())
+}
+
+func TestRepoServerRenderer_TimeoutDoesNotFallBackLocally(t *testing.T) {
+	t.Parallel()
+
+	repoServer := &blockingRepoServerClient{}
+	local := &stubRenderer{renderResult: []byte("local"), resolveResult: &source.ResolveResult{Hash: "local"}}
+	r := NewRepoServerRenderer(repoServer, local,
+		WithRepoServerCallTimeout(20*time.Millisecond), WithoutLocalFallbackOnTimeout())
+	tmpl := &paprikav1.Template{ObjectMeta: metav1.ObjectMeta{Name: "brandbrain-api-template", Namespace: "brandbrain"}}
+
+	start := time.Now()
+	_, err := r.ResolveSource(context.Background(), tmpl)
+	require.ErrorIs(t, err, ErrRepoServerTimeout)
+	_, err = r.Render(context.Background(), tmpl, nil)
+	require.ErrorIs(t, err, ErrRepoServerTimeout)
+
+	assert.Less(t, time.Since(start), 5*time.Second, "each call must end at the call timeout, not the client's 5 minutes")
+	assert.Equal(t, 1, repoServer.resolveCalls)
+	assert.Equal(t, 1, repoServer.renderCalls)
+	assert.False(t, local.resolveSourceCalled, "a timed-out resolve must not start a second clone locally")
+	assert.False(t, local.renderCalled, "a timed-out render must not start a second clone locally")
+}
+
+func TestRepoServerRenderer_ClientTimeoutDoesNotFallBackLocally(t *testing.T) {
+	t.Parallel()
+
+	// The repo-server client's own http.Client timeout surfaces as a connect
+	// deadline_exceeded error, as in the omega-ha controller log.
+	clientTimeout := connect.NewError(connect.CodeDeadlineExceeded,
+		errors.New(`Post "http://repo-server:8082/paprika.v1.PaprikaService/ResolveSource": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`))
+	repoServer := &stubRepoServerClient{enabled: true, err: fmt.Errorf("repo server ResolveSource: %w", clientTimeout)}
+	local := &stubRenderer{resolveResult: &source.ResolveResult{Hash: "local"}}
+	r := NewRepoServerRenderer(repoServer, local, WithoutLocalFallbackOnTimeout())
+
+	_, err := r.ResolveSource(context.Background(), &paprikav1.Template{ObjectMeta: metav1.ObjectMeta{Name: "app-template"}})
+	require.ErrorIs(t, err, ErrRepoServerTimeout)
+	assert.False(t, local.resolveSourceCalled)
+}
+
+func TestRepoServerRenderer_UnreachableStillFallsBackWithoutTimeoutFallback(t *testing.T) {
+	t.Parallel()
+
+	unreachable := connect.NewError(connect.CodeUnavailable, errors.New("dial tcp 10.0.0.1:8082: connect: connection refused"))
+	repoServer := &stubRepoServerClient{enabled: true, err: unreachable}
+	local := &stubRenderer{renderResult: []byte("local"), resolveResult: &source.ResolveResult{Hash: "local"}}
+	r := NewRepoServerRenderer(repoServer, local, WithoutLocalFallbackOnTimeout())
+	tmpl := &paprikav1.Template{ObjectMeta: metav1.ObjectMeta{Name: "app-template"}}
+
+	res, err := r.ResolveSource(context.Background(), tmpl)
+	require.NoError(t, err)
+	assert.Equal(t, "local", res.Hash)
+	out, err := r.Render(context.Background(), tmpl, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("local"), out)
+}
+
+func TestRepoServerRenderer_DefaultStillFallsBackOnTimeout(t *testing.T) {
+	t.Parallel()
+
+	// Release rendering keeps the old behaviour: a release whose render fails
+	// is marked Failed, so it still prefers a slow local render to an error.
+	repoServer := &stubRepoServerClient{enabled: true, err: connect.NewError(connect.CodeDeadlineExceeded, context.DeadlineExceeded)}
+	local := &stubRenderer{renderResult: []byte("local")}
+	r := NewRepoServerRenderer(repoServer, local)
+
+	out, err := r.Render(context.Background(), &paprikav1.Template{ObjectMeta: metav1.ObjectMeta{Name: "app-template"}}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("local"), out)
+	assert.True(t, local.renderCalled)
 }

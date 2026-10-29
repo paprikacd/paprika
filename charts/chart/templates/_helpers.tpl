@@ -294,6 +294,9 @@ touching manager.args.
 {{- if $r.sourceResolveTTL }}
 - --application-source-resolve-ttl={{ $r.sourceResolveTTL }}
 {{- end }}
+{{- if $r.repoServerTimeout }}
+- --application-repo-server-timeout={{ $r.repoServerTimeout }}
+{{- end }}
 {{- if $r.cacheResyncPeriod }}
 - --cache-resync-period={{ $r.cacheResyncPeriod }}
 {{- end }}

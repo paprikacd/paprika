@@ -286,11 +286,11 @@ func newDynamicClientForManager(mgr ctrl.Manager) (dynamic.Interface, error) {
 	return dc, nil
 }
 
-func newTemplateRenderer(ctx context.Context, mgr ctrl.Manager, cacheClient manifestCache, workDir, repoServerAddr string) *engine.RepoServerRenderer {
+func newTemplateRenderer(ctx context.Context, mgr ctrl.Manager, cacheClient manifestCache, workDir, repoServerAddr string, opts ...engine.RepoServerRendererOption) *engine.RepoServerRenderer {
 	_ = ctx // reserved for future cancellation/observability
 	base := engine.NewHelmSDKRendererWithClient(workDir, mgr.GetClient())
 	cached := engine.NewCachedTemplateRenderer(base, cacheClient, workDir, 0)
-	return engine.NewRepoServerRenderer(reposerverclient.New(repoServerAddr), cached)
+	return engine.NewRepoServerRenderer(reposerverclient.New(repoServerAddr), cached, opts...)
 }
 
 func clientsetFromInterface(k8sClient kubernetes.Interface) (*kubernetes.Clientset, error) {
@@ -419,7 +419,13 @@ func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient
 	if err != nil {
 		return fmt.Errorf("create kubernetes clientset for application controller: %w", err)
 	}
-	renderer := newTemplateRenderer(ctx, mgr, cacheClient, "/tmp/paprika-sources", repoServerAddr)
+	// The Application controller resolves and renders on every poll and holds
+	// the Application's work item while it waits, so its repo-server calls are
+	// bounded and a timeout is never repeated with a local clone (see
+	// engine.WithoutLocalFallbackOnTimeout). A sync annotation set meanwhile is
+	// handled as soon as the reconcile returns.
+	renderer := newTemplateRenderer(ctx, mgr, cacheClient, "/tmp/paprika-sources", repoServerAddr,
+		engine.WithRepoServerCallTimeout(tuning.appRepoServerTimeout), engine.WithoutLocalFallbackOnTimeout())
 	diffEngine := engine.NewScalableDiffEngine(dynClient)
 	if disc, discErr := discovery.NewDiscoveryClientForConfig(mgr.GetConfig()); discErr == nil {
 		diffEngine.SetResolver(engine.NewCachedGVRResolver(disc))
