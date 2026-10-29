@@ -439,3 +439,70 @@ in split mode and in the manager in monolith mode, so both include this.
     secretName: {{ .Values.satellite.observationStore.redis.existingSecret }}
 {{- end }}
 {{- end }}
+
+{{/*
+"true" when the repo server keeps its git cache on a PersistentVolumeClaim.
+*/}}
+{{- define "paprika.repoServerCachePersistent" -}}
+{{- if dig "cache" "persistence" "enabled" false .Values.repoServer -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The repo server's git cache claim.
+*/}}
+{{- define "paprika.repoServerCacheClaim" -}}
+{{- dig "cache" "persistence" "existingClaim" "" .Values.repoServer | default (include "paprika.resourceName" (dict "suffix" "repo-server-git-cache" "context" .)) -}}
+{{- end -}}
+
+{{/*
+Git fetch and cache settings for the repo server (internal/source).
+*/}}
+{{- define "paprika.repoServerGitEnv" -}}
+{{- $git := .Values.repoServer.git | default dict -}}
+{{- $cache := .Values.repoServer.cache | default dict -}}
+{{- with $git.backend }}
+- name: PAPRIKA_GIT_BACKEND
+  value: {{ . | quote }}
+{{- end }}
+{{- with $git.maxConcurrentFetches }}
+- name: PAPRIKA_GIT_MAX_CONCURRENT_FETCHES
+  value: {{ . | quote }}
+{{- end }}
+{{- with $git.fetchTimeout }}
+- name: PAPRIKA_GIT_FETCH_TIMEOUT
+  value: {{ . | quote }}
+{{- end }}
+{{- with $cache.maxSize }}
+- name: PAPRIKA_GIT_CACHE_MAX_BYTES
+  value: {{ . | quote }}
+{{- end }}
+{{- with $cache.minAge }}
+- name: PAPRIKA_GIT_CACHE_MIN_AGE
+  value: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+A ReadWriteOnce git cache volume can be attached to one pod: one replica, no
+HPA, and a strategy that stops the old pod before starting the new one.
+*/}}
+{{- define "paprika.validateRepoServerCache" -}}
+{{- $rs := .Values.repoServer -}}
+{{- if and $rs.enabled (include "paprika.repoServerCachePersistent" .) -}}
+{{- if ne (dig "cache" "persistence" "accessMode" "ReadWriteOnce" $rs) "ReadWriteMany" -}}
+{{- if gt (int $rs.replicas) 1 -}}
+{{- fail "repoServer.cache.persistence: a ReadWriteOnce volume needs repoServer.replicas: 1" -}}
+{{- end -}}
+{{- if dig "hpa" "enabled" false $rs -}}
+{{- fail "repoServer.cache.persistence: a ReadWriteOnce volume cannot be combined with repoServer.hpa" -}}
+{{- end -}}
+{{- with $rs.strategy -}}
+{{- $type := toString (.type | default "RollingUpdate") -}}
+{{- $surge := toString (dig "rollingUpdate" "maxSurge" "25%" .) -}}
+{{- if not (or (eq $type "Recreate") (and (eq $type "RollingUpdate") (has $surge (list "0" "0%")))) -}}
+{{- fail "repoServer.cache.persistence: a ReadWriteOnce volume needs repoServer.strategy Recreate or RollingUpdate with maxSurge 0 (the new pod cannot attach the volume while the old one holds it)" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

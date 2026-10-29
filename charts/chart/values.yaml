@@ -585,6 +585,60 @@ repoServer:
   # -- Client timeout used by controllers/webhooks when calling the repo server.
   clientTimeout: 5m
 
+  ## Git fetching (PAPRIKA_GIT_* env vars, also set on the manager, whose
+  ## local fallback renderer resolves sources the same way). With the git CLI
+  ## the repo server
+  ## resolves a branch with ls-remote (one round trip), fetches the commit at
+  ## depth 1 as a blobless partial clone (the commit and its trees), then
+  ## fetches only the blobs under the source's path: brandbrain's 102 KB chart
+  ## costs about 1 MB and 3 s cold, where go-git downloaded its 8.9 GB tip in
+  ## 13 minutes. Concurrent resolves of one commit share one fetch.
+  git:
+    # -- auto uses the git CLI when the image ships git (the published images
+    # do) and go-git otherwise. go-git downloads every blob of the tip tree;
+    # set go-git only to roll back.
+    backend: auto
+    # -- Git fetches the repo server runs at once across all repositories.
+    # Fetches into one repository are serialized, so a slow repository holds
+    # at most one slot and never blocks the others.
+    maxConcurrentFetches: 4
+    # -- Upper bound on one git fetch. At it the git process and every process
+    # it started are killed.
+    fetchTimeout: 10m
+
+  ## Git cache on disk: <work dir>/git-cache holds one blobless mirror per
+  ## repository and the checked-out source paths. maxSize and minAge apply to
+  ## each work dir (the manager's fallback renderer has two).
+  cache:
+    # -- Size bound. Above it the least recently used mirrors and checkouts
+    # are evicted. Keep it below the volume holding the cache (the /tmp
+    # emptyDir's sizeLimit, or persistence.size). "" or 0 disables eviction.
+    maxSize: 20Gi
+    # -- Entries used more recently than this are never evicted: a render may
+    # still be reading them.
+    minAge: 15m
+    ## Keep the cache across restarts on a PersistentVolumeClaim mounted at the
+    ## repo server's work dir.
+    ##
+    ## Trade-off: a ReadWriteOnce volume needs one replica and a strategy that
+    ## stops the old pod first (Recreate, rendered when repoServer.strategy is
+    ## unset, or RollingUpdate with maxSurge 0), so every rollout leaves the
+    ## repo server unavailable while the volume detaches and attaches (tens of
+    ## seconds on Vultr block storage); the controller renders locally if it
+    ## cannot reach the repo server. With the git CLI backend a cold cache
+    ## costs about one commit's trees plus the source path's files per
+    ## repository, so persistence pays off mainly for whole-repository sources
+    ## (no path) and for the go-git backend.
+    persistence:
+      enabled: false
+      # -- Use an existing claim instead of creating one.
+      existingClaim: ""
+      size: 30Gi
+      storageClassName: ""
+      accessMode: ReadWriteOnce
+      # -- Mount path; the repo server's --repo-workdir is set to it.
+      mountPath: /tmp/paprika-repo
+
   image:
     repository: controller
     ## Image tag (defaults to Chart.appVersion if not set)
@@ -673,13 +727,12 @@ repoServer:
   #   periodSeconds: 10
   #   failureThreshold: 6
 
-  ## /tmp holds the git mirror cache. sizeLimit bounds it: past it the kubelet
-  ## evicts the pod, which restarts with an empty cache, instead of the cache
-  ## filling the node's disk (117 GB of one repository's packs did, 2026-10-11).
-  ## A shallow source of a large, often-pushed repository still adds a pack per
-  ## push, so expect evictions for one; `shallow: false` on its Template stops
-  ## that. Overriding repoServer.extraVolumes replaces this list and drops the
-  ## limit.
+  ## /tmp holds the git cache unless repoServer.cache.persistence is enabled.
+  ## sizeLimit bounds it: past it the kubelet evicts the pod, which restarts
+  ## with an empty cache, instead of the cache filling the node's disk (117 GB
+  ## of one repository's go-git packs did, 2026-10-11). repoServer.cache.maxSize
+  ## keeps the cache itself below it. Overriding repoServer.extraVolumes
+  ## replaces this list and drops the limit.
   extraVolumes:
     - emptyDir:
         sizeLimit: 50Gi
