@@ -52,13 +52,15 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -
 
 # Alpine: runtime needs ca-certificates for outbound TLS and tar (busybox) for
 # S3 archives. Helm rendering is in-process (Helm SDK).
-# git: the repo server fetches git sources with the git CLI as a blobless
-# partial clone, so only the files under a source's path are downloaded
-# (internal/source/gitcli.go). Without it Paprika falls back to go-git, which
-# downloads every blob of the tip tree.
+# git (the 2.54 series; the CLI backend needs >= 2.44): the cluster image's repo
+# server and manager fetch git sources with the git CLI as a blobless partial
+# clone, so only the files under a source's path are downloaded
+# (internal/source/gitcli.go). Without it they fall back to go-git, which
+# downloads every blob of the tip tree. The release image (Dockerfile.goreleaser)
+# deliberately ships no git and uses go-git.
 FROM alpine:3.24
 WORKDIR /
-RUN apk add --no-cache ca-certificates git && \
+RUN apk add --no-cache ca-certificates "git~2.54" && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager .
