@@ -60,6 +60,12 @@ async function renderEveryPanel(board) {
     if(widget.config?.seriesMode==="all") {
       const bank=element.locator("[data-gauge-bank-display]")
       assert.equal(await bank.locator("[data-gauge-series]").count(),widget.config.maxSeries,"Reference capacity panels must display every distinct series")
+      await page.evaluate(()=>document.fonts.ready)
+      const readings=await bank.locator("[data-gauge-number]").evaluateAll(nodes=>nodes.map(node=>{
+        const box=node.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node)
+        return {text:node.textContent,box:{left:box.left,right:box.right},glyphs:[...range.getClientRects()].map(rect=>({left:rect.left,right:rect.right}))}
+      }))
+      for(const reading of readings)assert.ok(reading.glyphs.every(glyph=>glyph.left>=reading.box.left-.05&&glyph.right<=reading.box.right+.05),`${widget.title}: exact gauge digits must fit without fractional ellipsis ${JSON.stringify(reading)}`)
       const measurements=await bank.evaluate(node=>({height:node.clientHeight,content:node.scrollHeight}))
       const textBounds=await bank.evaluate(node=>{const tile=node.closest('[data-widget-id]').getBoundingClientRect(),bank=node.getBoundingClientRect();return [...node.querySelectorAll('[data-gauge-label], [data-gauge-value] > span')].map(text=>{const r=text.getBoundingClientRect();return{text:text.textContent,top:r.top,bottom:r.bottom,left:r.left,right:r.right,clipTop:Math.max(tile.top,bank.top),clipBottom:Math.min(tile.bottom,bank.bottom),clipLeft:Math.max(tile.left,bank.left),clipRight:Math.min(tile.right,bank.right),scroll:text.scrollWidth,client:text.clientWidth,height:text.scrollHeight,available:text.clientHeight}})})
       for(const text of textBounds) {

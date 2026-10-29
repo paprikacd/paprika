@@ -75,6 +75,7 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const enabled = !embedded && !parentEmbedded && (detailsEnabled || !!onContextChange);
   const publisher = useChartCursorPublisher();
   const root = useRef<HTMLDivElement>(null);
+  const restoringFocus = useRef(false);
   const setRoot = useCallback((element: HTMLDivElement | null) => { root.current = element; }, []);
   const [state, setState] = useState<{ observation: Observation; pinned: boolean; result: unknown; signature: string }>();
   const active = state?.result === result && state.signature === signature && enabled ? state : undefined;
@@ -96,11 +97,27 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
     setState({ observation, pinned, result, signature });
     if (pinned) onContextChange?.({ series: observation.name, labels: observation.series.labels, value: observation.value });
   };
-  return { root: setRoot, enabled, detailsEnabled, active, show, dismiss: () => setState(undefined), leave: () => { if (!active?.pinned) setState(undefined); } };
+  const dismiss = () => {
+    const inspector = root.current?.querySelector("[data-rich-metric-inspector]");
+    const returnFocus = inspector?.contains(document.activeElement);
+    setState(undefined);
+    if (returnFocus) {
+      // A dismissed inspector returns keyboard users to its chart. This focus
+      // event must not immediately create another transient observation.
+      restoringFocus.current = true;
+      root.current?.querySelector<SVGSVGElement>('svg[role="group"][tabindex="0"]')?.focus({ preventScroll: true });
+      restoringFocus.current = false;
+    }
+  };
+  const focus = (observation: Observation) => { if (enabled && !active && !restoringFocus.current) show(observation); };
+  return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave: () => { if (!active?.pinned) setState(undefined); } };
 }
 
 function Inspector({ observation, pinned, decimals, onPin, onClose, id }: { observation: Observation; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string }) {
-  return <section id={id} className={styles.inspector} aria-label="Observation details">
+  return <section id={id} className={styles.inspector} aria-label="Observation details" data-rich-metric-inspector tabIndex={pinned ? 0 : undefined}
+    onKeyDown={event => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+    }}>
     <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={onClose}><X size={14} /></GammaButton></div>
     <MetricDetails series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" />
     {observation.note && <p className={styles.note}>{observation.note}</p>}
@@ -202,7 +219,7 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
   return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <div className={styles.plot} ref={ref}>
       <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
-        onFocus={() => { if (inspection.enabled && !inspection.active) inspection.show(observation(0, data.timestamps.length - 1)); }}
+        onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
         onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
         onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
         {data.rows.map((row, rowIndex) => <g key={row.upper}>
@@ -289,7 +306,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>
     <div className={styles.plot} ref={ref}>
       <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${directional ? "Outbound traffic below zero" : "Stacked observations"}.${inspection.enabled ? " Arrow keys inspect values; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
-        onFocus={() => { if (inspection.enabled && !inspection.active) inspection.show(observation(0, data.timestamps.length - 1)); }}
+        onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
         onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
         onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
         <defs><clipPath id={`${id}-clip`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>

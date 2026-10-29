@@ -44,6 +44,64 @@ describe("rich metric renderers", () => {
     expect(screen.getByRole("button", { name: "Unpin observation" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.keyDown(chart, { key: "Escape" }); expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
   });
+  it("makes only a pinned inspector keyboard-scrollable without changing its exact observation", () => {
+    const select = vi.fn();
+    const longLabels = { ...result.series![1].labels, deployment: "production-worker-with-a-long-deployment-name", resource: "cluster/omega/namespace/observability/workload/processor/instance/worker-01" };
+    const richResult: QueryResult = { series: [result.series![0], { ...result.series![1], labels: longLabels }] };
+    const { container } = render(<StackedTimeseries widget={widget} result={richResult} onContextChange={select} />);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowDown" });
+    let inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(inspector).not.toHaveAttribute("tabindex");
+    fireEvent.click(within(inspector).getByRole("button", { name: "Pin observation" }));
+    expect(inspector).toHaveAttribute("tabindex", "0");
+    inspector.focus(); expect(inspector).toHaveFocus();
+    for (const key of ["ArrowDown", "PageDown", "End", "Home", "PageUp"])
+      expect(fireEvent.keyDown(inspector, { key })).toBe(true);
+    expect(inspector.querySelector('[data-metric-value="3.14159"]')).toBeInTheDocument();
+    expect(inspector).toHaveTextContent(longLabels.resource);
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenLastCalledWith({ series: "Worker", value: 3.14159, labels: longLabels });
+    fireEvent.pointerLeave(container.firstElementChild!);
+    expect(inspector).toBeInTheDocument();
+    fireEvent.click(within(inspector).getByRole("button", { name: "Unpin observation" }));
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    expect(chart).toHaveFocus();
+    fireEvent.focus(chart);
+    inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(inspector).not.toHaveAttribute("tabindex");
+    fireEvent.pointerLeave(container.firstElementChild!);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+  });
+  it("dismisses keyboard-focused pinned details even if an ancestor stops bubbling events", () => {
+    const parentKey = vi.fn((event: React.KeyboardEvent) => event.stopPropagation());
+    render(<div onKeyDown={parentKey}><StackedTimeseries widget={widget} result={result} /></div>);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "Enter" });
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    inspector.focus(); expect(inspector).toHaveFocus();
+    parentKey.mockClear();
+    expect(fireEvent.keyDown(inspector, { key: "Escape" })).toBe(false);
+    expect(parentKey).not.toHaveBeenCalled();
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    expect(chart).toHaveFocus();
+  });
+  it.each(["Close observation", "Unpin observation"])("returns focus after %s without reopening, and leaves outside pointer focus alone", action => {
+    render(<><button>Outside the chart</button><StackedTimeseries widget={widget} result={result} /></>);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "Enter" });
+    const button = screen.getByRole("button", { name: action });
+    button.focus(); expect(button).toHaveFocus();
+    fireEvent.click(button);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    expect(chart).toHaveFocus();
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+    const outside = screen.getByRole("button", { name: "Outside the chart" });
+    outside.focus(); fireEvent.pointerDown(outside);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    expect(outside).toHaveFocus();
+  });
   it("retains raw outbound value and closes stale inspection on refreshed results", () => {
     const onContextChange = vi.fn();
     const { rerender } = render(<DirectionalTraffic widget={widget} result={result} onContextChange={onContextChange} />);
