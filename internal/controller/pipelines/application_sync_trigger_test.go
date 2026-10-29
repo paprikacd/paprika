@@ -138,3 +138,86 @@ func TestResolveTemplateSource_ForcedRefreshFetchesTheRemote(t *testing.T) {
 	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: "brandbrain-api-template"}, &stored))
 	require.Equal(t, "45s", stored.Spec.Git.FetchTTL, "the stored Template is not modified")
 }
+
+// redeployDuringResolveRenderer plays a second deploy that annotates the
+// Application with a new sync value while the first trigger's refresh is
+// still resolving.
+type redeployDuringResolveRenderer struct {
+	c      client.Client
+	key    client.ObjectKey
+	value  string
+	result *source.ResolveResult
+	calls  int
+}
+
+func (r *redeployDuringResolveRenderer) ResolveSource(ctx context.Context, _ *paprikav1.Template) (*source.ResolveResult, error) {
+	r.calls++
+	if r.calls == 1 {
+		var app paprikav1.Application
+		if err := r.c.Get(ctx, r.key, &app); err != nil {
+			return nil, err
+		}
+		app.Annotations[syncAnnotation] = r.value
+		if err := r.c.Update(ctx, &app); err != nil {
+			return nil, err
+		}
+	}
+	return r.result, nil
+}
+
+func (r *redeployDuringResolveRenderer) Render(context.Context, *paprikav1.Template, map[string]string) ([]byte, error) {
+	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
+}
+
+// A sync trigger set while the previous trigger's refresh resolves is a new
+// request, possibly for a commit that resolve did not see. Consuming the
+// handled trigger must leave it for the next reconcile.
+func TestHandleSyncTrigger_SecondTriggerDuringRefreshSurvives(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r, c, app := syncTriggerFixture(t, &slowThenReadySourceRenderer{})
+	renderer := &redeployDuringResolveRenderer{
+		c: c, key: client.ObjectKeyFromObject(app), value: "second-deploy",
+		result: &source.ResolveResult{Hash: "de0485d97bbbbbbb:chartcontentnew0", Revision: "de0485d9767c"},
+	}
+	r.TemplateRenderer = renderer
+
+	var current paprikav1.Application
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(app), &current))
+	require.Equal(t, "29a3f4074d64-1", current.Annotations[syncAnnotation])
+	_, err := r.handleSyncTrigger(ctx, &current)
+	require.NoError(t, err)
+
+	var stored paprikav1.Application
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(app), &stored))
+	require.Equal(t, "second-deploy", stored.Annotations[syncAnnotation], "the second deploy's trigger must survive the first's consumption")
+	require.Equal(t, "de0485d97bbbbbbb:chartcontentnew0", stored.Status.SourceHash, "the first trigger's refresh still completes")
+	require.Equal(t, paprikav1.ApplicationPending, stored.Status.Phase)
+	require.Equal(t, 1, renderer.calls)
+	require.True(t, r.hasSyncTrigger(&stored), "the next reconcile handles the second trigger")
+}
+
+// The trigger the reconcile handled is cleared together with the legacy
+// trigger annotations, and the in-memory Application is left as stored.
+func TestHandleSyncTrigger_ClearsOnlyTheHandledValues(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	renderer := &slowThenReadySourceRenderer{result: &source.ResolveResult{Hash: "e5e9b6d48aaaaaaa:chartcontentold0", Revision: "e5e9b6d48"}}
+	r, c, app := syncTriggerFixture(t, renderer)
+
+	var current paprikav1.Application
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(app), &current))
+	current.Annotations[legacyWebhookTriggerAnnotation] = "push"
+	current.Annotations["unrelated"] = "kept"
+	require.NoError(t, c.Update(ctx, &current))
+
+	_, err := r.handleSyncTrigger(ctx, &current)
+	require.NoError(t, err)
+
+	var stored paprikav1.Application
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(app), &stored))
+	require.False(t, r.hasSyncTrigger(&stored), "every handled trigger is consumed: %v", stored.Annotations)
+	require.Equal(t, "kept", stored.Annotations["unrelated"])
+	require.Equal(t, stored.ResourceVersion, current.ResourceVersion, "the in-memory Application is the stored one")
+	require.Equal(t, stored.Annotations, current.Annotations)
+}

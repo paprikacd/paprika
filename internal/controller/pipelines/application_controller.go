@@ -672,11 +672,14 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
+// syncTriggerAnnotations are the annotations that request an immediate sync.
+var syncTriggerAnnotations = []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation}
+
 func syncTriggerPresent(annotations map[string]string) bool {
 	if annotations == nil {
 		return false
 	}
-	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
+	for _, key := range syncTriggerAnnotations {
 		if _, ok := annotations[key]; ok {
 			return true
 		}
@@ -692,6 +695,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 	log := log.FromContext(ctx)
 	log.Info("Sync trigger detected")
 	manualOverride := app.Annotations[manualSyncAnnotation] != ""
+	handled := syncTriggerValues(app.Annotations)
 
 	refresh := r.syncTriggerRefreshesSource(app)
 	var refreshed syncSourceRefresh
@@ -710,11 +714,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 		}
 	}
 
-	patch := client.MergeFrom(app.DeepCopy())
-	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
-		delete(app.Annotations, key)
-	}
-	if err := r.client.Patch(ctx, app, patch); err != nil {
+	if err := r.consumeSyncTrigger(ctx, app, handled); err != nil {
 		log.Error(err, "Failed to clear sync trigger annotation")
 		return ctrl.Result{}, fmt.Errorf("clearing sync trigger annotation: %w", err)
 	}
@@ -723,6 +723,61 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 		return r.finishSyncTriggerRefresh(ctx, app, refreshed, manualOverride)
 	}
 	return r.finishSyncTrigger(ctx, app, manualOverride)
+}
+
+// syncTriggerValues returns the sync trigger annotations present and their
+// values: the requests this reconcile handles.
+func syncTriggerValues(annotations map[string]string) map[string]string {
+	values := make(map[string]string, len(syncTriggerAnnotations))
+	for _, key := range syncTriggerAnnotations {
+		if value, ok := annotations[key]; ok {
+			values[key] = value
+		}
+	}
+	return values
+}
+
+// consumeSyncTrigger removes the sync trigger annotations this reconcile
+// handled, and only while they still hold the values it handled. The refresh
+// runs before the trigger is consumed, so a deploy can set a new value
+// (paprika.io/sync=<sha>-<attempt>) while it resolves: that is a new request
+// for a commit this resolve may not have seen, and is left for the next
+// reconcile. The write is a merge patch under the read resourceVersion, retried
+// on a conflict against a fresh read. On return app is the stored object, as a
+// Patch leaves it.
+func (r *ApplicationReconciler) consumeSyncTrigger(ctx context.Context, app *paprikav1.Application, handled map[string]string) error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Application
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(app), &fresh); err != nil {
+			return fmt.Errorf("fetching application to clear sync trigger: %w", err)
+		}
+		base := fresh.DeepCopy()
+		cleared := false
+		for key, value := range handled {
+			current, ok := fresh.Annotations[key]
+			if !ok {
+				continue
+			}
+			if current != value {
+				log.FromContext(ctx).Info("A newer sync trigger arrived during the refresh; leaving it for the next reconcile",
+					"annotation", key, "handled", value, "current", current)
+				continue
+			}
+			delete(fresh.Annotations, key)
+			cleared = true
+		}
+		if cleared {
+			if err := r.client.Patch(ctx, &fresh, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+				return fmt.Errorf("patching sync trigger annotation: %w", err)
+			}
+		}
+		fresh.DeepCopyInto(app)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("consume sync trigger: %w", err)
+	}
+	return nil
 }
 
 // syncSourceRefresh is the forced source resolve a sync trigger runs.
