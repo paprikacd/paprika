@@ -950,7 +950,9 @@ func (g *GitSource) materializeEntry(tree *object.Tree, name string, entry *obje
 	target := filepath.Join(dest, name)
 	mode := entry.Mode
 	switch {
-	case mode.IsRegular():
+	// IsRegular is false for an executable (100755): those were skipped as
+	// if they were submodules, and a chart's scripts never reached a render.
+	case mode.IsRegular() || mode == filemode.Executable:
 		file, fileErr := tree.TreeEntryFile(entry)
 		if fileErr != nil {
 			return fmt.Errorf("checkout tree: read blob %s: %w", name, fileErr)
@@ -961,25 +963,31 @@ func (g *GitSource) materializeEntry(tree *object.Tree, name string, entry *obje
 		}
 		return writeBlob(target, &file.Blob, os.FileMode(perm))
 	case mode == filemode.Symlink:
-		file, fileErr := tree.TreeEntryFile(entry)
-		if fileErr != nil {
-			return fmt.Errorf("checkout tree: read symlink %s: %w", name, fileErr)
-		}
-		targetContent, readErr := blobReaderString(&file.Blob)
-		if readErr != nil {
-			return readErr
-		}
-		if mkErr := os.MkdirAll(filepath.Dir(target), 0o750); mkErr != nil {
-			return fmt.Errorf("checkout tree: create dir for %s: %w", name, mkErr)
-		}
-		if linkErr := os.Symlink(targetContent, target); linkErr != nil {
-			return fmt.Errorf("checkout tree: create symlink %s: %w", name, linkErr)
-		}
-		return nil
+		return materializeSymlink(tree, name, entry, target)
 	default:
 		// Submodules, empty entries: nothing to materialize.
 		return nil
 	}
+}
+
+// materializeSymlink writes the symlink entry of tree, found at name, at
+// target.
+func materializeSymlink(tree *object.Tree, name string, entry *object.TreeEntry, target string) error {
+	file, fileErr := tree.TreeEntryFile(entry)
+	if fileErr != nil {
+		return fmt.Errorf("checkout tree: read symlink %s: %w", name, fileErr)
+	}
+	targetContent, readErr := blobReaderString(&file.Blob)
+	if readErr != nil {
+		return readErr
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(target), 0o750); mkErr != nil {
+		return fmt.Errorf("checkout tree: create dir for %s: %w", name, mkErr)
+	}
+	if linkErr := os.Symlink(targetContent, target); linkErr != nil {
+		return fmt.Errorf("checkout tree: create symlink %s: %w", name, linkErr)
+	}
+	return nil
 }
 
 func writeBlob(path string, blob *object.Blob, perm os.FileMode) error {
