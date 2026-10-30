@@ -9,6 +9,20 @@ const widget: Widget={id:"distribution",title:"Service state",type:"plugin",plug
 const series=(name:string,values:(number|null)[]):NonNullable<QueryResult["series"]>[number]=>({name,labels:{service:name},points:values.map((value,index)=>({timestamp:Date.UTC(2026,9,27,0,index),value}))})
 
 describe("metric distributions",()=>{
+  it("exposes history marks through named button semantics rather than native title tooltips",()=>{
+    const {container}=render(<StatusHistory widget={widget} result={{series:[series("api",[2.125])]}} />)
+    const mark=screen.getByRole("button",{name:/api .*2.13/})
+    expect(mark).toHaveAttribute("data-history-key","0-0")
+    expect(mark).not.toHaveAttribute("title")
+    expect(container.querySelector('button[title]')).toBeNull()
+    fireEvent.focus(mark)
+    fireEvent.click(mark)
+    expect(mark).toHaveAttribute("aria-pressed","true")
+    fireEvent.click(mark)
+    expect(mark).not.toHaveAttribute("aria-pressed")
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+  })
+
   it("shows configured service labels and a shared UTC time scale across all lanes",()=>{
     const first=series("up{service=api}",[1,2]), second=series("up{service=worker}",[1,2])
     first.labels.service="api";second.labels.service="worker"

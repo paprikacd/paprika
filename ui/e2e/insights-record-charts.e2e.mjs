@@ -39,8 +39,17 @@ try{
     for(const widget of dashboard.widgets){
       const tile=page.locator(`[data-widget-id="${widget.id}"]`)
       await tile.scrollIntoViewIfNeeded()
-      const mark=widget.pluginId==="status-history"?tile.locator('button[title]').first():tile.locator('svg [role="button"]').first()
+      const mark=widget.pluginId==="status-history"?tile.getByRole('button', {name: /.+/}).and(tile.locator('[data-history-key]')).first():tile.locator('svg [role="button"]').first()
       await mark.waitFor()
+      if (widget.pluginId === "status-history") {
+        const label = await mark.getAttribute("aria-label")
+        assert.ok(label?.includes(" · "), "History marks expose the recorded series, time and value in their accessible name")
+        await mark.focus()
+        await mark.press("Enter")
+        assert.equal(await mark.getAttribute("aria-pressed"), "true", "Keyboard activation pins the recorded history observation")
+        await mark.press("Enter")
+        assert.equal(await mark.getAttribute("aria-pressed"), null, "Keyboard activation can dismiss the pinned observation")
+      }
       assert.deepEqual(await tile.getByRole("alert").allTextContents(),[])
     }
     const barTile=page.locator('[data-widget-id="bar-validation"]')
