@@ -71,6 +71,9 @@ try{
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false)
     await page.screenshot({path:join(output,`desktop-${theme}.png`),fullPage:true})
     await page.setViewportSize({width:390,height:844})
+    // ResizeObserver commits a different canvas parent for stacked view.
+    // Wait for that semantic transition before resolving any tile for scrolling.
+    await page.locator('[data-testid="dashboard-canvas"][data-layout-mode="stacked"]').waitFor()
     for(const widget of dashboard.widgets){
       const tile=page.locator(`[data-widget-id="${widget.id}"]`)
       await tile.scrollIntoViewIfNeeded()
