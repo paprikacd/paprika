@@ -390,3 +390,32 @@ artboard parity, browser detector certification, exhaustive loading/error visual
 states, physical touch hardware, or a production release. Do not report any of
 those as passed. Tests for loading/error/empty data remain separate from visual
 state review.
+
+### Native-provider tooltip and gauge review slice
+
+The shared observation shell now owns placement and dismissal separately from
+metric content. Friendly heading, value caption, tooltip-only precision and unit
+visibility are typed options; canonical series identity and exact observations
+remain in expandable Source details. The Insights pipeline topology uses the same
+shell and content primitives; this does not cover the main application DAG.
+
+Single-value sparklines inspect original samples by timestamp, independently of
+rendered-point reduction. Pointer movement previews, Enter/tap pins, and arrow
+keys/Home/End navigate history. Test the real shell together with the trigger:
+its content-scrolling key capture previously intercepted history Home/End even
+though isolated trigger tests passed. History owns those keys while focused;
+Page Up/Down and focused panel scrolling remain available. Embedded sparklines
+remain static unless explicitly supplied an interactive widget context.
+
+For the horizontal threshold gauge, review the whole card: content-led rows,
+aligned label/track/value/status, adjacent explicit scale and threshold legend.
+Do not alter the scale or saved tile geometry to manufacture visual density.
+Authored excess tile height is a separate layout decision.
+
+Local native synthetic-provider checks covered three pointer history observations,
+keyboard endpoint/pin/source disclosure, custom presentation save/reload/restore,
+light/dark gauge grouping, 390/320px responsive iframe layouts, post-scroll narrow
+edge-hover, and pipeline hover/pinning. These are not physical-touch, transformed
+portal-ancestor, main-app-DAG, full-gallery or production-deployment approval.
+Flag sizing remains an explicit open review item until its owning renderer and
+reference are identified; the supplied Freshness-by-source crop contains no flag.

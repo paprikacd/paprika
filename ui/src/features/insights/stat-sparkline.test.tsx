@@ -68,7 +68,7 @@ describe("optional single-value history", () => {
       />,
     );
     expect(
-      screen.getByRole("img", { name: "History for api" }),
+      screen.getByRole("img", { name: "History for Requests" }),
     ).toBeInTheDocument();
     expect(
       container.querySelector('[data-metric-value="0"]'),
@@ -80,7 +80,7 @@ describe("optional single-value history", () => {
     const summary = container.querySelector("[data-stat-summary]");
     expect(summary).toHaveAttribute("data-sparkline-placement", "side");
     expect(summary?.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
-    expect(screen.getByRole("img", { name: "History for api" })).toHaveAttribute("data-sample-count", "5");
+    expect(screen.getByRole("img", { name: "History for Requests" })).toHaveAttribute("data-sample-count", "5");
   });
 
   it("renders the actual latest value against its explicit bar scale and thresholds", () => {
@@ -112,7 +112,7 @@ describe("optional single-value history", () => {
         result={{ series: [series, other] }}
       />,
     );
-    const svg = screen.getByRole("img", { name: "History for api" });
+    const svg = screen.getByRole("img", { name: "History for Requests" });
     expect(svg).toHaveAttribute("data-history-start", "1000");
     expect(svg).toHaveAttribute("data-history-end", "5000");
     expect(svg).toHaveAttribute("data-history-min", "-7.25");
@@ -145,7 +145,7 @@ describe("optional single-value history", () => {
     ).toBeInTheDocument();
     expect(svg).toHaveStyle({ color: "#336699" });
     expect(svg.querySelectorAll("text")).toHaveLength(0);
-    expect(svg).not.toHaveAttribute("tabindex");
+    expect(svg).toHaveAttribute("tabindex", "0");
     expect(
       container.querySelector('[data-metric-value="0"]'),
     ).toBeInTheDocument();

@@ -47,7 +47,7 @@ describe("metric distributions",()=>{
     expect(tip.querySelector('[data-metric-value="2.5"]')).toHaveTextContent("2.50")
     expect(tip.querySelector("time")).toHaveAttribute("datetime",new Date(Date.UTC(2026,9,27,0,1)).toISOString())
     expect(tip.querySelectorAll("time")).toHaveLength(1)
-    expect(tip.querySelector('[data-metric-value="2.5"]')!.compareDocumentPosition(tip.querySelector("time")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(tip.querySelector("time")!.compareDocumentPosition(tip.querySelector('[data-metric-value="2.5"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tip.querySelector("time")!.compareDocumentPosition(tip.querySelector("dl")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tip).toHaveTextContent("Share of positive observations: 25.00%")
     expect(select).not.toHaveBeenCalled()

@@ -144,7 +144,7 @@ func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors"})
+	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors"})
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func validateWidgetOptions(raw json.RawMessage) error {
 			return err
 		}
 	}
-	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetFlags, validateWidgetAppearance, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
+	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetFlags, validateWidgetAppearance, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
 		if err := check(options); err != nil {
 			return err
 		}
@@ -350,8 +350,20 @@ func validateWidgetAxisLabels(options map[string]json.RawMessage) error {
 	return nil
 }
 
+func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error {
+	for field, limit := range map[string]int{"tooltipTitle": 120, "tooltipValueLabel": 80} {
+		if value, ok := options[field]; ok {
+			var text string
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || stringUnits(text) > limit {
+				return fmt.Errorf("%s must be a string of at most %d characters", field, limit)
+			}
+		}
+	}
+	return nil
+}
+
 func validateWidgetFlags(options map[string]json.RawMessage) error {
-	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "showGrid", "showSparkline", "showStatBar"} {
+	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar"} {
 		if value, ok := options[field]; ok {
 			var flag bool
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &flag) != nil {
@@ -408,7 +420,7 @@ func validateWidgetColors(options map[string]json.RawMessage) error {
 
 func validateWidgetNumbers(options map[string]json.RawMessage) error {
 	numbers := map[string]float64{}
-	for _, field := range []string{"decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity"} {
+	for _, field := range []string{"decimals", "tooltipDecimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity"} {
 		if value, ok := options[field]; ok {
 			var n float64
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &n) != nil || !finite(n) {
@@ -501,6 +513,9 @@ func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, er
 func validateWidgetNumberBounds(numbers map[string]float64) error {
 	if n, ok := numbers["staleAfterSeconds"]; ok && (n < 1 || n > 2678400 || math.Trunc(n) != n) {
 		return errors.New("stale sample threshold must be an integer from 1 to 2678400 seconds")
+	}
+	if n, ok := numbers["tooltipDecimals"]; ok && !validDecimalPrecision(n) {
+		return errors.New("tooltip decimals must be an integer from 0 to 8")
 	}
 	if n, ok := numbers["decimals"]; ok && !validDecimalPrecision(n) {
 		return errors.New("decimals must be an integer from 0 to 8")

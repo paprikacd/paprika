@@ -1147,3 +1147,25 @@ describe("widget inspector", () => {
     expect(screen.getByRole("switch", { name: "Show values" })).toBeChecked();
   });
 });
+
+it("edits baseline tooltip presentation for stats and preserves it on appearance reset", () => {
+  const callbacks = props();
+  render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat", unit: "s", options: { decimals: 1 } }} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+  fireEvent.change(screen.getByLabelText("Tooltip heading"), { target: { value: "Checkout latency" } });
+  fireEvent.change(screen.getByLabelText("Tooltip value label"), { target: { value: "p95" } });
+  fireEvent.change(screen.getByLabelText("Tooltip decimal places"), { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("switch", { name: "Show unit in tooltip reading" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+  expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up", unit: "s", options: expect.objectContaining({ decimals: 1, tooltipTitle: "Checkout latency", tooltipValueLabel: "p95", tooltipDecimals: 3, tooltipShowUnit: false }) }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
+  expect(screen.getByLabelText("Tooltip heading")).toHaveValue("Checkout latency");
+  expect(screen.getByLabelText("Tooltip decimal places")).toHaveValue(3);
+});
+
+it("offers the same baseline presentation in the chart Tooltips tab", () => {
+  render(<WidgetEditor {...props()} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
+  expect(screen.getByLabelText("Tooltip heading")).toHaveAttribute("placeholder", "Widget title");
+  expect(screen.getByRole("switch", { name: "Show unit in tooltip reading" })).toBeChecked();
+});

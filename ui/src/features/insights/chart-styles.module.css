@@ -687,3 +687,20 @@
   > button[data-gamma-button][data-variant="quiet"] {
   color: var(--widget-text, var(--gamma-muted));
 }
+
+.tooltipSource { font-size: 11px; line-height: 1.5; }
+.tooltipSource summary { cursor: pointer; color: var(--gamma-muted); padding-block: 3px; }
+.tooltipSource summary:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: 2px; }
+.tooltipSourceIdentity { font-family: var(--gamma-font-code, monospace); overflow-wrap: anywhere; padding-block: 4px; color: var(--gamma-muted); }
+.tooltipDetail { min-width: 180px; max-width: 320px; white-space: normal; }
+.tooltipDetailBody { padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; line-height: 1.5; }
+.tooltipFact { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 16px; }
+.tooltipFact > span { color: var(--gamma-muted); }
+.tooltipFact > strong { font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.tooltipHint, .tooltipHint > span {
+  color: var(--gamma-muted, #626e65);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}

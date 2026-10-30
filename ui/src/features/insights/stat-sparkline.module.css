@@ -101,3 +101,9 @@
     mask-image: none;
   }
 }
+
+/* Static decorative sparklines stay inert; interactive history is one hit area,
+   not hundreds of per-sample DOM targets. Keep normal page scrolling on touch. */
+.plot[data-stat-interactive] { pointer-events: auto; cursor: crosshair; touch-action: pan-y; }
+.plot[data-stat-interactive]:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
+.plot[data-stat-selected-time] { mask-image: none; }
