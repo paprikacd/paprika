@@ -131,7 +131,7 @@ type DashboardTraceExample struct {
 	InvalidFields bool     `json:"invalidFields,omitempty"`
 }
 
-func summarizeDashboardResult(result QueryResult, options DashboardSummaryOptions) DashboardSignal {
+func summarizeDashboardResult(result *QueryResult, options DashboardSummaryOptions) DashboardSignal {
 	options = boundedDashboardSummaryOptions(options)
 	signal := DashboardSignal{State: "empty", ProviderTruncated: result.Truncated, Truncated: result.Truncated}
 	primary := primaryDashboardSeries(result.Series)
@@ -234,45 +234,13 @@ func summarizeDashboardSeries(series Series, index, historyPoints int) Dashboard
 	// the integer scratch space preserves cancellation without overflowing or
 	// allocating a wide floating-point mantissa for each observation.
 	var sum, term big.Int
-	// Most provider series are strictly ordered; defer the map until an
-	// out-of-order or repeated timestamp makes a membership check necessary.
-	var seen map[float64]struct{}
-	var previous float64
-	havePrevious := false
+	var duplicates dashboardDuplicateTracker
 	for index, point := range series.Points {
-		if dashboardTimestamp(point.Timestamp) {
-			if seen == nil && havePrevious && point.Timestamp <= previous {
-				seen = make(map[float64]struct{}, len(series.Points))
-				for _, prior := range series.Points[:index] {
-					if dashboardTimestamp(prior.Timestamp) {
-						seen[prior.Timestamp] = struct{}{}
-					}
-				}
-			}
-			if seen != nil {
-				if _, exists := seen[point.Timestamp]; exists {
-					summary.DuplicateObservations++
-				} else {
-					seen[point.Timestamp] = struct{}{}
-				}
-			}
-			previous, havePrevious = point.Timestamp, true
+		if duplicates.observe(series.Points, index) {
+			summary.DuplicateObservations++
 		}
 		if dashboardTimestamp(point.Timestamp) && dashboardFiniteValue(point.Value) {
-			bits := math.Float64bits(*point.Value)
-			exponent := (bits >> 52) & 0x7ff
-			mantissa := bits & ((uint64(1) << 52) - 1)
-			if exponent > 0 {
-				mantissa |= uint64(1) << 52
-			}
-			term.SetUint64(mantissa)
-			if exponent > 0 {
-				term.Lsh(&term, uint(exponent-1))
-			}
-			if bits>>63 != 0 {
-				term.Neg(&term)
-			}
-			sum.Add(&sum, &term)
+			addDashboardExactValue(&sum, &term, *point.Value)
 		}
 		addDashboardObservation(&summary, point)
 	}
@@ -292,6 +260,52 @@ func summarizeDashboardSeries(series Series, index, historyPoints int) Dashboard
 		summary.HistoryTruncated = len(summary.History) < len(points)
 	}
 	return summary
+}
+
+// dashboardDuplicateTracker delays allocation for the usual strictly ordered series.
+type dashboardDuplicateTracker struct {
+	seen         map[float64]struct{}
+	previous     float64
+	havePrevious bool
+}
+
+func (d *dashboardDuplicateTracker) observe(points []Point, index int) bool {
+	timestamp := points[index].Timestamp
+	if !dashboardTimestamp(timestamp) {
+		return false
+	}
+	if d.seen == nil && d.havePrevious && timestamp <= d.previous {
+		d.seen = make(map[float64]struct{}, len(points))
+		for _, prior := range points[:index] {
+			if dashboardTimestamp(prior.Timestamp) {
+				d.seen[prior.Timestamp] = struct{}{}
+			}
+		}
+	}
+	duplicate := false
+	if d.seen != nil {
+		_, duplicate = d.seen[timestamp]
+		d.seen[timestamp] = struct{}{}
+	}
+	d.previous, d.havePrevious = timestamp, true
+	return duplicate
+}
+
+func addDashboardExactValue(sum, term *big.Int, value float64) {
+	bits := math.Float64bits(value)
+	exponent := (bits >> 52) & 0x7ff
+	mantissa := bits & ((uint64(1) << 52) - 1)
+	if exponent > 0 {
+		mantissa |= uint64(1) << 52
+	}
+	term.SetUint64(mantissa)
+	if exponent > 0 {
+		term.Lsh(term, uint(exponent-1))
+	}
+	if bits>>63 != 0 {
+		term.Neg(term)
+	}
+	sum.Add(sum, term)
 }
 
 func addDashboardObservation(summary *DashboardSeriesSummary, point Point) {

@@ -75,7 +75,7 @@ func TestRecordSavedQueryDashboardMCPAndETags(t *testing.T) {
 
 func TestRecordSummaryBoundsAndPartialHonesty(t *testing.T) {
 	frame := &dataframe.Frame{Columns: []dataframe.Column{{Key: "text", Type: "string"}}, Rows: [][]any{{strings.Repeat("x", 300)}, {"two"}, {nil}, {"four"}}}
-	result := summarizeDashboardResult(QueryResult{Records: frame}, DashboardSummaryOptions{})
+	result := summarizeDashboardResult(&QueryResult{Records: frame}, DashboardSummaryOptions{})
 	require.Equal(t, "ok", result.State)
 	require.True(t, result.Truncated)
 	require.True(t, result.Records.RowsTruncated)
@@ -84,7 +84,7 @@ func TestRecordSummaryBoundsAndPartialHonesty(t *testing.T) {
 	require.Equal(t, 4, result.Records.Returned)
 	require.Len(t, result.Records.Rows, 3)
 	frame.Rows = [][]any{}
-	result = summarizeDashboardResult(QueryResult{Records: frame}, DashboardSummaryOptions{})
+	result = summarizeDashboardResult(&QueryResult{Records: frame}, DashboardSummaryOptions{})
 	require.Equal(t, "empty", result.State)
 	require.Zero(t, result.Records.Returned)
 }

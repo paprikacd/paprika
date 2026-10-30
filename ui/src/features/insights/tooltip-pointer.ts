@@ -53,3 +53,12 @@ export function placePointerTooltip(point: { x: number; y: number }, size: { wid
   const y = useBelow ? point.y + gap : point.y - gap - Math.min(size.height, maxHeight)
   return { left: x, top: y, placement: `pointer-${useBelow ? "bottom" : "top"}-${useRight ? "right" : "left"}`, maxHeight }
 }
+
+/** Convert viewport placement into a transformed fixed portal's local space.
+ * Ordinary body portals are unchanged; translated/scaled dialog ancestors are
+ * corrected from measured geometry without assuming iframe/page offsets. */
+export function correctPortalPosition(position: { left: number; top: number }, actual: { left: number; top: number; width: number; height: number }, layout: { width: number; height: number }) {
+  if (actual.width <= 0 || actual.height <= 0 || layout.width <= 0 || layout.height <= 0) return position
+  const scaleX = actual.width / layout.width, scaleY = actual.height / layout.height
+  return { left: position.left + (position.left - actual.left) / scaleX, top: position.top + (position.top - actual.top) / scaleY }
+}

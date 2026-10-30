@@ -215,24 +215,26 @@ type dashboardTextWidget struct {
 	} `json:"threshold"`
 }
 
+type dashboardTextSummary struct {
+	SchemaVersion int `json:"schemaVersion"`
+	Dashboard     struct {
+		ID   string `json:"id"`
+		ETag string `json:"etag"`
+	} `json:"dashboard"`
+	ObservedAt string `json:"observedAt"`
+	Range      struct {
+		Start       string  `json:"start"`
+		End         string  `json:"end"`
+		StepSeconds float64 `json:"stepSeconds"`
+	} `json:"range"`
+	Variables map[string]string     `json:"variables"`
+	State     string                `json:"state"`
+	Widgets   []dashboardTextWidget `json:"widgets"`
+	Signals   []dashboardTextSignal `json:"signals"`
+}
+
 func dashboardQueryText(raw json.RawMessage) (string, error) {
-	var summary struct {
-		SchemaVersion int `json:"schemaVersion"`
-		Dashboard     struct {
-			ID   string `json:"id"`
-			ETag string `json:"etag"`
-		} `json:"dashboard"`
-		ObservedAt string `json:"observedAt"`
-		Range      struct {
-			Start       string  `json:"start"`
-			End         string  `json:"end"`
-			StepSeconds float64 `json:"stepSeconds"`
-		} `json:"range"`
-		Variables map[string]string     `json:"variables"`
-		State     string                `json:"state"`
-		Widgets   []dashboardTextWidget `json:"widgets"`
-		Signals   []dashboardTextSignal `json:"signals"`
-	}
+	var summary dashboardTextSummary
 	if err := json.Unmarshal(raw, &summary); err != nil {
 		return "", fmt.Errorf("decode dashboard summary: %w", err)
 	}
@@ -240,49 +242,14 @@ func dashboardQueryText(raw json.RawMessage) (string, error) {
 		return "", errors.New("missing dashboard summary fields")
 	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "Dashboard %s: %s. Structured content is authoritative; state is data availability, not health.\n", strconv.Quote(shortDashboardText(summary.Dashboard.ID, 80)), shortDashboardText(summary.State, 24))
-	if summary.Range.Start != "" && summary.Range.End != "" {
-		fmt.Fprintf(&out, "Range %s to %s; step=%ss", strconv.Quote(shortDashboardText(summary.Range.Start, 80)), strconv.Quote(shortDashboardText(summary.Range.End, 80)), strconv.FormatFloat(summary.Range.StepSeconds, 'g', -1, 64))
-		if summary.ObservedAt != "" {
-			fmt.Fprintf(&out, "; observed at %s", strconv.Quote(shortDashboardText(summary.ObservedAt, 80)))
-		}
-		if summary.Dashboard.ETag != "" {
-			fmt.Fprintf(&out, "; dashboard ETag=%s", strconv.Quote(shortDashboardText(summary.Dashboard.ETag, 120)))
-		}
-		out.WriteByte('\n')
-	}
+	appendDashboardHeaderText(&out, &summary)
 	if summary.Variables != nil {
 		appendDashboardVariablesText(&out, summary.Variables)
 	}
 	// A widget can fail before it has a signal (for example, a missing saved
 	// query). Report these first so a text-only client does not miss the error.
-	for _, widget := range summary.Widgets {
-		if widget.Freshness != nil {
-			line := fmt.Sprintf("widget %s: returned sample freshness=%s (threshold %ds", strconv.Quote(shortDashboardText(widget.ID, 80)), widget.Freshness.State, widget.Freshness.ThresholdSeconds)
-			if widget.Freshness.AgeSeconds != nil {
-				line += fmt.Sprintf(", age %.0fs", *widget.Freshness.AgeSeconds)
-			}
-			line += "); relative to range end, not scrape health\n"
-			if out.Len()+len(line)+80 > dashboardQueryTextBytes {
-				out.WriteString("More widget details and signals are available in structuredContent.\n")
-				return out.String(), nil
-			}
-			out.WriteString(line)
-		}
-		for _, detail := range []struct {
-			suffix string
-			err    *dashboardTextError
-		}{{"", widget.Error}, {" events", widget.AnnotationError}} {
-			if detail.err == nil {
-				continue
-			}
-			line := fmt.Sprintf("widget %s %s%s: error %s: %s", strconv.Quote(shortDashboardText(widget.ID, 80)), strconv.Quote(shortDashboardText(widget.Title, 160)), detail.suffix, strconv.Quote(shortDashboardText(detail.err.Code, 80)), strconv.Quote(shortDashboardText(detail.err.Message, 240)))
-			if out.Len()+len(line)+80 > dashboardQueryTextBytes {
-				out.WriteString("More widget errors and signals are available in structuredContent.\n")
-				return out.String(), nil
-			}
-			out.WriteString(line + "\n")
-		}
+	if appendDashboardWidgetDiagnostics(&out, summary.Widgets) {
+		return out.String(), nil
 	}
 	appendDashboardThresholdsText(&out, summary.Widgets)
 	for index := range summary.Signals {
@@ -296,12 +263,60 @@ func dashboardQueryText(raw json.RawMessage) (string, error) {
 	return out.String(), nil
 }
 
+func appendDashboardHeaderText(out *strings.Builder, summary *dashboardTextSummary) {
+	fmt.Fprintf(out, "Dashboard %s: %s. Structured content is authoritative; state is data availability, not health.\n", strconv.Quote(shortDashboardText(summary.Dashboard.ID, 80)), shortDashboardText(summary.State, 24))
+	if summary.Range.Start != "" && summary.Range.End != "" {
+		fmt.Fprintf(out, "Range %s to %s; step=%ss", strconv.Quote(shortDashboardText(summary.Range.Start, 80)), strconv.Quote(shortDashboardText(summary.Range.End, 80)), strconv.FormatFloat(summary.Range.StepSeconds, 'g', -1, 64))
+		if summary.ObservedAt != "" {
+			fmt.Fprintf(out, "; observed at %s", strconv.Quote(shortDashboardText(summary.ObservedAt, 80)))
+		}
+		if summary.Dashboard.ETag != "" {
+			fmt.Fprintf(out, "; dashboard ETag=%s", strconv.Quote(shortDashboardText(summary.Dashboard.ETag, 120)))
+		}
+		out.WriteByte('\n')
+	}
+}
+
+func appendDashboardWidgetDiagnostics(out *strings.Builder, widgets []dashboardTextWidget) bool {
+	for index := range widgets {
+		widget := &widgets[index]
+		if widget.Freshness != nil {
+			line := fmt.Sprintf("widget %s: returned sample freshness=%s (threshold %ds", strconv.Quote(shortDashboardText(widget.ID, 80)), widget.Freshness.State, widget.Freshness.ThresholdSeconds)
+			if widget.Freshness.AgeSeconds != nil {
+				line += fmt.Sprintf(", age %.0fs", *widget.Freshness.AgeSeconds)
+			}
+			line += "); relative to range end, not scrape health\n"
+			if out.Len()+len(line)+80 > dashboardQueryTextBytes {
+				out.WriteString("More widget details and signals are available in structuredContent.\n")
+				return true
+			}
+			out.WriteString(line)
+		}
+		for _, detail := range []struct {
+			suffix string
+			err    *dashboardTextError
+		}{{"", widget.Error}, {" events", widget.AnnotationError}} {
+			if detail.err == nil {
+				continue
+			}
+			line := fmt.Sprintf("widget %s %s%s: error %s: %s", strconv.Quote(shortDashboardText(widget.ID, 80)), strconv.Quote(shortDashboardText(widget.Title, 160)), detail.suffix, strconv.Quote(shortDashboardText(detail.err.Code, 80)), strconv.Quote(shortDashboardText(detail.err.Message, 240)))
+			if out.Len()+len(line)+80 > dashboardQueryTextBytes {
+				out.WriteString("More widget errors and signals are available in structuredContent.\n")
+				return true
+			}
+			out.WriteString(line + "\n")
+		}
+	}
+	return false
+}
+
 // Keep visual-band context bounded independently of data signals. These are
 // authored thresholds, not inferred health or alert states.
 func appendDashboardThresholdsText(out *strings.Builder, widgets []dashboardTextWidget) {
 	var lines strings.Builder
 	total, shown := 0, 0
-	for _, widget := range widgets {
+	for index := range widgets {
+		widget := &widgets[index]
 		if widget.Threshold == nil {
 			continue
 		}
@@ -357,11 +372,11 @@ func appendDashboardVariablesText(out *strings.Builder, variables map[string]str
 	out.WriteByte('\n')
 }
 
-func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWidget) string {
-	title, unit, view := signal.ID, "", ""
-	matched := 0
-	for _, widget := range widgets {
-		if widget.SignalID == signal.ID {
+func dashboardSignalIdentity(signalID string, widgets []dashboardTextWidget) (title, unit, view string, matched int) {
+	title = signalID
+	for index := range widgets {
+		widget := &widgets[index]
+		if widget.SignalID == signalID {
 			matched++
 			if matched == 1 {
 				title, unit, view = widget.Title, widget.Unit, widget.Type
@@ -371,14 +386,23 @@ func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWid
 			}
 		}
 	}
-	if title == signal.ID {
-		for _, widget := range widgets {
-			if widget.AnnotationSignalID == signal.ID {
-				title = widget.Title + " events"
-				break
-			}
+	if title == signalID {
+		title = dashboardAnnotationTitle(signalID, title, widgets)
+	}
+	return title, unit, view, matched
+}
+
+func dashboardAnnotationTitle(signalID, fallback string, widgets []dashboardTextWidget) string {
+	for index := range widgets {
+		if widgets[index].AnnotationSignalID == signalID {
+			return widgets[index].Title + " events"
 		}
 	}
+	return fallback
+}
+
+func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWidget) string {
+	title, unit, view, matched := dashboardSignalIdentity(signal.ID, widgets)
 	var line strings.Builder
 	fmt.Fprintf(&line, "%s %s: %s", signal.ID, strconv.Quote(shortDashboardText(title, 160)), signal.State)
 	if view != "" {
@@ -387,52 +411,9 @@ func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWid
 			fmt.Fprintf(&line, "; shared widgets=%d", matched)
 		}
 	}
-	if signal.Kind != "" {
-		fmt.Fprintf(&line, "; kind=%s", strconv.Quote(shortDashboardText(signal.Kind, 24)))
-	}
-	if signal.ProviderID != "" {
-		fmt.Fprintf(&line, "; provider=%s", strconv.Quote(shortDashboardText(signal.ProviderID, 128)))
-	}
-	if signal.SeriesReturned != nil && signal.SeriesOmitted != nil {
-		fmt.Fprintf(&line, "; returned series=%d (bounded response), omitted summaries=%d", *signal.SeriesReturned, *signal.SeriesOmitted)
-	}
-	if signal.Error != nil {
-		fmt.Fprintf(&line, "; error %s: %s", strconv.Quote(shortDashboardText(signal.Error.Code, 80)), strconv.Quote(shortDashboardText(signal.Error.Message, 240)))
-	}
-	if signal.PrimarySeries != nil {
-		for _, series := range signal.Series {
-			if series.Index == *signal.PrimarySeries && series.Last != nil {
-				fmt.Fprintf(&line, "; latest valid=%s %s at %s ms", strconv.FormatFloat(series.Last.Value, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)), strconv.FormatFloat(series.Last.Timestamp, 'f', -1, 64))
-				if series.Mean != nil {
-					fmt.Fprintf(&line, "; sample mean=%s %s", strconv.FormatFloat(*series.Mean, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)))
-				}
-				if series.TailMissing {
-					line.WriteString("; latest observation missing")
-				}
-				break
-			}
-		}
-	}
-	if len(signal.Series) != 0 {
-		fmt.Fprintf(&line, "; series=%d", len(signal.Series))
-		duplicates := 0
-		for _, series := range signal.Series {
-			duplicates += series.DuplicateObservations
-		}
-		if duplicates > 0 {
-			fmt.Fprintf(&line, "; duplicate timestamp observations=%d in summarized series (additional samples; some charts require aggregation)", duplicates)
-		}
-	}
-	// A multi-series chart is often the actual operational signal (e.g. one
-	// rate per service). The primary value alone is not a representation of the
-	// other series. Keep text-only clients useful while bounding this synopsis;
-	// complete identities and samples remain in structuredContent.
-	if len(signal.Series) > 1 {
-		appendDashboardSeriesText(&line, signal.Series, unit)
-	}
-	if signal.SeriesTruncated {
-		line.WriteString("; series preview truncated")
-	}
+	appendDashboardSignalMetadata(&line, signal)
+	appendDashboardPrimaryText(&line, signal, unit)
+	appendDashboardSignalSeries(&line, signal, unit)
 	if signal.Traces != nil {
 		fmt.Fprintf(&line, "; returned traces=%d (bounded sample)", signal.Traces.Returned)
 		if signal.Traces.ExamplesTruncated || signal.Traces.MetadataTruncated {
@@ -441,34 +422,91 @@ func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWid
 		appendDashboardTraceText(&line, signal.Traces)
 	}
 	appendDashboardRecordText(&line, signal.Records, signal.ProviderTruncated)
+	appendDashboardTruncationText(&line, signal)
+	return line.String()
+}
+
+func appendDashboardTruncationText(line *strings.Builder, signal *dashboardTextSignal) {
 	if signal.Records == nil && signal.ProviderTruncated {
 		line.WriteString("; partial source response")
 	}
-	recordsExplainTruncation := signal.Records != nil && (signal.Records.RowsTruncated || signal.Records.MetadataTruncated || signal.Records.ColumnsOmitted > 0)
-	tracesExplainTruncation := signal.Traces != nil && (signal.Traces.ExamplesTruncated || signal.Traces.MetadataTruncated)
+	recordsExplainTruncation := dashboardRecordsTruncated(signal.Records)
+	tracesExplainTruncation := dashboardTracesTruncated(signal.Traces)
 	if signal.Truncated && !signal.ProviderTruncated && !signal.SeriesTruncated && !recordsExplainTruncation && !tracesExplainTruncation {
 		line.WriteString("; bounded signal truncated")
 	}
-	return line.String()
+}
+
+func dashboardRecordsTruncated(records *dashboardTextRecords) bool {
+	return records != nil && (records.RowsTruncated || records.MetadataTruncated || records.ColumnsOmitted > 0)
+}
+
+func dashboardTracesTruncated(traces *dashboardTextTraces) bool {
+	return traces != nil && (traces.ExamplesTruncated || traces.MetadataTruncated)
+}
+
+func appendDashboardPrimaryText(line *strings.Builder, signal *dashboardTextSignal, unit string) {
+	if signal.PrimarySeries == nil {
+		return
+	}
+	for index := range signal.Series {
+		series := &signal.Series[index]
+		if series.Index != *signal.PrimarySeries || series.Last == nil {
+			continue
+		}
+		fmt.Fprintf(line, "; latest valid=%s %s at %s ms", strconv.FormatFloat(series.Last.Value, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)), strconv.FormatFloat(series.Last.Timestamp, 'f', -1, 64))
+		if series.Mean != nil {
+			fmt.Fprintf(line, "; sample mean=%s %s", strconv.FormatFloat(*series.Mean, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)))
+		}
+		if series.TailMissing {
+			line.WriteString("; latest observation missing")
+		}
+		break
+	}
+}
+
+func appendDashboardSignalMetadata(line *strings.Builder, signal *dashboardTextSignal) {
+	if signal.Kind != "" {
+		fmt.Fprintf(line, "; kind=%s", strconv.Quote(shortDashboardText(signal.Kind, 24)))
+	}
+	if signal.ProviderID != "" {
+		fmt.Fprintf(line, "; provider=%s", strconv.Quote(shortDashboardText(signal.ProviderID, 128)))
+	}
+	if signal.SeriesReturned != nil && signal.SeriesOmitted != nil {
+		fmt.Fprintf(line, "; returned series=%d (bounded response), omitted summaries=%d", *signal.SeriesReturned, *signal.SeriesOmitted)
+	}
+	if signal.Error != nil {
+		fmt.Fprintf(line, "; error %s: %s", strconv.Quote(shortDashboardText(signal.Error.Code, 80)), strconv.Quote(shortDashboardText(signal.Error.Message, 240)))
+	}
+}
+
+func appendDashboardSignalSeries(line *strings.Builder, signal *dashboardTextSignal, unit string) {
+	if len(signal.Series) != 0 {
+		fmt.Fprintf(line, "; series=%d", len(signal.Series))
+		duplicates := 0
+		for _, series := range signal.Series {
+			duplicates += series.DuplicateObservations
+		}
+		if duplicates > 0 {
+			fmt.Fprintf(line, "; duplicate timestamp observations=%d in summarized series (additional samples; some charts require aggregation)", duplicates)
+		}
+	}
+	// A multi-series chart is often the actual operational signal (e.g. one
+	// rate per service). The primary value alone is not a representation of the
+	// other series. Keep text-only clients useful while bounding this synopsis;
+	// complete identities and samples remain in structuredContent.
+	if len(signal.Series) > 1 {
+		appendDashboardSeriesText(line, signal.Series, unit)
+	}
+	if signal.SeriesTruncated {
+		line.WriteString("; series preview truncated")
+	}
 }
 
 // Describe only returned trace samples, never total traffic. Keep this text
 // independently bounded so a verbose backend cannot hide later signals.
 func appendDashboardTraceText(line *strings.Builder, traces *dashboardTextTraces) {
-	if len(traces.StatusCounts) > 0 {
-		keys := make([]string, 0, len(traces.StatusCounts))
-		for key := range traces.StatusCounts {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		line.WriteString("; sample status counts:")
-		for _, key := range keys[:min(len(keys), 4)] {
-			fmt.Fprintf(line, " %s=%d", strconv.Quote(shortDashboardText(key, 32)), traces.StatusCounts[key])
-		}
-		if len(keys) > 4 {
-			fmt.Fprintf(line, " (%d statuses omitted; see structuredContent)", len(keys)-4)
-		}
-	}
+	appendDashboardTraceCounts(line, traces.StatusCounts)
 	var details strings.Builder
 	shown := 0
 	for _, example := range traces.Examples {
@@ -506,44 +544,34 @@ func appendDashboardTraceText(line *strings.Builder, traces *dashboardTextTraces
 	}
 }
 
+func appendDashboardTraceCounts(line *strings.Builder, counts map[string]int) {
+	if len(counts) > 0 {
+		keys := make([]string, 0, len(counts))
+		for key := range counts {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		line.WriteString("; sample status counts:")
+		for _, key := range keys[:min(len(keys), 4)] {
+			fmt.Fprintf(line, " %s=%d", strconv.Quote(shortDashboardText(key, 32)), counts[key])
+		}
+		if len(keys) > 4 {
+			fmt.Fprintf(line, " (%d statuses omitted; see structuredContent)", len(keys)-4)
+		}
+	}
+}
+
 const dashboardSeriesTextBytes = 1000
 
 func appendDashboardSeriesText(line *strings.Builder, entries []dashboardTextSeries, unit string) {
 	var synopsis strings.Builder
 	shown := 0
-	for _, entry := range entries {
-		var item strings.Builder
-		fmt.Fprintf(&item, " [#%d", entry.Index)
-		if entry.Name != "" && entry.Name != canonicalDashboardSeriesName(entry.Labels) {
-			fmt.Fprintf(&item, " name=%s", strconv.Quote(shortDashboardText(entry.Name, 64)))
-		}
-		keys := make([]string, 0, len(entry.Labels))
-		for key := range entry.Labels {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys[:min(len(keys), 3)] {
-			fmt.Fprintf(&item, " %s=%s", strconv.Quote(shortDashboardText(key, 40)), strconv.Quote(shortDashboardText(entry.Labels[key], 48)))
-		}
-		if len(keys) > 3 {
-			fmt.Fprintf(&item, " +%d labels", len(keys)-3)
-		}
-		if entry.Last == nil {
-			item.WriteString("; no valid observation")
-		} else {
-			fmt.Fprintf(&item, "; last valid=%s %s at %s ms", strconv.FormatFloat(entry.Last.Value, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)), strconv.FormatFloat(entry.Last.Timestamp, 'f', -1, 64))
-		}
-		if entry.Mean != nil {
-			fmt.Fprintf(&item, "; sample mean=%s %s", strconv.FormatFloat(*entry.Mean, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)))
-		}
-		if entry.TailMissing {
-			item.WriteString("; latest observation missing")
-		}
-		item.WriteByte(']')
-		if synopsis.Len()+item.Len() > dashboardSeriesTextBytes {
+	for index := range entries {
+		item := dashboardSeriesItemText(&entries[index], unit)
+		if synopsis.Len()+len(item) > dashboardSeriesTextBytes {
 			break
 		}
-		synopsis.WriteString(item.String())
+		synopsis.WriteString(item)
 		shown++
 	}
 	line.WriteString("; series details:")
@@ -551,6 +579,38 @@ func appendDashboardSeriesText(line *strings.Builder, entries []dashboardTextSer
 	if shown < len(entries) {
 		fmt.Fprintf(line, " (%d series details omitted; see structuredContent)", len(entries)-shown)
 	}
+}
+
+func dashboardSeriesItemText(entry *dashboardTextSeries, unit string) string {
+	var item strings.Builder
+	fmt.Fprintf(&item, " [#%d", entry.Index)
+	if entry.Name != "" && entry.Name != canonicalDashboardSeriesName(entry.Labels) {
+		fmt.Fprintf(&item, " name=%s", strconv.Quote(shortDashboardText(entry.Name, 64)))
+	}
+	keys := make([]string, 0, len(entry.Labels))
+	for key := range entry.Labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys[:min(len(keys), 3)] {
+		fmt.Fprintf(&item, " %s=%s", strconv.Quote(shortDashboardText(key, 40)), strconv.Quote(shortDashboardText(entry.Labels[key], 48)))
+	}
+	if len(keys) > 3 {
+		fmt.Fprintf(&item, " +%d labels", len(keys)-3)
+	}
+	if entry.Last == nil {
+		item.WriteString("; no valid observation")
+	} else {
+		fmt.Fprintf(&item, "; last valid=%s %s at %s ms", strconv.FormatFloat(entry.Last.Value, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)), strconv.FormatFloat(entry.Last.Timestamp, 'f', -1, 64))
+	}
+	if entry.Mean != nil {
+		fmt.Fprintf(&item, "; sample mean=%s %s", strconv.FormatFloat(*entry.Mean, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)))
+	}
+	if entry.TailMissing {
+		item.WriteString("; latest observation missing")
+	}
+	item.WriteByte(']')
+	return item.String()
 }
 
 // Prometheus-generated names repeat their labels. Omit only an exact match;

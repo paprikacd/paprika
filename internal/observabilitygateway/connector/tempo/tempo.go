@@ -62,9 +62,31 @@ func (Tempo) Query(ctx context.Context, req connector.QueryRequest) (*connector.
 		return nil, fmt.Errorf("tempo: %w", err)
 	}
 
-	var path string
-	var params url.Values
-	searchLimit := 0
+	path, params, searchLimit, reason := queryTarget(&req)
+	if reason != "" {
+		return unsupported(reason)
+	}
+
+	data, err := httphelp.Get(ctx, cfg, path, params, req.Credentials)
+	// Tempo installations can enforce a lower max_result_limit and reject
+	// the extra observation. Fall back to the requested limit on a 400 only;
+	// if it fills the page we cannot establish that the result is complete.
+	fallback := searchLimit > 0 && err != nil && err.Error() == "backend returned status 400"
+	if fallback {
+		params.Set("limit", strconv.Itoa(searchLimit))
+		data, err = httphelp.Get(ctx, cfg, path, params, req.Credentials)
+	}
+	if err != nil {
+		return queryError(err), nil
+	}
+	if searchLimit > 0 {
+		data = boundSearchResponse(data, searchLimit, fallback)
+	}
+	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
+}
+
+// queryTarget preserves direct trace precedence and search bounds in seconds.
+func queryTarget(req *connector.QueryRequest) (path string, params url.Values, searchLimit int, reason string) {
 	switch {
 	case req.TraceID != "":
 		path = pathTraceByID + "/" + url.PathEscape(req.TraceID)
@@ -85,25 +107,10 @@ func (Tempo) Query(ctx context.Context, req connector.QueryRequest) (*connector.
 			params.Set("end", strconv.FormatInt(req.Range.End.Unix(), 10))
 		}
 	default:
-		return unsupported("a trace ID or search query is required")
+		return "", nil, 0, "a trace ID or search query is required"
 	}
 
-	data, err := httphelp.Get(ctx, cfg, path, params, req.Credentials)
-	// Tempo installations can enforce a lower max_result_limit and reject
-	// the extra observation. Fall back to the requested limit on a 400 only;
-	// if it fills the page we cannot establish that the result is complete.
-	fallback := searchLimit > 0 && err != nil && err.Error() == "backend returned status 400"
-	if fallback {
-		params.Set("limit", strconv.Itoa(searchLimit))
-		data, err = httphelp.Get(ctx, cfg, path, params, req.Credentials)
-	}
-	if err != nil {
-		return queryError(err), nil
-	}
-	if searchLimit > 0 {
-		data = boundSearchResponse(data, searchLimit, fallback)
-	}
-	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
+	return path, params, searchLimit, ""
 }
 
 // boundSearchResponse preserves Tempo's other response fields and the raw

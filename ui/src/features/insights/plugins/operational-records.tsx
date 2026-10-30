@@ -4,7 +4,7 @@ import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, 
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { GammaButton } from "../gamma/button"
 import { GammaInput } from "../gamma/input"
-import { EmptyState, ObservationDetails, formatMetric, thresholdForValue } from "../chart-renderers"
+import { EmptyState, formatMetric, thresholdForValue } from "../chart-renderers"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps, type WidgetPlugin } from "../widget-registry"
 import type { DrilldownContext } from "../drilldown"
 import type { QueryResult } from "../schema"
@@ -13,6 +13,8 @@ import {
   connectionMapConfig, incidentCalendarConfig, pipelineTopologyConfig, statusTone,
 } from "./operational-records-data"
 import styles from "./operational-records.module.css"
+import { ObservationDetails } from "../observation-tooltip"
+import { TooltipDetail, TooltipFact } from "../tooltip-content"
 import { worldLandPath } from "./world-land"
 
 const metric = (value: number | null, unit: string, decimals?: number) => value === null ? "No observed value" : formatMetric(value, unit === "percent" ? "%" : unit, false, decimals)
@@ -30,10 +32,10 @@ function Inspect({label, context, details, children, className, props, selectOnF
 }
 
 function Detail({title, children}: {title: string; children: ReactNode}) {
-  return <div className={styles.details}><strong>{title}</strong>{children}</div>
+  return <TooltipDetail title={title}>{children}</TooltipDetail>
 }
 function Fact({label, children}: {label: string; children: ReactNode}) {
-  return <div className={styles.fact}><span>{label}</span><b>{children}</b></div>
+  return <TooltipFact label={label}>{children}</TooltipFact>
 }
 function Status({value}: {value: string}) {
   return value ? <span className={styles.status} data-tone={statusTone(value)}><i aria-hidden="true"/>{value}</span> : <span className={styles.muted}>Status not supplied</span>

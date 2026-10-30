@@ -255,7 +255,7 @@ func observeTime(seconds float64) string {
 	return time.Unix(whole, int64((seconds-float64(whole))*1e9)).UTC().Format(time.RFC3339Nano)
 }
 
-func (p *observeProvider) query(ctx context.Context, q Query) ([]byte, error) {
+func (p *observeProvider) query(ctx context.Context, q *Query) ([]byte, error) {
 	input := map[string]any{"provider": p.reference, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
 	switch q.Kind {
 	case "metrics":

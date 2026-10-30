@@ -9,6 +9,20 @@ const widget: Widget={id:"distribution",title:"Service state",type:"plugin",plug
 const series=(name:string,values:(number|null)[]):NonNullable<QueryResult["series"]>[number]=>({name,labels:{service:name},points:values.map((value,index)=>({timestamp:Date.UTC(2026,9,27,0,index),value}))})
 
 describe("metric distributions",()=>{
+  it("exposes history marks through named button semantics rather than native title tooltips",()=>{
+    const {container}=render(<StatusHistory widget={widget} result={{series:[series("api",[2.125])]}} />)
+    const mark=screen.getByRole("button",{name:/api .*2.13/})
+    expect(mark).toHaveAttribute("data-history-key","0-0")
+    expect(mark).not.toHaveAttribute("title")
+    expect(container.querySelector('button[title]')).toBeNull()
+    fireEvent.focus(mark)
+    fireEvent.click(mark)
+    expect(mark).toHaveAttribute("aria-pressed","true")
+    fireEvent.click(mark)
+    expect(mark).not.toHaveAttribute("aria-pressed")
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+  })
+
   it("shows configured service labels and a shared UTC time scale across all lanes",()=>{
     const first=series("up{service=api}",[1,2]), second=series("up{service=worker}",[1,2])
     first.labels.service="api";second.labels.service="worker"
@@ -47,7 +61,7 @@ describe("metric distributions",()=>{
     expect(tip.querySelector('[data-metric-value="2.5"]')).toHaveTextContent("2.50")
     expect(tip.querySelector("time")).toHaveAttribute("datetime",new Date(Date.UTC(2026,9,27,0,1)).toISOString())
     expect(tip.querySelectorAll("time")).toHaveLength(1)
-    expect(tip.querySelector('[data-metric-value="2.5"]')!.compareDocumentPosition(tip.querySelector("time")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(tip.querySelector("time")!.compareDocumentPosition(tip.querySelector('[data-metric-value="2.5"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tip.querySelector("time")!.compareDocumentPosition(tip.querySelector("dl")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tip).toHaveTextContent("Share of positive observations: 25.00%")
     expect(select).not.toHaveBeenCalled()

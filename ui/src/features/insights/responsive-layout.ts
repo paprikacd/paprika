@@ -7,9 +7,39 @@ export function canvasMode(width: number): CanvasMode {
   return width >= 960 ? "wide" : width >= 600 ? "compact" : "stacked"
 }
 
+/** Only ordinary short statistics use intrinsic reading height on phones.
+ * Extra result series and freshness notices expand naturally; richer authored
+ * presentations retain their original space. */
+export function intrinsicStat(widget: Widget): boolean {
+  return widget.type === "stat" && widget.layout.h <= 2 && !widget.description &&
+    !widget.options?.showStatBar &&
+    !widget.drilldowns?.length && !widget.selectionBindings?.length
+}
+
 /** Responsive views are projections of the saved layout, never document edits. */
-export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode): Layout {
+export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number): Layout {
   const ordered = [...widgets].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
+  // Fit a contiguous metric group into balanced rows when every card has
+  // at least ~270px. Do not leave one metric stranded after a three-up row.
+  // This is measured canvas width, not viewport width or saved geometry.
+  const metricWidths = new Map<string, number>()
+  if (mode === "compact" && width !== undefined && width >= 840) {
+    for (let start = 0; start < ordered.length;) {
+      if (ordered[start].type !== "stat") { start++; continue }
+      let end = start
+      while (end < ordered.length && ordered[end].type === "stat") end++
+      let remaining = end - start
+      let rows = Math.ceil(remaining / 3)
+      let cursor = start
+      while (rows > 0) {
+        const columns = Math.ceil(remaining / rows)
+        for (let column = 0; column < columns; column++) metricWidths.set(ordered[cursor++].id, 12 / columns)
+        remaining -= columns
+        rows--
+      }
+      start = end
+    }
+  }
   let x = 0
   let y = 0
   let rowHeight = 0
@@ -17,7 +47,7 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode): Layo
     let position = { ...widget.layout }
     if (mode !== "wide") {
       const small = widget.type === "stat" || (widget.type === "plugin" && widget.layout.w <= 4)
-      const w = mode === "compact" && small ? 6 : 12
+      const w = metricWidths.get(widget.id) ?? (mode === "compact" && small ? 6 : 12)
       const heatmapText = widget.type === "heatmap" &&
         (widget.options?.showLabels !== false || widget.options?.showValues !== false)
       // On narrow canvases a statistics table sits below the plot. Reserve a
@@ -34,7 +64,7 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode): Layo
           typeof style === "object" && style !== null && "display" in style && style.display === "sparkline")
       const minimumHeight = widget.type === "stat" ? mode === "stacked" ? 2 : 1 : heatmapText ? mode === "compact" ? 5 : 6 : statisticsLegend || sparklineTable ? 5 : 4
       const h = Math.max(minimumHeight, widget.layout.h)
-      if (x + w > 12) {
+      if (x + w > 12 || (metricWidths.has(widget.id) && x > 0 && x % w !== 0)) {
         y += rowHeight
         x = 0
         rowHeight = 0
@@ -50,8 +80,8 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode): Layo
 /** A viewing-only projection for dense operational boards. Horizontal
  * placement and reading order stay intact; earlier overlapping columns always
  * finish before later rows. Saved layouts and the editor are never mutated. */
-export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode): Layout {
-  const standard = canvasLayout(widgets, mode)
+export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, referenceCompact = false): Layout {
+  const standard = canvasLayout(widgets, mode, width)
   if (mode !== "wide") return standard
   const byId = new Map(widgets.map(widget => [widget.id, widget]))
   const heightFor = (item: Layout[number]) => {
@@ -97,6 +127,13 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode):
     (widget.type === "plugin" && ["stacked-timeseries", "directional-traffic"].includes(widget.pluginId ?? ""))
   const fineHeight = (item: Layout[number]) => {
     const widget = byId.get(item.i)!
+    // Fine-pointer dark reference view has 24px calendar targets and lanes.
+    // Reserve a complete six-week month, but never compress multi-month views
+    // or long state inventories using this bounded one-month/six-lane rule.
+    if (referenceCompact && widget.type === "plugin") {
+      if (widget.pluginId === "incident-calendar" && widget.config?.months === 1) return 9
+      if (widget.pluginId === "status-history" && typeof widget.config?.maxSeries === "number" && widget.config.maxSeries <= 6) return 8
+    }
     const tall = widget.type === "plugin" && (["incident-calendar", "uptime-calendar", "status-history"].includes(widget.pluginId ?? "") ||
       (widget.pluginId === "record-table" && typeof widget.config?.pageSize === "number" && widget.config.pageSize > 7))
     const calendar = widget.type === "plugin" && ["incident-calendar", "uptime-calendar"].includes(widget.pluginId ?? "")

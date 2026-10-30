@@ -63,6 +63,39 @@ export const widgetLabels = {
   plugin: "Plugin",
 };
 
+function tooltipPresentation(options?: WidgetOptions): Partial<WidgetOptions> {
+  return {
+    ...(options?.tooltipTitle !== undefined ? { tooltipTitle: options.tooltipTitle } : {}),
+    ...(options?.tooltipValueLabel !== undefined ? { tooltipValueLabel: options.tooltipValueLabel } : {}),
+    ...(options?.tooltipShowUnit !== undefined ? { tooltipShowUnit: options.tooltipShowUnit } : {}),
+    ...(options?.tooltipDecimals !== undefined ? { tooltipDecimals: options.tooltipDecimals } : {}),
+  };
+}
+
+function TooltipPresentationEditor({ options, onChange }: {
+  options: WidgetOptions;
+  onChange: (options: Partial<WidgetOptions>) => void;
+}) {
+  return <fieldset className={styles.thresholds}>
+    <legend>Reading presentation</legend>
+    <p className={styles.hint}>Friendly text for the reading. Original series identity, unit and sample values remain available in source details.</p>
+    <label className={styles.field}>Tooltip heading
+      <GammaInput value={options.tooltipTitle ?? ""} maxLength={120} placeholder="Widget title"
+        onChange={(event) => onChange({ tooltipTitle: event.target.value || undefined })} />
+    </label>
+    <label className={styles.field}>Tooltip value label
+      <GammaInput value={options.tooltipValueLabel ?? ""} maxLength={80} placeholder="Optional caption"
+        onChange={(event) => onChange({ tooltipValueLabel: event.target.value || undefined })} />
+    </label>
+    <label className={styles.field}>Tooltip decimal places
+      <GammaInput type="number" min={0} max={8} step={1} value={options.tooltipDecimals ?? ""} placeholder="Use widget precision"
+        onChange={(event) => onChange({ tooltipDecimals: event.target.value === "" ? undefined : Number(event.target.value) })} />
+    </label>
+    <GammaSwitch label="Show unit in tooltip reading" checked={options.tooltipShowUnit !== false}
+      onChange={(tooltipShowUnit) => onChange({ tooltipShowUnit })} />
+  </fieldset>;
+}
+
 function StyleEditor({
   widget,
   onChange,
@@ -377,6 +410,9 @@ function StyleEditor({
           onChange={(showTooltip) => update({ showTooltip })}
         />
       )}
+      {hasStyleControl("tooltips") && !supportsTooltipView(widget.type, widget.pluginId) && options.showTooltip !== false && (
+        <TooltipPresentationEditor options={options} onChange={update} />
+      )}
       {(["heatmap", "stat", "bar", "timeseries"].includes(widget.type) || gauge || ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") || (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds")) && (
         <fieldset className={styles.thresholds}>
           <legend>Value thresholds</legend>
@@ -489,6 +525,7 @@ function StyleEditor({
             ...widget,
             options: {
               ...getWidgetDefinition(widget)?.defaultOptions,
+              ...tooltipPresentation(options),
               ...(options.tooltipView
                 ? { tooltipView: options.tooltipView }
                 : {}),
@@ -767,6 +804,7 @@ export function WidgetEditor({
       next.options = definition.defaultOptions
         ? {
             ...definition.defaultOptions,
+            ...tooltipPresentation(draft.options),
             ...(draft.options?.tooltipView
               ? { tooltipView: draft.options.tooltipView, ...(draft.options.showTooltip !== undefined ? { showTooltip: draft.options.showTooltip } : {}) }
               : {}),
@@ -1089,6 +1127,7 @@ export function WidgetEditor({
                         </p>
                       ) : (
                         <>
+                        <TooltipPresentationEditor options={draft.options ?? {}} onChange={(options) => setDraft({ ...draft, options: { ...draft.options, ...options } })} />
                         <label className={styles.field}>
                           Details decimal places
                           <GammaInput

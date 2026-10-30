@@ -187,3 +187,13 @@ func TestConnectionQueueHonorsCancellation(t *testing.T) {
 	require.Equal(t, connector.StateError, result.State)
 	require.Less(t, time.Since(started), time.Second)
 }
+
+func TestParameterNormalizationRetainsOrderAndExactDecimal(t *testing.T) {
+	parameters := []any{json.Number("9007199254740993.125"), nil, true, map[string]any{"range": "start"}, "value"}
+	require.NoError(t, validateParameters(parameters))
+	require.Equal(t, []any{"9007199254740993.125", nil, true, rangeParameter("start"), "value"}, parameters)
+	invalid := []any{json.Number("1.25"), map[string]any{"range": "start", "extra": true}, json.Number("2.5")}
+	require.EqualError(t, validateParameters(invalid), `SQL range parameters must be exactly {"range":"start"} or {"range":"end"}`)
+	require.Equal(t, "1.25", invalid[0])
+	require.Equal(t, json.Number("2.5"), invalid[2], "validation stops at the first invalid parameter")
+}

@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react"
 import {
   Activity,
@@ -38,6 +39,7 @@ import {
   Undo2,
   X,
 } from "lucide-react"
+import { GammaActionMenu } from "./gamma/action-menu"
 import { verticalCompactor, type Layout } from "react-grid-layout"
 import type { InsightsClient } from "./client"
 import {
@@ -153,6 +155,23 @@ export interface InsightsAppProps {
   onBack?: () => void
 }
 
+// Desktop compact chrome is a view preference, independent of measured canvas
+// width so expanding navigation cannot repeatedly toggle the rail.
+const compactDesktopQuery = "(min-width: 1024px)";
+function subscribeCompactDesktop(listener: () => void) {
+  const media = window.matchMedia(compactDesktopQuery);
+  media.addEventListener("change", listener);
+  return () => media.removeEventListener("change", listener);
+}
+const compactDesktopSnapshot = () => window.matchMedia(compactDesktopQuery).matches;
+const compactDesktopServerSnapshot = () => false;
+function subscribeFinePointer(listener: () => void) {
+  const media = window.matchMedia("(pointer: fine)");
+  media.addEventListener("change", listener);
+  return () => media.removeEventListener("change", listener);
+}
+const finePointerSnapshot = () => window.matchMedia("(pointer: fine)").matches;
+
 export default function InsightsApp({
   client,
   initialExample = false,
@@ -230,6 +249,10 @@ export default function InsightsApp({
   const { dense, setDense } = useCanvasDensity()
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("wide")
   const [sidebar, setSidebar] = useState(true)
+  const [compactNavigationExpanded, setCompactNavigationExpanded] = useState(false)
+  const compactDesktop = useSyncExternalStore(subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot)
+  const finePointer = useSyncExternalStore(subscribeFinePointer, finePointerSnapshot, compactDesktopServerSnapshot)
+  const compactShell = dense && !editing && resolvedTheme === "dark" && compactDesktop
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const isMobile = useMobileNavigation()
   const drawerOpen = isMobile && mobileSidebar
@@ -1111,7 +1134,7 @@ export default function InsightsApp({
 
   return (
     <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
-    <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme}>
+    <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />
       {drawerOpen && (
         <button type="button"
@@ -1121,11 +1144,12 @@ export default function InsightsApp({
           onClick={() => setMobileSidebar(false)}
         />
       )}
-      {(isMobile ? drawerOpen : sidebar) && (
+      {(isMobile ? drawerOpen : compactShell || sidebar) && (
         <aside
           ref={navigation}
           id="insights-navigation"
-          className={`${styles.sidebar} ${mobileSidebar ? styles.mobileSidebar : ""}`}
+          className={`${styles.sidebar} ${mobileSidebar ? styles.mobileSidebar : ""} ${compactShell && !compactNavigationExpanded ? styles.compactRail : ""}`}
+          data-navigation-expanded={compactShell ? compactNavigationExpanded : undefined}
           aria-label="Insights navigation"
           role={drawerOpen ? "dialog" : undefined}
           aria-modal={drawerOpen ? true : undefined}
@@ -1143,6 +1167,7 @@ export default function InsightsApp({
           )}
           <GammaButton size="sm" variant="quiet"
             className={styles.back}
+            title={compactShell ? "Back to Paprika" : undefined}
             disabled={importingBundle}
             onClick={async () => {
               if (bundleImportActive.current) return
@@ -1164,6 +1189,7 @@ export default function InsightsApp({
           <div className={styles.sideLabel}>WORKSPACE</div>
           <GammaButton size="sm" variant="quiet"
             className={styles.sideLink}
+            title={compactShell ? "Dashboards — expand navigation to choose a dashboard" : undefined}
             aria-current={!exploring ? "page" : undefined}
             disabled={importingBundle}
             onClick={() => {
@@ -1177,12 +1203,14 @@ export default function InsightsApp({
           </GammaButton>
           <GammaButton size="sm" variant="quiet"
             className={styles.sideLink}
+            title={compactShell ? "Explore" : undefined}
             aria-current={exploring ? "page" : undefined}
             disabled={importingBundle}
             onClick={openQueryExplorer}
           ><Search size={16} /> Explore <span>{savedQueries.length}</span></GammaButton>
           <GammaButton size="sm" variant="quiet"
             className={styles.sideLink}
+            title={compactShell ? "Data sources" : undefined}
             disabled={importingBundle}
             onClick={() => {
               setExploring(false)
@@ -1192,7 +1220,7 @@ export default function InsightsApp({
           >
             <Database size={16} /> Data sources <span>{providers.length}</span>
           </GammaButton>
-          <GammaButton size="sm" variant="quiet" className={styles.sideLink} disabled={importingBundle} onClick={() => { setExploring(false); setPanel("examples"); setMobileSidebar(false) }}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
+          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onClick={() => { setExploring(false); setPanel("examples"); setMobileSidebar(false) }}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
           <div className={styles.sideSection}>
             <span className={styles.sideLabel}>YOUR DASHBOARDS</span>
             <GammaButton iconOnly size="sm" variant="quiet"
@@ -1261,10 +1289,11 @@ export default function InsightsApp({
               ref={navigationToggle}
               className={styles.iconButton}
               aria-label="Toggle sidebar"
-              aria-expanded={isMobile ? drawerOpen : sidebar}
+              aria-expanded={isMobile ? drawerOpen : compactShell ? compactNavigationExpanded : sidebar}
               aria-controls="insights-navigation"
               onClick={() => {
                 if (isMobile) setMobileSidebar(!mobileSidebar)
+                else if (compactShell) setCompactNavigationExpanded(!compactNavigationExpanded)
                 else setSidebar(!sidebar)
               }}
             >
@@ -1326,9 +1355,18 @@ export default function InsightsApp({
             ) : (
               <h1>{dashboard.title}</h1>
             )}
-            {dashboard.description && <p>{dashboard.description}</p>}
+            {dashboard.description && (compactShell ? <details className={styles.compactDescription}><summary>Dashboard context</summary><p>{dashboard.description}</p></details> : <p>{dashboard.description}</p>)}
           </div>
           <div className={styles.actions}>
+            {isMobile || compactShell ? <GammaActionMenu
+              label="Dashboard actions"
+              className={styles.iconButton}
+              disabled={importingBundle}
+              items={[
+                { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => setPanel(panel === "manage" ? null : "manage") },
+                { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => { setPanel(panel === "ai" ? null : "ai"); setEditing(true) } },
+              ]}
+            /> : <>
             <GammaButton size="sm" variant="secondary"
               className={styles.secondary}
               aria-label="Manage dashboards"
@@ -1347,6 +1385,7 @@ export default function InsightsApp({
             >
               <Sparkles size={15} /> Build with AI
             </GammaButton>
+            </>}
             {editing ? (
               <GammaButton size="sm" variant="primary" className={styles.primary} disabled={busy || !widgetDraftValid} aria-describedby={!widgetDraftValid ? invalidWidgetSaveHintId : undefined} onClick={save}>
                 {busy ? (
@@ -1358,10 +1397,13 @@ export default function InsightsApp({
               </GammaButton>
             ) : (
               <GammaButton size="sm" variant="primary"
+                iconOnly={compactShell}
+                aria-label={compactShell ? "Edit dashboard" : undefined}
+                title={compactShell ? "Edit dashboard" : undefined}
                 className={styles.primary}
                 onClick={() => setEditing(true)}
               >
-                <Pencil size={14} /> Edit dashboard
+                <Pencil size={14} />{!compactShell && " Edit dashboard"}
               </GammaButton>
             )}
           </div>
@@ -1383,17 +1425,20 @@ export default function InsightsApp({
             </span>
             <GammaButton size="sm" variant="quiet"
               className={panel === "source" ? styles.activeTool : ""}
+              iconOnly={compactShell} aria-label={compactShell ? "Code" : undefined} title={compactShell ? "Dashboard as code" : undefined}
               disabled={importingBundle}
               onClick={() => setPanel(panel === "source" ? null : "source")}
             >
-              <Braces size={14} /> Code
+              <Braces size={14} />{!compactShell && " Code"}
             </GammaButton>
+            {canvasMode === "wide" && <>
             <span className={styles.divider} />
-            <GammaButton size="sm" variant="quiet" aria-pressed={dense} disabled={editing || canvasMode !== "wide"}
+            <GammaButton size="sm" variant="quiet" iconOnly={compactShell} aria-label={compactShell ? "Compact view" : undefined} aria-pressed={dense} disabled={editing || canvasMode !== "wide"}
               title={editing ? "Compact view is available when previewing" : canvasMode !== "wide" ? "Compact view is available when the dashboard canvas is wider" : "Use a denser wide-screen layout without changing the saved dashboard"}
               className={dense && !editing ? styles.activeTool : ""} onClick={() => setDense(!dense)}>
-              <PanelTop size={14} /> Compact view
+              <PanelTop size={14} />{!compactShell && " Compact view"}
             </GammaButton>
+            </>}
             <span className={styles.widgetCount}>
               {dashboard.widgets.length} widgets
             </span>
@@ -1540,6 +1585,7 @@ export default function InsightsApp({
                 end={end}
                 editing={editing}
                 dense={dense}
+                referenceCompact={compactShell && finePointer}
                 onModeChange={setCanvasMode}
                 selected={selected}
                 onSelect={selectWidget}

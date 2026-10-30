@@ -81,14 +81,14 @@ func resolveRangeParameters(parameters []any, bounds connector.TimeRange) error 
 			continue
 		}
 		if !bounds.Start.IsZero() && !bounds.End.IsZero() && bounds.Start.After(bounds.End) {
-			return errors.New("SQL range parameters require an ordered query range.")
+			return errors.New("sql range parameters require an ordered query range")
 		}
 		value := bounds.Start
 		if reference == "end" {
 			value = bounds.End
 		}
 		if value.IsZero() {
-			return errors.New("SQL range parameter requires the corresponding query range boundary.")
+			return errors.New("sql range parameter requires the corresponding query range boundary")
 		}
 		parameters[index] = value.UTC()
 	}
