@@ -41,7 +41,11 @@ describe("responsive canvas projection", () => {
     const a = { ...exampleDashboard.widgets[3], id: "chart", type: "timeseries" as const, layout: { x: 0, y: 0, w: 6, h: 5 } }
     const b = { ...exampleDashboard.widgets[3], id: "map", type: "plugin" as const, pluginId: "connection-map", dataKind: "records" as const, layout: { x: 6, y: 0, w: 6, h: 5 } }
     const layout = denseCanvasLayout([a, b], "wide")
-    expect(layout.map(item => [item.y, item.h])).toEqual([[0, 9], [0, 9]])
+    // The dense plot floor is eight fine tracks; neighboring panels inherit
+    // that reading room even when their own content can use fewer tracks.
+    expect(layout.map(item => [item.y, item.h])).toEqual([[0, 8], [0, 8]])
+    expect(denseCanvasLayout([b, a], "wide")).toEqual(layout)
+    expect(canvasLayout([a, b], "wide").map(item => [item.y, item.h])).toEqual([[0, 5], [0, 5]])
   })
 
   it("reserves enough compact tracks for calendars, status lanes and paged tables", () => {
