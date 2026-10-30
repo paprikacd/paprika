@@ -62,8 +62,13 @@ func TestRecordAuthoringSchemaExamples(t *testing.T) {
 	query, err := validateSavedQuery("service-records", json.RawMessage(schemaRecordQueryExample))
 	require.NoError(t, err)
 	require.NoError(t, validateSQLTemplate("postgresql", query.Query))
-	require.Len(t, authoringSchemaExamples("widget"), 6)
-	require.Len(t, authoringSchemaExamples("saved_query"), 2)
+	ranged, err := validateSavedQuery("service-history", json.RawMessage(schemaRangeRecordQueryExample))
+	require.NoError(t, err)
+	require.NoError(t, validateSQLTemplate("postgresql", ranged.Query))
+	require.Contains(t, ranged.Query, `{"range":"start"}`)
+	require.Contains(t, ranged.Query, `{"range":"end"}`)
+	require.Len(t, authoringSchemaExamples("widget"), 8)
+	require.Len(t, authoringSchemaExamples("saved_query"), 3)
 }
 
 func TestAuthoringSchemaDiscoversRichChartContracts(t *testing.T) {
@@ -75,17 +80,52 @@ func TestAuthoringSchemaDiscoversRichChartContracts(t *testing.T) {
 			var response authoringSchemaResponse
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 			notes := strings.Join(response.Notes, "\n")
-			for _, plugin := range []string{"stacked-timeseries", "directional-traffic", "distribution-heatmap", "threshold-gauge", "connection-map", "pipeline-topology", "incident-calendar"} {
+			for _, plugin := range []string{"stacked-timeseries", "directional-traffic", "distribution-heatmap", "threshold-gauge", "connection-map", "geo-heatmap", "pipeline-topology", "incident-calendar", "status-grid", "uptime-calendar", "uptime-timeline", "small-multiples"} {
 				require.Contains(t, notes, plugin, "MCP authors must discover each installed rich plugin without inspecting UI code")
 			}
 			for _, contract := range []string{"legendDisplay?:compact|table", "legendPosition?:bottom|right", "seriesMode?:first|all", "columns?:1..12", "orientation?:horizontal|vertical", "maxSeries?:1..12", "maxColumns?:8..120", "density?:compact|comfortable", "showSearch?:boolean", "arithmetic mean", "query-side rates", "nonnegative", "numeric degrees", "Cycles remain explicit", "Days without observations stay unknown"} {
 				require.Contains(t, notes, contract)
 			}
-			require.Contains(t, notes, "cellStyles?:[{column:string,display:bar|color-text|color-background")
+			require.Contains(t, notes, "cellStyles?:[{column:string,display:bar|bar-segments|color-text|color-background")
+			require.Contains(t, notes, "sparkline string contains an ordered JSON array")
 			require.Contains(t, notes, "filtering never rescales bars")
+			require.Contains(t, notes, "options.seriesColors", "AI authors must discover how to style a time-series by exact metric labels")
+			for _, contract := range []string{"display=status-badge", "barColorMode=gradient|value", "unmapped and missing values remain neutral", "colorField?:string,colorMin?:number,colorMax?:number", "not underlying scrape or ingestion health", "options.staleAfterSeconds", "showStatus?:boolean", "showStatus defaults to false", "missing observation is Unknown"} {
+				require.Contains(t, notes, contract)
+			}
+			require.Contains(t, notes, "colorMode?:intensity|thresholds", "Incident calendar coloring must be discoverable")
+			require.Contains(t, notes, "sparkline cellStyle may set thresholdColumn", "Row-based sparkline coloring must be discoverable")
+			require.Contains(t, notes, "config.showRowNumbers", "Displayed row numbering must be discoverable")
+			require.Contains(t, notes, "colorScale?:linear|logarithmic", "Heatmap authors must discover logarithmic density coloring")
+			require.Contains(t, notes, "keeping zero separate", "Logarithmic heatmap coloring must explain observed zero")
+			require.Contains(t, notes, `{"range":"start"}`, "SQL authors must discover request-range parameters")
+			require.Contains(t, notes, "does not automatically filter SQL", "Do not imply that SQL follows dashboard time automatically")
+			require.Contains(t, notes, "options.thresholds color the aggregated daily value", "Describe the threshold input, not individual records")
+			require.Contains(t, string(response.Schema), `"seriesColors"`)
 			require.LessOrEqual(t, w.Body.Len(), maxSchemaResponseBytes)
 		})
 	}
+}
+
+func TestRecordChartAuthoringExamplesCanBeSavedTogether(t *testing.T) {
+	s, _ := testService(t)
+	body, err := json.Marshal(map[string]any{
+		"schemaVersion": 1, "id": "record-chart-overview", "title": "Record chart overview",
+		"timeRange": "1h", "refreshInterval": 0,
+		"widgets": []json.RawMessage{json.RawMessage(schemaStyledTableExample), json.RawMessage(schemaGroupedTreemapExample)},
+	})
+	require.NoError(t, err)
+	require.NoError(t, validateDashboard("record-chart-overview", body))
+	w := request(t, s.Handler(), http.MethodPut, "/api/dashboards/record-chart-overview", body, map[string]string{"If-None-Match": "*"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	etag := w.Header().Get("ETag")
+	require.NotEmpty(t, etag)
+	loaded := request(t, s.Handler(), http.MethodGet, "/api/dashboards/record-chart-overview", nil, nil)
+	require.Equal(t, http.StatusOK, loaded.Code, loaded.Body.String())
+	require.JSONEq(t, string(body), loaded.Body.String())
+	stale := request(t, s.Handler(), http.MethodPut, "/api/dashboards/record-chart-overview", body, map[string]string{"If-Match": `"stale"`})
+	require.Equal(t, http.StatusPreconditionFailed, stale.Code, stale.Body.String())
+	require.Equal(t, etag, loaded.Header().Get("ETag"))
 }
 
 func TestRichMetricAuthoringExamplesCanBeSavedTogether(t *testing.T) {

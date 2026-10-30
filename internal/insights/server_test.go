@@ -237,7 +237,7 @@ func TestPrometheusProviderContractAndSecretIsolation(t *testing.T) {
 
 func TestTempoSearchContract(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/search" || r.URL.Query().Get("q") != "{ resource.service.name = \"api\" }" || r.URL.Query().Get("limit") != "100" || r.URL.Query().Get("start") != "1700000000" {
+		if r.URL.Path != "/api/search" || r.URL.Query().Get("q") != "{ resource.service.name = \"api\" }" || r.URL.Query().Get("limit") != "101" || r.URL.Query().Get("start") != "1700000000" {
 			t.Errorf("unexpected trace request: %s", r.URL.String())
 		}
 		_, _ = io.WriteString(w, `{"traces":[{"traceID":"abc123","rootServiceName":"api","rootTraceName":"GET /orders","startTimeUnixNano":"1700000000123000000","durationMs":42}]}`)

@@ -25,6 +25,7 @@ import type { DrilldownContext } from "./drilldown";
 import { widgetTextColor } from "./appearance";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
+import { GammaButton } from "./gamma/button";
 export {
   downsamplePoints,
   formatMetric,
@@ -36,7 +37,9 @@ export interface WidgetVisualizationProps {
   widget: Widget;
   result?: QueryResult;
   loading?: boolean;
+  deferred?: boolean;
   error?: string | null;
+  onRetry?: () => void;
   onContextChange?: (context: DrilldownContext) => void;
 }
 
@@ -102,7 +105,9 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   widget,
   result,
   loading,
+  deferred,
   error,
+  onRetry,
   onContextChange,
 }: WidgetVisualizationProps) {
   // Registered plugins may arrive after a host loads an optional bundle.
@@ -126,6 +131,13 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       <div className={`${styles.state} ${styles.error}`} role="alert">
         <strong>Query failed</strong>
         <p>{error}</p>
+        {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}
+      </div>
+    );
+  if (deferred && !result)
+    return (
+      <div className={styles.state} role="status" aria-label="Widget waiting to load">
+        <span>Waiting to load…</span>
       </div>
     );
   if (loading && !result)
@@ -146,7 +158,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
           ? !series.length
           : !series.some((entry) => latestPoint(entry))))
   )
-    return <EmptyState />;
+    return <EmptyState partial={!!(result?.truncated || result?.records?.truncated)} />;
   return (
     <div
       className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
@@ -160,24 +172,26 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       }
       aria-busy={!!loading}
     >
-      {result?.truncated && (
+      {(result?.truncated || result?.records?.truncated) && (
         <p className={styles.limitNotice} role="status">
-          Provider result limit reached. Narrow the query to see more.
+          Provider response may be incomplete. Narrow the query or check the data source.
         </p>
       )}
-      <RendererBoundary
-        key={`${definition.id}:${widget.id}`}
-        resetKey={resetKey}
-      >
-        <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
-          <RegisteredRenderer
-            widget={widget}
-            result={result}
-            definition={definition}
-            onContextChange={onContextChange}
-          />
-        </TooltipWidgetDataProvider>
-      </RendererBoundary>
+      <div className={styles.visualizationContent}>
+        <RendererBoundary
+          key={`${definition.id}:${widget.id}`}
+          resetKey={resetKey}
+        >
+          <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
+            <RegisteredRenderer
+              widget={widget}
+              result={result}
+              definition={definition}
+              onContextChange={onContextChange}
+            />
+          </TooltipWidgetDataProvider>
+        </RendererBoundary>
+      </div>
     </div>
   );
 });

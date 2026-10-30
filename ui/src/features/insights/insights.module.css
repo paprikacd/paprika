@@ -303,6 +303,22 @@
   margin: 4px 0 0;
   line-height: 1.4;
 }
+/* Compact mode is a viewing preference, so retain all controls and the
+   description while giving the dashboard more of the viewport. */
+.workspace[data-density="compact"] .pageHeader {
+  padding-top: 10px;
+  padding-bottom: 6px;
+}
+.workspace[data-density="compact"] .heading h1 {
+  font-size: 20px !important;
+}
+.workspace[data-density="compact"] .heading p {
+  margin-top: 1px;
+}
+.workspace[data-density="compact"] .toolbar {
+  padding-top: 4px;
+  padding-bottom: 5px;
+}
 .titleInput {
   background: transparent;
   border-bottom: 1px dashed var(--gamma-border);
@@ -317,6 +333,16 @@
   gap: 8px;
   flex-shrink: 0;
   flex-wrap: wrap;
+}
+.saveBlockedHint {
+  margin: 0 24px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 6px;
+  background: var(--gamma-warning-soft, var(--gamma-surface-2));
+  color: var(--gamma-ink);
+  font-size: 12px;
+  line-height: 1.4;
 }
 .primary,
 .secondary,
@@ -451,6 +477,16 @@
   padding: 16px 24px;
   container: insights-canvas / inline-size;
 }
+.workspace[data-density="compact"] .canvasArea {
+  padding-top: 8px;
+}
+.canvas[data-density="compact"] .tileHeader {
+  min-height: 32px;
+  padding: 8px 12px 3px;
+}
+.canvas[data-density="compact"] .tile:not([data-widget-type="stat"]) .visualization {
+  padding: 3px 12px 8px;
+}
 .canvas {
   min-width: 0;
   /* Keep the previous measured grid width from briefly widening the page while
@@ -503,6 +539,7 @@
 .tile {
   display: flex;
   flex-direction: column;
+  container: insight-tile / inline-size;
   height: 100%;
   overflow: hidden;
   background: var(--gamma-bg);
@@ -580,6 +617,22 @@
 .tile[data-widget-sparkline="true"] .visualization {
   padding: 0;
   --stat-reading-inset: 16px;
+}
+/* A one-column KPI should still leave useful room for its title and value. */
+@container insight-tile (max-width: 110px) {
+  .tile[data-widget-type="stat"] .tileHeader { gap: 3px; padding: 8px 7px 0; }
+  .tile[data-widget-type="stat"] .tileTitle h3 { font-size: 11px; }
+  .tile[data-widget-type="stat"] .visualization { padding-inline: 7px; }
+  .tile[data-widget-sparkline="true"] .visualization { padding: 0; --stat-reading-inset: 7px; }
+  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 2px;
+  }
+  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) .dragHandle { grid-column: 1; grid-row: 1; }
+  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) .tileTitle { grid-column: 1 / -1; grid-row: 2; }
+  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) > button:not([aria-label^="Edit "]) { grid-column: 2; grid-row: 1; justify-self: end; margin: 0; }
+  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) > button[aria-label^="Edit "] { grid-column: 3; grid-row: 1; margin: 0; }
 }
 .canvas :global(.react-grid-item.react-grid-placeholder) {
   background: var(--gamma-surface-2);
@@ -1254,4 +1307,46 @@
     overflow: hidden; clip-path: inset(50%); white-space: nowrap;
   }
   .themeControl > svg { display: none; }
+}
+
+/* Insights is an analytical workspace: use the regular UI face for labels. */
+.root :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--gamma-font-ui);
+  text-wrap: initial;
+}
+.tile[data-stat-icon="true"] { position: relative; }
+.statIcon {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--stat-icon-color, var(--gamma-chart-1));
+  background: color-mix(in srgb, var(--stat-icon-color, var(--gamma-chart-1)) 15%, transparent);
+  pointer-events: none;
+}
+.tile[data-stat-icon="true"] .tileHeader { padding-left: 50px; }
+.tile[data-stat-icon="true"] .visualization { padding-left: 50px; }
+.tile[data-stat-icon="true"][data-widget-sparkline="true"] .visualization {
+  padding-left: 0;
+  --stat-reading-inset: 50px;
+}
+.tile[data-sparkline-placement="side"][data-widget-sparkline="true"] .tileHeader,
+.tile[data-compact-stat="true"] .tileHeader {
+  padding-top: 8px;
+  min-height: 27px;
+}
+/* A one-row KPI needs its remaining height for the reading, even when no
+   sparkline is present. Preserve inline padding and icon alignment. */
+.tile[data-compact-stat="true"] .visualization {
+  padding-block: 0;
+}
+@container insight-tile (max-width: 150px) {
+  .statIcon { display: none; }
+  .tile[data-stat-icon="true"] .tileHeader { padding-left: 7px; }
+  .tile[data-stat-icon="true"] .visualization { padding-left: 7px; }
+  .tile[data-stat-icon="true"][data-widget-sparkline="true"] .visualization { padding-left: 0; --stat-reading-inset: 7px; }
 }

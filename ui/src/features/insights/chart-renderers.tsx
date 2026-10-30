@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -10,12 +11,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useTraceFetcher } from "./trace-waterfall";
+import { TraceDialog } from "./trace-dialog";
+import { TooltipInstructions } from "./tooltip-instructions";
 import { createPortal } from "react-dom";
 import { areaY } from "@tanstack/charts/area";
 import { barY } from "@tanstack/charts/bar";
 import { focusGroupX, focusNearestX } from "@tanstack/charts/focus";
 import { usePlotTooltip } from "./plot-tooltip";
 import { useChartCursor } from "./chart-cursor";
+import { useAnnotationEvents } from "./annotation-events";
+import { TimeWindowLens } from "./time-window-lens";
+import { useDashboardWindow } from "./dashboard-window";
+import { alignPriorPeriod, seriesInWindow, type ObservationWindow } from "./time-window";
+import { compactSeriesLabels } from "./series-display";
+import { useTooltipWidgetData } from "./tooltip-widget-data";
+import { resolveSeriesColor } from "./series-colors";
 import { lineY } from "@tanstack/charts/line";
 import { decorative } from "@tanstack/charts/mark/decorative";
 import { Chart } from "@tanstack/charts/react";
@@ -27,6 +38,7 @@ import { portal } from "@tanstack/charts/tooltip/portal";
 import type { QueryResult, Widget, WidgetOptions, Threshold } from "./schema";
 import styles from "./charts.module.css";
 import configStyles from "./chart-styles.module.css";
+import eventStyles from "./plugins/rich-metrics.module.css";
 import contextStyles from "./widget-context.module.css";
 import type { DrilldownContext } from "./drilldown";
 import { readableTextColor, widgetTextColor } from "./appearance";
@@ -59,6 +71,7 @@ import {
 } from "./widget-presentation";
 
 import { lockBodyScroll } from "./gamma/scroll-lock";
+import { installTooltipPointerTracking, placePointerTooltip, pointerOverAnchor } from "./tooltip-pointer";
 import { GammaButton } from "./gamma/button";
 import { GammaSelect } from "./gamma/select";
 import { inheritGammaTheme } from "./gamma/inherit-theme";
@@ -155,6 +168,22 @@ export function resolveChartDomain(
   return [min, max];
 }
 
+/** Threshold guides participate in autoscaling, but explicit axis bounds win. */
+export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions): [number, number] | undefined {
+  const thresholds = options.thresholds?.filter(threshold => Number.isFinite(threshold.value)) ?? [];
+  if (!thresholds.length) return resolveChartDomain(series, options);
+  let observedMin = Infinity, observedMax = -Infinity;
+  for (const threshold of thresholds) { observedMin = Math.min(observedMin, threshold.value); observedMax = Math.max(observedMax, threshold.value); }
+  for (const entry of series) for (const point of entry.points) if (validTimestamp(point.timestamp) && typeof point.value === "number" && Number.isFinite(point.value)) { observedMin = Math.min(observedMin, point.value); observedMax = Math.max(observedMax, point.value); }
+  const padding = Math.max((observedMax - observedMin) * .05, observedMin === observedMax ? Math.max(1, Math.abs(observedMin) * .1) : 0);
+  let min = options.min ?? observedMin - padding, max = options.max ?? observedMax + padding;
+  if (min >= max) {
+    if (options.min !== undefined && options.max === undefined) max = min + Math.max(1, Math.abs(min) * .1);
+    else if (options.max !== undefined && options.min === undefined) min = max - Math.max(1, Math.abs(max) * .1);
+  }
+  return [min, max];
+}
+
 function configuredTheme(options: WidgetOptions) {
   const textColor = widgetTextColor(options);
   return {
@@ -189,7 +218,7 @@ function usePlotSize() {
     const observer =
       typeof ResizeObserver === "undefined"
         ? undefined
-        : new ResizeObserver(schedule);
+        : new ResizeObserver(measure);
     observer?.observe(element);
     window.addEventListener("resize", schedule);
     return () => {
@@ -208,15 +237,40 @@ export function responsiveChartTicks(width: number, height: number) {
   };
 }
 
+/** Reserve enough space for formatted numeric ticks, including custom precision.
+ * Keep longer units above the plot so they don't repeat on every tick. */
+export function chartYAxisLayout(values: number[], unit: string, decimals?: number, axisLabel?: string) {
+  const separateUnit = unit.length > 3;
+  let min = 0, max = 0;
+  for (const value of values) if (Number.isFinite(value)) {
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+  }
+  const labels = [min, max, min * 1.1, max * 1.1].map(value => formatMetric(value, separateUnit ? "" : unit, true, decimals));
+  const width = Math.max(...labels.map(label => label.length)) * 7 + 12;
+  return { separateUnit, left: Math.max(54, width) + (axisLabel ? 20 : 0) };
+}
+
 function TimeSeriesChart({
   widget,
   series,
+  onContextChange,
 }: {
   widget: Widget;
   series: Series[];
+  onContextChange?: (context: DrilldownContext) => void;
 }) {
   const { ref, width, height } = usePlotSize();
+  const [selection, setSelection] = useState<{ source: Series[]; window: ObservationWindow; previous?: QueryResult }>();
+  // Query/variable changes must never reuse a range selected from another result.
+  const zoom = selection?.source === series ? selection.window : undefined;
+  const visibleSeries = useMemo(() => zoom ? seriesInWindow(series, zoom) : series, [series, zoom]);
+  const previousResult = selection?.previous;
+  const prior = useMemo(() => zoom && previousResult ? alignPriorPeriod(series.slice(0, MAX_SERIES), previousResult.series ?? [], zoom) : [], [series, zoom, previousResult]);
+  const emptyCurrent = !!zoom && !visibleSeries.slice(0, MAX_SERIES).some(entry => latestPoint(entry));
+  const emptyZoom = emptyCurrent && !prior.length;
   const cursor = useChartCursor();
+  const eventData = useAnnotationEvents();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
   const associateDescription = useCallback(
     ({ svg }: { svg: SVGSVGElement }) => {
@@ -228,47 +282,61 @@ function TimeSeriesChart({
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
     !embedded && options.showTooltip !== false;
-  const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
+  const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange);
   const domain = useMemo(
-    () => resolveChartDomain(series.slice(0, MAX_SERIES), options),
-    [series, options],
+    () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options),
+    [visibleSeries, prior, options],
   );
+  const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: resolveSeriesColor(entry.original.labels, options.seriesColors, entry.index === 0 && widget.color ? widget.color : PALETTE[entry.index % PALETTE.length]), points: downsamplePoints(entry.shifted.points) })), [prior, widget.color, options.seriesColors]);
+  const displayLabels = useMemo(() => compactSeriesLabels(visibleSeries.slice(0, MAX_SERIES)), [visibleSeries]);
   const data = useMemo(
     () =>
-      series.slice(0, MAX_SERIES).map((entry, index) => ({
+      visibleSeries.slice(0, MAX_SERIES).map((entry, index) => ({
         name: seriesName(entry, index),
         latest: latestPoint(entry),
-        color:
-          index === 0 && widget.color
-            ? widget.color
-            : PALETTE[index % PALETTE.length],
+        color: resolveSeriesColor(entry.labels, options.seriesColors,
+          index === 0 && widget.color ? widget.color : PALETTE[index % PALETTE.length]),
         points: downsamplePoints(entry.points).map((point) => ({
           ...point,
           series: seriesName(entry, index),
           seriesIndex: index,
         })),
       })),
-    [series, widget.color],
+    [visibleSeries, widget.color, options.seriesColors],
   );
   const timeSpan = useMemo(() => {
-    const bounds = data.flatMap((entry) =>
+    const bounds = [...data, ...previousData].flatMap((entry) =>
       entry.points.length
         ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp]
         : [],
     );
     return bounds.length ? Math.max(...bounds) - Math.min(...bounds) : 0;
-  }, [data]);
+  }, [data, previousData]);
   const cursorBounds = data.flatMap(entry => entry.points.length ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp] : []);
   const cursorStart = Math.min(...cursorBounds), cursorEnd = Math.max(...cursorBounds);
-  const cursorLeft = !showAxis ? 8 : options.yAxisLabel ? 74 : 54;
+  const { left: axisLeft, separateUnit } = chartYAxisLayout([...data, ...previousData].flatMap(entry => entry.points.map(point => point.value ?? 0)).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel);
+  const cursorLeft = !showAxis ? 8 : axisLeft;
   const cursorX = cursor && !embedded && cursor.timestamp >= cursorStart && cursor.timestamp <= cursorEnd && cursorEnd > cursorStart
     ? cursorLeft + (cursor.timestamp - cursorStart) / (cursorEnd - cursorStart) * Math.max(0, width - cursorLeft - 12)
     : undefined;
+  // Match the rendered time domain, including aligned prior-period samples.
+  // Event markers are decorative and never intercept chart pointer input.
+  const eventBounds = [...data, ...previousData].flatMap(entry => entry.points.map(point => point.timestamp).filter(validTimestamp));
+  const eventStart = Math.min(...eventBounds), eventEnd = Math.max(...eventBounds);
+  const eventsInView = widget.annotationSource && !embedded && eventBounds.length ? eventData.events.filter(event => {
+    const at = Date.parse(event.timestamp);
+    return at <= eventEnd && Date.parse(event.endTimestamp ?? event.timestamp) >= eventStart;
+  }) : [];
+  const visibleEvents = eventsInView.slice(0, 20);
+  const eventTop = !showAxis ? 8 : separateUnit ? 18 : height < 130 ? 4 : 10;
+  const eventBottom = !showAxis ? 8 : options.xAxisLabel ? 47 : 29;
 
   const definition = useMemo(
     () =>
       defineChart({
-        marks: data.flatMap((entry, index) => [
+        marks: [
+          ...previousData.map((entry, index) => decorative(lineY(entry.points, { id: `previous-${index}`, x: "timestamp", y: "value", stroke: entry.color, strokeWidth: options.lineWidth ?? 1.8, strokeDasharray: "5 4", strokeOpacity: .7, curve: CURVES[options.curve ?? "linear"] }))),
+          ...data.flatMap((entry, index) => [
           ...(options.display === "area"
             ? [
                 // Fills paint behind observations; only the line owns hit testing.
@@ -301,7 +369,8 @@ function TimeSeriesChart({
                   points[position + 1].value === null),
             ),
           }),
-        ]),
+          ]),
+        ],
         scales: {
           x: {
             scale: scaleLinear,
@@ -345,7 +414,7 @@ function TimeSeriesChart({
                     count: ticks.y,
                     line: false,
                     format: (value: number) =>
-                      formatMetric(value, widget.unit.length > 6 ? "" : widget.unit, true, options.decimals),
+                      formatMetric(value, separateUnit ? "" : widget.unit, true, options.decimals),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -358,10 +427,10 @@ function TimeSeriesChart({
         margin: !showAxis
           ? { top: 8, right: 8, bottom: 8, left: 8 }
           : {
-              top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 10,
+              top: separateUnit ? 18 : height < 130 ? 4 : 10,
               right: 12,
               bottom: options.xAxisLabel ? 47 : 29,
-              left: options.yAxisLabel ? 74 : 54,
+              left: axisLeft,
             },
         clip: true,
         theme: configuredTheme(options),
@@ -388,7 +457,10 @@ function TimeSeriesChart({
       }),
     [
       data,
+      previousData,
       widget.unit,
+      axisLeft,
+      separateUnit,
       options,
       domain,
       ticks.x,
@@ -403,7 +475,7 @@ function TimeSeriesChart({
   );
 
   return (
-    <div className={styles.chart}>
+    <div className={styles.chart} data-prior-overlay={previousData.length || undefined}>
       <div
         className={styles.plot}
         ref={ref}
@@ -417,8 +489,8 @@ function TimeSeriesChart({
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
-        {showAxis && widget.unit.length > 6 && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
-        <Chart
+        {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {emptyZoom ? <div className={styles.state} role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <Chart
           definition={definition}
           height={height}
           width={width}
@@ -429,12 +501,20 @@ function TimeSeriesChart({
           onFocusChange={tooltipEnabled ? plotTooltip.onFocusChange : undefined}
           onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
           ariaDescription={`${data.length} time series.${embedded ? "" : " Use arrow keys to explore individual values."}`}
-        />
+        />}
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
-          style={{ left: cursorX, top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
+          style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
+        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= domain[0] && threshold.value <= domain[1]).map((threshold, index) => <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} style={{ left: cursorLeft, right: !showAxis ? 8 : 12, top: eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom), borderColor: threshold.color, color: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>)}
+        {eventEnd > eventStart && visibleEvents.map((event, index) => {
+          const at = Date.parse(event.timestamp), finish = event.endTimestamp ? Date.parse(event.endTimestamp) : at;
+          const position = (value: number) => cursorLeft + (value - eventStart) / (eventEnd - eventStart) * Math.max(0, width - cursorLeft - (!showAxis ? 8 : 12));
+          return <span key={`${event.timestamp}-${index}`} aria-hidden="true" data-annotation-timestamp={event.timestamp} data-annotation-interval={finish > at ? "true" : undefined} data-severity={event.severity ?? "unclassified"} className={finish > at ? styles.eventRange : styles.eventLine}
+            style={{ left: position(Math.max(at, eventStart)), width: finish > at ? Math.max(0, position(Math.min(finish, eventEnd)) - position(Math.max(at, eventStart))) : undefined, top: eventTop, bottom: eventBottom }} />;
+        })}
       </div>
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
+      {emptyCurrent && previousData.length > 0 && <span role="status" className={styles.notice}>No current observations in this window; the dashed lines show the preceding period.</span>}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series">
           {data.map((entry, index) => (
@@ -449,7 +529,7 @@ function TimeSeriesChart({
                 aria-hidden="true"
                 style={{ background: entry.color }}
               />
-              <span className={styles.legendName}>{entry.name}</span>
+              <span className={styles.legendName}>{displayLabels[index] === entry.name ? entry.name : <><span aria-hidden="true">{displayLabels[index]}</span><span className={styles.srOnly}>{entry.name}</span></>}</span>
               <span
                 className={styles.legendValue}
                 title={options.showTooltip === false ? undefined : entry.latest
@@ -469,8 +549,22 @@ function TimeSeriesChart({
           ))}
         </div>
       )}
-      {!embedded && <ChartDataInspector widget={widget} series={series} />}
+      {previousData.length > 0 && zoom && <div className={styles.priorLegend} role="group" aria-label="Previous period overlay" tabIndex={0}>
+        <span>Previous period · dashed · aligned to selected window</span>
+        {previousData.map(entry => { const last = latestPoint(entry.original); const first = entry.original.points[0]; return <span key={entry.index} data-prior-series={entry.index} data-prior-original-first={first?.timestamp} data-prior-aligned-first={entry.points[0]?.timestamp} title={last ? `Previous sample: ${formatMetricDetails(last.value, widget.unit)} at ${new Date(last.timestamp).toISOString()}` : "No prior sample"}>
+          <i aria-hidden="true" style={{ borderColor: entry.color }} />{seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{new Date(last.timestamp).toLocaleString()}</time></> : "No data"}
+        </span> })}
+        {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}
+      {!embedded && <TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />}
+      {!embedded && previousData.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={previousData.map(entry => entry.original)} buttonText="Inspect prior data" />}
+      {!embedded && <ChartDataInspector widget={widget} series={visibleSeries} />}
+      </div>}
+      {visibleEvents.length > 0 && <details className={eventStyles.annotationEvents} role="group" aria-label="Chart events"><summary>{visibleEvents.length} {visibleEvents.length === 1 ? "event" : "events"} in view</summary><ul>{visibleEvents.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={eventStyles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.timestamp).toISOString()}>{new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(event.timestamp))}</time>{event.endTimestamp && <time dateTime={event.endTimestamp}>to {new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(event.endTimestamp))}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
+      {widget.annotationSource && !embedded && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
+      {widget.annotationSource && !embedded && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
+      {widget.annotationSource && !embedded && eventsInView.length > visibleEvents.length && <p>{eventsInView.length - visibleEvents.length} additional events in view omitted.</p>}
+      {widget.annotationSource && !embedded && eventData.truncated && <p>Event source response is partial.</p>}
       {plotTooltip.panel}
       {series.length > MAX_SERIES && (
         <span className={styles.notice} role="status">
@@ -495,6 +589,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
   const tooltipEnabled =
     !embedded && options.showTooltip !== false;
   const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
+  const displayLabels = useMemo(() => compactSeriesLabels(series.slice(0, MAX_SERIES)), [series]);
   const rows = useMemo(
     () =>
       series.slice(0, MAX_SERIES).flatMap((entry, index) => {
@@ -503,6 +598,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
           ? [
               {
                 name: seriesName(entry, index),
+                displayName: displayLabels[index],
                 seriesIndex: index,
                 label: String(index + 1),
                 value: point.value,
@@ -516,7 +612,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
             ]
           : [];
       }),
-    [series, widget.color, options.thresholds],
+    [series, widget.color, options.thresholds, displayLabels],
   );
   const domain = useMemo(
     () =>
@@ -530,6 +626,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
       ),
     [rows, options],
   );
+  const { left: axisLeft, separateUnit } = chartYAxisLayout(rows.map(row => row.value).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel);
   const definition = useMemo(
     () =>
       defineChart({
@@ -557,7 +654,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
                     line: false,
                     format: (value: string) => {
                       const name =
-                        rows.find((row) => row.label === value)?.name || value;
+                        rows.find((row) => row.label === value)?.displayName || value;
                       const characters = Math.max(
                         4,
                         Math.min(
@@ -599,7 +696,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
                     count: ticks.y,
                     line: false,
                     format: (value: number) =>
-                      formatMetric(value, widget.unit.length > 6 ? "" : widget.unit, true, options.decimals),
+                      formatMetric(value, separateUnit ? "" : widget.unit, true, options.decimals),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -612,10 +709,10 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
         margin: !showAxis
           ? { top: 8, right: 8, bottom: 8, left: 8 }
           : {
-              top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 12,
+              top: separateUnit ? 18 : height < 130 ? 4 : 12,
               right: 10,
               bottom: options.xAxisLabel ? 47 : 28,
-              left: options.yAxisLabel ? 74 : 54,
+              left: axisLeft,
             },
         clip: true,
         theme: configuredTheme(options),
@@ -638,6 +735,8 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
     [
       rows,
       widget.unit,
+      axisLeft,
+      separateUnit,
       options,
       domain,
       ticks.y,
@@ -664,7 +763,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
-        {showAxis && widget.unit.length > 6 && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
         <Chart
           definition={definition}
           height={height}
@@ -684,8 +783,12 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
       </div>
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {options.showLegend !== false && (
-        <div className={styles.legend}>
-          <span>Latest valid sample per series</span>
+        <div className={`${styles.legend} ${styles.barLegend}`} role="list" aria-label="Latest values by category" tabIndex={0}>
+          {rows.map((row) => <span className={styles.legendItem} role="listitem" key={row.seriesIndex} title={row.name}>
+            <span className={styles.swatch} aria-hidden="true" style={{ background: row.color }} />
+            <span className={styles.legendName}>{row.displayName === row.name ? row.name : <><span aria-hidden="true">{row.displayName}</span><span className={styles.srOnly}>{row.name}</span></>}</span>
+            <span className={styles.legendValue} aria-label={`${row.name}, latest valid sample: ${formatMetricDetails(row.value, widget.unit, options.decimals)} at ${new Date(row.timestamp).toISOString()}`} data-legend-value={row.value} data-legend-timestamp={row.timestamp}>{formatMetric(row.value, widget.unit, false, options.decimals)}</span>
+          </span>)}
         </div>
       )}
       {!embedded && <ChartDataInspector widget={widget} series={series} />}
@@ -710,6 +813,7 @@ function Stat({
   onContextChange?: (context: DrilldownContext) => void;
 }) {
   const embedded = useEmbeddedWidget();
+  const { rangeEnd } = useDashboardWindow();
   const entries = series
     .map((entry, index) => ({
       entry,
@@ -720,15 +824,40 @@ function Stat({
     .filter((entry) => entry.point);
   const first = entries[0];
   if (!first?.point) return <EmptyState />;
+  // A Single value intentionally displays the last valid observation. A
+  // newer missing observation must still be disclosed: otherwise an older
+  // healthy value can be mistaken for a current reading. Match the dashboard
+  // bundle's last-in-input rule for duplicate latest timestamps.
+  let latestObservation: Point | undefined;
+  for (const point of first.entry.points) {
+    if (validTimestamp(point.timestamp) && (!latestObservation || point.timestamp >= latestObservation.timestamp)) latestObservation = point;
+  }
+  const latestMissing = latestObservation !== undefined && (typeof latestObservation.value !== "number" || !Number.isFinite(latestObservation.value));
+  const ageSeconds = rangeEnd !== undefined && Number.isFinite(rangeEnd)
+    ? Math.max(0, (rangeEnd - first.point.timestamp) / 1000)
+    : undefined;
+  const stale = ageSeconds !== undefined && widget.options?.staleAfterSeconds !== undefined && ageSeconds > widget.options.staleAfterSeconds;
   const color =
     widgetTextColor(widget.options) ??
     thresholdForValue(first.point.value, widget.options?.thresholds)?.color ??
     widget.color;
+  const minimum = widget.options?.min, maximum = widget.options?.max;
+  const showBar = widget.options?.showStatBar === true && minimum !== undefined && maximum !== undefined && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum < maximum;
+  const boundedValue = showBar ? Math.max(minimum, Math.min(maximum, first.point.value)) : 0;
+  const span = showBar ? maximum - minimum : 1;
+  const magnitude = showBar ? Math.max(Math.abs(minimum), Math.abs(maximum), 1) : 1;
+  const fraction = showBar ? Math.max(0, Math.min(1, Number.isFinite(span) ? (boundedValue - minimum) / span : (boundedValue / magnitude - minimum / magnitude) / (maximum / magnitude - minimum / magnitude))) : 0;
+  const barColor = thresholdForValue(first.point.value, widget.options?.thresholds)?.color ?? widget.color ?? "var(--gamma-chart-1)";
   return (
-    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined}>
+    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
+      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid · latest missing</div>}
+      {stale && <div className={styles.staleObservation} role="status" data-stale-observation="">
+        Last valid sample: {Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`} before range end.
+      </div>}
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""
+        data-sparkline-placement={widget.options?.sparklinePlacement ?? "background"}
       >
         <div className={sparklineStyles.value} data-stat-reading="">
           <ObservationDetails
@@ -753,7 +882,7 @@ function Stat({
             <span
               className={styles.statValue}
               data-metric-value={String(first.point.value)}
-              style={{ color }}
+              style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdForValue(first.point.value, widget.options?.thresholds)?.color : color }}
             >
               {formatMetric(
                 first.point.value,
@@ -778,6 +907,12 @@ function Stat({
           />
         )}
       </div>
+      {showBar && <div className={styles.statBar} role="meter" aria-label={`${widget.title} value on configured scale`}
+        aria-valuemin={minimum} aria-valuemax={maximum} aria-valuenow={boundedValue}
+        aria-valuetext={`${formatMetricDetails(first.point.value, widget.unit, widget.options?.decimals)}${first.point.value !== boundedValue ? " (outside configured scale)" : ""}`}
+        data-stat-bar="" data-stat-bar-value={first.point.value} data-stat-bar-fraction={fraction}>
+        <span className={styles.statBarFill} style={{ width: `${fraction * 100}%`, backgroundColor: barColor }} />
+      </div>}
       {entries.slice(1, 4).map((entry) => (
         <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
           <ObservationDetails
@@ -1010,6 +1145,30 @@ function TraceList({
   onContextChange?: (context: DrilldownContext) => void;
 }) {
   const [selected, setSelected] = useState<string>();
+  const [expandedTrace, setExpandedTrace] = useState<string>();
+  const fetchTrace = useTraceFetcher();
+  const list = useRef<HTMLDivElement>(null);
+  const hintElement = useRef<HTMLParagraphElement>(null);
+  const hintId = useId();
+  const [overflow, setOverflow] = useState<"vertical" | "horizontal" | "both">();
+  useLayoutEffect(() => {
+    const element = list.current;
+    if (!element) return;
+    let cancelled = false;
+    const measure = () => {
+      // Account for the hint's height so it cannot cause its own overflow.
+      const availableHeight = element.clientHeight + (hintElement.current?.getBoundingClientRect().height ?? 0);
+      const vertical = element.clientHeight > 0 && element.scrollHeight > availableHeight + 1;
+      const horizontal = element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1;
+      if (!cancelled) setOverflow(vertical && horizontal ? "both" : vertical ? "vertical" : horizontal ? "horizontal" : undefined);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+    observer?.observe(element);
+    if (element.firstElementChild) observer?.observe(element.firstElementChild);
+    void document.fonts?.ready.then(measure);
+    return () => { cancelled = true; observer?.disconnect(); };
+  }, [traces, expandedTrace]);
   const select = (trace: Trace) => {
     const context = traceContext(trace);
     setSelected(contextKey(context));
@@ -1024,11 +1183,14 @@ function TraceList({
       ),
   );
   return (
+    <div className={styles.traceListContainer}>
     <div
+      ref={list}
       className={styles.tableWrap}
       tabIndex={0}
       role="region"
       aria-label={`${widget.title} traces`}
+      aria-describedby={overflow ? hintId : undefined}
     >
       <table className={styles.table} aria-label={widget.title}>
         <thead>
@@ -1061,8 +1223,7 @@ function TraceList({
                 ? styles.traceSuccess
                 : "";
             return (
-              <tr
-                key={`${trace.traceId}-${index}`}
+              <Fragment key={`${trace.traceId}-${index}`}><tr
                 tabIndex={onContextChange ? 0 : undefined}
                 aria-selected={
                   onContextChange
@@ -1072,7 +1233,9 @@ function TraceList({
                 className={
                   onContextChange ? contextStyles.interactiveRow : undefined
                 }
-                onFocus={() => onContextChange && select(trace)}
+                onFocus={(event) => {
+                  if (onContextChange && !(event.target as HTMLElement).closest("[data-trace-waterfall-toggle]")) select(trace);
+                }}
                 onClick={() => onContextChange && select(trace)}
                 onKeyDown={(event) => {
                   if (
@@ -1156,6 +1319,10 @@ function TraceList({
                       </span>
                     </span>
                   </ObservationDetails>
+                  {fetchTrace && /^[a-fA-F0-9]{32}$/.test(trace.traceId) && <button type="button" data-trace-waterfall-toggle className={styles.traceExpand} aria-expanded={expandedTrace === trace.traceId} onClick={event => { event.stopPropagation(); setExpandedTrace(previous => previous === trace.traceId ? undefined : trace.traceId); }}>
+                    {expandedTrace === trace.traceId ? "Close waterfall" : "View waterfall"}
+                  </button>}
+                  {expandedTrace === trace.traceId && <TraceDialog traceId={trace.traceId} onClose={() => setExpandedTrace(undefined)} />}
                 </td>
                 <td>
                   <div className={styles.traceTime}>
@@ -1194,7 +1361,7 @@ function TraceList({
                     "—"
                   )}
                 </td>
-              </tr>
+              </tr></Fragment>
             );
           })}
         </tbody>
@@ -1206,14 +1373,21 @@ function TraceList({
         </p>
       )}
     </div>
+    {overflow && <p ref={hintElement} id={hintId} className={styles.traceScrollHint}>
+      {overflow === "both" ? "Scroll to see all traces and columns" : overflow === "vertical" ? "Scroll to see all traces" : "Scroll horizontally to see more columns"}
+    </p>}
+    </div>
   );
 }
 
-export function EmptyState() {
+export function EmptyState({ partial = false }: { partial?: boolean }) {
+  const source = useTooltipWidgetData();
+  const contextualPartial = !!(source?.result.truncated || source?.result.records?.truncated);
+  const incomplete = partial || contextualPartial;
   return (
     <div className={styles.state}>
-      <strong>No data in this time range</strong>
-      <p>Try a wider time range or adjust this widget’s query.</p>
+      <strong>{incomplete ? "No observations returned" : "No data in this time range"}</strong>
+      <p>{partial ? "The provider response may be incomplete. Narrow the query or check the data source." : contextualPartial ? "No observations were included in this incomplete response." : "Try a wider time range or adjust this widget’s query."}</p>
     </div>
   );
 }
@@ -1298,6 +1472,123 @@ export function placePlotTooltip(
   };
 }
 
+/** Prefer a free area outside the widget, so inspecting never covers its plot. */
+export function placeOutsideWidgetTooltip(
+  widget: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+  anchor: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+  size: { width: number; height: number },
+  viewport: TooltipViewport,
+) {
+  const margin = 12, gap = 10;
+  const left = (viewport.left ?? 0) + margin, right = (viewport.left ?? 0) + viewport.width - margin;
+  const top = (viewport.top ?? 0) + margin, bottom = (viewport.top ?? 0) + viewport.height - margin;
+  const maxHeight = Math.max(0, Math.min(560, bottom - top));
+  const clampedTop = Math.max(top, Math.min((anchor.top + anchor.bottom - size.height) / 2, bottom - Math.min(size.height, maxHeight)));
+  const rightStart = Math.max(left, widget.right + gap), leftStart = Math.min(right - size.width, widget.left - gap - size.width);
+  if (rightStart + size.width <= right)
+    return { left: rightStart, top: clampedTop, placement: "right", maxHeight, overlapsWidget: false };
+  if (leftStart >= left)
+    return { left: leftStart, top: clampedTop, placement: "left", maxHeight, overlapsWidget: false };
+  const aboveEnd = Math.min(bottom, widget.top - gap), belowStart = Math.max(top, widget.bottom + gap);
+  const above = Math.max(0, aboveEnd - top), below = Math.max(0, bottom - belowStart);
+  if (Math.max(above, below) >= 64) {
+    const useBelow = below >= above, available = Math.min(maxHeight, useBelow ? below : above);
+    return {
+      left: Math.max(left, Math.min((anchor.left + anchor.right - size.width) / 2, right - size.width)),
+      top: useBelow ? belowStart : aboveEnd - Math.min(size.height, available),
+      placement: useBelow ? "bottom" : "top", maxHeight: available, overlapsWidget: false,
+    };
+  }
+  // A full-viewport chart has no outside space. Hover previews pass pointer
+  // events through in this case; pinning makes the same panel interactive.
+  return { ...placePlotTooltip(anchor, size, viewport), maxHeight, overlapsWidget: true };
+}
+
+type TooltipRectangle = Pick<DOMRect, "left" | "right" | "top" | "bottom">;
+type TooltipObstacle = TooltipRectangle & { weight?: number };
+
+/** Prefer an unobstructed outside position when neighboring panels leave room.
+ * When every outside position is occupied, keep the least-obscuring one and
+ * retain the existing scrollable, pointer-transparent hover fallback. */
+export function placeClearOutsideWidgetTooltip(
+  widget: TooltipRectangle,
+  anchor: TooltipRectangle,
+  size: { width: number; height: number },
+  viewport: TooltipViewport,
+  obstacles: readonly TooltipObstacle[],
+) {
+  const baseline = placeOutsideWidgetTooltip(widget, anchor, size, viewport);
+  if (!obstacles.length || baseline.overlapsWidget) return baseline;
+  const left = (viewport.left ?? 0) + 12, right = (viewport.left ?? 0) + viewport.width - 12;
+  const top = (viewport.top ?? 0) + 12, bottom = (viewport.top ?? 0) + viewport.height - 12;
+  const gap = 10, maxHeight = Math.max(0, Math.min(560, bottom - top));
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+  const overlap = (a: TooltipRectangle, b: TooltipRectangle) =>
+    Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
+    Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const candidates = [baseline];
+  const vertical = (placement: "top" | "bottom", boundary: number, available: number) => {
+    const limit = Math.min(maxHeight, available);
+    if (limit < 64 || right - left < size.width) return;
+    const height = Math.min(size.height, limit);
+    const y = placement === "top" ? boundary - height : boundary;
+    const xs = [(anchor.left + anchor.right - size.width) / 2, left, right - size.width,
+      ...obstacles.flatMap(rect => [rect.left - size.width - gap, rect.right + gap])];
+    for (const value of xs) candidates.push({ left: clamp(value, left, right - size.width), top: y, placement, maxHeight: limit, overlapsWidget: false });
+  };
+  const horizontal = (placement: "left" | "right", x: number) => {
+    if (x < left || x + size.width > right || maxHeight < 64) return;
+    const height = Math.min(size.height, maxHeight);
+    const ys = [(anchor.top + anchor.bottom - height) / 2, top, bottom - height,
+      ...obstacles.flatMap(rect => [rect.top - height - gap, rect.bottom + gap])];
+    for (const value of ys) candidates.push({ left: x, top: clamp(value, top, bottom - height), placement, maxHeight, overlapsWidget: false });
+  };
+  vertical("top", Math.min(bottom, widget.top - gap), Math.max(0, Math.min(bottom, widget.top - gap) - top));
+  vertical("bottom", Math.max(top, widget.bottom + gap), Math.max(0, bottom - Math.max(top, widget.bottom + gap)));
+  horizontal("left", widget.left - gap - size.width);
+  horizontal("right", widget.right + gap);
+  const score = (candidate: typeof baseline) => {
+    const height = Math.min(size.height, candidate.maxHeight);
+    const rect = { left: candidate.left, right: candidate.left + size.width, top: candidate.top, bottom: candidate.top + height };
+    return {
+      controls: obstacles.filter(obstacle => (obstacle.weight ?? 1) > 1).reduce((sum, obstacle) => sum + overlap(rect, obstacle), 0),
+      other: obstacles.filter(obstacle => (obstacle.weight ?? 1) <= 1).reduce((sum, obstacle) => sum + overlap(rect, obstacle), 0) + (size.height - height) * size.width,
+    };
+  };
+  return candidates.reduce((best, candidate) => {
+    const a = score(candidate), b = score(best);
+    return a.controls < b.controls || (a.controls === b.controls && a.other < b.other) ? candidate : best;
+  }, baseline);
+}
+
+/** Use a narrower inspector when it makes room beside the chart. */
+export function outsideTooltipWidthLimit(
+  widget: Pick<DOMRect, "left" | "right">,
+  viewport: TooltipViewport,
+) {
+  const left = (viewport.left ?? 0) + 12;
+  const right = (viewport.left ?? 0) + viewport.width - 12;
+  const available = Math.max(
+    0,
+    right - Math.max(left, widget.right + 10),
+    Math.min(right, widget.left - 10) - left,
+  );
+  // Below 240px, retain the comfortable width and try above/below instead.
+  return available >= 240 ? Math.min(330, available) : Math.max(0, right - left);
+}
+
+/** A transient overlay must not intercept pointer movement over another tile. */
+export function tooltipOverlapsOtherWidget(
+  panel: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+  owner: Element,
+) {
+  return [...document.querySelectorAll("[data-widget-id]")].some(other => {
+    if (other === owner || other.contains(owner) || owner.contains(other)) return false;
+    const bounds = other.getBoundingClientRect();
+    return bounds.width > 0 && bounds.height > 0 && panel.left < bounds.right && panel.right > bounds.left && panel.top < bounds.bottom && panel.bottom > bounds.top;
+  });
+}
+
 export function balancedHeatmapColumns(
   count: number,
   width: number,
@@ -1326,6 +1617,13 @@ export function ObservationTooltip({
   anchor,
   anchorRect,
   preferSide = false,
+  avoidWidget = false,
+  pinned = false,
+  panelRef,
+  role = "tooltip",
+  ariaLabel,
+  className,
+  tabIndex,
   onDismiss,
   onEnter,
   onLeave,
@@ -1335,17 +1633,49 @@ export function ObservationTooltip({
   anchor: Element;
   anchorRect?: () => DOMRect;
   preferSide?: boolean;
+  avoidWidget?: boolean;
+  pinned?: boolean;
+  panelRef?: (element: HTMLDivElement | null) => void;
+  role?: "tooltip" | "region";
+  ariaLabel?: string;
+  className?: string;
+  tabIndex?: number;
   onDismiss: () => void;
   onEnter: () => void;
   onLeave: () => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  const [compactState, setCompactState] = useState({ anchor, pinned, minimized: false });
+  if (compactState.anchor !== anchor || compactState.pinned !== pinned) {
+    setCompactState({ anchor, pinned, minimized: false });
+  }
+  const minimized = narrow && pinned && compactState.anchor === anchor && compactState.pinned === pinned && compactState.minimized;
+  const dismissRef = useRef(onDismiss);
+  const pinnedRef = useRef(pinned);
+  useLayoutEffect(() => {
+    dismissRef.current = onDismiss;
+    pinnedRef.current = pinned;
+  }, [onDismiss, pinned]);
+  useEffect(() => {
+    // A stationary pointer can acquire a new hover target after scrolling
+    // while another chart still has focus. Keep transient previews singular;
+    // explicitly pinned observations remain under the user's control.
+    const opened = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== id && !pinnedRef.current) dismissRef.current();
+    };
+    document.addEventListener("paprika:observation-open", opened);
+    document.dispatchEvent(new CustomEvent("paprika:observation-open", { detail: id }));
+    return () => document.removeEventListener("paprika:observation-open", opened);
+  }, [id]);
+  const assignRef = useCallback((element: HTMLDivElement | null) => { ref.current = element; panelRef?.(element); }, [panelRef]);
   const [position, setPosition] = useState<ReturnType<
     typeof placeHeatmapTooltip
-  > | null>(null);
+  > & { overlapsWidget?: boolean; overlapsOtherWidget?: boolean; overlapsControls?: boolean; pointer?: boolean } | null>(null);
   useLayoutEffect(() => {
     let frame = 0;
+    const stopPointer = installTooltipPointerTracking();
     const stopTheme = ref.current ? inheritGammaTheme(anchor, ref.current) : undefined;
     const update = () => {
       const element = ref.current;
@@ -1357,8 +1687,53 @@ export function ObservationTooltip({
         left: viewport?.offsetLeft,
         top: viewport?.offsetTop,
       };
+      setNarrow(visibleViewport.width < 600);
       const anchorBounds = anchorRect?.() ?? anchor.getBoundingClientRect();
       const limits = heatmapTooltipSizeLimit(anchorBounds, visibleViewport);
+      const pointer = !pinned ? pointerOverAnchor(anchor) : undefined;
+      if (pointer) {
+        element.style.maxWidth = `${Math.max(0, visibleViewport.width - 24)}px`;
+        element.style.maxHeight = `${Math.max(0, Math.min(560, visibleViewport.height - 24))}px`;
+        const next = placePointerTooltip(pointer, element.getBoundingClientRect(), visibleViewport);
+        element.style.maxHeight = `${next.maxHeight}px`;
+        setPosition(previous => previous?.pointer && previous.left === next.left && previous.top === next.top && previous.placement === next.placement ? previous : { ...next, pointer: true });
+        return;
+      }
+      if (avoidWidget) {
+        const widget = anchor.closest("[data-widget-id]") ?? anchor.parentElement ?? anchor;
+        const widgetBounds = widget.getBoundingClientRect();
+        // Keep inspectors inside the dashboard canvas rather than covering
+        // navigation or the settings panel alongside it. Dialogs and charts
+        // outside a dashboard retain the ordinary viewport bounds.
+        const canvas = anchor.closest('[data-testid="dashboard-canvas"]');
+        const canvasBounds = canvas?.getBoundingClientRect();
+        const canvasLeft = Math.max(visibleViewport.left ?? 0, canvasBounds?.left ?? (visibleViewport.left ?? 0));
+        const canvasRight = Math.min((visibleViewport.left ?? 0) + visibleViewport.width, canvasBounds?.right ?? ((visibleViewport.left ?? 0) + visibleViewport.width));
+        const tooltipViewport = canvasBounds && canvasRight - canvasLeft >= 240
+          ? { ...visibleViewport, left: canvasLeft, width: canvasRight - canvasLeft }
+          : visibleViewport;
+        const obstacles = [...document.querySelectorAll("[data-widget-id], [data-tooltip-obstacle]")].flatMap(other => {
+          if (other === widget || other.contains(widget) || widget.contains(other)) return [];
+          const bounds = other.getBoundingClientRect();
+          const viewportLeft = tooltipViewport.left ?? 0, viewportTop = tooltipViewport.top ?? 0;
+          return bounds.width > 0 && bounds.height > 0 && bounds.right > viewportLeft && bounds.left < viewportLeft + tooltipViewport.width && bounds.bottom > viewportTop && bounds.top < viewportTop + tooltipViewport.height
+            ? [{ left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, weight: other.hasAttribute("data-tooltip-obstacle") ? 8 : 1 }]
+            : [];
+        });
+        element.style.maxWidth = `${outsideTooltipWidthLimit(widgetBounds, tooltipViewport)}px`;
+        // Clear a previous placement's height restriction before measuring.
+        // Otherwise an expanding tooltip is scored as if its clipped height
+        // were its full height, and the second placement can choose a smaller
+        // space without applying that new space's height limit.
+        element.style.maxHeight = `${Math.max(0, Math.min(560, tooltipViewport.height - 24))}px`;
+        const next = placeClearOutsideWidgetTooltip(widgetBounds, anchorBounds, element.getBoundingClientRect(), tooltipViewport, obstacles);
+        element.style.maxHeight = `${next.maxHeight}px`;
+        const size = element.getBoundingClientRect();
+        const overlapsOtherWidget = tooltipOverlapsOtherWidget({ left: next.left, right: next.left + size.width, top: next.top, bottom: next.top + size.height }, widget);
+        const overlapsControls = obstacles.some(rect => rect.weight === 8 && next.left < rect.right && next.left + size.width > rect.left && next.top < rect.bottom && next.top + size.height > rect.top);
+        setPosition(previous => !previous?.pointer && previous?.left === next.left && previous?.top === next.top && previous?.placement === next.placement && previous?.overlapsWidget === next.overlapsWidget && previous?.overlapsOtherWidget === overlapsOtherWidget && previous?.overlapsControls === overlapsControls ? previous : { ...next, overlapsOtherWidget, overlapsControls });
+        return;
+      }
       element.style.maxWidth = `${limits.width}px`;
       const candidate = preferSide
         ? placePlotTooltip(
@@ -1381,7 +1756,7 @@ export function ObservationTooltip({
         ? placePlotTooltip(anchorBounds, bounds, visibleViewport)
         : placeHeatmapTooltip(anchorBounds, bounds, visibleViewport);
       setPosition((previous) =>
-        previous?.left === next.left &&
+        !previous?.pointer && previous?.left === next.left &&
         previous?.top === next.top &&
         previous?.placement === next.placement
           ? previous
@@ -1392,27 +1767,41 @@ export function ObservationTooltip({
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(update);
     };
+    const followPointer = (event: PointerEvent) => {
+      if (!pinned && event.pointerType !== "touch" && event.target instanceof Node && anchor.contains(event.target)) schedule();
+    };
     update();
     const observer =
       typeof ResizeObserver === "undefined"
         ? undefined
         : new ResizeObserver(schedule);
+    // A scroll-capped panel can gain content without its border box resizing.
+    // Observe content changes as well, so async results and pinning can choose
+    // a better position instead of retaining a stale small height limit.
+    const contentObserver = typeof MutationObserver === "undefined" ? undefined : new MutationObserver(schedule);
     if (ref.current) observer?.observe(ref.current);
+    if (ref.current) contentObserver?.observe(ref.current, { subtree: true, childList: true, characterData: true });
     observer?.observe(anchor);
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, true);
+    document.addEventListener("pointermove", followPointer, true);
+    document.addEventListener("keydown", schedule, true);
     window.visualViewport?.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("scroll", schedule);
     return () => {
       stopTheme?.();
+      stopPointer();
       cancelAnimationFrame(frame);
       observer?.disconnect();
+      contentObserver?.disconnect();
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", schedule, true);
+      document.removeEventListener("pointermove", followPointer, true);
+      document.removeEventListener("keydown", schedule, true);
       window.visualViewport?.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("scroll", schedule);
     };
-  }, [anchor, anchorRect, preferSide]);
+  }, [anchor, anchorRect, preferSide, avoidWidget, minimized, pinned]);
   useEffect(() => {
     const pointer = (event: PointerEvent) => {
       if (
@@ -1421,18 +1810,28 @@ export function ObservationTooltip({
       )
         onDismiss();
     };
+    const focus = (event: FocusEvent) => {
+      if (!pinned && !anchor.contains(event.target as Node) && !ref.current?.contains(event.target as Node)) {
+        onDismiss();
+      }
+    };
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // A focused Gamma menu/listbox owns the first Escape even though its
+        // panel is portaled away from the widget and observation tooltip.
+        if (event.target instanceof Element && event.target.closest("[data-gamma-portal]")) return;
         // A fading hover card must not swallow Escape from another chart.
-        if (anchor.contains(event.target as Node) || ref.current?.contains(event.target as Node))
+        if (anchor.contains(event.target as Node) || ref.current?.contains(event.target as Node)) {
+          event.preventDefault();
           event.stopPropagation();
+        }
         onDismiss();
         return;
       }
       const element = ref.current;
       if (
         element &&
-        (event.target === anchor || element.contains(event.target as Node)) &&
+        (event.target === anchor || (role !== "region" && element.contains(event.target as Node))) &&
         ["PageDown", "PageUp", "Home", "End"].includes(event.key)
       ) {
         // A tooltip does not take focus away from its trigger. Let keyboard
@@ -1460,24 +1859,35 @@ export function ObservationTooltip({
       }
     };
     document.addEventListener("pointerdown", pointer, true);
+    document.addEventListener("focusin", focus, true);
     document.addEventListener("keydown", keyboard, true);
     return () => {
       document.removeEventListener("pointerdown", pointer, true);
+      document.removeEventListener("focusin", focus, true);
       document.removeEventListener("keydown", keyboard, true);
     };
-  }, [anchor, onDismiss]);
+  }, [anchor, onDismiss, pinned, role]);
   return createPortal(
     <div
-      ref={ref}
+      ref={assignRef}
       id={id}
-      role="tooltip"
-      className={configStyles.heatmapTooltip}
+      role={role}
+      aria-label={ariaLabel}
+      tabIndex={tabIndex}
+      className={`${configStyles.heatmapTooltip} ${className ?? ""}`}
       style={{
         left: position?.left ?? 0,
         top: position?.top ?? 0,
+        width: minimized ? "max-content" : undefined,
         visibility: position ? "visible" : "hidden",
+        pointerEvents: !pinned && (position?.pointer || (avoidWidget && (position?.overlapsWidget || position?.overlapsOtherWidget || position?.overlapsControls))) ? "none" : undefined,
       }}
       data-placement={position?.placement}
+      data-tooltip-pointer={position?.pointer || undefined}
+      data-tooltip-overlap={position?.overlapsWidget || undefined}
+      data-tooltip-overlaps-other-widget={position?.overlapsOtherWidget || undefined}
+      data-tooltip-overlaps-controls={position?.overlapsControls || undefined}
+      data-inspector-minimized={minimized || undefined}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
       onFocusCapture={onEnter}
@@ -1489,9 +1899,23 @@ export function ObservationTooltip({
           onLeave();
       }}
     >
-      {children}
+      {pinned && avoidWidget && narrow && (minimized || position?.overlapsWidget || position?.overlapsOtherWidget || position?.overlapsControls) && (
+        <div className={configStyles.tooltipCompactControls}>
+          <GammaButton variant="ghost" size="sm" aria-label={minimized ? "Show inspector details" : "Minimize inspector"} aria-expanded={!minimized} aria-controls={`${id}-details`} onClick={() => setCompactState({ anchor, pinned, minimized: !minimized })}>
+            {minimized ? "Show details" : "Minimize"}
+          </GammaButton>
+          {minimized && <GammaButton variant="ghost" size="sm" aria-label="Close inspector" onClick={() => {
+            const returnFocus = ref.current?.contains(document.activeElement);
+            if (returnFocus && (anchor instanceof HTMLElement || anchor instanceof SVGElement)) anchor.focus({ preventScroll: true });
+            onDismiss();
+          }}>Close</GammaButton>}
+        </div>
+      )}
+      <div id={`${id}-details`} hidden={minimized}>{children}</div>
     </div>,
-    document.body,
+    // Native dialogs occupy the browser top layer; a body portal would render
+    // behind them even with a high z-index. Escape the chart within that layer.
+    anchor.closest("dialog[open]") ?? document.body,
   );
 }
 
@@ -1505,6 +1929,9 @@ export function ObservationDetails({
   className,
   revision,
   externalAnchor,
+  avoidWidget = true,
+  selectOnFocus = true,
+  tabIndex,
 }: {
   label: string;
   children: ReactNode;
@@ -1514,6 +1941,11 @@ export function ObservationDetails({
   className?: string;
   revision?: unknown;
   externalAnchor?: Element;
+  avoidWidget?: boolean;
+  /** Some contexts change dashboard variables only on explicit activation. */
+  selectOnFocus?: boolean;
+  /** A dense visual can expose individual observations through a separate keyboard-accessible explorer. */
+  tabIndex?: number;
 }) {
   const id = useId();
   const [active, setActive] = useState<{
@@ -1584,6 +2016,7 @@ export function ObservationDetails({
         aria-label={label}
         aria-describedby={active ? id : undefined}
         aria-pressed={enabled ? (active?.pinned ?? false) : undefined}
+        tabIndex={tabIndex}
         onPointerEnter={(event) => {
           if (event.pointerType === "touch") return;
           interaction.current.hovered = true;
@@ -1595,14 +2028,13 @@ export function ObservationDetails({
         }}
         onFocus={(event) => {
           interaction.current.focused = true;
-          onSelect?.();
-          show(event.currentTarget);
+          if (selectOnFocus) onSelect?.();
+          if (!active?.pinned) show(event.currentTarget);
         }}
         onBlur={() => {
           interaction.current.focused = false;
-          setActive((current) =>
-            current ? { ...current, pinned: false } : null,
-          );
+          // Focus can move into the portaled content. Pinned observations
+          // remain open until explicitly dismissed.
           scheduleHide();
         }}
         onClick={(event) => {
@@ -1617,6 +2049,8 @@ export function ObservationDetails({
         <ObservationTooltip
           id={id}
           anchor={active.anchor}
+          avoidWidget={avoidWidget}
+          pinned={active.pinned}
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.panel = true;
@@ -1629,7 +2063,7 @@ export function ObservationDetails({
         >
           {details}
           <div className={configStyles.tooltipFooter}>
-            <small>Page Up/Down to scroll · Esc to close</small>
+            <small><TooltipInstructions /></small>
             <small>
               {active.pinned
                 ? "Pinned · tap again to close"
@@ -1649,6 +2083,8 @@ export function MetricDetails({
   unit,
   decimals,
   description = "Latest valid sample",
+  timestampFirst = false,
+  compact = false,
   children,
 }: {
   series: Series;
@@ -1657,15 +2093,22 @@ export function MetricDetails({
   unit: string;
   decimals?: number;
   description?: string;
+  timestampFirst?: boolean;
+  compact?: boolean;
   children?: ReactNode;
 }) {
   const value =
     typeof point?.value === "number" && Number.isFinite(point.value)
       ? point.value
       : undefined;
+  const timestamp = point && validTimestamp(point.timestamp) ? (
+    <time dateTime={new Date(point.timestamp).toISOString()}>
+      {fullDateTimeFormat.format(new Date(point.timestamp))}
+    </time>
+  ) : <span>No valid timestamp</span>;
   return (
     <>
-      <div className={configStyles.tooltipHeader}>
+      <div className={configStyles.tooltipHeader} data-tooltip-compact={compact || undefined}>
         <strong className={configStyles.tooltipTitle}>
           {seriesName(series, index)}
         </strong>
@@ -1676,10 +2119,11 @@ export function MetricDetails({
         >
           {value === undefined ? "No data" : formatMetricDetails(value, unit, decimals)}
         </strong>
+        {timestampFirst && <span className={configStyles.tooltipKeyHint}>{description} · {timestamp}</span>}
         {children}
       </div>
       {!!Object.keys(series.labels).length && (
-        <div className={configStyles.tooltipLabels}>
+        <div className={`${configStyles.tooltipLabels}${compact ? ` ${configStyles.tooltipVisuallyHidden}` : ""}`}>
           <dl>
             {Object.entries(series.labels).map(([key, value]) => (
               <div key={key}>
@@ -1690,26 +2134,22 @@ export function MetricDetails({
           </dl>
         </div>
       )}
-      <div className={configStyles.tooltipFooter}>
+      {!timestampFirst && <div className={configStyles.tooltipFooter}>
         <span>{description}</span>
-        {point && validTimestamp(point.timestamp) ? (
-          <time dateTime={new Date(point.timestamp).toISOString()}>
-            {fullDateTimeFormat.format(new Date(point.timestamp))}
-          </time>
-        ) : (
-          <span>No valid timestamp</span>
-        )}
-      </div>
+        {timestamp}
+      </div>}
     </>
   );
 }
 
-function ChartDataInspector({
+export function ChartDataInspector({
   widget,
   series,
+  buttonText = "Inspect data",
 }: {
   widget: Widget;
   series: Series[];
+  buttonText?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1720,7 +2160,7 @@ function ChartDataInspector({
         onClick={() => setOpen(true)}
         aria-label={`Inspect chart data for ${widget.title}`}
       >
-        Inspect data
+        {buttonText}
       </GammaButton>
       {open && (
         <ChartDataDialog
@@ -2152,6 +2592,8 @@ export function Heatmap({
         <ObservationTooltip
           id={tooltipId}
           anchor={active.anchor}
+          avoidWidget
+          pinned={active.pinned}
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.tooltipHovered = true;
@@ -2167,7 +2609,7 @@ export function Heatmap({
               {selected.name}
             </strong>
             <span className={configStyles.tooltipKeyHint}>
-              Page Up/Down to scroll · Esc to close
+              <TooltipInstructions />
             </span>
           </div>
           <div className={configStyles.tooltipReading}>
@@ -2289,7 +2731,7 @@ export function BuiltinWidgetRenderer({
   const series = result.series ?? [];
   switch (widget.type) {
     case "timeseries":
-      return <TimeSeriesChart widget={widget} series={series} />;
+      return <TimeSeriesChart widget={widget} series={series} onContextChange={onContextChange} />;
     case "bar":
       return <BarChart widget={widget} series={series} />;
     case "stat":

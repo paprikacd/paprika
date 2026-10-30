@@ -17,14 +17,17 @@ import {
 import type { QueryResult, Widget } from "./schema";
 import { contrastRatio } from "./appearance";
 import chartStyles from "./charts.module.css";
+import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
 import {
   contrastText,
   balancedHeatmapColumns,
   heatmapTooltipSizeLimit,
   placeHeatmapTooltip,
   responsiveChartTicks,
+  chartYAxisLayout,
   formatTimeTick,
   latestPoint,
+  EmptyState,
 } from "./chart-renderers";
 
 afterEach(() => {
@@ -56,6 +59,73 @@ const result: QueryResult = {
 };
 
 describe("bounded chart data", () => {
+  it("reserves room for high precision axis ticks and states longer units once", () => {
+    const short = chartYAxisLayout([0, 23], "req/s", 2);
+    expect(short.separateUnit).toBe(true);
+    expect(short.left).toBeGreaterThanOrEqual(54);
+    expect(chartYAxisLayout([-1234.56789], "%", 8).left).toBeGreaterThan(short.left);
+    expect(chartYAxisLayout([1], "ms", 2, "Latency").left).toBeGreaterThan(chartYAxisLayout([1], "ms", 2).left);
+  });
+  it("remeasures the plot immediately when the footer changes its size", () => {
+    const observers: Array<{ callback: ResizeObserverCallback; element?: Element }> = [];
+    class TestResizeObserver {
+      entry: { callback: ResizeObserverCallback; element?: Element };
+      constructor(callback: ResizeObserverCallback) {
+        this.entry = { callback };
+        observers.push(this.entry);
+      }
+      observe(element: Element) { this.entry.element = element; }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+    try {
+      const { container } = render(<WidgetVisualization widget={widget} result={result} />);
+      const plot = container.querySelector(`.${chartStyles.plot}`)!;
+      const observer = observers.find(entry => entry.element === plot)!;
+      expect(observer).toBeDefined();
+      const bounds = vi.spyOn(plot, "getBoundingClientRect");
+      act(() => observer.callback([], {} as ResizeObserver));
+      expect(bounds).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("explains when a selected zoom window contains no finite observations", () => {
+    const sparse: QueryResult = { series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: null }, { timestamp: 4000, value: 4 }] }] };
+    render(<WidgetVisualization widget={widget} result={sparse} />);
+    fireEvent.click(screen.getByRole("button", { name: /Compare window for API latency/ }));
+    fireEvent.change(screen.getByRole("slider", { name: "Window start" }), { target: { value: "1" } });
+    fireEvent.change(screen.getByRole("slider", { name: "Window end" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zoom chart to window" }));
+    expect(screen.getByRole("status")).toHaveTextContent("No recorded observations in this window");
+    fireEvent.click(screen.getByRole("button", { name: "Reset chart zoom" }));
+    expect(screen.queryByText(/No recorded observations in this window/)).not.toBeInTheDocument();
+  });
+  it("reserves a separate renderer area when a result is truncated", () => {
+    const { container } = render(<WidgetVisualization widget={widget} result={{ ...result, truncated: true }} />);
+    const notice = screen.getByText("Provider response may be incomplete. Narrow the query or check the data source.");
+    const content = container.querySelector(`.${chartStyles.visualizationContent}`);
+    expect(notice.parentElement).toHaveClass(chartStyles.visualization);
+    expect(content?.parentElement).toBe(notice.parentElement);
+    expect(content).toContainElement(screen.getByRole("list", { name: "Latest values by series" }));
+  });
+  it("distinguishes an incomplete empty response from a complete empty result and preserves zero", () => {
+    const { rerender } = render(<WidgetVisualization widget={widget} result={{ series: [], truncated: true }} />);
+    expect(screen.getByText("No observations returned")).toBeInTheDocument();
+    expect(screen.getByText(/provider response may be incomplete/i)).toBeInTheDocument();
+    expect(screen.queryByText("No data in this time range")).not.toBeInTheDocument();
+    rerender(<WidgetVisualization widget={widget} result={{ series: [] }} />);
+    expect(screen.getByText("No data in this time range")).toBeInTheDocument();
+    rerender(<WidgetVisualization widget={{ ...widget, type: "stat" }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 0 }] }], truncated: true }} />);
+    expect(screen.getByText("Provider response may be incomplete. Narrow the query or check the data source.")).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+  it("reports an incomplete empty records frame inside a registered renderer", () => {
+    render(<TooltipWidgetDataProvider kind="records" result={{ records: { columns: [], rows: [], truncated: true } }}><EmptyState /></TooltipWidgetDataProvider>);
+    expect(screen.getByText("No observations returned")).toBeInTheDocument();
+    expect(screen.getByText(/incomplete response/)).toBeInTheDocument();
+  });
   it.each(["timeseries", "bar"] as const)("states long units once beside %s axes while retaining exact inspection units", (type) => {
     const { container } = render(<WidgetVisualization widget={{ ...widget, type, unit: "connections" }} result={result} />);
     expect(container.querySelector("[data-chart-axis-unit]")).toHaveTextContent("connections");

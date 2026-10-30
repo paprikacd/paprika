@@ -27,13 +27,147 @@ import (
 
 const dashboardQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-overview","title":"Service overview","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{"service":"api"},"widgets":[{"id":"rate","title":"Request rate","type":"stat","unit":"req/s","signalId":"s1"},{"id":"trace","title":"Matching traces","type":"traces","unit":"ms","signalId":"s2"}],"savedQueries":[{"id":"requests","etag":"q1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"samples":300,"valid":299,"missing":1,"last":{"timestamp":1793008800000,"value":1.234567890123}}]},{"id":"s2","state":"partial","traces":{"returned":100,"statusCounts":{"unknown":100},"examples":[],"examplesTruncated":true}}],"queryCount":{"planned":2,"executed":2,"deduplicated":0},"state":"partial"}`
 
+func TestDashboardQueryCompactTextIncludesSampleMeans(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"test"},"widgets":[{"id":"rate","title":"Rate","type":"timeseries","unit":"req/s","signalId":"s1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"name":"api","mean":0,"last":{"timestamp":1000,"value":2}},{"index":1,"name":"worker","mean":4.25,"last":{"timestamp":1000,"value":6}}]}]}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `latest valid=2 "req/s" at 1000 ms; sample mean=0 "req/s"`)
+	require.Contains(t, text, `name="worker"; last valid=6 "req/s" at 1000 ms; sample mean=4.25 "req/s"`)
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryOutputSchema), &schema))
+	defs := schema["$defs"].(map[string]any)
+	series := defs["series"].(map[string]any)
+	mean := series["properties"].(map[string]any)["mean"].(map[string]any)
+	require.Contains(t, mean["description"], "not time weighted")
+}
+
+func TestDashboardTraceTextIncludesBoundedSampleDetails(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"demo"},"widgets":[{"id":"trace","title":"Traces","type":"traces","signalId":"q1"}],"signals":[{"id":"q1","state":"ok","traces":{"returned":9,"statusCounts":{"error":2,"ok":7},"examplesTruncated":true,"examples":[{"traceId":"abc123","service":"checkout","operation":"POST /order","durationMs":42.5,"startTime":1793008800000,"status":"error"},{"traceId":"def456","service":"worker","status":"unknown","invalidFields":true}]}}]}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `returned traces=9 (bounded sample); trace preview truncated`)
+	require.Contains(t, text, `sample status counts: "error"=2 "ok"=7`)
+	require.Contains(t, text, `trace="abc123" service="checkout" operation="POST /order" status="error" duration=42.5 ms start=1793008800000 ms`)
+	require.Contains(t, text, `trace="def456" service="worker" status="unknown"; invalid fields`)
+	require.NotContains(t, text, `duration=0`, "missing fields must not be invented")
+	require.LessOrEqual(t, len(text), dashboardQueryTextBytes)
+}
+
+func TestDashboardTraceTextBoundsUntrustedDetails(t *testing.T) {
+	examples := make([]map[string]any, 10)
+	for index := range examples {
+		examples[index] = map[string]any{"traceId": fmt.Sprintf("trace-%d", index), "service": strings.Repeat("\\\"", 160), "operation": strings.Repeat("<span>\n", 100), "status": "ok", "durationMs": 0}
+	}
+	fixture := map[string]any{"schemaVersion": 1, "dashboard": map[string]any{"id": "demo"}, "widgets": []any{map[string]any{"id": "trace", "title": "Traces", "signalId": "q1"}}, "signals": []any{map[string]any{"id": "q1", "state": "ok", "traces": map[string]any{"returned": 10, "statusCounts": map[string]int{"ok": 10}, "examples": examples}}}}
+	raw, err := json.Marshal(fixture)
+	require.NoError(t, err)
+	text, err := dashboardQueryText(raw)
+	require.NoError(t, err)
+	require.Contains(t, text, "trace examples omitted; see structuredContent")
+	require.LessOrEqual(t, len(text), dashboardQueryTextBytes)
+	require.True(t, utf8.ValidString(text))
+}
+
 const dashboardRecordsQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-records","title":"Service records","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{},"widgets":[{"id":"services","title":"Service records","type":"plugin","unit":"","signalId":"q1"}],"savedQueries":[],"signals":[{"id":"q1","state":"ok","truncated":true,"providerTruncated":true,"records":{"returned":7,"columns":[{"key":"service","type":"string"},{"key":"requests","label":"Requests","type":"number","unit":"req/s"},{"key":"active","type":"boolean"}],"rows":[["api",0,false],["worker",null,true]],"rowsTruncated":true,"columnsOmitted":1,"metadataTruncated":true}}],"queryCount":{"planned":1,"executed":1,"deduplicated":0},"state":"ok"}`
+
+func TestDashboardQueryCompactTextIncludesSnapshotContext(t *testing.T) {
+	text, err := dashboardQueryText(json.RawMessage(dashboardQueryFixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `Range "2026-10-26T09:00:00Z" to "2026-10-26T10:00:00Z"; step=12s; observed at "2026-10-26T10:00:00Z"; dashboard ETag="v1"`)
+	require.Contains(t, text, `Selected variables: "service"="api"`)
+	text, err = dashboardQueryText(json.RawMessage(dashboardRecordsQueryFixture))
+	require.NoError(t, err)
+	require.Contains(t, text, "Selected variables: none")
+}
+
+func TestDashboardQueryProvenanceSchemaAndCompactText(t *testing.T) {
+	var fixture map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryFixture), &fixture))
+	widgets := fixture["widgets"].([]any)
+	widgets[0].(map[string]any)["savedQueryId"] = "requests"
+	widgets[0].(map[string]any)["annotationSavedQueryId"] = "events"
+	signals := fixture["signals"].([]any)
+	signals[0].(map[string]any)["kind"] = "metrics"
+	signals[0].(map[string]any)["providerId"] = "prometheus"
+	signals[1].(map[string]any)["kind"] = "traces"
+	encoded, err := json.Marshal(fixture)
+	require.NoError(t, err)
+	text, err := dashboardQueryText(encoded)
+	require.NoError(t, err)
+	require.Contains(t, text, `kind="metrics"; provider="prometheus"`)
+	require.Contains(t, text, `kind="traces"`)
+	var schema jsonschema.Schema
+	require.NoError(t, json.Unmarshal(insightsQueryDashboardTool(nil).OutputSchema, &schema))
+	resolved, err := schema.Resolve(nil)
+	require.NoError(t, err)
+	require.NoError(t, resolved.Validate(fixture))
+	signals[0].(map[string]any)["kind"] = "unknown"
+	require.Error(t, resolved.Validate(fixture), "Provenance must use an explicit normalized query kind")
+}
+
+func TestDashboardQueryCompactTextAndSchemaDescribeStatVisualThreshold(t *testing.T) {
+	var fixture map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryFixture), &fixture))
+	widgets := fixture["widgets"].([]any)
+	widgets[0].(map[string]any)["threshold"] = map[string]any{"state": "matched", "boundary": 0, "color": "#ff0000", "label": "High"}
+	widgets[1].(map[string]any)["threshold"] = map[string]any{"state": "unknown"}
+	encoded, err := json.Marshal(fixture)
+	require.NoError(t, err)
+	text, err := dashboardQueryText(encoded)
+	require.NoError(t, err)
+	require.Contains(t, text, `widget "rate": configured visual band="matched"; boundary=0; color="#ff0000"; label="High"`)
+	require.Contains(t, text, `widget "trace": configured visual band="unknown"`)
+	var schema jsonschema.Schema
+	require.NoError(t, json.Unmarshal(insightsQueryDashboardTool(nil).OutputSchema, &schema))
+	resolved, err := schema.Resolve(nil)
+	require.NoError(t, err)
+	require.NoError(t, resolved.Validate(fixture))
+	widgets[0].(map[string]any)["threshold"] = map[string]any{"state": "matched", "color": "#ff0000"}
+	require.Error(t, resolved.Validate(fixture), "a matched band requires its boundary")
+	widgets[0].(map[string]any)["threshold"] = map[string]any{"state": "unknown", "boundary": 0}
+	require.Error(t, resolved.Validate(fixture), "an unknown band cannot claim a boundary")
+}
+
+func TestDashboardThresholdTextIsBounded(t *testing.T) {
+	widgets := make([]dashboardTextWidget, 48)
+	for i := range widgets {
+		widgets[i].ID = strings.Repeat("🫑", 40)
+		var entry dashboardTextWidget
+		require.NoError(t, json.Unmarshal([]byte(`{"threshold":{"state":"matched","boundary":0,"color":"#ff0000","label":"`+strings.Repeat("a", 80)+`"}}`), &entry))
+		widgets[i].Threshold = entry.Threshold
+	}
+	var out strings.Builder
+	appendDashboardThresholdsText(&out, widgets)
+	require.Less(t, out.Len(), 1200)
+	require.True(t, utf8.ValidString(out.String()))
+	require.Contains(t, out.String(), "visual bands omitted; see structuredContent")
+}
+
+func TestDashboardQueryCompactVariableContextIsBoundedAndDeterministic(t *testing.T) {
+	variables := make(map[string]string)
+	for i := range 20 {
+		variables[fmt.Sprintf("variable%02d", i)] = strings.Repeat("🫑\n", 200)
+	}
+	var first, second strings.Builder
+	appendDashboardVariablesText(&first, variables)
+	appendDashboardVariablesText(&second, variables)
+	require.Equal(t, first.String(), second.String())
+	require.Less(t, first.Len(), 1150)
+	require.True(t, utf8.ValidString(first.String()))
+	require.Contains(t, first.String(), `\n`, "variable values remain quoted and escaped")
+	require.Contains(t, first.String(), "variables omitted; see structuredContent")
+	require.Less(t, strings.Index(first.String(), `"variable00"`), strings.Index(first.String(), `"variable01"`))
+}
 
 func TestDashboardQueryRecordsContractAndCompactText(t *testing.T) {
 	c, calls := newDashboardQueryClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, dashboardRecordsQueryFixture)
 	}))
 	tool := insightsQueryDashboardTool(c)
+	require.Contains(t, string(tool.OutputSchema), "State can still be ok when a bounded query succeeded", "MCP discovery must explain provider truncation independently from query success")
+	require.Contains(t, string(tool.OutputSchema), "distinct from providerTruncated", "MCP discovery must distinguish compact series limits from provider limits")
+	require.Contains(t, string(tool.OutputSchema), "Latest recorded timestamp, including missing values, in Unix milliseconds", "MCP discovery must explain missing-tail timestamps")
+	require.Contains(t, string(tool.OutputSchema), "last refers to an earlier valid observation", "MCP discovery must not imply the last valid point is the latest observation")
 	principal := &auth.Principal{Subject: "human", Groups: []string{"readers"}, Scopes: []string{"paprika:observe"}}
 	result, err := tool.Invoke(auth.WithPrincipal(t.Context(), principal), nil, json.RawMessage(`{"id":"service-records"}`))
 	require.NoError(t, err)
@@ -69,6 +203,128 @@ func TestDashboardQueryRecordsContractAndCompactText(t *testing.T) {
 	}
 }
 
+func TestDashboardQueryCompactTextReportsWidgetAndSignalErrors(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"example"},"widgets":[{"id":"broken","title":"Missing query","error":{"code":"missing_saved_query","message":"The referenced saved query is unavailable."}},{"id":"events","title":"Events","signalId":"s1","annotationError":{"code":"invalid_bindings","message":"Saved query bindings are invalid."}}],"signals":[{"id":"s1","state":"error","error":{"code":"invalid_query","message":"The provider rejected the resolved query."}}],"state":"partial"}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `widget "broken" "Missing query": error "missing_saved_query": "The referenced saved query is unavailable."`)
+	require.Contains(t, text, `widget "events" "Events" events: error "invalid_bindings": "Saved query bindings are invalid."`)
+	require.Contains(t, text, `s1 "Events": error; error "invalid_query": "The provider rejected the resolved query."`)
+}
+
+func TestDashboardQueryCompactTextDescribesEveryIncludedMetricSeries(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"example"},"widgets":[{"id":"rates","title":"Rates","type":"timeseries","unit":"req/s","signalId":"q1"}],"signals":[{"id":"q1","state":"ok","primarySeries":0,"series":[{"index":0,"name":"checkout","labels":{"service":"checkout"},"last":{"timestamp":1700000000000,"value":0}},{"index":1,"name":"worker","labels":{"service":"worker"},"last":{"timestamp":1700000001000,"value":12.5},"tailMissing":true},{"index":2,"name":"catalog","labels":{"service":"catalog"}}]}],"state":"ok"}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `[#0 name="checkout" "service"="checkout"; last valid=0 "req/s" at 1700000000000 ms]`)
+	require.Contains(t, text, `[#1 name="worker" "service"="worker"; last valid=12.5 "req/s" at 1700000001000 ms; latest observation missing]`)
+	require.Contains(t, text, `[#2 name="catalog" "service"="catalog"; no valid observation]`)
+}
+
+func TestDashboardQueryMetricSeriesTextIsBoundedAndDeterministic(t *testing.T) {
+	last := &dashboardTextSample{Timestamp: 1700000000000, Value: 42}
+	entries := make([]dashboardTextSeries, 8)
+	for i := range entries {
+		entries[i] = dashboardTextSeries{Index: i, Name: strings.Repeat("🫑\n", 100), Last: last, Labels: map[string]string{"z": strings.Repeat("z", 200), "a": strings.Repeat("a", 200), "b": "b", "c": "c"}}
+	}
+	signal := &dashboardTextSignal{ID: "q1", State: "ok", Series: entries}
+	first := dashboardSignalText(signal, nil)
+	require.Equal(t, first, dashboardSignalText(signal, nil), "map iteration must not reorder labels")
+	require.Less(t, len(first), 1400)
+	require.True(t, utf8.ValidString(first))
+	require.Contains(t, first, `\n`, "untrusted labels must remain quoted")
+	require.Contains(t, first, "+1 labels")
+	require.Contains(t, first, "series details omitted; see structuredContent")
+}
+
+func TestDashboardQueryMetricSeriesTextAvoidsRepeatingCanonicalNames(t *testing.T) {
+	series := []dashboardTextSeries{
+		{Index: 0, Name: `requests{cluster="omega", service="checkout"}`, Labels: map[string]string{"__name__": "requests", "cluster": "omega", "service": "checkout"}},
+		{Index: 1, Name: "Authored alias", Labels: map[string]string{"service": "worker"}},
+	}
+	var line strings.Builder
+	appendDashboardSeriesText(&line, series, "")
+	require.NotContains(t, line.String(), `name="requests`)
+	require.Contains(t, line.String(), `"service"="checkout"`)
+	require.Contains(t, line.String(), `name="Authored alias"`)
+}
+
+func TestDashboardQueryTextDistinguishesIncompleteEmptySource(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"example"},"widgets":[{"id":"limited","title":"Limited","signalId":"q1"},{"id":"empty","title":"Empty","signalId":"q2"}],"signals":[{"id":"q1","state":"partial","providerTruncated":true,"truncated":true},{"id":"q2","state":"empty"}],"state":"partial"}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `q1 "Limited": partial; partial source response`)
+	require.Contains(t, text, `q2 "Empty": empty`)
+	require.NotContains(t, text, `q1 "Limited": empty`)
+	require.Contains(t, dashboardQueryOutputSchema, "source-limited response without usable observations is partial")
+}
+
+func TestDashboardQueryCompactTextReportsReturnedSampleFreshness(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"example"},"widgets":[{"id":"old","title":"Old","freshness":{"thresholdSeconds":300,"state":"stale","ageSeconds":600,"lastTimestamp":1000}},{"id":"empty","title":"Empty","freshness":{"thresholdSeconds":60,"state":"unknown"}}],"signals":[],"state":"ok"}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `widget "old": returned sample freshness=stale (threshold 300s, age 600s); relative to range end, not scrape health`)
+	require.Contains(t, text, `widget "empty": returned sample freshness=unknown (threshold 60s); relative to range end, not scrape health`)
+	var schema jsonschema.Schema
+	require.NoError(t, json.Unmarshal(json.RawMessage(dashboardQueryOutputSchema), &schema))
+	_, err = schema.Resolve(nil)
+	require.NoError(t, err)
+}
+
+func TestDashboardQueryCompactTextBoundsAndQuotesWidgetErrors(t *testing.T) {
+	var body map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryFixture), &body))
+	widgets := make([]any, 0, 48)
+	for i := range 48 {
+		widgets = append(widgets, map[string]any{"id": fmt.Sprintf("w%d", i), "title": strings.Repeat("🫑\n", 100), "error": map[string]any{"code": "invalid_query", "message": strings.Repeat("bad\n", 200)}})
+	}
+	body["widgets"] = widgets
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	text, err := dashboardQueryText(raw)
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(text), dashboardQueryTextBytes)
+	require.Contains(t, text, `bad\n`)
+	require.Contains(t, text, "More widget errors and signals are available in structuredContent.")
+	require.True(t, utf8.ValidString(text))
+}
+
+func TestDashboardQueryAnnotationSignalContract(t *testing.T) {
+	fixture := strings.Replace(dashboardRecordsQueryFixture, `"type":"plugin"`, `"type":"plugin","pluginId":"record-table","dataKind":"records"`, 1)
+	fixture = strings.Replace(fixture, `"signalId":"q1"`, `"signalId":"q1","annotationSignalId":"q1","annotationColumns":{"timestamp":"date","end":"ended_at","label":"label","severity":"status"}`, 1)
+	c, _ := newDashboardQueryClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, fixture) }))
+	tool := insightsQueryDashboardTool(c)
+	principal := &auth.Principal{Subject: "human", Groups: []string{"readers"}, Scopes: []string{"paprika:observe"}}
+	result, err := tool.Invoke(auth.WithPrincipal(t.Context(), principal), nil, json.RawMessage(`{"id":"service-records"}`))
+	require.NoError(t, err)
+	wire := result.(*sdkmcp.CallToolResult)
+	structured := wire.StructuredContent.(json.RawMessage)
+	var schema jsonschema.Schema
+	require.NoError(t, json.Unmarshal(tool.OutputSchema, &schema))
+	resolved, err := schema.Resolve(nil)
+	require.NoError(t, err)
+	var document any
+	require.NoError(t, json.Unmarshal(structured, &document))
+	require.NoError(t, resolved.Validate(document))
+	require.Contains(t, string(structured), `"annotationSignalId":"q1"`)
+	require.Contains(t, string(structured), `"annotationColumns"`)
+	require.Contains(t, string(structured), `"pluginId":"record-table"`)
+	require.Contains(t, string(structured), `"dataKind":"records"`)
+	require.Contains(t, string(tool.OutputSchema), `"end":{"type":"string"`, "Interval annotations must be discoverable")
+	var invalid any
+	require.NoError(t, json.Unmarshal([]byte(strings.Replace(fixture, `"dataKind":"records"`, `"dataKind":"logs"`, 1)), &invalid))
+	require.Error(t, resolved.Validate(invalid), "Discovery must constrain plugin input kinds")
+}
+
+func TestDashboardQueryCompactTextNamesFirstVisualizationAndSharedWidgets(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"signals"},"state":"ok","widgets":[{"id":"gauge","title":"CPU","type":"plugin","pluginId":"threshold-gauge","signalId":"q1"},{"id":"history","title":"CPU history","type":"plugin","pluginId":"status-history","signalId":"q1"},{"id":"trace","title":"Traces","type":"traces","signalId":"q2"}],"signals":[{"id":"q1","state":"ok"},{"id":"q2","state":"empty"}]}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `q1 "CPU": ok; first view="threshold-gauge"; shared widgets=2`)
+	require.Contains(t, text, `q2 "Traces": empty; first view="traces"`)
+	require.NotContains(t, text, `first view="status-history"`, "The title and view refer to the same first widget")
+}
+
 func TestDashboardQueryEmptyAndCompleteRecordText(t *testing.T) {
 	for _, count := range []int{0, 2} {
 		text := dashboardSignalText(&dashboardTextSignal{ID: "q1", State: "empty", Records: &dashboardTextRecords{Returned: count}}, nil)
@@ -76,6 +332,43 @@ func TestDashboardQueryEmptyAndCompleteRecordText(t *testing.T) {
 		require.NotContains(t, text, "truncated")
 		require.NotContains(t, text, "partial source")
 	}
+}
+
+func TestDashboardQueryCompactTextDistinguishesMissingTailAndTruncation(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"signals"},"state":"ok","widgets":[{"id":"metric","title":"Metric","unit":"req/s","signalId":"s1"},{"id":"trace","title":"Trace","unit":"","signalId":"s2"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"truncated":true,"providerTruncated":true,"seriesTruncated":true,"series":[{"index":0,"last":{"timestamp":1793008740000,"value":0},"lastAt":1793008800000,"tailMissing":true}]},{"id":"s2","state":"ok","truncated":true,"providerTruncated":true,"traces":{"returned":100,"examplesTruncated":true}}]}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, `latest valid=0 "req/s" at 1793008740000 ms; latest observation missing`)
+	require.Contains(t, text, `series preview truncated; partial source response`)
+	require.Contains(t, text, `returned traces=100 (bounded sample); trace preview truncated; partial source response`)
+	require.NotContains(t, text, "latest=0", "A missing tail must not be described as a current value")
+}
+
+func TestDashboardQueryCompactTextDisclosesDuplicateObservations(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"signals"},"state":"ok","widgets":[{"id":"metric","title":"Metric","unit":"req/s","signalId":"s1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"last":{"timestamp":1793008740000,"value":0},"duplicateObservations":2}]}]}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, "duplicate timestamp observations=2 in summarized series (additional samples; some charts require aggregation)")
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryOutputSchema), &schema))
+	defs := schema["$defs"].(map[string]any)
+	series := defs["series"].(map[string]any)
+	property := series["properties"].(map[string]any)["duplicateObservations"].(map[string]any)
+	require.Contains(t, property["description"], "Some visualizations reject duplicate timestamps")
+}
+
+func TestDashboardQueryCompactTextDisclosesHistoryOnlyTruncation(t *testing.T) {
+	fixture := `{"schemaVersion":1,"dashboard":{"id":"signals"},"state":"ok","widgets":[{"id":"metric","title":"Metric","unit":"","signalId":"s1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"truncated":true,"series":[{"index":0,"last":{"timestamp":1000,"value":3},"historyTruncated":true}]}]}`
+	text, err := dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, "bounded signal truncated")
+	require.NotContains(t, text, "partial source response", "A compact-history limit is not a provider limit")
+	// A mixed result can also have an intact records preview; it must not hide
+	// truncation in its metric history.
+	fixture = strings.Replace(fixture, `"state":"ok","primarySeries"`, `"state":"ok","records":{"returned":0,"columns":[],"rows":[]},"primarySeries"`, 1)
+	text, err = dashboardQueryText(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Contains(t, text, "bounded signal truncated")
 }
 
 func TestDashboardQueryRecordTextBoundsAndScalarHonesty(t *testing.T) {
@@ -219,6 +512,24 @@ func TestDashboardQueryCapsResponseAndSanitizesFailures(t *testing.T) {
 			require.NotContains(t, err.Error(), "secret")
 		})
 	}
+}
+
+func TestDashboardQueryCompactTextIncludesBoundedSeriesCounts(t *testing.T) {
+	var body map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryFixture), &body))
+	body["widgets"] = []any{map[string]any{"id": "metrics", "title": "Metrics", "type": "timeseries", "unit": "", "signalId": "q1"}}
+	body["signals"] = []any{map[string]any{"id": "q1", "kind": "metrics", "state": "ok", "seriesReturned": 10, "seriesOmitted": 7, "providerTruncated": true}}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	text, err := dashboardQueryText(raw)
+	require.NoError(t, err)
+	require.Contains(t, text, "returned series=10 (bounded response), omitted summaries=7")
+	require.Contains(t, text, "partial source response")
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryOutputSchema), &schema))
+	signal := schema["properties"].(map[string]any)["signals"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	require.Contains(t, signal, "seriesReturned")
+	require.Contains(t, signal, "seriesOmitted")
 }
 
 func TestDashboardQueryCompactTextBoundsAndQuotesUntrustedTitles(t *testing.T) {

@@ -341,6 +341,34 @@ describe("query editor", () => {
     expect(screen.queryByText("stale result")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
   })
+  it("clears a completed preview when the dashboard query context changes", async () => {
+    const apiFetcher = vi.fn().mockResolvedValue({ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 11 }, { timestamp: 2000, value: 12 }] }] })
+    const workerFetcher = vi.fn().mockResolvedValue({ series: [{ name: "worker", labels: {}, points: [{ timestamp: 1000, value: 21 }, { timestamp: 2000, value: 22 }] }] })
+    const { rerender } = render(<QueryBuilder widget={widget} onChange={vi.fn()} queryFetcher={apiFetcher} />)
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    await screen.findByText("api")
+    rerender(<QueryBuilder widget={widget} onChange={vi.fn()} queryFetcher={workerFetcher} />)
+    expect(screen.queryByLabelText("Query preview")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    await screen.findByText("worker")
+    expect(workerFetcher).toHaveBeenCalledTimes(1)
+    rerender(<QueryBuilder widget={widget} onChange={vi.fn()} queryFetcher={apiFetcher} />)
+    expect(screen.queryByLabelText("Query preview")).not.toBeInTheDocument()
+  })
+  it("aborts and ignores a pending preview when the dashboard query context changes", async () => {
+    let resolve!: (result: QueryResult) => void
+    const apiFetcher = vi.fn<(request: QueryRequest, signal: AbortSignal) => Promise<QueryResult>>(() => new Promise<QueryResult>(next => { resolve = next }))
+    const workerFetcher = vi.fn().mockResolvedValue({ series: [] })
+    const { rerender } = render(<QueryBuilder widget={widget} onChange={vi.fn()} queryFetcher={apiFetcher} />)
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    const signal = apiFetcher.mock.calls[0][1]
+    rerender(<QueryBuilder widget={widget} onChange={vi.fn()} queryFetcher={workerFetcher} />)
+    expect(signal.aborted).toBe(true)
+    await act(async () => resolve({ series: [{ name: "stale api", labels: {}, points: [] }] }))
+    expect(screen.queryByLabelText("Query preview")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+  })
   it("scopes discovery by provider and ignores a late prior provider response", async () => {
     let resolve!: (value: ProviderMetadata) => void
     const metadata = vi.fn((id: string) =>

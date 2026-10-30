@@ -1,4 +1,6 @@
 .visualization {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   width: 100%;
@@ -6,6 +8,14 @@
   min-width: 0;
   container: insight-widget / size;
 }
+.visualizationContent {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+.traceExpand { display: block; margin-top: 4px; padding: 0; color: var(--gamma-accent, #53876a); background: transparent; border: 0; font: inherit; font-size: 10px; cursor: pointer; text-align: left; }
+.traceExpand:focus-visible { outline: 2px solid var(--gamma-accent, #53876a); outline-offset: 2px; }
 .chart {
   display: flex;
   flex-direction: column;
@@ -18,7 +28,24 @@
   min-height: 48px;
   min-width: 0;
   position: relative;
+  /* A late legend or annotation can shrink the plot before the SVG is
+     remeasured. Keep the old drawing out of the footer during that frame. */
+  overflow: clip;
 }
+.eventLine { position: absolute; width: 0; border-left: 1.5px dashed var(--gamma-muted, #697c73); opacity: .8; pointer-events: none; }
+.thresholdGuide { position: absolute; border-top: 1px dashed; pointer-events: none; z-index: 1; font-size: 10px; line-height: 1.2; }
+.thresholdGuide > span { position: absolute; left: 2px; bottom: 2px; background: var(--widget-surface, var(--gamma-surface, #fff)); padding: 1px 3px; }
+.eventRange { position: absolute; background: var(--gamma-muted, #697c73); opacity: .16; pointer-events: none; }
+.eventRange[data-severity="info"] { background: var(--gamma-chart-1, #2867b9); }
+.eventRange[data-severity="warning"] { background: var(--gamma-chart-4, #977017); }
+.eventRange[data-severity="critical"] { background: var(--gamma-danger, #b4473d); }
+.eventLine::before { content: ""; position: absolute; left: -3px; top: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--gamma-muted, #697c73); }
+.eventLine[data-severity="info"] { border-color: var(--gamma-chart-1, #2867b9); }
+.eventLine[data-severity="info"]::before { background: var(--gamma-chart-1, #2867b9); }
+.eventLine[data-severity="warning"] { border-color: var(--gamma-chart-4, #977017); }
+.eventLine[data-severity="warning"]::before { background: var(--gamma-chart-4, #977017); }
+.eventLine[data-severity="critical"] { border-color: var(--gamma-danger, #b4473d); }
+.eventLine[data-severity="critical"]::before { background: var(--gamma-danger, #b4473d); }
 .sharedCursor {
   position: absolute;
   width: 0;
@@ -54,7 +81,18 @@
 }
 .chartFooter > .legend { flex: 1; border-top: 0; padding: 2px 0; gap: 4px 16px; }
 .chartFooter .legendItem { flex-basis: 140px; max-width: none; }
+/* A category key retains every plotted identity even when narrow axis labels
+   are thinned. The capped region remains keyboard scrollable for large sets. */
+.chartFooter > .barLegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); align-items: start; gap: 3px 12px; max-height: 98px; }
+.barLegend .legendItem { max-width: none; width: 100%; gap: 5px; }
+.barLegend .swatch { width: 8px; height: 8px; border-radius: 1px; }
+.barLegend:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+
 .chartFooter > :only-child { margin-left: auto; }
+@container insight-widget (max-width: 360px) {
+  .chartFooter:has([data-window-lens]) { flex-wrap: wrap; gap: 2px 6px; }
+  .chartFooter:has([data-window-lens]) > .legend { flex-basis: 100%; }
+}
 .legendItem {
   display: flex;
   align-items: center;
@@ -70,16 +108,23 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .legendValue {
-  flex-shrink: 0;
-  max-width: 50%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--widget-text, var(--gamma-ink));
   font-weight: 500;
 }
+.chartFooter:has(.priorLegend) { flex-wrap: wrap; gap: 4px 12px; }
+.chartFooter:has(.priorLegend) > .legend { flex-basis: 100%; }
+.priorLegend { display: flex; flex: 1 1 100%; min-width: 0; max-height: 64px; overflow: auto; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted)); }
+.priorLegend > span { display: inline-flex; min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; align-items: center; gap: 5px; }
+.priorLegend i { width: 15px; border-top: 2px dashed; flex: none; }
+.priorLegend time { font-variant-numeric: tabular-nums; }
 .swatch {
   display: inline-block;
   height: 2px;
@@ -93,6 +138,7 @@
   margin-left: auto;
 }
 .limitNotice {
+  flex: none;
   font-size: 11px;
   line-height: 1.4;
   color: var(--gamma-warning, #886827);
@@ -207,6 +253,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.staleObservation {
+  color: var(--gamma-warning, #886827);
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 4px 16px;
+}
+.missingObservation {
+  color: var(--gamma-warning, #886827);
+  font-size: 11px;
+  line-height: 1.3;
+  padding-inline: var(--stat-reading-inset, 0px);
+}
 .statExtra {
   display: flex;
   align-items: center;
@@ -255,6 +313,21 @@
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--gamma-muted, #626e65) transparent;
+}
+.traceListContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.traceListContainer > .tableWrap { flex: 1 1 0; }
+.traceScrollHint {
+  flex: none;
+  margin: 0;
+  padding: 5px 8px;
+  color: var(--widget-text, var(--gamma-muted, #626e65));
+  font-size: 11px;
+  line-height: 1.4;
 }
 .table {
   border-collapse: collapse;
@@ -377,6 +450,13 @@
     padding-inline: 5px;
   }
 }
+@container insight-widget (max-width: 90px) {
+  .stat { gap: 4px; padding-inline: 0; }
+  .statValue { font-size: clamp(13px, 26cqw, 20px); letter-spacing: 0; }
+  .statUnit { font-size: 10px; margin-left: 2px; }
+  .statMeta { font-size: 10px; line-height: 1.25; }
+  .stat.stat.stat :global(button[data-gamma-button]) { padding-inline: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .loading::after {
     animation: none;
@@ -403,4 +483,42 @@
   line-height: 14px;
   color: var(--widget-text, var(--gamma-chart-axis, var(--gamma-muted)));
   pointer-events: none;
+}
+
+.stat:has([data-sparkline-placement="side"]) .statValue {
+  font-size: clamp(18px, 8cqw, 24px);
+  letter-spacing: -0.01em;
+}
+/* Timestamp remains available to assistive technology and in value details. */
+.stat:has([data-sparkline-placement="side"]) .statMeta {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@container insight-widget (max-height: 40px) {
+  .stat.stat { gap: 0; overflow: hidden; }
+  .stat.stat .statValue { font-size: clamp(16px, 8cqw, 21px); line-height: 1.1; }
+  .stat.stat .statMeta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .stat.stat.stat :global(button[data-gamma-button]) { min-height: 26px; padding-block: 0; margin-block: 0; }
+}
+
+.stat[data-stat-bar-enabled="true"] { gap: 6px; }
+.stat[data-stat-bar-enabled="true"] > [data-stat-summary] { flex: 1 1 0; min-height: 0; }
+.stat[data-stat-bar-enabled="true"] .statMeta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.statBar {
+  height: 7px;
+  min-width: 0;
+  margin: 0 var(--stat-reading-inset, 0px);
+  border-radius: 3px;
+  background: var(--gamma-surface-2, #eaf0f1);
+  overflow: hidden;
+}
+.statBarFill { display: block; height: 100%; border-radius: inherit; }
+@container insight-widget (max-height: 40px) {
+  .stat[data-stat-bar-enabled="true"] { display: grid; grid-template-columns: minmax(0, auto) minmax(32px, 1fr); align-items: center; gap: 8px; }
+  .stat[data-stat-bar-enabled="true"] > [data-stat-summary] { min-width: 0; }
+  .statBar { margin: 0 8px 0 0; }
 }

@@ -22,7 +22,7 @@ const health = [{ value: 0, color: colors.green, label: "Normal" }, { value: 40,
 const freeSpace = [{ value: 0, color: colors.red, label: "Critical" }, { value: 10, color: colors.orange, label: "Low" }, { value: 30, color: colors.yellow, label: "Available" }, { value: 60, color: colors.green, label: "Healthy" }]
 const number = (key: string, label: string, unit?: string): RecordColumn => ({ key, label, type: "number", ...(unit ? { unit } : {}) })
 const text = (key: string, label: string): RecordColumn => ({ key, label, type: "string" })
-const timestamp: RecordColumn = { key: "at", label: "Time (UTC)", type: "timestamp" }
+const timestamp: RecordColumn = { key: "at", label: "Time (local)", type: "timestamp" }
 const at = (index: number, hours = 1) => new Date(end - hours * 3600000 + index / (samples - 1) * hours * 3600000).toISOString()
 
 /** Seeded irregular observations: correlated jitter, isolated bursts, ramps, steps and outages. */

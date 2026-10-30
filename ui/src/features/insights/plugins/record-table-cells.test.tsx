@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { readFileSync } from "node:fs"
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordTable, registerRecordWidgetPlugins } from "./records"
 import { tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
@@ -26,6 +26,26 @@ const result: QueryResult = { records: {
 } }
 
 describe("table visual cells", () => {
+  it("announces horizontal overflow and clears the hint when the table fits", async () => {
+    let wide = true
+    let notify: (() => void) | undefined
+    const scrollWidth = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(() => wide ? 600 : 250)
+    const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(250)
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { notify = callback }
+      observe() {}
+      disconnect() {}
+    })
+    try {
+      render(<RecordTable widget={widget} result={result} />)
+      const hint = await screen.findByText("Scroll horizontally to see more columns")
+      expect(screen.getByRole("region", { name: "Resource capacity records" })).toHaveAttribute("aria-describedby", hint.id)
+      wide = false
+      act(() => notify?.())
+      await waitFor(() => expect(screen.queryByText("Scroll horizontally to see more columns")).not.toBeInTheDocument())
+      expect(screen.getByRole("region", { name: "Resource capacity records" })).not.toHaveAttribute("aria-describedby")
+    } finally { scrollWidth.mockRestore(); clientWidth.mockRestore() }
+  })
   it("keeps threshold text readable against the actual Gamma panel tokens and custom backgrounds", () => {
     const css = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8")
     for (const theme of ["light", "dark"] as const) {
@@ -70,12 +90,50 @@ describe("table visual cells", () => {
     expect(reading.style.color).toBe("#f2cc0c")
     expect(normal.style.color).toBe("#73bf69")
     expect(contrastRatio(reading.style.color, "#182127")).toBeGreaterThanOrEqual(4.5)
-    expect(reading).toHaveAttribute("title", "Usage: 72.1234% · Warning")
+    expect(reading).toHaveAttribute("aria-label", "Usage: 72.1234% · Warning")
     view.rerender(<RecordTable widget={{ ...styledWidget, options: { ...styledWidget.options, background: "#ffffff" } }} result={result} />)
     expect(reading.style.color).toBe(light)
     expect(contrastRatio(reading.style.color, "#ffffff")).toBeGreaterThanOrEqual(4.5)
     expect(styledWidget.options?.thresholds).toEqual(thresholds)
     expect(screen.getByRole("img", { name: "Usage: No data" }).style.color).toBe("")
+  })
+
+  it("renders exact text statuses with explicit colors while keeping missing and unmapped values honest", () => {
+    const statusResult: QueryResult = { records: { columns: [{ key: "host", type: "string" }, { key: "status", label: "State", type: "string" }], rows: [["a", "At risk"], ["b", "Healthy"], ["c", "Unexpected"], ["d", null]] } }
+    const cellStyle = { column: "status", display: "status-badge", mappings: [{ value: "At risk", color: "#e6504d" }, { value: "Healthy", color: "#20cba3" }] }
+    const configured: Widget = { ...widget, config: { cellStyles: [cellStyle] } }
+    const view = render(<RecordTable widget={configured} result={statusResult} />)
+    const risk = screen.getByText("At risk").closest('[data-cell-display="status-badge"]')!
+    fireEvent.pointerEnter(risk.closest("td")!, { pointerType: "mouse" })
+    expect(screen.getByRole("tooltip")).toHaveTextContent("State")
+    expect(screen.getByRole("tooltip")).toHaveTextContent("At risk")
+    expect(risk).toHaveAttribute("data-status-state", "mapped")
+    expect(risk.querySelector('[aria-hidden="true"]')).toHaveStyle({ backgroundColor: "#e6504d" })
+    expect(screen.getByText("Healthy").closest('[data-status-state]')).toHaveAttribute("data-status-state", "mapped")
+    expect(screen.getByText("Unexpected").closest('[data-status-state]')).toHaveAttribute("data-status-state", "unmapped")
+    expect(screen.getByText("No data").closest('[data-status-state]')).toHaveAttribute("data-status-state", "missing")
+    expect(tableCellStylesSchema.parse([cellStyle])).toHaveLength(1)
+    for (const invalid of [
+      [{ ...cellStyle, mappings: [{ value: "Healthy", color: "red" }] }],
+      [{ ...cellStyle, mappings: [cellStyle.mappings[0], cellStyle.mappings[0]] }],
+      [{ ...cellStyle, unit: "%" }],
+      [{ ...cellStyle, display: "color-text" }],
+      [{ ...cellStyle, barColorMode: "value" }],
+    ]) expect(() => tableCellStylesSchema.parse(invalid)).toThrow()
+    view.rerender(<RecordTable widget={{ ...configured, config: { cellStyles: [{ ...cellStyle, column: "usage" }] } }} result={result} />)
+    expect(screen.getByRole("alert")).toHaveTextContent("requires a string column")
+    const dashboard = dashboardSchema.parse({ schemaVersion: 1, id: "status", title: "Status", timeRange: "1h", refreshInterval: 0, widgets: [configured] })
+    for (const format of ["json", "yaml"] as const) expect(parseDashboardBundle(serializeDashboardBundle({ dashboards: [dashboard] }, format), format).dashboards[0].widgets[0].config).toEqual(configured.config)
+    expect(parseOpenUIDashboard(dashboardToOpenUI(dashboard)).widgets[0].config).toEqual(configured.config)
+  })
+
+  it("colors a whole gauge by the observed value when configured", () => {
+    const rule = { column: "usage", display: "bar-segments", min: 0, max: 100, segments: 6, barColorMode: "value" }
+    render(<RecordTable widget={{ ...widget, config: { cellStyles: [rule] } }} result={result} />)
+    const warning = screen.getByRole("img", { name: "Usage: 72.1234% · High · Scale 0% to 100%" })
+    expect((warning.querySelector("[data-bar-end]") as HTMLElement).style.background).toBe("#bd593e")
+    expect(warning).toHaveTextContent("72.12%")
+    expect(screen.getByRole("img", { name: /Usage: No data/ }).querySelector("[data-bar-end]")).toBeNull()
   })
 
   it("preserves column rules through JSON/YAML bundles and OpenUI", () => {
@@ -109,6 +167,20 @@ describe("table visual cells", () => {
     expect(tableBarGeometry(-Number.MAX_VALUE / 2, -Number.MAX_VALUE, Number.MAX_VALUE)).toEqual({ baseline: .5, start: .25, end: .5, outside: false })
     expect(tableBarGeometry(Number.MAX_VALUE, -Number.MAX_VALUE, Number.MAX_VALUE)).toEqual({ baseline: .5, start: .5, end: 1, outside: false })
     expect(tableBarGeometry(0, -Number.MAX_VALUE, Number.MAX_VALUE)).toEqual({ baseline: .5, start: .5, end: .5, outside: false })
+  })
+
+  it("renders segmented percentage gauges with exact values, bounded scales and honest gaps", () => {
+    const rules = [{ column: "usage", display: "bar-segments", min: 0, max: 100, unit: "%", segments: 20 }]
+    expect(tableCellStylesSchema.parse(rules)).toHaveLength(1)
+    expect(() => tableCellStylesSchema.parse([{ ...rules[0], segments: 2 }])).toThrow()
+    expect(() => tableCellStylesSchema.parse([{ ...rules[0], display: "bar" }])).toThrow()
+    render(<RecordTable widget={{ ...widget, config: { cellStyles: rules } }} result={result} />)
+    const positive = screen.getByRole("img", { name: "Usage: 72.1234% · High · Scale 0% to 100%" })
+    expect(positive).toHaveTextContent("72.12%")
+    expect(positive.querySelector("[data-segmented]")).toHaveStyle("--cell-segments: 20")
+    expect(positive.querySelector("[data-bar-end]")).toHaveAttribute("data-bar-end", "0.721234")
+    expect(screen.getByRole("img", { name: /Usage: No data/ }).querySelector("[data-bar-start]")).toBeNull()
+    expect(screen.getByRole("img", { name: /Usage: 120%.*Outside scale/ })).toHaveTextContent("120.00%")
   })
 
   it("keeps exact readings, unknowns and threshold meaning while bars remain fixed through filtering", () => {
@@ -158,6 +230,29 @@ describe("table visual cells", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument()
   })
 
+  it("authors status mappings and per-value gauge colors in the guided editor", () => {
+    registerRecordWidgetPlugins()
+    function Editor() {
+      const [value, setValue] = useState('{"columns":["host","usage"]}')
+      return <PluginConfigEditor definition={getWidgetDefinition("plugin", "record-table")} value={value} onChange={setValue} />
+    }
+    render(<Editor />)
+    fireEvent.click(screen.getByRole("button", { name: "Add column style" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 name" }), { target: { value: "host" } })
+    fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
+    fireEvent.click(screen.getByRole("option", { name: "Status badge" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add status" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 status 1 value" }), { target: { value: "At risk" } })
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 status 1 color" }), { target: { value: "#e6504d" } })
+    const json = () => JSON.parse((screen.getByRole("textbox", { name: "Plugin configuration", hidden: true }) as HTMLTextAreaElement).value)
+    expect(json().cellStyles).toEqual([{ column: "host", display: "status-badge", mappings: [{ value: "At risk", color: "#e6504d" }] }])
+    fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
+    fireEvent.click(screen.getByRole("option", { name: "Segmented gauge" }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Column 1 gauge colors" }))
+    fireEvent.click(screen.getByRole("option", { name: "Current value threshold" }))
+    expect(json().cellStyles).toEqual([{ column: "host", display: "bar-segments", min: 0, max: 100, barColorMode: "value" }])
+  })
+
   it("authors column presentation without replacing unrelated configuration", () => {
     registerRecordWidgetPlugins()
     function Editor() {
@@ -173,6 +268,18 @@ describe("table visual cells", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
     fireEvent.click(screen.getByRole("option", { name: "Colored background" }))
     expect(json().cellStyles).toEqual([{ column: "usage", display: "color-background" }])
+    fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
+    fireEvent.click(screen.getByRole("option", { name: "History sparkline" }))
+    expect(json().cellStyles).toEqual([{ column: "usage", display: "sparkline" }])
+    expect(screen.getByText(/ordered ISO timestamp and numeric or null value/)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 history unit" }), { target: { value: "%" } })
+    expect(json().cellStyles).toEqual([{ column: "usage", display: "sparkline", unit: "%" }])
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 threshold column" }), { target: { value: "risk" } })
+    expect(json().cellStyles).toEqual([{ column: "usage", display: "sparkline", unit: "%", thresholdColumn: "risk" }])
+    fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
+    fireEvent.click(screen.getByRole("option", { name: "Segmented gauge" }))
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Column 1 segments" }), { target: { value: "20" } })
+    expect(json().cellStyles).toEqual([{ column: "usage", display: "bar-segments", unit: "%", min: 0, max: 100, segments: 20 }])
     fireEvent.click(screen.getByRole("button", { name: "Remove column style 1" }))
     expect(json()).toEqual({ columns: ["host", "usage"], pageSize: 5 })
   })

@@ -182,6 +182,12 @@ describe("bounded tooltip rendering", () => {
     expect(context).not.toHaveProperty("onContextChange");
   });
 
+  it("does not expose a timeless record value as a timestamped observation", () => {
+    const timeless = buildTooltipContext(series, view, "ms", undefined, {}, { timestamp: NaN, value: 42 });
+    expect(timeless.observation).toBeUndefined();
+    expect(buildTooltipContext(series, view, "ms", undefined, {}, { timestamp: 1000, value: 42 }).observation).toEqual({ timestamp: 1000, value: 42 });
+  });
+
   it("renders a static accessible chart with visible isolated zero/negative observations and full-opacity labels", () => {
     const { container } = render(
       <TooltipSubWidget view={view} series={series} unit="req/s" />,
@@ -788,7 +794,7 @@ describe("shared embedded tooltip renderers", () => {
     render(<Host view={queryView("traces")} result={result} />);
     await screen.findByText(/Showing 100 of 103 traces/);
     expect(
-      screen.getByText(/Provider result limit reached/),
+      screen.getByText(/Provider response may be incomplete/),
     ).toBeInTheDocument();
     expect(screen.queryByText("Operation 102")).toBeNull();
   });

@@ -274,6 +274,34 @@ try {
     for(const receipt of new Map(writes.map(write=>[write.path,write])).values())assert.ok(receipt.status<300,"Every generated document must eventually persist")
     return{dashboards:persisted.dashboards.length,savedQueries:persisted.queries.length,writes:writes.length,emptyInitially:true}
   })
+  await check("Dense ingress KPI cards remain readable in view and edit mode",async()=>{
+    const board=persisted.dashboards.find(item=>item.title===referenceDashboards[0].title),observations=[]
+    assert.ok(board,"The imported ingress dashboard must exist")
+    for(const theme of ["Light","Dark"])for(const editing of [false,true]) {
+      await newPage({width:1280,height:1000})
+      await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${encodeURIComponent(board.id)}`,{waitUntil:"networkidle"})
+      await page.getByRole("heading",{name:board.title,exact:true}).waitFor()
+      await selectGammaOption(page,page.getByRole("combobox",{name:"Dashboard appearance",exact:true}),theme)
+      if(editing)await page.getByRole("button",{name:"Edit dashboard",exact:true}).click()
+      await page.evaluate(()=>document.fonts.ready)
+      for(const widget of board.widgets.filter(item=>item.type==="stat")) {
+        const element=tile(widget.id),value=element.locator('[data-stat-reading] [data-metric-value]').first()
+        await value.waitFor()
+        const actual=await element.evaluate(tile=>{
+          const value=tile.querySelector('[data-stat-reading] [data-metric-value]'),button=value.closest('button'),heading=tile.querySelector('h3')
+          const box=value.getBoundingClientRect(),buttonBox=button.getBoundingClientRect(),tileBox=tile.getBoundingClientRect(),range=document.createRange()
+          range.selectNodeContents(value);const glyphs=[...range.getClientRects()].map(rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom}))
+          return {title:heading.textContent,value:value.textContent,headingOverflow:heading.scrollHeight-heading.clientHeight,box:{left:Math.max(box.left,buttonBox.left,tileBox.left),right:Math.min(box.right,buttonBox.right,tileBox.right),top:Math.max(box.top,buttonBox.top,tileBox.top),bottom:Math.min(box.bottom,buttonBox.bottom,tileBox.bottom)},glyphs}
+        })
+        assert.ok(actual.headingOverflow<=1,`${widget.title}: title must fit its card in ${theme} ${editing?'edit':'view'}: ${JSON.stringify(actual)}`)
+        assert.ok(actual.glyphs.every(rect=>rect.left>=actual.box.left-.05&&rect.right<=actual.box.right+.05&&rect.top>=actual.box.top-2.5&&rect.bottom<=actual.box.bottom+2.5),`${widget.title}: value and unit must be fully readable in ${theme} ${editing?'edit':'view'}: ${JSON.stringify(actual)}`)
+        observations.push({theme,editing,id:widget.id,value:actual.value})
+      }
+      await page.screenshot({path:join(output,`dense-ingress-${theme.toLowerCase()}-${editing?'edit':'view'}.png`),fullPage:false,animations:"disabled"})
+    }
+    await newPage()
+    return {viewport:1280,sidebar:true,observations}
+  })
   for(const reference of referenceDashboards)for(const theme of ["Dark","Light"])await check(`${reference.title}: ${theme} reference composition at1600px`,async()=>{
     const board=persisted.dashboards.find(item=>item.title===reference.title)
     await loadBoard(board,theme);await renderEveryPanel(board)

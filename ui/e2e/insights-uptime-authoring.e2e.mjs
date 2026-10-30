@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import { chromium } from "playwright";
+import { selectGammaOption } from "./gamma-controls.mjs";
+import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs";
+import { installUptimeExample, uptimeExampleResult } from "./fixtures/uptime-reference-data.mjs";
+
+const base = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015";
+const browser = await chromium.launch({ headless: true });
+const context = await browser.newContext({ viewport: { width: 1512, height: 1100 }, reducedMotion: "reduce" });
+const page = await context.newPage(), errors = [];
+page.on("pageerror", error => errors.push(error.message));
+page.setDefaultTimeout(15000);
+try {
+  const fixture = await installRichChartFixtureAPI(page, base); installUptimeExample(fixture);
+  const queries = [];
+  await page.route("**/api/insights/query", async route => {
+    const request = route.request().postDataJSON();
+    if (!request.query?.startsWith("paprika_uptime_example_")) return route.fallback();
+    queries.push(request.query);
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(uptimeExampleResult(request)) });
+  });
+  await page.goto(`${base}/dashboard/insights/?dashboard=local-uptime-study`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Monitor availability · Sample data" }).waitFor();
+  const grid = page.locator('[data-widget-id="sample-monitor-grid"]');
+  await grid.locator('[data-status-index="0"]').waitFor();
+  await selectGammaOption(page, page.getByRole("combobox", { name: "Environment", exact: true }), "staging");
+  await page.waitForFunction(() => document.querySelector('[data-widget-id="sample-monitor-grid"] [data-status-index="8"]')?.getAttribute("data-status-value") === "unknown");
+  assert.ok(queries.some(query => query.includes('scope="staging"')), "shared variable must reach the saved query");
+  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
+  await page.getByRole("button", { name: "Add widget", exact: true }).click();
+  const library = page.getByRole("region", { name: "Widget library" });
+  for (const name of ["Monitor status grid", "Uptime calendar", "Uptime timeline"]) assert.ok(await library.getByRole("button", { name: new RegExp(name) }).isVisible(), `${name} is available in the builder`);
+  await library.getByRole("button", { name: "Close widget library" }).click();
+  await page.getByRole("button", { name: "Edit Current monitor observations", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Widget editor" });
+  await editor.getByRole("tab", { name: "Style" }).click();
+  await editor.getByLabel("Threshold 1 label", { exact: true }).fill("Down for review");
+  await editor.getByRole("button", { name: "Apply widget", exact: true }).click();
+  await editor.getByRole("button", { name: "Close widget editor" }).click();
+  await grid.getByRole("button", { name: /Down for review/ }).first().waitFor();
+  await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
+  await page.getByText("All changes saved", { exact: true }).waitFor();
+  const written = fixture.documents.get("local-uptime-study");
+  assert.equal(written.widgets.find(widget => widget.id === "sample-monitor-grid").options.thresholds[0].label, "Down for review");
+  assert.equal(written.widgets.find(widget => widget.id === "sample-monitor-grid").queryRef.id, "uptime-example-monitors");
+  assert.equal(written.variables[0].defaultValue, "production", "changing the view filter must not overwrite the saved default");
+  await page.reload({ waitUntil: "networkidle" });
+  await grid.getByRole("button", { name: /Down for review/ }).first().waitFor();
+  assert.deepEqual(errors, []); assert.deepEqual(fixture.failures, []);
+  console.log("PASS uptime widgets: library discovery, live threshold edit, conditional save/reload and shared saved-query filter");
+} finally { await context.close(); await browser.close(); }

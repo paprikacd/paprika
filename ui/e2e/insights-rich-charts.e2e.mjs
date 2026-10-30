@@ -102,7 +102,7 @@ async function inspectMetric(id) {
   await element.scrollIntoViewIfNeeded()
   const plot = element.locator('svg[role="group"]').first()
   await plot.focus()
-  const details = element.getByRole("region", { name: "Observation details", exact: true })
+  const details = page.getByRole("region", { name: "Observation details", exact: true })
   await details.waitFor()
   await plot.press("ArrowLeft")
   await plot.press("Enter")
@@ -112,32 +112,107 @@ async function inspectMetric(id) {
   await plot.press("Escape")
   await details.waitFor({ state: "hidden" })
   const bounds = await plot.boundingBox()
-  await page.mouse.move(bounds.x + bounds.width * .62, bounds.y + bounds.height * .45)
+  await page.mouse.move(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45)
   await details.waitFor()
+  assert.equal(await details.evaluate(node => node.parentElement === document.body), true, "Inspector must escape the clipped widget")
+  const firstTime = await details.locator("time").getAttribute("datetime")
+  await page.mouse.move(bounds.x + bounds.width * .72, bounds.y + bounds.height * .45, { steps: 12 })
+  await until(async () => await details.locator("time").getAttribute("datetime") !== firstTime, "Pointer traversal must update the actual inspected observation")
+  const observed = { timestamp: await details.locator("time").getAttribute("datetime"), value: await details.locator("[data-metric-value]").getAttribute("data-metric-value") }
   const inspection = await details.boundingBox(), viewport = page.viewportSize()
-  assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1, "Metric inspection must fit the viewport")
+  assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1 && inspection.y >= 0 && inspection.y + inspection.height <= viewport.height + 1, "Metric inspection must fit the viewport")
+  const overlapping = await details.getAttribute("data-tooltip-overlap") === "true"
+  const coveringNeighbor = await details.getAttribute("data-tooltip-overlaps-other-widget") === "true"
+  if (!overlapping) {
+    const card = await element.boundingBox()
+    assert.ok(inspection.x + inspection.width <= card.x + .5 || inspection.x >= card.x + card.width - .5 || inspection.y + inspection.height <= card.y + .5 || inspection.y >= card.y + card.height - .5, "The inspector must stay outside the widget when space is available")
+  }
+  if (!overlapping && !coveringNeighbor) {
+    await details.hover()
+    await page.waitForTimeout(220)
+    assert.equal(await details.isVisible(), true, "Hover transfer to the external inspector must keep it open")
+    assert.deepEqual({ timestamp: await details.locator("time").getAttribute("datetime"), value: await details.locator("[data-metric-value]").getAttribute("data-metric-value") }, observed, "Panel transfer must retain the selected sample")
+    await details.getByRole("button", { name: "Pin observation", exact: true }).click()
+    await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
+  } else {
+    assert.equal(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "An unpinned inspector covering a chart must not intercept pointer movement")
+    if (coveringNeighbor) {
+      const passesThrough = await details.evaluate((node, id) => {
+        const panel = node.getBoundingClientRect(), owner = document.querySelector(`[data-widget-id="${id}"]`)
+        return [...document.querySelectorAll('[data-widget-id]')].filter(other => other !== owner && !other.contains(owner) && !owner?.contains(other)).some(other => {
+          const box = other.getBoundingClientRect(), left = Math.max(panel.left, box.left), right = Math.min(panel.right, box.right), top = Math.max(panel.top, box.top), bottom = Math.min(panel.bottom, box.bottom)
+          if (right <= left || bottom <= top) return false
+          const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+          return !!hit && other.contains(hit) && !node.contains(hit)
+        })
+      }, id)
+      assert.equal(passesThrough, true, "The neighboring widget must receive pointer events through the unpinned inspector")
+    }
+    await plot.click({ position: { x: bounds.width * .72, y: bounds.height * .45 } })
+    await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
+    assert.notEqual(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "Pinned content must be interactive")
+  }
+  if (id === "flow") {
+    const theme = await page.locator("[data-insights-theme]").first().getAttribute("data-insights-theme")
+    await page.screenshot({ path: join(output, `external-tooltip-${theme}-${viewport.width}.png`), fullPage: false, animations: "disabled" })
+  }
+  await page.evaluate(() => scrollBy(0, 30))
+  await page.waitForTimeout(80)
+  const afterScroll = await details.boundingBox()
+  assert.ok(afterScroll.x >= 0 && afterScroll.x + afterScroll.width <= viewport.width + 1 && afterScroll.y >= 0 && afterScroll.y + afterScroll.height <= viewport.height + 1, "Pinned inspection must remain in the viewport after scrolling")
+  if (id === "flow" && viewport.width >= 1200) {
+    const narrow = { width: viewport.width - 180, height: viewport.height }
+    await page.setViewportSize(narrow)
+    await until(async () => { const box = await details.boundingBox(); return !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= narrow.width + 1 && box.y + box.height <= narrow.height + 1 }, "Pinned inspector must reposition after resizing")
+    await page.setViewportSize(viewport)
+    await until(async () => { const box = await details.boundingBox(); return !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1 }, "Pinned inspector must remain in view after restoring size")
+  }
   await page.keyboard.press("Escape")
-  return { keyboard: true, pinned: true, pointer: true }
+  await details.waitFor({ state: "hidden" })
+  return { keyboard: true, pinned: true, pointerTraversal: true, hoverTransfer: !overlapping && !coveringNeighbor, fallbackPassThrough: overlapping || coveringNeighbor, outsideWidget: !overlapping, scrollPlacement: true }
 }
 async function inspectScrollableMetric() {
+  // Exercise an actual narrow, touch-capable viewport, including coarse pointer styling.
+  const previousPage = page, previousFixtureAPI = fixtureAPI
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce", timezoneId: "UTC" })
+  page = await mobile.newPage(); page.setDefaultTimeout(15000)
+  fixtureAPI = await installRichChartFixtureAPI(page, base)
+  page.on("pageerror", error => errors.push(error.message))
+  page.on("request", request => { if (!request.url().startsWith(new URL(base).origin) && !request.url().startsWith("data:")) liveRequests.push(request.url()) })
   const board = fixtureAPI.documents.get("example-artboard-edge-watch")
   const widget = board.widgets.find(widget => widget.id === "flow")
+  widget.layout.h = 4 // the supported minimum short chart card
   const query = fixtureAPI.savedQueries.get(widget.queryRef.id).query
   const fixture = chartFixtures.find(fixture => fixture.metric === query.slice(0, query.indexOf("{")))
   assert.ok(fixture?.series?.length, "The scroll regression must use a saved-query metric fixture")
   const original = fixture.series, expectedValue = 42.123456789
   const longLabels = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`resource_${index}`, `cluster/omega/namespace/observability/deployment/ingestion-worker-${index}/instance/long-label-regression`]))
   // Enrich only this HTTP fixture for the scroll test; never alter renderer DOM or styles.
-  fixture.series = original.map(source => ({ ...source, labels: { ...source.labels, ...longLabels }, base: expectedValue, variation: 0, trend: 0, gaps: undefined }))
+  fixture.series = original.map(source => ({ ...source, name: `{namespace="observability", pod="paprika-insights-observability-probe-8f7d6d97d8-12345", container="${source.name}"}`, labels: { ...source.labels, ...longLabels }, base: expectedValue, variation: 0, trend: 0, gaps: undefined }))
   try {
     await open(studies[2])
     const element = await ready(widget), plot = element.locator('svg[role="group"]').first()
-    await plot.focus()
-    const details = element.getByRole("region", { name: "Observation details", exact: true })
+    const details = page.getByRole("region", { name: "Observation details", exact: true })
+    const reading = details.locator("[data-metric-value]")
+    const exactReading = async (state) => {
+      assert.equal(Number(await reading.getAttribute("data-metric-value")), expectedValue, `${state}: the exact selected sample must remain unchanged`)
+      const bounds = await reading.evaluate(node => {
+        const value = node.getBoundingClientRect(), panel = node.closest('[aria-label="Observation details"]').getBoundingClientRect()
+        return { value: { top: value.top, bottom: value.bottom, left: value.left, right: value.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, scrollTop: node.closest('[aria-label="Observation details"]').scrollTop }
+      })
+      assert.ok(bounds.value.top >= bounds.panel.top && bounds.value.bottom <= bounds.panel.bottom && bounds.value.left >= bounds.panel.left && bounds.value.right <= bounds.panel.right, `${state}: exact sample must be visible without scrolling: ${JSON.stringify(bounds)}`)
+    }
+    // Pointer hover must reveal the observed value before any scroll or pin.
+    const plotBox = await plot.boundingBox()
+    await page.mouse.move(plotBox.x + plotBox.width * .62, plotBox.y + plotBox.height * .45)
     await details.waitFor()
+    await exactReading("Hover")
+    await page.screenshot({ path: join(output, "long-series-hover-mobile.png"), fullPage: false, animations: "disabled" })
     assert.equal(await details.getAttribute("tabindex"), null, "Transient inspection must not gain a tab stop")
+    await plot.focus()
     await plot.press("Enter")
     await details.getByText("Pinned observation", { exact: true }).waitFor()
+    await exactReading("Pinned")
     assert.equal(await details.getAttribute("tabindex"), "0", "Pinned inspection must be keyboard focusable")
     await page.keyboard.press("Tab")
     assert.equal(await details.evaluate(node => document.activeElement === node), true, "Tab from the chart must reach its pinned scroll surface")
@@ -145,16 +220,8 @@ async function inspectScrollableMetric() {
     assert.ok(geometry.scroll > geometry.client + 100, "Long label metadata must force real inspector overflow")
     assert.equal(geometry.containment, "contain")
     await details.getByText(longLabels.resource_11, { exact: true }).waitFor({ state: "attached" })
-    const reading = details.locator("[data-metric-value]")
-    const exactReading = async () => {
-      assert.equal(Number(await reading.getAttribute("data-metric-value")), expectedValue, "Scrolling must preserve the exact selected sample")
-      assert.equal(await reading.evaluate(node => {
-        const value = node.getBoundingClientRect(), panel = node.closest('[aria-label="Observation details"]').getBoundingClientRect()
-        return value.top >= panel.top && value.bottom <= panel.bottom && value.left >= panel.left && value.right <= panel.right
-      }), true, "The selected sample must remain visible after returning to the top")
-    }
+    await details.getByText(/paprika-insights-observability-probe-8f7d6d97d8-12345/, { exact: false }).first().waitFor({ state: "attached" })
     const documentScroll = () => page.evaluate(() => ({ x: scrollX, y: scrollY }))
-    await exactReading()
     const initialPage = await documentScroll()
     await page.keyboard.press("PageDown")
     await until(async () => await details.evaluate(node => node.scrollTop) > 0, "PageDown must scroll the focused inspector")
@@ -176,14 +243,104 @@ async function inspectScrollableMetric() {
     await page.mouse.wheel(0, -700)
     await page.waitForTimeout(200)
     assert.deepEqual(await documentScroll(), beforeWheel, "Wheel at the inspector's top must not propagate to the dashboard")
-    await exactReading()
+    await exactReading("Home")
     await page.screenshot({ path: join(output, "pinned-inspector-mobile-keyboard-scroll.png"), fullPage: false, animations: "disabled" })
     await page.keyboard.press("Escape")
     await details.waitFor({ state: "hidden" })
     assert.equal(await plot.evaluate(node => document.activeElement === node), true, "Escape must return focus to the chart without reopening its inspector")
-    return { mobileWidth: 390, savedQuery: widget.queryRef.id, exactValue: expectedValue, labelCount: Object.keys(longLabels).length, tabFocus: true, afterPageDown, bottom, wheelContainedBothBoundaries: true, escapeClosed: true, focusRestored: true }
-  } finally { fixture.series = original }
+    assert.deepEqual(fixtureAPI.failures, [], "No mobile fixture contract failures")
+    return { mobileWidth: 390, coarsePointer: true, savedQuery: widget.queryRef.id, exactValue: expectedValue, labelCount: Object.keys(longLabels).length, initialHoverVisible: true, initiallyPinnedVisible: true, tabFocus: true, afterPageDown, bottom, wheelContainedBothBoundaries: true, escapeClosed: true, focusRestored: true }
+  } finally { fixture.series = original; await mobile.close(); page = previousPage; fixtureAPI = previousFixtureAPI }
 }
+async function inspectCompactProviderLabels() {
+  const board = fixtureAPI.documents.get("example-artboard-fleet-atlas")
+  const gaugeIndex = board.widgets.findIndex(widget => widget.id === "cpu-meter")
+  const gauge = board.widgets[gaugeIndex], plot = board.widgets.find(widget => widget.id === "node-cpu")
+  const originalGauge = structuredClone(gauge), originalVariables = structuredClone(board.variables)
+  const query = fixtureAPI.savedQueries.get(plot.queryRef.id).query
+  const metric = query.slice(0, query.indexOf("{")), fixture = chartFixtures.find(fixture => fixture.metric === metric)
+  assert.ok(fixture?.series?.length, "The provider label check requires the saved node query")
+  const originalSeries = fixture.series
+  const canonical = labels => metric + "{" + Object.entries(labels).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(", ") + "}"
+  fixture.series = originalSeries.map(source => {
+    const labels = { ...source.labels, pod: `paprika-observability-collector-deployment-87f6b76b67-${source.labels.cluster}-${source.labels.node}` }
+    return { ...source, labels, name: canonical(labels) }
+  })
+  Object.assign(gauge, {
+    providerId: plot.providerId, query: plot.query, queryRef: structuredClone(plot.queryRef),
+    config: { display: "segmented", seriesMode: "all", columns: 1, maxSeries: 7, segments: 16, showThresholds: false },
+    drilldowns: [{ id: "inspect-node", title: "Inspect selected signal", dashboardId: board.id, bindings: [
+      { variable: "selected_node", source: "label", value: "node" },
+      { variable: "selected_pod", source: "label", value: "pod" },
+      { variable: "selected_series", source: "series" },
+      { variable: "selected_value", source: "value" },
+    ] }],
+  })
+  board.variables.push(...["selected_node", "selected_pod", "selected_series", "selected_value"].map(name => ({ name, label: name })))
+  try {
+    await open(studies[1])
+    const chart = await ready(plot), legend = chart.getByRole("list", { name: "Latest values by series" })
+    const legendRows = legend.getByRole("listitem")
+    await until(async () => await legendRows.count() === 7, "All seven saved-query time series must appear in the legend")
+    const firstOmega = fixture.series.find(source => source.labels.cluster === "omega" && source.labels.node === "node-01")
+    assert.equal(await legendRows.first().getAttribute("title"), firstOmega.name, "Legend title must preserve the raw source name")
+    await legendRows.first().locator('[aria-hidden="true"]').filter({ hasText: "node-01" }).waitFor()
+    const element = tile(gauge.id), bank = element.getByRole("region", { name: `${gauge.title} gauges`, exact: true })
+    await element.scrollIntoViewIfNeeded()
+    await until(async () => await bank.locator("[data-gauge-series]").count() === 7, "The gauge must render all seven scoped series")
+    assert.deepEqual(await element.getByRole("alert").allTextContents(), [])
+    const assertRows = async (cluster, count) => {
+      const sources = fixture.series.filter(source => source.labels.cluster === cluster)
+      const rows = bank.locator("[data-gauge-series]")
+      await until(async () => await rows.count() === count, `Expected ${count} ${cluster} gauge rows`)
+      for (let index = 0; index < count; index++) {
+        const row = rows.nth(index), source = sources[index], label = row.locator("[data-gauge-label]")
+        assert.equal(await row.getAttribute("data-gauge-series"), source.name, "The plotted series identity must remain unchanged")
+        assert.equal(await label.getAttribute("title"), source.name, "The full source identity must remain on the label")
+        const visible = label.locator('[aria-hidden="true"]')
+        assert.equal(await visible.innerText(), source.labels.node, "The visible identifier must distinguish the real node")
+        const bounds = await visible.evaluate(node => {
+          const text = document.createRange(); text.selectNodeContents(node)
+          const glyph = text.getBoundingClientRect(), container = node.parentElement.getBoundingClientRect()
+          return { left: glyph.left, right: glyph.right, containerLeft: container.left, containerRight: container.right }
+        })
+        assert.ok(bounds.left >= bounds.containerLeft - .05 && bounds.right <= bounds.containerRight + .05, `Node label must fit at 390px: ${JSON.stringify(bounds)}`)
+        const button = row.getByRole("button")
+        assert.ok((await button.getAttribute("aria-label")).includes(source.name), "Accessible selection name must preserve full source identity")
+      }
+      return rows
+    }
+    await assertRows("omega", 7)
+    await selectGammaOption(page, scopeControl(board.variables[0]), "staging")
+    await element.scrollIntoViewIfNeeded()
+    const rows = await assertRows("staging", 4)
+    assert.ok(fixtureAPI.calls.some(call => call.path === "/query" && call.document?.query === `${metric}{cluster="staging"}`), "The shared filter must resolve into the saved provider query")
+    const source = fixture.series.find(source => source.labels.cluster === "staging" && source.labels.node === "node-01"), first = rows.first()
+    const rawValue = await first.locator("[data-gauge-value]").getAttribute("data-gauge-value")
+    assert.ok(Number.isFinite(Number(rawValue)), "The selected observation must be finite")
+    await first.getByRole("button").click()
+    await element.getByRole("status").filter({ hasText: `Selected: ${source.name}` }).waitFor()
+    const details = page.getByRole("tooltip")
+    await details.getByText(source.name, { exact: true }).waitFor()
+    await details.getByText(source.labels.node, { exact: true }).waitFor()
+    await details.getByText(source.labels.pod, { exact: true }).waitFor()
+    assert.equal(await details.locator("[data-metric-value]").getAttribute("data-metric-value"), rawValue)
+    await page.screenshot({ path: join(output, "compact-provider-labels-mobile.png"), fullPage: false, animations: "disabled" })
+    await page.keyboard.press("Escape")
+    await element.getByRole("button", { name: `Open related dashboard from ${gauge.title}`, exact: true }).click()
+    await page.getByRole("menuitem", { name: "Inspect selected signal", exact: false }).click()
+    await until(() => {
+      const params = new URL(page.url()).searchParams, values = JSON.parse(params.get("vars") ?? "{}")
+      return values.selected_node === source.labels.node && values.selected_pod === source.labels.pod && values.selected_series === source.name && values.selected_value === rawValue
+    }, "Drilldown must carry the complete original labels, series and exact value")
+    return { width: 390, before: 7, after: 4, shortLabel: source.labels.node, fullIdentityRetained: true, exactSelectionContextRetained: true, sharedFilter: "staging", standardLegend: true }
+  } finally {
+    fixture.series = originalSeries
+    board.widgets[gaugeIndex] = originalGauge
+    board.variables = originalVariables
+  }
+}
+
 async function inspectRecord(id, name) {
   const element = tile(id)
   await element.scrollIntoViewIfNeeded()
@@ -366,7 +523,10 @@ try {
         return { existingTimeSeriesConverted: true, stackedBarsRendered: true, gaugePreviewModes: ["linear", "segmented", "radial"], queryBindingsPreserved: true, savedAndReloaded: true, sharedFilterRetained: true }
       })
     }
-    if (width === 390) await check("Pinned mobile metric inspector supports native keyboard scrolling and contains wheel gestures", inspectScrollableMetric)
+    if (width === 390) {
+      await check("Pinned mobile metric inspector supports native keyboard scrolling and contains wheel gestures", inspectScrollableMetric)
+      await check("Provider series stay distinguishable and retain exact context through a mobile filter and drilldown", inspectCompactProviderLabels)
+    }
     assert.deepEqual(fixtureAPI.failures, [], "No test API contract failures")
     await writeFile(join(output, `api-calls-${width}.json`), JSON.stringify(fixtureAPI.calls, null, 2))
     await context.close(); context = undefined

@@ -71,6 +71,12 @@ describe("tooltip sub-widget contract", () => {
 })
 
 describe("dashboard document contract", () => {
+  it("allows one-row stat widgets, but not other visualizations", () => {
+    for (const type of ["stat", "timeseries", "bar", "table", "traces", "heatmap"] as const) {
+      const widget = { ...dashboard.widgets[0], type, layout: { x: 0, y: 0, w: 4, h: 1 } }
+      expect(widgetSchema.safeParse(widget).success, type).toBe(type === "stat")
+    }
+  })
   it.each(["json", "yaml"] as const)(
     "round trips %s without losing queries or layout",
     (format) => {

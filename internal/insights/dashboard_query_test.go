@@ -20,6 +20,26 @@ func queryReadWidget(id, expression string) map[string]any {
 	return map[string]any{"id": id, "title": id, "type": "stat", "providerId": "prometheus", "query": expression, "unit": "req/s", "layout": map[string]int{"x": 0, "y": 0, "w": 6, "h": 4}, "options": map[string]int{"decimals": 2}}
 }
 
+func TestDashboardQueryDisclosesDuplicateTimestampObservations(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/query_range" {
+			t.Errorf("unexpected provider request: %s", r.URL)
+		}
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1792972800,"1"],[1792972800,"NaN"],[1792972800,"3"],[1792972812,"5"]]}]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	_, etag := putReadDashboard(t, s, queryReadWidget("requests", "up"))
+	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+	series := result.Signals[0].Series[0]
+	if series.DuplicateObservations != 2 || series.Samples != 4 || series.Missing != 1 || series.Mean == nil || *series.Mean != 3 {
+		t.Fatalf("unexpected duplicate observation summary: %+v", series)
+	}
+	if result.Dashboard.ETag != etag {
+		t.Fatal("read-only query changed the dashboard revision")
+	}
+}
+
 func putReadDashboard(t *testing.T, s *Server, widgets ...map[string]any) (json.RawMessage, string) {
 	t.Helper()
 	document, err := json.Marshal(map[string]any{"schemaVersion": 1, "id": "overview", "title": "Service overview", "timeRange": "1h", "refreshInterval": 30, "widgets": widgets, "variables": []any{map[string]any{"name": "service", "label": "Service", "defaultValue": "checkout", "options": []string{"checkout", "api"}}}})
@@ -93,13 +113,171 @@ func TestDashboardQuerySavedBindingsDeduplicateAndDoNotWrite(t *testing.T) { //n
 	if result.Dashboard.ETag != dashboardETag || len(result.SavedQueries) != 1 || result.SavedQueries[0].ETag != savedETag || result.Variables["service"] != value {
 		t.Fatalf("snapshot provenance: %+v", result)
 	}
+	if result.Widgets[0].SavedQueryID != "requests" || result.Widgets[1].SavedQueryID != "requests" || result.Signals[0].Kind != "metrics" || result.Signals[0].ProviderID != "prometheus" {
+		t.Fatalf("shared signal must retain each saved reference and resolved provider: %+v", result)
+	}
 	after, afterETag, err := s.store.Get("overview")
 	if err != nil || !bytes.Equal(before, after) || dashboardETag != afterETag {
 		t.Fatal("reading dashboard mutated its document")
 	}
-	_, afterSavedETag, err := s.savedQueries.get("requests")
+	savedDocument, afterSavedETag, err := s.savedQueries.get("requests")
 	if err != nil || afterSavedETag != savedETag {
 		t.Fatal("reading dashboard mutated saved query")
+	}
+	if _, err = s.savedQueries.put("requests", savedDocument, `"stale-etag"`, ""); err == nil {
+		t.Fatal("stale saved-query update must be rejected")
+	}
+	again := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(body), nil))
+	if again.Widgets[0].SavedQueryID != "requests" || len(again.SavedQueries) != 1 || again.SavedQueries[0].ETag != savedETag || again.Signals[0].ProviderID != "prometheus" {
+		t.Fatalf("rejected update must leave saved-query provenance unchanged: %+v", again)
+	}
+}
+
+func TestDashboardQueryKeepsVisualizationIdentityForSharedSignals(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"node":"one"},"values":[[1792972800,"2"]]}]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	stat := queryReadWidget("stat", "up")
+	gauge := queryReadWidget("gauge", "up")
+	gauge["type"], gauge["pluginId"], gauge["dataKind"] = "plugin", "threshold-gauge", "metrics"
+	history := queryReadWidget("history", "up")
+	history["type"], history["pluginId"], history["dataKind"] = "plugin", "status-history", "metrics"
+	before, etag := putReadDashboard(t, s, stat, gauge, history)
+	response := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil)
+	result := readDashboardResult(t, response)
+	if result.QueryCount.Deduplicated != 2 || len(result.Signals) != 1 {
+		t.Fatalf("shared query must execute once: %+v", result.QueryCount)
+	}
+	if result.Widgets[0].PluginID != "" || result.Widgets[0].DataKind != "" || result.Widgets[1].PluginID != "threshold-gauge" || result.Widgets[1].DataKind != "metrics" || result.Widgets[2].PluginID != "status-history" || result.Widgets[2].DataKind != "metrics" {
+		t.Fatalf("visualizations lost their identities: %+v", result.Widgets)
+	}
+	var wire struct {
+		Widgets []map[string]any `json:"widgets"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wire.Widgets[0]["pluginId"]; ok {
+		t.Fatal("builtins must omit plugin-only metadata")
+	}
+	if _, ok := wire.Widgets[0]["dataKind"]; ok {
+		t.Fatal("builtins must omit plugin-only metadata")
+	}
+	after, afterETag, err := s.store.Get("overview")
+	if err != nil || !bytes.Equal(before, after) || etag != afterETag {
+		t.Fatal("query changed the dashboard or its ETag")
+	}
+}
+
+func TestDashboardQueryKeepsDistinctSavedReferencesForDeduplicatedSignals(t *testing.T) {
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	firstETag := putReadSavedQuery(t, s, "first-query", `up{service={{service}}}`)
+	secondETag := putReadSavedQuery(t, s, "second-query", `up{service={{service}}}`)
+	first, second := queryReadWidget("first", "dormant"), queryReadWidget("second", "dormant")
+	first["queryRef"] = map[string]any{"id": "first-query"}
+	second["queryRef"] = map[string]any{"id": "second-query"}
+	putReadDashboard(t, s, first, second)
+	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+	if calls.Load() != 1 || len(result.Signals) != 1 || result.Widgets[0].SignalID != result.Widgets[1].SignalID || result.QueryCount.Deduplicated != 1 {
+		t.Fatalf("identical queries should share one signal: %+v", result)
+	}
+	if result.Widgets[0].SavedQueryID != "first-query" || result.Widgets[1].SavedQueryID != "second-query" || len(result.SavedQueries) != 2 || result.SavedQueries[0].ETag != firstETag || result.SavedQueries[1].ETag != secondETag {
+		t.Fatalf("deduplication must preserve each source reference and ETag: %+v", result)
+	}
+	if result.Signals[0].Kind != "metrics" || result.Signals[0].ProviderID != "prometheus" || result.Signals[0].State != "empty" {
+		t.Fatalf("empty signals retain resolved kind and provider: %+v", result.Signals[0])
+	}
+}
+
+func TestDashboardQueryReturnedSampleFreshness(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("query") == "empty" {
+			_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1792972800,"0"],[1792972812,"NaN"]]}]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	stale, fresh, empty := queryReadWidget("old", "up"), queryReadWidget("fresh", "up"), queryReadWidget("empty", "empty")
+	stale["options"] = map[string]any{"staleAfterSeconds": 300}
+	fresh["options"] = map[string]any{"staleAfterSeconds": 3600}
+	empty["options"] = map[string]any{"staleAfterSeconds": 300}
+	putReadDashboard(t, s, stale, fresh, empty)
+	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+	if got := result.Widgets[0].Freshness; got == nil || got.State != "stale" || got.AgeSeconds == nil || *got.AgeSeconds != 3600 || got.LastTimestamp == nil || *got.LastTimestamp != 1792972800000 {
+		t.Fatalf("stale observation: %+v", got)
+	}
+	if got := result.Widgets[1].Freshness; got == nil || got.State != "fresh" || *got.AgeSeconds != 3600 {
+		t.Fatalf("threshold boundary: %+v", got)
+	}
+	if got := result.Widgets[2].Freshness; got == nil || got.State != "unknown" || got.AgeSeconds != nil || got.LastTimestamp != nil {
+		t.Fatalf("empty observations are unknown: %+v", got)
+	}
+}
+
+func TestDashboardQueryStatThresholdsUseTheDisplayedLastValidValue(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("query") == "empty" {
+			_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"status":"success","warnings":["partial response"],"data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1792972800,"-2"],[1792972812,"0"],[1792972824,"NaN"]]}]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	first, second, empty, plain := queryReadWidget("boundary", "up"), queryReadWidget("fallback", "up"), queryReadWidget("empty", "empty"), queryReadWidget("plain", "up")
+	missing, plugin := queryReadWidget("missing", "up"), queryReadWidget("plugin", "up")
+	first["options"] = map[string]any{"thresholds": []any{map[string]any{"value": -1, "color": "#10aa10", "label": "Low"}, map[string]any{"value": 0, "color": "#ff0000", "label": "High"}}}
+	second["options"] = map[string]any{"thresholds": []any{map[string]any{"value": 10, "color": "#123456", "label": "Fallback"}, map[string]any{"value": 20, "color": "#ffffff"}}}
+	empty["options"] = first["options"]
+	missing["options"], missing["queryRef"] = first["options"], map[string]any{"id": "missing-query"}
+	plugin["type"], plugin["pluginId"], plugin["dataKind"], plugin["options"] = "plugin", "threshold-gauge", "metrics", first["options"]
+	_, etag := putReadDashboard(t, s, first, second, empty, plain, missing, plugin)
+	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+	if result.QueryCount.Deduplicated != 3 || len(result.Signals) != 2 || result.Dashboard.ETag != etag {
+		t.Fatalf("query deduplication and revision: %+v", result)
+	}
+	if got := result.Widgets[0].Threshold; got == nil || got.State != "matched" || got.Boundary == nil || *got.Boundary != 0 || got.Color != "#ff0000" || got.Label != "High" {
+		t.Fatalf("exact boundary must match the UI's displayed zero: %+v", got)
+	}
+	if got := result.Widgets[1].Threshold; got == nil || got.State != "matched" || got.Boundary == nil || *got.Boundary != 10 || got.Label != "Fallback" {
+		t.Fatalf("first threshold must be the below-range fallback: %+v", got)
+	}
+	if got := result.Widgets[2].Threshold; got == nil || got.State != "unknown" || got.Boundary != nil || got.Color != "" {
+		t.Fatalf("empty data must not imply a threshold band: %+v", got)
+	}
+	if result.Widgets[3].Threshold != nil || !result.Signals[0].Series[0].TailMissing || !result.Signals[0].ProviderTruncated || result.Signals[0].State != "ok" {
+		t.Fatalf("unconfigured thresholds, missing latest sample or partial source disclosure: %+v", result)
+	}
+	if result.Widgets[4].Threshold == nil || result.Widgets[4].Threshold.State != "unknown" || result.Widgets[4].Error == nil || result.Widgets[4].Error.Code != "missing_saved_query" || result.State != "partial" {
+		t.Fatalf("failed reference must keep an unknown band and explicit error: %+v", result.Widgets[4])
+	}
+	if result.Widgets[5].Threshold != nil {
+		t.Fatalf("plugin thresholds have different semantics and must not be interpreted as a stat band: %+v", result.Widgets[5])
+	}
+}
+
+func TestReturnedSampleThresholdValidation(t *testing.T) {
+	for _, tc := range []struct {
+		raw   string
+		valid bool
+	}{
+		{`{"staleAfterSeconds":1}`, true}, {`{"staleAfterSeconds":2678400}`, true},
+		{`{"staleAfterSeconds":0}`, false}, {`{"staleAfterSeconds":1.5}`, false},
+		{`{"staleAfterSeconds":2678401}`, false}, {`{"staleAfterSeconds":null}`, false},
+	} {
+		if err := validateWidgetOptions(json.RawMessage(tc.raw)); (err == nil) != tc.valid {
+			t.Errorf("%s: valid=%v error=%v", tc.raw, tc.valid, err)
+		}
 	}
 }
 
@@ -121,6 +299,9 @@ func TestDashboardQueryDefaultsSelectionAndNoFallback(t *testing.T) {
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
 	if result.State != "partial" || len(queries) != 2 || queries[0] != `up{service="saved-default"}` || queries[1] != `up{service="checkout"}` || result.Widgets[1].Error.Code != "missing_saved_query" {
 		t.Fatalf("default/fallback semantics queries=%v result=%+v", queries, result)
+	}
+	if result.Widgets[0].SavedQueryID != "requests" || result.Widgets[1].SavedQueryID != "missing-query" || result.Widgets[1].SignalID != "" || result.Widgets[2].SavedQueryID != "" || result.Signals[0].Kind != "metrics" {
+		t.Fatalf("resolved, missing and inline provenance must remain distinct: %+v", result)
 	}
 	queries = nil
 	result = readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","widget_ids":["inline","saved"],`+dashboardQueryWindow+`}`), nil))
@@ -247,6 +428,38 @@ func TestDashboardQueryPartialProviderFailureAndCancellation(t *testing.T) {
 	}
 }
 
+func TestDashboardQueryPartialEmptyProviderResponse(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("query") {
+		case "limited-empty":
+			_, _ = fmt.Fprint(w, `{"status":"success","warnings":["partial response"],"data":{"resultType":"matrix","result":[]}}`)
+		case "empty":
+			_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+		default:
+			_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1792972800,"0"]]}]}}`)
+		}
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	_, etag := putReadDashboard(t, s, queryReadWidget("limited", "limited-empty"), queryReadWidget("empty", "empty"), queryReadWidget("zero", "zero"))
+	for _, tc := range []struct{ ids, state string }{
+		{`["limited"]`, "partial"}, {`["empty"]`, "empty"},
+		{`["limited","zero"]`, "partial"}, {`["zero","limited"]`, "partial"}, {`["empty","zero"]`, "ok"},
+	} {
+		input := `{"id":"overview","widget_ids":` + tc.ids + `,` + dashboardQueryWindow + `}`
+		response := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(input), nil)
+		result := readDashboardResult(t, response)
+		if result.State != tc.state || result.Dashboard.ETag != etag {
+			t.Fatalf("%s: expected %s with unchanged ETag: %+v", tc.ids, tc.state, result)
+		}
+		for _, signal := range result.Signals {
+			if signal.ProviderTruncated && signal.State != "partial" {
+				t.Fatalf("source-limited no-data signal is not partial: %+v", signal)
+			}
+		}
+	}
+}
+
 func TestDashboardQueryAdmissionIsSharedAndCancellationIsHonest(t *testing.T) {
 	var calls atomic.Int32
 	provider := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
@@ -314,7 +527,7 @@ func TestDashboardQueryTempoSavedQueryAndOptInHistory(t *testing.T) {
 	putReadDashboard(t, s, queryReadWidget("rate", "up"), traceWidget)
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","max_traces":1,`+dashboardQueryWindow+`}`), nil))
 	trace := result.Signals[1].Traces
-	if result.State != "ok" || trace.Returned != 2 || trace.StatusCounts["unknown"] != 2 || len(trace.Examples) != 1 || !trace.ExamplesTruncated || trace.Examples[0].TraceID != "abc" || *trace.Examples[0].DurationMs != 12 {
+	if result.State != "ok" || trace.Returned != 2 || trace.StatusCounts["unknown"] != 2 || len(trace.Examples) != 1 || !trace.ExamplesTruncated || trace.Examples[0].TraceID != "00000000000000000000000000000abc" || *trace.Examples[0].DurationMs != 12 {
 		t.Fatalf("Tempo summary: %+v", trace)
 	}
 	w := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","widget_ids":["rate"],"history_points":2,`+dashboardQueryWindow+`}`), nil)

@@ -133,12 +133,60 @@ describe("document capacity backoff", () => {
   })
 
   it("does not retry provider operations or an unconditioned document mutation", async () => {
-    const fetcher = mockFetch(limited("1"), limited("1"), limited("1"))
+    const fetcher = mockFetch(limited("1"), limited("1"))
     const api = createInsightsClient()
-    await expect(api.query({ providerId: "metrics", kind: "metrics", query: "up", start: 0, end: 1000, step: 1 }, new AbortController().signal)).rejects.toThrow(/retry shortly/)
     await expect(api.saveProvider({ id: "metrics", name: "Metrics", type: "prometheus", url: "http://metrics:9090" })).rejects.toThrow(/retry shortly/)
     await expect(api.remove(dashboard.id)).rejects.toThrow(/retry shortly/)
-    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(fetcher).toHaveBeenCalledTimes(2)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe("read-only query capacity backoff", () => {
+  const input = { providerId: "metrics", kind: "metrics" as const, query: "up", start: 0, end: 1000, step: 1 }
+  it("retries an explicit 429 with the exact query and returns the result", async () => {
+    const fetcher = mockFetch(limited("1"), response({ series: [] }))
+    const pending = createInsightsClient().query(input, new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(await pending).toEqual({ series: [] })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[1][1].body).toEqual(fetcher.mock.calls[0][1].body)
+  })
+  it("cancels backoff when a widget is hidden or its query changes", async () => {
+    const fetcher = mockFetch(limited("1"))
+    const abort = new AbortController()
+    const rejected = expect(createInsightsClient().query(input, abort.signal)).rejects.toMatchObject({ name: "AbortError" })
+    await vi.advanceTimersByTimeAsync(0)
+    abort.abort()
+    await rejected
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it("does not replay under a different principal", async () => {
+    let token = "first"
+    const fetcher = mockFetch(limited("1"))
+    const rejected = expect(createInsightsClient("/api/insights", () => token).query(input, new AbortController().signal)).rejects.toThrow(/session changed/)
+    await vi.advanceTimersByTimeAsync(0)
+    token = "second"
+    await vi.advanceTimersByTimeAsync(1000)
+    await rejected
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it("surfaces the error after three retries and never retries a 5xx", async () => {
+    const fetcher = mockFetch(limited(), limited(), limited(), limited(), response({ error: "unavailable" }, 503))
+    const api = createInsightsClient()
+    const rejected = expect(api.query(input, new AbortController().signal)).rejects.toThrow(/retry shortly/)
+    await vi.advanceTimersByTimeAsync(7000)
+    await rejected
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    await expect(api.query(input, new AbortController().signal)).rejects.toThrow(/unavailable/)
+    expect(fetcher).toHaveBeenCalledTimes(5)
+  })
+  it("does not retry an ambiguous network failure", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))
+    vi.stubGlobal("fetch", fetcher)
+    await expect(createInsightsClient().query(input, new AbortController().signal)).rejects.toThrow(/Failed to fetch/)
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 })

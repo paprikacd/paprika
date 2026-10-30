@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowDown, ChevronDown, Code2, Plus, Play, SlidersHorizontal, Trash2 } from "lucide-react"
 import type { InsightsClient, ProviderMetadata } from "./client"
 import {
@@ -517,12 +517,6 @@ export function QueryBuilder({
   useEffect(() => () => onValidityChange?.(true), [onValidityChange])
   const [hasOpened, setHasOpened] = useState(defaultExpanded)
   const [mode, setMode] = useState(defaultExpanded ? "builder" : "code")
-  const [preview, setPreview] = useState<{
-    key: string
-    result?: QueryResult
-    error?: string
-    loading: boolean
-  }>()
   const request = useRef<AbortController | null>(null)
   const fetcher = queryFetcher ?? client?.query
   const key = JSON.stringify([
@@ -532,13 +526,23 @@ export function QueryBuilder({
     range?.start,
     range?.end,
   ])
-  useEffect(() => () => request.current?.abort(), [key])
+  // The fetcher is scoped to the dashboard's current variable values and
+  // provider/query configuration. A filter change creates a new context even
+  // when the authored expression and time range are unchanged.
+  const revision = useMemo(() => ({ key, fetcher }), [key, fetcher])
+  const [preview, setPreview] = useState<{
+    revision: typeof revision
+    result?: QueryResult
+    error?: string
+    loading: boolean
+  }>()
+  useEffect(() => () => request.current?.abort(), [revision])
   async function run() {
     if (!fetcher || !widget.query.trim() || !editorValid) return
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
-    setPreview({ key, loading: true })
+    setPreview({ revision, loading: true })
     const end = range?.end ?? Math.floor(Date.now() / 1000),
       start = range?.start ?? end - 3600
     try {
@@ -555,17 +559,17 @@ export function QueryBuilder({
         controller.signal,
       )
       if (!controller.signal.aborted)
-        setPreview({ key, result, loading: false })
+        setPreview({ revision, result, loading: false })
     } catch (error) {
       if (!controller.signal.aborted)
         setPreview({
-          key,
+          revision,
           error: error instanceof Error ? error.message : "Query failed",
           loading: false,
         })
     }
   }
-  const current = preview?.key === key ? preview : undefined
+  const current = preview?.revision === revision ? preview : undefined
   const codeEditor = (
     <div className={styles.codeEditor}>
       <div className={styles.field}>

@@ -8,7 +8,33 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/benebsworth/paprika/internal/dataframe"
 )
+
+func TestDashboardSummaryDoesNotCallIncompleteEmptySourceEmpty(t *testing.T) {
+	for name, result := range map[string]QueryResult{
+		"metrics": {Series: []Series{}, Truncated: true},
+		"traces":  {Traces: []Trace{}, Truncated: true},
+		"records": {Records: &dataframe.Frame{Columns: []dataframe.Column{{Key: "value", Type: "number"}}, Rows: [][]any{}, Truncated: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			signal := summarizeDashboardResult(result, DashboardSummaryOptions{})
+			if signal.State != "partial" || !signal.ProviderTruncated || !signal.Truncated {
+				t.Fatalf("source-limited empty response must be partial, not definitively empty: %+v", signal)
+			}
+			if signal.PrimarySeries != nil {
+				t.Fatalf("source-limited empty response must not invent a primary observation: %+v", signal)
+			}
+		})
+	}
+	// A compact preview limit is not a source failure; populated source-limited
+	// signals remain ok and are independently marked providerTruncated.
+	signal := summarizeDashboardResult(QueryResult{Series: []Series{{Points: []Point{dashboardTestPoint(1, 0)}}}, Truncated: true}, DashboardSummaryOptions{})
+	if signal.State != "ok" || !signal.ProviderTruncated || signal.PrimarySeries == nil || *signal.Series[0].Last.Value != 0 {
+		t.Fatalf("an observed zero is valid even in a bounded source response: %+v", signal)
+	}
+}
 
 func dashboardTestPoint(timestamp, value float64) Point {
 	return Point{Timestamp: timestamp, Value: &value}
@@ -65,7 +91,7 @@ func TestDashboardSummaryDoesNotInventZero(t *testing.T) {
 				t.Fatalf("missing data acquired a reading: %+v", signal)
 			}
 			summary := signal.Series[0]
-			if summary.Last != nil || summary.First != nil || summary.Min != nil || summary.Max != nil || summary.Valid != 0 {
+			if summary.Last != nil || summary.First != nil || summary.Min != nil || summary.Max != nil || summary.Mean != nil || summary.Valid != 0 {
 				t.Fatalf("missing samples were converted into finite values: %+v", summary)
 			}
 			if _, err := json.Marshal(signal); err != nil {
@@ -74,8 +100,69 @@ func TestDashboardSummaryDoesNotInventZero(t *testing.T) {
 		})
 	}
 	zero := summarizeDashboardResult(QueryResult{Series: []Series{{Points: []Point{dashboardTestPoint(1, 0)}}}}, DashboardSummaryOptions{})
-	if zero.State != "ok" || zero.Series[0].Last == nil || *zero.Series[0].Last.Value != 0 {
+	if zero.State != "ok" || zero.Series[0].Last == nil || *zero.Series[0].Last.Value != 0 || zero.Series[0].Mean == nil || *zero.Series[0].Mean != 0 {
 		t.Fatalf("an observed zero is valid data: %+v", zero)
+	}
+}
+
+func TestDashboardSummaryDisclosesRepeatedValidTimestamps(t *testing.T) {
+	points := []Point{dashboardTestPoint(3, 9), dashboardTestPoint(1, 0), {Timestamp: 3}, dashboardTestPoint(3, 3), dashboardTestPoint(math.Inf(1), 4), dashboardTestPoint(math.Inf(1), 5)}
+	summary := summarizeDashboardSeries(Series{Points: points}, 0, 2)
+	if summary.DuplicateObservations != 2 || summary.InvalidTimestamps != 2 || summary.Samples != 4 || summary.Valid != 3 {
+		t.Fatalf("duplicate observations must count additional samples with valid timestamps, including gaps: %+v", summary)
+	}
+	if summary.Mean == nil || *summary.Mean != 4 {
+		t.Fatalf("duplicate disclosure must not change the raw-observation mean: %+v", summary)
+	}
+	encoded, err := json.Marshal(summary)
+	if err != nil || !strings.Contains(string(encoded), `"duplicateObservations":2`) {
+		t.Fatalf("duplicate disclosure missing from JSON: %s: %v", encoded, err)
+	}
+}
+
+func TestDashboardSummaryDuplicateDetectionAfterUnorderedSamples(t *testing.T) {
+	// The first ordering reversal is not itself a duplicate, but a later point
+	// can duplicate one of the observations before that reversal.
+	points := []Point{dashboardTestPoint(1, 1), dashboardTestPoint(math.NaN(), 2), dashboardTestPoint(3, 3), dashboardTestPoint(2, 4), dashboardTestPoint(1, 5), {Timestamp: 2}}
+	summary := summarizeDashboardSeries(Series{Points: points}, 0, 0)
+	if summary.DuplicateObservations != 2 || summary.Samples != 5 || summary.InvalidTimestamps != 1 {
+		t.Fatalf("unordered duplicates or invalid timestamps miscounted: %+v", summary)
+	}
+}
+
+func TestDashboardSummaryMeanUsesAllFiniteReturnedObservationsWithoutOverflow(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		points []Point
+		want   float64
+	}{
+		{"gaps and duplicate timestamps", []Point{dashboardTestPoint(3, 9), dashboardTestPoint(1, 0), {Timestamp: 2}, dashboardTestPoint(3, 3), dashboardTestPoint(math.Inf(1), 100)}, 4},
+		{"large same sign", []Point{dashboardTestPoint(1, math.MaxFloat64), dashboardTestPoint(2, math.MaxFloat64), dashboardTestPoint(3, math.MaxFloat64)}, math.MaxFloat64},
+		{"large opposite signs", []Point{dashboardTestPoint(1, 1e308), dashboardTestPoint(2, -1e308)}, 0},
+		{"cancellation retains small observation", []Point{dashboardTestPoint(1, 1e16), dashboardTestPoint(2, 1), dashboardTestPoint(3, -1e16)}, 1.0 / 3},
+		{"extreme cancellation retains subnormal mean", []Point{dashboardTestPoint(1, 1e308), dashboardTestPoint(2, 1e-308), dashboardTestPoint(3, -1e308)}, 1e-308 / 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			summary := summarizeDashboardSeries(Series{Points: test.points}, 0, 2)
+			if summary.Mean == nil || !finite(*summary.Mean) || *summary.Mean != test.want {
+				t.Fatalf("wrong finite sample mean: %+v", summary)
+			}
+			if _, err := json.Marshal(summary); err != nil {
+				t.Fatalf("mean cannot be encoded: %v", err)
+			}
+		})
+	}
+}
+
+func BenchmarkDashboardSeriesSummary(b *testing.B) {
+	points := make([]Point, 1000)
+	for i := range points {
+		points[i] = dashboardTestPoint(float64(i), float64(i%97)-48)
+	}
+	series := Series{Points: points}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = summarizeDashboardSeries(series, 0, 0)
 	}
 }
 
@@ -93,9 +180,36 @@ func TestDashboardSummaryIncludesPrimarySeriesBeyondLimit(t *testing.T) {
 	if signal.Series[2].Index != 7 || *signal.Series[2].Last.Value != 42 || !signal.SeriesTruncated || !signal.Truncated || signal.ProviderTruncated {
 		t.Fatalf("primary or local truncation was lost: %+v", signal)
 	}
+	if signal.SeriesReturned == nil || *signal.SeriesReturned != 10 || signal.SeriesOmitted == nil || *signal.SeriesOmitted != 7 {
+		t.Fatalf("counts must describe the fetched series and summaries omitted: %+v", signal)
+	}
 	bounded := summarizeDashboardResult(QueryResult{Series: series, Truncated: true}, DashboardSummaryOptions{MaxSeries: 10_000})
-	if len(bounded.Series) != 8 || !bounded.ProviderTruncated {
+	if len(bounded.Series) != 8 || !bounded.ProviderTruncated || bounded.SeriesReturned == nil || *bounded.SeriesReturned != 10 || bounded.SeriesOmitted == nil || *bounded.SeriesOmitted != 2 {
 		t.Fatalf("defensive limits or provider truncation missing: %+v", bounded)
+	}
+}
+
+func TestDashboardSeriesCountsDistinguishEmptyFromOtherKinds(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		result QueryResult
+		want   string
+	}{
+		{"empty metrics", QueryResult{Series: []Series{}}, `"seriesReturned":0,"seriesOmitted":0`},
+		{"traces", QueryResult{Traces: []Trace{}}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			encoded, err := json.Marshal(summarizeDashboardResult(test.result, DashboardSummaryOptions{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want != "" && !strings.Contains(string(encoded), test.want) {
+				t.Fatalf("missing zero counts: %s", encoded)
+			}
+			if test.want == "" && strings.Contains(string(encoded), "seriesReturned") {
+				t.Fatalf("invented metric counts: %s", encoded)
+			}
+		})
 	}
 }
 

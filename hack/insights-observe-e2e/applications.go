@@ -54,12 +54,19 @@ func applicationFixtureObjects(endpoint, providerFile string, providerStdin bool
 		}
 		credentials := []byte(provider.Credentials)
 		var rawToken string
-		if json.Unmarshal(provider.Credentials, &rawToken) == nil {
+		stringCredentials := json.Unmarshal(provider.Credentials, &rawToken) == nil
+		if stringCredentials {
 			credentials = []byte(rawToken)
 		}
-		objects = append(objects,
-			&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: provider.Name + "-credentials", Namespace: "observability", Labels: map[string]string{observev1.CredentialsSecretLabel: "true"}}, Data: map[string][]byte{"credentials": credentials}},
-			&observev1.ObservabilityProvider{ObjectMeta: metav1.ObjectMeta{Name: provider.Name, Namespace: "observability"}, Spec: observev1.ObservabilityProviderSpec{Type: provider.Type, Config: runtime.RawExtension{Raw: provider.Config}, CredentialsSecretRef: &observev1.CredentialsSecretRef{Name: provider.Name + "-credentials"}}})
+		fixture := &observev1.ObservabilityProvider{ObjectMeta: metav1.ObjectMeta{Name: provider.Name, Namespace: "observability"}, Spec: observev1.ObservabilityProviderSpec{Type: provider.Type, Config: runtime.RawExtension{Raw: provider.Config}}}
+		// An explicitly empty string asks for anonymous access. Omitted or null
+		// credentials do not silently grant that behavior: retain their Secret
+		// reference so the gateway's normal validation reports the error.
+		if strings.TrimSpace(string(provider.Credentials)) != `""` {
+			fixture.Spec.CredentialsSecretRef = &observev1.CredentialsSecretRef{Name: provider.Name + "-credentials"}
+			objects = append(objects, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: provider.Name + "-credentials", Namespace: "observability", Labels: map[string]string{observev1.CredentialsSecretLabel: "true"}}, Data: map[string][]byte{"credentials": credentials}})
+		}
+		objects = append(objects, fixture)
 	}
 	return objects, nil
 }

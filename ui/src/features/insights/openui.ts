@@ -48,11 +48,13 @@ const widgetProps = z.strictObject({
   config: widgetSchema.shape.config,
   drilldowns: widgetSchema.shape.drilldowns,
   queryRef: widgetSchema.shape.queryRef,
+  selectionBindings: widgetSchema.shape.selectionBindings,
+  annotationSource: widgetSchema.shape.annotationSource,
 })
 const widgetComponents = Object.entries(componentNames).map(([type, name]) =>
   defineComponent({
     name,
-    description: `${type === "traces" ? "Tempo TraceQL search" : "Prometheus PromQL query"} displayed as ${type}. Layout is a 12-column grid. Data comes from a configured provider, never embedded values.`,
+    description: `Provider query displayed as ${type}. Query syntax must match the configured provider and data kind. Layout is a 12-column grid. Data comes from a configured provider, never embedded values.`,
     // defineComponent tags the schema with its name; each needs its own object.
     props: z.strictObject({ ...widgetProps.shape }),
     component: null,
@@ -96,6 +98,8 @@ function optionalProps(props: Record<string, unknown>) {
     "variables",
     "drilldowns",
     "queryRef",
+    "selectionBindings",
+    "annotationSource",
   ])
     if (value[key] === null || value[key] === undefined) delete value[key]
   return value
@@ -180,7 +184,7 @@ export function dashboardToOpenUI(dashboard: Dashboard): string {
   const args = (values: unknown[]) => values.map((item) => JSON.stringify(item ?? null)).join(", ")
   const lines = value.widgets.map(
     (widget, index) =>
-      `widget${index} = ${componentNames[widget.type]}(${args([widget.id, widget.title, widget.providerId, widget.query, widget.unit, widget.layout, widget.description, widget.color, widget.options, widget.pluginId, widget.dataKind, widget.config, widget.drilldowns, widget.queryRef])})`,
+      `widget${index} = ${componentNames[widget.type]}(${args([widget.id, widget.title, widget.providerId, widget.query, widget.unit, widget.layout, widget.description, widget.color, widget.options, widget.pluginId, widget.dataKind, widget.config, widget.drilldowns, widget.queryRef, widget.selectionBindings, widget.annotationSource])})`,
   )
   return `root = Dashboard(${args([value.id, value.title, value.timeRange, value.refreshInterval])}, [${value.widgets.map((_, index) => `widget${index}`).join(", ")}], ${args([value.description, value.folder, value.customTimeRange, value.variables])})\n${lines.join("\n")}\n`
 }
@@ -202,6 +206,11 @@ export function validateAIProviders(dashboard: Dashboard, providers: Provider[],
     return resolveSavedQueryReference(ref, documents, Object.fromEntries([...declared].map(name => [name, "1"])), kind, observation ? { series: { name: "validation", labels, points: [point] }, point } : undefined).providerId
   }
   for (const widget of dashboard.widgets) {
+    if (widget.annotationSource) {
+      const eventProvider = referenceProvider(widget.annotationSource.queryRef, "records", false)
+      if (!providers.some(item => item.id === eventProvider && item.capabilities.includes("records")))
+        throw new Error(`“${widget.title}” event query needs an available records provider.`)
+    }
     const providerId = widget.queryRef ? referenceProvider(widget.queryRef, widgetKind(widget), false) : widget.providerId
     const provider = providers.find((item) => item.id === providerId)
     if (!provider)
@@ -264,12 +273,13 @@ export function buildAIContext(
     additionalRules: [
       "Use static literals and component references only. Do not use Query, Mutation, actions, expressions, functions, URLs, HTML or JavaScript.",
       "Preserve the existing Dashboard id. Use unique widget ids and only the provided provider ids. Keep existing widgets unless the user asks to remove them.",
-      "Use PromQL for metrics widgets and Tempo TraceQL for Traces. Query fields are strings executed by the configured data provider.",
+      "Query fields are strings executed by the configured data provider. Use that provider's syntax and supported data kind: Prometheus metrics use PromQL, Tempo traces use TraceQL, and PostgreSQL uses a JSON query with sql and optional parameters (plus projection when requesting metrics). Do not assume every metrics query uses PromQL. Reuse a known query or ask for provider-specific syntax when it is unknown.",
+      'PostgreSQL can bind the current query range as UTC timestamp parameters using {"range":"start"} and {"range":"end"} in the parameters array. SQL comparison operators determine whether each endpoint is included; range bounds are never inserted into SQL text.',
       "Metric names in the existing document are context, not proof that those metrics exist. If a requested metric is unknown, ask the operator for its name instead of fabricating one.",
-      `At most ${MAX_WIDGETS} widgets. Layout x is 0–11, y is 0–1000, width w is 1–12, height h is 2–12, and x+w <= 12. Avoid overlapping widgets.`,
-      "Never embed fake metric values or credentials. Keep timeRange in 15m, 1h, 6h, 24h, 7d and refreshInterval in 0, 15, 30, 60 seconds.",
-      "Optional folder is a slash-separated path. customTimeRange uses ISO from/to timestamps with timezone, increasing by at most 31 days. Options configure axes, display line/area, legend, tooltip, grid, decimals, bounds and ascending threshold values/colors. Preserve these settings when editing.",
-      "Plugin widgets must reference an installed trusted plugin id and its declared dataKind. Configuration is JSON data; never generate renderer code or new plugin identifiers.",
+      `At most ${MAX_WIDGETS} widgets. Layout x is 0–11, y is 0–1000, width w is 1–12, height h is 1–12 for stat widgets and 2–12 for all others, and x+w <= 12. Avoid overlapping widgets.`,
+      `Never embed fake metric values or credentials. Keep timeRange in ${dashboardSchema.shape.timeRange.options.join(", ")} and refreshInterval in 0, 15, 30, 60 seconds.`,
+      "Optional folder is a slash-separated path. customTimeRange uses ISO from/to timestamps with timezone, increasing by at most 31 days. Options configure axes, display line/area, legend, tooltip, grid, decimals, bounds and ascending threshold values/colors. Single value may set staleAfterSeconds to warn when its latest valid returned sample is older than that threshold relative to the selected range end; this does not measure source scrape health. Preserve these settings when editing.",
+      "Plugin widgets must reference an installed trusted plugin id and its declared dataKind. Configuration is JSON data; never generate renderer code or new plugin identifiers. The plugin list includes its defaults and available configuration controls; config field keys name JSON properties, and recordColumn fields name returned record columns rather than expressions. These controls are not necessarily the complete plugin schema. Preserve existing configuration unless asked to change it.",
       "Heatmap, TimeSeries, BarChart and MetricsTable options.tooltipView select a built-in or installed plugin sub-widget. Omit source or use {type:'series'} for the hovered metric series. Opt into source:{type:'query',providerId,query,bindings:[{variable,label}]} for a separate query. Bindings may instead be {variable,field:'value'|'timestamp'|'series'}: value is the exact hovered observation, timestamp is Unix seconds (may be fractional), and series is its name. Numeric fields supply finite numeric literals; labels and series supply complete quoted strings. Do not add surrounding quotes or concatenate token fragments. For example up{service={{service}}} @ {{timestamp}}. Bindings are independent of dashboard variables. Missing labels/values/timestamps prevent queries. TimeSeries uses the hovered historical point; bars/tables use their displayed latest-valid sample; heatmaps retain the latest sample even when null. Trace tooltip widgets require a compatible query source. Never nest tooltip definitions or executable code.",
       "Dashboard variables are named strings. Use {{variableName}} as a complete query string literal without surrounding quotes, for example up{service={{service}}}. Never interpolate inside quotes, comments, identifiers, or query fragments. Widget drilldowns reference dashboard IDs and bind declared target variables from label, value, series or constant sources. Preserve existing links and variables unless asked to change them.",
       "Reuse only listed saved queries. The trailing 14th widget argument queryRef is {id,bindings?}; all previous positional arguments remain unchanged. A saved reference is authoritative: use its providerId and kind, keep the required query string as a fallback, and do not copy changes into the shared query. To edit a template, use Explore. Bindings are {parameter,source:'variable',variable} or {parameter,source:'constant',value}. Every variable binding must name a declared dashboard variable; name matching does not automatically bind it. An omitted binding uses the typed saved default; no default means a binding is required. Text and finite numeric parameters must retain their types. Never invent query IDs or parameters.",
@@ -277,12 +287,15 @@ export function buildAIContext(
     ],
     examples: [dashboardToOpenUI(dashboard)],
   })}\n\nInstalled trusted widget plugins:\n${JSON.stringify(
-    getWidgetPlugins().map(({ id, label, description, dataKind, defaultOptions }) => ({
+    getWidgetPlugins().map(({ id, label, description, dataKind, defaultOptions, defaultConfig, configFields, styleControls }) => ({
       id,
       label,
       description,
       dataKind,
       defaultOptions,
+      defaultConfig,
+      configFields,
+      styleControls,
     })),
     null,
     2,

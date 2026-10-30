@@ -89,23 +89,27 @@ Use a JSON envelope for parameters or an explicit metric projection:
 ```json
 {
   "sql": "SELECT observed_at AS time, service, requests::double precision AS value FROM reporting.service_history WHERE service = $1 AND observed_at >= $2::timestamptz AND observed_at <= $3::timestamptz ORDER BY observed_at",
-  "parameters": ["api", "2026-10-27T00:00:00Z", "2026-10-27T01:00:00Z"],
+  "parameters": ["api", {"range":"start"}, {"range":"end"}],
   "projection": {"value":"value","time":"time","labels":["service"]}
 }
 ```
 
-Parameters are positional strings, numbers, booleans or null. They are sent as
-driver bind values; their contents are never concatenated into SQL. Placeholder
+Parameters are positional strings, numbers, booleans, null, or the exact objects
+`{"range":"start"}` and `{"range":"end"}`. Range objects resolve to the query's
+absolute start or end as UTC PostgreSQL timestamp bind values; no numeric epoch
+unit conversion is needed. An absent referenced boundary or reversed range is an
+error. SQL determines inclusivity: the example's `>=` and `<=` include both
+endpoints. All values are sent as driver bind values and never concatenated into SQL. Placeholder
 positions must exactly match the supplied array. Reusing `$1` is supported.
 Raw SQL cannot contain unbound placeholders. Unknown envelope fields,
-duplicate JSON keys, nested parameter objects and unused parameters are rejected.
+duplicate JSON keys, other nested parameter objects and unused parameters are rejected.
 
 A saved-query template can put `{{service}}` in the envelope's `parameters`
 array, where Paprika's existing typed parameter resolver emits a JSON value.
 Keep `$1` in the SQL body. Do not put template expressions into quoted SQL
-strings. Dashboard time ranges do not automatically rewrite SQL: bind the
-desired time bounds explicitly. Grafana macros and arbitrary SQL transformations
-are not implemented.
+strings. Dashboard time ranges do not automatically rewrite SQL: use these
+range objects with the desired comparison operators. Grafana macros and
+arbitrary SQL transformations are not implemented.
 
 Only a single `SELECT` or read-only `WITH` query is accepted. Data-modifying
 CTEs, multiple statements, locking queries, session commands and known

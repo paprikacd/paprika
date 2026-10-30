@@ -16,6 +16,9 @@ type queryDocument struct {
 	Projection *dataframe.Projection `json:"projection,omitempty"`
 }
 
+// A range reference is resolved to a driver parameter, never inserted into SQL.
+type rangeParameter string
+
 func parseQuery(source string) (queryDocument, error) {
 	if len(source) > 64<<10 {
 		return queryDocument{}, errors.New("SQL query exceeds its size limit")
@@ -53,8 +56,14 @@ func validateParameters(parameters []any) error {
 			// Let PostgreSQL's declared/inferred parameter type parse the exact
 			// decimal text rather than rounding it through a float64.
 			parameters[index] = value.String()
+		case map[string]any:
+			reference, ok := value["range"].(string)
+			if len(value) != 1 || !ok || (reference != "start" && reference != "end") {
+				return errors.New("SQL range parameters must be exactly {\"range\":\"start\"} or {\"range\":\"end\"}")
+			}
+			parameters[index] = rangeParameter(reference)
 		default:
-			return errors.New("SQL parameters must be scalar values or null")
+			return errors.New("SQL parameters must be scalar values, null or a range reference")
 		}
 	}
 	return nil

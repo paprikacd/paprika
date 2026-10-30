@@ -23,6 +23,29 @@
 .gridLine { stroke: var(--gamma-chart-grid, var(--gamma-border)); stroke-width: 1; }
 .baseline { stroke: var(--gamma-muted); stroke-width: 1; opacity: .5; }
 .crosshair { stroke: var(--gamma-ink); stroke-width: 1; stroke-dasharray: 4 4; pointer-events: none; }
+.annotationLine { stroke: var(--gamma-chart-1, #2867b9); stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .8; }
+.annotationRange { fill: var(--gamma-muted, #697c73); opacity: .16; }
+.annotationRange[data-severity="info"] { fill: var(--gamma-chart-1, #2867b9); }
+.annotationRange[data-severity="warning"] { fill: var(--gamma-chart-4, #977017); }
+.annotationRange[data-severity="critical"] { fill: var(--gamma-danger, #b4473d); }
+.annotationMarker, .annotationBullet { fill: var(--gamma-chart-1, #2867b9); background: var(--gamma-chart-1, #2867b9); }
+.annotationLine[data-severity="warning"] { stroke: var(--gamma-chart-4, #977017); }
+.annotationMarker[data-severity="warning"], .annotationBullet[data-severity="warning"] { fill: var(--gamma-chart-4, #977017); background: var(--gamma-chart-4, #977017); }
+.annotationLine[data-severity="critical"] { stroke: var(--gamma-danger, #b4473d); }
+.annotationMarker[data-severity="critical"], .annotationBullet[data-severity="critical"] { fill: var(--gamma-danger, #b4473d); background: var(--gamma-danger, #b4473d); }
+.annotationLine[data-severity="unclassified"] { stroke: var(--gamma-muted, #697c73); }
+.annotationMarker[data-severity="unclassified"], .annotationBullet[data-severity="unclassified"] { fill: var(--gamma-muted, #697c73); background: var(--gamma-muted, #697c73); }
+.annotationEvents { flex: 0 1 auto; min-height: 0; max-height: 35%; overflow: auto; margin-top: 4px; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted)); }
+.priorLegend { display: flex; flex: 0 1 auto; flex-wrap: wrap; gap: 4px 12px; max-height: 48px; min-width: 0; overflow: auto; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; }
+.priorLegend span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.priorLegend i { width: 12px; flex: none; border-top: 2px dashed; }
+.comparisonActions { display: flex; flex: none; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0 12px; min-width: 0; }
+.annotationEvents summary { cursor: pointer; padding: 3px; }
+.annotationEvents summary:focus-visible { outline: 2px solid var(--gamma-accent); }
+.annotationEvents ul { list-style: none; margin: 0; padding: 4px 3px; }
+.annotationEvents li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 3px 0; }
+.annotationEvents time { font-variant-numeric: tabular-nums; }
+.annotationBullet { display: inline-block; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; }
 .legendContainer { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; max-height: min(128px, 42%); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; min-height: 0; max-height: 104px; flex: 0 1 auto; overflow: auto; padding: 9px 3px 3px; border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border)); scrollbar-width: thin; }
 .legend:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; border-radius: 3px; }
@@ -42,6 +65,13 @@
 .legendTableName { display: flex; align-items: center; gap: 6px; max-width: 180px; }
 .legendTableName i { width: 12px; height: 3px; flex-shrink: 0; border-radius: 1px; }
 .legendTableName > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+/* Keep a four-series statistics legend useful on narrow panels without
+   consuming the plot or requiring a separate scroll for ordinary results. */
+@container rich-metric (max-width: 679px) {
+  .metricContent[data-legend-display="table"] > .legendContainer { max-height: min(132px, 55%); }
+  .metricContent[data-legend-display="table"] .legendTable :is(th, td) { padding-block: 2px; }
+}
 @container rich-metric (min-width: 680px) {
   .metricContent[data-legend-position="right"] { flex-direction: row; gap: 12px; }
   .metricContent[data-legend-position="right"] > .plot { width: auto; }
@@ -55,10 +85,21 @@
 .unknownKey::before { content: ""; width: 10px; height: 8px; border: 1px dashed var(--gamma-muted); background: var(--gamma-surface); }
 .notices { flex-shrink: 0; display: flex; gap: 4px 12px; flex-wrap: wrap; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
 .notices:not(:empty) { padding: 4px 3px 0; }
-.inspector { position: absolute; z-index: 5; right: 9px; top: 8px; width: min(260px, calc(100% - 18px)); max-height: calc(100% - 16px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; background: var(--widget-background, var(--gamma-bg)); color: var(--widget-text, var(--gamma-ink)); border: 1px solid var(--gamma-border); border-radius: 6px; padding: 12px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.inspector.inspector { width: min(300px, calc(100vw - 24px)); padding: 12px; font-size: 12px; line-height: 1.45; border-radius: 6px; }
 .inspector:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
 .inspectorActions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; color: var(--gamma-muted); font-size: 11px; }
 .inspectorActions button { flex-shrink: 0; }
+/* MetricDetails puts the full series title before the reading in its semantic
+   order. Present the reading first so long labels cannot push it out of a
+   short chart, while keeping the complete title and labels available below. */
+.inspectorDetails { display: flex; flex-direction: column; }
+.inspectorDetails > :nth-child(2) { order: -1; }
+.inspectorPeers { list-style: none; padding: 8px 0; margin: 8px 0 0; border-top: 1px solid var(--gamma-border); display: grid; gap: 5px; font-size: 11px; }
+.inspectorPeers li { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+.inspectorPeers i { width: 7px; height: 7px; border-radius: 50%; }
+.inspectorPeers li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspectorPeers b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pinHint { color: var(--widget-text, var(--gamma-muted)); font-size: 11px; margin-top: 6px; }
 .history { height: 48px; position: relative; margin: 8px 0; }
 .history > svg { position: static; width: 100%; height: 48px; opacity: .85; mask-image: none; }
 .note { margin: 7px 0 0; font-size: 11px; line-height: 1.4; color: var(--gamma-muted); }
@@ -66,5 +107,6 @@
 
 .heatmapFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 4px 3px 0; flex: 0 0 auto; }
 .heatmapFooter .densityLegend { padding: 0; font-size: 10px; gap: 7px; }
-.heatmapFooter .notices { padding: 0; }
+.heatmapFooter .notices { padding: 0; min-width: 0; max-width: 100%; }
+.heatmapFooter .notices > span { min-width: 0; overflow-wrap: anywhere; }
 .heatmapFooter .unknownKey { margin-left: 5px; }

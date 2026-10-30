@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries, registerRichMetricPlugins } from "./rich-metrics";
 import { getWidgetDefinition } from "../widget-registry";
@@ -14,6 +14,74 @@ const result: QueryResult = { series: [
 ] };
 
 describe("rich metric renderers", () => {
+  it("distinguishes generated peer names visually without losing full accessible identities", () => {
+    const input: QueryResult = { series: ["inbound", "outbound"].map((direction, index) => ({
+      name: `traffic{cluster="omega", direction="${direction}"}`,
+      labels: { __name__: "traffic", cluster: "omega", direction },
+      points: [{ timestamp: 1000, value: index + 1 }],
+    })) };
+    render(<DirectionalTraffic widget={{ ...widget, pluginId: "directional-traffic" }} result={input} />);
+    fireEvent.focus(screen.getByRole("group", { name: /Request outcomes/ }));
+    const list = within(screen.getByRole("region", { name: "Observation details" })).getByRole("list", { name: "Series at selected time" });
+    expect(within(list).getByText("inbound")).toBeVisible();
+    expect(within(list).getByText("outbound")).toBeVisible();
+    expect(list).toHaveTextContent('traffic{cluster="omega", direction="inbound"}');
+    expect(list).toHaveTextContent('traffic{cluster="omega", direction="outbound"}');
+    expect(list.querySelectorAll("li")[0]).toHaveAttribute("data-series-value", "1");
+    expect(list.querySelectorAll("li")[1]).toHaveAttribute("data-series-value", "2");
+  });
+  it("keeps the transient inspector concise and restores complete details when pinned", () => {
+    render(<DirectionalTraffic widget={{ ...widget, pluginId: "directional-traffic" }} result={result} />);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(within(inspector).getByText("Click or tap chart to pin details")).toBeInTheDocument();
+    expect(within(inspector).getByRole("list", { name: "Series at selected time" })).toBeInTheDocument();
+    expect(inspector.querySelector("time")).toBeInTheDocument();
+    expect(inspector.querySelector("[data-stat-sparkline]")).not.toBeInTheDocument();
+    expect(inspector.querySelector('[data-tooltip-compact="true"]')).toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(within(inspector).queryByText("Click or tap chart to pin details")).not.toBeInTheDocument();
+    expect(inspector.querySelector("[data-stat-sparkline]")).toBeInTheDocument();
+    expect(inspector.querySelector('[data-tooltip-compact="true"]')).not.toBeInTheDocument();
+    expect(within(inspector).getByText("Outbound is drawn below zero; this is the original nonnegative observation.")).toBeInTheDocument();
+  });
+  it("shows exact same-time observations for every plotted series without inventing missing values", () => {
+    const irregular: QueryResult = { series: [
+      { name: "API", labels: { direction: "inbound" }, points: [{ timestamp: 1000, value: 4 }, { timestamp: 2000, value: 8.127 }] },
+      { name: "Worker", labels: { direction: "outbound" }, points: [{ timestamp: 1000, value: 2 }, { timestamp: 3000, value: 3.14159 }] },
+    ] };
+    render(<DirectionalTraffic widget={{ ...widget, pluginId: "directional-traffic", unit: "Mb/s" }} result={irregular} />);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    const comparisons = within(inspector).getByRole("list", { name: "Series at selected time" });
+    expect(within(comparisons).getByText("API").closest("li")).toHaveTextContent("8.13 Mb/s");
+    expect(within(comparisons).getByText("Worker").closest("li")).toHaveTextContent("No observation");
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(within(comparisons).getByText("API").closest("li")).toHaveTextContent("4.00 Mb/s");
+    expect(within(comparisons).getByText("Worker").closest("li")).toHaveTextContent("2.00 Mb/s");
+  });
+  it("renders finite, distinct axis positions for extreme opposite-signed observations", () => {
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height: 300, top: 0, left: 0, right: 600, bottom: 300, toJSON: () => ({}) });
+    try {
+      const extremes: QueryResult = { series: [{ name: "extreme", labels: {}, points: [{ timestamp: 1000, value: -1e308 }, { timestamp: 2000, value: 1e308 }] }] };
+      const { container } = render(<StackedTimeseries widget={widget} result={extremes} />);
+      const labels = [...container.querySelectorAll("[data-value-axis]")];
+      expect(labels.length).toBeGreaterThan(2);
+      const positions = labels.map(label => Number(label.getAttribute("y")));
+      expect(positions.every(Number.isFinite)).toBe(true);
+      expect(new Set(positions).size).toBe(labels.length);
+      for (const path of container.querySelectorAll("[data-metric-marks] path")) expect(path.getAttribute("d")).not.toMatch(/NaN|Infinity/);
+    } finally { bounds.mockRestore(); }
+  });
+  it("explains overflowing stack columns instead of rendering a fabricated height", () => {
+    const extremes: QueryResult = { series: ["a", "b"].map(name => ({ name, labels: {}, points: [{ timestamp: 1000, value: 1e308 }, { timestamp: 2000, value: 1 }] })) };
+    const { container } = render(<StackedTimeseries widget={widget} result={extremes} />);
+    expect(screen.getByText(/1 time column omitted.*stack.*finite/i)).toBeInTheDocument();
+    for (const path of container.querySelectorAll("[data-metric-marks] path")) expect(path.getAttribute("d")).not.toMatch(/NaN|Infinity/);
+  });
   it.each([104, 128, 146, 180])("keeps bucket labels separated in a %ipx plot without dropping data cells", (height) => {
     const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height, top: 0, left: 0, right: 600, bottom: height, toJSON: () => ({}) });
     try {
@@ -33,6 +101,9 @@ describe("rich metric renderers", () => {
       expect(definition.configFields!.length).toBeGreaterThan(0);
       expect(definition.parseConfig!(definition.defaultConfig)).toEqual(definition.defaultConfig);
     }
+    const directional = getWidgetDefinition("plugin", "directional-traffic")!;
+    expect(directional.configFields).toEqual(expect.arrayContaining([expect.objectContaining({ key: "symmetricAxis", kind: "boolean" })]));
+    expect(directional.parseConfig?.({ symmetricAxis: true })).toMatchObject({ symmetricAxis: true });
   });
   it("inspects and pins exact raw stacked values, not cumulative geometry", () => {
     const onContextChange = vi.fn();
@@ -44,7 +115,23 @@ describe("rich metric renderers", () => {
     expect(screen.getByRole("button", { name: "Unpin observation" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.keyDown(chart, { key: "Escape" }); expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
   });
-  it("makes only a pinned inspector keyboard-scrollable without changing its exact observation", () => {
+  it("retains the complete source identity and exact observation in short-inspector details", () => {
+    const longName = '{namespace="observability", pod="paprika-insights-observability-probe-8f7d6d97d8-12345", container="worker"}';
+    const labels = { namespace: "observability", pod: "paprika-insights-observability-probe-8f7d6d97d8-12345", container: "worker" };
+    const select = vi.fn();
+    const longResult: QueryResult = { series: [{ name: longName, labels, points: [{ timestamp: 2000, value: 3.14159 }] }] };
+    render(<StackedTimeseries widget={widget} result={longResult} onContextChange={select} />);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(within(inspector).getByText(longName)).toBeInTheDocument();
+    expect(inspector.querySelector('[data-metric-value="3.14159"]')).toHaveTextContent("3.14 req/s");
+    expect(within(inspector).getByText(labels.pod)).toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(select).toHaveBeenLastCalledWith({ series: longName, labels, value: 3.14159 });
+    expect(within(inspector).getByRole("button", { name: "Unpin observation" })).toHaveAttribute("aria-pressed", "true");
+  });
+  it("makes only a pinned inspector keyboard-scrollable without changing its exact observation", async () => {
     const select = vi.fn();
     const longLabels = { ...result.series![1].labels, deployment: "production-worker-with-a-long-deployment-name", resource: "cluster/omega/namespace/observability/workload/processor/instance/worker-01" };
     const richResult: QueryResult = { series: [result.series![0], { ...result.series![1], labels: longLabels }] };
@@ -71,7 +158,21 @@ describe("rich metric renderers", () => {
     inspector = screen.getByRole("region", { name: "Observation details" });
     expect(inspector).not.toHaveAttribute("tabindex");
     fireEvent.pointerLeave(container.firstElementChild!);
-    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument());
+  });
+  it("portals inspection outside the chart and keeps it open while moving into the panel", async () => {
+    const { container } = render(<StackedTimeseries widget={widget} result={result} />);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(container.contains(inspector)).toBe(false);
+    expect(document.body.contains(inspector)).toBe(true);
+    fireEvent.pointerLeave(container.firstElementChild!);
+    fireEvent.pointerEnter(inspector);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+    expect(screen.getByRole("region", { name: "Observation details" })).toBe(inspector);
+    fireEvent.pointerLeave(inspector);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument());
   });
   it("dismisses keyboard-focused pinned details even if an ancestor stops bubbling events", () => {
     const parentKey = vi.fn((event: React.KeyboardEvent) => event.stopPropagation());
@@ -129,6 +230,22 @@ describe("rich metric renderers", () => {
     const { container } = render(<StackedTimeseries widget={widget} result={broken} />);
     expect(container.querySelectorAll('g[data-series="API"] path[fill="none"]')).toHaveLength(2);
     expect(screen.getByText("Incomplete timestamps leave gaps in the stack")).toBeInTheDocument();
+  });
+  it("hides decorative stacked marks from the accessibility tree while retaining exact keyboard inspection", () => {
+    const many: QueryResult = { series: Array.from({ length: 3 }, (_, row) => ({
+      name: `Series ${row}`, labels: { source: `source-${row}` },
+      points: Array.from({ length: 50 }, (_, column) => ({ timestamp: 1000 + column * 1000, value: row + column })),
+    })) };
+    const { container } = render(<StackedTimeseries widget={{ ...widget, config: { display: "bar" } }} result={many} />);
+    const marks = container.querySelector("[data-metric-marks]")!;
+    expect(marks).toHaveAttribute("aria-hidden", "true");
+    expect(marks.querySelectorAll("rect[data-raw-value]").length).toBeGreaterThan(100);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    fireEvent.keyDown(chart, { key: "ArrowDown" });
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("Series 1");
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("50.00");
   });
   it("keeps bars inside the clip boundary at the first and last timestamps", () => {
     const { container } = render(<StackedTimeseries widget={{ ...widget, config: { display: "bar" } }} result={result} />);

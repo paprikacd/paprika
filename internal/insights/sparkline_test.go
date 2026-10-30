@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSparklineSettingsPersistWithSavedQueryReferences(t *testing.T) {
@@ -58,5 +60,55 @@ func TestSparklineOptionRemainsPortableAcrossVisualizationTypes(t *testing.T) {
 		if err := validateDashboard("demo", extendedDashboard(`"type":"`+kind+`","options":{"showSparkline":true,"tooltipView":{"type":"`+kind+`","showSparkline":false}}`, "")); err != nil {
 			t.Errorf("display option rejected for %s: %v", kind, err)
 		}
+	}
+}
+
+func TestCompactStatPresentationValidationAndPersistence(t *testing.T) {
+	s, store := testService(t)
+	document := extendedDashboard(`"type":"stat","options":{"showSparkline":true,"sparklinePlacement":"side","statIcon":"network"}`, "")
+	w := request(t, s.Handler(), "PUT", "/api/dashboards/demo", document, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("compact presentation rejected: %d %s", w.Code, w.Body)
+	}
+	reopened, err := OpenStore(store.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, _, err := reopened.Get("demo")
+	if err != nil || string(persisted) != string(document) {
+		t.Fatalf("compact presentation did not round-trip: %v", err)
+	}
+	for _, option := range []string{`"sparklinePlacement":"above"`, `"sparklinePlacement":null`, `"statIcon":"untrusted"`, `"statIcon":false`} {
+		if err := validateDashboard("demo", extendedDashboard(`"type":"stat","options":{`+option+`}`, "")); err == nil {
+			t.Errorf("invalid presentation accepted: %s", option)
+		}
+	}
+}
+
+func TestSingleRowOnlyForStats(t *testing.T) {
+	for _, kind := range []string{"stat", "timeseries", "bar", "table", "traces", "heatmap"} {
+		document := extendedDashboard(`"type":"`+kind+`"`, "")
+		var raw map[string]any
+		if err := json.Unmarshal(document, &raw); err != nil {
+			t.Fatal(err)
+		}
+		raw["widgets"].([]any)[0].(map[string]any)["layout"].(map[string]any)["h"] = 1
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = validateDashboard("demo", encoded)
+		if (err == nil) != (kind == "stat") {
+			t.Errorf("type %s with height 1: %v", kind, err)
+		}
+	}
+}
+
+func TestStatValueBarRequiresExplicitScale(t *testing.T) {
+	for _, options := range []string{`{"showStatBar":true,"min":0,"max":100}`, `{"showStatBar":false}`, `{}`} {
+		require.NoError(t, validateDashboard("demo", extendedDashboard(`"type":"stat","options":`+options, "")), options)
+	}
+	for _, options := range []string{`{"showStatBar":true}`, `{"showStatBar":true,"min":0}`, `{"showStatBar":true,"max":100}`, `{"showStatBar":true,"min":5,"max":5}`, `{"showStatBar":"yes","min":0,"max":100}`, `{"showStatBar":null}`, `{"showStatBar":true,"min":null,"max":100}`} {
+		require.Error(t, validateDashboard("demo", extendedDashboard(`"type":"stat","options":`+options, "")), options)
 	}
 }

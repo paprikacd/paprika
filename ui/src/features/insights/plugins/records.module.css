@@ -21,6 +21,16 @@
   flex: 1;
   scrollbar-width: thin;
 }
+.scrollHint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+  line-height: 1.35;
+  flex: 0 0 auto;
+}
+.scrollHint svg { flex: 0 0 auto; }
 .wrapper table {
   border-collapse: collapse;
   width: 100%;
@@ -50,6 +60,7 @@
   text-overflow: ellipsis;
 }
 .wrapper :is(th, td)[data-numeric] { text-align: right; }
+.wrapper :is(th, td).rowNumber { width: 1%; color: var(--gamma-muted); text-align: right; white-space: nowrap; }
 .wrapper td[data-styled-cell] { padding-block: 3px; }
 .visualCell {
   position: relative;
@@ -63,7 +74,7 @@
   border-radius: 2px;
   font-variant-numeric: tabular-nums;
 }
-.visualCell[data-cell-display="bar"] { min-width: 130px; padding-inline: 0; }
+.visualCell:is([data-cell-display="bar"], [data-cell-display="bar-segments"]) { min-width: 130px; padding-inline: 0; }
 .cellBar {
   position: relative;
   flex: 1 1 80px;
@@ -74,6 +85,9 @@
   border-radius: 1px;
 }
 .cellBarFill { position: absolute; inset: 0; }
+.cellBar[data-segmented] {
+  mask-image: repeating-linear-gradient(to right, #000 0, #000 calc(100% / var(--cell-segments) - 2px), transparent calc(100% / var(--cell-segments) - 2px), transparent calc(100% / var(--cell-segments)));
+}
 .cellBarZero {
   position: absolute;
   inset-block: 0;
@@ -81,12 +95,47 @@
   background: var(--gamma-ink);
   opacity: .65;
 }
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--gamma-ink) 6%, transparent);
+  color: var(--widget-text, var(--gamma-ink));
+  line-height: 1.3;
+  vertical-align: middle;
+}
+.statusBadge > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.statusDot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--gamma-muted); }
+.statusBadge[data-status-state="missing"] { color: var(--gamma-muted); }
 .cellReading { flex: 0 0 auto; min-width: 4ch; text-align: right; }
+.cellHistory { display: inline-flex; align-items: center; gap: 8px; min-width: 140px; }
+.cellHistoryPlot { display: block; flex: 0 0 88px; width: 88px; height: 24px; }
+.cellHistoryPlot [data-stat-sparkline] { width: 100%; height: 100%; border-radius: 0; }
+.cellHistoryPlot [data-stat-trend] { stroke-opacity: 1; }
+.cellHistoryReading { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
+.cellHistoryState { color: var(--gamma-muted); font-size: 11px; }
+.cellHistoryMeaning { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.recordCellDetails { display: grid; gap: 6px; min-width: 150px; max-width: 340px; overflow-wrap: anywhere; }
+.recordCellDetails strong { font-size: 12px; }
+.recordCellDetails > span { font-size: 13px; font-variant-numeric: tabular-nums; }
+.recordCellDetails small { color: var(--gamma-muted); font-size: 11px; }
+.recordCellDetails button { justify-self: start; }
+.recordTooltip { width: min(230px, calc(100vw - 24px)); }
+.wrapper td[data-record-cell-row] svg { pointer-events: none; }
 .cellOverflow { color: var(--gamma-muted); font-size: 10px; }
 .visualCell[data-cell-missing] { color: var(--gamma-muted); }
 .compactTable td[data-styled-cell] { padding-block: 1px; }
 .compactTable .visualCell { min-height: 20px; padding-block: 2px; }
-.compactTable .cellBar { height: 10px; }
+.compactTable .visualCell:is([data-cell-display="bar"], [data-cell-display="bar-segments"]) {
+  min-width: 84px;
+  gap: 4px;
+}
+.compactTable .cellBar { flex-basis: 48px; min-width: 32px; height: 10px; }
+.compactTable .cellHistory { min-width: 86px; gap: 4px; }
+.compactTable .cellHistoryPlot { flex-basis: 48px; width: 48px; height: 20px; }
 .wrapper button {
   border: 0;
   background: transparent;
@@ -134,7 +183,7 @@
 }
 .compactTable td,
 .compactTable th {
-  padding: 2px 8px;
+  padding: 2px 3px;
   font-size: 11px;
   line-height: 1.35;
 }
@@ -204,11 +253,22 @@
 .treemap g[role="button"] {
   cursor: pointer;
 }
+.treeTooltip { min-width: 0; padding: 12px; font-size: 12px; line-height: 1.4; }
+.treeTooltip > strong { display: block; overflow-wrap: anywhere; }
+.treeTooltip dl { display: grid; gap: 5px; margin: 8px 0; }
+.treeTooltip dl div { display: flex; justify-content: space-between; gap: 12px; }
+.treeTooltip dt { color: var(--gamma-muted); }
+.treeTooltip dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.treeTooltip small { color: var(--gamma-muted); font-size: 11px; }
 .tileText {
   font: 12px var(--gamma-font-ui);
   fill: #23332c;
   pointer-events: none;
 }
+.treeColorLegend { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px; flex: 0 0 auto; padding: 6px 3px 2px; font-size: 11px; color: var(--widget-text, var(--gamma-muted)); font-variant-numeric: tabular-nums; }
+.treeColorGradient { width: 96px; height: 7px; border-radius: 3px; background: linear-gradient(90deg, rgb(220, 238, 225), rgb(180, 61, 50)); }
+.treeMissingKey { display: inline-flex; align-items: center; gap: 4px; }
+.treeMissingKey::before { content: ""; width: 9px; height: 9px; border: 1px solid #a6b0a8; background: repeating-linear-gradient(135deg, #e2e6e2 0 3px, #a6b0a8 3px 4px); }
 .matrix th {
   max-width: 100px;
   font-size: 10px;
@@ -240,6 +300,7 @@
   font-weight: 550;
   font-variant-numeric: tabular-nums;
 }
+.pieLegend { max-height: 140px; flex-shrink: 0; scrollbar-width: thin; }
 .historyWrapper { gap: 4px; }
 .history {
   display: grid;

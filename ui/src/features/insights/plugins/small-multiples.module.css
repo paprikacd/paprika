@@ -1,0 +1,19 @@
+.root { display: flex; flex-direction: column; height: 100%; min-height: 0; container: small-multiples / inline-size; }
+.scroll { overflow: auto; min-height: 0; flex: 1; scrollbar-width: thin; }
+.grid { display: grid; grid-template-columns: repeat(var(--multiple-columns), minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+.panel { min-width: 0; border: 1px solid var(--gamma-border); border-radius: 4px; padding: 8px; background: var(--widget-background, var(--gamma-surface-1, transparent)); }
+.heading { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; min-width: 0; font-size: 11px; line-height: 1.4; }
+.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.value { flex-shrink: 0; color: var(--widget-text, var(--gamma-muted)); font-variant-numeric: tabular-nums; }
+.plotLayout { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 5px; }
+.yAxis { display: flex; flex-direction: column; justify-content: space-between; padding: 6px 0 4px; color: var(--widget-text, var(--gamma-chart-axis, var(--gamma-muted))); font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
+.plot { display: block; width: 100%; height: 115px; touch-action: pan-y; }
+.plot:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: 1px; }
+.gridLine { stroke: var(--gamma-chart-grid, var(--gamma-border)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.xAxis { grid-column: 2; display: flex; justify-content: space-between; gap: 4px; color: var(--widget-text, var(--gamma-chart-axis, var(--gamma-muted))); font-size: 10px; font-variant-numeric: tabular-nums; }
+.line { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.point { stroke: var(--gamma-surface-1, white); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.footer { display: flex; flex-wrap: wrap; gap: 4px 10px; padding-top: 5px; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
+.hint { color: var(--widget-text, var(--gamma-muted)); font-size: 10px; }
+@container small-multiples (max-width: 740px) { .grid { grid-template-columns: repeat(min(var(--multiple-columns), 2), minmax(0, 1fr)); } }
+@container small-multiples (max-width: 360px) { .grid { grid-template-columns: minmax(0, 1fr); } }

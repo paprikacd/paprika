@@ -1,6 +1,8 @@
 # Observation tooltip widgets
 
-Time series, bars, metrics tables and status heatmaps can embed a time series, bar chart, single value, metrics table, trace explorer, status heatmap or trusted installed widget inside their observation tooltip. The original point or row's exact value, labels and timestamp remain available; heatmaps also retain their threshold status. Existing dashboards keep details-only tooltips unless a view is configured.
+Time series, bars, metrics tables, status heatmaps and geographic hex heatmaps can embed a time series, bar chart, single value, metrics table, trace explorer, status heatmap or trusted installed widget inside their observation tooltip. Metric observations retain their exact value, labels and timestamp; status heatmaps also retain their threshold status. A geographic hex exposes its displayed aggregate and the labels shared by every contributing record, but has no timestamp or history. Existing dashboards keep details-only tooltips unless a view is configured.
+
+For a geographic hex, use a saved or provider query for a metric or trace tooltip. A record-type tooltip may instead reuse the parent query result: this shows up to ten **all-parent** records, not just the selected hex, and marks the result partial when more records were returned. Timestamp bindings fail locally for hexes rather than inventing a time. Activating a hex can also drive a dashboard selection or drilldown; hover and focus alone never apply the selection. A grouped hex cannot supply a label that differs across its contributing records.
 
 ## Configure it in the builder
 

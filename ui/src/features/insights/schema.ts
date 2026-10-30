@@ -1,14 +1,17 @@
 import { z } from "zod"
+import { seriesColorRulesSchema } from "./series-colors"
 import { parseDocument, stringify } from "yaml"
 
 export const MAX_WIDGETS = 48
 export const MAX_DOCUMENT_BYTES = 256 * 1024
 export const timeRanges = {
   "15m": 900,
+  "30m": 1800,
   "1h": 3600,
   "6h": 21600,
   "24h": 86400,
   "7d": 604800,
+  "30d": 2592000,
 } as const
 export const widgetTypes = [
   "timeseries",
@@ -324,13 +327,18 @@ export const widgetOptionsSchema = z
     showLabels: z.boolean().optional(),
     showValues: z.boolean().optional(),
     showSparkline: z.boolean().optional(),
+    showStatBar: z.boolean().optional(),
+    sparklinePlacement: z.enum(["background", "side"]).optional(),
+    statIcon: z.enum(["arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"]).optional(),
     showTooltip: z.boolean().optional(),
     tooltipView: tooltipViewSchema.optional(),
     showGrid: z.boolean().optional(),
     decimals: z.number().int().min(0).max(8).optional(),
+    staleAfterSeconds: z.number().int().min(1).max(2678400).optional(),
     min: z.number().optional(),
     max: z.number().optional(),
     lineWidth: z.number().min(0.5).max(8).optional(),
+    seriesColors: seriesColorRulesSchema.optional(),
     fillOpacity: z.number().min(0).max(1).optional(),
     curve: z.enum(["linear", "step", "monotone"]).optional(),
     background: hexColor.optional(),
@@ -338,6 +346,8 @@ export const widgetOptionsSchema = z
     thresholds: z.array(thresholdSchema).max(12).optional(),
   })
   .superRefine((options, context) => {
+    if (options.showStatBar && (options.min === undefined || options.max === undefined))
+      context.addIssue({ code: "custom", path: ["showStatBar"], message: "A stat bar requires explicit minimum and maximum values" })
     if (options.min !== undefined && options.max !== undefined && options.min >= options.max)
       context.addIssue({
         code: "custom",
@@ -364,6 +374,11 @@ export const customTimeRangeSchema = z
     return Date.parse(range.from) > 0 && duration > 0 && duration <= 31 * 24 * 60 * 60 * 1000
   }, "Choose an increasing time range of at most 31 days, after the Unix epoch")
 
+/** Event markers are supported on time-based line and traffic charts. */
+export function supportsAnnotationSource(type: string, pluginId?: string): boolean {
+  return type === "timeseries" || (type === "plugin" && (pluginId === "stacked-timeseries" || pluginId === "directional-traffic"))
+}
+
 export const widgetSchema = z
   .strictObject({
     id: identifier,
@@ -373,6 +388,13 @@ export const widgetSchema = z
     query: z.string().trim().min(1).max(8192),
     unit: z.string().max(24),
     queryRef: dashboardQueryReferenceSchema.optional(),
+    annotationSource: z.strictObject({
+      queryRef: dashboardQueryReferenceSchema,
+      timestampColumn: z.string().trim().min(1).max(128),
+      endColumn: z.string().trim().min(1).max(128).optional(),
+      labelColumn: z.string().trim().min(1).max(128),
+      severityColumn: z.string().trim().min(1).max(128).optional(),
+    }).optional(),
     description: z.string().max(500).optional(),
     color: hexColor.optional(),
     options: widgetOptionsSchema.optional(),
@@ -380,16 +402,27 @@ export const widgetSchema = z
     dataKind: z.enum(["metrics", "traces", "records"]).optional(),
     config: pluginConfigSchema.optional(),
     drilldowns: z.array(drilldownSchema).max(8).optional(),
+    selectionBindings: z.array(drilldownBindingSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
     layout: z
       .strictObject({
         x: z.number().int().min(0).max(11),
         y: z.number().int().min(0).max(1000),
         w: z.number().int().min(1).max(12),
-        h: z.number().int().min(2).max(12),
+        h: z.number().int().min(1).max(12),
       })
       .refine((v) => v.x + v.w <= 12, "Widget must fit within the 12-column canvas"),
   })
   .superRefine((widget, context) => {
+    if (widget.type !== "stat" && widget.layout.h < 2)
+      context.addIssue({ code: "custom", path: ["layout", "h"], message: "Only single-value widgets can use one row" })
+    if (widget.annotationSource && !supportsAnnotationSource(widget.type, widget.pluginId))
+      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-series or directional-traffic widget" })
+    const boundVariables = new Set<string>()
+    widget.selectionBindings?.forEach((binding, index) => {
+      if (boundVariables.has(binding.variable))
+        context.addIssue({ code: "custom", path: ["selectionBindings", index, "variable"], message: "Bind each dashboard variable once" })
+      boundVariables.add(binding.variable)
+    })
     const drilldownIds = new Set<string>()
     widget.drilldowns?.forEach((drilldown, index) => {
       if (drilldownIds.has(drilldown.id))
@@ -452,7 +485,7 @@ export const dashboardSchema = z
       .optional(),
     customTimeRange: customTimeRangeSchema.optional(),
     variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
-    timeRange: z.enum(["15m", "1h", "6h", "24h", "7d"]),
+    timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
     refreshInterval: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60)]),
     widgets: z.array(widgetSchema).max(MAX_WIDGETS),
   })
@@ -487,8 +520,8 @@ export type TooltipSource = z.infer<typeof tooltipSourceSchema>
 export type TooltipQuerySource = Extract<TooltipSource, { type: "query" }>
 export type TooltipBinding = z.infer<typeof tooltipBindingSchema>
 
-export function supportsTooltipView(type: Widget["type"]): boolean {
-  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table"
+export function supportsTooltipView(type: Widget["type"], pluginId?: string): boolean {
+  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginId === "geo-heatmap")
 }
 export type Threshold = z.infer<typeof thresholdSchema>
 export type DashboardVariable = z.infer<typeof dashboardVariableSchema>
@@ -521,6 +554,8 @@ export interface QueryRequest {
   start: number
   end: number
   step: number
+  /** Fetch one trace's spans instead of searching trace summaries. */
+  traceId?: string
   /** Authoring reference; the host resolves and removes this before transport. */
   queryRef?: DashboardQueryReference
 }
@@ -538,6 +573,7 @@ export interface RecordFrame {
 export interface QueryResult {
   records?: RecordFrame
   truncated?: boolean
+  spans?: { spanId: string; parentSpanId?: string; service: string; operation: string; startTime: number; durationMs: number; status: string; attributes?: { key: string; value: string }[]; attributesOmitted?: number }[]
   series?: {
     name: string
     labels: Record<string, string>

@@ -33,8 +33,8 @@ export function sqlQueryIssue(draft: SQLQueryDraft, parameters: readonly QueryEd
   catch (error) { return error instanceof Error ? error.message : "SQL parameters need a fixed SQL body." }
   try {
     const values = JSON.parse(maskQueryParameters(draft.parameters || "[]", parameters))
-    if (!Array.isArray(values) || values.length > 64 || values.some(value => value !== null && !["string", "number", "boolean"].includes(typeof value)))
-      return "SQL parameters must be an array of up to 64 scalar values or typed placeholders."
+    if (!Array.isArray(values) || values.length > 64 || values.some(value => value !== null && !["string", "number", "boolean"].includes(typeof value) && !(typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 1 && ["start", "end"].includes(value.range))))
+      return 'SQL parameters must be scalar values, typed placeholders, or {"range":"start"}/{"range":"end"}.'
   } catch { return "Complete the SQL parameter JSON array before running or saving." }
   if (draft.projection.trim()) {
     if (records) return "Record queries return their columns directly. Remove the metric projection."

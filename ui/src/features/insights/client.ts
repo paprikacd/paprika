@@ -81,7 +81,10 @@ function documentETag(response: Response): string | undefined {
   return response.headers.get("X-Paprika-Document-ETag") ?? response.headers.get("ETag") ?? undefined
 }
 
-function documentCapacityRetry(path: string, init: RequestInit): boolean {
+function canRetryCapacity(path: string, init: RequestInit): boolean {
+  // The query endpoint is read-only even though its bounded request is POST.
+  // A 429 is a definite admission rejection, so replay is safe.
+  if (path === "/query" && init.method === "POST") return true
   if (!/^\/(dashboards|saved-queries)(\/[^/?]+)?$/.test(path)) return false
   if (!init.method || init.method === "GET") return true
   const headers = new Headers(init.headers)
@@ -151,11 +154,11 @@ export function createInsightsClient(
       if (bearer) headers.set("Authorization", `Bearer ${bearer}`)
       else headers.delete("Authorization")
       let response = await fetch(`${baseURL}${path}`, { ...init, headers })
-      // Shared-provider validation can reject a document before its write when
-      // Observe reaches capacity. Replay only explicit 429 rejections, keeping
+      // Observe can reject a query or document validation before execution when
+      // it reaches capacity. Replay only explicit 429 rejections, keeping
       // the exact body and conditional revision. Lost responses, 5xx errors and
       // conflicts remain with the importer's read-back reconciliation.
-      for (let attempt = 0; response.status === 429 && attempt < 3 && documentCapacityRetry(path, init); attempt++) {
+      for (let attempt = 0; response.status === 429 && attempt < 3 && canRetryCapacity(path, init); attempt++) {
         if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
         const delay = capacityRetryDelay(response, attempt)
         if (delay === undefined) break

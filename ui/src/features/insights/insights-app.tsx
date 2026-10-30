@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -25,6 +26,7 @@ import {
   Link2,
   Loader2,
   PanelLeftClose,
+  PanelTop,
   Pencil,
   Plus,
   Redo2,
@@ -40,10 +42,12 @@ import { verticalCompactor, type Layout } from "react-grid-layout"
 import type { InsightsClient } from "./client"
 import {
   dashboardSchema,
+  customTimeRangeSchema,
   newDashboard,
   newWidget,
   MAX_WIDGETS,
   type Dashboard,
+  type Widget,
   type Provider,
   type Drilldown,
   type QueryRequest,
@@ -76,7 +80,9 @@ import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import { useDashboardHistory } from "./history"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas } from "./canvas"
-import { createQueryScheduler } from "./query"
+import { useCanvasDensity } from "./canvas-density"
+import type { CanvasMode } from "./responsive-layout"
+import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
 import { DocumentEditor } from "./document-editor"
 import { WidgetEditor } from "./widget-editor"
 import { ProviderManager } from "./provider-manager"
@@ -96,7 +102,7 @@ import { VariableBar } from "./dashboard-variables"
 import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
 import {
   buildDashboardURL, parseDashboardURL, resolveDashboardVariables,
-  resolveDrilldown, interpolateQuery, type DashboardNavigation, type DrilldownContext,
+  resolveDrilldown, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext,
 } from "./drilldown"
 
 function writeLocation(state: DashboardNavigation, example: boolean, method: "push" | "replace") {
@@ -209,6 +215,7 @@ export default function InsightsApp({
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
   const [editing, setEditing] = useState(false)
   const [widgetDraftValid, setWidgetDraftValid] = useState(true)
+  const invalidWidgetSaveHintId = useId()
   const [panel, setPanel] = useState<
     "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | null
   >(null)
@@ -220,6 +227,8 @@ export default function InsightsApp({
   const [importingBundle, setImportingBundle] = useState(false)
   const confirmation = useConfirmation()
   const [search, setSearch] = useState("")
+  const { dense, setDense } = useCanvasDensity()
+  const [canvasMode, setCanvasMode] = useState<CanvasMode>("wide")
   const [sidebar, setSidebar] = useState(true)
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const isMobile = useMobileNavigation()
@@ -462,7 +471,7 @@ export default function InsightsApp({
   // Resolve each authoring scope once, before sharing the bounded scheduler.
   // Tooltip label values may themselves contain {{text}}; never interpolate
   // those resolved query literals again as dashboard variables.
-  const fetcher = useMemo(() => async (request: QueryRequest, signal: AbortSignal) => {
+  const fetcher = useMemo(() => createResolvedQueryFetcher(scheduledFetcher, (request: QueryRequest) => {
     const { queryRef, ...resolved } = request
     if (queryRef) {
       if (queriesLoading) throw new Error("Loading the saved-query library…")
@@ -472,11 +481,11 @@ export default function InsightsApp({
       const definition = resolveSavedQueryReference(queryRef, savedQueries, variableValues, request.kind)
       if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
         throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
-      return scheduledFetcher({ ...resolved, ...definition }, signal)
+      return { ...resolved, ...definition }
     }
     assertProviderQueryTemplate(providers.find(provider => provider.id === request.providerId)?.type, request.query)
-    return scheduledFetcher({ ...resolved, query: interpolateQuery(request.query, variableValues) }, signal)
-  }, [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers])
+    return { ...resolved, query: interpolateQuery(request.query, variableValues) }
+  }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers])
   const range = dashboardRange(viewDashboard, end)
   const builderClient = useMemo(
     () =>
@@ -688,6 +697,28 @@ export default function InsightsApp({
       if (await openDashboard(target, loaded => resolveDrilldown(link, context, loaded, range))) setReturnTo(previous)
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not open drilldown")
+    }
+  }
+  function selectDashboardContext(widget: Widget, context: DrilldownContext) {
+    try {
+      const variables = resolveSelectionBindings(widget.selectionBindings ?? [], context, dashboard, variableValues)
+      const state = { ...currentRoute, dashboardId: dashboard.id, variables }
+      writeLocation(state, mode === "example", "replace")
+      setRouteState(state)
+      setError("")
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not apply selection")
+    }
+  }
+  function selectDashboardTime(window: { start: number; end: number }) {
+    try {
+      const customTimeRange = customTimeRangeSchema.parse({ from: new Date(window.start).toISOString(), to: new Date(window.end).toISOString() })
+      const state = { ...currentRoute, dashboardId: dashboard.id, variables: variableValues, customTimeRange }
+      writeLocation(state, mode === "example", "replace")
+      setRouteState(state)
+      setError("")
+    } catch {
+      setError("Choose an increasing time range of at most 31 days.")
     }
   }
   // Browser history must restore the same document, variable values, and time
@@ -1223,8 +1254,8 @@ export default function InsightsApp({
           </div>
         </aside>
       )}
-      <div className={styles.workspace} inert={drawerOpen || undefined}>
-        <div className={styles.topbar}>
+      <div className={styles.workspace} data-density={dense && !editing && canvasMode === "wide" ? "compact" : "standard"} inert={drawerOpen || undefined}>
+        <div className={styles.topbar} data-tooltip-obstacle>
           <div className={styles.breadcrumb}>
             <GammaButton iconOnly size="sm" variant="quiet"
               ref={navigationToggle}
@@ -1280,7 +1311,7 @@ export default function InsightsApp({
           </section>
         )}
         <section hidden={exploring} aria-label="Dashboard workspace">
-        <div className={styles.pageHeader}>
+        <div className={styles.pageHeader} data-tooltip-obstacle>
           <div className={styles.heading}>
             {editing ? (
               <GammaInput
@@ -1317,7 +1348,7 @@ export default function InsightsApp({
               <Sparkles size={15} /> Build with AI
             </GammaButton>
             {editing ? (
-              <GammaButton size="sm" variant="primary" className={styles.primary} disabled={busy || !widgetDraftValid} onClick={save}>
+              <GammaButton size="sm" variant="primary" className={styles.primary} disabled={busy || !widgetDraftValid} aria-describedby={!widgetDraftValid ? invalidWidgetSaveHintId : undefined} onClick={save}>
                 {busy ? (
                   <Loader2 size={15} className={styles.spin} />
                 ) : (
@@ -1335,7 +1366,8 @@ export default function InsightsApp({
             )}
           </div>
         </div>
-        <div className={styles.toolbar}>
+        {editing && !widgetDraftValid && <p id={invalidWidgetSaveHintId} className={styles.saveBlockedHint} role="status">Fix the widget settings to save, or close the editor to keep the last valid preview.</p>}
+        <div className={styles.toolbar} data-tooltip-obstacle>
           <div className={styles.toolbarLeft}>
             <VariableBar key={dashboard.id} dashboard={dashboard} values={variableValues} onApply={values => {
               try {
@@ -1357,6 +1389,11 @@ export default function InsightsApp({
               <Braces size={14} /> Code
             </GammaButton>
             <span className={styles.divider} />
+            <GammaButton size="sm" variant="quiet" aria-pressed={dense} disabled={editing || canvasMode !== "wide"}
+              title={editing ? "Compact view is available when previewing" : canvasMode !== "wide" ? "Compact view is available when the dashboard canvas is wider" : "Use a denser wide-screen layout without changing the saved dashboard"}
+              className={dense && !editing ? styles.activeTool : ""} onClick={() => setDense(!dense)}>
+              <PanelTop size={14} /> Compact view
+            </GammaButton>
             <span className={styles.widgetCount}>
               {dashboard.widgets.length} widgets
             </span>
@@ -1495,11 +1532,15 @@ export default function InsightsApp({
                 dashboard={viewDashboard}
                 active={!exploring}
                 onDrilldown={drilldown}
+                onSelection={selectDashboardContext}
+                onTimeRange={selectDashboardTime}
                 providers={providers}
                 fetcher={fetcher}
                 tooltipFetcher={scheduledFetcher}
                 end={end}
                 editing={editing}
+                dense={dense}
+                onModeChange={setCanvasMode}
                 selected={selected}
                 onSelect={selectWidget}
                 onLayout={layoutUpdate}

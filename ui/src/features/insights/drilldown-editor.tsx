@@ -1,5 +1,6 @@
 "use client";
 
+import { useId, useState } from "react";
 import { Link2, Plus, Trash2 } from "lucide-react";
 import { GammaButton } from "./gamma/button";
 import { GammaInput } from "./gamma/input";
@@ -14,6 +15,7 @@ import {
   type Widget,
 } from "./schema";
 import styles from "./drilldown.module.css";
+import type { QueryFields } from "./query-connections";
 
 const sources = [
   {
@@ -38,14 +40,22 @@ export interface DrilldownEditorProps {
   widget: Widget;
   dashboards: Dashboard[];
   onChange: (widget: Widget) => void;
+  queryFields?: QueryFields;
 }
 
 export function DrilldownEditor({
   widget,
   dashboards,
   onChange,
+  queryFields,
 }: DrilldownEditorProps) {
+  const fieldListId = useId();
+  const [pendingDestination, setPendingDestination] = useState<{ linkId: string; from: string; to: string }>();
   const links = widget.drilldowns ?? [];
+  const recordColumns = queryFields?.recordColumns;
+  const labelNames = recordColumns ? recordColumns.map(column => column.name) : queryFields?.labels.map(label => label.name) ?? [];
+  const hasFieldSnapshot = !!recordColumns || !!queryFields?.seriesCount;
+  const needsLabelSuggestions = links.some(link => link.bindings?.some(binding => binding.source === "label"));
   function update(next: Drilldown[]) {
     const copy = { ...widget };
     if (next.length) copy.drilldowns = next;
@@ -69,6 +79,10 @@ export function DrilldownEditor({
         heatmap cell to pass its context. Links using constants can also open
         from the widget menu.
       </p>
+      {hasFieldSnapshot && needsLabelSuggestions && <>
+        <datalist id={fieldListId}>{labelNames.map(name => <option key={name} value={name} />)}</datalist>
+        <p className={styles.help}>Available result {recordColumns ? "fields" : "labels"}: {labelNames.length ? labelNames.slice(0, 6).join(", ") : "none"}{labelNames.length > 6 ? ` · ${labelNames.length - 6} more in suggestions` : ""}{queryFields?.partial ? " · limited result" : ""}. Availability depends on the selected observation.</p>
+      </>}
       {!links.length && (
         <div className={styles.empty}>
           <Link2 size={18} aria-hidden="true" />
@@ -89,6 +103,10 @@ export function DrilldownEditor({
           (variable) =>
             !assigned.some((binding) => binding.variable === variable.name),
         );
+        const pending = pendingDestination?.linkId === link.id && pendingDestination.from === link.dashboardId ? pendingDestination : undefined;
+        const pendingTarget = pending && dashboards.find(dashboard => dashboard.id === pending.to);
+        const pendingNames = new Set(pendingTarget?.variables?.map(variable => variable.name));
+        const removed = pendingTarget ? assigned.filter(binding => !pendingNames.has(binding.variable)) : [];
         const targetOptions = dashboards.map((dashboard) => ({
           value: dashboard.id,
           label: dashboard.title,
@@ -140,9 +158,18 @@ export function DrilldownEditor({
                   const next = dashboards.find(
                     (dashboard) => dashboard.id === dashboardId,
                   );
+                  if (!next || dashboardId === link.dashboardId) {
+                    setPendingDestination(undefined);
+                    return;
+                  }
                   const names = new Set(
                     next?.variables?.map((variable) => variable.name),
                   );
+                  if (assigned.some(binding => !names.has(binding.variable))) {
+                    setPendingDestination({ linkId: link.id, from: link.dashboardId, to: dashboardId });
+                    return;
+                  }
+                  setPendingDestination(undefined);
                   patch(index, {
                     dashboardId,
                     bindings: assigned.filter((binding) =>
@@ -152,6 +179,22 @@ export function DrilldownEditor({
                 }}
               />
             </div>
+            {pending && <div className={styles.binding} role="status">
+              {pendingTarget ? <p className={styles.help}>
+                {removed.length ? `Bindings for ${removed.map(binding => binding.variable).join(", ")} will be removed when changing to “${pendingTarget.title}”.` : `Changing to “${pendingTarget.title}” will keep the remaining variable bindings.`}
+                {" "}The dashboard is not saved until you save it.
+              </p> : <p className={styles.help}>The selected destination is no longer available. Keep the current destination and choose another.</p>}
+              <GammaButton size="sm" variant="secondary" disabled={!pendingTarget} onClick={(event) => {
+                if (!pendingTarget) return;
+                patch(index, { dashboardId: pendingTarget.id, bindings: assigned.filter(binding => pendingNames.has(binding.variable)) });
+                event.currentTarget.closest("fieldset")?.querySelector<HTMLButtonElement>(`[role="combobox"][aria-label="Link ${index + 1} destination"]`)?.focus();
+                setPendingDestination(undefined);
+              }}>{removed.length ? "Remove incompatible bindings and switch" : "Switch destination"}</GammaButton>{" "}
+              <GammaButton size="sm" variant="quiet" onClick={(event) => {
+                event.currentTarget.closest("fieldset")?.querySelector<HTMLButtonElement>(`[role="combobox"][aria-label="Link ${index + 1} destination"]`)?.focus();
+                setPendingDestination(undefined);
+              }}>Keep current destination</GammaButton>
+            </div>}
             {!target && (
               <p role="alert" className={styles.error}>
                 Destination “{link.dashboardId}” is unavailable. Choose another
@@ -278,6 +321,7 @@ export function DrilldownEditor({
                       </span>
                       <GammaInput
                         aria-label={`Link ${index + 1} binding ${bindingIndex + 1} ${binding.source === "label" ? "label key" : "constant value"}`}
+                        list={binding.source === "label" && hasFieldSnapshot ? fieldListId : undefined}
                         value={binding.value ?? ""}
                         maxLength={
                           binding.source === "label"
@@ -293,6 +337,8 @@ export function DrilldownEditor({
                           edit({ ...binding, value: event.target.value })
                         }
                       />
+                      {binding.source === "label" && binding.value && hasFieldSnapshot && !labelNames.includes(binding.value) && !queryFields?.partial && <span className={styles.help}>The current result has no “{binding.value}” {recordColumns ? "field" : "label"}.</span>}
+                      {binding.source === "label" && binding.value && !recordColumns && queryFields?.labels.some(label => label.name === binding.value && label.present < queryFields.seriesCount) && <span className={styles.help}>“{binding.value}” appears in {queryFields.labels.find(label => label.name === binding.value)!.present} of {queryFields.seriesCount} loaded series; some selections may not contain it.</span>}
                     </label>
                   )}
                   <p className={styles.help}>

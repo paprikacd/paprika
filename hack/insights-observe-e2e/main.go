@@ -419,6 +419,11 @@ func serveMetricRange(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(q.Get("query"), "dense_http_requests_total") {
 		values = denseMetricValues(q, last)
 	}
+	if strings.Contains(q.Get("query"), "duplicate_timestamp_fixture_metric") {
+		// A synthetic malformed upstream response: actual Prometheus deduplicates
+		// timestamps, but compatible providers can return ambiguous observations.
+		values = [][]any{{end - 60, "1"}, {end - 60, "NaN"}, {end - 60, "3"}, {end, "5"}}
+	}
 	if !scaleMetricValues(w, q.Get("query"), values) {
 		return
 	}

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DrilldownEditor } from "./drilldown-editor";
 import { widgetSchema, type Dashboard, type Widget } from "./schema";
+import type { QueryFields } from "./query-connections";
 
 const widget: Widget = {
   id: "health",
@@ -41,16 +42,19 @@ function Harness({
   initial = widget,
   targets = dashboards,
   onChange = vi.fn(),
+  fields,
 }: {
   initial?: Widget;
   targets?: Dashboard[];
   onChange?: (widget: Widget) => void;
+  fields?: QueryFields;
 }) {
   const [draft, setDraft] = useState(initial);
   return (
     <DrilldownEditor
       widget={draft}
       dashboards={targets}
+      queryFields={fields}
       onChange={(value) => {
         setDraft(value);
         onChange(value);
@@ -71,6 +75,31 @@ function addBinding() {
 }
 
 describe("dashboard drilldown editor", () => {
+  it("suggests loaded metric label keys and explains incomplete series coverage", () => {
+    const fields: QueryFields = { seriesCount: 3, labels: [{ name: "node", samples: ["node-01"], present: 3 }, { name: "zone", samples: [], present: 2 }], partial: false };
+    render(<Harness fields={fields} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add dashboard link" }));
+    addBinding();
+    const input = screen.getByLabelText("Link 1 binding 1 label key") as HTMLInputElement;
+    expect([...input.list!.options].map(option => option.value)).toEqual(["node", "zone"]);
+    expect(screen.getByText(/Available result labels: node, zone/)).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "zone" } });
+    expect(screen.getByText(/zone.*2 of 3 loaded series/)).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "missing" } });
+    expect(screen.getByText(/no.*missing.*label/i)).toBeInTheDocument();
+  });
+
+  it("suggests record columns and does not claim missing fields for a partial result", () => {
+    const fields: QueryFields = { seriesCount: 0, labels: [], partial: true, recordColumns: [{ name: "ticker", type: "string" }, { name: "sector", type: "string" }] };
+    render(<Harness fields={fields} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add dashboard link" }));
+    addBinding();
+    const input = screen.getByLabelText("Link 1 binding 1 label key") as HTMLInputElement;
+    expect([...input.list!.options].map(option => option.value)).toEqual(["ticker", "sector"]);
+    fireEvent.change(input, { target: { value: "other" } });
+    expect(screen.queryByText(/no.*other.*field/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/limited result/i)).toBeInTheDocument();
+  });
   it("creates a bounded valid link and configures label, numeric, series and constant bindings through Gamma controls", () => {
     const changed = vi.fn();
     const { container } = render(<Harness onChange={changed} />);
@@ -114,7 +143,7 @@ describe("dashboard drilldown editor", () => {
     expect(container.querySelector("select")).toBeNull();
   });
 
-  it("prevents duplicate target bindings and removes incompatible bindings when changing destination", () => {
+  it("prevents duplicate bindings and asks before a destination change removes incompatible bindings", () => {
     const changed = vi.fn();
     render(<Harness onChange={changed} />);
     fireEvent.click(screen.getByRole("button", { name: "Add dashboard link" }));
@@ -135,6 +164,16 @@ describe("dashboard drilldown editor", () => {
       { key: "Escape" },
     );
     choose("Link 1 destination", /^Region detail/);
+    expect(screen.getByRole("combobox", { name: "Link 1 destination" })).toHaveTextContent("Service detail");
+    expect(screen.getByText(/service.*removed/i)).toBeVisible();
+    expect(changed.mock.lastCall?.[0].drilldowns[0].bindings).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Keep current destination" }));
+    expect(screen.getByRole("combobox", { name: "Link 1 destination" })).toHaveFocus();
+    expect(screen.queryByText(/service.*removed/i)).toBeNull();
+    expect(changed.mock.lastCall?.[0].drilldowns[0].bindings).toHaveLength(2);
+    choose("Link 1 destination", /^Region detail/);
+    fireEvent.click(screen.getByRole("button", { name: "Remove incompatible bindings and switch" }));
+    expect(screen.getByRole("combobox", { name: "Link 1 destination" })).toHaveFocus();
     expect(changed.mock.lastCall?.[0].drilldowns[0].bindings).toEqual([
       { variable: "region", source: "label", value: "region" },
     ]);
@@ -146,6 +185,38 @@ describe("dashboard drilldown editor", () => {
     ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Remove link 1" }));
     expect(changed.mock.lastCall?.[0].drilldowns).toBeUndefined();
+  });
+
+  it("switches immediately when all bindings are compatible", () => {
+    const changed = vi.fn();
+    render(<Harness onChange={changed} initial={{ ...widget, drilldowns: [{ id: "a", title: "Inspect", dashboardId: "service", bindings: [{ variable: "region", source: "label", value: "region" }] }] }} />);
+    choose("Link 1 destination", /^Region detail/);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(changed.mock.lastCall?.[0].drilldowns[0]).toMatchObject({ dashboardId: "region", bindings: [{ variable: "region", source: "label", value: "region" }] });
+  });
+
+  it("does not drop bindings if the pending destination disappears", () => {
+    const changed = vi.fn();
+    const initial: Widget = { ...widget, drilldowns: [{ id: "a", title: "Inspect", dashboardId: "service", bindings: [{ variable: "service", source: "label", value: "service" }] }] };
+    const { rerender } = render(<Harness onChange={changed} initial={initial} />);
+    choose("Link 1 destination", /^Region detail/);
+    rerender(<Harness onChange={changed} initial={initial} targets={[dashboards[0]]} />);
+    expect(screen.getByText(/selected destination is no longer available/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Switch destination" })).toBeDisabled();
+    expect(changed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep current destination" }));
+    expect(screen.getByRole("combobox", { name: "Link 1 destination" })).toHaveTextContent("Service detail");
+  });
+
+  it("rechecks destination variables before confirming a pending change", () => {
+    const changed = vi.fn();
+    const initial: Widget = { ...widget, drilldowns: [{ id: "a", title: "Inspect", dashboardId: "service", bindings: [{ variable: "service", source: "label", value: "service" }] }] };
+    const { rerender } = render(<Harness onChange={changed} initial={initial} />);
+    choose("Link 1 destination", /^Region detail/);
+    rerender(<Harness onChange={changed} initial={initial} targets={[dashboards[0], { ...dashboards[1], variables: [{ name: "service" }] }]} />);
+    expect(screen.getByText(/will keep the remaining variable bindings/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Switch destination" }));
+    expect(changed.mock.lastCall?.[0].drilldowns[0]).toMatchObject({ dashboardId: "region", bindings: [{ variable: "service", source: "label", value: "service" }] });
   });
 
   it("keeps missing destinations and variables visible with a way to repair each", () => {
@@ -174,6 +245,8 @@ describe("dashboard drilldown editor", () => {
       screen.getByRole("button", { name: "Add variable binding to link 1" }),
     ).toBeDisabled();
     choose("Link 1 destination", /^Service detail/);
+    expect(screen.getByText(/old_service.*removed/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Remove incompatible bindings and switch" }));
     expect(screen.queryByRole("alert")).toBeNull();
     addBinding();
     expect(

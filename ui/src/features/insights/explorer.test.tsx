@@ -125,7 +125,7 @@ function deferred<T>() {
 describe("Explore query workspace", () => {
   it("requires explicit result columns for record chart previews without requerying the provider", async () => {
     const api = client()
-    vi.mocked(api.query).mockResolvedValue({ records: { columns: [{ key: "service", type: "string" }, { key: "count", type: "number" }], rows: [["api", 10]] } })
+    vi.mocked(api.query).mockResolvedValue({ records: { columns: [{ key: "service", type: "string" }, { key: "count", type: "number" }], rows: [["api", 10]], truncated: true } })
     render(<Explorer client={api} providers={[{ id: "app", name: "Uptime", type: "uptime", capabilities: ["records"] }]} queries={[]} onQueriesChange={vi.fn()} onUse={vi.fn()} onClose={vi.fn()} />)
     edit("JSON query", '{"operation":"services"}')
     fireEvent.click(screen.getByRole("button", { name: "Run query" }))
@@ -133,6 +133,8 @@ describe("Explore query workspace", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Explore record visualization" }))
     fireEvent.click(screen.getByRole("option", { name: "Record bar chart" }))
     expect(screen.getByText("Choose the result columns to preview this visualization.")).toBeInTheDocument()
+    expect(screen.getByLabelText("Result summary")).toHaveTextContent("1 row · 2 columns returned")
+    expect(screen.getByLabelText("Result summary")).toHaveTextContent("Partial provider response")
     expect(screen.queryByTestId("result")).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("combobox", { name: "Preview x column" }))
     fireEvent.click(screen.getByRole("option", { name: "service" }))
@@ -308,10 +310,54 @@ describe("Explore query workspace", () => {
     edit("PromQL query", "rate(requests_total[5m])");
     expect(api.query).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("result")).toHaveTextContent(/^up$/);
-    expect(within(screen.getByRole("region", { name: "Explore query results" })).getByRole("status")).toHaveTextContent("Inputs changed");
+    expect(within(screen.getByRole("region", { name: "Explore query results" })).getByText(/Inputs changed/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Use in dashboard" }),
     ).toBeDisabled();
+  });
+  it("identifies the last successful result when an unchanged rerun fails", async () => {
+    const api = client();
+    vi.mocked(api.query).mockResolvedValueOnce({ series: [{ name: "up", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: null }] }], truncated: true }).mockRejectedValueOnce(new Error("Provider unavailable"));
+    render(<Harness api={api} />);
+    edit("PromQL query", "up");
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await screen.findByTestId("result");
+    expect(screen.getByLabelText("Result summary")).toHaveTextContent("1 series · 2 samples · 1 missing sample");
+    expect(screen.getByLabelText("Result summary")).toHaveTextContent("Partial provider response");
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provider unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent("Showing the previous successful result");
+    expect(screen.getByTestId("result")).toHaveTextContent("up");
+  });
+  it("explains a first-run failure and clears it when test inputs change", async () => {
+    const api = client();
+    vi.mocked(api.query).mockRejectedValueOnce(new Error("Provider unavailable"));
+    render(<Harness api={api} initial={[saved]} />);
+    await openSaved();
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provider unavailable");
+    expect(screen.getByRole("heading", { name: "Query failed" })).toBeInTheDocument();
+    expect(screen.queryByText("Ready when you are")).not.toBeInTheDocument();
+    edit("Test value for service", "payments");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Ready when you are")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reset test value" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  it("identifies an earlier result when the changed-input run fails", async () => {
+    const api = client();
+    vi.mocked(api.query).mockResolvedValueOnce(result).mockRejectedValueOnce(new Error("Provider unavailable"));
+    render(<Harness api={api} initial={[saved]} />);
+    await openSaved();
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await screen.findByTestId("result");
+    edit("Test value for service", "payments");
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provider unavailable");
+    expect(screen.getByText("Latest run failed. Showing the previous result for different inputs.")).toBeInTheDocument();
+    edit("Test value for service", "orders");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/Inputs changed. Showing the previous result/)).toBeInTheDocument();
   });
   it("keeps test inputs separate from typed saved defaults and uses ETags", async () => {
     const api = client();
@@ -378,6 +424,32 @@ describe("Explore query workspace", () => {
     await act(async () => first.resolve(result));
     expect(screen.queryByTestId("result")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled();
+  });
+  it("acknowledges an explicit cancellation and clears the notice on editing", async () => {
+    const api = client(), pending = deferred<QueryResult>();
+    vi.mocked(api.query).mockReturnValueOnce(pending.promise);
+    render(<Harness api={api} />);
+    edit("PromQL query", "up");
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel query" }));
+    expect(screen.getByText("Query cancelled.")).toBeInTheDocument();
+    expect(vi.mocked(api.query).mock.calls[0][1].aborted).toBe(true);
+    edit("PromQL query", "up == 1");
+    expect(screen.queryByText("Query cancelled.")).not.toBeInTheDocument();
+  });
+  it("labels the retained result after a rerun is cancelled and ignores late data", async () => {
+    const api = client(), pending = deferred<QueryResult>();
+    vi.mocked(api.query).mockResolvedValueOnce(result).mockReturnValueOnce(pending.promise);
+    render(<Harness api={api} />);
+    edit("PromQL query", "up");
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await screen.findByTestId("result");
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    expect(screen.getByText(/Running query… Showing the previous successful result/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel query" }));
+    expect(screen.getByText("Query cancelled. Showing the previous successful result below.")).toBeInTheDocument();
+    await act(async () => pending.resolve({ series: [{ name: "late", labels: {}, points: [{ timestamp: 1, value: 42 }] }] }));
+    expect(screen.getByLabelText("Result summary")).toHaveTextContent("0 series · 0 samples returned");
   });
   it("a canceled old rejection cannot replace a newer successful result", async () => {
     const api = client(),

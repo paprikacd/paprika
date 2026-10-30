@@ -30,8 +30,17 @@ const (
 
 var validID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$`)
 var validHeaderName = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+var validTempoTraceID = regexp.MustCompile(`^[a-fA-F0-9]{32}$`)
+var validTempoSearchTraceID = regexp.MustCompile(`^[a-fA-F0-9]{1,32}$`)
 
 var errUpstream = errors.New("provider query failed; check the query and provider configuration")
+
+// Status is retained only for safe internal retry decisions; Error never
+// exposes a provider response, URL, or status detail to a caller.
+type providerHTTPError struct{ status int }
+
+func (e *providerHTTPError) Error() string { return errUpstream.Error() }
+func (e *providerHTTPError) Unwrap() error { return errUpstream }
 
 type providerClient struct {
 	public        Provider
@@ -84,6 +93,9 @@ func validateQuery(q Query) error {
 	if q.Kind != "metrics" && q.Kind != "traces" && q.Kind != "records" {
 		return errors.New("query kind must be metrics, traces or records")
 	}
+	if q.TraceID != "" && (q.Kind != "traces" || !validTempoTraceID.MatchString(q.TraceID)) {
+		return errors.New("traceId requires a 32-character hexadecimal trace ID and traces kind")
+	}
 	if strings.TrimSpace(q.Query) == "" || len(q.Query) > 16384 {
 		return errors.New("query must contain between 1 and 16384 bytes")
 	}
@@ -96,10 +108,16 @@ func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error
 	if !p.public.supports(q.Kind) {
 		return QueryResult{}, errors.New("provider does not support this query kind")
 	}
+	if q.TraceID != "" && p.public.Type != "tempo" {
+		return QueryResult{}, errors.New("trace detail is not available for this provider type")
+	}
 	if p.remote != nil {
 		body, err := p.remote.query(ctx, q)
 		if err != nil {
 			return QueryResult{}, err
+		}
+		if q.TraceID != "" {
+			return decodeTempoDetail(body, q.TraceID)
 		}
 		return decodeObserveQuery(q.Kind, body)
 	}
@@ -111,21 +129,44 @@ func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error
 		params.Set("timeout", "15s")
 		params.Set("limit", strconv.Itoa(maxSeries))
 	} else {
-		path = "/api/search"
-		params.Set("q", q.Query)
-		params.Set("limit", strconv.Itoa(maxTraces))
-		// Tempo accepts integer Unix seconds.
-		params.Set("start", strconv.FormatInt(int64(q.Start), 10))
-		params.Set("end", strconv.FormatInt(int64(q.End), 10))
+		if q.TraceID != "" {
+			path = "/api/traces/" + q.TraceID
+			// Fetch the complete trace: Tempo's optional start/end narrow the
+			// lookup and can omit spans outside the dashboard search window.
+			params = url.Values{}
+		} else {
+			path = "/api/search"
+			params.Set("q", q.Query)
+			// Ask for one more than the bounded result to detect omissions.
+			params.Set("limit", strconv.Itoa(maxTraces+1))
+			// Tempo accepts integer Unix seconds.
+			params.Set("start", strconv.FormatInt(int64(q.Start), 10))
+			params.Set("end", strconv.FormatInt(int64(q.End), 10))
+		}
 	}
 	body, err := p.fetch(ctx, path, params, maxResponseBytes)
+	var httpErr *providerHTTPError
+	fallback := errors.As(err, &httpErr) && httpErr.status == http.StatusBadRequest && q.Kind == "traces" && q.TraceID == "" && ctx.Err() == nil
+	if fallback {
+		// Some Tempo installations reject a search limit above their own cap.
+		// Retry at our normal bound. A full fallback page is potentially partial.
+		params.Set("limit", strconv.Itoa(maxTraces))
+		body, err = p.fetch(ctx, path, params, maxResponseBytes)
+	}
 	if err != nil {
 		return QueryResult{}, err
 	}
 	if q.Kind == "metrics" {
 		return decodePrometheus(body)
 	}
-	return decodeTempo(body)
+	if q.TraceID != "" {
+		return decodeTempoDetail(body, q.TraceID)
+	}
+	result, err := decodeTempo(body)
+	if fallback && len(result.Traces) == maxTraces {
+		result.Truncated = true
+	}
+	return result, err
 }
 
 func decodeObserveQuery(kind string, body []byte) (QueryResult, error) {
@@ -164,7 +205,7 @@ func (p *providerClient) fetch(ctx context.Context, path string, params url.Valu
 	}
 	defer closeReadBody(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, errUpstream
+		return nil, &providerHTTPError{status: resp.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil || int64(len(body)) > limit {
@@ -343,10 +384,11 @@ type tempoTrace struct {
 
 func decodeTempoTrace(row tempoTrace) (Trace, error) {
 	start, err := strconv.ParseInt(row.StartTimeUnixNano, 10, 64)
-	if err != nil || start < 0 || row.TraceID == "" || !finite(row.DurationMs) || row.DurationMs < 0 {
+	if err != nil || start < 0 || !validTempoSearchTraceID.MatchString(row.TraceID) || !finite(row.DurationMs) || row.DurationMs < 0 {
 		return Trace{}, errUpstream
 	}
-	return Trace{TraceID: row.TraceID, Service: row.RootServiceName, Operation: row.RootTraceName,
+	traceID := strings.Repeat("0", 32-len(row.TraceID)) + strings.ToLower(row.TraceID)
+	return Trace{TraceID: traceID, Service: row.RootServiceName, Operation: row.RootTraceName,
 		DurationMs: row.DurationMs, StartTime: float64(start) / 1e6,
 		// Search metadata does not report a trace-wide status.
 		Status: "unknown",

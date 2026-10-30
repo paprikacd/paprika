@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   widgetKind,
   type QueryRequest,
@@ -8,10 +8,27 @@ import {
   type Widget,
 } from "./schema";
 
-export type QueryFetcher = (
+export type QueryFetcher = ((
   request: QueryRequest,
   signal: AbortSignal,
-) => Promise<QueryResult>;
+) => Promise<QueryResult>) & {
+  /** Stable identity of the fully resolved request, including binding errors. */
+  requestIdentity?: (request: QueryRequest) => string;
+  /** Changes when the underlying provider/scheduler is invalidated. */
+  requestRevision?: QueryFetcher;
+};
+
+/** Keep query resolution authoritative while allowing unrelated variable
+ * changes to retain an unchanged result and its interaction state. */
+export function createResolvedQueryFetcher(scheduler: QueryFetcher, resolve: (request: QueryRequest) => QueryRequest): QueryFetcher {
+  const fetcher: QueryFetcher = async (request, signal) => scheduler(resolve(request), signal);
+  fetcher.requestRevision = scheduler;
+  fetcher.requestIdentity = request => {
+    try { return JSON.stringify(["resolved", resolve(request)]); }
+    catch (error) { return JSON.stringify(["error", error instanceof Error ? error.message : "Invalid query"]); }
+  };
+  return fetcher;
+}
 
 interface QuerySubscriber {
   resolve: (data: QueryResult) => void;
@@ -116,6 +133,7 @@ export function createQueryScheduler(
       request.end,
       request.step,
       request.queryRef,
+      request.traceId,
     ]);
     const cached = cache.get(key);
     if (cached && cached.expires > Date.now()) {
@@ -210,6 +228,11 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
   const debounceRef = useRef(debounceMs);
   useEffect(() => { debounceRef.current = debounceMs; }, [debounceMs]);
   const kind = widgetKind({ type, dataKind });
+  const request: QueryRequest = { providerId, query, kind, start, end, step, ...(queryRef ? { queryRef } : {}) };
+  const requestIdentity = fetcher.requestIdentity?.(request);
+  const fetcherRevision = fetcher.requestIdentity ? fetcher.requestRevision ?? fetcher : fetcher;
+  const fetcherRef = useRef(fetcher);
+  useLayoutEffect(() => { fetcherRef.current = fetcher; }, [fetcher]);
   const key = JSON.stringify([
     providerId,
     query,
@@ -218,6 +241,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     end,
     step,
     referenceKey,
+    requestIdentity,
   ]);
   const [state, setState] = useState<QueryState>({
     data: undefined,
@@ -236,8 +260,8 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const requestChanged =
       previousRequest.current?.key !== key ||
-      previousRequest.current?.fetcher !== fetcher;
-    previousRequest.current = { key, fetcher };
+      previousRequest.current?.fetcher !== fetcherRevision;
+    previousRequest.current = { key, fetcher: fetcherRevision };
     const clearTimer = () => {
       if (timer) clearTimeout(timer);
       timer = undefined;
@@ -250,7 +274,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       if (!queryRef && (!providerId || !query.trim())) {
         setState({
           key,
-          fetcher,
+          fetcher: fetcherRevision,
           data: undefined,
           loading: false,
           error: null,
@@ -267,7 +291,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       const signal = controller.signal;
       setState((previous) => ({ ...previous, loading: true, error: null }));
       try {
-        const data = await fetcher(
+        const data = await fetcherRef.current(
           {
             providerId,
             query,
@@ -280,13 +304,13 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
           signal,
         );
         if (!disposed && !signal.aborted && generation === requestGeneration) {
-          setState({ key, fetcher, data, loading: false, error: null });
+          setState({ key, fetcher: fetcherRevision, data, loading: false, error: null });
         }
       } catch (error) {
         if (!disposed && !signal.aborted && generation === requestGeneration) {
           setState({
             key,
-            fetcher,
+            fetcher: fetcherRevision,
             data: undefined,
             loading: false,
             error:
@@ -322,7 +346,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
         if (requestChanged)
           setState({
             key,
-            fetcher,
+            fetcher: fetcherRevision,
             data: undefined,
             loading: enabled,
             error: null,
@@ -349,14 +373,14 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     step,
     refreshInterval,
     enabled,
-    fetcher,
+    fetcherRevision,
     referenceKey,
     key,
     queryRef,
   ]);
 
   const refresh = useCallback(() => runRef.current(), []);
-  const current = state.key === key && state.fetcher === fetcher;
+  const current = state.key === key && state.fetcher === fetcherRevision;
   return {
     data: current ? state.data : undefined,
     loading: current ? state.loading : enabled,

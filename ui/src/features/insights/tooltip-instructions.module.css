@@ -1,0 +1,6 @@
+.touch { display: none; }
+
+@media (pointer: coarse) {
+  .keyboard { display: none; }
+  .touch { display: inline; }
+}

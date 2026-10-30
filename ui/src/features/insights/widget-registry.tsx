@@ -44,6 +44,8 @@ export interface WidgetConfigField {
   max?: number;
   step?: number;
   options?: readonly { value: string; label: string }[];
+  /** A column key from an already-loaded record result; numeric fields are validated by the renderer. */
+  recordColumn?: "any" | "number";
 }
 export type WidgetPlugin = Omit<WidgetDefinition, "type">;
 

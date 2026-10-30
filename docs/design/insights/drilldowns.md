@@ -5,15 +5,40 @@
 1. Open the destination dashboard, choose **Manage**, and add its variable declarations (for example, `service`). Apply the declarations and save the dashboard.
 2. Use the variable in a destination widget query, such as `up{service={{service}}`.
 3. Open a source widget's **Links** tab. Add a dashboard link, select the destination in the searchable Gamma picker, and bind `service` to the selected signal's `service` label. Apply the widget and save.
-4. Select a heatmap cell, table row, or trace. For multi-series charts, choose a series in the widget picker. Open the arrow menu in the widget header and follow the named link. A single-series widget uses its latest observation automatically.
+4. Select a heatmap cell, table row, or trace. For multi-series charts, choose a series in the widget picker. To follow a link from a specific historical time-series point, pin its tooltip and choose the named link directly. Alternatively choose **Use sample for dashboard links**, then open the arrow menu in the widget header. Without an explicit point, a single-series widget uses its latest observation automatically.
 
-The destination shows editable view variables and a return link. Text inputs use **Apply values** to update queries once after editing; typing does not issue requests. Variables with authored dropdown choices apply that selection immediately and preserve keyboard focus; pending text edits remain staged until **Apply values**. Selecting filters updates the URL view, without changing saved defaults. Browser Back/Forward and reload restore the same URL context. **Copy dashboard link** copies that view. Selecting a series uses its latest value; individual historical time-series point selection is not currently implemented.
+The destination shows editable view variables and a return link. Text inputs use **Apply values** to update queries once after editing; typing does not issue requests. Variables with authored dropdown choices apply that selection immediately and preserve keyboard focus; pending text edits remain staged until **Apply values**. Selecting filters updates the URL view, without changing saved defaults. Browser Back/Forward and reload restore the same URL context. **Copy dashboard link** copies that view. Selecting a series in the picker uses its latest valid value. A deliberately selected time-series sample uses that exact point's labels and value for dashboard links; the source widget identifies its observation time. Direct tooltip links use the same validated context and carry the current dashboard range when configured, not a range centered on the sample. A missing binding disables the link and explains why. The selection expires when the query result changes, returning to the latest available value for that series. Hovering or focusing an unpinned tooltip does not change the link context.
 
 The carried time range and variable overrides are view state. Saving the destination keeps its own configured range and variable defaults. A manual time-range edit changes its saved configuration as usual. Missing signals, labels, destinations, and declarations are surfaced before navigation. Edits made while a destination loads are preserved, and a declined discard prompt keeps the current document and URL.
 
 Library imports allocate all new IDs before rewriting links between imported dashboards. Partial retries preserve these mappings, including when a provider mapping is corrected. Links to dashboards outside the imported library retain their original target IDs.
 
 ## Document contract
+
+### Filter this dashboard from a selection
+
+In a record treemap, table, list, matrix, record line/bar chart, or pie chart,
+the **Links** tab can map a selected field to a variable on the current
+dashboard. Add the variable first, then add a selection binding and choose
+its field or label. Clicking a mark or activating it with the keyboard applies
+the filter to other queries; hovering does not. Record values come from the
+selected row, including columns hidden from the table. A missing field stops
+the whole update and displays an error. Other current filters and saved
+defaults are preserved. Existing drilldown links continue to work.
+
+The document representation uses the same bounded sources as drilldowns:
+
+```yaml
+selectionBindings:
+  - variable: company
+    source: label
+    value: symbol
+```
+
+Only supported plugins activate these bindings; other visualizations retain
+their usual drilldown behavior. Selection updates URL view state rather than
+the persisted dashboard definition. Avoid binding a source widget's own query
+to a selection when the user should still see all available choices.
 
 Dashboards declare up to 20 named string variables. Each variable has a `name`, optional display `label`, optional `defaultValue`, and optional `options` for a dropdown. Names use letters, numbers and underscores, start with a letter or underscore, and are at most 64 characters. Values are at most 1,024 UTF-16 code units. Unset variables remain unset; a query that needs one reports an error before requesting data.
 

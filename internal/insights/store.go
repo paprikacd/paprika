@@ -286,7 +286,7 @@ func readStoreDocument(dir, name string, limit int64) ([]byte, error) {
 }
 
 func validateDashboardWidgetShape(raw json.RawMessage) error {
-	widget, err := requireObjectShape(raw, []string{"id", "title", "type", "providerId", "query", "unit", "layout"}, []string{"description", "color", "options", "pluginId", "dataKind", "config", "drilldowns", "queryRef"})
+	widget, err := requireObjectShape(raw, []string{"id", "title", "type", "providerId", "query", "unit", "layout"}, []string{"description", "color", "options", "pluginId", "dataKind", "config", "drilldowns", "queryRef", "selectionBindings", "annotationSource"})
 	if err != nil {
 		return err
 	}
@@ -359,7 +359,11 @@ func validateWidgetText(w *dashboardWidget) error {
 }
 
 func validateWidgetLayout(w *dashboardWidget) error {
-	if w.Layout.X < 0 || w.Layout.Y < 0 || w.Layout.Y > 1000 || w.Layout.W < 1 || w.Layout.W > 12 || w.Layout.X+w.Layout.W > 12 || w.Layout.H < 2 || w.Layout.H > 12 {
+	minHeight := 2
+	if w.Type == "stat" {
+		minHeight = 1
+	}
+	if w.Layout.X < 0 || w.Layout.Y < 0 || w.Layout.Y > 1000 || w.Layout.W < 1 || w.Layout.W > 12 || w.Layout.X+w.Layout.W > 12 || w.Layout.H < minHeight || w.Layout.H > 12 {
 		return errors.New("widget layout is outside the dashboard grid")
 	}
 	return nil
@@ -373,7 +377,7 @@ func validateDashboardIdentity(d *dashboardDocument, id string) error {
 		return errors.New("dashboard title or description is invalid")
 	}
 	switch d.TimeRange {
-	case "15m", "1h", "6h", "24h", "7d":
+	case "15m", "30m", "1h", "6h", "24h", "7d", "30d":
 	default:
 		return errors.New("unsupported dashboard time range")
 	}

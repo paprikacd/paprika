@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordTable, RecordList, RecordTreemap, RecordMatrix, registerRecordWidgetPlugins } from "./records"
 import { getWidgetDefinition } from "../widget-registry"
@@ -72,6 +72,9 @@ describe("record widgets", () => {
     const onChange = vi.fn()
     render(<PluginConfigEditor definition={getWidgetDefinition("plugin", "record-table")} value={'{"columns":["service"],"pageSize":5}'} onChange={onChange} />)
     expect(screen.getByRole("switch", { name: /^Show search/ })).toBeChecked()
+    expect(screen.getByRole("switch", { name: /^Show row numbers/ })).not.toBeChecked()
+    fireEvent.click(screen.getByRole("switch", { name: /^Show row numbers/ }))
+    expect(JSON.parse(onChange.mock.calls.at(-1)![0])).toEqual({ columns: ["service"], pageSize: 5, showRowNumbers: true })
     fireEvent.click(screen.getByRole("switch", { name: /^Show search/ }))
     expect(JSON.parse(onChange.mock.calls.at(-1)![0])).toEqual({ columns: ["service"], pageSize: 5, showSearch: false })
     fireEvent.click(screen.getByRole("combobox", { name: "Row density" }))
@@ -88,6 +91,23 @@ describe("record widgets", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }))
     expect(screen.getByText("service-5")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
+  })
+  it("numbers only displayed loaded rows, including after sorting, filtering and paging", () => {
+    const rows = Array.from({ length: 7 }, (_, i) => [`service-${i}`, i, true]) as NonNullable<QueryResult["records"]>["rows"]
+    const { rerender } = render(<RecordTable widget={{ ...widget, config: { showRowNumbers: true, pageSize: 5 } }} result={{ records: { ...result.records!, rows } }} />)
+    expect(screen.getByRole("columnheader", { name: "Row number" })).toHaveTextContent("#")
+    const row = (name: string) => screen.getByText(name).closest("tr")!
+    expect(within(row("service-0")).getAllByRole("cell")[0]).toHaveTextContent("1")
+    fireEvent.click(screen.getByRole("button", { name: "Next" }))
+    expect(within(row("service-5")).getAllByRole("cell")[0]).toHaveTextContent("6")
+    fireEvent.click(screen.getByRole("button", { name: "uptime" }))
+    fireEvent.click(screen.getByRole("button", { name: "uptime ↑" }))
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }))
+    expect(within(row("service-6")).getAllByRole("cell")[0]).toHaveTextContent("1")
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Service records" }), { target: { value: "service-4" } })
+    expect(within(row("service-4")).getAllByRole("cell")[0]).toHaveTextContent("1")
+    rerender(<RecordTable widget={{ ...widget, config: { showRowNumbers: false } }} result={{ records: { ...result.records!, rows } }} />)
+    expect(screen.queryByRole("columnheader", { name: "Row number" })).not.toBeInTheDocument()
   })
   it("preserves zero, missing and boolean values, filters, and sends row dimensions to drilldowns", () => {
     const select = vi.fn()
@@ -167,7 +187,7 @@ describe("record widgets", () => {
         result={result}
       />,
     )
-    expect(screen.getByRole("img", { name: /web: 99.99/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /web: 99.99/ })).toBeInTheDocument()
     expect(screen.getByText(/2 zero, missing or negative/)).toBeInTheDocument()
   })
   it("refuses ambiguous matrix coordinates", () => {

@@ -77,6 +77,15 @@ describe("SQL editor envelope", () => {
     expect(sqlQueryIssue({ ...draft, parameters: '[null, false, 0, ""]' }, parameters)).toBe("")
   })
 
+  it("accepts only explicit start and end range references alongside typed parameters", () => {
+    const draft = readSQLQuery(source, parameters)
+    const bound = { ...draft, parameters: '[{{service}}, {"range":"start"}, {"range":"end"}]' }
+    expect(sqlQueryIssue(bound, parameters)).toBe("")
+    expect(jsonObjectFragments(writeSQLQuery(bound)).get("parameters")).toBe(bound.parameters)
+    for (const invalid of ['[{"range":"now"}]', '[{"range":[]}]', '[{"range":"start","extra":1}]'])
+      expect(sqlQueryIssue({ ...draft, parameters: invalid }, parameters)).not.toBe("")
+  })
+
   it("rejects metric projection on records and supports removing it without changing SQL", () => {
     const draft = readSQLQuery(source, parameters)
     expect(sqlQueryIssue(draft, parameters, true)).toContain("Remove the metric projection")

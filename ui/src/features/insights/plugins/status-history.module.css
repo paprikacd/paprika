@@ -2,6 +2,36 @@
   min-height: 100%;
   grid-auto-rows: minmax(18px, 1fr);
 }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.lanes.lanes { gap: 3px; }
+.seriesLabel.seriesLabel { display: flex; overflow: hidden; }
+.seriesLabel > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seriesLabel > span:last-child:not(:first-child) { flex: none; }
+.timeAxis { display: grid; grid-template-columns: minmax(76px, 14%) minmax(0, 1fr); gap: 8px; min-width: 0; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.3; }
+.tickRow { display: flex; justify-content: space-between; min-width: 0; gap: 4px; font-variant-numeric: tabular-nums; }
+.tickRow time { white-space: nowrap; }
+@container insight-widget (max-width: 460px) { .tickRow time:nth-child(2), .tickRow time:nth-child(4) { display: none; } }
 .cells {
+  position: relative;
   height: 100%;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--gamma-surface-2);
 }
+.cells > button, .cells > span { position: absolute; top: 0; bottom: 0; min-width: 1px; border-radius: 1px; }
+.mark { transform: translateX(-50%); }
+/* Keep time-axis endpoints reachable even when subpixel marks are rounded
+   against an adjacent sample. Their outside edge stays at the exact boundary. */
+.mark[data-history-edge="start"] { transform: none; min-width: 2px; z-index: 1; }
+.mark[data-history-edge="end"] { transform: translateX(-100%); min-width: 2px; z-index: 1; }
+.cells[data-segmented="true"] > .mark { box-shadow: inset -1px 0 var(--gamma-surface-2); }
+.band { pointer-events: none; }
+.cells > button:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; z-index: 2; }
+.unknown { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }
+.cells > button.unknown, .cells > button.unknown:hover:not(:disabled) { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }
+.mixed { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 3px, var(--gamma-muted) 3px 4px); }
+.legend { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
+.footer.footer { justify-content: flex-start; gap: 4px 12px; font-size: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 10px; height: 8px; border-radius: 1px; flex-shrink: 0; }
+.legend :is(.unknown, .mixed) { border: 1px solid var(--gamma-border); }

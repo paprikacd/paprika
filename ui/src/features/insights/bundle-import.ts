@@ -61,6 +61,7 @@ function message(error: unknown) { return error instanceof Error ? error.message
 function referencedQueries(dashboard: Dashboard): Set<string> {
   return new Set(dashboard.widgets.flatMap(widget => [
     ...(widget.queryRef ? [widget.queryRef.id] : []),
+    ...(widget.annotationSource ? [widget.annotationSource.queryRef.id] : []),
     ...(widget.options?.tooltipView?.source?.type === "saved" ? [widget.options.tooltipView.source.ref.id] : []),
   ]))
 }

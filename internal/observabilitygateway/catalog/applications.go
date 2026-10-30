@@ -47,7 +47,7 @@ func postgresqlProvider() TypeInfo {
 		Type: connector.ProviderPostgreSQL, DisplayName: "PostgreSQL", Vendor: vendorOpenSource, Category: categoryApplication,
 		Signals:     []connector.Signal{connector.SignalMetrics, connector.SignalRecords},
 		Summary:     "Query approved PostgreSQL data with a constrained reader role.",
-		Description: "Runs a single SELECT in a read-only transaction with fixed statement and lock timeouts, an unprivileged reader-role check, a bounded row limit and typed scalar results. SQL privileges define accessible data. Metrics use an explicit projection or the connector's limited numeric/time inference. No connection strings or credentials are accepted in queries.",
+		Description: "Runs a single SELECT in a read-only transaction with fixed statement and lock timeouts, an unprivileged reader-role check, a bounded row limit and typed scalar results. SQL privileges define accessible data. The parameters array accepts {\"range\":\"start\"} and {\"range\":\"end\"} to bind query-range boundaries as UTC timestamps; SQL comparison operators determine inclusivity. Metrics use an explicit projection or the connector's limited numeric/time inference. No connection strings or credentials are accepted in queries.",
 		ConfigFields: []Field{
 			{Key: "host", Label: "Host", Input: "string", Required: true, Placeholder: "database.example.com", Help: "Database hostname or IP only; no URI, userinfo or connection options."},
 			{Key: "port", Label: "Port", Input: "number", Placeholder: "5432", Help: "TCP port, default 5432."},

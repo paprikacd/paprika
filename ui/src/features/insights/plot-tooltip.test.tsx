@@ -9,11 +9,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WidgetVisualization } from "./charts";
-import { ObservationTooltip, placePlotTooltip } from "./chart-renderers";
+import { ObservationDetails, ObservationTooltip, outsideTooltipWidthLimit, placeClearOutsideWidgetTooltip, placeOutsideWidgetTooltip, placePlotTooltip, tooltipOverlapsOtherWidget } from "./chart-renderers";
 import { TooltipQueryProvider } from "./tooltip-query";
 import type { Provider, QueryResult, TooltipView, Widget } from "./schema";
 import type { Series } from "./chart-data";
 import { ChartCursorProvider } from "./chart-cursor";
+import { GammaActionMenu } from "./gamma/action-menu";
+import { WidgetDrilldownProvider } from "./widget-drilldown";
 
 const providers: Provider[] = [
   {
@@ -78,11 +80,13 @@ function Host({
   response = result,
   fetcher = async () => child,
   onContextChange,
+  onDrilldown,
 }: {
   value?: Widget;
   response?: QueryResult;
   fetcher?: (request: unknown, signal: AbortSignal) => Promise<QueryResult>;
   onContextChange?: () => void;
+  onDrilldown?: Parameters<typeof WidgetDrilldownProvider>[0]["open"];
 }) {
   return (
     <TooltipQueryProvider
@@ -92,11 +96,11 @@ function Host({
       end={10}
       step={1}
     >
-      <WidgetVisualization
+      <WidgetDrilldownProvider open={onDrilldown}><WidgetVisualization
         widget={value}
         result={response}
         onContextChange={onContextChange}
-      />
+      /></WidgetDrilldownProvider>
     </TooltipQueryProvider>
   );
 }
@@ -129,10 +133,187 @@ function hoverLine(chart: HTMLElement, lineIndex: number, fraction = 0.5, offset
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
 describe("point and row tooltip hosts", () => {
+  it("places value details outside their owning widget by default", () => {
+    vi.stubGlobal("innerWidth", 1024); vi.stubGlobal("innerHeight", 768);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.widgetId === "owner") return new DOMRect(100, 200, 500, 250);
+      if (this.getAttribute("role") === "tooltip") return new DOMRect(0, 0, 200, 100);
+      return new DOMRect(200, 250, 20, 20);
+    });
+    render(<article data-widget-id="owner"><ObservationDetails label="Inspect value" details={<span>Selected sample</span>}>12</ObservationDetails></article>);
+    fireEvent.focus(screen.getByRole("button", { name: "Inspect value" }));
+    const tooltip = screen.getByRole("tooltip");
+    expect(Number.parseFloat(tooltip.style.left)).toBeGreaterThanOrEqual(610);
+  });
+  it("places a built-in heatmap cell outside its owning widget", () => {
+    vi.stubGlobal("innerWidth", 1024); vi.stubGlobal("innerHeight", 768);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.widgetId === "owner") return new DOMRect(100, 200, 500, 250);
+      if (this.getAttribute("role") === "tooltip") return new DOMRect(0, 0, 200, 100);
+      return new DOMRect(200, 250, 20, 20);
+    });
+    render(<article data-widget-id="owner"><Host value={{ ...widget, type: "heatmap", options: {} }} /></article>);
+    fireEvent.focus(screen.getByRole("button", { name: /api:/ }));
+    const tooltip = screen.getByRole("tooltip");
+    expect(Number.parseFloat(tooltip.style.left)).toBeGreaterThanOrEqual(610);
+  });
+  it("measures the full inspector before choosing a placement when its previous height was constrained", () => {
+    vi.stubGlobal("innerWidth", 1384);
+    vi.stubGlobal("innerHeight", 726);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.widgetId === "owner") return new DOMRect(99, 394, 602, 256);
+      if (this.dataset.widgetId === "other") return new DOMRect(349, 82, 343, 240);
+      if (this.dataset.obstacle === "one") return new DOMRect(1077, 425, 153, 224);
+      if (this.dataset.obstacle === "two") return new DOMRect(50, 518, 944, 104);
+      if (this.id === "expanding-tooltip") return new DOMRect(0, 0, 159, Math.min(550, Number.parseFloat(this.style.maxHeight) || 114));
+      return new DOMRect(109, 404, 10, 10);
+    });
+    render(<><article data-widget-id="owner"><button>Point</button></article><article data-widget-id="other">Other</article><div data-tooltip-obstacle data-obstacle="one" /><div data-tooltip-obstacle data-obstacle="two" /></>);
+    render(<ObservationTooltip id="expanding-tooltip" anchor={screen.getByRole("button", { name: "Point" })} avoidWidget onDismiss={() => {}} onEnter={() => {}} onLeave={() => {}}>Long loaded details</ObservationTooltip>);
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveAttribute("data-placement", "top");
+    expect(Number.parseFloat(tooltip.style.maxHeight)).toBeLessThanOrEqual(372);
+    expect(Number.parseFloat(tooltip.style.top) + tooltip.getBoundingClientRect().height).toBeLessThanOrEqual(384);
+  });
+  it("repositions async content even when a prior height cap prevents a resize", async () => {
+    vi.stubGlobal("innerWidth", 1384);
+    vi.stubGlobal("innerHeight", 726);
+    let naturalHeight = 114;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.widgetId === "owner") return new DOMRect(99, 394, 602, 256);
+      if (this.dataset.widgetId === "other") return new DOMRect(349, 82, 343, 240);
+      if (this.dataset.obstacle === "one") return new DOMRect(1077, 425, 153, 224);
+      if (this.dataset.obstacle === "two") return new DOMRect(50, 518, 944, 104);
+      if (this.id === "async-tooltip") return new DOMRect(0, 0, 159, Math.min(naturalHeight, Number.parseFloat(this.style.maxHeight) || 114));
+      return new DOMRect(109, 404, 10, 10);
+    });
+    render(<><article data-widget-id="owner"><button>Point</button></article><article data-widget-id="other">Other</article><div data-tooltip-obstacle data-obstacle="one" /><div data-tooltip-obstacle data-obstacle="two" /></>);
+    const props = { id: "async-tooltip", anchor: screen.getByRole("button", { name: "Point" }), avoidWidget: true, onDismiss: () => {}, onEnter: () => {}, onLeave: () => {} };
+    const { rerender } = render(<ObservationTooltip {...props}>Loading</ObservationTooltip>);
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveAttribute("data-placement", "right");
+    naturalHeight = 550;
+    rerender(<ObservationTooltip {...props}>Loaded additional results</ObservationTooltip>);
+    await waitFor(() => expect(tooltip).toHaveAttribute("data-placement", "top"));
+    expect(Number.parseFloat(tooltip.style.maxHeight)).toBeLessThanOrEqual(372);
+  });
+  it("identifies when a tooltip covers a neighboring widget without treating a shared edge as an overlap", () => {
+    const { container } = render(<><article data-widget-id="source"><button>Point</button></article><article data-widget-id="neighbor">Next chart</article></>);
+    const source = container.querySelector('[data-widget-id="source"]')!;
+    const neighbor = container.querySelector('[data-widget-id="neighbor"]')!;
+    vi.spyOn(neighbor, "getBoundingClientRect").mockReturnValue(new DOMRect(400, 100, 200, 200));
+    expect(tooltipOverlapsOtherWidget({ left: 320, right: 410, top: 120, bottom: 180 }, source)).toBe(true);
+    expect(tooltipOverlapsOtherWidget({ left: 310, right: 400, top: 120, bottom: 180 }, source)).toBe(false);
+    expect(tooltipOverlapsOtherWidget({ left: 410, right: 500, top: 300, bottom: 350 }, source)).toBe(false);
+  });
+  it("lets the pointer reach a covered neighboring widget until the tooltip is pinned", async () => {
+    let neighborLeft = 0;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.widgetId === "owner") return new DOMRect(10, 100, 400, 300);
+      if (this.dataset.widgetId === "neighbor") return neighborLeft === 0 ? new DOMRect(0, 0, 1024, 768) : new DOMRect(neighborLeft, 100, 200, 300);
+      if (this.id === "cross-widget-preview") return new DOMRect(0, 0, 200, 120);
+      return new DOMRect(100, 150, 20, 20);
+    });
+    render(<><article data-widget-id="owner"><button>Point</button></article><article data-widget-id="neighbor">Next chart</article></>);
+    const anchor = screen.getByRole("button", { name: "Point" });
+    const props = { id: "cross-widget-preview", anchor, avoidWidget: true, onDismiss: () => {}, onEnter: () => {}, onLeave: () => {} };
+    const { rerender } = render(<ObservationTooltip {...props}>Preview</ObservationTooltip>);
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveAttribute("data-tooltip-overlaps-other-widget", "true");
+    expect(tooltip).toHaveStyle({ pointerEvents: "none" });
+    rerender(<ObservationTooltip {...props} pinned>Preview</ObservationTooltip>);
+    expect(tooltip).not.toHaveStyle({ pointerEvents: "none" });
+    rerender(<ObservationTooltip {...props}>Preview</ObservationTooltip>);
+    neighborLeft = 800;
+    fireEvent.scroll(window);
+    await waitFor(() => expect(tooltip).not.toHaveAttribute("data-tooltip-overlaps-other-widget"));
+    expect(tooltip).not.toHaveStyle({ pointerEvents: "none" });
+  });
+  it("lets a pinned mobile inspector be minimized and restored without losing its details", async () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 800);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-tooltip-obstacle")) return new DOMRect(0, 0, 390, 230);
+      if (this.dataset.widgetId === "owner") return new DOMRect(20, 240, 350, 300);
+      if (this.dataset.widgetId === "neighbor") return new DOMRect(20, 550, 350, 250);
+      if (this.id === "mobile-inspector") return this.dataset.inspectorMinimized ? new DOMRect(0, 0, 160, 38) : new DOMRect(0, 0, 300, 180);
+      return new DOMRect(100, 300, 20, 20);
+    });
+    render(<><header data-tooltip-obstacle>Filters</header><article data-widget-id="owner"><button>Point</button></article><article data-widget-id="neighbor">Next chart</article></>);
+    const anchor = screen.getByRole("button", { name: "Point" });
+    const dismiss = vi.fn();
+    render(<ObservationTooltip id="mobile-inspector" anchor={anchor} avoidWidget pinned onDismiss={dismiss} onEnter={() => {}} onLeave={() => {}}><span>Recorded 42 at 10:00</span></ObservationTooltip>);
+    const tip = screen.getByRole("tooltip");
+    await screen.findByRole("button", { name: "Minimize inspector" });
+    const details = screen.getByText("Recorded 42 at 10:00");
+    fireEvent.click(screen.getByRole("button", { name: "Minimize inspector" }));
+    expect(tip).toHaveAttribute("data-inspector-minimized", "true");
+    expect(details).not.toBeVisible();
+    expect(dismiss).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Show inspector details" }));
+    expect(screen.getByText("Recorded 42 at 10:00")).toBe(details);
+    expect(details).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Minimize inspector" }));
+    const close = screen.getByRole("button", { name: "Close inspector" });
+    close.focus();
+    fireEvent.click(close);
+    expect(dismiss).toHaveBeenCalledOnce();
+    expect(anchor).toHaveFocus();
+  });
+  it("lets hover events reach dashboard controls if a constrained inspector must cover them", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-tooltip-obstacle")) return new DOMRect(0, 0, 1024, 170);
+      if (this.dataset.widgetId === "owner") return new DOMRect(0, 180, 1024, 580);
+      if (this.id === "over-controls") return new DOMRect(0, 0, 200, 120);
+      return new DOMRect(400, 250, 20, 20);
+    });
+    render(<><header data-tooltip-obstacle><button>Dashboard filters</button></header><article data-widget-id="owner"><button>Point</button></article></>);
+    const anchor = screen.getByRole("button", { name: "Point" });
+    const props = { id: "over-controls", anchor, avoidWidget: true, onDismiss: () => {}, onEnter: () => {}, onLeave: () => {} };
+    const { rerender } = render(<ObservationTooltip {...props}>Preview</ObservationTooltip>);
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveAttribute("data-tooltip-overlaps-controls", "true");
+    expect(tooltip).toHaveStyle({ pointerEvents: "none" });
+    rerender(<ObservationTooltip {...props} pinned>Preview</ObservationTooltip>);
+    expect(tooltip).not.toHaveStyle({ pointerEvents: "none" });
+  });
+  it("closes an open dashboard menu before dismissing a pinned observation on Escape", () => {
+    const dismiss = vi.fn();
+    render(<><button>Chart point</button><GammaActionMenu label="Related dashboards" items={[{ id: "overview", label: "Overview", onSelect: vi.fn() }]} /></>);
+    const anchor = screen.getByRole("button", { name: "Chart point" });
+    render(<ObservationTooltip id="pinned-chart" anchor={anchor} pinned onDismiss={dismiss} onEnter={() => {}} onLeave={() => {}}>Pinned observation</ObservationTooltip>);
+    const trigger = screen.getByRole("button", { name: "Related dashboards" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const item = screen.getByRole("menuitem", { name: "Overview" });
+    expect(item).toHaveFocus();
+    fireEvent.keyDown(item, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(dismiss).not.toHaveBeenCalled();
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+  it("dismisses a hover preview when focus moves to another chart, while preserving a pinned panel", () => {
+    const dismiss = vi.fn();
+    render(<><button>First chart</button><button>Other chart</button></>);
+    const anchor = screen.getByRole("button", { name: "First chart" });
+    const other = screen.getByRole("button", { name: "Other chart" });
+    const props = { id: "focus-preview", anchor, onDismiss: dismiss, onEnter: () => {}, onLeave: () => {} };
+    const { rerender } = render(<ObservationTooltip {...props}><button>Panel action</button></ObservationTooltip>);
+    fireEvent.focusIn(anchor);
+    fireEvent.focusIn(screen.getByRole("button", { name: "Panel action" }));
+    expect(dismiss).not.toHaveBeenCalled();
+    fireEvent.focusIn(other);
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    rerender(<ObservationTooltip {...props} pinned><button>Panel action</button></ObservationTooltip>);
+    fireEvent.focusIn(other);
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
   it("dismisses a lingering hover card without swallowing Escape from another chart", () => {
     const dismiss = vi.fn(), ownKey = vi.fn(), otherKey = vi.fn();
     render(<><button onKeyDown={ownKey}>Hovered chart</button><button onKeyDown={otherKey}>Focused chart</button></>);
@@ -144,6 +325,18 @@ describe("point and row tooltip hosts", () => {
     fireEvent.keyDown(anchor, { key: "Escape" });
     expect(dismiss).toHaveBeenCalledTimes(2);
     expect(ownKey).not.toHaveBeenCalled();
+  });
+  it("only sends an exact historical observation to links after deliberate activation", async () => {
+    const selected = vi.fn();
+    const value: Widget = { ...widget, options: {}, drilldowns: [{ id: "related", title: "Related", dashboardId: "other", bindings: [{ variable: "service", source: "label", value: "service" }] }] };
+    render(<Host value={value} onContextChange={selected} />);
+    const chart = screen.getByRole("img", { name: value.title });
+    act(() => chart.focus());
+    expect(selected).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Use sample for dashboard links" })).not.toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Use sample for dashboard links" }));
+    expect(selected).toHaveBeenCalledExactlyOnceWith({ series: "api", labels: series[0].labels, value: -7.25, timestamp: 1000.25 });
   });
   it("pins details without a child query and shares the exact timestamp with sibling charts", async () => {
     const fetcher = vi.fn().mockResolvedValue(child);
@@ -279,7 +472,88 @@ describe("point and row tooltip hosts", () => {
     const tip = await screen.findByRole("tooltip");
     expect(tip).toHaveTextContent("api");
     expect(tip).toHaveTextContent("10 ms");
-    expect(tip).not.toHaveTextContent("worker");
+    expect(tip.querySelector('[data-observation-series="api"]')).toBeInTheDocument();
+    expect(tip).toHaveTextContent("Other plotted series at this time");
+    expect(tip).toHaveTextContent("worker");
+  });
+
+  it("compares only plotted series at the selected exact timestamp", async () => {
+    render(<Host value={{ ...widget, options: { decimals: 2 } }} response={{ series: [
+      { name: "selected", labels: {service:"api"}, points: [{ timestamp: 1000, value: 10 }, { timestamp: 2000, value: 20 }] },
+      { name: "same time", labels: {}, points: [{ timestamp: 1000, value: 42.125 }, { timestamp: 2000, value: 50 }] },
+      { name: "different time", labels: {}, points: [{ timestamp: 1001, value: 99 }, { timestamp: 2001, value: 101 }] },
+    ] }} />);
+    hoverLine(screen.getByRole("img", { name: widget.title }), 0, 0);
+    const tip = await screen.findByRole("tooltip");
+    expect(tip.querySelector('[data-observation-series="selected"]')).toBeInTheDocument();
+    expect(tip).toHaveTextContent("same time");
+    expect(tip).toHaveTextContent("42.13 ms");
+    expect(tip).not.toHaveTextContent("different time");
+    const timestamp = tip.querySelector("time[datetime]");
+    const selected = tip.querySelector('[data-metric-value="10"]');
+    const peer = tip.querySelector('[data-peer-series="same time"]');
+    const labels = tip.querySelector("dl");
+    expect(timestamp).toHaveAttribute("datetime", "1970-01-01T00:00:01.000Z");
+    expect(timestamp!.compareDocumentPosition(selected!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(selected!.compareDocumentPosition(peer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(peer!.compareDocumentPosition(labels!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(labels).toHaveTextContent("service: api");
+  });
+
+  it("allows inspecting all coincident series when the preview is truncated", async () => {
+    render(<Host value={{ ...widget, options: {} }} response={{ series: Array.from({ length: 8 }, (_, i) => ({
+      name: `series-${i}`, labels: {}, points: [{ timestamp: 1000, value: i }, { timestamp: 2000, value: i }],
+    })) }} />);
+    const chart = screen.getByRole("img", { name: widget.title });
+    act(() => chart.focus());
+    const tip = await screen.findByRole("tooltip");
+    expect(tip.querySelectorAll("[data-peer-series]")).toHaveLength(5);
+    fireEvent.click(within(tip).getByRole("button", { name: "Show 2 more plotted series" }));
+    expect(tip.querySelectorAll("[data-peer-series]")).toHaveLength(7);
+    fireEvent.click(within(tip).getByRole("button", { name: "Show fewer plotted series" }));
+    expect(tip.querySelectorAll("[data-peer-series]")).toHaveLength(5);
+  });
+
+  it("opens a configured dashboard directly from a pinned exact observation", async () => {
+    const open = vi.fn();
+    const link = { id: "trace-link", title: "View service traces", dashboardId: "traces", carryTimeRange: true, bindings: [{ variable: "service", source: "label" as const, value: "service" }] };
+    render(<Host value={{ ...widget, options: {}, drilldowns: [link] }} onDrilldown={open} />);
+    const chart = screen.getByRole("img", { name: widget.title });
+    act(() => chart.focus());
+    await screen.findByRole("tooltip");
+    expect(screen.queryByRole("button", { name: "View service traces" })).toBeNull();
+    fireEvent.keyDown(chart, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("button", { name: "View service traces" }));
+    expect(open).toHaveBeenCalledExactlyOnceWith(link, { series: "api", labels: series[0].labels, value: -7.25, timestamp: 1000.25 });
+  });
+
+  it("keeps the pinned observation and its drilldown context stable when the pointer crosses another line", async () => {
+    const open = vi.fn();
+    const link = { id: "trace-link", title: "View service traces", dashboardId: "traces", bindings: [{ variable: "service", source: "label" as const, value: "service" }] };
+    render(<Host value={{ ...widget, options: {}, drilldowns: [link] }} onDrilldown={open} />);
+    const chart = screen.getByRole("img", { name: widget.title });
+    act(() => chart.focus());
+    await screen.findByRole("tooltip");
+    fireEvent.keyDown(chart, { key: "Enter" });
+    const tip = await screen.findByRole("tooltip");
+    expect(tip.querySelector('[data-observation-series="api"]')).toBeInTheDocument();
+    hoverLine(chart, 1, 0.8);
+    expect(tip.querySelector('[data-observation-series="api"]')).toBeInTheDocument();
+    fireEvent.click(within(tip).getByRole("button", { name: "View service traces" }));
+    expect(open).toHaveBeenCalledExactlyOnceWith(link, { series: "api", labels: series[0].labels, value: -7.25, timestamp: 1000.25 });
+  });
+
+  it("explains unavailable observation bindings and never navigates", async () => {
+    const open = vi.fn();
+    const link = { id: "trace-link", title: "View service traces", dashboardId: "traces", bindings: [{ variable: "service", source: "label" as const, value: "missing" }] };
+    render(<Host value={{ ...widget, options: {}, drilldowns: [link] }} onDrilldown={open} />);
+    const chart = screen.getByRole("img", { name: widget.title });
+    act(() => chart.focus());
+    await screen.findByRole("tooltip");
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(await screen.findByRole("button", { name: "View service traces" })).toBeDisabled();
+    expect(screen.getByText(/missing/i)).toBeInTheDocument();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it.each(["line", "area"] as const)("visits each %s observation once with exact values and fractional timestamps through real keyboard navigation without changing dashboard drilldown selection", async (display) => {
@@ -635,6 +909,122 @@ describe("point and row tooltip hosts", () => {
 });
 
 describe("plot tooltip placement", () => {
+  it("portals inside an open native dialog so the inspector remains above its top layer", () => {
+    const dialog = document.createElement("dialog"), anchor = document.createElement("button");
+    dialog.setAttribute("open", ""); dialog.appendChild(anchor); document.body.appendChild(dialog);
+    const dismiss = vi.fn();
+    const { unmount } = render(<ObservationTooltip id="dialog-observation" anchor={anchor} avoidWidget onDismiss={dismiss} onEnter={() => {}} onLeave={() => {}}>Observation</ObservationTooltip>);
+    try {
+      const panel = screen.getByRole("tooltip");
+      expect(panel.parentElement).toBe(dialog);
+      fireEvent.pointerDown(panel);
+      expect(dismiss).not.toHaveBeenCalled();
+      fireEvent.keyDown(anchor, { key: "Escape" });
+      expect(dismiss).toHaveBeenCalledTimes(1);
+    } finally { unmount(); dialog.remove(); }
+  });
+  it("places a chart inspector outside the widget and flips at viewport edges", () => {
+    const widget = { left: 100, right: 600, top: 100, bottom: 400 };
+    const anchor = { left: 300, right: 306, top: 220, bottom: 226 };
+    expect(placeOutsideWidgetTooltip(widget, anchor, { width: 240, height: 250 }, { width: 1000, height: 700 }))
+      .toMatchObject({ left: 610, placement: "right", overlapsWidget: false });
+    expect(placeOutsideWidgetTooltip({ ...widget, left: 400, right: 900 }, anchor, { width: 240, height: 250 }, { width: 1000, height: 700 }))
+      .toMatchObject({ left: 150, placement: "left", overlapsWidget: false });
+  });
+  it("uses an unobstructed part of the outside gutter before covering another widget", () => {
+    const widget = { left: 200, right: 600, top: 100, bottom: 400 };
+    const anchor = { left: 300, right: 306, top: 220, bottom: 226 };
+    const size = { width: 240, height: 250 }, viewport = { width: 1000, height: 700 };
+    const obstacle = { left: 610, right: 900, top: 100, bottom: 350 };
+    const result = placeClearOutsideWidgetTooltip(widget, anchor, size, viewport, [obstacle]);
+    expect(result.overlapsWidget).toBe(false);
+    expect(result.top >= obstacle.bottom || result.top + size.height <= obstacle.top || result.left >= obstacle.right || result.left + size.width <= obstacle.left).toBe(true);
+    expect(result.top + size.height).toBeLessThanOrEqual(viewport.height - 12);
+    expect(placeClearOutsideWidgetTooltip(widget, anchor, size, viewport, [])).toEqual(placeOutsideWidgetTooltip(widget, anchor, size, viewport));
+  });
+  it("keeps dashboard controls reachable before preferring another panel", () => {
+    const widget = { left: 12, right: 378, top: 240, bottom: 650 };
+    const anchor = { left: 180, right: 186, top: 360, bottom: 366 };
+    const controls = { left: 0, right: 390, top: 0, bottom: 220, weight: 8 };
+    const neighbor = { left: 12, right: 378, top: 660, bottom: 844 };
+    const result = placeClearOutsideWidgetTooltip(widget, anchor, { width: 330, height: 100 }, { width: 390, height: 844 }, [controls, neighbor]);
+    expect(result).toMatchObject({ placement: "bottom", overlapsWidget: false });
+    expect(result.top).toBeGreaterThanOrEqual(controls.bottom);
+  });
+  it("narrows a tooltip to use a viable side gutter before covering another part of the chart", () => {
+    const viewport = { width: 1000, height: 700 };
+    const widget = { left: 50, right: 700, top: 50, bottom: 600 };
+    const width = outsideTooltipWidthLimit(widget, viewport);
+    expect(width).toBe(278);
+    expect(placeOutsideWidgetTooltip(widget, widget, { width, height: 250 }, viewport))
+      .toMatchObject({ left: 710, placement: "right", overlapsWidget: false });
+    // When neither side is usable, keep a readable width for above/below.
+    expect(outsideTooltipWidthLimit({ left: 100, right: 900 }, viewport)).toBe(976);
+    expect(outsideTooltipWidthLimit({ left: 400, right: 1100 }, { ...viewport, left: 50 })).toBe(328);
+  });
+  it("keeps a pinned observation open when focus moves into its details", async () => {
+    render(<ObservationDetails label="Inspect value" details={<button>Details action</button>}>42</ObservationDetails>);
+    const trigger = screen.getByRole("button", { name: "Inspect value" });
+    fireEvent.focus(trigger);
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-pressed", "true");
+    const action = screen.getByRole("button", { name: "Details action" });
+    fireEvent.blur(trigger, { relatedTarget: action });
+    fireEvent.focus(action, { relatedTarget: trigger });
+    expect(trigger).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Pinned · tap again to close")).toBeInTheDocument();
+    fireEvent.keyDown(action, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("Pinned · tap again to close")).not.toBeInTheDocument());
+  });
+  it("replaces another transient tooltip when scrolling introduces a new hover target, but keeps pinned details", () => {
+    render(<>
+      <ObservationDetails label="First value" details={<span>First details</span>}>1</ObservationDetails>
+      <ObservationDetails label="Second value" details={<span>Second details</span>}>2</ObservationDetails>
+    </>);
+    const first = screen.getByRole("button", { name: "First value" });
+    const second = screen.getByRole("button", { name: "Second value" });
+    fireEvent.focus(first);
+    expect(screen.getByText("First details")).toBeInTheDocument();
+    fireEvent.pointerEnter(second);
+    expect(screen.queryByText("First details")).not.toBeInTheDocument();
+    expect(screen.getByText("Second details")).toBeInTheDocument();
+    fireEvent.pointerLeave(second);
+    fireEvent.focus(first);
+    fireEvent.click(first);
+    expect(first).toHaveAttribute("aria-pressed", "true");
+    fireEvent.pointerEnter(second);
+    expect(screen.getByText("First details")).toBeInTheDocument();
+    expect(screen.getByText("Second details")).toBeInTheDocument();
+  });
+  it("uses free space above or below full-width widgets and bounds small screens", () => {
+    const widget = { left: 10, right: 310, top: 250, bottom: 500 }, anchor = { left: 140, right: 146, top: 300, bottom: 306 };
+    const position = placeOutsideWidgetTooltip(widget, anchor, { width: 296, height: 400 }, { width: 320, height: 700 });
+    expect(position).toMatchObject({ left: 12, top: 12, placement: "top", maxHeight: 228, overlapsWidget: false });
+    const below = placeOutsideWidgetTooltip({ ...widget, top: 30, bottom: 250 }, anchor, { width: 296, height: 400 }, { width: 320, height: 700 });
+    expect(below).toMatchObject({ left: 12, top: 260, placement: "bottom", maxHeight: 428, overlapsWidget: false });
+  });
+  it("marks full-viewport overlap for a pointer-transparent hover fallback", () => {
+    const widget = { left: 0, right: 320, top: 0, bottom: 700 };
+    const anchor = { left: 100, right: 106, top: 350, bottom: 356 };
+    const result = placeOutsideWidgetTooltip(widget, anchor, { width: 296, height: 220 }, { width: 320, height: 700 });
+    expect(result.overlapsWidget).toBe(true);
+    expect(result.left).toBeGreaterThanOrEqual(12);
+    expect(result.top).toBeGreaterThanOrEqual(12);
+  });
+  it("keeps a pinned inspector inside an offset viewport after its widget scrolls offscreen", () => {
+    for (const widget of [
+      { left: -500, right: -20, top: 100, bottom: 450 },
+      { left: 1100, right: 1500, top: 100, bottom: 450 },
+      { left: 50, right: 1000, top: -600, bottom: -50 },
+      { left: 50, right: 1000, top: 900, bottom: 1400 },
+    ]) {
+      const position = placeOutsideWidgetTooltip(widget, widget, { width: 300, height: 250 }, { width: 900, height: 700, left: 50, top: 100 });
+      expect(position.left).toBeGreaterThanOrEqual(62);
+      expect(position.left + 300).toBeLessThanOrEqual(938);
+      expect(position.top).toBeGreaterThanOrEqual(112);
+      expect(position.top + 250).toBeLessThanOrEqual(788);
+    }
+  });
   it("keeps vertical movement between lines clear by preferring the side of the sample", () => {
     const position = placePlotTooltip(
       { left: 337, right: 343, top: 495, bottom: 501 },

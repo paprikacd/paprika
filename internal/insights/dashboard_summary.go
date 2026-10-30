@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"sort"
 	"unicode/utf8"
 
@@ -26,6 +27,8 @@ type DashboardQueryError struct {
 // PrimarySeries is the original provider index used by a Single value widget.
 type DashboardSignal struct {
 	ID                string                   `json:"id"`
+	Kind              string                   `json:"kind,omitempty"`
+	ProviderID        string                   `json:"providerId,omitempty"`
 	State             string                   `json:"state"`
 	Error             *DashboardQueryError     `json:"error,omitempty"`
 	Series            []DashboardSeriesSummary `json:"series,omitempty"`
@@ -35,6 +38,10 @@ type DashboardSignal struct {
 	Truncated         bool                     `json:"truncated,omitempty"`
 	ProviderTruncated bool                     `json:"providerTruncated,omitempty"`
 	SeriesTruncated   bool                     `json:"seriesTruncated,omitempty"`
+	// These counts describe the bounded provider response, never the source's
+	// total cardinality. Pointers preserve zero for a successful empty query.
+	SeriesReturned *int `json:"seriesReturned,omitempty"`
+	SeriesOmitted  *int `json:"seriesOmitted,omitempty"`
 }
 
 // Records are bounded column/row tuples, shared with the UI. Returned describes
@@ -68,24 +75,28 @@ func summarizeDashboardRecords(frame *dataframe.Frame) DashboardRecordSummary {
 // All timestamps are Unix milliseconds, matching the UI's normalized results.
 // First and Last contain finite values only; FirstAt/LastAt also include gaps.
 type DashboardSeriesSummary struct {
-	Index             int                     `json:"index"`
-	Name              string                  `json:"name,omitempty"`
-	Labels            map[string]string       `json:"labels,omitempty"`
-	Samples           int                     `json:"samples"`
-	Valid             int                     `json:"valid"`
-	Missing           int                     `json:"missing"`
-	InvalidTimestamps int                     `json:"invalidTimestamps,omitempty"`
-	First             *Point                  `json:"first,omitempty"`
-	Last              *Point                  `json:"last,omitempty"`
-	Min               *float64                `json:"min,omitempty"`
-	Max               *float64                `json:"max,omitempty"`
-	FirstAt           *float64                `json:"firstAt,omitempty"`
-	LastAt            *float64                `json:"lastAt,omitempty"`
-	TailMissing       bool                    `json:"tailMissing,omitempty"`
-	MetadataTruncated bool                    `json:"metadataTruncated,omitempty"`
-	LabelsOmitted     int                     `json:"labelsOmitted,omitempty"`
-	History           []DashboardHistoryPoint `json:"history,omitempty"`
-	HistoryTruncated  bool                    `json:"historyTruncated,omitempty"`
+	Index             int               `json:"index"`
+	Name              string            `json:"name,omitempty"`
+	Labels            map[string]string `json:"labels,omitempty"`
+	Samples           int               `json:"samples"`
+	Valid             int               `json:"valid"`
+	Missing           int               `json:"missing"`
+	InvalidTimestamps int               `json:"invalidTimestamps,omitempty"`
+	// DuplicateObservations counts additional samples sharing a valid timestamp,
+	// including missing-valued samples. It does not change the raw-sample mean.
+	DuplicateObservations int                     `json:"duplicateObservations,omitempty"`
+	First                 *Point                  `json:"first,omitempty"`
+	Last                  *Point                  `json:"last,omitempty"`
+	Min                   *float64                `json:"min,omitempty"`
+	Max                   *float64                `json:"max,omitempty"`
+	Mean                  *float64                `json:"mean,omitempty"`
+	FirstAt               *float64                `json:"firstAt,omitempty"`
+	LastAt                *float64                `json:"lastAt,omitempty"`
+	TailMissing           bool                    `json:"tailMissing,omitempty"`
+	MetadataTruncated     bool                    `json:"metadataTruncated,omitempty"`
+	LabelsOmitted         int                     `json:"labelsOmitted,omitempty"`
+	History               []DashboardHistoryPoint `json:"history,omitempty"`
+	HistoryTruncated      bool                    `json:"historyTruncated,omitempty"`
 }
 
 // DashboardHistoryPoint is [Unix milliseconds, value|null]. The compact tuple
@@ -128,6 +139,10 @@ func summarizeDashboardResult(result QueryResult, options DashboardSummaryOption
 		signal.PrimarySeries, signal.State = &primary, "ok"
 	}
 	indexes := dashboardSeriesIndexes(len(result.Series), primary, options.MaxSeries)
+	if result.Series != nil {
+		returned, omitted := len(result.Series), len(result.Series)-len(indexes)
+		signal.SeriesReturned, signal.SeriesOmitted = &returned, &omitted
+	}
 	signal.SeriesTruncated = len(indexes) < len(result.Series)
 	signal.Truncated = signal.Truncated || signal.SeriesTruncated
 	for _, index := range indexes {
@@ -137,6 +152,12 @@ func summarizeDashboardResult(result QueryResult, options DashboardSummaryOption
 	}
 	appendDashboardTraces(&signal, result.Traces, options.MaxTraces)
 	appendDashboardRecords(&signal, result.Records)
+	// An incomplete source page with no usable observations cannot establish
+	// that the complete source is empty. A populated source-limited response
+	// remains ok, with providerTruncated disclosing its separate limitation.
+	if signal.State == "empty" && signal.ProviderTruncated {
+		signal.State = "partial"
+	}
 
 	return signal
 }
@@ -209,8 +230,61 @@ func summarizeDashboardSeries(series Series, index, historyPoints int) Dashboard
 	summary := DashboardSeriesSummary{Index: index}
 	summary.Name, summary.MetadataTruncated = dashboardText(series.Name, 160)
 	summary.Labels, summary.LabelsOmitted, summary.MetadataTruncated = dashboardLabels(series.Labels, summary.MetadataTruncated)
-	for _, point := range series.Points {
+	// Accumulate exact multiples of the smallest float64 subnormal. Reusing
+	// the integer scratch space preserves cancellation without overflowing or
+	// allocating a wide floating-point mantissa for each observation.
+	var sum, term big.Int
+	// Most provider series are strictly ordered; defer the map until an
+	// out-of-order or repeated timestamp makes a membership check necessary.
+	var seen map[float64]struct{}
+	var previous float64
+	havePrevious := false
+	for index, point := range series.Points {
+		if dashboardTimestamp(point.Timestamp) {
+			if seen == nil && havePrevious && point.Timestamp <= previous {
+				seen = make(map[float64]struct{}, len(series.Points))
+				for _, prior := range series.Points[:index] {
+					if dashboardTimestamp(prior.Timestamp) {
+						seen[prior.Timestamp] = struct{}{}
+					}
+				}
+			}
+			if seen != nil {
+				if _, exists := seen[point.Timestamp]; exists {
+					summary.DuplicateObservations++
+				} else {
+					seen[point.Timestamp] = struct{}{}
+				}
+			}
+			previous, havePrevious = point.Timestamp, true
+		}
+		if dashboardTimestamp(point.Timestamp) && dashboardFiniteValue(point.Value) {
+			bits := math.Float64bits(*point.Value)
+			exponent := (bits >> 52) & 0x7ff
+			mantissa := bits & ((uint64(1) << 52) - 1)
+			if exponent > 0 {
+				mantissa |= uint64(1) << 52
+			}
+			term.SetUint64(mantissa)
+			if exponent > 0 {
+				term.Lsh(&term, uint(exponent-1))
+			}
+			if bits>>63 != 0 {
+				term.Neg(&term)
+			}
+			sum.Add(&sum, &term)
+		}
 		addDashboardObservation(&summary, point)
+	}
+	if summary.Valid > 0 {
+		// 2304 bits cover the full float64 exponent span, any possible Go
+		// slice length and the final division before rounding back to float64.
+		var exact, count big.Float
+		exact.SetPrec(2304).SetInt(&sum)
+		exact.SetMantExp(&exact, -1074)
+		count.SetInt64(int64(summary.Valid))
+		mean, _ := exact.Quo(&exact, &count).Float64()
+		summary.Mean = dashboardNumber(mean)
 	}
 	if historyPoints > 0 {
 		points := dashboardNormalizedPoints(series.Points)

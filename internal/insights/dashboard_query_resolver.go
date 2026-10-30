@@ -28,17 +28,35 @@ type dashboardReadVariable struct {
 }
 
 type dashboardReadWidget struct {
-	ID         string                  `json:"id"`
-	Title      string                  `json:"title"`
-	Type       string                  `json:"type"`
-	Unit       string                  `json:"unit"`
-	ProviderID string                  `json:"providerId"`
-	Query      string                  `json:"query"`
-	DataKind   string                  `json:"dataKind"`
-	QueryRef   *dashboardReadReference `json:"queryRef"`
-	Options    struct {
-		Decimals *int `json:"decimals"`
+	ID               string                   `json:"id"`
+	Title            string                   `json:"title"`
+	Type             string                   `json:"type"`
+	PluginID         string                   `json:"pluginId"`
+	Unit             string                   `json:"unit"`
+	ProviderID       string                   `json:"providerId"`
+	Query            string                   `json:"query"`
+	DataKind         string                   `json:"dataKind"`
+	QueryRef         *dashboardReadReference  `json:"queryRef"`
+	AnnotationSource *dashboardReadAnnotation `json:"annotationSource"`
+	Options          struct {
+		Decimals          *int                     `json:"decimals"`
+		StaleAfterSeconds *float64                 `json:"staleAfterSeconds"`
+		Thresholds        []dashboardReadThreshold `json:"thresholds"`
 	} `json:"options"`
+}
+
+type dashboardReadThreshold struct {
+	Value float64 `json:"value"`
+	Color string  `json:"color"`
+	Label string  `json:"label"`
+}
+
+type dashboardReadAnnotation struct {
+	QueryRef        dashboardReadReference `json:"queryRef"`
+	TimestampColumn string                 `json:"timestampColumn"`
+	EndColumn       string                 `json:"endColumn,omitempty"`
+	LabelColumn     string                 `json:"labelColumn"`
+	SeverityColumn  string                 `json:"severityColumn,omitempty"`
 }
 
 type dashboardReadReference struct {

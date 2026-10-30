@@ -47,11 +47,15 @@ export function savedQuerySearchText(query: SavedQuery): string {
 }
 
 export function savedQueryOption(query: SavedQuery): GammaSelectOption {
+  // Kind describes the result, not the query language: PostgreSQL can return
+  // metrics or records, and trace providers do not all speak TraceQL.
+  const kind = { metrics: "Metrics", traces: "Traces", records: "Records" }[query.kind];
+  const count = query.parameters?.length ?? 0;
   return {
     value: query.id,
     label: query.name,
     accessibleLabel: query.name,
-    description: query.description || `${query.kind === "metrics" ? "PromQL" : "TraceQL"} · ${query.parameters?.length ?? 0} parameters`,
+    description: query.description || `${kind} · ${count} ${count === 1 ? "parameter" : "parameters"}`,
     icon: <SavedQueryArtwork query={query} />,
     details: <SavedQueryDetails query={query} />,
     ...(query.tags?.length ? { selectedDetails: <SavedQueryTags query={query} limit={2} /> } : {}),

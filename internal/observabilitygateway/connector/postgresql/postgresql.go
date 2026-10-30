@@ -68,7 +68,31 @@ func (PostgreSQL) Query(ctx context.Context, req connector.QueryRequest) (*conne
 	if req.Signal == connector.Signal("records") && query.Projection != nil {
 		return unsupported("SQL record queries do not accept a metric projection.")
 	}
+	if err := resolveRangeParameters(query.Parameters, req.Range); err != nil {
+		return unsupported(err.Error())
+	}
 	return execute(ctx, &req, cfg, query)
+}
+
+func resolveRangeParameters(parameters []any, bounds connector.TimeRange) error {
+	for index, parameter := range parameters {
+		reference, ok := parameter.(rangeParameter)
+		if !ok {
+			continue
+		}
+		if !bounds.Start.IsZero() && !bounds.End.IsZero() && bounds.Start.After(bounds.End) {
+			return errors.New("SQL range parameters require an ordered query range.")
+		}
+		value := bounds.Start
+		if reference == "end" {
+			value = bounds.End
+		}
+		if value.IsZero() {
+			return errors.New("SQL range parameter requires the corresponding query range boundary.")
+		}
+		parameters[index] = value.UTC()
+	}
+	return nil
 }
 
 func execute(ctx context.Context, req *connector.QueryRequest, cfg config, query queryDocument) (*connector.QueryResult, error) {

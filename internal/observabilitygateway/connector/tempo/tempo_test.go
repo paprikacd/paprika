@@ -102,7 +102,7 @@ func TestSearch(t *testing.T) {
 	require.Equal(t, `{.service.name="api"}`, capture.query.Get("q"))
 	require.Equal(t, strconv.FormatInt(start.Unix(), 10), capture.query.Get("start"))
 	require.Equal(t, strconv.FormatInt(end.Unix(), 10), capture.query.Get("end"))
-	require.Equal(t, "20", capture.query.Get("limit"))
+	require.Equal(t, "21", capture.query.Get("limit"))
 
 	_, err = New().Query(context.Background(), connector.QueryRequest{
 		Signal: connector.SignalTraces,
@@ -111,7 +111,7 @@ func TestSearch(t *testing.T) {
 		Config: config,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "100", capture.query.Get("limit"))
+	require.Equal(t, "101", capture.query.Get("limit"))
 }
 
 func TestNeitherTraceIDNorQuery(t *testing.T) {
@@ -235,4 +235,59 @@ func TestValidateConfig(t *testing.T) {
 
 	err = New().ValidateConfig(json.RawMessage(`{"endpont":"https://tempo.example.com"}`))
 	require.ErrorContains(t, err, `unknown key "endpont"`)
+}
+
+// Search metadata is not sufficient to tell whether an unpaged Tempo result
+// hit its limit. Fetch one extra and retain all provider fields and raw trace
+// values while bounding the user-facing page.
+func TestSearchReportsBoundedResults(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name         string
+		total, limit int
+		rejectProbe  bool
+		truncated    bool
+		wantCount    int
+	}{
+		{"under limit", 2, 3, false, false, 2},
+		{"exact limit", 3, 3, false, false, 3},
+		{"above limit", 4, 3, false, true, 3},
+		{"rejected probe full fallback", 4, 3, true, true, 3},
+		{"rejected probe short fallback", 2, 3, true, false, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+				require.NoError(t, err)
+				if tc.rejectProbe && limit > tc.limit {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				traces := make([]map[string]any, min(limit, tc.total))
+				for i := range traces {
+					traces[i] = map[string]any{"traceID": strconv.Itoa(i), "startTimeUnixNano": "1793273373697818918"}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"traces": traces, "metrics": map[string]int{"completedJobs": 1, "totalJobs": 1}, "providerExtra": "kept"})
+			}))
+			defer server.Close()
+			result, err := New().Query(context.Background(), connector.QueryRequest{Signal: connector.SignalTraces, Query: "{}", Limit: tc.limit, Config: endpointConfig(t, server.URL)})
+			require.NoError(t, err)
+			require.Equal(t, connector.StateOK, result.State)
+			var body struct {
+				Traces []struct {
+					Start string `json:"startTimeUnixNano"`
+				} `json:"traces"`
+				Truncated bool   `json:"truncated"`
+				Extra     string `json:"providerExtra"`
+			}
+			require.NoError(t, json.Unmarshal(result.Data, &body))
+			require.Len(t, body.Traces, tc.wantCount)
+			require.Equal(t, tc.truncated, body.Truncated)
+			require.Equal(t, "kept", body.Extra)
+			if tc.wantCount > 0 {
+				require.Equal(t, "1793273373697818918", body.Traces[0].Start)
+			}
+		})
+	}
 }

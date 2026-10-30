@@ -10,12 +10,30 @@ describe("histogram distributions", () => {
     expect(data.rows.map(row => [row.lower, row.upper])).toEqual([[-Infinity, 10], [10, 50], [50, Infinity]]);
     expect(data.rows.map(row => row.cells.map(cell => cell.value))).toEqual([[0, 4], [8, 9], [2, 5]]);
     expect(data.max).toBe(9);
+    expect(data.minPositive).toBe(2);
     expect(data.rows[2].labels).toEqual({ service: "api", le: "+Inf" });
+  });
+  it("uses all returned bucket observations for the color scale even when columns are sampled", () => {
+    const values = Array.from({ length: 120 }, (_, index) => index === 20 ? 0.001 : index === 70 ? 1000 : 10);
+    const data = buildDistribution([bucket("1", values), bucket("+Inf", values.map(value => value * 2))], { maxColumns: 8 });
+    expect(data.sampled).toBe(true);
+    expect(data.minPositive).toBe(0.001);
+    expect(data.max).toBe(1000);
   });
   it("does not bridge missing lower bounds or silently repair non-monotonic buckets", () => {
     const data = buildDistribution([bucket("1", [4, null, 6]), bucket("2", [3, 8, 10]), bucket("+Inf", [9, 9, 11])], {});
     expect(data.rows.map(row => row.cells.map(cell => cell.value))).toEqual([[4, null, 6], [null, null, 4], [6, 1, 1]]);
     expect(data.invalidCells).toBe(1);
+  });
+  it("does not turn materially decreasing tiny bucket rates into an observed zero", () => {
+    const data = buildDistribution([bucket("1", [1e-12]), bucket("2", [0]), bucket("3", [0])], {});
+    expect(data.rows.map(row => row.cells[0].value)).toEqual([1e-12, null, 0]);
+    expect(data.invalidCells).toBe(1);
+    // Relative floating-point noise at any magnitude may still be rounded to
+    // zero; the tolerance must scale with the data rather than with one.
+    const noise = buildDistribution([bucket("1", [1e-12]), bucket("2", [1e-12 * (1 - 1e-10)])], {});
+    expect(noise.rows[1].cells[0].value).toBe(0);
+    expect(noise.invalidCells).toBe(0);
   });
   it("requires explicit grouping and only sums compatible bucket boundaries", () => {
     const input = [bucket("1", [2], "api"), bucket("+Inf", [5], "api"), bucket("1", [3], "worker"), bucket("+Inf", [7], "worker")];
@@ -35,6 +53,16 @@ describe("histogram distributions", () => {
     expect(() => buildDistribution([bucket("1", [2]), bucket("1.0", [3])], {})).toThrow("Duplicate histogram bucket");
     expect(() => buildDistribution([{ ...bucket("1", [2]), points: [{ timestamp: 1, value: 2 }, { timestamp: 1, value: 3 }] }], {})).toThrow("Duplicate observation timestamps");
   });
+  it("joins disjoint observations for numerically identical migrated bucket labels", () => {
+    const first = { ...bucket("1.0", []), points: [{ timestamp: 1000, value: 3 }, { timestamp: 2000, value: null }] };
+    const second = { ...bucket("1", []), points: [{ timestamp: 3000, value: 7 }] };
+    const overflow = bucket("+Inf", [5, 6, 10]);
+    const result = buildDistribution([first, second, overflow], {});
+    expect(result.timestamps).toEqual([1000, 2000, 3000]);
+    expect(result.rows.map(row => row.cells.map(cell => cell.value))).toEqual([[3, null, 7], [2, null, 3]]);
+    const overlapping = { ...second, points: [{ timestamp: 2000, value: 7 }] };
+    expect(() => buildDistribution([first, overlapping], {})).toThrow("Duplicate histogram bucket");
+  });
   it("bounds rows and columns and preserves missing snapshots in a sampled interval", () => {
     const values = Array.from({ length: 100 }, (_, index) => index === 28 ? null : index);
     const data = buildDistribution([bucket("1", values), bucket("2", values.map(value => value === null ? null : value + 1))], { maxBuckets: 1, maxColumns: 8 });
@@ -45,10 +73,30 @@ describe("histogram distributions", () => {
 });
 
 describe("stack and directional geometry", () => {
+  it("can center directional axes without changing the recorded values", () => {
+    const directions = [series("in", [100, 80], { direction: "inbound" }), series("out", [20, 30], { direction: "outbound" })];
+    const config = directionalConfigSchema.parse({ symmetricAxis: true });
+    const centered = buildMetricPlot(directions, config, true);
+    expect(centered.domain).toEqual([-100, 100]);
+    expect(centered.tracks[1].cells.map(cell => [cell.value, cell.upper])).toEqual([[20, -20], [30, -30]]);
+    expect(buildMetricPlot(directions, {}, true).domain).toEqual([-30, 100]);
+    expect(buildMetricPlot([series("zero", [0])], config, true).domain).toEqual([-1, 1]);
+    expect(buildMetricPlot([series("extreme", [Number.MAX_VALUE])], config, true).domain).toEqual([-Number.MAX_VALUE, Number.MAX_VALUE]);
+  });
   it("uses independent positive and negative baselines without changing observed values", () => {
     const data = buildMetricPlot([series("A", [3]), series("B", [-4]), series("C", [2]), series("D", [-6])], {});
     expect(data.tracks.map(track => [track.cells[0].lower, track.cells[0].upper, track.cells[0].value])).toEqual([[0, 3, 3], [0, -4, -4], [3, 5, 2], [-4, -10, -6]]);
     expect(data.domain).toEqual([-10, 5]);
+  });
+  it("omits the entire time column when a positive or negative stack exceeds finite precision", () => {
+    const data = buildMetricPlot([series("A", [1e308, -1e308, 2]), series("B", [1e308, -1e308, 3])], {});
+    expect(data.overflowColumns).toBe(2);
+    expect(data.tracks.map(track => track.cells.slice(0, 2).map(cell => [cell.value, cell.lower, cell.upper]))).toEqual([
+      [[1e308, null, null], [-1e308, null, null]],
+      [[1e308, null, null], [-1e308, null, null]],
+    ]);
+    expect(data.tracks.map(track => track.cells[2].upper)).toEqual([2, 5]);
+    expect(data.domain).toEqual([0, 5]);
   });
   it("leaves an entire stack gap when any series is missing, while retaining inspectable raw values", () => {
     const data = buildMetricPlot([series("A", [4, 8, 0]), series("B", [3, null, -2])], {});
@@ -107,9 +155,19 @@ describe("stack and directional geometry", () => {
     expect(buildMetricPlot([series("Large", [1e308, 1e308])], {}).tracks[0].statistics.mean).toBe(1e308);
     expect(buildMetricPlot([series("Opposite", [-1e308, 1e308])], {}).tracks[0].statistics.mean).toBe(0);
   });
+  it("preserves small observations through cancellation in legend means", () => {
+    expect(buildMetricPlot([series("Cancellation", [1e16, 1, -1e16])], {}).tracks[0].statistics.mean).toBe(1 / 3);
+    expect(buildMetricPlot([series("Wide", [1e308, 1e-308, -1e308])], {}).tracks[0].statistics.mean).toBe(1e-308 / 3);
+    expect(buildMetricPlot([series("Overflow", [Number.MAX_VALUE, Number.MAX_VALUE, -Number.MAX_VALUE])], {}).tracks[0].statistics.mean).toBe(Number.MAX_VALUE / 3);
+    expect(buildMetricPlot([series("Negative", [-1e16, -1, 1e16])], {}).tracks[0].statistics.mean).toBe(-1 / 3);
+    expect(buildMetricPlot([series("Half subnormal", [Number.MIN_VALUE, 0])], {}).tracks[0].statistics.mean).toBe(0);
+    expect(buildMetricPlot([series("Odd tie", [3 * Number.MIN_VALUE, 0])], {}).tracks[0].statistics.mean).toBe(2 * Number.MIN_VALUE);
+  });
   it("limits unsafe config instead of treating it as executable or unknown settings", () => {
     expect(distributionConfigSchema.safeParse({ maxColumns: 10000 }).success).toBe(false);
     expect(distributionConfigSchema.safeParse({ bucketLabel: "a.b" }).success).toBe(false);
+    expect(distributionConfigSchema.safeParse({ colorScale: "logarithmic" }).success).toBe(true);
+    expect(distributionConfigSchema.safeParse({ colorScale: "arbitrary" }).success).toBe(false);
     expect(stackedConfigSchema.safeParse({ display: "pie" }).success).toBe(false);
     expect(directionalConfigSchema.safeParse({ directionLabel: "direction", handler: "code" }).success).toBe(false);
     expect(stackedConfigSchema.safeParse({ legendDisplay: "table", legendPosition: "right" }).success).toBe(true);

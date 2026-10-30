@@ -16,6 +16,7 @@ import {
   widgetSchema,
   pluginConfigSchema,
   supportsTooltipView,
+  supportsAnnotationSource,
   type Dashboard,
   type Provider,
   type Widget,
@@ -23,11 +24,13 @@ import {
 } from "./schema";
 import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
 import { PluginConfigEditor } from "./plugin-config-editor";
+import { SeriesColorEditor } from "./plugins/series-color-editor";
 import type { InsightsClient } from "./client";
 import { QueryBuilder, type QueryFetcher } from "./query-builder";
 import { GammaTabs } from "./gamma/tabs";
 import { GammaSwitch } from "./gamma/switch";
 import { DrilldownEditor } from "./drilldown-editor";
+import { SelectionEditor } from "./selection-editor";
 import { GammaButton } from "./gamma/button";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { GammaSelect } from "./gamma/select";
@@ -42,6 +45,7 @@ import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
 import { TooltipEditor } from "./tooltip-editor";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
 import { useSavedQueryLibrary } from "./saved-query-context";
+import { AnnotationSourceEditor } from "./annotation-source-editor";
 import { resolveSavedQueryReference } from "./saved-queries";
 import {
   SavedQueryPicker,
@@ -73,10 +77,10 @@ function StyleEditor({
     onChange({ ...widget, options: { ...options, ...patch } });
   const numeric = (
     label: string,
-    field: "min" | "max" | "decimals" | "lineWidth" | "fillOpacity",
+    field: "min" | "max" | "decimals" | "lineWidth" | "fillOpacity" | "staleAfterSeconds",
     min?: number,
     max?: number,
-    step = 1,
+    step: number | "any" = 1,
   ) => (
     <label className={styles.field}>
       {label}
@@ -126,7 +130,7 @@ function StyleEditor({
       : "#c46146";
   return (
     <div className={styles.stack}>
-      {supportsTooltipView(widget.type) && (
+      {supportsTooltipView(widget.type, widget.pluginId) && (
         <div className={styles.tooltipShortcut}>
           <p className={styles.hint}>
             Add a widget or change the details shown when you inspect this
@@ -165,6 +169,10 @@ function StyleEditor({
           blank for Auto, or choose 0–8 places.
         </p>
       )}
+      {widget.type === "stat" && <>
+        {numeric("Warn when last valid sample is older than (seconds)", "staleAfterSeconds", 1, 2678400)}
+        <p className={styles.hint}>Optional. Compared with the end of the selected time range; this describes returned samples, not the source’s scrape health.</p>
+      </>}
       {widget.type === "traces" && (
         <p className={styles.hint}>
           Trace duration is displayed in milliseconds.
@@ -253,6 +261,7 @@ function StyleEditor({
               />
             </label>
           </div>
+          <SeriesColorEditor config={{ seriesColors: options.seriesColors ?? [] }} onChange={(config) => update({ seriesColors: config.seriesColors as WidgetOptions["seriesColors"] })} />
           <div className={styles.row}>
             {numeric("Line width", "lineWidth", 0.5, 8, 0.5)}
             {options.display === "area" &&
@@ -302,11 +311,40 @@ function StyleEditor({
         </div>
       )}
       {widget.type === "stat" && (
-        <GammaSwitch
-          label="Show sparkline"
-          checked={options.showSparkline === true}
-          onChange={(showSparkline) => update({ showSparkline })}
-        />
+        <>
+          <GammaSwitch
+            label="Show value bar"
+            description="Shows the current value on an explicit scale. Threshold colors apply to the observed value."
+            checked={options.showStatBar === true}
+            onChange={(showStatBar) => update(showStatBar ? { showStatBar, min: options.min ?? 0, max: options.max ?? 100 } : { showStatBar })}
+          />
+          {options.showStatBar && <div className={styles.row}>
+            {numeric("Bar minimum", "min", undefined, undefined, "any")}
+            {numeric("Bar maximum", "max", undefined, undefined, "any")}
+          </div>}
+          <GammaSwitch
+            label="Show sparkline"
+            checked={options.showSparkline === true}
+            onChange={(showSparkline) => update({ showSparkline })}
+          />
+          {options.showSparkline && <label className={styles.field}>
+            Sparkline placement
+            <GammaSelect aria-label="Sparkline placement" value={options.sparklinePlacement ?? "background"}
+              onValueChange={(value) => update({ sparklinePlacement: value as WidgetOptions["sparklinePlacement"] })}
+              options={[{ value: "background", label: "Behind value" }, { value: "side", label: "Beside value" }]} />
+          </label>}
+          <label className={styles.field}>
+            Icon
+            <GammaSelect aria-label="Stat icon" value={options.statIcon ?? "none"}
+              onValueChange={(value) => update({ statIcon: value === "none" ? undefined : value as WidgetOptions["statIcon"] })}
+              options={[
+                { value: "none", label: "None" }, { value: "arrow-down", label: "Arrow down" },
+                { value: "arrow-up", label: "Arrow up" }, { value: "shield", label: "Shield" },
+                { value: "network", label: "Network" }, { value: "activity", label: "Activity" },
+                { value: "target", label: "Target" }, { value: "pie", label: "Pie" },
+              ]} />
+          </label>
+        </>
       )}
       {!chart && pluginControls.includes("grid") && (
         <GammaSwitch label="Show grid" checked={options.showGrid !== false} onChange={(showGrid) => update({ showGrid })} />
@@ -332,20 +370,19 @@ function StyleEditor({
           />
         </>
       )}
-      {hasStyleControl("tooltips") && !supportsTooltipView(widget.type) && (
+      {hasStyleControl("tooltips") && !supportsTooltipView(widget.type, widget.pluginId) && (
         <GammaSwitch
           label="Show tooltips"
           checked={options.showTooltip !== false}
           onChange={(showTooltip) => update({ showTooltip })}
         />
       )}
-      {(["heatmap", "stat", "bar"].includes(widget.type) || gauge || widget.pluginId === "record-table") && (
+      {(["heatmap", "stat", "bar", "timeseries"].includes(widget.type) || gauge || ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") || (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds")) && (
         <fieldset className={styles.thresholds}>
           <legend>Value thresholds</legend>
           <p className={styles.hint}>
-            List values in ascending order. A value uses the highest threshold
-            it reaches. Below the first threshold, its color still applies.
-            {widget.type === "heatmap" &&
+            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its color still applies."}
+            {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
               " Without custom thresholds, heatmaps are red below 1 and green from 1."}
           </p>
           {(options.thresholds ?? []).map((threshold, index) => (
@@ -507,6 +544,7 @@ export function WidgetEditor({
   const [tab, setTab] = useState("query");
   const [sourceFormat, setSourceFormat] = useState("json");
   const [queryDraftValid, setQueryDraftValid] = useState(true);
+  const [pendingVisualization, setPendingVisualization] = useState<string>();
   const [editorRevision, setEditorRevision] = useState(0);
   const [pluginConfig, setPluginConfig] = useState(
     JSON.stringify(widget.config ?? {}, null, 2),
@@ -521,6 +559,12 @@ export function WidgetEditor({
   const stale = contentKey(widget) !== contentKey(base) &&
     contentKey(widget) !== contentKey(previewRevision.widget);
   const dimensions = size ?? widget.layout;
+  const pendingDefinition = pendingVisualization && definitions.find((item) =>
+    (item.type === "plugin" ? `plugin:${item.id}` : item.type) === pendingVisualization,
+  );
+  const pendingQueryLoss = !!pendingDefinition && pendingDefinition.dataKind !== widgetKind(draft);
+  const pendingEventLoss = !!pendingDefinition && !!draft.annotationSource &&
+    !supportsAnnotationSource(pendingDefinition.type, pendingDefinition.id);
   const compatible = providers.filter((provider) =>
     provider.capabilities.includes(widgetKind(draft)),
   );
@@ -606,6 +650,13 @@ export function WidgetEditor({
         );
       }
     }
+    if (parsed.data.annotationSource) {
+      if (library.loading) throw new Error("The saved query library is loading.");
+      if (library.error) throw new Error(library.error);
+      const resolved = resolveSavedQueryReference(parsed.data.annotationSource.queryRef, library.queries, library.values, "records");
+      if (!providers.some(provider => provider.id === resolved.providerId && provider.capabilities.includes("records")))
+        throw new Error("Choose an event query with an available records provider.");
+    }
     if (
       !draft.queryRef &&
       !compatible.some((provider) => provider.id === draft.providerId)
@@ -686,6 +737,51 @@ export function WidgetEditor({
     setPreviewRevision({ key: draftKey, widget: preview });
     onApply(preview);
   }
+  function chooseVisualization(value: string, acceptReplacement = false) {
+    const definition = definitions.find((item) =>
+      (item.type === "plugin" ? `plugin:${item.id}` : item.type) === value,
+    );
+    if (!definition) return;
+    const type = definition.type, capability = definition.dataKind;
+    const replacesQuery = capability !== widgetKind(draft);
+    const removesEvent = !!draft.annotationSource && !supportsAnnotationSource(type, definition.id);
+    if ((replacesQuery || removesEvent) && !acceptReplacement) {
+      setPendingVisualization(value);
+      return;
+    }
+    const provider = providers.find((item) => item.id === draft.providerId && item.capabilities.includes(capability)) ??
+      providers.find((item) => item.capabilities.includes(capability));
+    const next: Widget = {
+      ...draft,
+      type,
+      providerId: provider?.id ?? "unconfigured",
+      query: capability !== widgetKind(draft) ? capability === "traces" ? "{}" : "up" : draft.query,
+    };
+    if (capability !== widgetKind(draft)) delete next.queryRef;
+    if (!supportsAnnotationSource(type, definition.id)) delete next.annotationSource;
+    if (type === "plugin") {
+      next.pluginId = definition.id;
+      next.dataKind = capability;
+      next.config = definition.defaultConfig ? structuredClone(definition.defaultConfig) : undefined;
+      setPluginConfig(JSON.stringify(next.config ?? {}, null, 2));
+      next.options = definition.defaultOptions
+        ? {
+            ...definition.defaultOptions,
+            ...(draft.options?.tooltipView
+              ? { tooltipView: draft.options.tooltipView, ...(draft.options.showTooltip !== undefined ? { showTooltip: draft.options.showTooltip } : {}) }
+              : {}),
+          }
+        : next.options;
+    } else {
+      delete next.pluginId;
+      delete next.dataKind;
+      delete next.config;
+    }
+    if (type !== "stat" && dimensions.h < 2) setSize({ w: dimensions.w, h: 2 });
+    setPendingVisualization(undefined);
+    setDraft(next);
+    if (tab === "tooltips" && !supportsTooltipView(type, next.pluginId)) setTab("style");
+  }
   const source = preview ?? widget;
   const sourceText = sourceFormat === "yaml"
     ? stringifyYaml(source, { lineWidth: 0 })
@@ -719,6 +815,7 @@ export function WidgetEditor({
             onClick={() => {
               setBase(widget);
               setDraft(widget);
+              setPendingVisualization(undefined);
               setQueryDraftValid(true);
               setEditorRevision(revision => revision + 1);
               setSize(null);
@@ -753,49 +850,7 @@ export function WidgetEditor({
           value={
             draft.type === "plugin" ? `plugin:${draft.pluginId}` : draft.type
           }
-          onValueChange={(value) => {
-            const definition = definitions.find(
-              (item) =>
-                (item.type === "plugin" ? `plugin:${item.id}` : item.type) ===
-                value,
-            );
-            if (!definition) return;
-            const type = definition.type,
-              capability = definition.dataKind;
-            const provider =
-              providers.find(
-                (item) =>
-                  item.id === draft.providerId &&
-                  item.capabilities.includes(capability),
-              ) ??
-              providers.find((item) => item.capabilities.includes(capability));
-            const next: Widget = {
-              ...draft,
-              type,
-              providerId: provider?.id ?? "unconfigured",
-              query:
-                capability !== widgetKind(draft)
-                  ? capability === "traces"
-                    ? "{}"
-                    : "up"
-                  : draft.query,
-            };
-            if (capability !== widgetKind(draft)) delete next.queryRef;
-            if (type === "plugin") {
-              next.pluginId = definition.id;
-              next.dataKind = capability;
-              next.config = definition.defaultConfig ? structuredClone(definition.defaultConfig) : undefined;
-              setPluginConfig(JSON.stringify(next.config ?? {}, null, 2));
-              next.options = definition.defaultOptions ?? next.options;
-            } else {
-              delete next.pluginId;
-              delete next.dataKind;
-              delete next.config;
-            }
-            setDraft(next);
-            if (tab === "tooltips" && !supportsTooltipView(type))
-              setTab("style");
-          }}
+          onValueChange={(value) => chooseVisualization(value)}
           options={[
             ...definitions.map((definition) => ({
               value:
@@ -816,6 +871,26 @@ export function WidgetEditor({
           ]}
         />
       </label>
+      {pendingDefinition && <div className={styles.stack} role="status">
+        {pendingQueryLoss && <p className={styles.hint}>{draft.queryRef
+          ? "This visualization uses a different data kind. The saved query connection and its mappings will be removed, and the current query will be replaced with a new query."
+          : "This visualization uses a different data kind. The current query will be replaced with a new query."}</p>}
+        {pendingEventLoss && <p className={styles.hint}>This visualization cannot show the configured event query. To switch, the event query will be removed from this draft.</p>}
+        <p className={styles.hint}>The dashboard is not saved until you save it.</p>
+        <div className={styles.row}>
+          <GammaButton variant="secondary" size="sm" onClick={() => chooseVisualization(pendingVisualization!, true)}>{pendingQueryLoss ? "Replace query and switch" : "Remove event query and switch"}</GammaButton>
+          <GammaButton variant="quiet" size="sm" onClick={() => setPendingVisualization(undefined)}>Keep current visualization</GammaButton>
+        </div>
+      </div>}
+      {draft.options?.tooltipView && !supportsTooltipView(draft.type, draft.pluginId) && (
+        <div className={styles.stack} role="status">
+          <p className={styles.hint}>The configured tooltip widget is inactive for this visualization. Switch back to a supported visualization to use it, or remove it from this draft.</p>
+          <GammaButton variant="secondary" size="sm" onClick={() => {
+            setDraft({ ...draft, options: { ...draft.options, tooltipView: undefined } });
+            setTooltipPluginConfig("{}");
+          }}>Remove inactive tooltip widget</GammaButton>
+        </div>
+      )}
       <GammaTabs
         label="Widget settings"
         value={tab}
@@ -952,8 +1027,9 @@ export function WidgetEditor({
                   </>
                 )}
                 {draft.type === "plugin" && (
-                  <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} />
+                  <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} queryFields={queryFields} />
                 )}
+                {supportsAnnotationSource(draft.type, draft.pluginId) && <AnnotationSourceEditor widget={draft} onChange={setDraft} />}
               </div>
             ),
           },
@@ -975,7 +1051,7 @@ export function WidgetEditor({
               />
             ),
           },
-          ...(supportsTooltipView(draft.type)
+          ...(supportsTooltipView(draft.type, draft.pluginId)
             ? [
                 {
                   id: "tooltips",
@@ -985,7 +1061,9 @@ export function WidgetEditor({
                       <div className={styles.tooltipIntro}>
                         <h3>Details on demand</h3>
                         <p className={styles.hint}>
-                          {draft.type === "timeseries"
+                          {draft.type === "plugin" && draft.pluginId === "geo-heatmap"
+                            ? "Inspect a hex to see its recorded values and shared labels. Add a widget for more context."
+                            : draft.type === "timeseries"
                             ? "Inspect a chart point to see its value and time. Add a widget for more context."
                             : draft.type === "bar"
                               ? "Inspect a bar to see its latest valid value. Add a widget for more context."
@@ -1100,10 +1178,10 @@ export function WidgetEditor({
                           h: Number(value),
                         })
                       }
-                      options={Array.from({ length: 11 }, (_, i) => ({
-                        value: String(i + 2),
-                        label: `${i + 2} rows`,
-                      }))}
+                      options={Array.from({ length: draft.type === "stat" ? 12 : 11 }, (_, i) => {
+                        const rows = i + (draft.type === "stat" ? 1 : 2);
+                        return { value: String(rows), label: `${rows} ${rows === 1 ? "row" : "rows"}` };
+                      })}
                     />
                   </label>
                 </div>
@@ -1137,11 +1215,12 @@ export function WidgetEditor({
             id: "links",
             title: "Links",
             content: (
-              <DrilldownEditor
+              <><SelectionEditor widget={draft} onChange={setDraft} queryFields={queryFields} /><DrilldownEditor
                 widget={draft}
                 dashboards={dashboards}
+                queryFields={queryFields}
                 onChange={setDraft}
-              />
+              /></>
             ),
           },
           {

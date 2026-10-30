@@ -66,10 +66,12 @@ export function TimeRangeControl({
           }}
           options={[
             {value: "15m", label: "Last 15 minutes"},
+            {value: "30m", label: "Last 30 minutes"},
             {value: "1h", label: "Last 1 hour"},
             {value: "6h", label: "Last 6 hours"},
             {value: "24h", label: "Last 24 hours"},
             {value: "7d", label: "Last 7 days"},
+            {value: "30d", label: "Last 30 days"},
             {value: "custom", label: "Custom range…"},
           ]}
         />

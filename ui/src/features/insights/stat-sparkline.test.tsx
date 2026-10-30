@@ -31,6 +31,21 @@ const series: Series = {
 };
 
 describe("optional single-value history", () => {
+  it("warns when the newest returned observation is missing while preserving the last valid zero", () => {
+    const { rerender, container } = render(<WidgetVisualization widget={{ ...widget, options: { showSparkline: true, sparklinePlacement: "side" } }} result={{ series: [series] }} />);
+    expect(container.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
+    expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+    rerender(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points: [...series.points, { timestamp: 6000, value: 4 }] }] }} />);
+    expect(screen.queryByText(/Last valid · latest missing/)).not.toBeInTheDocument();
+  });
+
+  it("uses the last observation at a duplicate latest timestamp, without treating zero as missing", () => {
+    const points = [{ timestamp: 1000, value: 2 }, { timestamp: 3000, value: null }, { timestamp: 3000, value: 0 }];
+    const { rerender } = render(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points }] }} />);
+    expect(screen.queryByText(/Last valid · latest missing/)).not.toBeInTheDocument();
+    rerender(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points: [...points, { timestamp: 3000, value: null }] }] }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+  });
   it("keeps the original stat unchanged unless its sparkline is explicitly enabled", () => {
     const { rerender, container } = render(
       <WidgetVisualization widget={widget} result={{ series: [series] }} />,
@@ -58,6 +73,31 @@ describe("optional single-value history", () => {
     expect(
       container.querySelector('[data-metric-value="0"]'),
     ).toHaveTextContent("0req/s");
+  });
+
+  it("offers a side placement while preserving the selected series and latest value", () => {
+    const { container } = render(<WidgetVisualization widget={{ ...widget, options: { showSparkline: true, sparklinePlacement: "side" } }} result={{ series: [series] }} />);
+    const summary = container.querySelector("[data-stat-summary]");
+    expect(summary).toHaveAttribute("data-sparkline-placement", "side");
+    expect(summary?.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
+    expect(screen.getByRole("img", { name: "History for api" })).toHaveAttribute("data-sample-count", "5");
+  });
+
+  it("renders the actual latest value against its explicit bar scale and thresholds", () => {
+    const result = { series: [{ ...series, points: [{ timestamp: 1000, value: 75 }] }] };
+    const options = { showStatBar: true, min: 0, max: 100, thresholds: [{ value: 0, color: "#00aa55" }, { value: 70, color: "#ee9900" }] };
+    const { rerender } = render(<WidgetVisualization widget={{ ...widget, options }} result={result} />);
+    const meter = screen.getByRole("meter", { name: "Requests value on configured scale" });
+    expect(meter).toHaveAttribute("aria-valuenow", "75");
+    expect(meter).toHaveAttribute("data-stat-bar-fraction", "0.75");
+    expect(meter.firstElementChild).toHaveStyle({ width: "75%", backgroundColor: "#ee9900" });
+    rerender(<WidgetVisualization widget={{ ...widget, options }} result={{ series: [{ ...series, points: [{ timestamp: 1000, value: 120 }] }] }} />);
+    expect(meter).toHaveAttribute("aria-valuenow", "100");
+    expect(meter).toHaveAttribute("data-stat-bar-value", "120");
+    expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("120 req/s (outside configured scale)"));
+    expect(meter.firstElementChild).toHaveStyle({ width: "100%" });
+    rerender(<WidgetVisualization widget={{ ...widget, options: { ...options, min: -1e308, max: 1e308 } }} result={{ series: [{ ...series, points: [{ timestamp: 1000, value: 0 }] }] }} />);
+    expect(meter).toHaveAttribute("data-stat-bar-fraction", "0.5");
   });
 
   it("plots the displayed series only, with gaps, exact ranges, zero, and an honest missing tail", () => {

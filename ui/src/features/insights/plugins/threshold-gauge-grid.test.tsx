@@ -10,6 +10,43 @@ const widget: Widget = { id: "capacity", title: "Free disk space", type: "plugin
 const result: QueryResult = { series: Array.from({ length: 6 }, (_, index) => ({ name: `sda${index + 1}`, labels: { disk: `sda${index + 1}`, host: "omega" }, points: [{ timestamp: 1000, value: 99 }, { timestamp: 2000, value: 22.718 + index * 3 }] })) };
 
 describe("multi-series threshold gauges", () => {
+  it.each(["linear", "segmented", "radial"] as const)("keeps %s gauges finite across extreme signed bounds", display => {
+    const value = { series: [{ name: "sample", labels: {}, points: [{ timestamp: 1000, value: 5e307 }] }] };
+    const thresholds = [{ value: -1e308, color: "#00aa00" }, { value: 0, color: "#ffaa00" }, { value: 5e307, color: "#cc0000" }];
+    const { container } = render(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, min: -1e308, max: 1e308, thresholds }, config: { display, segments: 10 } }} result={value} />);
+    const track = container.querySelector<HTMLElement>("[data-gauge-progress]")!;
+    expect(Number(track.dataset.gaugeProgress)).toBeCloseTo(.75);
+    expect(track.outerHTML).not.toMatch(/NaN|Infinity/);
+    if (display === "segmented") {
+      const segments = [...track.querySelectorAll<HTMLElement>("[data-filled]")];
+      expect(segments).toHaveLength(10);
+      expect(segments[0].style.getPropertyValue("--meter-fill")).toBe("#00aa00");
+      expect(segments[5].style.getPropertyValue("--meter-fill")).toBe("#ffaa00");
+      expect(segments[9].style.getPropertyValue("--meter-fill")).toBe("#cc0000");
+    }
+  });
+  it.each([{ options: { max: -1e308 }, value: -1e308 }, { options: { min: 1e308 }, value: 1e308 }])("infers a distinct finite missing bound at large magnitudes", ({ options, value }) => {
+    const { container } = render(<ThresholdGauge widget={{ ...widget, options }} result={{ series: [{ name: "sample", labels: {}, points: [{ timestamp: 1000, value }] }] }} />);
+    const meter = container.querySelector<HTMLElement>('[role="meter"]')!;
+    expect(Number(meter.getAttribute("aria-valuemin"))).toBeLessThan(Number(meter.getAttribute("aria-valuemax")));
+    expect(meter.outerHTML).not.toMatch(/NaN|Infinity/);
+  });
+  it("keeps threshold bands finite when a narrow extreme-scale gauge switches to a continuous track", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ x: 0, y: 0, width: 30, height: 20, left: 0, right: 30, top: 0, bottom: 20, toJSON() {} }));
+    const thresholds = [{ value: -1e308, color: "#00aa00" }, { value: 0, color: "#ffaa00" }, { value: 5e307, color: "#cc0000" }];
+    const { container } = render(<ThresholdGauge widget={{ ...widget, options: { min: -1e308, max: 1e308, thresholds }, config: { display: "segmented", segments: 10 } }} result={{ series: [{ name: "sample", labels: {}, points: [{ timestamp: 1000, value: 5e307 }] }] }} />);
+    const track = container.querySelector<HTMLElement>('[data-gauge-rendering="continuous"]')!;
+    const fill = track.querySelector<HTMLElement>('[data-gauge-solid-fill]')!;
+    expect(track).toHaveAttribute("data-gauge-progress", "0.75");
+    expect(fill.style.background).toContain("50%");
+    expect(fill.style.background).toContain("75%");
+    expect(fill.outerHTML).not.toMatch(/NaN|Infinity/);
+  });
+  it("explains an impossible inferred scale rather than rendering an invalid meter", () => {
+    render(<ThresholdGauge widget={{ ...widget, options: { min: Number.MAX_VALUE } }} result={{ series: [{ name: "sample", labels: {}, points: [{ timestamp: 1000, value: Number.MAX_VALUE }] }] }} />);
+    expect(screen.getByRole("alert")).toHaveTextContent(/finite.*bounds/i);
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument();
+  });
   it("preserves the existing first-series default", () => {
     render(<ThresholdGauge widget={widget} result={result} />);
     expect(screen.getAllByRole("meter")).toHaveLength(1);
@@ -27,6 +64,27 @@ describe("multi-series threshold gauges", () => {
     expect(screen.getByText("22.72")).toBeInTheDocument();
     for (let index = 1; index <= 6; index++) expect(screen.getByText(`sda${index}`)).toBeInTheDocument();
   });
+  it("associates bank reading accents with the observed thresholds and preserves an authored text color", () => {
+    const thresholds = [{ value: 0, color: "#d05b61", label: "Critical" }, { value: 30, color: "#59a56b", label: "Healthy" }];
+    const bankWidget = { ...widget, config: { seriesMode: "all", display: "radial" }, options: { ...widget.options, thresholds } };
+    const { container, rerender } = render(<ThresholdGauge widget={bankWidget} result={result} />);
+    const values = [...container.querySelectorAll<HTMLElement>("[data-gauge-value]")];
+    expect(values[0].style.getPropertyValue("--gauge-status-color")).toBe("#d05b61");
+    expect(values[3].style.getPropertyValue("--gauge-status-color")).toBe("#59a56b");
+    expect(screen.getByRole("meter", { name: "Free disk space: sda1" })).toHaveAttribute("aria-valuetext", "22.718 GB · Critical");
+    rerender(<ThresholdGauge widget={{ ...bankWidget, options: { ...bankWidget.options, textColor: "#18293a" } }} result={result} />);
+    expect(container.querySelector<HTMLElement>("[data-gauge-value]")!.style.color).toBe("#18293a");
+  });
+  it("keeps radial scale endpoints as readable, non-scaling text without duplicating the meter semantics", () => {
+    const { container } = render(<ThresholdGauge widget={{ ...widget, config: { seriesMode: "all", display: "radial" } }} result={result} />);
+    const first = container.querySelector('[data-gauge-series="sda1"]')!;
+    const bounds = first.querySelector('[data-gauge-radial-bounds]')!;
+    expect(bounds).toHaveAttribute("aria-hidden", "true");
+    expect(bounds.querySelector('[data-gauge-bound="min"]')).toHaveTextContent("0.00");
+    expect(bounds.querySelector('[data-gauge-bound="max"]')).toHaveTextContent("100.00");
+    expect(first.querySelector("svg text")).toBeNull();
+    expect(screen.getByRole("meter", { name: "Free disk space: sda1" })).toHaveAttribute("aria-valuemax", "100");
+  });
   it("renders compact segmented rows and preserves the selected series rather than the first", () => {
     const select = vi.fn();
     const { container } = render(<ThresholdGauge widget={{ ...widget, config: { seriesMode: "all", display: "segmented", segments: 10, columns: 1, showThresholds: false } }} result={result} onContextChange={select} />);
@@ -36,6 +94,25 @@ describe("multi-series threshold gauges", () => {
     expect(select).toHaveBeenLastCalledWith({ series: "sda4", labels: { disk: "sda4", host: "omega" }, value: 31.718 });
     expect(screen.getByRole("tooltip").querySelector('[data-metric-value="31.718"]')).toBeInTheDocument();
     expect(screen.getByRole("tooltip")).toHaveTextContent("31.72 GB");
+  });
+  it("explains the observed threshold band and exact scale in the gauge tooltip", () => {
+    const thresholds = [{ value: 0, color: "#d05b61", label: "Critical" }, { value: 30, color: "#d1a130", label: "Low" }, { value: 60, color: "#59a56b", label: "Healthy" }];
+    const { rerender } = render(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, thresholds } }} result={result} />);
+    const trigger = screen.getByRole("button", { name: /Inspect value for Free disk space:/ });
+    fireEvent.focus(trigger);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Critical");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Below 30 GB");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Scale: 0 to 100 GB");
+    expect(screen.getByRole("tooltip").querySelector('[data-gauge-threshold-swatch]')).toHaveStyle({ background: "#d05b61" });
+    fireEvent.blur(trigger);
+    rerender(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, thresholds } }} result={{ series: [{ ...result.series![0], points: [{ timestamp: 3000, value: 42 }] }] }} />);
+    fireEvent.focus(screen.getByRole("button", { name: /Inspect value for Free disk space:/ }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("≥ 30 GB and < 60 GB");
+    fireEvent.blur(screen.getByRole("button", { name: /Inspect value for Free disk space:/ }));
+    rerender(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, thresholds } }} result={{ series: [{ ...result.series![0], points: [{ timestamp: 4000, value: null }] }] }} />);
+    fireEvent.focus(screen.getByRole("button", { name: /Inspect value for Free disk space:/ }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Unknown");
+    expect(screen.getByRole("tooltip")).not.toHaveTextContent("Below 30 GB");
   });
   it("discloses actual bank overflow and keeps the last gauge keyboard and pointer accessible", () => {
     let availableHeight = 210;
@@ -65,6 +142,26 @@ describe("multi-series threshold gauges", () => {
     act(() => callbacks.forEach(callback => callback([], {} as ResizeObserver)));
     expect(screen.queryByText("Scroll to see all gauges")).not.toBeInTheDocument();
     expect(within(bank).getAllByRole("meter")).toHaveLength(6);
+  });
+  it("rechecks a temporary responsive overflow after the dashboard grid settles", () => {
+    let contentHeight = 300;
+    const frames: FrameRequestCallback[] = [];
+    const observed: Element[] = [];
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) { return this.hasAttribute("data-gauge-columns") ? 200 : 0; });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) { return this.hasAttribute("data-gauge-columns") ? contentHeight : 0; });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) { const height = this.hasAttribute("data-gauge-overflow-hint") ? 18 : 0; return { x: 0, y: 0, width: 0, height, left: 0, right: 0, top: 0, bottom: height, toJSON() {} }; });
+    vi.stubGlobal("ResizeObserver", class { observe(element: Element) { observed.push(element); } disconnect() {} });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    render(<ThresholdGauge widget={{ ...widget, config: { display: "radial", seriesMode: "all" } }} result={result} />);
+    expect(screen.getByText("Scroll to see all gauges")).toBeInTheDocument();
+    expect(observed.some(element => element.hasAttribute("data-gauge-arc-body"))).toBe(true);
+    // No ResizeObserver notification is needed when only the grid placement
+    // changed; the scheduled recheck must clear the stale overflow hint.
+    contentHeight = 200;
+    act(() => frames.shift()?.(0));
+    act(() => frames.shift()?.(16));
+    expect(screen.queryByText("Scroll to see all gauges")).not.toBeInTheDocument();
   });
   it("exposes the configured density without changing exact segmented progress or unknown values", () => {
     const values = [0, 12.5, 55.25, 100, null];
@@ -133,6 +230,23 @@ describe("multi-series threshold gauges", () => {
     expect(container.querySelectorAll('[data-gauge-legend]')).toHaveLength(1);
     expect(screen.getAllByLabelText("Threshold limits")).toHaveLength(1);
     expect(row.querySelector('[data-gauge-value]')).toHaveAttribute("data-gauge-value", "22.718");
+    expect(row.querySelector('[data-gauge-value]')).not.toHaveAttribute("title");
+  });
+  it("keeps native exact-value text only when interactive details are disabled", () => {
+    const { container, rerender } = render(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, showTooltip: false }, config: { seriesMode: "all" } }} result={result} />);
+    expect(container.querySelector('[data-gauge-value]')).toHaveAttribute("title", "22.718 GB");
+    rerender(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, showTooltip: true }, config: { seriesMode: "all" } }} result={result} />);
+    expect(container.querySelector('[data-gauge-value]')).not.toHaveAttribute("title");
+  });
+  it("shows opt-in threshold status for horizontal banks, including unknown values", () => {
+    const config = { display: "linear", seriesMode: "all", showStatus: true };
+    const options = { ...widget.options, thresholds: [{ value: 0, color: "#159977", label: "OK" }, { value: 30, color: "#cc9833", label: "Delayed" }] };
+    const values = [22, 31, null].map((value, index) => ({ name: `source-${index}`, labels: {}, points: [{ timestamp: 1000, value }] }));
+    const { container, rerender } = render(<ThresholdGauge widget={{ ...widget, options, config }} result={{ series: values }} />);
+    expect([...container.querySelectorAll('[data-gauge-status]')].map(element => element.textContent)).toEqual(["OK", "Delayed", "Unknown"]);
+    expect(container.querySelector('[data-gauge-series="source-1"] [role="meter"]')).toHaveAttribute("aria-valuetext", expect.stringContaining("Delayed"));
+    rerender(<ThresholdGauge widget={{ ...widget, options, config: { ...config, orientation: "vertical" } }} result={{ series: values }} />);
+    expect(container.querySelectorAll('[data-gauge-status]')).toHaveLength(0);
   });
   it("renders explicit vertical continuous bars bottom-up while radial remains an arc", () => {
     const { container, rerender } = render(<ThresholdGauge widget={{ ...widget, unit: "%", config: { display: "linear", orientation: "vertical", seriesMode: "all" } }} result={{ series: [{ ...result.series![0], points: [{ timestamp: 2000, value: 12.5 }] }] }} />);

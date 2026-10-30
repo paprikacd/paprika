@@ -265,6 +265,9 @@ func (p *observeProvider) query(ctx context.Context, q Query) ([]byte, error) {
 		input["limit"] = 1000
 	default:
 		input["limit"] = maxTraces
+		if q.TraceID != "" {
+			input["trace_id"] = q.TraceID
+		}
 	}
 	tool := "query_" + q.Kind
 	return p.data(ctx, tool, input, maxResponseBytes)

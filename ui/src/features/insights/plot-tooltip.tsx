@@ -16,10 +16,16 @@ import type {
 } from "@tanstack/charts";
 import { MetricDetails, ObservationTooltip } from "./chart-renderers";
 import { TooltipSubWidget } from "./tooltip-widgets";
-import type { Point, Series } from "./chart-data";
+import { TooltipInstructions } from "./tooltip-instructions";
+import { formatMetricDetails, fullDateTimeFormat, seriesName, type Point, type Series } from "./chart-data";
+import { validTimestamp } from "./widget-context";
 import type { Widget } from "./schema";
 import styles from "./chart-styles.module.css";
 import { useChartCursorPublisher } from "./chart-cursor";
+import { GammaButton } from "./gamma/button";
+import type { DrilldownContext } from "./drilldown";
+import { drilldownContextReason } from "./widget-context";
+import { useWidgetDrilldown } from "./widget-drilldown";
 
 export interface PlotDatum extends Point {
   seriesIndex: number;
@@ -37,6 +43,27 @@ interface ActivePoint {
   anchor: SVGSVGElement;
   pinned: boolean;
   revision: unknown;
+  peers: PlotPoint[];
+}
+
+function coincidentPoints(points: readonly PlotPoint[], selected: PlotPoint, series: Series[]) {
+  const peers = new Map<number, PlotPoint>();
+  const ambiguous = new Set<number>();
+  for (const candidate of points) {
+    const datum = candidate.datum;
+    if (datum.seriesIndex !== selected.datum.seriesIndex &&
+        datum.timestamp === selected.datum.timestamp &&
+        typeof datum.value === "number" && Number.isFinite(datum.value) &&
+        series[datum.seriesIndex]) {
+      if (peers.has(datum.seriesIndex)) {
+        peers.delete(datum.seriesIndex);
+        ambiguous.add(datum.seriesIndex);
+      } else if (!ambiguous.has(datum.seriesIndex)) {
+        peers.set(datum.seriesIndex, candidate);
+      }
+    }
+  }
+  return [...peers.values()];
 }
 
 /** TanStack owns hit testing/navigation; this adapter only presents its exact datum. */
@@ -44,16 +71,19 @@ export function usePlotTooltip(
   widget: Widget,
   series: Series[],
   enabled: boolean,
+  onContextChange?: (context: DrilldownContext) => void,
 ) {
   const id = useId();
   const cursor = useChartCursorPublisher();
+  const openDrilldown = useWidgetDrilldown();
   const revision = useMemo(
-    () => ({ series, view: widget.options?.tooltipView, unit: widget.unit }),
-    [series, widget.options?.tooltipView, widget.unit],
+    () => ({ series, view: widget.options?.tooltipView, unit: widget.unit, color: widget.color, seriesColors: widget.options?.seriesColors }),
+    [series, widget.options?.tooltipView, widget.unit, widget.color, widget.options?.seriesColors],
   );
   const scene = useRef<PlotScene | null>(null);
   const armedRevision = useRef<unknown>(null);
   const [active, setActive] = useState<ActivePoint | null>(null);
+  const [showAllPeers, setShowAllPeers] = useState(false);
   const interaction = useRef({ panel: false, focused: false });
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const clearHide = useCallback(() => clearTimeout(timer.current), []);
@@ -99,14 +129,16 @@ export function usePlotTooltip(
       const anchor = scene.current?.svg;
       if (!anchor || !series[point.datum.seriesIndex]) return;
       clearHide();
+      const peers = widget.type === "timeseries" ? coincidentPoints(scene.current?.points ?? [], point, series) : [];
       setActive((current) => ({
         point,
         anchor,
         pinned: current?.revision === revision && current.pinned,
         revision,
+        peers,
       }));
     },
-    [enabled, series, revision, clearHide, scheduleHide],
+    [enabled, series, revision, clearHide, scheduleHide, widget.type],
   );
   const onSelect = useCallback(
     (point: PlotPoint | null) => {
@@ -118,9 +150,9 @@ export function usePlotTooltip(
       const anchor = scene.current?.svg;
       if (!anchor || !series[point.datum.seriesIndex]) return;
       clearHide();
-      setActive({ point, anchor, pinned: true, revision });
+      setActive({ point, anchor, pinned: true, revision, peers: widget.type === "timeseries" ? coincidentPoints(scene.current?.points ?? [], point, series) : [] });
     },
-    [enabled, active, revision, series, dismiss, clearHide],
+    [enabled, active, revision, series, dismiss, clearHide, widget.type],
   );
   const current = enabled && active?.revision === revision ? active : null;
   const selectedTimestamp = current?.point.datum.timestamp;
@@ -184,6 +216,9 @@ export function usePlotTooltip(
         value: current.point.datum.value,
       }
     : undefined;
+  // Only compare plotted observations with exactly the same timestamp; do not
+  // interpolate or substitute the latest value from a different series.
+  const peersAtTime = current?.peers ?? [];
   return {
     extension,
     onRender,
@@ -208,6 +243,8 @@ export function usePlotTooltip(
           anchor={current.anchor}
           anchorRect={anchorRect}
           preferSide
+          avoidWidget
+          pinned={current.pinned}
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.panel = true;
@@ -225,18 +262,54 @@ export function usePlotTooltip(
             data-observation-timestamp={String(point.timestamp)}
             data-observation-series={entry.name}
           >
-            <MetricDetails
-              series={entry}
-              index={current.point.datum.seriesIndex}
-              point={point}
-              unit={widget.unit}
-              decimals={widget.options?.decimals}
-              description={
-                widget.type === "bar"
-                  ? "Latest valid sample"
-                  : "Selected observation"
-              }
-            />
+            {widget.type === "timeseries" ? <>
+              <div className={styles.plotTooltipTime}>
+                <span>Selected observation</span>
+                {validTimestamp(point.timestamp)
+                  ? <time dateTime={new Date(point.timestamp).toISOString()}>{fullDateTimeFormat.format(new Date(point.timestamp))}</time>
+                  : <span>No valid timestamp</span>}
+              </div>
+              <div className={styles.plotTooltipValues}>
+                <ul>
+                  <li className={styles.plotTooltipSelected}>
+                    <i aria-hidden="true" style={{ background: current.point.color || widget.color }} />
+                    <span title={seriesName(entry, current.point.datum.seriesIndex)}>{seriesName(entry, current.point.datum.seriesIndex)}</span>
+                    <strong data-metric-value={typeof point.value === "number" && Number.isFinite(point.value) ? String(point.value) : undefined}>
+                      {typeof point.value === "number" && Number.isFinite(point.value) ? formatMetricDetails(point.value, widget.unit, widget.options?.decimals) : "No data"}
+                    </strong>
+                  </li>
+                  {(showAllPeers ? peersAtTime : peersAtTime.slice(0, 5)).map(candidate => {
+                    const peer = series[candidate.datum.seriesIndex];
+                    const name = seriesName(peer, candidate.datum.seriesIndex);
+                    return <li key={candidate.datum.seriesIndex} data-peer-series={name} data-peer-value={candidate.datum.value} data-peer-timestamp={candidate.datum.timestamp}>
+                      <i aria-hidden="true" style={{ background: candidate.color }} />
+                      <span title={name}>{name}</span>
+                      <strong>{formatMetricDetails(candidate.datum.value!, widget.unit, widget.options?.decimals)}</strong>
+                    </li>;
+                  })}
+                </ul>
+                {peersAtTime.length > 0 && <span className={styles.plotTooltipCaption}>Other plotted series at this time</span>}
+                {peersAtTime.length > 5 && <button type="button" className={styles.plotTooltipExpand} aria-expanded={showAllPeers} onClick={() => setShowAllPeers(value => !value)}>
+                  {showAllPeers ? "Show fewer plotted series" : `Show ${peersAtTime.length - 5} more plotted series`}
+                </button>}
+              </div>
+              {!!Object.keys(entry.labels).length && <div className={styles.tooltipLabels}>
+                <dl>{Object.entries(entry.labels).map(([key, value]) => <div key={key}><dt>{key}: </dt><dd>{value}</dd></div>)}</dl>
+              </div>}
+            </> : <MetricDetails series={entry} index={current.point.datum.seriesIndex} point={point} unit={widget.unit} decimals={widget.options?.decimals} description="Latest valid sample" />}
+            {current.pinned && widget.type === "timeseries" && !!widget.drilldowns?.length && (openDrilldown || onContextChange) && <div className={styles.tooltipActions}>
+              {openDrilldown && widget.drilldowns.map(link => {
+                const selected = { series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp };
+                const reason = drilldownContextReason(link, selected);
+                return <div key={link.id}>
+                  <GammaButton size="sm" variant="secondary" disabled={!!reason} onClick={() => openDrilldown(link, selected)}>{link.title}</GammaButton>
+                  {reason && <p className={styles.tooltipActionReason}>{reason}</p>}
+                </div>;
+              })}
+              {onContextChange && <GammaButton size="sm" variant="secondary" onClick={() => onContextChange({ series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp })}>
+                Use sample for dashboard links
+              </GammaButton>}
+            </div>}
             {widget.options?.tooltipView && <TooltipSubWidget
               view={widget.options.tooltipView}
               series={entry}
@@ -246,7 +319,7 @@ export function usePlotTooltip(
               color={current.point.color || widget.color}
             />}
             <div className={styles.tooltipFooter}>
-              <small>Page Up/Down to scroll · Esc to close</small>
+              <small><TooltipInstructions /></small>
               <small>
                 {current.pinned
                   ? "Pinned · select again to close"

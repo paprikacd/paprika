@@ -26,6 +26,7 @@ import {
   type SavedQueryLibrary,
 } from "./saved-query-context";
 import { resolveSavedQueryReference } from "./saved-queries";
+import { installTooltipPointerTracking } from "./tooltip-pointer";
 
 export type TooltipQuerySource = Extract<
   NonNullable<TooltipView["source"]>,
@@ -49,6 +50,7 @@ export function TooltipQueryProvider({
   end,
   step,
 }: TooltipQueryEnvironment & { children: ReactNode }) {
+  useEffect(() => installTooltipPointerTracking(), []);
   const value = useMemo(
     () => ({ fetcher, providers, start, end, step }),
     [fetcher, providers, start, end, step],

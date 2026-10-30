@@ -2,15 +2,21 @@
 .item { display: flex; flex-direction: column; justify-content: safe center; gap: 8px; width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 4px; overflow: auto; color: var(--widget-text, var(--gamma-ink)); font-variant-numeric: tabular-nums; }
 /* Resolve the ch-based reading column at the value's font size, not inherited body text. */
 .body { display: grid; grid-template-columns: minmax(0, min(28%, 160px)) minmax(24px, 1fr) minmax(0, min(34%, var(--gauge-reading-width, 9ch))); align-items: center; gap: 8px; min-width: 0; font-size: 15px; }
+.body[data-gauge-show-status] { grid-template-columns: minmax(0, min(25%, 130px)) minmax(24px, 1fr) minmax(0, min(26%, var(--gauge-reading-width, 9ch))) minmax(0, min(22%, 76px)); }
+.status { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; color: var(--gamma-ink); color: color-mix(in srgb, var(--gauge-status-color) 32%, var(--widget-text, var(--gamma-ink))); font-size: 11px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.status i { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--gauge-status-color); }
 .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--widget-text, var(--gamma-muted)); font-size: 11px; line-height: 1.4; }
 .reading.reading.reading { display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 22px; padding: 1px 0; margin: 0; overflow: hidden; text-align: right; white-space: nowrap; }
 .value.value { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: baseline; width: 100%; min-width: 0; gap: 4px; font-size: 15px; line-height: 1.3; letter-spacing: 0; }
 .value > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .value.value small { flex-shrink: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 1.4; }
+/* Mix status with theme ink so light backgrounds darken pale thresholds and
+   dark backgrounds lift them. Explicit widget text colors take precedence. */
+.statusValue { color: var(--gamma-ink); color: color-mix(in srgb, var(--gauge-status-color) 32%, var(--gamma-ink)); }
 .track { position: relative; width: 100%; height: 20px; min-width: 0; overflow: hidden; border-radius: 2px; background: var(--gamma-surface-2); }
 .solid { display: block; }
 .segmented { display: flex; gap: var(--meter-gap, 2px); }
-.segment { flex: 1; min-width: 4px; min-height: 0; position: relative; overflow: hidden; background: var(--gamma-surface-2); }
+.segment { flex: 1; min-width: 4px; min-height: 0; position: relative; overflow: hidden; background: var(--gamma-surface-2); background: color-mix(in srgb, var(--meter-fill) 18%, var(--gamma-surface-2)); }
 .segment::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--meter-fraction) * 100%); background: var(--meter-fill); }
 .fill { position: absolute; left: 0; bottom: 0; width: 100%; height: 100%; border-radius: inherit; }
 .track[data-gauge-unknown], .track[data-gauge-unknown] .segment { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }
@@ -28,14 +34,15 @@
 .item[data-gauge-kind="radial"] { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; justify-content: stretch; gap: 4px; align-items: center; }
 .radialFrame { display: grid; place-items: center; width: 100%; height: 100%; min-width: 0; min-height: 0; }
 .radialBody { display: grid; width: min(100%, 240px); max-width: 100%; min-height: 0; aspect-ratio: 200 / 114; }
-.radial { grid-area: 1 / 1; width: 100%; align-self: stretch; }
+.radial { position: relative; grid-area: 1 / 1; width: 100%; align-self: stretch; }
 .radialReading.radialReading { grid-area: 1 / 1; z-index: 1; align-self: end; justify-self: center; align-items: center; text-align: center; margin: 0 0 18px; padding: 6px; max-width: 80%; }
-.radialValue.radialValue { justify-content: center; font-size: clamp(18px, calc(var(--gauge-arc-width, 200px) * .14), 32px); }
+.radialValue.radialValue { justify-content: center; font-size: clamp(18px, calc(var(--gauge-arc-width, 200px) * .14), 32px); line-height: 1.25; }
 .item[data-gauge-kind="radial"] > .label { grid-row: 2; width: 100%; min-height: 16px; line-height: 16px; text-align: center; }
 .arc { width: 100%; height: 100%; overflow: visible; }
-.arcTrack, .arcFill { fill: none; stroke-width: 12px; }
+.arcTrack, .arcFill { fill: none; stroke-width: 16px; }
 .arcTrack { stroke: var(--gamma-surface-2); }
-.arc text { font: 10px var(--gamma-font-ui); fill: var(--widget-text, var(--gamma-muted)); }
+.radialBounds { position: absolute; inset: auto 6% 0; display: flex; justify-content: space-between; gap: 8px; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1; pointer-events: none; }
+.radialBounds span { max-width: 36%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend { display: flex; flex-direction: column; flex-shrink: 0; gap: 5px; padding: 2px 4px; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
 .bounds { display: flex; justify-content: space-between; gap: 8px; }
 .bounds > span { min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -46,9 +53,12 @@
 .bank { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(116px, calc((100% - (var(--gauge-columns) - 1) * 12px) / var(--gauge-columns)))), 1fr)); align-content: start; gap: 12px; min-width: 0; min-height: 0; overflow: auto; padding: 4px; scrollbar-width: thin; }
 .bank:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; border-radius: 4px; }
 .bank .item { height: auto; min-width: 0; overflow: visible; gap: 4px; padding: 0; }
-.bank[data-gauge-bank-orientation="horizontal"] { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(240px, calc((100% - (var(--gauge-columns) - 1) * 12px) / var(--gauge-columns)))), 1fr)); gap: 3px 12px; }
+/* Keep rows at their intrinsic height even in a short card. Allowing tracks to
+   shrink makes overflow measurements change when the scroll hint appears. */
+.bank[data-gauge-bank-orientation="horizontal"] { flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(240px, calc((100% - (var(--gauge-columns) - 1) * 12px) / var(--gauge-columns)))), 1fr)); grid-auto-rows: max-content; align-content: space-evenly; gap: 3px 12px; }
 .bank[data-gauge-bank-orientation="vertical"] { flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(24px, calc((100% - (var(--gauge-columns) - 1) * 8px) / var(--gauge-columns)))), 1fr)); gap: 8px; grid-auto-rows: minmax(120px, 1fr); align-content: stretch; }
-.bank[data-gauge-bank-display="radial"] { flex: 1; grid-auto-rows: minmax(100px, 1fr); align-content: stretch; }
+/* Keep compact banks in the authored grid while reserving room for long readings. */
+.bank[data-gauge-bank-display="radial"] { flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(94px, calc(var(--gauge-reading-width, 9ch) + 32px), calc((100% - (var(--gauge-columns) - 1) * 8px) / var(--gauge-columns)))), 1fr)); gap: 8px; grid-auto-rows: minmax(92px, 1fr); align-content: stretch; }
 .bank .item[data-gauge-kind="radial"] { grid-template-rows: minmax(0, 1fr) 16px; text-align: center; padding: 4px; }
 .bank .item[data-gauge-kind="radial"] .radialReading { margin-bottom: calc(var(--gauge-arc-height, 90px) * .17); padding: 2px; min-height: 28px; }
 .bank .item[data-gauge-kind="radial"] .radialValue { font-size: clamp(16px, calc(var(--gauge-arc-width, 180px) * .14), 26px); }

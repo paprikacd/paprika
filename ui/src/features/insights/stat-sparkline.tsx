@@ -19,11 +19,13 @@ export function StatSparkline({
   name,
   unit,
   color,
+  latestLabel = "Displayed latest valid sample",
 }: {
   series: Series;
   name: string;
   unit: string;
   color?: string;
+  latestLabel?: string;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -109,7 +111,7 @@ export function StatSparkline({
     `History of the displayed series, from ${new Date(history.start).toISOString()} to ${new Date(history.end).toISOString()}.`,
     `${history.sampleCount} samples; ${history.missingCount} missing.`,
     `Minimum ${exactMetric(history.min, unit)}; maximum ${exactMetric(history.max, unit)}.`,
-    `Displayed latest valid sample: ${exactMetric(history.latestValid.value!, unit)} at ${new Date(history.latestValid.timestamp).toISOString()}.`,
+    `${latestLabel}: ${exactMetric(history.latestValid.value!, unit)} at ${new Date(history.latestValid.timestamp).toISOString()}.`,
     history.latest?.value === null
       ? `Latest observation is missing at ${new Date(history.latest.timestamp).toISOString()}.`
       : "",

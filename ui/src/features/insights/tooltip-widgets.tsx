@@ -149,7 +149,10 @@ export function buildTooltipContext(
   }
   return Object.freeze({
     name: seriesName(series, 0),
-    ...(observation ? { observation: Object.freeze({ ...observation }) } : {}),
+    // Record-backed observations can provide an exact value without a time.
+    // Their missing timestamp is used only for binding validation; do not hand
+    // an invalid timestamp to a trusted tooltip renderer as an observation.
+    ...(observation && validTimestamp(observation.timestamp) ? { observation: Object.freeze({ ...observation }) } : {}),
     labels: Object.freeze({ ...series.labels }),
     points: bounded.series?.[0]?.points ?? Object.freeze([]),
     result: bounded,
