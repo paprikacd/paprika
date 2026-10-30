@@ -92,9 +92,18 @@ async function open(study) {
   return current
 }
 async function chartSnapshot(id) {
-  return tile(id).evaluate(element => ({
+  const chart = tile(id)
+  if (await chart.locator('[data-operational-chart="pipeline-topology"]').count()) {
+    // Connection values live in a user-operated disclosure; stage counts and
+    // names alone cannot prove that the shared filter changed the records.
+    const summary = chart.locator("summary").filter({ hasText: /^Connections · \d+$/ })
+    if (!await summary.evaluate(node => node.parentElement.open)) await summary.click()
+    await chart.getByRole("region", { name: "Connection observations", exact: true }).waitFor()
+  }
+  return chart.evaluate(element => ({
     text: element.innerText,
     cells: [...element.querySelectorAll("[data-bucket-value]")].map(cell => cell.getAttribute("data-bucket-value")),
+    connections: [...element.querySelectorAll('button[aria-label^="Inspect connection "]')].map(button => button.getAttribute("aria-label")),
   }))
 }
 async function inspectMetric(id) {
@@ -461,10 +470,15 @@ try {
         await tile(first.id).scrollIntoViewIfNeeded()
         const before = await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value")
         const priorSecondary = await chartSnapshot(study.secondary)
+        if (study.id === "collection-control") assert.ok(priorSecondary.connections.includes("Inspect connection Sources to Collector: 124,820.00 obs/s"), "Production pipeline must show its exact fixture connection value")
         await selectGammaOption(page, scopeControl(variable), variable.options[1])
         await until(async () => await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value") !== before, "Shared filter did not update the single value")
         await ready(board.widgets.find(widget => widget.id === study.secondary))
         await until(async () => JSON.stringify(await chartSnapshot(study.secondary)) !== JSON.stringify(priorSecondary), "Shared filter did not update the dependent chart or records")
+        if (study.id === "collection-control") {
+          await until(async () => (await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 79,884.80 obs/s"), "Staging pipeline must show its exact scoped fixture connection value")
+          assert.equal((await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 124,820.00 obs/s"), false, "The stale production connection must not remain after switching scope")
+        }
         for (const widget of board.widgets) {
           await ready(widget)
           const saved = byId.get(widget.queryRef.id)
