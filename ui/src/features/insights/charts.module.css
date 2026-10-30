@@ -499,7 +499,7 @@
   white-space: nowrap;
 }
 @container insight-widget (max-height: 40px) {
-  .stat.stat { gap: 0; overflow: hidden; }
+  .stat.stat { gap: 0; overflow: auto; }
   .stat.stat .statValue { font-size: clamp(16px, 8cqw, 21px); line-height: 1.1; }
   .stat.stat .statMeta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .stat.stat.stat :global(button[data-gamma-button]) { min-height: 26px; padding-block: 0; margin-block: 0; }
@@ -531,3 +531,19 @@
 .intrinsicStat .statValue { font-size: 28px; line-height: 1.1; }
 .intrinsicStat .statUnit { font-size: 12px; }
 .intrinsicStat .statMeta { white-space: normal; overflow: visible; }
+
+/* Empty/error/loading content must start inside a one-track card. The normal
+   100px minimum otherwise centers the actual message below its clipped body. */
+@container insight-widget (max-height: 40px) {
+  .state {
+    min-height: 0;
+    padding: 0 4px;
+    gap: 2px;
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+  .state > * { flex-shrink: 0; }
+}

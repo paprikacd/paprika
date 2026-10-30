@@ -78,3 +78,26 @@
   .withSparkline.withSparkline.withSparkline .value :global(button[data-gamma-button]) { min-height: 26px; padding-block: 0; margin-block: 0; }
   .withSparkline[data-sparkline-placement="side"] .plot { height: min(100%, 28px); }
 }
+
+/* A one-track card has no safe background region behind its reading. Keep the
+   authored placement for larger cards, but reserve a separate trend column at
+   compact heights instead of drawing through the value or unit. */
+@container insight-widget (max-height: 40px) {
+  .withSparkline.withSparkline {
+    flex: 1 0 auto;
+    min-height: 26px;
+    grid-template-columns: minmax(0, auto) minmax(28px, 1fr);
+    gap: 12px;
+    padding: 0 12px 3px var(--stat-reading-inset, 0px);
+    box-sizing: border-box;
+  }
+  .withSparkline.withSparkline .value { padding: 0; }
+  .withSparkline.withSparkline .plot {
+    position: static;
+    align-self: center;
+    width: 100%;
+    height: 20px;
+    margin: 0;
+    mask-image: none;
+  }
+}

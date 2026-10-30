@@ -345,3 +345,28 @@ describe("optional single-value history", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
+
+it("keeps a one-track background stat's saved geometry, precise value, unit and missing-tail disclosure", () => {
+  const compact: Widget = { ...widget, layout: { x: 3, y: 0, w: 3, h: 1 }, options: { showSparkline: true, sparklinePlacement: "background" } };
+  const before = JSON.stringify(compact);
+  const { container, rerender } = render(<WidgetVisualization widget={compact} result={{ series: [series] }} />);
+  expect(container.querySelector("[data-stat-summary]")).toHaveAttribute("data-sparkline-placement", "background");
+  expect(container.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
+  expect(screen.getByRole("button", { name: "Inspect value for Requests" })).toBeEnabled();
+  expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+  expect(screen.getByRole("img")).toHaveAccessibleDescription(/1970-01-01T00:00:04.000Z/);
+  rerender(<WidgetVisualization widget={compact} result={{ series: [{ ...series, points: [{ timestamp: 5000, value: null }] }] }} />);
+  expect(container.querySelector("[data-metric-value]")).toBeNull();
+  expect(container.querySelector("[data-widget-state-frame]")).toHaveTextContent("No data in this time range");
+  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  expect(JSON.stringify(compact)).toBe(before);
+});
+
+ it("measures compact failed-query and loading states without losing retry", () => {
+  const retry = vi.fn();
+  const { container, rerender } = render(<WidgetVisualization widget={widget} error="Fixture failure" onRetry={retry} />);
+  expect(container.querySelector("[data-widget-state-frame]")).toHaveTextContent("Query failed");
+  expect(screen.getByRole("button", { name: "Retry query for Requests" })).toBeEnabled();
+  rerender(<WidgetVisualization widget={widget} loading />);
+  expect(container.querySelector("[data-widget-state-frame]")).toContainElement(screen.getByRole("status", { name: "Loading widget" }));
+});
