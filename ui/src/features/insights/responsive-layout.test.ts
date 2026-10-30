@@ -15,10 +15,13 @@ describe("responsive canvas projection", () => {
   it("only gives ordinary short stats intrinsic mobile reading height", () => {
     const base = exampleDashboard.widgets[0]
     expect(intrinsicStat(base)).toBe(true)
+    expect(intrinsicStat({ ...base, options: { showSparkline: true } })).toBe(true)
     for (const widget of [
       { ...base, description: "Context" },
       { ...base, layout: { ...base.layout, h: 3 } },
-      { ...base, options: { showSparkline: true } },
+      { ...base, layout: { ...base.layout, h: 3 }, options: { showSparkline: true } },
+      { ...base, drilldowns: [{ id: "details", title: "Details", dashboardId: "target" }] },
+      { ...base, selectionBindings: [{ variable: "service", source: "label" as const, value: "service" }] },
       { ...base, options: { showStatBar: true } },
       { ...base, type: "timeseries" as const },
     ]) expect(intrinsicStat(widget)).toBe(false)

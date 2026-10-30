@@ -120,7 +120,25 @@ async function inspectMetric(id) {
   await until(async () => await details.locator("time").getAttribute("datetime") !== firstTime, "Pointer traversal must update the actual inspected observation")
   const observed = { timestamp: await details.locator("time").getAttribute("datetime"), value: await details.locator("[data-metric-value]").getAttribute("data-metric-value") }
   const inspection = await details.boundingBox(), viewport = page.viewportSize()
-  assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1 && inspection.y >= 0 && inspection.y + inspection.height <= viewport.height + 1, `Metric inspection must fit the viewport: ${JSON.stringify({inspection,viewport,observed,placement:await details.getAttribute("data-placement"),scroll:await page.evaluate(()=>({x:scrollX,y:scrollY}))})}`)
+  const fitsViewport = inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1 && inspection.y >= 0 && inspection.y + inspection.height <= viewport.height + 1
+  // Capture the failed geometry before throwing; do not wait for it to settle
+  // or change the assertion. Dev and static-export CSS/effect timing may differ.
+  const geometry = fitsViewport ? undefined : await details.evaluate(node => {
+    const describe = element => {
+      const style = getComputedStyle(element), rect = element.getBoundingClientRect()
+      return {
+        tag: element.tagName, id: element.id, className: element.getAttribute("class"), inline: element.getAttribute("style"),
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        offset: { left: element.offsetLeft, top: element.offsetTop, width: element.offsetWidth, height: element.offsetHeight, parent: element.offsetParent?.tagName },
+        computed: Object.fromEntries(["position", "left", "top", "right", "bottom", "width", "height", "max-height", "transform", "translate", "scale", "zoom", "transition", "animation", "contain", "filter", "perspective", "will-change"].map(name => [name, style.getPropertyValue(name)])),
+      }
+    }
+    const ancestors = []
+    for (let parent = node.parentElement; parent; parent = parent.parentElement) ancestors.push(describe(parent))
+    return { panel: describe(node), ancestors, placement: node.getAttribute("data-placement"), innerViewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, visualViewport: window.visualViewport && { width: visualViewport.width, height: visualViewport.height, left: visualViewport.offsetLeft, top: visualViewport.offsetTop, scale: visualViewport.scale } }
+  })
+  const pointerGeometry = fitsViewport ? undefined : { originalPlot: bounds, currentPlot: await plot.boundingBox(), intendedPointer: { x: bounds.x + bounds.width * .72, y: bounds.y + bounds.height * .45 } }
+  assert.ok(fitsViewport, `Metric inspection must fit the viewport: ${JSON.stringify({inspection,viewport,observed,geometry,pointerGeometry})}`)
   const overlapping = await details.getAttribute("data-tooltip-overlap") === "true"
   const coveringNeighbor = await details.getAttribute("data-tooltip-overlaps-other-widget") === "true"
   if (!overlapping) {

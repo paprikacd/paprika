@@ -107,3 +107,29 @@
 .plot[data-stat-interactive] { pointer-events: auto; cursor: crosshair; touch-action: pan-y; }
 .plot[data-stat-interactive]:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
 .plot[data-stat-selected-time] { mask-image: none; }
+
+/* Phone viewing of ordinary short stats has intrinsic height. Reserve distinct
+   reading/trend lanes even for authored background placement; tall cards and
+   editing retain their existing geometry. Long readings may grow, never mask. */
+:global([data-intrinsic-stat="true"]) .withSparkline.withSparkline {
+  grid-template-columns: minmax(0, 1fr) minmax(64px, 30%);
+  gap: 12px;
+  padding: 0 16px 0 var(--stat-reading-inset, 0px);
+  flex: none;
+}
+:global([data-intrinsic-stat="true"]) .withSparkline.withSparkline .value {
+  padding: 0;
+  gap: 2px;
+}
+:global([data-intrinsic-stat="true"]) .withSparkline.withSparkline [data-metric-value] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:global([data-intrinsic-stat="true"]) .withSparkline.withSparkline .plot {
+  position: static;
+  align-self: center;
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  mask-image: none;
+}

@@ -12,7 +12,7 @@ export function canvasMode(width: number): CanvasMode {
  * presentations retain their original space. */
 export function intrinsicStat(widget: Widget): boolean {
   return widget.type === "stat" && widget.layout.h <= 2 && !widget.description &&
-    !widget.options?.showSparkline && !widget.options?.showStatBar &&
+    !widget.options?.showStatBar &&
     !widget.drilldowns?.length && !widget.selectionBindings?.length
 }
 

@@ -225,6 +225,32 @@ describe("rich metric renderers", () => {
     expect(screen.getByLabelText("Color encodes bucket observations/s")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Observation details" }).textContent).toContain("11.00 observations/s");
   });
+  it("keeps the selected bucket, value and time visible with a friendly heading before and after pinning", () => {
+    const histogram: QueryResult = { series: [
+      { name: "bucket", labels: { service: "api", le: "10" }, points: [{ timestamp: 1000, value: 2 }, { timestamp: 2000, value: 5 }] },
+      { name: "bucket", labels: { service: "api", le: "100" }, points: [{ timestamp: 1000, value: 9 }, { timestamp: 2000, value: 16 }] },
+    ] };
+    render(<DistributionHeatmap widget={{ ...widget, unit: "ms", options: { ...widget.options, tooltipTitle: "Latency distribution" }, config: { densityUnit: "observations/s" } }} result={histogram} />);
+    const chart = screen.getByRole("group", { name: /histogram buckets/ });
+    fireEvent.focus(chart);
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    const assertObservation = (bucket: string, value: string, timestamp: string) => {
+      expect(within(inspector).getByText("Latency distribution")).toBeVisible();
+      expect(within(inspector).getByText(`Selected bucket: ${bucket}`)).toBeVisible();
+      expect(within(inspector).getByText(value)).toBeVisible();
+      expect(inspector.querySelector("time")).toBeVisible();
+      expect(inspector.querySelector("time")).toHaveAttribute("datetime", timestamp);
+      expect(inspector.querySelector("details")).not.toHaveAttribute("open");
+      expect(inspector.querySelector("details")).toHaveTextContent(bucket);
+    };
+    assertObservation("≤ 10 ms", "5.00 observations/s", "1970-01-01T00:00:02.000Z");
+    fireEvent.keyDown(chart, { key: "ArrowUp" });
+    assertObservation("10–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
+    fireEvent.keyDown(chart, { key: "Enter" });
+    assertObservation("10–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    assertObservation("10–100 ms", "7.00 observations/s", "1970-01-01T00:00:01.000Z");
+  });
   it("does not render area through an incomplete stack and explains the gap", () => {
     const broken: QueryResult = { series: result.series!.map((entry, i) => ({ ...entry, points: [{ timestamp: 1000, value: i ? 2 : 4 }, { timestamp: 2000, value: i ? null : 8 }, { timestamp: 3000, value: i ? 3 : 9 }] })) };
     const { container } = render(<StackedTimeseries widget={widget} result={broken} />);

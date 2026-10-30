@@ -292,6 +292,9 @@ export function galleryDocuments(providers) {
         { label: "signal", value: "logs", color: "#16c9c6" },
       ] };
       const freshness = dashboard.widgets.find(widget => widget.id === "source-freshness");
+      // This demo's five-row gauge needs less height than the original bar
+      // composition. Change only newly generated demo documents, not saved views.
+      freshness.layout = { ...freshness.layout, h: 5 };
       Object.assign(freshness, { title: "Freshness by source", type: "plugin", pluginId: "threshold-gauge", dataKind: "metrics", config: { display: "linear", orientation: "horizontal", seriesMode: "all", maxSeries: 5, showThresholds: true, showStatus: true }, options: { min: 0, max: 60, decimals: 2, showLegend: true, showTooltip: true, thresholds: [{ value: 0, color: "#12cba1", label: "OK" }, { value: 30, color: "#f1b841", label: "Delayed" }, { value: 60, color: "#e95352", label: "Critical" }] } });
       const states = dashboard.widgets.find(widget => widget.id === "job-states");
       states.title = "Job execution history · sampled states";

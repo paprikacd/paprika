@@ -22,6 +22,7 @@ import { heatmapColumnAt, heatmapColumnLimit, heatmapColumns, heatmapDensityLeve
 import heatmapStyles from "./distribution-heatmap.module.css";
 import { buildDistribution, buildMetricPlot, directionalConfigSchema, distributionConfigSchema, stackedConfigSchema, MetricDataError, type DistributionConfig, type DistributionData, type MetricCell, type MetricSeries } from "./rich-metrics-data";
 import styles from "./rich-metrics.module.css";
+import tooltipStyles from "../chart-styles.module.css";
 
 const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 const densityPalette = ["var(--gamma-density-0, #dce9f0)", "var(--gamma-density-1, #98bfd7)", "var(--gamma-density-2, #509bbf)", "var(--gamma-density-3, #35a7a2)", "var(--gamma-density-4, #c1bf5d)", "var(--gamma-density-5, #d78642)", "var(--gamma-danger, #b4473d)"];
@@ -31,7 +32,7 @@ const number = (value: number) => Number.isFinite(value) ? Number(value.toFixed(
 
 interface Observation {
   row: number; column: number; value: number | null; timestamp: number;
-  series: MetricSeries; name: string; unit: string; color: string; note?: string;
+  series: MetricSeries; name: string; unit: string; color: string; note?: string; bucket?: string;
 }
 
 function useSize() {
@@ -140,7 +141,9 @@ function Inspector({ widget, observation, peers, pinned, decimals, onPin, onClos
   return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
     <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={onClose}><X size={14} /></GammaButton></div>
     <div className={styles.inspectorDetails}>
-      <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned} />
+      <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}>
+        {observation.bucket && <span className={tooltipStyles.tooltipEyebrow}>Selected bucket: {observation.bucket}</span>}
+      </MetricDetails>
     </div>
     {peers && peers.length > 1 && <ul aria-label="Series at selected time" className={styles.inspectorPeers}>
       {peers.map((peer, index) => <li key={index} data-series-index={index} data-series-name={peer.name} data-series-value={peer.value === null ? "missing" : peer.value}><i aria-hidden="true" style={{ background: peer.color }} /><LegendName name={peer.name} display={peer.display} /><b>{peer.value === null ? "No observation" : formatMetric(peer.value, observation.unit, false, decimals)}</b></li>)}
@@ -252,7 +255,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const cursorTime = inspection.enabled && sharedCursor && sharedCursor.timestamp >= timeStart && sharedCursor.timestamp <= timeStart + timeSpan ? sharedCursor.timestamp : undefined;
   const observation = (row: number, column: number): Observation => {
     const bucket = data.rows[row], cell = bucket.cells[column], name = cellLabel(bucket.lower, bucket.upper, unit);
-    return { row, column, ...cell, name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note: "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit." };
+    return { row, column, ...cell, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note: "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit." };
   };
   const locate = (event: PointerEvent<SVGSVGElement>) => {
     const point = coordinates(event, width, height);

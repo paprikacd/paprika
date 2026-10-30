@@ -530,7 +530,17 @@
 .intrinsicStat [data-stat-reading] { gap: 2px; }
 .intrinsicStat .statValue { font-size: 28px; line-height: 1.1; }
 .intrinsicStat .statUnit { font-size: 12px; }
-.intrinsicStat .statMeta { white-space: normal; overflow: visible; }
+.intrinsicStat .stat .statMeta {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.intrinsicStat .stat[data-stat-sparkline-enabled="true"] { padding: 0; }
+.intrinsicStat .stat .statValue { font-size: 28px; white-space: normal; }
 
 /* Empty/error/loading content must start inside a one-track card. The normal
    100px minimum otherwise centers the actual message below its clipped body. */
