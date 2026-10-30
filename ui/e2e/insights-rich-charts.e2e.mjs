@@ -249,6 +249,22 @@ async function inspectScrollableMetric() {
   const longLabels = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`resource_${index}`, `cluster/omega/namespace/observability/deployment/ingestion-worker-${index}/instance/long-label-regression`]))
   // Enrich only this HTTP fixture for the scroll test; never alter renderer DOM or styles.
   fixture.series = original.map(source => ({ ...source, name: `{namespace="observability", pod="paprika-insights-observability-probe-8f7d6d97d8-12345", container="${source.name}"}`, labels: { ...source.labels, ...longLabels }, base: expectedValue, variation: 0, trend: 0, gaps: undefined }))
+  const scrollDiagnostics = []
+  const captureScroll = async (phase) => {
+    const state = await page.evaluate(() => {
+      const panel = document.querySelector('[role="region"][aria-label="Observation details"]')
+      const identify = node => node instanceof Element ? { tag: node.tagName, id: node.id, role: node.getAttribute("role"), label: node.getAttribute("aria-label"), tabIndex: node.tabIndex, connected: node.isConnected } : null
+      const style = panel && getComputedStyle(panel), bounds = panel?.getBoundingClientRect()
+      return { panel: identify(panel), active: identify(document.activeElement), panelFocused: document.activeElement === panel,
+        scrollTop: panel?.scrollTop, clientHeight: panel?.clientHeight, scrollHeight: panel?.scrollHeight,
+        bounds: bounds && { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        style: style && { overflowY: style.overflowY, maxHeight: style.maxHeight, scrollBehavior: style.scrollBehavior, overscrollBehaviorY: style.overscrollBehaviorY, pointerEvents: style.pointerEvents },
+        page: { x: scrollX, y: scrollY, width: innerWidth, height: innerHeight, visualWidth: visualViewport?.width, visualHeight: visualViewport?.height },
+        reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches, coarsePointer: matchMedia("(pointer: coarse)").matches,
+        keyEvents: window.__paprikaInspectorKeyDiagnostics ?? [] }
+    })
+    scrollDiagnostics.push({ phase, ...state })
+  }
   try {
     await open(studies[2])
     const element = await ready(widget), plot = element.locator('svg[role="group"]').first()
@@ -283,7 +299,19 @@ async function inspectScrollableMetric() {
     await details.getByText(/paprika-insights-observability-probe-8f7d6d97d8-12345/, { exact: false }).first().waitFor({ state: "attached" })
     const documentScroll = () => page.evaluate(() => ({ x: scrollX, y: scrollY }))
     const initialPage = await documentScroll()
+    await captureScroll("before PageDown")
+    // Test-only event observation; do not alter focus, scrolling or dispatch.
+    await page.evaluate(() => {
+      window.__paprikaInspectorKeyDiagnostics = []
+      document.addEventListener("keydown", event => {
+        const target = event.target
+        queueMicrotask(() => window.__paprikaInspectorKeyDiagnostics.push({ key: event.key, defaultPrevented: event.defaultPrevented,
+          targetTag: target?.tagName, targetRole: target?.getAttribute?.("role"), targetLabel: target?.getAttribute?.("aria-label"),
+          targetStillFocused: target === document.activeElement, scrollTop: target?.scrollTop, clientHeight: target?.clientHeight, scrollHeight: target?.scrollHeight }))
+      }, { capture: true, once: true })
+    })
     await page.keyboard.press("PageDown")
+    await captureScroll("immediately after PageDown")
     await until(async () => await details.evaluate(node => node.scrollTop) > 0, "PageDown must scroll the focused inspector")
     const afterPageDown = await details.evaluate(node => node.scrollTop)
     assert.deepEqual(await documentScroll(), initialPage, "PageDown must not scroll the dashboard")
@@ -310,6 +338,11 @@ async function inspectScrollableMetric() {
     assert.equal(await plot.evaluate(node => document.activeElement === node), true, "Escape must return focus to the chart without reopening its inspector")
     assert.deepEqual(fixtureAPI.failures, [], "No mobile fixture contract failures")
     return { mobileWidth: 390, coarsePointer: true, savedQuery: widget.queryRef.id, exactValue: expectedValue, labelCount: Object.keys(longLabels).length, initialHoverVisible: true, initiallyPinnedVisible: true, tabFocus: true, afterPageDown, bottom, wheelContainedBothBoundaries: true, escapeClosed: true, focusRestored: true }
+  } catch (error) {
+    await captureScroll("failure").catch(diagnosticError => scrollDiagnostics.push({ diagnosticError: diagnosticError.message }))
+    await page.screenshot({ path: join(output, "long-inspector-mobile-failure.png"), fullPage: false, animations: "disabled" }).catch(() => {})
+    await writeFile(join(output, "long-inspector-mobile-failure.json"), JSON.stringify({ error: error.stack, url: page.url(), viewport: page.viewportSize(), scrollDiagnostics }, null, 2))
+    throw error
   } finally { fixture.series = original; await mobile.close(); page = previousPage; fixtureAPI = previousFixtureAPI }
 }
 async function inspectCompactProviderLabels() {
