@@ -38,6 +38,7 @@ import {
   Undo2,
   X,
 } from "lucide-react"
+import { GammaActionMenu } from "./gamma/action-menu"
 import { verticalCompactor, type Layout } from "react-grid-layout"
 import type { InsightsClient } from "./client"
 import {
@@ -1329,6 +1330,15 @@ export default function InsightsApp({
             {dashboard.description && <p>{dashboard.description}</p>}
           </div>
           <div className={styles.actions}>
+            {isMobile ? <GammaActionMenu
+              label="Dashboard actions"
+              className={styles.iconButton}
+              disabled={importingBundle}
+              items={[
+                { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => setPanel(panel === "manage" ? null : "manage") },
+                { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => { setPanel(panel === "ai" ? null : "ai"); setEditing(true) } },
+              ]}
+            /> : <>
             <GammaButton size="sm" variant="secondary"
               className={styles.secondary}
               aria-label="Manage dashboards"
@@ -1347,6 +1357,7 @@ export default function InsightsApp({
             >
               <Sparkles size={15} /> Build with AI
             </GammaButton>
+            </>}
             {editing ? (
               <GammaButton size="sm" variant="primary" className={styles.primary} disabled={busy || !widgetDraftValid} aria-describedby={!widgetDraftValid ? invalidWidgetSaveHintId : undefined} onClick={save}>
                 {busy ? (
@@ -1388,12 +1399,14 @@ export default function InsightsApp({
             >
               <Braces size={14} /> Code
             </GammaButton>
+            {canvasMode === "wide" && <>
             <span className={styles.divider} />
             <GammaButton size="sm" variant="quiet" aria-pressed={dense} disabled={editing || canvasMode !== "wide"}
               title={editing ? "Compact view is available when previewing" : canvasMode !== "wide" ? "Compact view is available when the dashboard canvas is wider" : "Use a denser wide-screen layout without changing the saved dashboard"}
               className={dense && !editing ? styles.activeTool : ""} onClick={() => setDense(!dense)}>
               <PanelTop size={14} /> Compact view
             </GammaButton>
+            </>}
             <span className={styles.widgetCount}>
               {dashboard.widgets.length} widgets
             </span>

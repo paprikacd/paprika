@@ -8,7 +8,7 @@ Review scope: all six built-in renderers and the bundled Threshold gauge, their 
 - Impeccable: **Operate** mode, technical audit, craft checks, one initial visual batch and one confirmation batch. Its context command permitted scoped fixes to existing UI. The earlier spring/overshoot finding remains fixed through Gamma's emphasized easing alias.
 - Frontend Design Premium and its upstream frontend-design: canonical component resolution, production states, focus, responsive behavior and static verification.
 - Explicit local frontend-design: hierarchy, typography, visual restraint and existing product context.
-- Design Taste: its dashboard exclusion applies. Compatible preservation, clarity and dependency guidance were used; landing-page defaults were not applied. The operating workspace retains low visual variance and motion, with deliberate information density.
+- Design Taste: the earlier review incorrectly treated dashboards as excluded. Current app-screen guidance applies to the entire operating workspace: navigation, hierarchy, density, states and task flow. Preserve the existing Gamma identity; do not apply landing-page defaults. The 2026-10-30 review below supersedes the earlier scope exemption.
 - Gamma MCP: current component checklist and maintained briefs/source. Consumer adapters retain source provenance; Gamma catalogue publishing checks are not claimed for Paprika.
 
 The root `DESIGN.md` records the current light Insights island alongside the older dark main-app brief. `UX-CONTRACT.md` records the canonical owners. This review did not introduce another component library or change the saved dashboard schema.
@@ -97,9 +97,9 @@ Local browser evidence is Chromium desktop and mobile emulation. Physical device
 
 This is a scoped continuation, not proof of pixel-perfect coverage across the
 entire gallery. The design direction remains the existing Gamma **Operate**
-workspace; the explicitly requested design-taste skill excludes dashboards, so
-its general legibility and state guidance was applied without its landing-page
-layouts. Impeccable's scoped detector returned no findings for the changed UI.
+workspace. This historical pass applied only general legibility and state
+guidance; its dashboard-exclusion rationale was incorrect and is superseded
+by the full app-screen review process recorded below. Impeccable's scoped detector returned no findings for the changed UI.
 
 | Area | Status | Evidence |
 | --- | --- | --- |
@@ -353,3 +353,40 @@ pixel-perfect equivalence for every reference or authoring view.
 | Directional axis | Pass for covered workflows | The optional `symmetricAxis` control centers zero with equal positive and negative bounds. It does not alter recorded ingress or egress values, and its default preserves existing charts. Edge Watch enables it. Unit coverage includes zero and extreme finite values; real-provider checks cover chart geometry, authoring, ETag-protected save/reload and AI context in both themes and viewport sizes. |
 | Edge sample continuity | Pass for covered provider data | The isolated PostgreSQL worker appends independent synthetic blocked requests every two minutes and gateway annotations every fifteen minutes for each cluster. A live saved-query check observed a later worker tick in the selected range; controlled tests cover bounded catch-up, idempotence and preserved history. These records are illustrative and do not represent real client traffic. |
 | Full reference parity | Incomplete | These targeted improvements do not establish pixel-level parity across all gallery, authoring and drilldown surfaces. Physical-device, non-Chromium and production-scale behavior remains unverified. |
+
+
+## Telemetry-first review loop — 2026-10-30
+
+The reproducible multi-stage process is [review-loop.md](review-loop.md). It
+supersedes the historical dashboard exclusion for DesignTaste. Review the whole
+scan → pin → edit → save → reload journey, not disconnected widgets. Keep
+composition approval distinct from functional test results and deployment.
+
+This bounded candidate balances contiguous statistics at measured canvas widths
+of 840px and above, uses intrinsic-height plain statistics in narrow **view mode**,
+consolidates secondary mobile actions in the maintained Gamma menu, and keeps all
+five widget-editor tabs on one accessible row. Saved positions and edit mode are
+unchanged. Intrinsic cards grow for additional series and freshness notices;
+sparkline, bar, described, linked and custom-height cards retain authored space.
+
+Local sample review measured the traffic panel 148px earlier on the 1180px desktop
+and 166px earlier in the 390px responsive iframe. The latter now includes the
+chart header and beginning of its traces in the first viewport. At 320px the
+five tabs measured 44px high and approximately 50px wide, with no page overflow.
+These are observed sample-view results, not production-provider benchmarks or
+physical-device certification.
+
+Candidate validation: 2,140 UI tests across 204 files, TypeScript, production
+static export and scoped ESLint passed. Regression coverage includes counts 1–8,
+839/840/841px, mixed plugin/stat groups, view/edit document immutability, secondary
+series, mobile menu keyboard focus/escape and local save behavior. Actual browser
+checks covered both themes, desktop observation pinning, 320/390px editor and
+menu interaction, and browser-local title save/reload/restore. Screenshot evidence
+and candidate hashes are retained in the task review receipt; they are not a
+substitute for authenticated provider or deployed-source verification.
+
+Not established by this pass: Omega backend integration, missing original Grafana
+artboard parity, browser detector certification, exhaustive loading/error visual
+states, physical touch hardware, or a production release. Do not report any of
+those as passed. Tests for loading/error/empty data remain separate from visual
+state review.

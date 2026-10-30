@@ -39,7 +39,7 @@ import {
 } from "./widget-context";
 import { dashboardRange } from "./time-range";
 import { widgetTextColor } from "./appearance";
-import { canvasLayout, canvasMode, denseCanvasLayout, type CanvasMode } from "./responsive-layout";
+import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, type CanvasMode } from "./responsive-layout";
 import styles from "./insights.module.css";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -73,6 +73,7 @@ const Tile = memo(function Tile({
   end,
   editing,
   draggable,
+  naturalHeight = false,
   selected,
   onSelect,
   onDrilldown,
@@ -88,6 +89,7 @@ const Tile = memo(function Tile({
   end: number;
   editing: boolean;
   draggable: boolean;
+  naturalHeight?: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
@@ -212,6 +214,7 @@ const Tile = memo(function Tile({
     <article
       ref={element}
       className={`${styles.tile} ${selected ? styles.selectedTile : ""}`}
+      data-intrinsic-stat={naturalHeight || undefined}
       data-widget-id={widget.id}
       data-widget-type={widget.type}
       data-widget-sparkline={widget.type === "stat" && widget.options?.showSparkline || undefined}
@@ -316,6 +319,7 @@ const Tile = memo(function Tile({
         {active && (
           <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><WidgetVisualization
             widget={widget}
+            naturalHeight={naturalHeight}
             result={savedQueryLoading ? undefined : data}
             loading={savedQueryLoading || loading || (visible && awaitingFirstResult)}
             deferred={!savedQueryLoading && !visible && awaitingFirstResult}
@@ -379,8 +383,8 @@ export function DashboardCanvas({
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
   const draggable = editing && mode === "wide";
   const layout = useMemo(
-    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode) : canvasLayout(dashboard.widgets, mode),
-    [dashboard.widgets, mode, dense, editing],
+    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width) : canvasLayout(dashboard.widgets, mode, width),
+    [dashboard.widgets, mode, width, dense, editing],
   );
   const orderedWidgets = useMemo(() => {
     const byId = new Map(
@@ -389,6 +393,37 @@ export function DashboardCanvas({
     return layout.map((item) => byId.get(item.i)!);
   }, [dashboard.widgets, layout]);
   const range = dashboardRange(dashboard, end);
+  const stackedView = mode === "stacked" && !editing;
+  const tiles = orderedWidgets.map((widget, index) => (
+              <div key={widget.id} style={stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
+                <Tile
+                  key={`${dashboard.id}:${widget.id}`}
+                  widget={widget}
+                  active={active}
+                  provider={providers.find(
+                    (provider) =>
+                      provider.id ===
+                      (widget.queryRef
+                        ? library.queries.find(
+                            (entry) => entry.id === widget.queryRef!.id,
+                          )?.providerId
+                        : widget.providerId),
+                  )}
+                  fetcher={fetcher}
+                  start={range.start}
+                  end={range.end}
+                  naturalHeight={stackedView && intrinsicStat(widget)}
+                  editing={editing}
+                  draggable={draggable}
+                  selected={selected === widget.id}
+                  onSelect={onSelect}
+                  onDrilldown={onDrilldown}
+                  onSelection={onSelection}
+                  onQueryFields={onQueryFields}
+                  onTimeRange={onTimeRange}
+                />
+              </div>
+            ));
   return (
     <TooltipQueryProvider
       fetcher={tooltipFetcher}
@@ -405,7 +440,7 @@ export function DashboardCanvas({
         data-density={dense && !editing && mode === "wide" ? "compact" : "standard"}
       >
         <ChartCursorProvider key={dashboard.id}>
-        {mounted && (
+        {mounted && (stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout
             width={width}
             layout={layout}
@@ -428,37 +463,9 @@ export function DashboardCanvas({
               if (draggable) onLayout(next);
             }}
           >
-            {orderedWidgets.map((widget) => (
-              <div key={widget.id}>
-                <Tile
-                  key={`${dashboard.id}:${widget.id}`}
-                  widget={widget}
-                  active={active}
-                  provider={providers.find(
-                    (provider) =>
-                      provider.id ===
-                      (widget.queryRef
-                        ? library.queries.find(
-                            (entry) => entry.id === widget.queryRef!.id,
-                          )?.providerId
-                        : widget.providerId),
-                  )}
-                  fetcher={fetcher}
-                  start={range.start}
-                  end={range.end}
-                  editing={editing}
-                  draggable={draggable}
-                  selected={selected === widget.id}
-                  onSelect={onSelect}
-                  onDrilldown={onDrilldown}
-                  onSelection={onSelection}
-                  onQueryFields={onQueryFields}
-                  onTimeRange={onTimeRange}
-                />
-              </div>
-            ))}
+            {tiles}
           </ReactGridLayout>
-        )}
+        ))}
         </ChartCursorProvider>
       </div>
     </TooltipQueryProvider>

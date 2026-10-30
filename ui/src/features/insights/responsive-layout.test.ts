@@ -1,9 +1,52 @@
 import { describe, expect, it } from "vitest"
-import { canvasLayout, canvasMode, denseCanvasLayout } from "./responsive-layout"
+import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat } from "./responsive-layout"
 import { exampleDashboard } from "./example"
 import type { Widget } from "./schema"
 
 describe("responsive canvas projection", () => {
+  it("starts balanced metric groups after an occupied plugin half-row", () => {
+    const base = exampleDashboard.widgets[0]
+    const widgets: Widget[] = [{ ...base, id: "plugin", type: "plugin", layout: { x: 0, y: 0, w: 4, h: 2 } },
+      ...Array.from({ length: 3 }, (_, i) => ({ ...base, id: `stat-${i}`, layout: { x: i * 4, y: 2, w: 4, h: 2 } }))]
+    const before = JSON.stringify(widgets)
+    expect(canvasLayout(widgets, "compact", 840).slice(1).map(item => [item.x, item.y, item.w])).toEqual([[0, 4, 4], [4, 4, 4], [8, 4, 4]])
+    expect(JSON.stringify(widgets)).toBe(before)
+  })
+  it("only gives ordinary short stats intrinsic mobile reading height", () => {
+    const base = exampleDashboard.widgets[0]
+    expect(intrinsicStat(base)).toBe(true)
+    for (const widget of [
+      { ...base, description: "Context" },
+      { ...base, layout: { ...base.layout, h: 3 } },
+      { ...base, options: { showSparkline: true } },
+      { ...base, options: { showStatBar: true } },
+      { ...base, type: "timeseries" as const },
+    ]) expect(intrinsicStat(widget)).toBe(false)
+  })
+
+  it("balances metric groups at the measured three-column threshold without editing documents", () => {
+    const base = exampleDashboard.widgets[0]
+    for (const count of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const widgets = Array.from({ length: count }, (_, i) => ({ ...base, id: `metric-${i}`, layout: { x: i % 3 * 4, y: Math.floor(i / 3) * 2, w: 4, h: 2 } }))
+      const original = JSON.stringify(widgets)
+      for (const width of [839, 840, 841]) {
+        const layout = canvasLayout(widgets, "compact", width)
+        expect(layout.every(item => item.x >= 0 && item.x + item.w <= 12)).toBe(true)
+        if (width < 840) expect(layout.every(item => item.w === 6)).toBe(true)
+        else if (count > 1) {
+          for (const y of new Set(layout.map(item => item.y))) expect(layout.filter(item => item.y === y).length).toBeGreaterThan(1)
+        }
+        for (const [i, a] of layout.entries()) for (const b of layout.slice(i + 1))
+          expect(a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y).toBe(false)
+      }
+      expect(JSON.stringify(widgets)).toBe(original)
+      expect(canvasLayout(widgets, "stacked", 390).every(item => item.w === 12)).toBe(true)
+    }
+    const layout = canvasLayout(exampleDashboard.widgets, "compact", 840)
+    expect(layout.slice(0, 3).map(item => [item.x, item.y, item.w])).toEqual([[0, 0, 4], [4, 0, 4], [8, 0, 4]])
+    expect(layout.find(item => item.i === "traffic")).toMatchObject({ x: 0, y: 2, w: 12 })
+  })
+
   it("leaves room for sparkline rows and horizontal-scroll guidance in narrow record tables", () => {
     const widget: Widget = { ...exampleDashboard.widgets[3], id: "risk-table", type: "plugin", pluginId: "record-table", dataKind: "records", config: { cellStyles: [{ column: "trend", display: "sparkline" }] }, layout: { x: 0, y: 0, w: 4, h: 4 } }
     const before = JSON.stringify(widget)

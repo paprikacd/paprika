@@ -436,3 +436,13 @@
     min-height: 44px;
   }
 }
+
+/* Short editor labels stay in one evenly spaced row rather than an orphan
+   fifth tab. Longer tab sets retain the wrapping default. */
+.sample-tabs [role="tablist"][aria-label="Widget settings"] {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.sample-tabs [role="tablist"][aria-label="Widget settings"] [role="tab"] {
+  padding-inline: 3px;
+}

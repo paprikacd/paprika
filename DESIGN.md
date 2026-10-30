@@ -43,7 +43,7 @@ Use the host's existing sans font through Gamma's UI token. Reserve monospace fo
 
 ## Layout
 
-The saved dashboard uses twelve columns. `responsive-layout.ts` projects the actual available canvas width: twelve columns from 960px, two compact stat columns from 600px, and a single column below 600px. This projection never overwrites saved placement. The widget inspector provides a non-drag layout alternative at every width. Tables scroll within their widget; an open inspector remains reachable through natural document scrolling on small screens. Widget size, loading and error states reserve useful geometry.
+The saved dashboard uses twelve columns. `responsive-layout.ts` projects the actual available canvas width: twelve columns from 960px, balanced three-column stat groups from 840px, two compact stat columns from 600px, and a single column below 600px. This projection never overwrites saved placement. The widget inspector provides a non-drag layout alternative at every width. Tables scroll within their widget; an open inspector remains reachable through natural document scrolling on small screens. Widget size, loading and error states reserve useful geometry.
 
 ## Elevation & Depth
 

@@ -37,6 +37,7 @@ export interface WidgetVisualizationProps {
   widget: Widget;
   result?: QueryResult;
   loading?: boolean;
+  naturalHeight?: boolean;
   deferred?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -105,6 +106,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   widget,
   result,
   loading,
+  naturalHeight = false,
   deferred,
   error,
   onRetry,
@@ -161,7 +163,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
     return <EmptyState partial={!!(result?.truncated || result?.records?.truncated)} />;
   return (
     <div
-      className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
+      className={`${styles.visualization} ${naturalHeight ? styles.intrinsicStat : ""} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
       style={
         {
           background: widget.options?.background,

@@ -1350,3 +1350,10 @@
   .tile[data-stat-icon="true"] .visualization { padding-left: 7px; }
   .tile[data-stat-icon="true"][data-widget-sparkline="true"] .visualization { padding-left: 0; --stat-reading-inset: 7px; }
 }
+
+/* Phone viewing uses document flow, so plain statistics expand for extra
+   series/freshness notices instead of clipping them into saved grid tracks. */
+.stackedView { display: grid; gap: 16px; }
+.stackedView .tile[data-intrinsic-stat="true"] { height: auto; min-height: 94px; }
+.stackedView .tile[data-intrinsic-stat="true"] .tileHeader { padding-top: 9px; min-height: 27px; }
+.stackedView .tile[data-intrinsic-stat="true"] .visualization { flex: none; padding-block: 0 8px; }
