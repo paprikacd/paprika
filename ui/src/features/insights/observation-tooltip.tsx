@@ -272,6 +272,11 @@ export function ObservationTooltip({
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || !position) return;
+    // React does not rewrite an unchanged coordinate after our previous
+    // imperative correction. Measure from the requested coordinates on both
+    // axes, not from a mix of requested and already-corrected local positions.
+    element.style.left = `${position.left}px`;
+    element.style.top = `${position.top}px`;
     const actual = element.getBoundingClientRect();
     const corrected = correctPortalPosition(position, actual, { width: element.offsetWidth, height: element.offsetHeight });
     element.style.left = `${corrected.left}px`;

@@ -120,7 +120,7 @@ async function inspectMetric(id) {
   await until(async () => await details.locator("time").getAttribute("datetime") !== firstTime, "Pointer traversal must update the actual inspected observation")
   const observed = { timestamp: await details.locator("time").getAttribute("datetime"), value: await details.locator("[data-metric-value]").getAttribute("data-metric-value") }
   const inspection = await details.boundingBox(), viewport = page.viewportSize()
-  assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1 && inspection.y >= 0 && inspection.y + inspection.height <= viewport.height + 1, "Metric inspection must fit the viewport")
+  assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1 && inspection.y >= 0 && inspection.y + inspection.height <= viewport.height + 1, `Metric inspection must fit the viewport: ${JSON.stringify({inspection,viewport,observed,placement:await details.getAttribute("data-placement"),scroll:await page.evaluate(()=>({x:scrollX,y:scrollY}))})}`)
   const overlapping = await details.getAttribute("data-tooltip-overlap") === "true"
   const coveringNeighbor = await details.getAttribute("data-tooltip-overlaps-other-widget") === "true"
   if (!overlapping) {
