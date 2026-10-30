@@ -291,3 +291,18 @@ func TestSearchReportsBoundedResults(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryTargetPreservesDirectTracePriorityAndSecondBounds(t *testing.T) {
+	req := connector.QueryRequest{TraceID: "abc/def", Query: "{}", Limit: 2, Range: connector.TimeRange{Start: time.Unix(100, 999), End: time.Unix(200, 999)}}
+	path, params, limit, reason := queryTarget(&req)
+	require.Equal(t, pathTraceByID+"/abc%2Fdef", path)
+	require.Nil(t, params)
+	require.Zero(t, limit)
+	require.Empty(t, reason)
+	req.TraceID = ""
+	path, params, limit, reason = queryTarget(&req)
+	require.Equal(t, pathSearch, path)
+	require.Equal(t, url.Values{"q": {"{}"}, "limit": {"3"}, "start": {"100"}, "end": {"200"}}, params)
+	require.Equal(t, 2, limit)
+	require.Empty(t, reason)
+}

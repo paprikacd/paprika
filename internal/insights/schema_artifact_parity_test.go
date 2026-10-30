@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
+
+	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
 )
 
 // Validate the embedded artifacts themselves, including constraints that the
@@ -25,9 +26,10 @@ func TestPublishedWidgetLayoutAndAnnotationSchema(t *testing.T) {
 			require.NoError(t, compiler.AddResource(url, raw))
 			schema, err := compiler.Compile(url)
 			require.NoError(t, err)
+			layout := map[string]any{"x": 0, "y": 0, "w": 4, "h": 1}
 			widget := map[string]any{
 				"id": "sample", "title": "Sample", "type": "stat", "providerId": "prom", "query": "up", "unit": "",
-				"layout": map[string]any{"x": 0, "y": 0, "w": 4, "h": 1},
+				"layout": layout,
 			}
 			doc := func() any {
 				if kind == "widget" {
@@ -36,10 +38,11 @@ func TestPublishedWidgetLayoutAndAnnotationSchema(t *testing.T) {
 				return map[string]any{"schemaVersion": 1, "id": "example", "title": "Example", "timeRange": "1h", "refreshInterval": 0, "widgets": []any{widget}}
 			}
 			require.NoError(t, schema.Validate(doc()), "stat widgets may use one row")
-			widget["options"] = map[string]any{"showStatBar": true}
+			options := map[string]any{"showStatBar": true}
+			widget["options"] = options
 			require.Error(t, schema.Validate(doc()), "stat bar must require both bounds")
-			widget["options"].(map[string]any)["min"] = 0
-			widget["options"].(map[string]any)["max"] = 100
+			options["min"] = 0
+			options["max"] = 100
 			require.NoError(t, schema.Validate(doc()), "stat bar with an explicit scale must be published")
 			delete(widget, "options")
 			for _, visual := range []string{"timeseries", "bar", "table", "traces", "heatmap", "plugin"} {
@@ -49,14 +52,14 @@ func TestPublishedWidgetLayoutAndAnnotationSchema(t *testing.T) {
 					widget["dataKind"] = "metrics"
 				}
 				require.Error(t, schema.Validate(doc()), "%s must reject one row", visual)
-				widget["layout"].(map[string]any)["h"] = 2
+				layout["h"] = 2
 				require.NoError(t, schema.Validate(doc()), "%s must accept two rows", visual)
-				widget["layout"].(map[string]any)["h"] = 1
+				layout["h"] = 1
 				delete(widget, "pluginId")
 				delete(widget, "dataKind")
 			}
 			widget["type"] = "timeseries"
-			widget["layout"].(map[string]any)["h"] = 2
+			layout["h"] = 2
 			annotation := map[string]any{"queryRef": map[string]any{"id": "events"}, "timestampColumn": "start", "endColumn": "end", "labelColumn": "event"}
 			widget["annotationSource"] = annotation
 			require.NoError(t, schema.Validate(doc()), "an interval end column must be published")

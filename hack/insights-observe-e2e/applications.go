@@ -47,6 +47,10 @@ func applicationFixtureObjects(endpoint, providerFile string, providerStdin bool
 		}
 		providers = append(providers, extra...)
 	}
+	return applicationProviderObjects(providers)
+}
+
+func applicationProviderObjects(providers []applicationProviderFixture) ([]client.Object, error) {
 	objects := make([]client.Object, 0, len(providers)*2)
 	for _, provider := range providers {
 		if provider.Name == "" || provider.Type == "" {

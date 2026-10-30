@@ -72,26 +72,8 @@ func validateDashboardTimeRange(raw json.RawMessage) error {
 
 func validateWidgetExtensions(widget map[string]json.RawMessage) error {
 	if raw, ok := widget["annotationSource"]; ok {
-		var widgetType, pluginID string
-		_ = json.Unmarshal(widget["type"], &widgetType)
-		_ = json.Unmarshal(widget["pluginId"], &pluginID)
-		if widgetType != "timeseries" && (widgetType != "plugin" || (pluginID != "stacked-timeseries" && pluginID != "directional-traffic")) {
-			return errors.New("event queries require a time-series or directional-traffic widget")
-		}
-		fields, err := requireObjectShape(raw, []string{"queryRef", "timestampColumn", "labelColumn"}, []string{"severityColumn", "endColumn"})
-		if err != nil {
+		if err := validateWidgetAnnotationSource(widget, raw); err != nil {
 			return err
-		}
-		if err := validateQueryReference(fields["queryRef"], false); err != nil {
-			return err
-		}
-		for _, name := range []string{"timestampColumn", "labelColumn", "severityColumn", "endColumn"} {
-			if value, exists := fields[name]; exists {
-				var column string
-				if json.Unmarshal(value, &column) != nil || trimJS(column) == "" || trimJS(column) != column || stringUnits(column) > 128 {
-					return errors.New("event query column names must contain 1–128 characters")
-				}
-			}
 		}
 	}
 	if ref, ok := widget["queryRef"]; ok {
@@ -99,22 +81,65 @@ func validateWidgetExtensions(widget map[string]json.RawMessage) error {
 			return err
 		}
 	}
-	if raw, ok := widget["drilldowns"]; ok {
-		if err := validateDrilldowns(raw); err != nil {
-			return err
-		}
-	}
-	if raw, ok := widget["selectionBindings"]; ok {
-		if err := validateDrilldownBindings(raw); err != nil {
-			return err
-		}
-	}
-	if options, ok := widget["options"]; ok {
-		if err := validateWidgetOptions(options); err != nil {
-			return err
+	for _, check := range []struct {
+		field    string
+		validate func(json.RawMessage) error
+	}{
+		{"drilldowns", validateDrilldowns}, {"selectionBindings", validateDrilldownBindings}, {"options", validateWidgetOptions},
+	} {
+		if raw, ok := widget[check.field]; ok {
+			if err := check.validate(raw); err != nil {
+				return err
+			}
 		}
 	}
 	return validateWidgetPluginFields(widget)
+}
+
+func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
+	var kind string
+	if err := json.Unmarshal(widget["type"], &kind); err != nil {
+		return false
+	}
+	if kind == "timeseries" {
+		return true
+	}
+	if kind != "plugin" {
+		return false
+	}
+	var pluginID string
+	if err := json.Unmarshal(widget["pluginId"], &pluginID); err != nil {
+		return false
+	}
+	return pluginID == "stacked-timeseries" || pluginID == "directional-traffic"
+}
+
+func validateWidgetAnnotationSource(widget map[string]json.RawMessage, raw json.RawMessage) error {
+	if !supportsWidgetAnnotationSource(widget) {
+		return errors.New("event queries require a time-series or directional-traffic widget")
+	}
+	fields, err := requireObjectShape(raw, []string{"queryRef", "timestampColumn", "labelColumn"}, []string{"severityColumn", "endColumn"})
+	if err != nil {
+		return err
+	}
+	if err := validateQueryReference(fields["queryRef"], false); err != nil {
+		return err
+	}
+	return validateWidgetAnnotationColumns(fields)
+}
+
+func validateWidgetAnnotationColumns(fields map[string]json.RawMessage) error {
+	for _, name := range []string{"timestampColumn", "labelColumn", "severityColumn", "endColumn"} {
+		value, exists := fields[name]
+		if !exists {
+			continue
+		}
+		var column string
+		if json.Unmarshal(value, &column) != nil || trimJS(column) == "" || trimJS(column) != column || stringUnits(column) > 128 {
+			return errors.New("event query column names must contain 1–128 characters")
+		}
+	}
+	return nil
 }
 
 func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
@@ -379,30 +404,29 @@ func validateWidgetAppearance(options map[string]json.RawMessage) error {
 	if err := validateWidgetColors(options); err != nil {
 		return err
 	}
-	if value, ok := options["display"]; ok {
-		var display string
-		if json.Unmarshal(value, &display) != nil || !slices.Contains([]string{"line", "area"}, display) {
-			return errors.New("display must be line or area")
-		}
+	if err := validateWidgetEnum(options, "display", []string{"line", "area"}, "display must be line or area"); err != nil {
+		return err
 	}
 	for field, allowed := range map[string][]string{
 		"sparklinePlacement": {"background", "side"},
 		"statIcon":           {"arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"},
 	} {
-		if value, ok := options[field]; ok {
-			var selected string
-			if json.Unmarshal(value, &selected) != nil || !slices.Contains(allowed, selected) {
-				return fmt.Errorf("invalid %s", field)
-			}
+		if err := validateWidgetEnum(options, field, allowed, "invalid "+field); err != nil {
+			return err
 		}
 	}
-	if value, ok := options["curve"]; ok {
-		var curve string
-		if json.Unmarshal(value, &curve) != nil || !slices.Contains([]string{"linear", "step", "monotone"}, curve) {
-			return errors.New("curve must be linear, step, or monotone")
-		}
-	}
+	return validateWidgetEnum(options, "curve", []string{"linear", "step", "monotone"}, "curve must be linear, step, or monotone")
+}
 
+func validateWidgetEnum(options map[string]json.RawMessage, field string, allowed []string, message string) error {
+	value, ok := options[field]
+	if !ok {
+		return nil
+	}
+	var selected string
+	if json.Unmarshal(value, &selected) != nil || !slices.Contains(allowed, selected) {
+		return errors.New(message)
+	}
 	return nil
 }
 
@@ -419,31 +443,51 @@ func validateWidgetColors(options map[string]json.RawMessage) error {
 }
 
 func validateWidgetNumbers(options map[string]json.RawMessage) error {
-	numbers := map[string]float64{}
-	for _, field := range []string{"decimals", "tooltipDecimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity"} {
-		if value, ok := options[field]; ok {
-			var n float64
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &n) != nil || !finite(n) {
-				return errors.New("widget numeric settings must be finite")
-			}
-			numbers[field] = n
-		}
+	numbers, err := parseWidgetNumbers(options)
+	if err != nil {
+		return err
 	}
-	if raw, ok := options["showStatBar"]; ok {
-		var enabled bool
-		if json.Unmarshal(raw, &enabled) != nil {
-			return errors.New("stat bar setting must be boolean")
-		}
-		if enabled {
-			if _, ok := numbers["min"]; !ok {
-				return errors.New("stat bar requires an explicit minimum")
-			}
-			if _, ok := numbers["max"]; !ok {
-				return errors.New("stat bar requires an explicit maximum")
-			}
-		}
+	if err := validateWidgetStatBarBounds(options, numbers); err != nil {
+		return err
 	}
 	return validateWidgetNumberBounds(numbers)
+}
+
+func parseWidgetNumbers(options map[string]json.RawMessage) (map[string]float64, error) {
+	numbers := map[string]float64{}
+	for _, field := range []string{"decimals", "tooltipDecimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity"} {
+		value, ok := options[field]
+		if !ok {
+			continue
+		}
+		var n float64
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &n) != nil || !finite(n) {
+			return nil, errors.New("widget numeric settings must be finite")
+		}
+		numbers[field] = n
+	}
+	return numbers, nil
+}
+
+func validateWidgetStatBarBounds(options map[string]json.RawMessage, numbers map[string]float64) error {
+	raw, ok := options["showStatBar"]
+	if !ok {
+		return nil
+	}
+	var enabled bool
+	if json.Unmarshal(raw, &enabled) != nil {
+		return errors.New("stat bar setting must be boolean")
+	}
+	if !enabled {
+		return nil
+	}
+	if _, ok := numbers["min"]; !ok {
+		return errors.New("stat bar requires an explicit minimum")
+	}
+	if _, ok := numbers["max"]; !ok {
+		return errors.New("stat bar requires an explicit maximum")
+	}
+	return nil
 }
 
 func validateWidgetSeriesColors(options map[string]json.RawMessage) error {
@@ -457,24 +501,31 @@ func validateWidgetSeriesColors(options map[string]json.RawMessage) error {
 	}
 	seen := make(map[[2]string]bool, len(rules))
 	for _, entry := range rules {
-		if _, err := requireObjectShape(entry, []string{"label", "value", "color"}, nil); err != nil {
+		key, err := validateWidgetSeriesColorRule(entry)
+		if err != nil {
 			return err
 		}
-		var rule struct {
-			Label string `json:"label"`
-			Value string `json:"value"`
-			Color string `json:"color"`
-		}
-		if json.Unmarshal(entry, &rule) != nil || !validPromLabel.MatchString(rule.Label) || len(rule.Label) > 100 || stringUnits(rule.Value) < 1 || stringUnits(rule.Value) > 256 || !validWidgetColor.MatchString(rule.Color) {
-			return errors.New("series colors require a valid metric label, nonempty value, and six-digit hex color")
-		}
-		key := [2]string{rule.Label, rule.Value}
 		if seen[key] {
 			return errors.New("duplicate series color label and value")
 		}
 		seen[key] = true
 	}
 	return nil
+}
+
+func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
+	if _, err := requireObjectShape(entry, []string{"label", "value", "color"}, nil); err != nil {
+		return [2]string{}, err
+	}
+	var rule struct {
+		Label string `json:"label"`
+		Value string `json:"value"`
+		Color string `json:"color"`
+	}
+	if json.Unmarshal(entry, &rule) != nil || !validPromLabel.MatchString(rule.Label) || len(rule.Label) > 100 || stringUnits(rule.Value) < 1 || stringUnits(rule.Value) > 256 || !validWidgetColor.MatchString(rule.Color) {
+		return [2]string{}, errors.New("series colors require a valid metric label, nonempty value, and six-digit hex color")
+	}
+	return [2]string{rule.Label, rule.Value}, nil
 }
 
 func validateWidgetThresholds(options map[string]json.RawMessage) error {

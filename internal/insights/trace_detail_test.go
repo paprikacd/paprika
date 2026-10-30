@@ -184,7 +184,7 @@ func TestTraceDetailUsesDelegatedProviderAuthorization(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	p := &providerClient{public: Provider{Type: "tempo", Capabilities: []string{"traces"}}}
-	if _, started, err := s.runProviderQuery(ctx, p, Query{}); err == nil || started {
+	if _, started, err := s.runProviderQuery(ctx, p, &Query{}); err == nil || started {
 		t.Fatal("canceled query began provider I/O")
 	}
 }

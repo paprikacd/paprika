@@ -73,3 +73,58 @@ func TestWidgetNumberBoundsPreservesValidationOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestWidgetOptionRefactorsPreserveValidationOrder(t *testing.T) {
+	cases := []struct{ name, raw, want string }{
+		{"valid presentation", `{"display":"area","sparklinePlacement":"side","statIcon":"activity","curve":"step","showStatBar":true,"min":0,"max":100,"tooltipDecimals":3}`, ""},
+		{"color before display", `{"background":"red","display":"bad"}`, "widget colors must be six-digit hex colors"},
+		{"display before icon", `{"display":"bad","statIcon":"bad"}`, "display must be line or area"},
+		{"icon before curve", `{"statIcon":"bad","curve":"bad"}`, "invalid statIcon"},
+		{"placement", `{"sparklinePlacement":"bad"}`, "invalid sparklinePlacement"},
+		{"curve type", `{"curve":42}`, "curve must be linear, step, or monotone"},
+		{"numeric type before absent bar bounds", `{"tooltipDecimals":"invalid","showStatBar":true}`, "widget numeric settings must be finite"},
+		{"bar minimum before precision", `{"tooltipDecimals":9,"showStatBar":true}`, "stat bar requires an explicit minimum"},
+		{"bar maximum before precision", `{"tooltipDecimals":9,"showStatBar":true,"min":0}`, "stat bar requires an explicit maximum"},
+		{"disabled bar", `{"showStatBar":false}`, ""},
+		{"valid rule", `{"seriesColors":[{"label":"service","value":"checkout","color":"#112233"}]}`, ""},
+		{"duplicate rule", `{"seriesColors":[{"label":"service","value":"checkout","color":"#112233"},{"label":"service","value":"checkout","color":"#445566"}]}`, "duplicate series color label and value"},
+		{"malformed duplicate before duplicate detection", `{"seriesColors":[{"label":"service","value":"checkout","color":"#112233"},{"label":"service","value":"checkout","color":"red"}]}`, "series colors require a valid metric label, nonempty value, and six-digit hex color"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateWidgetOptions(json.RawMessage(tc.raw))
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWidgetAnnotationRefactorPreservesValidationOrder(t *testing.T) {
+	cases := []struct{ name, raw, want string }{
+		{"invalid type before malformed annotation", `{"type":false,"annotationSource":null}`, "event queries require a time-series or directional-traffic widget"},
+		{"invalid plugin before malformed annotation", `{"type":"plugin","pluginId":3,"annotationSource":null}`, "event queries require a time-series or directional-traffic widget"},
+		{"column before widget query reference", `{"type":"timeseries","queryRef":null,"annotationSource":{"queryRef":{"id":"events"},"timestampColumn":" date ","labelColumn":"label"}}`, "event query column names must contain 1–128 characters"},
+		{"valid optional columns", `{"type":"timeseries","annotationSource":{"queryRef":{"id":"events"},"timestampColumn":"date","labelColumn":"label","endColumn":"end","severityColumn":"severity"}}`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var widget map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(tc.raw), &widget); err != nil {
+				t.Fatal(err)
+			}
+			err := validateWidgetExtensions(widget)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

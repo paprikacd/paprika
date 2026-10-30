@@ -46,27 +46,40 @@ func parseQuery(source string) (queryDocument, error) {
 
 func validateParameters(parameters []any) error {
 	for index, parameter := range parameters {
-		switch value := parameter.(type) {
-		case nil, bool:
-		case string:
-			if len(value) > dataframe.MaxCellBytes || strings.ContainsRune(value, 0) {
-				return errors.New("SQL parameter exceeds its text limit")
-			}
-		case json.Number:
-			// Let PostgreSQL's declared/inferred parameter type parse the exact
-			// decimal text rather than rounding it through a float64.
-			parameters[index] = value.String()
-		case map[string]any:
-			reference, ok := value["range"].(string)
-			if len(value) != 1 || !ok || (reference != "start" && reference != "end") {
-				return errors.New("SQL range parameters must be exactly {\"range\":\"start\"} or {\"range\":\"end\"}")
-			}
-			parameters[index] = rangeParameter(reference)
-		default:
-			return errors.New("SQL parameters must be scalar values, null or a range reference")
+		value, err := normalizeParameter(parameter)
+		if err != nil {
+			return err
 		}
+		parameters[index] = value
 	}
 	return nil
+}
+
+func normalizeParameter(parameter any) (any, error) {
+	switch value := parameter.(type) {
+	case nil, bool:
+		return value, nil
+	case string:
+		if len(value) > dataframe.MaxCellBytes || strings.ContainsRune(value, 0) {
+			return nil, errors.New("SQL parameter exceeds its text limit")
+		}
+		return value, nil
+	case json.Number:
+		// Preserve exact decimal text for PostgreSQL's parameter type parser.
+		return value.String(), nil
+	case map[string]any:
+		return normalizeRangeParameter(value)
+	default:
+		return nil, errors.New("SQL parameters must be scalar values, null or a range reference")
+	}
+}
+
+func normalizeRangeParameter(value map[string]any) (any, error) {
+	reference, ok := value["range"].(string)
+	if len(value) != 1 || !ok || (reference != "start" && reference != "end") {
+		return nil, errors.New("SQL range parameters must be exactly {\"range\":\"start\"} or {\"range\":\"end\"}")
+	}
+	return rangeParameter(reference), nil
 }
 
 // This lexer bounds the supported shape; PostgreSQL's READ ONLY transaction and

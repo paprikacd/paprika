@@ -164,17 +164,7 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 	seenQueries := make(map[Query]string)
 	for i := range selected {
 		widget := &selected[i]
-		output := DashboardQueryWidget{ID: widget.ID, Title: widget.Title, Type: widget.Type, Unit: widget.Unit, Decimals: widget.Options.Decimals}
-		if widget.Type == "plugin" {
-			output.PluginID, output.DataKind = widget.PluginID, widget.DataKind
-		}
-		if widget.Type == "stat" && widget.Options.StaleAfterSeconds != nil {
-			output.Freshness = &DashboardObservationFreshness{ThresholdSeconds: int(*widget.Options.StaleAfterSeconds), State: "unknown"}
-		}
-		if widget.Type == "stat" && len(widget.Options.Thresholds) > 0 {
-			output.Threshold = &DashboardStatThreshold{State: "unknown"}
-			output.thresholds = widget.Options.Thresholds
-		}
+		output := dashboardQueryWidgetOutput(widget)
 		if widget.QueryRef != nil && !seenSaved[widget.QueryRef.ID] {
 			if snapshot, found := saved[widget.QueryRef.ID]; found {
 				result.SavedQueries = append(result.SavedQueries, DashboardQueryDocument{ID: widget.QueryRef.ID, ETag: snapshot.ETag})
@@ -187,7 +177,7 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 		query, resolutionError := resolveDashboardWidget(widget, saved, result.Variables, definitions)
 		query.Start, query.End, query.Step = start, end, result.Range.StepSeconds
 		if resolutionError == nil {
-			resolutionError = validatePlannedDashboardQuery(widget, query, saved, validators)
+			resolutionError = validatePlannedDashboardQuery(widget, &query, saved, validators)
 		}
 
 		if resolutionError != nil {
@@ -201,40 +191,61 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 			seenQueries[query] = output.SignalID
 			queries = append(queries, query)
 		}
-		if source := widget.AnnotationSource; source != nil {
-			output.AnnotationSavedQueryID = source.QueryRef.ID
-			output.AnnotationColumns = &dashboardReadAnnotationColumns{Timestamp: source.TimestampColumn, End: source.EndColumn, Label: source.LabelColumn, Severity: source.SeverityColumn}
-			if !seenSaved[source.QueryRef.ID] {
-				if snapshot, found := saved[source.QueryRef.ID]; found {
-					result.SavedQueries = append(result.SavedQueries, DashboardQueryDocument{ID: source.QueryRef.ID, ETag: snapshot.ETag})
-					seenSaved[source.QueryRef.ID] = true
-				}
-			}
-			eventWidget := &dashboardReadWidget{Type: "plugin", DataKind: "records", QueryRef: &source.QueryRef}
-			eventQuery, eventError := resolveDashboardWidget(eventWidget, saved, result.Variables, definitions)
-			eventQuery.Start, eventQuery.End, eventQuery.Step = start, end, result.Range.StepSeconds
-			if eventError == nil {
-				eventError = validatePlannedDashboardQuery(eventWidget, eventQuery, saved, validators)
-			}
-			if eventError != nil {
-				output.AnnotationError = eventError
-				result.State = "partial"
-			} else if signalID, found := seenQueries[eventQuery]; found {
-				output.AnnotationSignalID = signalID
-				result.QueryCount.Deduplicated++
-			} else {
-				output.AnnotationSignalID = fmt.Sprintf("q%d", len(queries)+1)
-				seenQueries[eventQuery] = output.AnnotationSignalID
-				queries = append(queries, eventQuery)
-			}
-		}
+		planDashboardAnnotation(widget, &output, result, saved, seenSaved, seenQueries, &queries, definitions, start, end, validators)
 		result.Widgets = append(result.Widgets, output)
 	}
 	result.QueryCount.Planned = len(queries)
 	return queries
 }
 
-func validatePlannedDashboardQuery(widget *dashboardReadWidget, query Query, saved map[string]dashboardSavedSnapshot, validators []func(string, string) *DashboardQueryError) *DashboardQueryError {
+func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidget {
+	output := DashboardQueryWidget{ID: widget.ID, Title: widget.Title, Type: widget.Type, Unit: widget.Unit, Decimals: widget.Options.Decimals}
+	if widget.Type == "plugin" {
+		output.PluginID, output.DataKind = widget.PluginID, widget.DataKind
+	}
+	if widget.Type == "stat" && widget.Options.StaleAfterSeconds != nil {
+		output.Freshness = &DashboardObservationFreshness{ThresholdSeconds: int(*widget.Options.StaleAfterSeconds), State: "unknown"}
+	}
+	if widget.Type == "stat" && len(widget.Options.Thresholds) > 0 {
+		output.Threshold = &DashboardStatThreshold{State: "unknown"}
+		output.thresholds = widget.Options.Thresholds
+	}
+	return output
+}
+
+func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, validators []func(string, string) *DashboardQueryError) {
+	source := widget.AnnotationSource
+	if source == nil {
+		return
+	}
+	output.AnnotationSavedQueryID = source.QueryRef.ID
+	output.AnnotationColumns = &dashboardReadAnnotationColumns{Timestamp: source.TimestampColumn, End: source.EndColumn, Label: source.LabelColumn, Severity: source.SeverityColumn}
+	if !seenSaved[source.QueryRef.ID] {
+		if snapshot, found := saved[source.QueryRef.ID]; found {
+			result.SavedQueries = append(result.SavedQueries, DashboardQueryDocument{ID: source.QueryRef.ID, ETag: snapshot.ETag})
+			seenSaved[source.QueryRef.ID] = true
+		}
+	}
+	eventWidget := &dashboardReadWidget{Type: "plugin", DataKind: "records", QueryRef: &source.QueryRef}
+	eventQuery, eventError := resolveDashboardWidget(eventWidget, saved, result.Variables, definitions)
+	eventQuery.Start, eventQuery.End, eventQuery.Step = start, end, result.Range.StepSeconds
+	if eventError == nil {
+		eventError = validatePlannedDashboardQuery(eventWidget, &eventQuery, saved, validators)
+	}
+	if eventError != nil {
+		output.AnnotationError = eventError
+		result.State = "partial"
+	} else if signalID, found := seenQueries[eventQuery]; found {
+		output.AnnotationSignalID = signalID
+		result.QueryCount.Deduplicated++
+	} else {
+		output.AnnotationSignalID = fmt.Sprintf("q%d", len(*queries)+1)
+		seenQueries[eventQuery] = output.AnnotationSignalID
+		*queries = append(*queries, eventQuery)
+	}
+}
+
+func validatePlannedDashboardQuery(widget *dashboardReadWidget, query *Query, saved map[string]dashboardSavedSnapshot, validators []func(string, string) *DashboardQueryError) *DashboardQueryError {
 	if len(validators) > 0 {
 		template := widget.Query
 		if widget.QueryRef != nil {
@@ -443,7 +454,7 @@ func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardRe
 	start, end = start.UTC().Truncate(time.Millisecond), end.UTC().Truncate(time.Millisecond)
 	startSeconds, endSeconds := float64(start.UnixMilli())/1000, float64(end.UnixMilli())/1000
 	step := math.Max(1, math.Ceil((endSeconds-startSeconds)/300))
-	if err != nil || validateQueryRange(Query{Kind: "metrics", Start: startSeconds, End: endSeconds, Step: step}) != nil {
+	if err != nil || validateQueryRange(&Query{Kind: "metrics", Start: startSeconds, End: endSeconds, Step: step}) != nil {
 		return DashboardQueryRange{}, 0, 0, errors.New("time range must use RFC3339 timestamps after the Unix epoch, increasing by at most 31 days")
 	}
 	return DashboardQueryRange{Start: start.Format(time.RFC3339Nano), End: end.Format(time.RFC3339Nano), StepSeconds: step}, startSeconds, endSeconds, nil
@@ -454,7 +465,8 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 	if len(caches) > 0 {
 		cache = caches[0]
 	}
-	for index, query := range queries {
+	for index := range queries {
+		query := &queries[index]
 		signal, executed, columns := s.executeDashboardQuery(r, query, options, cache)
 		signal.ID = fmt.Sprintf("q%d", index+1)
 		signal.Kind = query.Kind
@@ -466,47 +478,9 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 		}
 		for i := range result.Widgets {
 			widget := &result.Widgets[i]
-			if widget.SignalID == signal.ID && widget.Threshold != nil && signal.Error == nil && signal.PrimarySeries != nil {
-				for _, series := range signal.Series {
-					if series.Index == *signal.PrimarySeries && series.Last != nil && series.Last.Value != nil {
-						match := widget.thresholds[0]
-						for _, threshold := range widget.thresholds {
-							if threshold.Value > *series.Last.Value {
-								break
-							}
-							match = threshold
-						}
-						widget.Threshold = &DashboardStatThreshold{State: "matched", Boundary: &match.Value, Color: match.Color, Label: match.Label}
-						break
-					}
-				}
-			}
-			if widget.SignalID == signal.ID && widget.Freshness != nil && signal.Error == nil && signal.PrimarySeries != nil {
-				for _, series := range signal.Series {
-					if series.Index != *signal.PrimarySeries || series.Last == nil {
-						continue
-					}
-					timestamp := series.Last.Timestamp
-					age := math.Max(0, query.End-timestamp/1000)
-					widget.Freshness.LastTimestamp, widget.Freshness.AgeSeconds = &timestamp, &age
-					widget.Freshness.State = "fresh"
-					if age > float64(widget.Freshness.ThresholdSeconds) {
-						widget.Freshness.State = "stale"
-					}
-					break
-				}
-			}
-			if widget.AnnotationSignalID != signal.ID || widget.AnnotationColumns == nil {
-				continue
-			}
-			failure := signal.Error
-			if failure == nil {
-				failure = validateAnnotationColumns(columns, widget.AnnotationColumns)
-			}
-			if failure != nil {
-				widget.AnnotationError = failure
-				result.State = "partial"
-			}
+			applyDashboardThreshold(widget, &signal)
+			applyDashboardFreshness(widget, &signal, query.End)
+			applyDashboardAnnotation(widget, &signal, columns, result)
 		}
 		if executed {
 			result.QueryCount.Executed++
@@ -517,6 +491,72 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 			result.State = "ok"
 		}
 		result.Signals = append(result.Signals, signal)
+	}
+}
+
+func dashboardPrimaryObservation(signal *DashboardSignal, requireValue bool) *Point {
+	if signal.Error != nil || signal.PrimarySeries == nil {
+		return nil
+	}
+	for index := range signal.Series {
+		series := &signal.Series[index]
+		if series.Index != *signal.PrimarySeries || series.Last == nil {
+			continue
+		}
+		if requireValue && series.Last.Value == nil {
+			continue
+		}
+		return series.Last
+	}
+	return nil
+}
+
+func applyDashboardThreshold(widget *DashboardQueryWidget, signal *DashboardSignal) {
+	if widget.SignalID != signal.ID || widget.Threshold == nil {
+		return
+	}
+	last := dashboardPrimaryObservation(signal, true)
+	if last == nil {
+		return
+	}
+	match := widget.thresholds[0]
+	for _, threshold := range widget.thresholds {
+		if threshold.Value > *last.Value {
+			break
+		}
+		match = threshold
+	}
+	widget.Threshold = &DashboardStatThreshold{State: "matched", Boundary: &match.Value, Color: match.Color, Label: match.Label}
+}
+
+func applyDashboardFreshness(widget *DashboardQueryWidget, signal *DashboardSignal, end float64) {
+	if widget.SignalID != signal.ID || widget.Freshness == nil {
+		return
+	}
+	last := dashboardPrimaryObservation(signal, false)
+	if last == nil {
+		return
+	}
+	timestamp := last.Timestamp
+	age := math.Max(0, end-timestamp/1000)
+	widget.Freshness.LastTimestamp, widget.Freshness.AgeSeconds = &timestamp, &age
+	widget.Freshness.State = "fresh"
+	if age > float64(widget.Freshness.ThresholdSeconds) {
+		widget.Freshness.State = "stale"
+	}
+}
+
+func applyDashboardAnnotation(widget *DashboardQueryWidget, signal *DashboardSignal, columns []dataframe.Column, result *DashboardQueryResult) {
+	if widget.AnnotationSignalID != signal.ID || widget.AnnotationColumns == nil {
+		return
+	}
+	failure := signal.Error
+	if failure == nil {
+		failure = validateAnnotationColumns(columns, widget.AnnotationColumns)
+	}
+	if failure != nil {
+		widget.AnnotationError = failure
+		result.State = "partial"
 	}
 }
 
@@ -547,7 +587,7 @@ func (s *Server) dashboardQueryProvider(r *http.Request, id string, cache *dashb
 	return provider, err
 }
 
-func (s *Server) executeDashboardQuery(r *http.Request, query Query, options DashboardSummaryOptions, cache *dashboardQueryProviders) (DashboardSignal, bool, []dataframe.Column) {
+func (s *Server) executeDashboardQuery(r *http.Request, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders) (DashboardSignal, bool, []dataframe.Column) {
 	provider, err := s.dashboardQueryProvider(r, query.ProviderID, cache)
 	if err != nil {
 		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, false, nil
@@ -564,7 +604,7 @@ func (s *Server) executeDashboardQuery(r *http.Request, query Query, options Das
 	if raw.Records != nil {
 		columns = raw.Records.Columns
 	}
-	return summarizeDashboardResult(raw, options), executed, columns
+	return summarizeDashboardResult(&raw, options), executed, columns
 }
 
 func validateAnnotationColumns(columns []dataframe.Column, mapping *dashboardReadAnnotationColumns) *DashboardQueryError {
@@ -575,18 +615,12 @@ func validateAnnotationColumns(columns []dataframe.Column, mapping *dashboardRea
 		if required.name == "" {
 			continue
 		}
-		found := -1
-		for index, column := range columns {
-			if column.Key == required.name {
-				found = index
-				break
-			}
-		}
+		found := annotationColumnIndex(columns, required.name)
 		if found < 0 {
 			return &DashboardQueryError{Code: "invalid_annotation_columns", Message: "The event query does not return a configured column."}
 		}
 		kind := columns[found].Type
-		if kind != "string" && !(required.timestamp && (kind == "number" || kind == "timestamp")) {
+		if !validAnnotationColumnType(kind, required.timestamp) {
 			return &DashboardQueryError{Code: "invalid_annotation_columns", Message: "The event query returned an unsupported column type."}
 		}
 		if found >= 12 {
@@ -594,6 +628,19 @@ func validateAnnotationColumns(columns []dataframe.Column, mapping *dashboardRea
 		}
 	}
 	return nil
+}
+
+func annotationColumnIndex(columns []dataframe.Column, name string) int {
+	for index := range columns {
+		if columns[index].Key == name {
+			return index
+		}
+	}
+	return -1
+}
+
+func validAnnotationColumnType(kind string, timestamp bool) bool {
+	return kind == "string" || (timestamp && (kind == "number" || kind == "timestamp"))
 }
 
 func dashboardProviderError(err error) *DashboardQueryError {

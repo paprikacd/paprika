@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/dataframe"
 )
 
 const dashboardQueryWindow = `"start":"2026-10-26T00:00:00Z","end":"2026-10-26T01:00:00Z"`
@@ -246,6 +248,12 @@ func TestDashboardQueryStatThresholdsUseTheDisplayedLastValidValue(t *testing.T)
 	if result.QueryCount.Deduplicated != 3 || len(result.Signals) != 2 || result.Dashboard.ETag != etag {
 		t.Fatalf("query deduplication and revision: %+v", result)
 	}
+	assertDashboardThresholdBands(t, &result)
+	assertDashboardThresholdErrorAndPluginSemantics(t, &result)
+}
+
+func assertDashboardThresholdBands(t *testing.T, result *DashboardQueryResult) {
+	t.Helper()
 	if got := result.Widgets[0].Threshold; got == nil || got.State != "matched" || got.Boundary == nil || *got.Boundary != 0 || got.Color != "#ff0000" || got.Label != "High" {
 		t.Fatalf("exact boundary must match the UI's displayed zero: %+v", got)
 	}
@@ -255,6 +263,11 @@ func TestDashboardQueryStatThresholdsUseTheDisplayedLastValidValue(t *testing.T)
 	if got := result.Widgets[2].Threshold; got == nil || got.State != "unknown" || got.Boundary != nil || got.Color != "" {
 		t.Fatalf("empty data must not imply a threshold band: %+v", got)
 	}
+}
+
+func assertDashboardThresholdErrorAndPluginSemantics(t *testing.T, result *DashboardQueryResult) {
+	t.Helper()
+
 	if result.Widgets[3].Threshold != nil || !result.Signals[0].Series[0].TailMissing || !result.Signals[0].ProviderTruncated || result.Signals[0].State != "ok" {
 		t.Fatalf("unconfigured thresholds, missing latest sample or partial source disclosure: %+v", result)
 	}
@@ -553,5 +566,61 @@ func TestDashboardQueryResponseBudget(t *testing.T) {
 	writeDashboardQueryResult(w, &result)
 	if w.Code != 413 || w.Body.Len() > 1024 {
 		t.Fatalf("oversized response was not bounded: status=%d bytes=%d", w.Code, w.Body.Len())
+	}
+}
+
+func TestDashboardAnnotationColumnValidationPreservesPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, code string
+		index            int
+	}{
+		{"timestamp number", "number", "", 0},
+		{"timestamp native", "timestamp", "", 0},
+		{"timestamp string", "string", "", 0},
+		{"invalid before truncation", "boolean", "invalid_annotation_columns", 12},
+		{"valid but truncated", "timestamp", "annotation_columns_truncated", 12},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			columns := make([]dataframe.Column, tc.index+1)
+			columns[tc.index] = dataframe.Column{Key: "time", Type: tc.kind}
+			failure := validateAnnotationColumns(columns, &dashboardReadAnnotationColumns{Timestamp: "time"})
+			if tc.code == "" {
+				if failure != nil {
+					t.Fatalf("unexpected failure: %+v", failure)
+				}
+				return
+			}
+			if failure == nil || failure.Code != tc.code {
+				t.Fatalf("expected %s, got %+v", tc.code, failure)
+			}
+		})
+	}
+}
+
+func TestDashboardAnnotationColumnLookupKeepsFirstDuplicate(t *testing.T) {
+	columns := []dataframe.Column{{Key: "label", Type: "number"}, {Key: "label", Type: "string"}}
+	failure := validateAnnotationColumns(columns, &dashboardReadAnnotationColumns{Label: "label"})
+	if failure == nil || failure.Code != "invalid_annotation_columns" {
+		t.Fatalf("first duplicate must remain authoritative: %+v", failure)
+	}
+}
+
+func TestDashboardPrimaryObservationDistinguishesFreshnessFromThreshold(t *testing.T) {
+	primary := 1
+	value := 0.0
+	missing := &Point{Timestamp: 1000}
+	valid := &Point{Timestamp: 2000, Value: &value}
+	signal := DashboardSignal{PrimarySeries: &primary, Series: []DashboardSeriesSummary{
+		{Index: 0, Last: valid}, {Index: 1, Last: missing}, {Index: 1, Last: valid},
+	}}
+	if got := dashboardPrimaryObservation(&signal, false); got != missing {
+		t.Fatalf("freshness must use the first primary timestamp even without a value: %+v", got)
+	}
+	if got := dashboardPrimaryObservation(&signal, true); got != valid {
+		t.Fatalf("threshold must select a primary observation with a value: %+v", got)
+	}
+	signal.Error = &DashboardQueryError{Code: "provider_error"}
+	if got := dashboardPrimaryObservation(&signal, false); got != nil {
+		t.Fatalf("provider errors must not imply fresh data: %+v", got)
 	}
 }
