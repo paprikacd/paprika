@@ -510,7 +510,7 @@ func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, er
 	return threshold.Value, nil
 }
 
-func validateWidgetNumberBounds(numbers map[string]float64) error {
+func validateWidgetPrecisionBounds(numbers map[string]float64) error {
 	if n, ok := numbers["staleAfterSeconds"]; ok && (n < 1 || n > 2678400 || math.Trunc(n) != n) {
 		return errors.New("stale sample threshold must be an integer from 1 to 2678400 seconds")
 	}
@@ -519,6 +519,13 @@ func validateWidgetNumberBounds(numbers map[string]float64) error {
 	}
 	if n, ok := numbers["decimals"]; ok && !validDecimalPrecision(n) {
 		return errors.New("decimals must be an integer from 0 to 8")
+	}
+	return nil
+}
+
+func validateWidgetNumberBounds(numbers map[string]float64) error {
+	if err := validateWidgetPrecisionBounds(numbers); err != nil {
+		return err
 	}
 	if n, ok := numbers["lineWidth"]; ok && !validNumberRange(n, 0.5, 8) {
 		return errors.New("line width must be from 0.5 to 8")

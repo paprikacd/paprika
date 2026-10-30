@@ -40,3 +40,36 @@ func TestTooltipPresentationContract(t *testing.T) {
 		}
 	}
 }
+
+func TestWidgetNumberBoundsPreservesValidationOrder(t *testing.T) {
+	cases := []struct {
+		name   string
+		values map[string]float64
+		want   string
+	}{
+		{"defaults", nil, ""},
+		{"precision endpoints", map[string]float64{"tooltipDecimals": 0, "decimals": 8}, ""},
+		{"tooltip negative", map[string]float64{"tooltipDecimals": -1}, "tooltip decimals must be an integer from 0 to 8"},
+		{"tooltip fraction", map[string]float64{"tooltipDecimals": 1.5}, "tooltip decimals must be an integer from 0 to 8"},
+		{"tooltip above maximum", map[string]float64{"tooltipDecimals": 9}, "tooltip decimals must be an integer from 0 to 8"},
+		{"widget precision", map[string]float64{"decimals": 9}, "decimals must be an integer from 0 to 8"},
+		{"stale first", map[string]float64{"staleAfterSeconds": 0, "tooltipDecimals": 9}, "stale sample threshold must be an integer from 1 to 2678400 seconds"},
+		{"tooltip before widget", map[string]float64{"tooltipDecimals": 9, "decimals": 9}, "tooltip decimals must be an integer from 0 to 8"},
+		{"precision before appearance", map[string]float64{"decimals": 9, "lineWidth": 0}, "decimals must be an integer from 0 to 8"},
+		{"line width", map[string]float64{"lineWidth": 0}, "line width must be from 0.5 to 8"},
+		{"opacity", map[string]float64{"fillOpacity": 2}, "fill opacity must be from 0 to 1"},
+		{"range", map[string]float64{"min": 5, "max": 5}, "maximum must exceed minimum"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateWidgetNumberBounds(tc.values)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
