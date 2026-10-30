@@ -8,6 +8,7 @@ import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
 import { chartFixtures } from "./fixtures/rich-chart-data.ts"
+import { widgetRendered } from "./widget-readiness.ts"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const base = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -47,15 +48,20 @@ async function check(name, action) {
 async function ready(widget) {
   const element = tile(widget.id)
   await element.scrollIntoViewIfNeeded()
-  await element.getByRole("status", { name: "Loading widget" }).waitFor({ state: "hidden" })
-  await until(async () => !(await element.locator('[aria-busy="true"]').count()) && !/Querying data source|No data in this time range/.test(await element.innerText()), `${widget.title} did not finish querying`)
+  // Scrolling enables deferred queries. Read pending state and mandatory chart
+  // markers in one DOM snapshot, not separate awaits across a loading commit.
+  await until(async () => widgetRendered(widget, await element.evaluate((node, widget) => ({
+    busy: !!node.querySelector('[aria-busy="true"]'),
+    loading: !!node.querySelector('[role="status"][aria-label="Loading widget"]'),
+    text: node.innerText,
+    values: node.querySelectorAll("[data-metric-value]").length,
+    buckets: node.querySelectorAll("rect[data-bucket-value]").length,
+    series: node.querySelectorAll("g[data-series]").length,
+    operationalCharts: node.querySelectorAll(`[data-operational-chart="${widget.pluginId}"]`).length,
+    gauges: node.querySelectorAll(`[data-gauge-display="${widget.config?.display}"]`).length,
+  }), widget)), `${widget.title} did not finish querying and render its required chart`)
   assert.deepEqual(await element.getByRole("alert").allTextContents(), [], `${widget.title} has a render/query error`)
   assert.ok((await element.innerText()).trim().length > widget.title.length, `${widget.title} has no rendered content`)
-  if (widget.type === "stat") await until(async () => await element.locator("[data-metric-value]").count() === 1, `${widget.title} has no observed value`)
-  if (widget.pluginId === "distribution-heatmap") await until(async () => await element.locator("rect[data-bucket-value]").count() > 20, "Histogram buckets must render observations")
-  if (widget.pluginId === "stacked-timeseries" || widget.pluginId === "directional-traffic") assert.ok(await element.locator("g[data-series]").count() >= 2, `${widget.title} requires multiple plotted contributions`)
-  if (["connection-map", "pipeline-topology", "incident-calendar"].includes(widget.pluginId)) assert.equal(await element.locator(`[data-operational-chart="${widget.pluginId}"]`).count(), 1)
-  if (widget.pluginId === "threshold-gauge") assert.equal(await element.locator(`[data-gauge-display="${widget.config.display}"]`).count(), 1)
   if (["distribution-heatmap", "stacked-timeseries", "directional-traffic"].includes(widget.pluginId)) {
     await until(async () => element.locator("text[data-value-axis]").evaluateAll(labels => labels.length > 0 && labels.every(label => {
       const text = label.getBoundingClientRect(), plot = label.ownerSVGElement.getBoundingClientRect()
