@@ -441,11 +441,13 @@ export function ObservationTooltip({
       if (
         element &&
         !(anchorOwnsHistoryKeys && anchor.contains(event.target as Node) && ["Home", "End"].includes(event.key)) &&
-        (event.target === anchor || (role !== "region" && element.contains(event.target as Node))) &&
+        (event.target === anchor || (pinned && event.target === element) || (role !== "region" && element.contains(event.target as Node))) &&
         ["PageDown", "PageUp", "Home", "End"].includes(event.key)
       ) {
         // A tooltip does not take focus away from its trigger. Let keyboard
         // users inspect every label while keeping the chart's tab order intact.
+        // A pinned region also owns its focused scroll surface: touch-browser
+        // keyboard defaults need not scroll it. Descendant controls keep keys.
         event.preventDefault();
         event.stopPropagation();
         const maximum = Math.max(

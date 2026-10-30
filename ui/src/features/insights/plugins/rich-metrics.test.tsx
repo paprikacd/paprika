@@ -143,8 +143,22 @@ describe("rich metric renderers", () => {
     fireEvent.click(within(inspector).getByRole("button", { name: "Pin observation" }));
     expect(inspector).toHaveAttribute("tabindex", "0");
     inspector.focus(); expect(inspector).toHaveFocus();
-    for (const key of ["ArrowDown", "PageDown", "End", "Home", "PageUp"])
-      expect(fireEvent.keyDown(inspector, { key })).toBe(true);
+    Object.defineProperties(inspector, {
+      clientHeight: { value: 100 },
+      scrollHeight: { value: 600 },
+    });
+    expect(fireEvent.keyDown(inspector, { key: "ArrowDown" })).toBe(true);
+    expect(fireEvent.keyDown(inspector, { key: "PageDown" })).toBe(false);
+    expect(inspector.scrollTop).toBe(80);
+    fireEvent.keyDown(inspector, { key: "End" });
+    expect(inspector.scrollTop).toBe(500);
+    fireEvent.keyDown(inspector, { key: "PageUp" });
+    expect(inspector.scrollTop).toBe(420);
+    fireEvent.keyDown(inspector, { key: "Home" });
+    expect(inspector.scrollTop).toBe(0);
+    const control = within(inspector).getByRole("button", { name: "Unpin observation" });
+    expect(fireEvent.keyDown(control, { key: "End" })).toBe(true);
+    expect(inspector.scrollTop).toBe(0); // Descendant controls retain their keys.
     expect(inspector.querySelector('[data-metric-value="3.14159"]')).toBeInTheDocument();
     expect(inspector).toHaveTextContent(longLabels.resource);
     expect(select).toHaveBeenCalledTimes(1);
