@@ -80,7 +80,7 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width
 /** A viewing-only projection for dense operational boards. Horizontal
  * placement and reading order stay intact; earlier overlapping columns always
  * finish before later rows. Saved layouts and the editor are never mutated. */
-export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number): Layout {
+export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, referenceCompact = false): Layout {
   const standard = canvasLayout(widgets, mode, width)
   if (mode !== "wide") return standard
   const byId = new Map(widgets.map(widget => [widget.id, widget]))
@@ -127,6 +127,13 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, 
     (widget.type === "plugin" && ["stacked-timeseries", "directional-traffic"].includes(widget.pluginId ?? ""))
   const fineHeight = (item: Layout[number]) => {
     const widget = byId.get(item.i)!
+    // Fine-pointer dark reference view has 24px calendar targets and lanes.
+    // Reserve a complete six-week month, but never compress multi-month views
+    // or long state inventories using this bounded one-month/six-lane rule.
+    if (referenceCompact && widget.type === "plugin") {
+      if (widget.pluginId === "incident-calendar" && widget.config?.months === 1) return 9
+      if (widget.pluginId === "status-history" && typeof widget.config?.maxSeries === "number" && widget.config.maxSeries <= 6) return 8
+    }
     const tall = widget.type === "plugin" && (["incident-calendar", "uptime-calendar", "status-history"].includes(widget.pluginId ?? "") ||
       (widget.pluginId === "record-table" && typeof widget.config?.pageSize === "number" && widget.config.pageSize > 7))
     const calendar = widget.type === "plugin" && ["incident-calendar", "uptime-calendar"].includes(widget.pluginId ?? "")

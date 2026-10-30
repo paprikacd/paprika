@@ -88,7 +88,9 @@
     min-height: 26px;
     grid-template-columns: minmax(0, auto) minmax(28px, 1fr);
     gap: 12px;
-    padding: 0 12px 3px var(--stat-reading-inset, 0px);
+    /* The 26px reading target must fit the 27px body left by a one-track
+       card's header and borders; extra bottom padding creates a scrollbar. */
+    padding: 0 12px 0 var(--stat-reading-inset, 0px);
     box-sizing: border-box;
   }
   .withSparkline.withSparkline .value { padding: 0; }

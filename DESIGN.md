@@ -47,7 +47,32 @@ The saved dashboard uses twelve columns. `responsive-layout.ts` projects the act
 
 ## Elevation & Depth
 
-Use quiet borders for resting data tiles. Menus and tooltips may use Gamma's offset soft shadows to indicate an overlay. No decorative glass, glowing accents or gradient text. Portals retain the scoped theme and viewport collision behavior.
+Use quiet borders for resting data tiles. Menus and tooltips may use Gamma's offset soft shadows to indicate an overlay. No decorative glass, ambient glowing accents or gradient text. Portals retain the scoped theme and viewport collision behavior.
+
+### Compact dark reference direction
+
+The supplied Edge Watch and Reliability Room images (30 October 2026) are the
+visual authority for **dark, Compact, non-editing desktop views** from 1024px.
+The canonical Gamma scope uses midnight blue-black surfaces (`#07141b` canvas,
+`#0b1b22` plots), thin blue-gray boundaries, cyan/teal signals and violet
+comparison. Standard density, light appearance and narrow layouts retain their
+existing theme. Density is a viewing preference, not a saved dashboard edit.
+Portals copy the same tokens and update on density and desktop-boundary changes.
+Explicit authored series colors remain authoritative.
+
+The demo composition follows four Edge stats, traffic/destinations at 8/4,
+geography/outcomes/risk at 4/4/4 and full-width blocked records; Reliability uses
+three stats, burn/attention at 8/4, state history/calendar at 8/4 and full-width
+incidents. Extra investigations follow these rows. These are generated synthetic
+provider demos, not migrations of user documents. Preserve real queries, units,
+missingness, exact inspection and source limitations; never copy concept deltas.
+Keep readable working-desktop typography rather than the small reference pixels.
+Fine-pointer reference views use 24px calendar day targets and state lanes;
+one-month calendars reserve a complete six-week grid and retain their legends.
+Coarse-pointer calendars retain 44px targets and the ordinary taller projection.
+A modest plot-local glow is permitted only when it does not enlarge meaningful
+marks or reduce intersection/label legibility; it is not required, and the default
+implementation uses crisp marks without glow. No ambient or shell glow is allowed.
 
 ## Shapes
 

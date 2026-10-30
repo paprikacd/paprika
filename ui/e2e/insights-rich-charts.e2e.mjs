@@ -91,8 +91,7 @@ async function open(study) {
   assert.ok(current, `The HTTP fixture must seed ${study.title}`)
   return current
 }
-async function chartSnapshot(id) {
-  const chart = tile(id)
+async function ensureConnectionsOpen(chart) {
   if (await chart.locator('[data-operational-chart="pipeline-topology"]').count()) {
     // Connection values live in a user-operated disclosure; stage counts and
     // names alone cannot prove that the shared filter changed the records.
@@ -100,6 +99,10 @@ async function chartSnapshot(id) {
     if (!await summary.evaluate(node => node.parentElement.open)) await summary.click()
     await chart.getByRole("region", { name: "Connection observations", exact: true }).waitFor()
   }
+}
+async function chartSnapshot(id) {
+  const chart = tile(id)
+  await ensureConnectionsOpen(chart)
   return chart.evaluate(element => ({
     text: element.innerText,
     cells: [...element.querySelectorAll("[data-bucket-value]")].map(cell => cell.getAttribute("data-bucket-value")),
@@ -395,6 +398,9 @@ async function inspectCompactProviderLabels() {
 async function inspectRecord(id, name) {
   const element = tile(id)
   await element.scrollIntoViewIfNeeded()
+  // Query replacement can remount the renderer and close native disclosures.
+  // Reopen through the current locator rather than relying on a prior snapshot.
+  await ensureConnectionsOpen(element)
   const mark = element.getByRole("button", { name }).first()
   await mark.focus()
   const details = page.getByRole("tooltip")

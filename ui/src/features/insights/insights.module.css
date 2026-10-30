@@ -1357,3 +1357,73 @@
 .stackedView .tile[data-intrinsic-stat="true"] { height: auto; min-height: 94px; }
 .stackedView .tile[data-intrinsic-stat="true"] .tileHeader { padding-top: 9px; min-height: 27px; }
 .stackedView .tile[data-intrinsic-stat="true"] .visualization { flex: none; padding-block: 0 8px; }
+
+/* The existing Compact view preference earns a focused desktop reading shell.
+   Light theme, mobile drawers and authoring retain their established layout. */
+@media (min-width: 1024px) {
+  .root[data-insights-theme="dark"][data-density="compact"][data-compact-shell] {
+    --insights-topbar-height: 32px;
+  }
+  .root[data-compact-shell] .compactRail {
+    width: 60px;
+    flex-basis: 60px;
+    padding: 10px 8px;
+    gap: 8px;
+    overflow: visible;
+  }
+  .compactRail .back, .compactRail .sideLink {
+    width: 42px;
+    min-height: 40px;
+    padding: 8px;
+    justify-content: center;
+    font-size: 0 !important;
+    gap: 0;
+  }
+  .compactRail .sideLink > span, .compactRail .previewTag,
+  .compactRail .sideLabel, .compactRail .sideSection,
+  .compactRail .search, .compactRail .dashboardList, .compactRail .environment { display: none; }
+  .compactRail .wordmark { padding: 3px 0 10px; font-size: 0; gap: 0; justify-content: center; }
+  .compactRail .wordmark > span:first-child { color: var(--gamma-accent); border: 0; background: transparent; }
+  .compactRail .sidebarBottom { margin-top: auto; padding: 0; }
+  .root[data-compact-shell] .topbar { padding-inline: 12px; }
+  .root[data-compact-shell] .breadcrumb { gap: 8px; }
+  .root[data-compact-shell] .breadcrumb > :is(span, strong, svg) { display: none; }
+  .root[data-compact-shell] .workspace > section[aria-label="Dashboard workspace"] {
+    display: grid;
+    grid-template-columns: minmax(220px, .7fr) minmax(0, 2fr);
+    align-items: start;
+  }
+  .root[data-compact-shell] .workspace > section[aria-label="Dashboard workspace"] > * { grid-column: 1 / -1; }
+  .root[data-compact-shell] .workspace > section[aria-label="Dashboard workspace"] > .pageHeader {
+    grid-column: 1;
+    padding: 6px 8px 6px 12px;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  .root[data-compact-shell] .heading h1 { font-size: 15px !important; line-height: 1.35; letter-spacing: -.2px; }
+  .root[data-compact-shell] .actions { gap: 2px; flex-wrap: nowrap; }
+  .root[data-compact-shell] .actions button { min-height: 30px; }
+  .root[data-compact-shell] .workspace > section[aria-label="Dashboard workspace"] > .toolbar {
+    grid-column: 2;
+    margin: 0;
+    padding: 6px 12px 6px 4px;
+    min-height: 48px;
+    border: 0;
+    gap: 6px;
+  }
+  .root[data-compact-shell] .toolbarLeft, .root[data-compact-shell] .toolbarRight { gap: 6px; }
+  .root[data-compact-shell] .canvasTools { gap: 2px; }
+  .root[data-compact-shell] .canvasTab, .root[data-compact-shell] .widgetCount,
+  .root[data-compact-shell] .canvasTools .divider { display: none; }
+  .root[data-compact-shell] .canvasArea { padding: 0 12px 16px; }
+  /* A 54px compact track leaves 52px inside its border. Allocate 23px to
+     the title and 29px to the >=26px reading target; never conceal overflow. */
+  .root[data-compact-shell] .tile[data-compact-stat="true"] .tileHeader {
+    min-height: 23px;
+    padding-top: 4px;
+  }
+  .compactDescription { font-size: 10px; color: var(--gamma-muted); margin-top: 3px; }
+  .compactDescription summary { cursor: pointer; width: fit-content; }
+  .compactDescription summary:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: 3px; }
+  .compactDescription p { font-size: 11px; line-height: 1.5; }
+}

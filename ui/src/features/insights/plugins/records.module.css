@@ -364,3 +364,21 @@
     border: 1px solid CanvasText;
   }
 }
+
+/* Described trend/risk/status tables can keep provenance reachable without
+   spending two resting rows on it. This class is emitted only in reference view. */
+.compactRecordTitle { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.compactRecordTitle h3 { flex: 1; }
+.compactRecordDescription { flex: 0 0 auto; font-size: 11px; color: var(--widget-text, var(--gamma-muted)); }
+.compactRecordDescription summary { min-height: 24px; cursor: pointer; line-height: 24px; }
+.compactRecordDescription summary:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: 2px; }
+.compactRecordDescription[open] { flex-basis: 100%; }
+.compactRecordDescription > span { display: block; line-height: 1.4; padding-bottom: 4px; overflow-wrap: anywhere; }
+
+@media (min-width: 1024px) and (pointer: fine) {
+  /* Select the existing styled-cell vocabulary, not a dashboard ID or a new
+     table schema. Other compact tables keep their accepted geometry. */
+  :global([data-insights-theme="dark"][data-density="compact"]) .compactTable:has(td[data-styled-cell="sparkline"]):has(td[data-styled-cell="bar-segments"]):has(td[data-styled-cell="status-badge"]) {
+    & :is(th, td) { padding-inline: 2px; }
+  }
+}

@@ -108,6 +108,29 @@ describe("responsive canvas projection", () => {
     expect(denseCanvasLayout([plugin("small-calendar", "incident-calendar", {}, 0, 3)], "wide")[0].h).toBe(7)
   })
 
+  it("bounds reference-only month and six-lane density without changing ordinary or narrow layouts", () => {
+    const base = exampleDashboard.widgets[3]
+    const month: Widget = { ...base, id: "month", type: "plugin", pluginId: "incident-calendar", config: { months: 1 }, layout: { x: 8, y: 6, w: 4, h: 4 } }
+    const lanes: Widget = { ...base, id: "lanes", type: "plugin", pluginId: "status-history", config: { maxSeries: 6 }, layout: { x: 0, y: 6, w: 8, h: 4 } }
+    const records: Widget = { ...base, id: "records", type: "plugin", pluginId: "record-table", config: { pageSize: 5 }, layout: { x: 0, y: 10, w: 12, h: 4 } }
+    const widgets = [month, lanes, records]
+    const before = structuredClone(widgets)
+    const ordinary = denseCanvasLayout(widgets, "wide", 1100)
+    const reference = denseCanvasLayout(widgets, "wide", 1100, true)
+    expect(reference.filter(item => item.i !== "records").map(item => item.h)).toEqual([9, 9])
+    expect(reference.find(item => item.i === "records")!.y).toBeLessThan(ordinary.find(item => item.i === "records")!.y)
+    expect(denseCanvasLayout(widgets, "wide", 1100, false)).toEqual(ordinary)
+    expect(denseCanvasLayout(widgets, "compact", 800, true)).toEqual(canvasLayout(widgets, "compact", 800))
+    expect(widgets).toEqual(before)
+    for (const [index, a] of reference.entries()) for (const b of reference.slice(index + 1)) {
+      expect(a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y).toBe(false)
+    }
+    // Larger inventories keep the ordinary tall-content protection.
+    const manyMonths = { ...month, config: { months: 3 } }
+    const manyLanes = { ...lanes, config: { maxSeries: 20 } }
+    expect(denseCanvasLayout([manyMonths, manyLanes], "wide", 1100, true)).toEqual(denseCanvasLayout([manyMonths, manyLanes], "wide", 1100))
+  })
+
   it("reflows by available canvas width, including space taken by the inspector", () => {
     expect([320, 599, 600, 959, 960, 2400].map(canvasMode)).toEqual([
       "stacked", "stacked", "compact", "compact", "wide", "wide",
