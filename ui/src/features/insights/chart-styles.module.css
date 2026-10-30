@@ -104,6 +104,9 @@
 }
 .heatmapTooltip {
   position: fixed;
+  /* Placement measures immediately after writing left/top. The global reduced-
+     motion duration must not activate the initial transition-property: all. */
+  transition-property: none;
   box-sizing: border-box;
   z-index: 1500;
   width: min(330px, calc(100vw - 24px));

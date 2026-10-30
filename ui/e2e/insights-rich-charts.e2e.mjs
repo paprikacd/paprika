@@ -104,9 +104,20 @@ async function inspectMetric(id) {
   await plot.focus()
   const details = page.getByRole("region", { name: "Observation details", exact: true })
   await details.waitFor()
+  const assertOutsideWhenAvailable = async label => {
+    await until(async () => await details.getAttribute("data-tooltip-pointer") !== "true", `${label} must use anchored placement`)
+    const outside = await details.getAttribute("data-tooltip-overlap") !== "true"
+    if (outside) {
+      const panel = await details.boundingBox(), card = await element.boundingBox()
+      assert.ok(panel.x + panel.width <= card.x + .5 || panel.x >= card.x + card.width - .5 || panel.y + panel.height <= card.y + .5 || panel.y >= card.y + card.height - .5, `${label} must stay outside the widget when space is available`)
+    }
+    return outside
+  }
   await plot.press("ArrowLeft")
+  await assertOutsideWhenAvailable("Keyboard inspection")
   await plot.press("Enter")
   await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
+  await assertOutsideWhenAvailable("Pinned keyboard inspection")
   await page.mouse.move(1, 1)
   assert.equal(await details.isVisible(), true, "Pinned observation must survive pointer exit")
   await plot.press("Escape")
@@ -139,13 +150,25 @@ async function inspectMetric(id) {
   })
   const pointerGeometry = fitsViewport ? undefined : { originalPlot: bounds, currentPlot: await plot.boundingBox(), intendedPointer: { x: bounds.x + bounds.width * .72, y: bounds.y + bounds.height * .45 } }
   assert.ok(fitsViewport, `Metric inspection must fit the viewport: ${JSON.stringify({inspection,viewport,observed,geometry,pointerGeometry})}`)
+  const pointerPreview = await details.getAttribute("data-tooltip-pointer") === "true"
   const overlapping = await details.getAttribute("data-tooltip-overlap") === "true"
   const coveringNeighbor = await details.getAttribute("data-tooltip-overlaps-other-widget") === "true"
-  if (!overlapping) {
-    const card = await element.boundingBox()
-    assert.ok(inspection.x + inspection.width <= card.x + .5 || inspection.x >= card.x + card.width - .5 || inspection.y + inspection.height <= card.y + .5 || inspection.y >= card.y + card.height - .5, "The inspector must stay outside the widget when space is available")
+  const coveringControls = await details.getAttribute("data-tooltip-overlaps-controls") === "true"
+  if (pointerPreview) {
+    const point = { x: bounds.x + bounds.width * .72, y: bounds.y + bounds.height * .45 }
+    const clearGap = Math.max(inspection.x - point.x, point.x - inspection.x - inspection.width, inspection.y - point.y, point.y - inspection.y - inspection.height)
+    assert.ok(clearGap >= 15.5, "Pointer preview must leave the cursor uncovered with a 16px gap")
+    assert.equal(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "Pointer previews must not intercept chart interaction")
+    assert.equal(await plot.evaluate((node, point) => node.contains(document.elementFromPoint(point.x, point.y)), point), true, "The chart must receive input at the inspection pointer")
+    assert.equal(await details.evaluate(node => {
+      const box = node.getBoundingClientRect(), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return !!hit && !node.contains(hit)
+    }), true, "Pointer input must pass through the preview surface")
+  } else {
+    await assertOutsideWhenAvailable("Anchored hover inspection")
   }
-  if (!overlapping && !coveringNeighbor) {
+  const hoverTransfer = !pointerPreview && !overlapping && !coveringNeighbor && !coveringControls
+  if (hoverTransfer) {
     await details.hover()
     await page.waitForTimeout(220)
     assert.equal(await details.isVisible(), true, "Hover transfer to the external inspector must keep it open")
@@ -153,7 +176,7 @@ async function inspectMetric(id) {
     await details.getByRole("button", { name: "Pin observation", exact: true }).click()
     await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
   } else {
-    assert.equal(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "An unpinned inspector covering a chart must not intercept pointer movement")
+    assert.equal(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "A pointer preview or overlapping inspector must not intercept pointer movement")
     if (coveringNeighbor) {
       const passesThrough = await details.evaluate((node, id) => {
         const panel = node.getBoundingClientRect(), owner = document.querySelector(`[data-widget-id="${id}"]`)
@@ -170,6 +193,7 @@ async function inspectMetric(id) {
     await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
     assert.notEqual(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "Pinned content must be interactive")
   }
+  const pinnedOutsideWidget = await assertOutsideWhenAvailable("Pinned pointer inspection")
   if (id === "flow") {
     const theme = await page.locator("[data-insights-theme]").first().getAttribute("data-insights-theme")
     await page.screenshot({ path: join(output, `external-tooltip-${theme}-${viewport.width}.png`), fullPage: false, animations: "disabled" })
@@ -187,7 +211,7 @@ async function inspectMetric(id) {
   }
   await page.keyboard.press("Escape")
   await details.waitFor({ state: "hidden" })
-  return { keyboard: true, pinned: true, pointerTraversal: true, hoverTransfer: !overlapping && !coveringNeighbor, fallbackPassThrough: overlapping || coveringNeighbor, outsideWidget: !overlapping, scrollPlacement: true }
+  return { keyboard: true, pinned: true, pointerTraversal: true, pointerPreview, hoverTransfer, fallbackPassThrough: !hoverTransfer, outsideWidget: pinnedOutsideWidget, scrollPlacement: true }
 }
 async function inspectScrollableMetric() {
   // Exercise an actual narrow, touch-capable viewport, including coarse pointer styling.
