@@ -38,6 +38,7 @@ import { tooltip } from "@tanstack/charts/tooltip";
 import { portal } from "@tanstack/charts/tooltip/portal";
 import type { QueryResult, Widget, WidgetOptions, Threshold } from "./schema";
 import styles from "./charts.module.css";
+import hatchStyles from "./plot-hatch.module.css";
 import configStyles from "./chart-styles.module.css";
 import eventStyles from "./plugins/rich-metrics.module.css";
 import contextStyles from "./widget-context.module.css";
@@ -54,6 +55,11 @@ import {
   timeFormat,
   dateTimeFormat,
   fullDateTimeFormat,
+  plotTimeDomain,
+  sampleCadence,
+  seriesCoverage,
+  uncoveredIntervals,
+  withGapBreaks,
 } from "./chart-data";
 export {
   downsamplePoints,
@@ -274,6 +280,8 @@ function TimeSeriesChart({
   const cursor = useChartCursor();
   const eventData = useAnnotationEvents();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
+  const { rangeEnd } = useDashboardWindow();
+  const truncated = useTooltipWidgetData()?.result.truncated;
   const associateDescription = useCallback(
     ({ svg }: { svg: SVGSVGElement }) => {
       if (descriptionId) svg.setAttribute("aria-describedby", descriptionId);
@@ -289,61 +297,99 @@ function TimeSeriesChart({
     () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options),
     [visibleSeries, prior, options],
   );
-  const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: resolveSeriesColor(entry.original.labels, options.seriesColors, entry.index === 0 && widget.color ? widget.color : PALETTE[entry.index % PALETTE.length]), points: downsamplePoints(entry.shifted.points) })), [prior, widget.color, options.seriesColors]);
+  const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: resolveSeriesColor(entry.original.labels, options.seriesColors, entry.index === 0 && widget.color ? widget.color : PALETTE[entry.index % PALETTE.length]), points: downsamplePoints(entry.shifted.points), plotPoints: downsamplePoints(withGapBreaks(entry.shifted.points, sampleCadence(entry.shifted.points))) })), [prior, widget.color, options.seriesColors]);
   const displayLabels = useMemo(() => compactSeriesLabels(visibleSeries.slice(0, MAX_SERIES)), [visibleSeries]);
   const data = useMemo(
     () =>
-      visibleSeries.slice(0, MAX_SERIES).map((entry, index) => ({
-        name: seriesName(entry, index),
-        latest: latestPoint(entry),
-        color: resolveSeriesColor(entry.labels, options.seriesColors,
-          index === 0 && widget.color ? widget.color : PALETTE[index % PALETTE.length]),
-        points: downsamplePoints(entry.points).map((point) => ({
-          ...point,
-          series: seriesName(entry, index),
-          seriesIndex: index,
-        })),
-      })),
+      visibleSeries.slice(0, MAX_SERIES).map((entry, index) => {
+        const cadence = sampleCadence(entry.points);
+        const tag = (point: Point) => ({ ...point, series: seriesName(entry, index), seriesIndex: index });
+        return {
+          name: seriesName(entry, index),
+          latest: latestPoint(entry),
+          color: resolveSeriesColor(entry.labels, options.seriesColors,
+            index === 0 && widget.color ? widget.color : PALETTE[index % PALETTE.length]),
+          points: downsamplePoints(entry.points).map(tag),
+          // Plot-only: an inferred gap gets a null break so the line ends there. Values, legends and tooltips never see it.
+          plotPoints: downsamplePoints(withGapBreaks(entry.points, cadence)).map(tag),
+          // Unsampled coverage, so downsampling can neither hide nor invent a gap.
+          coverage: seriesCoverage(entry.points, cadence),
+        };
+      }),
     [visibleSeries, widget.color, options.seriesColors],
   );
-  const timeSpan = useMemo(() => {
-    const bounds = [...data, ...previousData].flatMap((entry) =>
-      entry.points.length
-        ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp]
-        : [],
-    );
-    return bounds.length ? Math.max(...bounds) - Math.min(...bounds) : 0;
-  }, [data, previousData]);
-  const cursorBounds = data.flatMap(entry => entry.points.length ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp] : []);
-  const cursorStart = Math.min(...cursorBounds), cursorEnd = Math.max(...cursorBounds);
+  // The plotted current and prior samples define one time domain. TanStack's x scale, the shared cursor, events,
+  // the stale tail and the no-sample bands all map time through it, so every overlay sits on its samples.
+  const plottedTimes = [...data, ...previousData].flatMap((entry) =>
+    entry.points.length ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp] : [],
+  );
+  const dataStart = plottedTimes.length ? Math.min(...plottedTimes) : undefined;
+  const dataEnd = plottedTimes.length ? Math.max(...plottedTimes) : undefined;
+  // Stale tail: rangeEnd lies beyond the latest observation by more than the limit. It is judged on the unzoomed
+  // series and only for a complete result. Without staleAfterSeconds, the limit is two expected intervals. That is a
+  // factual "expected samples missing" rule, not a verdict on the source.
+  const staleTail = useMemo(() => {
+    if (embedded || zoom || truncated || rangeEnd === undefined || !Number.isFinite(rangeEnd)) return undefined;
+    const latest = series.slice(0, MAX_SERIES).flatMap((entry) => {
+      const last = latestPoint(entry);
+      return last ? [{ entry, last }] : [];
+    });
+    if (!latest.length) return undefined;
+    const at = Math.max(...latest.map((item) => item.last.timestamp));
+    // The longest cadence among the series that reported at `at`, so a slow series is not called stale early.
+    const cadence = latest.reduce<number | null>((known, item) => {
+      const own = item.last.timestamp === at ? sampleCadence(item.entry.points) : null;
+      return own === null ? known : Math.max(known ?? 0, own);
+    }, null);
+    const limit = options.staleAfterSeconds !== undefined ? options.staleAfterSeconds * 1000 : cadence === null ? undefined : 2 * cadence;
+    return limit !== undefined && rangeEnd - at > limit ? { from: at, to: rangeEnd } : undefined;
+  }, [series, embedded, zoom, truncated, rangeEnd, options.staleAfterSeconds]);
+  const timeEnd = staleTail && dataEnd !== undefined ? Math.max(dataEnd, staleTail.to) : dataEnd;
+  const timeSpan = dataStart !== undefined && timeEnd !== undefined ? timeEnd - dataStart : 0;
+  const timeDomain = useMemo(
+    () => (dataStart !== undefined && timeEnd !== undefined ? plotTimeDomain(dataStart, timeEnd) : undefined),
+    [dataStart, timeEnd],
+  );
   const { left: axisLeft, separateUnit } = chartYAxisLayout([...data, ...previousData].flatMap(entry => entry.points.map(point => point.value ?? 0)).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel);
   const cursorLeft = !showAxis ? 8 : axisLeft;
-  const cursorX = cursor && !embedded && cursor.timestamp >= cursorStart && cursor.timestamp <= cursorEnd && cursorEnd > cursorStart
-    ? cursorLeft + (cursor.timestamp - cursorStart) / (cursorEnd - cursorStart) * Math.max(0, width - cursorLeft - 12)
-    : undefined;
-  // Match the rendered time domain, including aligned prior-period samples.
+  // The TanStack plot area: the right margin is 12, or 8 without axes.
+  const plotWidth = Math.max(0, width - cursorLeft - (showAxis ? 12 : 8));
+  const xAt = (time: number) => timeDomain ? cursorLeft + (time - timeDomain[0]) / (timeDomain[1] - timeDomain[0]) * plotWidth : 0;
+  const bandBox = (from: number, to: number) => ({ left: xAt(from), width: Math.max(1.5, xAt(to) - xAt(from)) });
+  const cursorX = cursor && !embedded && timeDomain && timeSpan > 0 && cursor.timestamp >= timeDomain[0] && cursor.timestamp <= timeDomain[1]
+    ? xAt(cursor.timestamp) : undefined;
   // Event markers are decorative and never intercept chart pointer input.
-  const eventBounds = [...data, ...previousData].flatMap(entry => entry.points.map(point => point.timestamp).filter(validTimestamp));
-  const eventStart = Math.min(...eventBounds), eventEnd = Math.max(...eventBounds);
-  const eventsInView = widget.annotationSource && !embedded && eventBounds.length ? eventData.events.filter(event => {
+  const eventStart = dataStart ?? 0, eventEnd = timeEnd ?? 0;
+  const eventsInView = widget.annotationSource && !embedded && dataStart !== undefined ? eventData.events.filter(event => {
     const at = Date.parse(event.timestamp);
     return at <= eventEnd && Date.parse(event.endTimestamp ?? event.timestamp) >= eventStart;
   }) : [];
   const visibleEvents = eventsInView.slice(0, 20);
   const eventTop = !showAxis ? 8 : separateUnit ? 18 : height < 130 ? 4 : 10;
   const eventBottom = !showAxis ? 8 : options.xAxisLabel ? 47 : 29;
+  // No-sample bands: time that no plotted series observes. They are measured on the unsampled series, so downsampling
+  // can neither invent nor hide a gap. The stale tail owns everything after the latest observation.
+  const bands = useMemo(() => {
+    if (embedded || dataStart === undefined || dataEnd === undefined || dataEnd <= dataStart) return [];
+    const holes = uncoveredIntervals(data.map((entry) => entry.coverage), [dataStart, dataEnd]);
+    return staleTail
+      ? holes.flatMap((hole) => hole.from >= staleTail.from ? [] : [{ from: hole.from, to: Math.min(hole.to, staleTail.from) }])
+      : holes;
+  }, [data, embedded, dataStart, dataEnd, staleTail]);
+  const visibleBands = embedded || emptyZoom ? [] : bands;
+  const tailBox = staleTail ? bandBox(staleTail.from, staleTail.to) : undefined;
 
   const definition = useMemo(
     () =>
       defineChart({
         marks: [
-          ...previousData.map((entry, index) => decorative(lineY(entry.points, { id: `previous-${index}`, x: "timestamp", y: "value", stroke: entry.color, strokeWidth: options.lineWidth ?? 1.8, strokeDasharray: "5 4", strokeOpacity: .7, curve: CURVES[options.curve ?? "linear"] }))),
+          ...previousData.map((entry, index) => decorative(lineY(entry.plotPoints, { id: `previous-${index}`, x: "timestamp", y: "value", stroke: entry.color, strokeWidth: options.lineWidth ?? 1.8, strokeDasharray: "5 4", strokeOpacity: .7, curve: CURVES[options.curve ?? "linear"] }))),
           ...data.flatMap((entry, index) => [
           ...(options.display === "area"
             ? [
                 // Fills paint behind observations; only the line owns hit testing.
                 decorative(
-                  areaY(entry.points, {
+                  areaY(entry.plotPoints, {
                     id: `area-${index}`,
                     x: "timestamp",
                     y: "value",
@@ -354,7 +400,7 @@ function TimeSeriesChart({
                 ),
               ]
             : []),
-          lineY(entry.points, {
+          lineY(entry.plotPoints, {
             id: `line-${index}`,
             x: "timestamp",
             y: "value",
@@ -363,7 +409,7 @@ function TimeSeriesChart({
             stroke: entry.color,
             strokeWidth: options.lineWidth ?? 1.8,
             curve: CURVES[options.curve ?? "linear"],
-            points: entry.points.some(
+            points: entry.plotPoints.some(
               (point, position, points) =>
                 point.value !== null &&
                 (position === 0 || points[position - 1].value === null) &&
@@ -375,7 +421,7 @@ function TimeSeriesChart({
         ],
         scales: {
           x: {
-            scale: scaleLinear,
+            scale: timeDomain ? scaleLinear().domain(timeDomain) : scaleLinear,
             axis: !showAxis
               ? false
               : {
@@ -469,6 +515,7 @@ function TimeSeriesChart({
       ticks.y,
       height,
       timeSpan,
+      timeDomain,
       showAxis,
       embedded,
       tooltipEnabled,
@@ -492,6 +539,17 @@ function TimeSeriesChart({
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
         {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {visibleBands.map((band) => {
+          const box = bandBox(band.from, band.to);
+          return (
+            <span key={`${band.from}-${band.to}`} role="img" aria-label={`No samples from ${fullDateTimeFormat.format(new Date(band.from))} to ${fullDateTimeFormat.format(new Date(band.to))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-no-sample-band data-from={band.from} data-to={band.to} style={{ ...box, top: eventTop, bottom: eventBottom }}>
+              {box.width >= 56 && <span aria-hidden="true" className={styles.noSampleLabel}>No samples</span>}
+            </span>
+          );
+        })}
+        {staleTail && tailBox && <span role="img" aria-label={`No samples after ${fullDateTimeFormat.format(new Date(staleTail.from))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-stale-tail data-from={staleTail.from} data-to={staleTail.to} style={{ ...tailBox, top: eventTop, bottom: eventBottom }}>
+          {tailBox.width >= 56 && <span aria-hidden="true" className={styles.noSampleLabel}>No samples since {timeFormat.format(new Date(staleTail.from))}</span>}
+        </span>}
         {emptyZoom ? <div className={styles.state} role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <Chart
           definition={definition}
           height={height}
@@ -507,16 +565,18 @@ function TimeSeriesChart({
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
           style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= domain[0] && threshold.value <= domain[1]).map((threshold, index) => <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} style={{ left: cursorLeft, right: !showAxis ? 8 : 12, top: eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom), borderColor: threshold.color, color: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>)}
+        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= domain[0] && threshold.value <= domain[1]).map((threshold, index) => <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} style={{ left: cursorLeft, right: !showAxis ? 8 : 12, top: eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom), borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>)}
         {eventEnd > eventStart && visibleEvents.map((event, index) => {
           const at = Date.parse(event.timestamp), finish = event.endTimestamp ? Date.parse(event.endTimestamp) : at;
-          const position = (value: number) => cursorLeft + (value - eventStart) / (eventEnd - eventStart) * Math.max(0, width - cursorLeft - (!showAxis ? 8 : 12));
+          const position = xAt;
           return <span key={`${event.timestamp}-${index}`} aria-hidden="true" data-annotation-timestamp={event.timestamp} data-annotation-interval={finish > at ? "true" : undefined} data-severity={event.severity ?? "unclassified"} className={finish > at ? styles.eventRange : styles.eventLine}
             style={{ left: position(Math.max(at, eventStart)), width: finish > at ? Math.max(0, position(Math.min(finish, eventEnd)) - position(Math.max(at, eventStart))) : undefined, top: eventTop, bottom: eventBottom }} />;
         })}
       </div>
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {emptyCurrent && previousData.length > 0 && <span role="status" className={styles.notice}>No current observations in this window; the dashed lines show the preceding period.</span>}
+      {visibleBands.length > 0 && <span className={styles.notice}>No samples in {visibleBands.length} {visibleBands.length === 1 ? "interval" : "intervals"}; first {dateTimeFormat.format(new Date(visibleBands[0].from))}–{dateTimeFormat.format(new Date(visibleBands[0].to))}</span>}
+      {staleTail && <span className={styles.notice}>Latest sample {dateTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series">
           {data.map((entry, index) => (

@@ -31,10 +31,15 @@
   /* A late legend or annotation can shrink the plot before the SVG is
      remeasured. Keep the old drawing out of the footer during that frame. */
   overflow: clip;
+  /* Own stacking context: no-sample bands sit at z-index -1, beneath the TanStack SVG. */
+  isolation: isolate;
 }
 .eventLine { position: absolute; width: 0; border-left: 1.5px dashed var(--gamma-muted, #697c73); opacity: .8; pointer-events: none; }
-.thresholdGuide { position: absolute; border-top: 1px dashed; pointer-events: none; z-index: 1; font-size: 10px; line-height: 1.2; }
-.thresholdGuide > span { position: absolute; left: 2px; bottom: 2px; background: var(--widget-surface, var(--gamma-surface, #fff)); padding: 1px 3px; }
+.thresholdGuide { position: absolute; border-top: 1.25px dashed; pointer-events: none; z-index: 1; color: var(--widget-text, var(--gamma-ink, #27332e)); }
+.thresholdGuide > span { position: absolute; right: 4px; bottom: 3px; padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); font-size: 12px; font-weight: 500; line-height: 1.3; white-space: nowrap; }
+/* Hatched time with no samples. Gridlines, lines and dots paint over it; the band itself never takes pointer input. */
+.noSampleBand { position: absolute; z-index: -1; pointer-events: none; }
+.noSampleLabel { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); color: var(--widget-text, var(--gamma-muted, #626e65)); font-size: 12px; line-height: 1.3; white-space: nowrap; }
 .eventRange { position: absolute; background: var(--gamma-muted, #697c73); opacity: .16; pointer-events: none; }
 .eventRange[data-severity="info"] { background: var(--gamma-chart-1, #2867b9); }
 .eventRange[data-severity="warning"] { background: var(--gamma-chart-4, #977017); }

@@ -29,6 +29,14 @@ import {
   latestPoint,
   EmptyState,
 } from "./chart-renderers";
+import {
+  plotTimeDomain,
+  sampleCadence,
+  seriesCoverage,
+  seriesGaps,
+  uncoveredIntervals,
+  withGapBreaks,
+} from "./chart-data";
 
 afterEach(() => {
   cleanup();
@@ -1119,3 +1127,62 @@ it.each(["timeseries", "bar"] as const)(
     for (const title of titles) expect(title).toHaveAttribute("opacity", "1");
   },
 );
+
+describe("time-series gap helpers", () => {
+  // [seconds, value] samples; a null value is an explicit missing sample.
+  const samples = (pairs: [number, number | null][]) =>
+    pairs.map(([seconds, value]) => ({ timestamp: seconds * 1000, value }));
+
+  it("takes the lower median of positive steps between observed samples, and none below three", () => {
+    expect(sampleCadence(samples([[0, 1], [1, 1]]))).toBeNull();
+    expect(sampleCadence(samples([[0, 1], [1, 1], [2, 1]]))).toBe(1000);
+    // Steps of 1, 2, 3 and 4 s: the lower median is 2 s.
+    expect(sampleCadence(samples([[0, 1], [1, 1], [3, 1], [6, 1], [10, 1]]))).toBe(2000);
+    // An explicit null is not an observed sample, so the steps are 3, 3 and 4 s.
+    expect(sampleCadence(samples([[0, 1], [1, null], [3, 1], [6, 1], [10, 1]]))).toBe(3000);
+  });
+
+  it("reports explicit null runs as gaps even without a cadence, and steps beyond 1.5 cadence", () => {
+    expect(seriesGaps(samples([[0, 1], [1, null], [2, 1]]), null)).toEqual([{ from: 0, to: 2000 }]);
+    const steady = samples([[1, 1], [2, 1], [3, 1], [7, 1], [8, 1]]);
+    expect(seriesGaps(steady, 1000)).toEqual([{ from: 3000, to: 7000 }]);
+    expect(seriesCoverage(steady, 1000)).toEqual([
+      { from: 1000, to: 2000 },
+      { from: 2000, to: 3000 },
+      { from: 7000, to: 8000 },
+    ]);
+    // Exactly 1.5 cadence is not a gap.
+    expect(seriesGaps(samples([[0, 1], [1.5, 1]]), 1000)).toEqual([]);
+  });
+
+  it("adds a null break at the midpoint of inferred gaps only, never where an explicit null already breaks the line", () => {
+    const steady = samples([[1, 1], [2, 1], [3, 1], [7, 1], [8, 1]]);
+    expect(withGapBreaks(steady, 1000).map((point) => [point.timestamp, point.value])).toEqual([
+      [1000, 1],
+      [2000, 1],
+      [3000, 1],
+      [5000, null],
+      [7000, 1],
+      [8000, 1],
+    ]);
+    const explicit = samples([[1, 1], [2, 1], [3, null], [7, 1], [8, 1]]);
+    expect(withGapBreaks(explicit, 1000)).toEqual(explicit);
+  });
+
+  it("finds only the time that no series covers, and nothing in a zero-width domain", () => {
+    const sparse = seriesCoverage(samples([[1, 1], [2, 1], [3, 1], [7, 1], [8, 1]]), 1000);
+    const dense = seriesCoverage(samples([[1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1], [8, 1]]), 1000);
+    expect(uncoveredIntervals([sparse], [1000, 8000])).toEqual([{ from: 3000, to: 7000 }]);
+    expect(uncoveredIntervals([sparse, dense], [1000, 8000])).toEqual([]);
+    expect(uncoveredIntervals([[]], [1000, 4000])).toEqual([{ from: 1000, to: 4000 }]);
+    expect(uncoveredIntervals([sparse], [8000, 8000])).toEqual([]);
+  });
+
+  it("pads a single instant the way TanStack pads a single value, and keeps a real span unchanged", () => {
+    expect(plotTimeDomain(1000, 5000)).toEqual([1000, 5000]);
+    expect(plotTimeDomain(0, 0)).toEqual([-1, 1]);
+    const [start, end] = plotTimeDomain(1_000_000, 1_000_000);
+    expect(start).toBeLessThan(1_000_000);
+    expect(end).toBeGreaterThan(1_000_000);
+  });
+});
