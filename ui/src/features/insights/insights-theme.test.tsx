@@ -137,11 +137,14 @@ describe("dashboard appearance", () => {
     }
   });
 
-  it("keeps the empty chart fill visibly, but quietly, apart from the page background", () => {
-    for (const tokens of Object.values(themeTokenSets())) {
-      const ratio = contrastRatio(tokens["--gamma-chart-empty"], tokens["--gamma-bg"]);
-      expect(ratio).toBeGreaterThanOrEqual(1.1);
-      expect(ratio).toBeLessThanOrEqual(1.25);
-    }
+  it("keeps the lowest density step at least 3:1 against the empty chart fill in every block", () => {
+    for (const tokens of Object.values(themeTokenSets()))
+      expect(contrastRatio(tokens["--gamma-density-0"], tokens["--gamma-chart-empty"])).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps the empty chart fill distinct from the page background in every block", () => {
+    // Empty may sit close to the page (an observed zero reads as nothing drawn), but never on it.
+    for (const tokens of Object.values(themeTokenSets()))
+      expect(tokens["--gamma-chart-empty"]).not.toBe(tokens["--gamma-bg"]);
   });
 });

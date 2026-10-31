@@ -633,7 +633,7 @@ export function RecordTreemap({
                     y={leaf.y0 + 18}
                     className={styles.tileText}
                     clipPath={`url(#${missingPattern}-tile-${index})`}
-                    style={color >= 0 ? { fill: colorStyle?.ink ?? "#000000" } : undefined}
+                    style={color >= 0 ? { fill: colorStyle?.ink ?? "var(--gamma-ink)" } : undefined}
                   >
                     {visibleName}
                     {tileHeight > 43 && <tspan x={leaf.x0 + 8} dy={17}>

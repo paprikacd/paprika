@@ -63,6 +63,13 @@ describe("independent treemap color", () => {
     fireEvent.keyDown(b, { key: "Enter" });
     expect(selected).toHaveBeenCalledWith({ labels: { ticker: "B", market_cap: "50", short_interest: "8" }, value: 50, series: "B" });
   });
+  it("labels a missing-colour tile in the theme ink, since its hatch follows the theme, and keeps the picked ink on coloured tiles", () => {
+    render(<RecordTreemap widget={widget} result={result} />);
+    const missing = screen.getByRole("button", { name: /C:.*Short interest: No data/ });
+    expect(missing.querySelector("text")?.style.fill).toBe("var(--gamma-ink)");
+    const coloured = screen.getByRole("button", { name: /A:.*Short interest: 0/ });
+    expect(coloured.querySelector("text")?.style.fill).toBe("#000000");
+  });
   it("supports an explicit stable scale and rejects invalid or nonnumeric configuration", () => {
     registerRecordWidgetPlugins();
     const definition = getWidgetDefinition("plugin", "record-treemap")!;
