@@ -1,0 +1,91 @@
+.ref-chart{position:relative;width:100%;height:100%;font-family:Barlow,sans-serif;color:var(--ref-muted);isolation:isolate}
+.ref-chart-svg{display:block;width:100%;height:auto;overflow:visible;outline-offset:-2px!important}
+.ref-chart-svg:focus-visible{outline:1px solid #79c9e577!important}
+.ref-grid-line{stroke:var(--ref-grid);stroke-width:1;opacity:.9}
+.ref-zero-line{stroke:#8fbbca;stroke-width:1.1;opacity:.85}
+.ref-chart-tick,.ref-chart-unit{font-family:inherit;fill:#bad1e5;font-size:13px;font-weight:400}
+.ref-chart-unit{font-size:14px}.ref-tick-threshold{fill:#ffbc1d;font-size:14px}
+.ref-chart-legend{position:absolute;bottom:10px;left:17px;right:18px;display:flex;align-items:center;gap:22px;font-size:14px;color:#c0d4e9;line-height:19px}
+.ref-chart-legend>span{display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
+.ref-chart-legend .ref-dot{width:14px;height:14px;flex-basis:14px}
+.ref-chart-legend strong{font-weight:500;margin-left:1px;color:#eff6ff}
+.ref-chart-reliability .ref-chart-legend{bottom:10px;left:18px;right:24px;gap:28px;font-size:14px}
+.ref-chart-reliability .ref-chart-legend .ref-dot{width:12px;height:12px;flex-basis:12px}
+.ref-threshold-key{width:34px;border-top:2px dashed #fabc04}.ref-incident-key,.ref-unknown-key{width:36px;height:16px;display:inline-block;background:repeating-linear-gradient(130deg,transparent 0 2px,#bc433ab0 2px 3px);border:1px solid #d5423d70}
+.ref-unknown-key{background:repeating-linear-gradient(130deg,transparent 0 2px,#7495a8a0 2px 3px);border:0}
+.ref-unknown-key-label{margin-left:auto}
+.ref-inspector{position:absolute;width:242px;height:251px;left:618px;top:10px;border:1px solid #28546a;border-radius:6px;background:linear-gradient(130deg,#03141dfc,#03111bfc);box-shadow:0 10px 22px #0005;z-index:20;padding:9px 13px 0;color:#dceafa;font-size:14px;line-height:20px;animation:ref-inspector-appear 120ms ease-out both}
+.ref-inspector-close{position:absolute;right:4px;top:3px;width:17px;height:17px;color:#7195ae!important;opacity:0}
+.ref-inspector:hover .ref-inspector-close,.ref-inspector:focus-within .ref-inspector-close{opacity:1}
+.ref-inspector-time{display:flex;align-items:center;gap:9px;font-size:13px;color:#d8e8f6;margin-bottom:7px;white-space:nowrap}
+.ref-inspector-time time{white-space:pre}.ref-inspector-time svg{color:#b4cce1;flex:0 0 auto}
+.ref-inspector-values>div{display:flex;justify-content:space-between;align-items:center;margin:3px 0}.ref-inspector-values span{display:flex;gap:10px;align-items:center}.ref-inspector-values strong{font-weight:400;color:#eff6fe;white-space:nowrap}
+.ref-inspector-values .ref-dot{width:12px;height:12px;flex-basis:12px}
+.ref-inspector-context{margin-top:3px;padding-bottom:8px;border-bottom:1px solid #193644}.ref-inspector-context>span,.ref-inspector-slo>span{display:flex;justify-content:space-between;gap:8px;line-height:21px}.ref-inspector-context strong,.ref-inspector-slo strong{font-weight:400;color:#e1ecf7;min-width:96px}
+.ref-inspector-histories{margin-top:4px}.ref-inspector-history{height:39px;display:flex;flex-direction:column;gap:0}.ref-inspector-history>span{font-size:12px;line-height:15px}.ref-inspector-history>div{height:24px;width:100%}
+.ref-inspector footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #173442;padding-top:8px;margin-top:4px}
+.ref-inspector footer button{display:flex;align-items:center;gap:9px;color:#00b8ff;font-size:13px;white-space:nowrap}.ref-inspector footer button svg{stroke-width:1.4}
+.ref-chart-reliability .ref-inspector{left:511px;top:-7px;width:214px;height:243px;padding:8px 10px 0;font-size:14px}
+.ref-chart-reliability .ref-inspector-time{gap:8px;font-size:13px;line-height:17px;margin-bottom:6px}
+.ref-chart-reliability .ref-inspector-values>div{margin:1px 0}
+.ref-chart-reliability .ref-inspector-values span{gap:7px}.ref-chart-reliability .ref-inspector-values strong{font-size:14px}
+.ref-inspector-slo{border-top:1px solid #193644;margin-top:5px;padding-top:3px}
+.ref-inspector-slo strong{min-width:0}
+.ref-chart-reliability .ref-inspector-context{border-top:1px solid #193644;margin-top:3px;padding-top:3px;padding-bottom:2px;border-bottom:0}.ref-chart-reliability .ref-inspector-context strong{min-width:0}
+.ref-chart-reliability .ref-inspector-history{height:25px;flex-direction:row;align-items:center;gap:7px}.ref-chart-reliability .ref-inspector-history>span{font-size:14px;width:61px;flex:0 0 61px}.ref-chart-reliability .ref-inspector-history>div{height:23px;min-width:0}
+.ref-chart-reliability .ref-inspector footer{padding-top:7px;margin-top:2px;gap:11px}.ref-chart-reliability .ref-inspector footer button{font-size:14px;gap:5px}.ref-chart-reliability .ref-inspector footer button svg{width:14px}
+.ref-chart-detail{position:absolute;left:70px;top:10px;width:460px;padding:16px;z-index:80;border:1px solid #2f5c70;border-radius:6px;background:#041722;box-shadow:0 12px 40px #0009;color:#cce0f0;font-size:14px;line-height:1.5}.ref-chart-detail header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.ref-chart-detail p{margin:8px 0}.ref-chart-detail code{display:block;padding:9px;background:#00111b;border-radius:3px;font-size:12px;overflow:auto}.ref-chart-detail a{display:flex;align-items:center;gap:7px;color:#00bdff}.ref-chart-detail table{width:100%;border-collapse:collapse;margin-top:10px}.ref-chart-detail td,.ref-chart-detail th{padding:4px 0;text-align:left;border-bottom:1px solid #1c3c4b}
+@keyframes ref-inspector-appear{from{opacity:0}to{opacity:1}}
+
+.ref-chart-edge .ref-inspector-history{position:relative;height:35px}
+.ref-chart-edge .ref-inspector-history>div{position:absolute;top:6px;height:25px}
+.ref-chart-edge .ref-inspector footer{margin-top:6px}
+
+/* Measured operational geometry keeps labels and point rings in CSS pixels. */
+.ref-chart[data-responsive=true]{min-width:0;height:auto;padding:0 10px 12px;container:reference-timeseries / inline-size}
+.ref-chart[data-responsive=true] .ref-chart-svg{max-width:100%;height:auto}
+.ref-chart[data-responsive=true] .ref-chart-svg path,.ref-chart[data-responsive=true] .ref-chart-svg line,.ref-chart[data-responsive=true] .ref-chart-svg circle{vector-effect:non-scaling-stroke}
+.ref-chart[data-responsive=true] .ref-chart-annotation{paint-order:stroke;stroke:var(--ref-panel,#081c26);stroke-width:3px;stroke-linejoin:round}
+.ref-chart[data-responsive=true] .ref-chart-legend{position:static;margin:8px 2px 0;display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13px;line-height:1.5}
+.ref-chart[data-responsive=true] .ref-chart-legend>span{gap:7px}
+.ref-chart[data-responsive=true] .ref-chart-legend .ref-dot{width:11px;height:11px;flex-basis:11px}
+.ref-chart[data-responsive=true] .ref-unknown-key-label{margin-left:0}
+.ref-chart[data-responsive=true] .ref-inspector{position:relative;inset:auto;width:100%;height:auto;max-width:100%;margin:12px 0 0;padding:12px;font-size:14px;line-height:1.5;box-shadow:none}
+.ref-chart[data-responsive=true] .ref-inspector-time{padding-right:24px;white-space:normal;font-size:13px}
+.ref-chart[data-responsive=true] .ref-inspector-time time{white-space:normal}
+.ref-chart[data-responsive=true] .ref-inspector-close{opacity:1;width:28px;height:28px;right:5px;top:5px}
+.ref-chart[data-responsive=true] .ref-inspector-values>div{min-height:27px;gap:12px}
+.ref-chart[data-responsive=true] .ref-inspector-histories{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:10px}
+.ref-chart[data-responsive=true] .ref-inspector-history{position:relative;display:flex;flex-direction:column;align-items:stretch;height:50px;gap:5px}
+.ref-chart[data-responsive=true] .ref-inspector-history>span{width:auto;flex:none;font-size:12px}
+.ref-chart[data-responsive=true] .ref-inspector-history>div{position:static;height:30px;width:100%}
+.ref-chart[data-responsive=true] .ref-inspector footer{margin-top:10px;padding-top:8px;flex-wrap:wrap;gap:10px}
+.ref-chart[data-responsive=true] .ref-inspector footer button{min-height:30px;font-size:13px}
+.ref-chart[data-responsive=true] .ref-inspector-context strong{min-width:0;overflow-wrap:anywhere}
+.ref-chart[data-responsive=true] .ref-chart-detail{position:relative;inset:auto;width:100%;margin-top:12px;padding:12px}
+.ref-chart[data-responsive=true] .ref-chart-detail header{gap:12px}
+.ref-chart[data-responsive=true] .ref-chart-detail header button{min-width:30px;min-height:30px}
+
+/* Pinned evidence occupies a compact, readable region as panel space increases. */
+@container reference-timeseries (min-width:600px){
+  .ref-chart[data-responsive=true] .ref-inspector{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 24px;align-items:start}
+  .ref-chart[data-responsive=true] .ref-inspector-time{grid-column:1 / -1;margin:0}
+  .ref-chart[data-responsive=true] .ref-inspector-values{grid-column:1;grid-row:2}
+  .ref-chart[data-responsive=true] .ref-inspector-values>div{min-height:24px;margin:0}
+  .ref-chart[data-responsive=true] .ref-inspector-context{grid-column:1;grid-row:3;margin:0;padding:0;border:0}
+  .ref-chart[data-responsive=true] .ref-inspector-slo{grid-column:1;grid-row:3;margin:0;padding:0;border:0}
+  .ref-chart-reliability[data-responsive=true] .ref-inspector-context{grid-row:4}
+  .ref-chart[data-responsive=true] .ref-inspector-histories{grid-column:2;grid-row:2 / 5;grid-template-columns:minmax(0,1fr);margin:0;gap:6px;align-content:start}
+  .ref-chart[data-responsive=true] .ref-inspector-history{height:42px;gap:3px}
+  .ref-chart[data-responsive=true] .ref-inspector-history>div{height:25px}
+  .ref-chart[data-responsive=true] .ref-inspector footer{grid-column:1 / -1;grid-row:5;margin:0;justify-content:flex-start;gap:18px}
+}
+@container reference-timeseries (min-width:820px){
+  .ref-chart[data-responsive=true] .ref-inspector{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr);column-gap:24px}
+  .ref-chart[data-responsive=true] .ref-inspector-values{grid-column:1;grid-row:2 / 4}
+  .ref-chart[data-responsive=true] .ref-inspector-context{grid-column:2;grid-row:2 / 4}
+  .ref-chart[data-responsive=true] .ref-inspector-slo{grid-column:2;grid-row:2}
+  .ref-chart-reliability[data-responsive=true] .ref-inspector-context{grid-column:2;grid-row:3}
+  .ref-chart[data-responsive=true] .ref-inspector-histories{grid-column:3;grid-row:2 / 4;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .ref-chart[data-responsive=true] .ref-inspector footer{grid-row:4}
+}

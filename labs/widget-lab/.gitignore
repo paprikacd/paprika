@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.sites/
+.openai/local/
+*.log
+coverage/

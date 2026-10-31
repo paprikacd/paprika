@@ -1,0 +1,44 @@
+.spatial-chart { color:#c6dce8;font-family:Barlow,sans-serif;font-size:12px;min-width:0;width:100%;font-variant-numeric:tabular-nums; }
+.spatial-chart svg { display:block;max-width:none;overflow:visible; }
+.spatial-chart [role=button] {cursor:pointer;outline:none;}
+.spatial-chart [role=button]:focus-visible {outline:2px solid #ff7956;outline-offset:2px;}
+.spatial-chart svg:focus-visible {outline:2px solid #ff7956;outline-offset:-2px;}
+.spatial-chart button,.spatial-chart select,.spatial-chart input {font:inherit;min-height:30px;border:1px solid #28505f;border-radius:4px;background:#0b2733;color:#cbe2ef;}
+.spatial-chart button {padding:4px 9px;cursor:pointer;}
+.spatial-chart button:hover {background:#153c49;border-color:#3c7083;}
+.spatial-chart button:disabled {opacity:.4;cursor:default;}
+.spatial-chart select {max-width:100%;padding:4px 8px;}
+.spatial-chart input {padding:3px 7px;max-width:112px;}
+.spatial-chart button:focus-visible,.spatial-chart select:focus-visible,.spatial-chart input:focus-visible {outline:2px solid #ff7956;outline-offset:2px;}
+.spatial-scroll {max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;}
+.spatial-controls {display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 3px;color:#8cabbc;font-size:12px;}
+.spatial-controls label {display:flex;align-items:center;gap:5px;}
+.spatial-controls input[type=checkbox] {min-height:initial;}
+.spatial-legend {display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:7px 4px;color:#9cbaca;font-size:12px;}
+.spatial-legend>span {display:inline-flex;align-items:center;gap:6px;}
+.spatial-legend i {width:8px;height:8px;border-radius:50%;display:inline-block;}
+.spatial-note {font-size:11px;color:#7f9faf;margin:4px 4px 9px;}
+.spatial-inspector {border:1px solid #356071;border-radius:5px;background:#061a25;padding:10px 12px;margin:6px 3px 9px;box-shadow:0 7px 22px #0003;}
+.spatial-inspector>header {display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #21434f;padding-bottom:6px;}
+.spatial-inspector strong {font-size:14px;color:#ecf6ff;}
+.spatial-inspector header button {min-height:27px;padding:3px;display:flex;}
+.spatial-inspector dl {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:8px 20px;margin:10px 0 1px;}
+.spatial-inspector dl>div {display:flex;flex-direction:column;gap:3px;}
+.spatial-inspector dt {color:#85a6b9;font-size:11px;}
+.spatial-inspector dd {margin:0;color:#e2f0f8;font-size:13px;overflow-wrap:anywhere;}
+.spatial-map-stage {position:relative;overflow:hidden;border:1px solid #123746;border-radius:4px;}
+.spatial-map-controls {position:absolute;left:10px;top:10px;display:flex;align-items:center;gap:4px;}
+.spatial-map-controls button {display:flex;align-items:center;justify-content:center;width:31px;height:31px;background:#08222eec;}
+.spatial-map-controls span {padding:4px;color:#b8d7e7;font-size:11px;background:#08222ecc;}
+.spatial-map-pan {position:absolute;left:10px;top:48px;display:flex;gap:4px;}
+.spatial-map-pan button {width:31px;background:#08222eec;}
+.spatial-map-caption {position:absolute;bottom:7px;left:10px;max-width:calc(100% - 20px);background:#061c26d9;color:#8aafc0;padding:3px 6px;font-size:11px;}
+.spatial-empty {color:#7897a8;display:grid;place-items:center;min-height:220px;font-size:13px;}
+.spatial-raster {position:relative;flex-shrink:0;}
+.spatial-raster>canvas,.spatial-raster>svg {position:absolute;inset:0;}
+.spatial-color-key {display:inline-block!important;width:120px;height:10px;border-radius:2px;}
+.spatial-subheading {display:flex;justify-content:space-between;gap:12px;padding:5px 18px 0 58px;font-size:12px;color:#8eafbf;}
+.spatial-subheading strong {color:#d2e6ef;font-weight:500;}
+.spatial-error {color:#ffad8f;padding:0 5px;}
+@media(prefers-reduced-motion:no-preference){.spatial-inspector {animation:spatial-inspect-in 130ms ease-out;}@keyframes spatial-inspect-in{from{opacity:.3;transform:translateY(2px)}to{opacity:1;transform:none}}}
+[data-motion=reduced] .spatial-inspector {animation:none;}

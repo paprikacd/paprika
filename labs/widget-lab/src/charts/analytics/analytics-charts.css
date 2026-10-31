@@ -1,0 +1,21 @@
+.analytics-chart { position:relative; display:flex; flex-direction:column; min-width:0; width:100%; height:100%; color:#d7eaf3; font-family:Barlow,sans-serif; font-variant-numeric:tabular-nums; }
+.analytics-chart-scroll { width:100%; min-width:0; min-height:0; overflow:auto; flex:1; }
+.analytics-chart svg { display:block; max-width:none; }
+.analytics-chart svg text { font:12px Barlow,sans-serif; fill:#b8d2df; pointer-events:none; }
+.analytics-chart svg text.analytics-muted { fill:#7da0b2; }
+.analytics-grid { stroke:#173845; stroke-width:1; }
+.analytics-chart [data-analytics-mark] { cursor:pointer; outline:none; }
+.analytics-chart [data-analytics-mark]:focus-visible { outline:2px solid #ffac7b; outline-offset:1px; }
+.analytics-chart [data-analytics-mark] path,.analytics-chart [data-analytics-mark] rect { transition:fill-opacity 140ms ease,opacity 140ms ease; }
+.analytics-inspector { position:absolute; right:12px; top:35px; z-index:5; width:min(260px,calc(100% - 24px)); padding:11px 12px; border:1px solid #355768; border-radius:5px; box-shadow:0 7px 22px #0009; background:#061a25f7; pointer-events:auto; font-size:12px; }
+.analytics-inspector header { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#87abbd; margin-bottom:8px; }
+.analytics-inspector button { cursor:pointer; color:#bcd8e5; background:none; border:0; font:inherit; }
+.analytics-inspector > strong { display:block; color:#ecf8fd; font-size:15px; overflow-wrap:anywhere; }
+.analytics-inspector dl { margin:8px 0; }
+.analytics-inspector dl > div { display:flex; justify-content:space-between; align-items:baseline; gap:14px; padding:5px 0; border-bottom:1px solid #183543; }
+.analytics-inspector dt { color:#95b3c3; }
+.analytics-inspector dd { margin:0; color:#e5f1f7; text-align:right; }
+.analytics-inspector button.analytics-pin { width:100%; padding:7px; border:1px solid #2c5263; border-radius:4px; color:#16cde7; }
+.analytics-empty { display:grid; place-items:center; min-height:180px; padding:18px; color:#9ab7c7; font-size:13px; }
+@media(prefers-reduced-motion:reduce) { .analytics-chart [data-analytics-mark] path,.analytics-chart [data-analytics-mark] rect { transition:none; } }
+[data-motion="reduced"] .analytics-chart [data-analytics-mark] path,[data-motion="reduced"] .analytics-chart [data-analytics-mark] rect { transition:none; }
