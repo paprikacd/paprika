@@ -1,4 +1,4 @@
-.plotBackground { fill: var(--gamma-surface-2); stroke: var(--gamma-border); stroke-width: 1; }
+.plotBackground { fill: var(--gamma-bg); stroke: var(--gamma-border); stroke-width: 1; }
 .gridLine { stroke: var(--gamma-border); stroke-width: .5; opacity: .7; }
 .legend {
   display: flex;
@@ -10,20 +10,39 @@
   line-height: 1.4;
 }
 .ramp {
-  display: flex;
+  flex: none;
   width: 120px;
   height: 8px;
-  overflow: hidden;
   border-radius: 2px;
 }
-.ramp > i { flex: 1; }
-.missing { display: inline-flex; align-items: center; gap: 5px; }
-.missing::before {
-  content: "";
-  width: 10px;
-  height: 8px;
-  border: 1px solid var(--gamma-border);
-  background: repeating-linear-gradient(135deg, var(--gamma-surface) 0 3px, var(--gamma-border) 3px 4px);
+.key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.key > i { flex: none; }
+.quantileSwatch { flex: none; overflow: visible; }
+.quantile {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+  line-height: 1.4;
 }
+.window { display: grid; gap: 6px; margin-top: 8px; }
+.windowList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.windowList li { display: grid; grid-template-columns: 62px minmax(40px, 1fr) auto; align-items: center; gap: 8px; }
+.windowList li[aria-current="true"] { color: var(--gamma-ink); font-weight: 600; }
+.windowLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.windowTrack { display: block; height: 8px; border-radius: 2px; overflow: hidden; background: var(--gamma-chart-empty); }
+.windowTrack > i { display: block; height: 100%; }
+.windowValue { font-weight: inherit; white-space: nowrap; }
+.quantileNote { margin: 0; color: var(--widget-text, var(--gamma-muted)); font-size: 11px; line-height: 1.4; }
 .dataError { display: grid; align-content: center; gap: 6px; height: 100%; padding: 12px; color: var(--gamma-ink); font-size: 12px; line-height: 1.5; }
 .dataError p { margin: 0; color: var(--gamma-muted); }

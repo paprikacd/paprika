@@ -7,16 +7,69 @@ export function heatmapColumnLimit(plotWidth: number, maximum = 60): number {
 
 export interface HeatmapColumn { center: number; left: number; width: number }
 
-/** Zero has its own color; positive values are mapped between the observed
- * positive minimum and maximum without altering the underlying bucket data. */
-export function heatmapDensityLevel(value: number, max: number, minPositive: number | null, steps: number, scale: "linear" | "logarithmic"): number {
-  if (!Number.isFinite(value) || value <= 0 || !Number.isFinite(max) || max <= 0 || steps < 2) return 0;
-  if (scale === "linear") return Math.min(steps - 1, Math.max(0, Math.floor(value / max * (steps - 1))));
-  if (minPositive === null || minPositive <= 0 || !Number.isFinite(minPositive)) return 0;
-  const low = Math.log(minPositive), high = Math.log(max);
-  if (high <= low) return steps - 1;
-  const fraction = Math.max(0, Math.min(1, (Math.log(value) - low) / (high - low)));
-  return 1 + Math.floor(fraction * (steps - 2));
+/** Zero is not a density step: it returns null, so the caller draws observed zero as the empty fill.
+ * Positive values map to steps 0..steps-1 against the maximum, linearly or, when logarithmic, between
+ * the smallest positive value (step 0) and the maximum. A single positive value takes the top step. */
+export function heatmapDensityLevel(value: number, max: number, minPositive: number | null, steps: number, scale: "linear" | "logarithmic"): number | null {
+  if (!Number.isFinite(value) || value <= 0 || steps < 2) return null;
+  const logarithmic = scale === "logarithmic" && minPositive !== null && minPositive > 0 && Number.isFinite(minPositive) && max > 0 && Number.isFinite(max);
+  let unit = max > 0 && Number.isFinite(max) ? value / max : 1;
+  if (logarithmic) {
+    const low = Math.log(minPositive), high = Math.log(max);
+    unit = high <= low ? 1 : (Math.log(value) - low) / (high - low);
+  }
+  return Math.min(steps - 1, Math.max(0, Math.round(Math.min(1, Math.max(0, unit)) * (steps - 1))));
+}
+
+export interface QuantileLineInput {
+  columns: readonly HeatmapColumn[];
+  /** The p95 bucket of each column, or null when the column has no drawable p95. */
+  buckets: readonly (number | null)[];
+  /** True where the line must not join the previous column. */
+  breaks: readonly boolean[];
+  /** Displayed rows. A bucket at or above this index is hidden, so it cannot be drawn. */
+  rows: number;
+  rowCentre: (row: number) => number;
+  gaps: readonly { left: number; right: number }[];
+}
+
+/** The step line for the p95 bucket. `d` joins every run of drawable columns with one path; `above`
+ * lists the centres of columns whose p95 bucket is hidden above the displayed rows. */
+export function quantileLine({ columns, buckets, breaks, rows, rowCentre, gaps }: QuantileLineInput): { d: string; above: number[] } {
+  const runs: number[][] = [], above: number[] = [];
+  let run: number[] = [];
+  columns.forEach((column, index) => {
+    const bucket = buckets[index];
+    if (bucket === null || bucket >= rows) {
+      if (bucket !== null) above.push(column.center);
+      if (run.length) runs.push(run);
+      run = [];
+      return;
+    }
+    // A column joins the run only if it is the next column, no window in between is unsampled and not
+    // ok, and no source gap lies between their centres. Each of those breaks the line rather than bridging.
+    if (run.length && (breaks[index] || gaps.some(gap => gap.right > columns[index - 1].center && gap.left < column.center))) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(index);
+  });
+  if (run.length) runs.push(run);
+  const round = (value: number) => Number(value.toFixed(2));
+  const d = runs.map(members => {
+    const points: string[] = [];
+    members.forEach((index, position) => {
+      const column = columns[index], y = rowCentre(buckets[index]!);
+      if (position) {
+        // The vertical join sits midway in the gutter between the two columns.
+        const previous = columns[index - 1], join = round((previous.left + previous.width + column.left) / 2);
+        points.push(`${join},${round(rowCentre(buckets[index - 1]!))}`, `${join},${round(y)}`);
+      }
+      points.push(`${round(column.left)},${round(y)}`, `${round(column.left + column.width)},${round(y)}`);
+    });
+    return `M${points.join("L")}`;
+  }).join("");
+  return { d, above };
 }
 
 /** Adjacent representative samples share the available timeline, but known

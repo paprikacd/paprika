@@ -177,3 +177,86 @@ describe("stack and directional geometry", () => {
     expect(sampleTimeIndices(0, 12, () => false, () => 0)).toEqual([]);
   });
 });
+
+describe("distribution quantiles and gap states", () => {
+  it("classifies each cell as observed, missing or invalid, and keeps observed zero distinct", () => {
+    const data = buildDistribution([bucket("10", [5, null, 5, 0]), bucket("50", [10, 10, 4, 0]), bucket("+Inf", [10, 10, 10, 0])], {});
+    expect(data.rows.map(row => row.cells.map(cell => cell.state))).toEqual([
+      ["observed", "missing", "observed", "observed"],
+      ["observed", "missing", "invalid", "observed"],
+      ["observed", "observed", "observed", "observed"],
+    ]);
+    expect(data.rows[0].cells[3]).toMatchObject({ value: 0, state: "observed" });
+    expect(data.invalidCells).toBe(1);
+  });
+  it("finds each window's p95 bucket from the full bucket list and never averages percentiles", () => {
+    // Window A is all in the first bucket, B all in the second. Their per-window p95s average to 28.75, but
+    // the p95 of the pooled counts (10 in each of two buckets) is 46.
+    const data = buildDistribution([bucket("10", [10, 0]), bucket("50", [10, 10]), bucket("+Inf", [10, 10])], {});
+    expect(data.quantiles.map(window => [window.state, window.p95?.bucket])).toEqual([["ok", 0], ["ok", 1]]);
+    expect(data.quantiles[0].p95?.estimate).toBeCloseTo(9.5);
+    expect(data.quantiles[1].p95?.estimate).toBeCloseTo(48);
+    expect(data.merged).toMatchObject({ bounded: true, windows: 2, used: 2, missing: 0, invalid: 0, empty: 0 });
+    expect(data.merged.estimate?.estimate).toBeCloseTo(46);
+    expect(data.quantiles.map(window => window.total)).toEqual([10, 10]);
+  });
+  it("reports no p95 and no total without a +Inf bucket", () => {
+    const data = buildDistribution([bucket("10", [5, 0]), bucket("50", [10, 10])], {});
+    expect(data.quantiles.map(window => [window.state, window.p95, window.total])).toEqual([["unbounded", null, null], ["unbounded", null, null]]);
+    expect(data.merged).toMatchObject({ estimate: null, bounded: false, used: 0 });
+  });
+  it("keeps every window unbounded without +Inf, but still reports the gap for sampling and counts", () => {
+    const data = buildDistribution([bucket("10", [5, null, 5]), bucket("50", [10, 10, 4])], {});
+    expect(data.quantiles.map(window => [window.state, window.gap, window.total, window.p95])).toEqual([
+      ["unbounded", null, null, null], ["unbounded", "missing", null, null], ["unbounded", "invalid", null, null],
+    ]);
+    expect(data.merged).toMatchObject({ bounded: false, used: 0, missing: 1, invalid: 1 });
+  });
+  it("leaves missing and invalid windows out of the merge, and reports their counts", () => {
+    const data = buildDistribution([bucket("10", [5, null, 5, 0]), bucket("50", [10, 10, 4, 0]), bucket("+Inf", [10, 10, 10, 0])], {});
+    expect(data.quantiles.map(window => window.state)).toEqual(["ok", "missing", "invalid", "empty"]);
+    expect(data.quantiles.map(window => window.total)).toEqual([10, null, null, 0]);
+    expect(data.merged).toMatchObject({ windows: 4, used: 2, missing: 1, invalid: 1, empty: 1 });
+    expect(data.merged.estimate?.estimate).toBeCloseTo(46);
+  });
+  it("quotes the highest window and marks an overflow p95 as above its last finite bound", () => {
+    const data = buildDistribution([bucket("10", [5, 2]), bucket("50", [10, 6]), bucket("+Inf", [10, 10])], {});
+    expect(data.quantiles[1].p95).toMatchObject({ bucket: 2, overflow: true, estimate: null, lower: 50 });
+    expect(data.highest).toMatchObject({ timestamp: 2000, p95: { overflow: true, lower: 50 } });
+    expect(data.merged.estimate).toMatchObject({ overflow: true, lower: 50 });
+  });
+  it("keeps a p95-only spike when sampling, because the magnitude rule would drop it", () => {
+    // Ordinary windows put 90% in the second bucket. The spike has the smallest largest-bucket count but
+    // pushes its p95 into +Inf, so only the peak rule keeps it.
+    const ordinary = Array.from({ length: 40 }, () => [900, 90, 10]);
+    ordinary[17] = [600, 300, 100];
+    const spike = 17 * 1000 + 1000;
+    const values = [0, 1, 2].map(row => ordinary.map(counts => counts[row]));
+    const data = buildDistribution([bucket("10", values[0]), bucket("50", values[0].map((v, i) => v + values[1][i])), bucket("+Inf", values[0].map((v, i) => v + values[1][i] + values[2][i]))], { maxColumns: 8 });
+    expect(data.sampled).toBe(true);
+    expect(data.timestamps).toContain(spike);
+    expect(data.quantiles.find(window => window.timestamp === spike)?.p95?.overflow).toBe(true);
+    expect(data.highest).toMatchObject({ timestamp: spike, p95: { overflow: true } });
+  });
+  it("breaks the p95 line before a sampled column when an unsampled window in between is not ok", () => {
+    // Window 10 is observed zero (empty), which sampling may drop. The column after it must break the line.
+    const counts = Array.from({ length: 40 }, () => [900, 90, 10]);
+    counts[10] = [0, 0, 0];
+    const values = [0, 1, 2].map(row => counts.map(c => c[row]));
+    const data = buildDistribution([bucket("10", values[0]), bucket("50", values[0].map((v, i) => v + values[1][i])), bucket("+Inf", values[0].map((v, i) => v + values[1][i] + values[2][i]))], { maxColumns: 8 });
+    const indices = data.timestamps.map(timestamp => timestamp / 1000 - 1);
+    expect(indices).not.toContain(10);
+    const after = data.quantiles.findIndex((window, position) => position > 0 && indices[position - 1] < 10 && indices[position] > 10);
+    expect(data.quantiles[after].breakBefore).toBe(true);
+    expect(data.quantiles[0].breakBefore).toBe(false);
+  });
+});
+
+describe("sampling priority", () => {
+  it("keeps a missing column over a peak, and a peak over magnitude", () => {
+    expect(sampleTimeIndices(10, 4, () => false, index => index)).toEqual([0, 4, 8, 9]);
+    expect(sampleTimeIndices(10, 4, () => false, index => index, index => index === 3)).toEqual([0, 3, 8, 9]);
+    expect(sampleTimeIndices(10, 4, index => index === 2, index => index, index => index === 3)).toEqual([0, 2, 8, 9]);
+    expect(sampleTimeIndices(10, 4, index => index === 5, () => 0)).toEqual([0, 1, 5, 9]);
+  });
+});

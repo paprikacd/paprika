@@ -251,7 +251,8 @@ describe("rich metric renderers", () => {
     const assertObservation = (bucket: string, value: string, timestamp: string) => {
       expect(within(inspector).getByText("Latency distribution")).toBeVisible();
       expect(within(inspector).getByText(`Selected bucket: ${bucket}`)).toBeVisible();
-      expect(within(inspector).getByText(value)).toBeVisible();
+      // The window histogram repeats bucket values, so the selected value is read from the observation block.
+      expect(within(inspector.querySelector<HTMLElement>("[data-observation-details]")!).getByText(value)).toBeVisible();
       expect(inspector.querySelector("time")).toBeVisible();
       expect(inspector.querySelector("time")).toHaveAttribute("datetime", timestamp);
       expect(inspector.querySelector("details")).not.toHaveAttribute("open");

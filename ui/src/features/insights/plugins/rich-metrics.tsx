@@ -18,14 +18,21 @@ import { TimeWindowLens } from "../time-window-lens";
 import { seriesInWindow, type ObservationWindow } from "../time-window";
 import type { QueryResult } from "../schema";
 import { metricPriorPeriod } from "./metric-prior-period";
-import { heatmapColumnAt, heatmapColumnLimit, heatmapColumns, heatmapDensityLevel, heatmapGaps } from "./distribution-heatmap-layout";
+import { heatmapColumnAt, heatmapColumnLimit, heatmapColumns, heatmapDensityLevel, heatmapGaps, quantileLine } from "./distribution-heatmap-layout";
 import heatmapStyles from "./distribution-heatmap.module.css";
-import { buildDistribution, buildMetricPlot, directionalConfigSchema, distributionConfigSchema, stackedConfigSchema, MetricDataError, type DistributionConfig, type DistributionData, type MetricCell, type MetricSeries } from "./rich-metrics-data";
+import plotHatchStyles from "../plot-hatch.module.css";
+import { PlotHatchDefs, plotHatchFill } from "../plot-hatch";
+import { DistributionWindowHistogram, type WindowHistogramBucket } from "./distribution-window-histogram";
+import { buildDistribution, buildMetricPlot, directionalConfigSchema, distributionConfigSchema, stackedConfigSchema, MetricDataError, type DistributionCell, type DistributionConfig, type DistributionData, type DistributionRow, type MetricCell, type MetricSeries } from "./rich-metrics-data";
 import styles from "./rich-metrics.module.css";
 import tooltipStyles from "../chart-styles.module.css";
 
 const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
-const densityPalette = ["var(--gamma-density-0, #dce9f0)", "var(--gamma-density-1, #98bfd7)", "var(--gamma-density-2, #509bbf)", "var(--gamma-density-3, #35a7a2)", "var(--gamma-density-4, #c1bf5d)", "var(--gamma-density-5, #d78642)", "var(--gamma-danger, #b4473d)"];
+// The 24-step heat ramp, lowest density first. Fallbacks are the light-theme values.
+const densityPalette = ["var(--gamma-density-0, #13a0ab)", "var(--gamma-density-1, #119ca5)", "var(--gamma-density-2, #0f979f)", "var(--gamma-density-3, #0d939a)", "var(--gamma-density-4, #0a8f94)", "var(--gamma-density-5, #088a8e)", "var(--gamma-density-6, #068689)", "var(--gamma-density-7, #078187)", "var(--gamma-density-8, #087d84)", "var(--gamma-density-9, #087881)", "var(--gamma-density-10, #09747e)", "var(--gamma-density-11, #096f7b)", "var(--gamma-density-12, #096a79)", "var(--gamma-density-13, #086576)", "var(--gamma-density-14, #076073)", "var(--gamma-density-15, #065b70)", "var(--gamma-density-16, #05556d)", "var(--gamma-density-17, #03506b)", "var(--gamma-density-18, #034b67)", "var(--gamma-density-19, #024663)", "var(--gamma-density-20, #02415f)", "var(--gamma-density-21, #013d5b)", "var(--gamma-density-22, #013857)", "var(--gamma-density-23, #003353)"];
+/** Histogram rows with at most this many buckets are shown while hovering; pinned rows always show them. */
+const hoverHistogramLimit = 12;
+const readoutClock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 const stamp = (timestamp: number) => new Date(timestamp).toISOString();
 const localEventTime = (timestamp: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(timestamp));
 const number = (value: number) => Number.isFinite(value) ? Number(value.toFixed(3)) : 0;
@@ -137,10 +144,10 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave, enterPanel, focusPanel };
 }
 
-function Inspector({ widget, observation, peers, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
+function Inspector({ widget, observation, peers, extra, footer, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; extra?: ReactNode; footer?: ReactNode; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
   return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
     <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={onClose}><X size={14} /></GammaButton></div>
-    <div className={styles.inspectorDetails}>
+    <div className={styles.inspectorDetails} data-observation-details>
       <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}>
         {observation.bucket && <span className={tooltipStyles.tooltipEyebrow}>Selected bucket: {observation.bucket}</span>}
       </MetricDetails>
@@ -148,8 +155,10 @@ function Inspector({ widget, observation, peers, pinned, decimals, onPin, onClos
     {peers && peers.length > 1 && <ul aria-label="Series at selected time" className={styles.inspectorPeers}>
       {peers.map((peer, index) => <li key={index} data-series-index={index} data-series-name={peer.name} data-series-value={peer.value === null ? "missing" : peer.value}><i aria-hidden="true" style={{ background: peer.color }} /><LegendName name={peer.name} display={peer.display} /><b>{peer.value === null ? "No observation" : formatMetric(peer.value, observation.unit, false, decimals)}</b></li>)}
     </ul>}
+    {extra}
     {observation.note && <p className={styles.note}>{observation.note}</p>}
     {pinned && <div className={styles.history}><StatSparkline series={observation.series} name={observation.name} color={observation.color} unit={observation.unit} /></div>}
+    {footer}
     {!pinned && <span className={styles.pinHint}>Click or tap chart to pin details</span>}
     <GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />{pinned ? "Unpin observation" : "Pin observation"}</GammaButton>
   </ObservationTooltip>;
@@ -215,6 +224,21 @@ function densityMaximumLabel(value: number, unit: string, decimals?: number) {
   return formatMetric(value, unit, false, decimals);
 }
 
+/** The readout under the heatmap. The merged p95 is quoted only when the +Inf bucket makes it defined; percentiles are never averaged. */
+function quantileReadout(data: DistributionData, unit: string, decimals: number | undefined, clock: (timestamp: number) => string) {
+  const { merged, highest } = data;
+  const format = (value: number) => formatMetric(value, unit, false, decimals);
+  const estimate = merged.estimate, scope = `merged over ${merged.used} of ${merged.windows} windows`;
+  const parts: string[] = [];
+  if (estimate?.overflow) parts.push(`p95 above ${format(estimate.lower)} · ${scope}`);
+  else if (estimate?.estimate !== null && estimate?.estimate !== undefined) parts.push(`p95 ≈ ${format(estimate.estimate)} · ${scope}`);
+  else parts.push(!merged.bounded ? "p95 unavailable: no +Inf bucket" : merged.used === 0 ? "p95 unavailable: no complete windows" : "p95 unavailable: no observations");
+  const excluded = merged.missing + merged.invalid;
+  if (excluded) parts.push(`${[merged.missing ? `${merged.missing} missing` : "", merged.invalid ? `${merged.invalid} invalid` : ""].filter(Boolean).join(", ")} ${excluded === 1 ? "window" : "windows"} excluded`);
+  if (highest) parts.push(highest.p95.overflow ? `highest window p95 above ${format(highest.p95.lower)} at ${clock(highest.timestamp)}` : `highest window p95 ${format(highest.p95.estimate!)} at ${clock(highest.timestamp)}`);
+  return parts.join(" · ");
+}
+
 export function DistributionHeatmap(props: WidgetRendererProps) {
   const { widget, result } = props;
   const config = useMemo(() => distributionConfigSchema.parse(widget.config ?? {}), [widget.config]);
@@ -253,10 +277,41 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const timeStart = data.timestamps[0] ?? 0, timeSpan = (data.timestamps.at(-1) ?? timeStart) - timeStart;
   const columnX = (timestamp: number) => left + cellWidth / 2 + (timeSpan ? (timestamp - timeStart) / timeSpan : .5) * Math.max(0, plotWidth - cellWidth);
   const cursorTime = inspection.enabled && sharedCursor && sharedCursor.timestamp >= timeStart && sharedCursor.timestamp <= timeStart + timeSpan ? sharedCursor.timestamp : undefined;
+  // Zero is the empty fill and a gap is hatched; neither takes a density colour.
+  const densityFill = (value: number) => {
+    const level = heatmapDensityLevel(value, data.max, data.minPositive, densityPalette.length, config.colorScale ?? "linear");
+    return level === null ? "var(--gamma-chart-empty)" : densityPalette[level];
+  };
+  const cellFill = (cell: DistributionCell) => cell.state === "missing" ? plotHatchFill(id) : cell.state === "invalid" ? plotHatchFill(id, "warning") : densityFill(cell.value ?? 0);
+  const cellTitle = (row: DistributionRow, cell: DistributionCell) => cell.state === "missing" ? "No observation"
+    : cell.state === "invalid" ? "Invalid bucket counts: cumulative counts decrease or are negative"
+    : `${cellLabel(row.lower, row.upper, unit)} · ${stamp(cell.timestamp)} · ${formatMetric(cell.value ?? 0, densityUnit, false, widget.options?.decimals)}`;
+  // Labels come from the full bounds, so a bucket hidden by maxBuckets can still be named in the inspector.
+  const bucketLabel = (bucket: number) => cellLabel(bucket ? fullData.bounds[bucket - 1] : -Infinity, fullData.bounds[bucket], unit);
+  // The readout names one window, so it shows seconds; the axis format is too coarse to tell neighbours apart.
+  const clock = (timestamp: number) => timeSpan >= 86_400_000 ? formatTimeTick(timestamp, timeSpan) : readoutClock.format(new Date(timestamp));
   const observation = (row: number, column: number): Observation => {
     const bucket = data.rows[row], cell = bucket.cells[column], name = cellLabel(bucket.lower, bucket.upper, unit);
-    return { row, column, ...cell, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note: "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit." };
+    const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
+      : cell.state === "invalid" ? "Invalid source counts: cumulative counts decrease or are negative here. The cell is not drawn as density and its time is left out of the p95."
+      : "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit.";
+    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note };
   };
+  // The p95 line sits on each drawable window's bucket row. Non-ok windows, source gaps and hidden buckets break it.
+  const quantile = quantileLine({
+    columns, buckets: data.quantiles.map(window => window.state === "ok" && window.p95 ? window.p95.bucket : null), breaks: data.quantiles.map(window => window.breakBefore),
+    rows: data.rows.length, rowCentre: row => top + (data.rows.length - .5 - row) * cellHeight, gaps,
+  });
+  const readout = quantileReadout(data, unit, widget.options?.decimals, clock);
+  const selected = inspection.active && columns[inspection.active.observation.column] ? {
+    x: columns[inspection.active.observation.column].left, width: columns[inspection.active.observation.column].width,
+    y: top + (data.rows.length - 1 - inspection.active.observation.row) * cellHeight + .5, height: Math.max(.1, cellHeight - 1),
+  } : undefined;
+  const windowAt = inspection.active ? data.quantiles[inspection.active.observation.column] : undefined;
+  const histogram = inspection.active && windowAt ? <DistributionWindowHistogram
+    buckets={data.rows.map((row, bucket): WindowHistogramBucket => ({ bucket, label: cellLabel(row.lower, row.upper, unit), value: row.cells[inspection.active!.observation.column].value, state: row.cells[inspection.active!.observation.column].state, fill: cellFill(row.cells[inspection.active!.observation.column]) })).reverse()}
+    selected={inspection.active.observation.row} windowQuantile={windowAt} bucketLabel={bucketLabel} unit={unit} densityUnit={densityUnit} decimals={widget.options?.decimals}
+    showList={inspection.active.pinned || data.rows.length <= hoverHistogramLimit} /> : undefined;
   const locate = (event: PointerEvent<SVGSVGElement>) => {
     const point = coordinates(event, width, height);
     if (point.x < left || point.x > left + plotWidth || point.y < top || point.y > top + plotHeight) return;
@@ -283,25 +338,50 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
         onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value); else if (inspection.active && !inspection.active.pinned) inspection.dismiss(); }}
         onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
-        <defs><pattern id={`${id}-missing`} width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="var(--gamma-surface)" /><path d="M-1 1L1 -1 M0 5L5 0 M4 6L6 4" stroke="var(--gamma-border)" strokeWidth="1" /></pattern></defs>
+        <PlotHatchDefs id={id} />
         <rect x={left} y={top} width={plotWidth} height={plotHeight} className={heatmapStyles.plotBackground} aria-hidden="true" />
         {timeTicks(data.timestamps, plotWidth).map(index => <line key={index} x1={columnX(data.timestamps[index])} x2={columnX(data.timestamps[index])} y1={top} y2={top + plotHeight} className={heatmapStyles.gridLine} aria-hidden="true" />)}
+        {gaps.map((gap, index) => <rect key={index} x={gap.left} y={top} width={Math.max(0, gap.right - gap.left)} height={plotHeight} fill={plotHatchFill(id)} pointerEvents="none" aria-hidden="true" data-heatmap-gap />)}
         {data.rows.map((row, rowIndex) => <g key={row.upper}>
           {showAxis && axisRows.has(rowIndex) && <text data-value-axis x={left - 8} y={top + (data.rows.length - rowIndex - .5) * cellHeight} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[rowIndex]}</text>}
-          {row.cells.map((cell, column) => {
-            const fill = cell.value === null ? `url(#${id}-missing)` : densityPalette[heatmapDensityLevel(cell.value, data.max, data.minPositive, densityPalette.length, config.colorScale ?? "linear")];
-            const active = inspection.active?.observation.row === rowIndex && inspection.active.observation.column === column;
-            return <rect key={cell.timestamp} x={columns[column].left} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={columns[column].width} height={Math.max(.1, cellHeight - 1)} fill={fill} stroke={active ? "var(--gamma-ink)" : cell.value === null ? "var(--gamma-border)" : "none"} strokeWidth={active ? 2 : .5} strokeDasharray={cell.value === null ? "2 2" : undefined} data-bucket-value={cell.value ?? "unknown"} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}>{(embeddedChart || props.embedded) && <title>{cellLabel(row.lower, row.upper, unit)} · {stamp(cell.timestamp)} · {cell.value === null ? "No observations" : formatMetric(cell.value, densityUnit, false, widget.options?.decimals)}</title>}</rect>;
-          })}
+          {row.cells.map((cell, column) => <rect key={cell.timestamp} x={columns[column].left} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={columns[column].width} height={Math.max(.1, cellHeight - 1)} fill={cellFill(cell)} data-bucket-value={cell.value ?? "unknown"} data-bucket-state={cell.state} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}>{(embeddedChart || props.embedded) && <title>{cellTitle(row, cell)}</title>}</rect>)}
         </g>)}
-        {cursorTime !== undefined && <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
+        {quantile.d !== "" && <>
+          <path d={quantile.d} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4.6} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-halo />
+          <path d={quantile.d} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-line />
+        </>}
+        {quantile.above.map((x, index) => <g key={index} pointerEvents="none" aria-hidden="true">
+          <path d={`M${x - 4},${top + 6}L${x},${top + 2}L${x + 4},${top + 6}`} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} strokeLinejoin="round" strokeLinecap="round" />
+          <path d={`M${x - 4},${top + 6}L${x},${top + 2}L${x + 4},${top + 6}`} fill="none" stroke="var(--gamma-ink)" strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" data-quantile-above />
+        </g>)}
+        {selected && <g pointerEvents="none" aria-hidden="true">
+          <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} />
+          <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} data-selected-bucket />
+        </g>}
+        {cursorTime !== undefined && <>
+          <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={3} pointerEvents="none" aria-hidden="true" />
+          <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />
+        </>}
         {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], timeSpan)}</text>)}
       </svg>
-      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
+      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
     <div className={styles.heatmapFooter}>
-    {widget.options?.showLegend !== false && <div className={heatmapStyles.legend} aria-label={`Color encodes bucket ${densityUnit}`}><span>0</span><div className={heatmapStyles.ramp}>{densityPalette.map(color => <i key={color} style={{ background: color }} />)}</div><span>{densityMaximumLabel(data.max, densityUnit, widget.options?.decimals)}</span>{config.colorScale === "logarithmic" && <span title={data.minPositive === null ? "No positive bucket observations" : `Lowest positive observation: ${data.minPositive} ${densityUnit}`}>Logarithmic · zero separate{data.minPositive !== null && ` · min ≈${data.minPositive.toPrecision(3)}`}</span>}<span className={heatmapStyles.missing}>Missing</span></div>}
-    <Notices truncated={result.truncated}>{data.groups > 1 && <span>Sum of {data.groups} compatible histograms</span>}{data.invalidCells > 0 && <span>{data.invalidCells} non-monotonic or negative bucket observations omitted</span>}{data.omittedBuckets > 0 && <span>{data.omittedBuckets} higher buckets not shown</span>}{data.sampled && <span>Sampled observations · column width does not show duration</span>}</Notices>
+    <p className={heatmapStyles.quantile} data-heatmap-quantile>{readout}</p>
+    {widget.options?.showLegend !== false && <div className={heatmapStyles.legend} aria-label={`Color encodes bucket ${densityUnit}`}>
+      <span>{config.colorScale === "logarithmic" && data.minPositive !== null ? densityMaximumLabel(data.minPositive, densityUnit, widget.options?.decimals) : "> 0"}</span>
+      <div className={heatmapStyles.ramp} style={{ background: `linear-gradient(to right, ${densityPalette.join(", ")})` }} />
+      <span>{densityMaximumLabel(data.max, densityUnit, widget.options?.decimals)}</span>
+      {config.colorScale === "logarithmic" && <span title={data.minPositive === null ? "No positive bucket observations" : `Lowest positive observation: ${data.minPositive} ${densityUnit}`}>Logarithmic · zero separate{data.minPositive !== null && ` · min ≈${data.minPositive.toPrecision(3)}`}</span>}
+      <span className={heatmapStyles.key}><i aria-hidden="true" className={plotHatchStyles.emptySwatch} />Zero</span>
+      <span className={heatmapStyles.key}><i aria-hidden="true" className={`${plotHatchStyles.hatch} ${plotHatchStyles.swatch}`} />Missing</span>
+      {data.invalidCells > 0 && <span className={heatmapStyles.key}><i aria-hidden="true" className={`${plotHatchStyles.hatchWarning} ${plotHatchStyles.swatch}`} />Invalid</span>}
+      {quantile.d !== "" && <span className={heatmapStyles.key}>
+        <svg className={heatmapStyles.quantileSwatch} width={22} height={10} viewBox="0 0 22 10" aria-hidden="true" focusable="false"><path d="M1 5H21" fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4.6} strokeLinecap="round" /><path d="M1 5H21" fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeLinecap="round" /></svg>
+        p95 bucket
+      </span>}
+    </div>}
+    <Notices truncated={result.truncated}>{data.groups > 1 && <span>Sum of {data.groups} compatible histograms</span>}{data.invalidCells > 0 && <span>{data.invalidCells} non-monotonic or negative bucket observations shown hatched, not drawn as density</span>}{data.omittedBuckets > 0 && <span>{data.omittedBuckets} higher buckets not shown</span>}{data.sampled && <span>Sampled observations · column width does not show duration</span>}</Notices>
     </div>
   </div>;
 }
