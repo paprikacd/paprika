@@ -253,9 +253,24 @@ describe("distribution quantiles and gap states", () => {
 });
 
 describe("stacked columns, partial stacks and totals", () => {
-  it("counts a track as not started until its first observation, and as missing from then on", () => {
+  it("counts a track as not started before its first observation, missing between observations, and ended after its last", () => {
     const data = buildMetricPlot([series("A", [1, null, 3]), series("B", [null, 2, null])], {});
-    expect(data.columns.map(column => [column.missing, column.notStarted])).toEqual([[[], [1]], [[0], []], [[1], []]]);
+    expect(data.columns.map(column => [column.missing, column.notStarted, column.ended])).toEqual([[[], [1], []], [[0], [], []], [[], [], [1]]]);
+  });
+  it("keeps a series that ended from counting as missing, so the stack total survives pod churn", () => {
+    // old reports at 1-3 s, new starts at 4 s, steady reports throughout.
+    const old = series("old", [2, 2, 2, null, null, null]), fresh = series("new", [null, null, null, 2, 2, 2]), steady = series("steady", [1, 1, 1, 1, 1, 1]);
+    const data = buildMetricPlot([steady, old, fresh], stackedConfigSchema.parse({ display: "bar" }));
+    expect(data.columns.map(column => [column.missing, column.notStarted, column.ended])).toEqual([
+      [[], [2], []], [[], [2], []], [[], [2], []], [[], [], [1]], [[], [], [1]], [[], [], [1]],
+    ]);
+    expect(data.totals.map(total => total.value)).toEqual([3, 3, 3, 3, 3, 3]);
+    expect(data.tracks.map(track => track.lastFinite)).toEqual([6000, 3000, 6000]);
+  });
+  it("reports each track's last finite time from the unzoomed history, or null when it never reported", () => {
+    const full = [series("A", [1, 2, 3]), series("B", [5, null, null]), series("C", [null, null, null])];
+    const zoomed = full.map(entry => ({ ...entry, points: entry.points.filter(point => point.timestamp >= 2000) }));
+    expect(buildMetricPlot(zoomed, {}, false, full).tracks.map(track => track.lastFinite)).toEqual([3000, 1000, null]);
   });
   it("keeps a track that reported before a zoomed window missing inside it when the unzoomed history is given", () => {
     const full = [series("A", [1, 2, 3]), series("B", [5, null, 6])];
@@ -265,7 +280,8 @@ describe("stacked columns, partial stacks and totals", () => {
   it("stacks the reporting tracks of an incomplete column on the complete stack's running sums", () => {
     const data = buildMetricPlot([series("A", [2, 2]), series("B", [3, null]), series("C", [-1, -1])], {});
     expect(data.columns[0]).toMatchObject({ total: 4, partial: [] });
-    expect(data.columns[1]).toMatchObject({ total: null, missing: [1], notStarted: [] });
+    // B ended after its only sample at 1 s, so the total is over the reporting series A and C.
+    expect(data.columns[1]).toMatchObject({ total: 1, missing: [], notStarted: [], ended: [1] });
     expect(data.columns[1].partial).toEqual([{ index: 0, lower: 0, upper: 2 }, { index: 2, lower: 0, upper: -1 }]);
     const signed = buildMetricPlot([series("A", [2, 2]), series("B", [-3, null]), series("C", [1, 1])], {});
     expect(signed.columns[1].partial).toEqual([{ index: 0, lower: 0, upper: 2 }, { index: 2, lower: 2, upper: 3 }]);
@@ -288,8 +304,8 @@ describe("stacked columns, partial stacks and totals", () => {
   it("gives directional columns empty stack data", () => {
     const data = buildMetricPlot([series("in", [4, null], { direction: "inbound" }), series("out", [1, 2], { direction: "outbound" })], {}, true);
     expect(data.columns).toEqual([
-      { timestamp: 1000, total: null, missing: [], notStarted: [], partial: [] },
-      { timestamp: 2000, total: null, missing: [], notStarted: [], partial: [] },
+      { timestamp: 1000, total: null, missing: [], notStarted: [], ended: [], partial: [] },
+      { timestamp: 2000, total: null, missing: [], notStarted: [], ended: [], partial: [] },
     ]);
     expect(data.totals).toEqual([{ timestamp: 1000, value: null }, { timestamp: 2000, value: null }]);
   });
@@ -314,5 +330,45 @@ describe("sampling priority", () => {
     expect(sampleTimeIndices(10, 4, () => false, index => index, index => index === 3)).toEqual([0, 3, 8, 9]);
     expect(sampleTimeIndices(10, 4, index => index === 2, index => index, index => index === 3)).toEqual([0, 2, 8, 9]);
     expect(sampleTimeIndices(10, 4, index => index === 5, () => 0)).toEqual([0, 1, 5, 9]);
+  });
+});
+
+describe("bar-mode sampling, domain and overflow", () => {
+  const bars = stackedConfigSchema.parse({ display: "bar" });
+  // a reports 10 at every time except a spike of 1000 at 152 s. late starts at 291 s, so every earlier column is incomplete.
+  const spikeAndLate = () => [
+    series("a", Array.from({ length: 300 }, (_, index) => index === 151 ? 1000 : 10)),
+    series("late", Array.from({ length: 300 }, (_, index) => index >= 290 ? 5 : null)),
+  ];
+  it("keeps a partial spike when sampling, and lets it set the bar domain", () => {
+    const data = buildMetricPlot(spikeAndLate(), bars);
+    expect(data.timestamps).toContain(152000);
+    expect(data.tracks[0].cells.find(cell => cell.timestamp === 152000)?.value).toBe(1000);
+    expect(data.columns.find(column => column.timestamp === 152000)).toMatchObject({ notStarted: [1], partial: [{ index: 0, lower: 0, upper: 1000 }] });
+    expect(data.domain).toEqual([0, 1000]);
+  });
+  it("keeps area-mode sampling and domain on complete stacks, as before", () => {
+    const data = buildMetricPlot(spikeAndLate(), {});
+    expect(data.timestamps).not.toContain(152000);
+    expect(data.domain).toEqual([0, 15]);
+  });
+  it("does not stretch the bar axis to a spike that sampling drops beside the edge of an incomplete run", () => {
+    // late starts at 151 s, so the last incomplete column (150 s) must be kept. It shares a sampling bucket with the 149 s spike.
+    const data = buildMetricPlot([
+      series("a", Array.from({ length: 300 }, (_, index) => index === 148 ? 1000 : 10)),
+      series("late", Array.from({ length: 300 }, (_, index) => index >= 150 ? 5 : null)),
+    ], bars);
+    expect(data.timestamps).toContain(150000);
+    expect(data.timestamps).not.toContain(149000);
+    expect(data.domain).toEqual([0, 15]);
+  });
+  it("counts an incomplete column as overflowing only in bar mode, as before partial stacks existed", () => {
+    const overflowing = [series("a", [1e308, 1]), series("b", [1e308, 1]), series("c", [null, 1])];
+    const area = buildMetricPlot(overflowing, {});
+    expect(area.overflowColumns).toBe(0);
+    expect(area.columns[0].overflow).toBeUndefined();
+    const barData = buildMetricPlot(overflowing, bars);
+    expect(barData.overflowColumns).toBe(1);
+    expect(barData.columns[0]).toMatchObject({ overflow: true, partial: [], total: null });
   });
 });

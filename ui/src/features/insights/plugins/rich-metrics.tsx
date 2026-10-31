@@ -5,7 +5,7 @@ import { resolveSeriesColor } from "../series-colors";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { Pin, X } from "lucide-react";
 import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
-import { formatTimeTick } from "../chart-data";
+import { fullDateTimeFormat, formatTimeTick } from "../chart-data";
 import { GammaButton } from "../gamma/button";
 import { StatSparkline } from "../stat-sparkline";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
@@ -32,8 +32,8 @@ const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)
 const densityPalette = ["var(--gamma-density-0, #13a0ab)", "var(--gamma-density-1, #119ca5)", "var(--gamma-density-2, #0f979f)", "var(--gamma-density-3, #0d939a)", "var(--gamma-density-4, #0a8f94)", "var(--gamma-density-5, #088a8e)", "var(--gamma-density-6, #068689)", "var(--gamma-density-7, #078187)", "var(--gamma-density-8, #087d84)", "var(--gamma-density-9, #087881)", "var(--gamma-density-10, #09747e)", "var(--gamma-density-11, #096f7b)", "var(--gamma-density-12, #096a79)", "var(--gamma-density-13, #086576)", "var(--gamma-density-14, #076073)", "var(--gamma-density-15, #065b70)", "var(--gamma-density-16, #05556d)", "var(--gamma-density-17, #03506b)", "var(--gamma-density-18, #034b67)", "var(--gamma-density-19, #024663)", "var(--gamma-density-20, #02415f)", "var(--gamma-density-21, #013d5b)", "var(--gamma-density-22, #013857)", "var(--gamma-density-23, #003353)"];
 /** Histogram rows with at most this many buckets are shown while hovering; pinned rows always show them. */
 const hoverHistogramLimit = 12;
-/** Bar-mode caps are fixed-size and never encode a value. Each sits above the stack, one step higher per missing series. */
-const capHeight = 8, capStep = 9;
+/** Bar-mode caps are fixed-size and never encode a value. One per incomplete column, a gap above the partial stack. */
+const capHeight = 6, capGap = 1, capHeadroom = 7;
 const readoutClock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 const stamp = (timestamp: number) => new Date(timestamp).toISOString();
 const localEventTime = (timestamp: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(timestamp));
@@ -91,6 +91,9 @@ function useAxisGutter(labels: string[], root: RefObject<HTMLDivElement | null>,
   return Math.max(32, measured?.key === key ? measured.size : labels.reduce((largest, text) => Math.max(largest, text.length * 7 + 18), 0));
 }
 
+/** Who opened an unpinned inspection. Only a pointer inspection ends when the pointer leaves the chart. */
+type InspectionOwner = "pointer" | "keyboard";
+
 function useInspection({ result, widget, embedded, onContextChange }: WidgetRendererProps, signature: string, panel: HTMLDivElement | null) {
   const parentEmbedded = useEmbeddedWidget();
   const detailsEnabled = !embedded && !parentEmbedded && widget.options?.showTooltip !== false;
@@ -101,7 +104,7 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const restoringFocus = useRef(false);
   const setRoot = useCallback((element: HTMLDivElement | null) => { root.current = element; }, []);
-  const [state, setState] = useState<{ observation: Observation; pinned: boolean; result: unknown; signature: string }>();
+  const [state, setState] = useState<{ observation: Observation; pinned: boolean; owner: InspectionOwner; result: unknown; signature: string }>();
   const active = state?.result === result && state.signature === signature && enabled ? state : undefined;
   const timestamp = active?.observation.timestamp, pinned = active?.pinned;
   useEffect(() => {
@@ -117,10 +120,10 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
     return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
   }, [enabled, panel]);
   useEffect(() => () => clearTimeout(hideTimer.current), []);
-  const show = (observation: Observation, pinned = false) => {
+  const show = (observation: Observation, pinned = false, owner: InspectionOwner = "pointer") => {
     clearTimeout(hideTimer.current);
     if (!enabled || (active?.pinned && !pinned)) return;
-    setState({ observation, pinned, result, signature });
+    setState({ observation, pinned, owner, result, signature });
     if (pinned) onContextChange?.({ series: observation.name, labels: observation.series.labels, value: observation.value });
   };
   const dismiss = () => {
@@ -137,10 +140,12 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   };
   const focus = (observation: Observation) => { if (enabled && !active && !restoringFocus.current) show(observation); };
   const enterPanel = () => { panelHover.current = true; clearTimeout(hideTimer.current); };
+  // A pointer leaving the chart ends a pointer inspection only. An inspection the arrow keys or Enter opened ends on
+  // Escape, a dismissing pointer press or focus moving away, so a pointer that was over the chart cannot clear it.
   const leave = () => {
     panelHover.current = false;
     clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => { if (!panelHover.current) setState(current => current?.pinned ? current : undefined); }, 180);
+    hideTimer.current = setTimeout(() => { if (!panelHover.current) setState(current => current?.pinned || current?.owner === "keyboard" ? current : undefined); }, 180);
   };
   const focusPanel = () => { if (!panel) return false; panel.focus({ preventScroll: true }); return true; };
   return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave, enterPanel, focusPanel };
@@ -437,12 +442,17 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const gutter = useAxisGutter(tickLabels, ref, width);
   const left = showAxis ? gutter : 4, right = 12, top = showAxis ? 14 : 4, bottom = showAxis ? 29 : 4;
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);
+  // A cap needs its headroom above the tallest drawn stack, so the scale starts below the plot top only when a drawn
+  // column has one. The domain is unchanged; only the drawn range is lowered, which keeps every cap inside the plot.
+  const capped = bars && data.columns.some(column => !column.overflow && column.missing.length > 0);
+  const headroom = capped ? capHeadroom : 0;
+  const scaleTop = top + headroom, scaleHeight = Math.max(1, plotHeight - headroom);
   const x = (timestamp: number) => left + (span ? (timestamp - minTime) / span : .5) * plotWidth;
   const cursorTime = inspection.enabled && sharedCursor && sharedCursor.timestamp >= minTime && sharedCursor.timestamp <= minTime + span ? sharedCursor.timestamp : inspection.active?.observation.timestamp;
   const y = (value: number) => {
     const span = domain[1] - domain[0];
     const fraction = Number.isFinite(span) ? (value - domain[0]) / span : (value / 2 - domain[0] / 2) / (domain[1] / 2 - domain[0] / 2);
-    return top + (1 - fraction) * plotHeight;
+    return scaleTop + (1 - fraction) * scaleHeight;
   };
   // Resolve by exact provider label, so changing series order or a shared
   // dashboard filter cannot silently assign a different semantic color.
@@ -459,23 +469,37 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   };
   // The positive top of an incomplete stack is its highest reporting bound, or the baseline when every reporting track is negative.
   const stackTop = (column: number) => y(Math.max(0, ...data.columns[column].partial.map(part => part.upper)));
-  const capTop = (column: number, rank: number) => Math.max(top, stackTop(column) - capStep * (rank + 1));
+  // The cap's top edge is one gap above the partial stack. The headroom keeps it inside the plot.
+  const capTop = (column: number) => stackTop(column) - capGap - capHeight;
   // A track's vertical extent at a time: its complete bounds, or in bar mode its partial stack.
   const extent = (index: number, column: number) => {
     const cell = data.tracks[index].cells[column];
     if (cell.lower !== null && cell.upper !== null) return { lower: cell.lower, upper: cell.upper };
     return bars ? data.columns[column].partial.find(part => part.index === index) : undefined;
   };
-  const incomplete = (column: number) => data.columns[column].missing.length + data.columns[column].notStarted.length > 0;
+  const incomplete = (column: number) => { const { missing, notStarted, ended } = data.columns[column]; return missing.length + notStarted.length + ended.length > 0; };
   const incompleteNote = (column: number) => {
-    const { missing, notStarted } = data.columns[column];
-    const reporting = data.tracks.length - missing.length - notStarted.length;
+    const { missing, notStarted, ended } = data.columns[column];
+    const reporting = data.tracks.length - missing.length - notStarted.length - ended.length;
     const known = data.tracks.reduce((sum, track) => sum + (track.cells[column].value ?? 0), 0);
+    const shown = formatMetric(known, widget.unit, false, widget.options?.decimals);
     // With no reporting series there is no known sum, and a zero would read as an observed total.
+    const count = `${reporting} of ${data.tracks.length} series report at this time`;
     const status = reporting === 0 ? "No series reports at this time, so the stack total is unavailable."
-      : `${reporting} of ${data.tracks.length} series report at this time, so the stack total is unavailable. Known series sum to ${formatMetric(known, widget.unit, false, widget.options?.decimals)}.`;
-    const names = notStarted.map(index => data.tracks[index].name).join(", ");
-    return names ? `${status} ${names}: no samples yet.` : status;
+      : missing.length ? `${count}, so the stack total is unavailable. Known series sum to ${shown}.`
+      : `${count}. Their stack total is ${shown}.`;
+    // Ended series are grouped by their last sample, so each time is named once.
+    const endedAt = new Map<number, string[]>();
+    for (const index of ended) {
+      const at = data.tracks[index].lastFinite;
+      if (at !== null) endedAt.set(at, [...endedAt.get(at) ?? [], data.tracks[index].name]);
+    }
+    const parts = [status, ...[...endedAt].map(([at, names]) => `${names.join(", ")}: no samples since ${fullDateTimeFormat.format(new Date(at))}.`)];
+    const waiting = notStarted.map(index => data.tracks[index].name);
+    if (waiting.length) parts.push(`${waiting.join(", ")}: no samples yet.`);
+    // Every missing series is named here; the cap is one shape for all of them.
+    if (missing.length) parts.push(`${missing.map(index => data.tracks[index].name).join(", ")}: no value at this time.`);
+    return parts.join(" ");
   };
   const observation = (row: number, column: number): Observation => {
     const track = data.tracks[row], cell = track.cells[column];
@@ -490,11 +514,11 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     const point = coordinates(event, width, height);
     if (point.x < left || point.x > width - right || point.y < top || point.y > height - bottom) return;
     const column = data.timestamps.reduce((nearest, time, index) => Math.abs(x(time) - point.x) < Math.abs(x(data.timestamps[nearest]) - point.x) ? index : nearest, 0);
-    if (bars && !data.columns[column].overflow) {
-      // A cap sits above its stack and belongs to one missing track, so caps are tested before the bands.
+    if (bars && !data.columns[column].overflow && data.columns[column].missing.length) {
+      // A cap sits above its stack and stands for its missing series, so caps are tested before the bands.
+      // A pointer on the cap selects the first missing series; the inspector lists all of them.
       const bar = barAt(column);
-      const capped = data.columns[column].missing.find((_, rank) => point.x >= bar.x && point.x <= bar.x + bar.width && point.y >= capTop(column, rank) && point.y <= capTop(column, rank) + capHeight);
-      if (capped !== undefined) return observation(capped, column);
+      if (point.x >= bar.x && point.x <= bar.x + bar.width && point.y >= capTop(column) && point.y <= capTop(column) + capHeight) return observation(data.columns[column].missing[0], column);
     }
     let row = 0, distance = Infinity;
     data.tracks.forEach((_, index) => {
@@ -512,8 +536,8 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row--; else if (event.key === "ArrowDown") row++;
-    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true); return; } else return;
-    event.preventDefault(); inspection.show(observation(Math.max(0, Math.min(data.tracks.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
+    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, "keyboard"); return; } else return;
+    event.preventDefault(); inspection.show(observation(Math.max(0, Math.min(data.tracks.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, "keyboard");
   };
   if (!data.tracks.length || (!displayTimes.length && !zoom)) return <EmptyState />;
   const authored = !directional && "annotations" in config ? config.annotations ?? [] : [];
@@ -524,10 +548,12 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const displayLabels = compactSeriesLabels(data.tracks.map(track => track.series));
   const legendRevision = JSON.stringify([widget.unit, widget.options?.decimals, config.legendDisplay, data.tracks.map(track => [track.name, track.cells.at(-1)?.value, track.statistics])]);
   const formatSummary = (value: number | null) => value === null ? "No data" : formatMetric(value, widget.unit, false, widget.options?.decimals);
+  // The series beyond maxSeries are never plotted, so the total does not include them. Say so.
+  const hiddenSeries = (result.series?.length ?? 0) - fullSeries.length;
   // Pinned bar detail only: the stack total's trend, with gaps where the stack is incomplete. Area mode keeps its inspector.
   const stackFooter = bars && inspection.active?.pinned && data.totals.some(total => total.value !== null) ? <figure className={styles.stackTotal} data-stack-total="">
     <div className={styles.history}><StatSparkline series={stackTotal} name={stackTotal.name} color="var(--gamma-muted)" unit={widget.unit} /></div>
-    <figcaption className={styles.note}>Stack total; gaps where a series has no value</figcaption>
+    <figcaption className={styles.note}>Stack total of the series shown that report at each time; gaps where a started series has no value{hiddenSeries > 0 && ` · ${hiddenSeries} hidden series not included`}</figcaption>
   </figure> : undefined;
   return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>
@@ -560,10 +586,12 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
             const forward = segment.map(cell => `${number(x(cell.timestamp))},${number(y(cell.upper!))}`), back = segment.toReversed().map(cell => `${number(x(cell.timestamp))},${number(y(cell.lower!))}`);
             return <g key={part}><path d={`M${forward.join("L")}L${back.join("L")}Z`} fill={color(index)} fillOpacity={directional ? .16 : .48} /><path d={`M${forward.join("L")}`} fill="none" stroke={color(index)} strokeWidth={widget.options?.lineWidth ?? 1.6} strokeLinejoin="round" />{segment.length === 1 && <circle cx={x(segment[0].timestamp)} cy={y(segment[0].upper!)} r={2.5} fill={color(index)} />}</g>;
           })}
-        </g>)}{bars && data.columns.flatMap((column, index) => column.overflow ? [] : column.missing.map((track, rank) => {
-          const bar = barAt(index);
-          return <rect key={`${index}-${track}`} x={bar.x} y={capTop(index, rank)} width={bar.width} height={capHeight} fill={plotHatchFill(id)} stroke={color(track)} strokeWidth={1.25} strokeDasharray="2 2" data-missing-series={data.tracks[track].name} aria-hidden="true"><title>{`${data.tracks[track].name}: no value at ${stamp(column.timestamp)}`}</title></rect>;
-        }))}</g>
+        </g>)}{bars && data.columns.map((column, index) => {
+          // One cap per incomplete column, however many series are missing. A single missing series sets its colour.
+          if (column.overflow || !column.missing.length) return null;
+          const bar = barAt(index), names = column.missing.map(track => data.tracks[track].name).join(", ");
+          return <rect key={index} x={bar.x} y={capTop(index)} width={bar.width} height={capHeight} fill={plotHatchFill(id)} stroke={column.missing.length === 1 ? color(column.missing[0]) : "var(--gamma-chart-hatch)"} strokeWidth={1} strokeDasharray="2 2" data-missing-series={names} data-missing-count={column.missing.length} aria-hidden="true"><title>{`${names}: no value at ${stamp(column.timestamp)}`}</title></rect>;
+        })}</g>
         {annotations.map((event, index) => <g key={`${event.timestamp}-${index}`} aria-hidden="true">
           {event.at >= minTime && <><line data-annotation-timestamp={event.timestamp} x1={x(event.at)} x2={x(event.at)} y1={top} y2={height - bottom} className={styles.annotationLine} data-severity={event.severity ?? "unclassified"} pointerEvents="none" />
           <circle cx={x(event.at)} cy={top + 4} r={3} className={styles.annotationMarker} data-severity={event.severity ?? "unclassified"} pointerEvents="none" /></>}
@@ -601,7 +629,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && inView.length > queried.length && <p>{inView.length - queried.length} additional events in view omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.truncated && <p>Event source response is partial.</p>}
-    <Notices truncated={result.truncated}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
+    <Notices truncated={result.truncated}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started or have ended are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
   </div>;
 }
 

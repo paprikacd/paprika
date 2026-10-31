@@ -93,6 +93,8 @@ export interface MetricTrack {
   index: number;
   cells: MetricCell[];
   statistics: MetricStatistics;
+  /** The last finite observation in the unzoomed history, or null if the track never reported. Ended tracks name it. */
+  lastFinite: number | null;
 }
 export interface MetricStatistics {
   current: number | null;
@@ -154,18 +156,20 @@ export interface MetricPartial {
 /** One time column, aligned with the sampled timestamps. Track indices are listed in track order. */
 export interface MetricColumn {
   timestamp: number;
-  /** The stack height when every track reports and the stack is finite. Null otherwise. */
+  /** The sum of the reporting tracks, when no track is missing, at least one reports and the sum is finite. Null otherwise. */
   total: number | null;
-  /** Tracks that reported at an earlier time and have no finite value here. */
+  /** Tracks with a finite value before and after this time but none here: a gap inside their lifetime. Bar mode hatches each one. */
   missing: number[];
-  /** Tracks with no finite value up to and including this time. They have not started, so bar mode draws nothing for them. */
+  /** Tracks whose first finite observation is later than this time. Bar mode draws nothing for them. */
   notStarted: number[];
-  /** Bounds of the reporting tracks in an incomplete column. Empty for complete, overflowed and directional columns. */
+  /** Tracks whose last finite observation is earlier than this time. Bar mode draws nothing for them and does not count them as missing. */
+  ended: number[];
+  /** Bounds of the reporting tracks in an incomplete column. Empty for complete and overflowed columns and for directional traffic. Only bar mode draws them. */
   partial: MetricPartial[];
-  /** Set only when the stack exceeds the finite range. The column is then omitted from the drawing. */
+  /** Set when the stack exceeds the finite range, so the column is not drawn. Area mode flags only complete overflows. */
   overflow?: boolean;
 }
-/** The stack total at one unsampled timestamp. Null where the stack is incomplete or overflowed. */
+/** The stack total at one unsampled timestamp. Null where a track is missing, no track reports, or the stack overflows. */
 export interface MetricTotal {
   timestamp: number;
   value: number | null;
@@ -193,8 +197,10 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
   const maps = selected.map(observations);
   const timestamps = [...new Set(maps.flatMap(map => [...map.keys()]))].sort((a, b) => a - b);
   const bars = !directional && "display" in config && config.display === "bar";
-  // A track has started from its first finite observation. Before that it has no value and no placeholder.
+  // A track's lifetime comes from its finite observations in the unzoomed history. It has not started before its first,
+  // has ended after its last, and a missing value between them is a gap. A track that never reported never starts.
   const firstFinite = history.slice(0, config.maxSeries ?? 8).map(entry => entry.points.reduce((first, point) => validTimestamp(point.timestamp) && finite(point.value) && point.timestamp < first ? point.timestamp : first, Infinity));
+  const lastFinite = history.slice(0, config.maxSeries ?? 8).map(entry => entry.points.reduce((last, point) => validTimestamp(point.timestamp) && finite(point.value) && point.timestamp > last ? point.timestamp : last, -Infinity));
   let invalidValues = 0, overflowColumns = 0;
   const cells: MetricCell[][] = selected.map(() => []);
   const columns: MetricColumn[] = [], totals: MetricTotal[] = [];
@@ -225,46 +231,57 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
       // layer would falsely present a partial total as the full observation.
       for (const track of cells) Object.assign(track[track.length - 1], { lower: null, upper: null, overflow: true });
     }
-    const column: MetricColumn = { timestamp, total: !directional && complete && !overflow ? positive + negative : null, missing: [], notStarted: [], partial: [] };
-    let partialOverflow = false;
+    const column: MetricColumn = { timestamp, total: null, missing: [], notStarted: [], ended: [], partial: [] };
     if (!directional) {
+      // The reporting tracks stack on the complete stack's running sums, so an incomplete column's partial stack
+      // is never drawn with a different baseline.
+      let reportingPositive = 0, reportingNegative = 0, reporting = 0, stackOverflow = false;
       for (const [index, value] of values.entries()) {
-        if (!finite(value)) (firstFinite[index] <= timestamp ? column.missing : column.notStarted).push(index);
-      }
-      if (!complete) {
-        // An incomplete column still stacks its reporting tracks with the complete stack's running sums,
-        // so a partial stack is never drawn with a different baseline.
-        let partialPositive = 0, partialNegative = 0;
-        for (const [index, value] of values.entries()) {
-          if (!finite(value)) continue;
-          const lower = value >= 0 ? partialPositive : partialNegative, upper = lower + value;
-          if (!finite(upper)) partialOverflow = true;
-          if (value >= 0) partialPositive = upper; else partialNegative = upper;
-          column.partial.push({ index, lower, upper });
+        if (!finite(value)) {
+          if (timestamp < firstFinite[index]) column.notStarted.push(index);
+          else if (timestamp > lastFinite[index]) column.ended.push(index);
+          else column.missing.push(index);
+          continue;
         }
+        const lower = value >= 0 ? reportingPositive : reportingNegative, upper = lower + value;
+        if (!finite(upper)) stackOverflow = true;
+        if (value >= 0) reportingPositive = upper; else reportingNegative = upper;
+        reporting++;
+        if (!complete) column.partial.push({ index, lower, upper });
       }
-    }
-    if (overflow || partialOverflow) {
-      overflowColumns++;
-      column.overflow = true;
-      column.partial = [];
+      // Area mode omits a column only for a complete overflow, as it did before partial stacks existed.
+      if (stackOverflow && (complete || bars)) {
+        overflowColumns++;
+        column.overflow = true;
+      }
+      if (stackOverflow) column.partial = [];
+      else if (column.missing.length === 0 && reporting > 0) column.total = reportingPositive + reportingNegative;
     }
     columns.push(column);
     totals.push({ timestamp, value: column.total });
   }
+  const incompleteAt = (index: number) => index >= 0 && index < timestamps.length && cells.some(track => track[index].upper === null);
+  // Bar mode keeps only the first and last column of a run of incomplete columns as must-keep: those are where the
+  // stack changes to partial bars and caps. Area mode keeps every gap as before.
   const indices = sampleTimeIndices(timestamps.length, config.maxPoints ?? 120,
-    index => cells.some(track => track[index].upper === null),
-    index => Math.max(0, ...cells.map(track => Math.abs(track[index].upper ?? 0))));
+    bars ? index => incompleteAt(index) && (!incompleteAt(index - 1) || !incompleteAt(index + 1)) : incompleteAt,
+    // A bar column's magnitude is its largest bound, partial bounds included, so a partial spike survives sampling.
+    index => Math.max(0, ...cells.map(track => Math.abs(track[index].upper ?? 0)), ...(bars ? columns[index].partial.flatMap(part => [Math.abs(part.lower), Math.abs(part.upper)]) : [])));
+  // Bar mode scales to the columns it draws, so the axis never reflects a value that no bar shows. Area and
+  // directional modes keep every returned column, as before. Only bar mode draws partial bounds.
+  const scaled = bars ? indices : timestamps.map((_, index) => index);
   let low = 0, high = 0;
-  for (const track of cells) for (const cell of track) {
-    if (cell.upper === null || cell.lower === null) continue;
-    low = Math.min(low, cell.lower, cell.upper);
-    high = Math.max(high, cell.lower, cell.upper);
-  }
-  // Bar mode also draws the reporting tracks of incomplete columns, so their partial stacks must not be clipped.
-  if (bars) for (const column of columns) for (const part of column.partial) {
-    low = Math.min(low, part.lower, part.upper);
-    high = Math.max(high, part.lower, part.upper);
+  for (const index of scaled) {
+    for (const track of cells) {
+      const cell = track[index];
+      if (cell.upper === null || cell.lower === null) continue;
+      low = Math.min(low, cell.lower, cell.upper);
+      high = Math.max(high, cell.lower, cell.upper);
+    }
+    if (bars) for (const part of columns[index].partial) {
+      low = Math.min(low, part.lower, part.upper);
+      high = Math.max(high, part.lower, part.upper);
+    }
   }
   if (low === high) { low = Math.min(0, low); high = Math.max(1, high); }
   if (directional && direction.symmetricAxis) {
@@ -272,7 +289,7 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
     low = -extent; high = extent;
   }
   return {
-    tracks: selected.map((entry, index) => ({ series: entry, name: seriesName(entry, index), index, cells: indices.map(i => cells[index][i]), statistics: metricStatistics(maps[index]) })),
+    tracks: selected.map((entry, index) => ({ series: entry, name: seriesName(entry, index), index, cells: indices.map(i => cells[index][i]), statistics: metricStatistics(maps[index]), lastFinite: Number.isFinite(lastFinite[index]) ? lastFinite[index] : null })),
     timestamps: indices.map(i => timestamps[i]), columns: indices.map(i => columns[i]), totals, domain: [low, high], sampled: indices.length < timestamps.length,
     omittedSeries: series.length - selected.length, invalidValues, overflowColumns,
   };

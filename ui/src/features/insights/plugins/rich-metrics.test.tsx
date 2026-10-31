@@ -4,6 +4,7 @@ import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries, registerRic
 import { getWidgetDefinition } from "../widget-registry";
 import { ChartCursorProvider } from "../chart-cursor";
 import { EmbeddedWidgetProvider } from "../widget-presentation";
+import { fullDateTimeFormat } from "../chart-data";
 import type { QueryResult, Widget } from "../schema";
 
 afterEach(cleanup);
@@ -446,13 +447,16 @@ describe("stacked bars with missing and not-started series", () => {
     expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(1);
     const cap = container.querySelector<SVGRectElement>('[data-missing-series="search"]')!;
     expect(cap).toHaveAttribute("aria-hidden", "true");
-    expect(cap).toHaveAttribute("height", "8");
+    expect(cap).toHaveAttribute("height", "6");
+    expect(cap).toHaveAttribute("stroke-width", "1");
     expect(cap).toHaveAttribute("stroke-dasharray", "2 2");
+    expect(cap).toHaveAttribute("stroke", "var(--gamma-chart-2, #087f7a)");
+    expect(cap).toHaveAttribute("data-missing-count", "1");
     expect(cap.getAttribute("fill")).toMatch(/-hatch\)$/);
     expect(container.querySelector('pattern[id$="-hatch"]')).toBeInTheDocument();
     expect(cap.querySelector("title")).toHaveTextContent("search: no value at");
     expect(container.querySelectorAll("rect[data-partial-stack]")).toHaveLength(3);
-    expect(screen.getByText("Hatched caps mark series with no value at that time. Series that have not started are left out of the stack.")).toBeInTheDocument();
+    expect(screen.getByText("Hatched caps mark series with no value at that time. Series that have not started or have ended are left out of the stack.")).toBeInTheDocument();
   });
   it("places each cap above its partial stack at the same width, and keeps caps and partial stacks inside the plot", () => {
     const { container } = barChart(stacked);
@@ -467,15 +471,49 @@ describe("stacked bars with missing and not-started series", () => {
       expect(Number(element.getAttribute("x")) + Number(element.getAttribute("width"))).toBeLessThanOrEqual(right);
     }
   });
-  it("clamps a cap inside the top of the plot instead of drawing it above the clip", () => {
-    const topped: QueryResult = { series: [
-      { name: "a", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 10 }] },
-      { name: "b", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: null }] },
+  it("draws one cap for the incomplete column, names every missing series on it, and keeps it clear of the bar", () => {
+    // b and c report at 1 s and 3 s and are both missing at 2 s, where a stacks to 10. One cap stands for both.
+    const twoMissing: QueryResult = { series: [
+      { name: "a", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 10 }, { timestamp: 3000, value: 1 }] },
+      { name: "b", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 1 }] },
+      { name: "c", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 1 }] },
     ] };
-    const { container } = barChart(topped);
-    const clip = container.querySelector("clipPath rect")!;
-    const cap = container.querySelector<SVGRectElement>('[data-missing-series="b"]')!;
-    expect(Number(cap.getAttribute("y"))).toBeGreaterThanOrEqual(Number(clip.getAttribute("y")));
+    const bounds = vi.spyOn(SVGElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height: 240, top: 0, left: 0, right: 600, bottom: 240, toJSON: () => ({}) });
+    try {
+      const select = vi.fn();
+      const { container } = barChart(twoMissing, select);
+      const clipTop = Number(container.querySelector("clipPath rect")!.getAttribute("y"));
+      const tallest = [...container.querySelectorAll<SVGRectElement>('g[data-series="a"] rect[data-partial-stack]')].find(rect => rect.getAttribute("data-raw-value") === "10")!;
+      const barTop = Number(tallest.getAttribute("y"));
+      // The headroom is the cap height and gap, so the tallest bar starts 7px below the plot top.
+      expect(barTop).toBe(clipTop + 7);
+      const caps = container.querySelectorAll<SVGRectElement>("[data-missing-series]");
+      expect(caps).toHaveLength(1);
+      const cap = caps[0];
+      expect(cap).toHaveAttribute("data-missing-series", "b, c");
+      expect(cap).toHaveAttribute("data-missing-count", "2");
+      expect(cap).toHaveAttribute("stroke", "var(--gamma-chart-hatch)");
+      const capTop = Number(cap.getAttribute("y")), capBottom = capTop + Number(cap.getAttribute("height"));
+      expect(capTop).toBeGreaterThanOrEqual(clipTop);
+      expect(capBottom).toBeCloseTo(barTop - 1);
+      expect(capBottom).toBeLessThanOrEqual(barTop);
+      // A pointer on the cap selects the first missing series.
+      const center = { clientX: Number(cap.getAttribute("x")) + Number(cap.getAttribute("width")) / 2, clientY: capTop + Number(cap.getAttribute("height")) / 2 };
+      fireEvent.click(screen.getByRole("group", { name: /Request outcomes/ }), center);
+      expect(select).toHaveBeenLastCalledWith({ series: "b", labels: {}, value: null });
+    } finally { bounds.mockRestore(); }
+  });
+  it("draws one cap per incomplete column however many series are missing, and none for a series that has not started", () => {
+    // x and y are missing together at 2 s; x alone is missing at 4 s; z has not started until 2 s.
+    const grouped: QueryResult = { series: [
+      { name: "x", labels: { service: "x" }, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 3 }, { timestamp: 4000, value: null }, { timestamp: 5000, value: 5 }] },
+      { name: "y", labels: { service: "y" }, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 3 }, { timestamp: 4000, value: 4 }, { timestamp: 5000, value: 5 }] },
+      { name: "z", labels: { service: "z" }, points: [{ timestamp: 1000, value: null }, { timestamp: 2000, value: 1 }, { timestamp: 3000, value: 1 }, { timestamp: 4000, value: 1 }, { timestamp: 5000, value: 1 }] },
+    ] };
+    const { container } = barChart(grouped);
+    const caps = [...container.querySelectorAll("[data-missing-series]")];
+    expect(caps.map(cap => [cap.getAttribute("data-missing-series"), cap.getAttribute("data-missing-count")])).toEqual([["x, y", "2"], ["x", "1"]]);
+    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(2);
   });
   it("explains an incomplete time in the inspector with the known sum and the series that have not started", () => {
     barChart(stacked);
@@ -491,7 +529,8 @@ describe("stacked bars with missing and not-started series", () => {
       { name: "b", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 4 }] },
     ] };
     const { container } = barChart(none);
-    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(2);
+    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(1);
+    expect(container.querySelector("[data-missing-series]")).toHaveAttribute("data-missing-series", "a, b");
     const chart = screen.getByRole("group", { name: /Request outcomes/ });
     fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowLeft" });
     const inspector = screen.getByRole("region", { name: "Observation details" });
@@ -506,7 +545,7 @@ describe("stacked bars with missing and not-started series", () => {
     fireEvent.keyDown(chart, { key: "Enter" });
     const inspector = screen.getByRole("region", { name: "Observation details" });
     expect(within(inspector).getByRole("img", { name: "History for Stack total" })).toBeInTheDocument();
-    expect(within(inspector).getByText("Stack total; gaps where a series has no value")).toBeInTheDocument();
+    expect(within(inspector).getByText("Stack total of the series shown that report at each time; gaps where a started series has no value")).toBeInTheDocument();
     expect(inspector.querySelectorAll("[data-stat-sparkline]")).toHaveLength(2);
   });
   it("hover and click resolve the series under the pointer at incomplete times, including a cap", () => {
@@ -545,5 +584,94 @@ describe("stacked bars with missing and not-started series", () => {
     const { container } = barChart(overflowing);
     expect(screen.getByText(/1 time column omitted.*stack.*finite/i)).toBeInTheDocument();
     expect(container.querySelectorAll("[data-missing-series], [data-partial-stack]")).toHaveLength(0);
+  });
+  it("draws a partial spike at full plot height, even when sampling thins a long window", () => {
+    const spike: QueryResult = { series: [
+      { name: "a", labels: { service: "a" }, points: Array.from({ length: 300 }, (_, index) => ({ timestamp: (index + 1) * 1000, value: index === 151 ? 1000 : 10 })) },
+      { name: "late", labels: { service: "late" }, points: Array.from({ length: 300 }, (_, index) => ({ timestamp: (index + 1) * 1000, value: index >= 290 ? 5 : null })) },
+    ] };
+    const { container } = barChart(spike);
+    const clip = container.querySelector("clipPath rect")!;
+    const bar = container.querySelector<SVGRectElement>('g[data-series="a"] rect[data-raw-value="1000"]')!;
+    expect(bar).toHaveAttribute("data-partial-stack", "true");
+    expect(Number(bar.getAttribute("height"))).toBeCloseTo(Number(clip.getAttribute("height")), 5);
+  });
+  it("does not hatch a series after its last sample, and names when it stopped", () => {
+    // old reports at 1-3 s, new starts at 4 s and steady reports throughout. Nothing is missing, so no cap is drawn.
+    const churn: QueryResult = { series: [
+      { name: "old", labels: { pod: "old" }, points: [1, 2, 3].map(second => ({ timestamp: second * 1000, value: 2 })) },
+      { name: "new", labels: { pod: "new" }, points: [4, 5, 6].map(second => ({ timestamp: second * 1000, value: 2 })) },
+      { name: "steady", labels: { pod: "steady" }, points: [1, 2, 3, 4, 5, 6].map(second => ({ timestamp: second * 1000, value: 1 })) },
+    ] };
+    const { container } = barChart(churn);
+    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(0);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent(`2 of 3 series report at this time. Their stack total is 3.00 req/s. old: no samples since ${fullDateTimeFormat.format(new Date(3000))}.`);
+    for (let step = 0; step < 5; step++) fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("2 of 3 series report at this time. Their stack total is 3.00 req/s. new: no samples yet.");
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(screen.getByText("Stack total of the series shown that report at each time; gaps where a started series has no value")).toBeInTheDocument();
+  });
+  it("says when the stack total leaves out series beyond the maximum plotted", () => {
+    const three: QueryResult = { series: ["a", "b", "c"].map(name => ({ name, labels: { service: name }, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 2 }] })) };
+    render(<StackedTimeseries widget={{ ...bar, config: { display: "bar", maxSeries: 2 } }} result={three} />);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "Enter" });
+    expect(screen.getByText("Stack total of the series shown that report at each time; gaps where a started series has no value · 1 hidden series not included")).toBeInTheDocument();
+  });
+  it("keeps area mode's overflow count and notes unchanged when an incomplete column's reporting values overflow", () => {
+    const overflowing: QueryResult = { series: [
+      { name: "a", labels: {}, points: [{ timestamp: 1000, value: 1e308 }, { timestamp: 2000, value: 1 }] },
+      { name: "b", labels: {}, points: [{ timestamp: 1000, value: 1e308 }, { timestamp: 2000, value: 1 }] },
+      { name: "c", labels: {}, points: [{ timestamp: 2000, value: 1 }] },
+    ] };
+    render(<StackedTimeseries widget={widget} result={overflowing} />);
+    expect(screen.queryByText(/columns? omitted/)).not.toBeInTheDocument();
+    const chart = screen.getByRole("group", { name: /Stacked observations/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("Recorded value; the stack is unavailable because another series is missing at this timestamp.");
+  });
+  it("opens the inspector when ArrowLeft moves from the focused plot onto an incomplete column in bar mode", () => {
+    barChart(stacked);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    act(() => chart.focus());
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(inspector.style.visibility).toBe("visible");
+    expect(inspector).toHaveTextContent("1 of 3 series report at this time, so the stack total is unavailable. Known series sum to 8.00 req/s. notifications: no samples yet. search: no value at this time.");
+  });
+  it("names every missing series in the inspector note for an incomplete column", () => {
+    const twoMissing: QueryResult = { series: [
+      { name: "a", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 10 }, { timestamp: 3000, value: 1 }] },
+      { name: "b", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 1 }] },
+      { name: "c", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 1 }] },
+    ] };
+    barChart(twoMissing);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("1 of 3 series report at this time, so the stack total is unavailable. Known series sum to 10.00 req/s. b, c: no value at this time.");
+  });
+  it("keeps a keyboard-opened inspector when the pointer leaves the chart", async () => {
+    const { container } = barChart(stacked);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    act(() => chart.focus());
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    fireEvent.pointerLeave(container.firstElementChild!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+  });
+  it("still ends a pointer-opened inspector when the pointer leaves the chart", async () => {
+    const bounds = vi.spyOn(SVGElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height: 240, top: 0, left: 0, right: 600, bottom: 240, toJSON: () => ({}) });
+    try {
+      const { container } = barChart(stacked);
+      const chart = screen.getByRole("group", { name: /Request outcomes/ });
+      fireEvent.pointerMove(chart, { clientX: 300, clientY: 120, pointerType: "mouse" });
+      expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+      fireEvent.pointerLeave(container.firstElementChild!);
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+      expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    } finally { bounds.mockRestore(); }
   });
 });
