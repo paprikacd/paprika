@@ -121,9 +121,9 @@ const themedPortal: typeof portal = {
 };
 
 const chartTheme = {
-  foreground: "var(--gamma-ink, #27332e)",
-  muted: "var(--gamma-chart-axis, var(--gamma-muted, #626e65))",
-  grid: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
+  foreground: "var(--gamma-ink, #223139)",
+  muted: "var(--gamma-chart-axis, var(--gamma-muted, #52636f))",
+  grid: "var(--gamma-chart-grid, var(--gamma-border, #e4ebed))",
   background: "transparent",
   palette: PALETTE,
 };
