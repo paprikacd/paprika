@@ -234,14 +234,19 @@ function densityMaximumLabel(value: number, unit: string, decimals?: number) {
 /** The readout under the heatmap. The merged p95 is quoted only when the +Inf bucket makes it defined; percentiles are never averaged. */
 function quantileReadout(data: DistributionData, unit: string, decimals: number | undefined, clock: (timestamp: number) => string) {
   const { merged, highest } = data;
+  // Without +Inf the total is unknown, so no p95 and no window count is quoted against it.
+  if (!merged.bounded) return "p95 unavailable: no +Inf bucket";
   const format = (value: number) => formatMetric(value, unit, false, decimals);
   const estimate = merged.estimate, scope = `merged over ${merged.used} of ${merged.windows} windows`;
   const parts: string[] = [];
   if (estimate?.overflow) parts.push(`p95 above ${format(estimate.lower)} · ${scope}`);
   else if (estimate?.estimate !== null && estimate?.estimate !== undefined) parts.push(`p95 ≈ ${format(estimate.estimate)} · ${scope}`);
-  else parts.push(!merged.bounded ? "p95 unavailable: no +Inf bucket" : merged.used === 0 ? "p95 unavailable: no complete windows" : "p95 unavailable: no observations");
+  else parts.push(merged.used === 0 ? "p95 unavailable: no complete windows" : "p95 unavailable: no observations");
   const excluded = merged.missing + merged.invalid;
   if (excluded) parts.push(`${[merged.missing ? `${merged.missing} missing` : "", merged.invalid ? `${merged.invalid} invalid` : ""].filter(Boolean).join(", ")} ${excluded === 1 ? "window" : "windows"} excluded`);
+  // A gap above maxBuckets breaks the line over cells that look complete, so the readout says where it is.
+  if (merged.hiddenMissing) parts.push(`${merged.hiddenMissing} ${merged.hiddenMissing === 1 ? "window has" : "windows have"} missing buckets above the shown range`);
+  if (merged.hiddenInvalid) parts.push(`${merged.hiddenInvalid} ${merged.hiddenInvalid === 1 ? "window has" : "windows have"} invalid buckets above the shown range`);
   if (highest) parts.push(highest.p95.overflow ? `highest window p95 above ${format(highest.p95.lower)} at ${clock(highest.timestamp)}` : `highest window p95 ${format(highest.p95.estimate!)} at ${clock(highest.timestamp)}`);
   return parts.join(" · ");
 }
@@ -305,10 +310,12 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note };
   };
   // The p95 line sits on each drawable window's bucket row. Non-ok windows, source gaps and hidden buckets break it.
-  const quantile = quantileLine({
-    columns, buckets: data.quantiles.map(window => window.state === "ok" && window.p95 ? window.p95.bucket : null), breaks: data.quantiles.map(window => window.breakBefore),
-    rows: data.rows.length, rowCentre: row => top + (data.rows.length - .5 - row) * cellHeight, gaps,
-  });
+  // An overflow window has no finite estimate, so `quantile` is the whole line and `finite` is its solid part.
+  const line = { columns, breaks: data.quantiles.map(window => window.breakBefore), rows: data.rows.length, rowCentre: (row: number) => top + (data.rows.length - .5 - row) * cellHeight, gaps };
+  const quantile = quantileLine({ ...line, buckets: data.quantiles.map(window => window.state === "ok" && window.p95 ? window.p95.bucket : null) });
+  const finite = quantileLine({ ...line, buckets: data.quantiles.map(window => window.state === "ok" && window.p95 && !window.p95.overflow ? window.p95.bucket : null) });
+  const overflowRun = data.quantiles.some(window => window.state === "ok" && window.p95?.overflow === true && window.p95.bucket < data.rows.length);
+  const embeddedView = props.embedded || embeddedChart;
   const readout = quantileReadout(data, unit, widget.options?.decimals, clock);
   const selected = inspection.active && columns[inspection.active.observation.column] ? {
     x: columns[inspection.active.observation.column].left, width: columns[inspection.active.observation.column].width,
@@ -334,16 +341,16 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row++; else if (event.key === "ArrowDown") row--;
-    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true); return; } else return;
+    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, "keyboard"); return; } else return;
     event.preventDefault();
-    inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
+    inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, "keyboard");
   };
   if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
   return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <div className={styles.plot} ref={ref}>
       <svg ref={setAnchor} className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
         onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
-        onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value); else if (inspection.active && !inspection.active.pinned) inspection.dismiss(); }}
+        onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value); else if (inspection.active && !inspection.active.pinned && inspection.active.owner === "pointer") inspection.dismiss(); }}
         onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
         <PlotHatchDefs id={id} />
         <rect x={left} y={top} width={plotWidth} height={plotHeight} className={heatmapStyles.plotBackground} aria-hidden="true" />
@@ -355,7 +362,9 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         </g>)}
         {quantile.d !== "" && <>
           <path d={quantile.d} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4.6} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-halo />
-          <path d={quantile.d} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-line />
+          {/* With an overflow run the whole line is dashed, then the finite runs are drawn solid over it, so an overflow run and its joins are dashed. */}
+          <path d={quantile.d} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeDasharray={overflowRun ? "4 3" : undefined} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-line data-quantile-overflow={overflowRun || undefined} />
+          {overflowRun && finite.d !== "" && <path d={finite.d} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-solid />}
         </>}
         {quantile.above.map((x, index) => <g key={index} pointerEvents="none" aria-hidden="true">
           <path d={`M${x - 4},${top + 6}L${x},${top + 2}L${x + 4},${top + 6}`} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} strokeLinejoin="round" strokeLinecap="round" />
@@ -374,7 +383,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
       {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
     <div className={styles.heatmapFooter}>
-    <p className={heatmapStyles.quantile} data-heatmap-quantile>{readout}</p>
+    {!embeddedView && <p className={heatmapStyles.quantile} data-heatmap-quantile>{readout}</p>}
     {widget.options?.showLegend !== false && <div className={heatmapStyles.legend} aria-label={`Color encodes bucket ${densityUnit}`}>
       <span>{config.colorScale === "logarithmic" && data.minPositive !== null ? densityMaximumLabel(data.minPositive, densityUnit, widget.options?.decimals) : "> 0"}</span>
       <div className={heatmapStyles.ramp} style={{ background: `linear-gradient(to right, ${densityPalette.join(", ")})` }} />
@@ -383,9 +392,17 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
       <span className={heatmapStyles.key}><i aria-hidden="true" className={plotHatchStyles.emptySwatch} />Zero</span>
       <span className={heatmapStyles.key}><i aria-hidden="true" className={`${plotHatchStyles.hatch} ${plotHatchStyles.swatch}`} />Missing</span>
       {data.invalidCells > 0 && <span className={heatmapStyles.key}><i aria-hidden="true" className={`${plotHatchStyles.hatchWarning} ${plotHatchStyles.swatch}`} />Invalid</span>}
-      {quantile.d !== "" && <span className={heatmapStyles.key}>
+      {finite.d !== "" && <span className={heatmapStyles.key}>
         <svg className={heatmapStyles.quantileSwatch} width={22} height={10} viewBox="0 0 22 10" aria-hidden="true" focusable="false"><path d="M1 5H21" fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4.6} strokeLinecap="round" /><path d="M1 5H21" fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeLinecap="round" /></svg>
         p95 bucket
+      </span>}
+      {overflowRun && <span className={heatmapStyles.key}>
+        <svg className={heatmapStyles.quantileSwatch} width={22} height={10} viewBox="0 0 22 10" aria-hidden="true" focusable="false"><path d="M1 5H21" fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4.6} strokeLinecap="round" /><path d="M1 5H21" fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeDasharray="4 3" strokeLinecap="round" /></svg>
+        p95 above the last bound
+      </span>}
+      {quantile.above.length > 0 && <span className={heatmapStyles.key}>
+        <svg className={heatmapStyles.quantileSwatch} width={22} height={10} viewBox="0 0 22 10" aria-hidden="true" focusable="false"><path d="M7 7L11 3L15 7" fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} strokeLinejoin="round" strokeLinecap="round" /><path d="M7 7L11 3L15 7" fill="none" stroke="var(--gamma-ink)" strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" /></svg>
+        p95 above shown buckets
       </span>}
     </div>}
     <Notices truncated={result.truncated}>{data.groups > 1 && <span>Sum of {data.groups} compatible histograms</span>}{data.invalidCells > 0 && <span>{data.invalidCells} non-monotonic or negative bucket observations shown hatched, not drawn as density</span>}{data.omittedBuckets > 0 && <span>{data.omittedBuckets} higher buckets not shown</span>}{data.sampled && <span>Sampled observations · column width does not show duration</span>}</Notices>

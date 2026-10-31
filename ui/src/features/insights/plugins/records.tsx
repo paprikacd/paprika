@@ -19,6 +19,9 @@ import { useDashboardWindow } from "../dashboard-window"
 import { PlotHatchDefs, plotHatchFill } from "../plot-hatch"
 import hatchStyles from "../plot-hatch.module.css"
 
+/** A label on a missing-colour tile sits on the hatch, so its halo is the empty fill, which keeps the text legible. */
+const missingLabelHalo = { paintOrder: "stroke", stroke: "var(--gamma-chart-empty)", strokeWidth: "3px", strokeLinejoin: "round" } as const
+
 const key = z.string().min(1).max(128)
 const tableConfig = z.strictObject({
   columns: z.array(key).min(1).max(64).optional(),
@@ -633,7 +636,7 @@ export function RecordTreemap({
                     y={leaf.y0 + 18}
                     className={styles.tileText}
                     clipPath={`url(#${missingPattern}-tile-${index})`}
-                    style={color >= 0 ? { fill: colorStyle?.ink ?? "var(--gamma-ink)" } : undefined}
+                    style={color >= 0 ? { fill: colorStyle?.ink ?? "var(--gamma-ink)", ...(colorStyle ? undefined : missingLabelHalo) } : undefined}
                   >
                     {visibleName}
                     {tileHeight > 43 && <tspan x={leaf.x0 + 8} dy={17}>

@@ -70,6 +70,16 @@ describe("independent treemap color", () => {
     const coloured = screen.getByRole("button", { name: /A:.*Short interest: 0/ });
     expect(coloured.querySelector("text")?.style.fill).toBe("#000000");
   });
+  it("gives a missing-colour label an empty-fill halo, so it reads over the hatch; coloured labels have none", () => {
+    render(<RecordTreemap widget={widget} result={result} />);
+    const missing = screen.getByRole("button", { name: /C:.*Short interest: No data/ }).querySelector("text")!;
+    expect(missing.style.getPropertyValue("paint-order")).toBe("stroke");
+    expect(missing.style.getPropertyValue("stroke")).toBe("var(--gamma-chart-empty)");
+    expect(missing.style.getPropertyValue("stroke-width")).toBe("3px");
+    expect(missing.style.getPropertyValue("stroke-linejoin")).toBe("round");
+    const coloured = screen.getByRole("button", { name: /A:.*Short interest: 0/ }).querySelector("text")!;
+    expect(coloured.style.getPropertyValue("stroke")).toBe("");
+  });
   it("supports an explicit stable scale and rejects invalid or nonnumeric configuration", () => {
     registerRecordWidgetPlugins();
     const definition = getWidgetDefinition("plugin", "record-treemap")!;

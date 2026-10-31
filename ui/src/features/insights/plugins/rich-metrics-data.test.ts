@@ -250,6 +250,29 @@ describe("distribution quantiles and gap states", () => {
     expect(data.quantiles[after].breakBefore).toBe(true);
     expect(data.quantiles[0].breakBefore).toBe(false);
   });
+  it("counts a gap above maxBuckets as hidden, and a gap in a displayed bucket as shown", () => {
+    const hidden = buildDistribution([bucket("10", [1, 1, 1]), bucket("50", [2, 2, 2]), bucket("100", [3, null, 3]), bucket("+Inf", [4, 4, 4])], { maxBuckets: 2 });
+    expect(hidden.quantiles.map(window => [window.state, window.gap, window.hiddenGap])).toEqual([["ok", null, false], ["missing", "missing", true], ["ok", null, false]]);
+    expect(hidden.merged).toMatchObject({ missing: 1, hiddenMissing: 1, invalid: 0, hiddenInvalid: 0 });
+    const invalid = buildDistribution([bucket("10", [1, 1]), bucket("50", [2, 2]), bucket("100", [3, 1]), bucket("+Inf", [4, 4])], { maxBuckets: 2 });
+    expect(invalid.merged).toMatchObject({ invalid: 1, hiddenInvalid: 1, hiddenMissing: 0 });
+    const shown = buildDistribution([bucket("10", [1, null]), bucket("50", [2, 2]), bucket("100", [3, null]), bucket("+Inf", [4, 4])], { maxBuckets: 2 });
+    expect(shown.quantiles[1]).toMatchObject({ gap: "missing", hiddenGap: false });
+    expect(shown.merged).toMatchObject({ missing: 1, hiddenMissing: 0 });
+  });
+  it("forces only the window to quote through sampling, so later overflow windows compete by magnitude", () => {
+    // Windows 0 and 10 have finite p95s; every other window's p95 is in +Inf. Window 10 is by far the densest.
+    const first = Array.from({ length: 40 }, (_, index) => index === 0 ? 10 : index === 10 ? 500 : 0);
+    const inf = Array.from({ length: 40 }, (_, index) => index === 0 ? 10 : index === 10 ? 500 : 10);
+    const data = buildDistribution([bucket("10", first), bucket("50", first), bucket("+Inf", inf)], { maxColumns: 8 });
+    expect(data.quantiles.map(window => window.p95?.overflow)).toContain(true);
+    expect(data.quantiles[0].p95?.overflow).toBe(false);
+    expect(data.highest).toMatchObject({ timestamp: 2000, p95: { overflow: true } });
+    // The first overflow window is forced. The densest window in its sampling interval survives over the other overflow windows.
+    expect(data.timestamps).toContain(2000);
+    expect(data.timestamps).toContain(11000);
+    expect(data.timestamps).not.toContain(8000);
+  });
 });
 
 describe("stacked columns, partial stacks and totals", () => {

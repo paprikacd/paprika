@@ -30,10 +30,12 @@ export interface WindowHistogramProps {
 }
 
 /** One sentence about the window's p95, or null when a complete window has nothing to say. */
-export function windowQuantileNote(entry: Pick<WindowQuantile, "state" | "gap" | "p95">, format: (value: number) => string, bucketLabel: (bucket: number) => string): string | null {
-  const { state, gap, p95 } = entry;
-  if (gap === "missing") return "p95 unavailable: this time has missing buckets.";
-  if (gap === "invalid") return "p95 unavailable: this time has invalid buckets.";
+export function windowQuantileNote(entry: Pick<WindowQuantile, "state" | "gap" | "hiddenGap" | "p95">, format: (value: number) => string, bucketLabel: (bucket: number) => string): string | null {
+  const { state, gap, hiddenGap, p95 } = entry;
+  // A gap above maxBuckets is not in any displayed row, so the note says where it is.
+  const where = hiddenGap ? " above the shown range" : "";
+  if (gap === "missing") return `p95 unavailable: this time has missing buckets${where}.`;
+  if (gap === "invalid") return `p95 unavailable: this time has invalid buckets${where}.`;
   if (state === "unbounded") return "p95 unavailable: no +Inf bucket.";
   if (state === "empty") return "p95 unavailable: no observations at this time.";
   if (state === "ok" && p95?.overflow) return `p95 above ${format(p95.lower)} (overflow bucket).`;
@@ -41,24 +43,32 @@ export function windowQuantileNote(entry: Pick<WindowQuantile, "state" | "gap" |
   return null;
 }
 
-/** Each bucket's share of the window's full total, with the p95 note beneath the list. Gap buckets are hatched. */
+/** Each bucket's share of the window's full total, with the p95 note beneath the list. Gap buckets are hatched.
+ * A window without a known total scales its observed buckets to the largest one shown, and says so. */
 export function DistributionWindowHistogram({ buckets, selected, windowQuantile, bucketLabel, unit, densityUnit, decimals, showList }: WindowHistogramProps) {
   const { total } = windowQuantile;
+  const largest = Math.max(0, ...buckets.map(bucket => bucket.state === "observed" ? bucket.value ?? 0 : 0));
+  const scale = total ?? largest;
   const note = windowQuantileNote(windowQuantile, value => formatMetric(value, unit, false, decimals), bucketLabel);
   return <div className={heatmapStyles.window} data-window-state={windowQuantile.state}>
-    {showList && <ul role="list" aria-label="Buckets at this time" className={heatmapStyles.windowList}>
-      {buckets.map(bucket => {
-        const current = bucket.bucket === selected;
-        const share = bucket.state === "observed" && total && bucket.value !== null ? Math.min(1, bucket.value / total) : 0;
-        return <li key={bucket.bucket} data-histogram-bucket={bucket.bucket} data-histogram-state={bucket.state} aria-current={current ? "true" : undefined}>
-          <span className={heatmapStyles.windowLabel}>{bucket.label}</span>
-          <span className={heatmapStyles.windowTrack}>{bucket.state === "observed"
-            ? <i style={{ width: `${share * 100}%`, background: bucket.fill }} />
-            : <i className={bucket.state === "missing" ? plotHatchStyles.hatch : plotHatchStyles.hatchWarning} style={{ width: "100%" }} />}</span>
-          <b className={heatmapStyles.windowValue}>{bucket.state === "missing" ? "No observation" : bucket.state === "invalid" ? "Invalid counts" : formatMetric(bucket.value ?? 0, densityUnit, false, decimals)}</b>
-        </li>;
-      })}
-    </ul>}
+    {showList && <>
+      <ul role="list" aria-label="Buckets at this time" className={heatmapStyles.windowList}>
+        {buckets.map(bucket => {
+          const current = bucket.bucket === selected;
+          const observed = bucket.state === "observed" ? bucket.value ?? 0 : null;
+          // A nonzero bucket keeps a two-pixel sliver, so a small share is never drawn as an observed zero.
+          const share = observed !== null && scale > 0 ? Math.min(1, observed / scale) : 0;
+          return <li key={bucket.bucket} data-histogram-bucket={bucket.bucket} data-histogram-state={bucket.state} aria-current={current ? "true" : undefined}>
+            <span className={heatmapStyles.windowLabel}>{bucket.label}</span>
+            <span className={heatmapStyles.windowTrack}>{observed !== null
+              ? <i style={{ width: `${share * 100}%`, minWidth: observed > 0 ? 2 : undefined, background: bucket.fill }} />
+              : <i className={bucket.state === "missing" ? plotHatchStyles.hatch : plotHatchStyles.hatchWarning} style={{ width: "100%" }} />}</span>
+            <b className={heatmapStyles.windowValue}>{bucket.state === "missing" ? "No observation" : bucket.state === "invalid" ? "Invalid counts" : formatMetric(bucket.value ?? 0, densityUnit, false, decimals)}</b>
+          </li>;
+        })}
+      </ul>
+      {total === null && largest > 0 && <p className={heatmapStyles.quantileNote}>Scaled to the largest bucket shown; window total unknown.</p>}
+    </>}
     {note && <p className={heatmapStyles.quantileNote}>{note}</p>}
   </div>;
 }

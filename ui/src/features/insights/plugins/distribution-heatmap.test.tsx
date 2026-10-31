@@ -166,4 +166,120 @@ describe("distribution heatmap states and p95", () => {
     expect(container.querySelector('[data-bucket-state="missing"] title')).toHaveTextContent("No observation");
     expect(container.querySelector('[data-bucket-state="invalid"] title')).toHaveTextContent("Invalid bucket counts: cumulative counts decrease or are negative");
   });
+  it("reports only the missing +Inf bucket in the readout without +Inf, even when counts are invalid", () => {
+    const invalid: QueryResult = { series: [series("10", [5, 5]), series("50", [3, 10])] };
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={invalid} />);
+    expect(container.querySelector("[data-heatmap-quantile]")!.textContent).toBe("p95 unavailable: no +Inf bucket");
+  });
+  it("leaves the readout out of an embedded heatmap, which keeps its legend", () => {
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={{ series: [series("10", [0, 0]), series("50", [0, 0]), series("+Inf", [5, 5])] }} embedded />);
+    expect(container.querySelector("[data-heatmap-quantile]")).toBeNull();
+    expect(screen.getByLabelText("Color encodes bucket events/s")).toBeInTheDocument();
+  });
+  it("names only the p95 keys it draws: a chevron for a hidden bucket, a dashed key for overflow, a solid key for finite", () => {
+    const overflow: QueryResult = { series: [series("10", [0, 0]), series("50", [0, 0]), series("+Inf", [5, 5])] };
+    const { rerender } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms", config: { ...widget.config, maxBuckets: 2 } }} result={overflow} />);
+    // The +Inf row is hidden above maxBuckets, so the p95 is a chevron at the top and no line is drawn.
+    const legend = () => screen.getByLabelText("Color encodes bucket events/s");
+    expect(legend()).toHaveTextContent("p95 above shown buckets");
+    expect(legend()).not.toHaveTextContent("p95 above the last bound");
+    expect(legend()).not.toHaveTextContent("p95 bucket");
+    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={overflow} />);
+    expect(legend()).toHaveTextContent("p95 above the last bound");
+    expect(legend()).not.toHaveTextContent("p95 above shown buckets");
+    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={{ series: [series("10", [10, 10]), series("50", [10, 10]), series("+Inf", [10, 10])] }} />);
+    expect(legend()).toHaveTextContent("p95 bucket");
+    expect(legend()).not.toHaveTextContent("p95 above the last bound");
+  });
+  it("dashes the p95 run of a window above the last bound, and keeps finite runs solid", () => {
+    // Window 2 has its p95 in +Inf. Windows 1 and 3 have finite p95s in the first bucket.
+    const mixed: QueryResult = { series: [series("10", [10, 0, 10]), series("50", [10, 0, 10]), series("+Inf", [10, 10, 10])] };
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={mixed} />);
+    expect(container.querySelector("[data-quantile-line]")).toHaveAttribute("stroke-dasharray", "4 3");
+    expect(container.querySelector("[data-quantile-halo]")).not.toHaveAttribute("stroke-dasharray");
+    // The finite runs are drawn solid over the dashed line: two runs, one on each side of the overflow window.
+    const solid = container.querySelector("[data-quantile-solid]")!;
+    expect(solid).not.toHaveAttribute("stroke-dasharray");
+    expect(solid.getAttribute("d")!.match(/M/g)).toHaveLength(2);
+    expect(screen.getByLabelText("Color encodes bucket events/s")).toHaveTextContent("p95 above the last bound");
+  });
+  it("draws an all-overflow p95 line dashed, with no solid part", () => {
+    const overflow: QueryResult = { series: [series("10", [0, 0]), series("50", [0, 0]), series("+Inf", [5, 5])] };
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={overflow} />);
+    expect(container.querySelector("[data-quantile-line]")).toHaveAttribute("stroke-dasharray", "4 3");
+    expect(container.querySelector("[data-quantile-solid]")).toBeNull();
+    expect(screen.getByLabelText("Color encodes bucket events/s")).not.toHaveTextContent("p95 bucket");
+  });
+  it("names a gap above maxBuckets in the readout and in the inspector of the window it breaks", () => {
+    const hiddenGap: QueryResult = { series: [series("10", [1, 1, 1]), series("50", [2, 2, 2]), series("100", [3, null, 3]), series("+Inf", [4, 4, 4])] };
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms", config: { ...widget.config, maxBuckets: 2 } }} result={hiddenGap} />);
+    expect(container.querySelector("[data-heatmap-quantile]")!.textContent).toContain("1 missing window excluded · 1 window has missing buckets above the shown range");
+    const chart = screen.getByRole("group", { name: /histogram buckets/ });
+    fireEvent.focus(chart);
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(screen.getByText("p95 unavailable: this time has missing buckets above the shown range.")).toBeInTheDocument();
+  });
+  it("scales an unbounded window's shares to its largest shown bucket, so no observed bucket is drawn empty", () => {
+    const unbounded: QueryResult = { series: [series("10", [3]), series("50", [5]), series("100", [10])] };
+    const { unmount } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={unbounded} />);
+    fireEvent.focus(screen.getByRole("group", { name: /histogram buckets/ }));
+    const list = screen.getByRole("list", { name: "Buckets at this time" });
+    // The observed buckets are 3, 2 and 5 events/s and the window total is unknown, so the largest fills its track.
+    expect(list.querySelector<HTMLElement>('[data-histogram-bucket="2"] i')!.style.width).toBe("100%");
+    expect(list.querySelector<HTMLElement>('[data-histogram-bucket="1"] i')!.style.width).toBe("40%");
+    expect(list.querySelector<HTMLElement>('[data-histogram-bucket="0"] i')!.style.width).toBe("60%");
+    expect(screen.getByText("Scaled to the largest bucket shown; window total unknown.")).toBeInTheDocument();
+    unmount();
+    render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={{ series: [series("10", [3]), series("50", [5]), series("+Inf", [10])] }} />);
+    fireEvent.focus(screen.getByRole("group", { name: /histogram buckets/ }));
+    expect(screen.queryByText(/Scaled to the largest bucket/)).not.toBeInTheDocument();
+  });
+  it("scales the observed buckets of a window that is missing only its +Inf bucket, and hatches the missing one", () => {
+    // At the last time the +Inf bucket is missing, so the total is unknown: observed 3 and 2 scale to the larger one.
+    const plusInfMissing: QueryResult = { series: [series("10", [3, 3]), series("50", [5, 5]), series("+Inf", [10, null])] };
+    render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={plusInfMissing} />);
+    fireEvent.focus(screen.getByRole("group", { name: /histogram buckets/ }));
+    const list = screen.getByRole("list", { name: "Buckets at this time" });
+    expect(list.querySelector('[data-histogram-bucket="2"]')).toHaveAttribute("data-histogram-state", "missing");
+    expect(list.querySelector<HTMLElement>('[data-histogram-bucket="0"] i')!.style.width).toBe("100%");
+    expect(parseFloat(list.querySelector<HTMLElement>('[data-histogram-bucket="1"] i')!.style.width)).toBeCloseTo(66.67, 1);
+    expect(screen.getByText("Scaled to the largest bucket shown; window total unknown.")).toBeInTheDocument();
+  });
+  it("keeps a visible sliver for an observed bucket too small to show beside a large one", () => {
+    const tiny: QueryResult = { series: [series("10", [1]), series("50", [1001]), series("100", [1002])] };
+    render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={tiny} />);
+    fireEvent.focus(screen.getByRole("group", { name: /histogram buckets/ }));
+    const list = screen.getByRole("list", { name: "Buckets at this time" });
+    expect(list.querySelector<HTMLElement>('[data-histogram-bucket="0"] i')!.style.minWidth).toBe("2px");
+    expect(list.querySelector<HTMLElement>('[data-histogram-bucket="2"] i')!.style.minWidth).toBe("2px");
+    expect(list.querySelector<HTMLElement>('[data-histogram-bucket="1"] i')!.style.width).toBe("100%");
+  });
+  it("keeps a keyboard-opened heatmap inspection when the pointer leaves the chart", async () => {
+    const threeColumns: QueryResult = { series: [series("10", [1, 1, 1]), series("50", [2, 2, 2]), series("+Inf", [3, 3, 3])] };
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={threeColumns} />);
+    const chart = screen.getByRole("group", { name: /histogram buckets/ });
+    fireEvent.focus(chart);
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    fireEvent.pointerLeave(container.firstElementChild!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+  });
+  it("still ends a pointer-opened heatmap inspection when the pointer leaves the chart, and keeps a keyboard one through margin movement", async () => {
+    const threeColumns: QueryResult = { series: [series("10", [1, 1, 1]), series("50", [2, 2, 2]), series("+Inf", [3, 3, 3])] };
+    const bounds = vi.spyOn(SVGElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height: 240, top: 0, left: 0, right: 600, bottom: 240, toJSON: () => ({}) });
+    try {
+      const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={threeColumns} />);
+      const chart = screen.getByRole("group", { name: /histogram buckets/ });
+      fireEvent.pointerMove(chart, { clientX: 300, clientY: 120, pointerType: "mouse" });
+      expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+      fireEvent.pointerLeave(container.firstElementChild!);
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+      expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+      fireEvent.focus(chart);
+      fireEvent.keyDown(chart, { key: "ArrowLeft" });
+      // A stray pointer event in the chart margin, outside the plot, must not close a keyboard observation.
+      fireEvent.pointerMove(chart, { clientX: 2, clientY: 2, pointerType: "mouse" });
+      expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+    } finally { bounds.mockRestore(); }
+  });
 });
