@@ -93,6 +93,7 @@ func TestAuthoringSchemaDiscoversRichChartContracts(t *testing.T) {
 			for _, contract := range []string{"display=status-badge", "barColorMode=gradient|value", "unmapped and missing values remain neutral", "colorField?:string,colorMin?:number,colorMax?:number", "not underlying scrape or ingestion health", "options.staleAfterSeconds", "showStatus?:boolean", "showStatus defaults to false", "missing observation is Unknown"} {
 				require.Contains(t, notes, contract)
 			}
+			require.Contains(t, notes, "A time series hatches the time after that sample", "Time-series staleness must be discoverable")
 			require.Contains(t, notes, "colorMode?:intensity|thresholds", "Incident calendar coloring must be discoverable")
 			require.Contains(t, notes, "sparkline cellStyle may set thresholdColumn", "Row-based sparkline coloring must be discoverable")
 			require.Contains(t, notes, "config.showRowNumbers", "Displayed row numbering must be discoverable")

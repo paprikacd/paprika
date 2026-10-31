@@ -202,9 +202,9 @@ function StyleEditor({
           blank for Auto, or choose 0–8 places.
         </p>
       )}
-      {widget.type === "stat" && <>
-        {numeric("Warn when last valid sample is older than (seconds)", "staleAfterSeconds", 1, 2678400)}
-        <p className={styles.hint}>Optional. Compared with the end of the selected time range; this describes returned samples, not the source’s scrape health.</p>
+      {(widget.type === "stat" || widget.type === "timeseries") && <>
+        {numeric(widget.type === "stat" ? "Warn when last valid sample is older than (seconds)" : "Hatch after latest sample when older than (seconds)", "staleAfterSeconds", 1, 2678400)}
+        <p className={styles.hint}>{widget.type === "stat" ? "Optional. Compared with the end of the selected time range; this describes returned samples, not the source’s scrape health." : "Time series: hatch the time after the latest sample when it is older than this before the range end. Leave blank to use two expected sample intervals."}</p>
       </>}
       {widget.type === "traces" && (
         <p className={styles.hint}>

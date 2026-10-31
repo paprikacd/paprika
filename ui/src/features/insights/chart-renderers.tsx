@@ -56,6 +56,7 @@ import {
   timeFormat,
   dateTimeFormat,
   fullDateTimeFormat,
+  isolatedPlotPoints,
   plotTimeDomain,
   sampleCadence,
   seriesCoverage,
@@ -305,19 +306,26 @@ function TimeSeriesChart({
       visibleSeries.slice(0, MAX_SERIES).map((entry, index) => {
         const cadence = sampleCadence(entry.points);
         const tag = (point: Point) => ({ ...point, series: seriesName(entry, index), seriesIndex: index });
+        // Plot-only: an inferred gap gets a null break so the line ends there. Values, legends and tooltips never see it.
+        const plotPoints = downsamplePoints(withGapBreaks(entry.points, cadence)).map(tag);
         return {
           name: seriesName(entry, index),
           latest: latestPoint(entry),
           color: resolveSeriesColor(entry.labels, options.seriesColors,
             index === 0 && widget.color ? widget.color : PALETTE[index % PALETTE.length]),
           points: downsamplePoints(entry.points).map(tag),
-          // Plot-only: an inferred gap gets a null break so the line ends there. Values, legends and tooltips never see it.
-          plotPoints: downsamplePoints(withGapBreaks(entry.points, cadence)).map(tag),
-          // Unsampled coverage, so downsampling can neither hide nor invent a gap.
-          coverage: seriesCoverage(entry.points, cadence),
+          plotPoints,
+          // Observations that no line segment reaches. They get dots of their own.
+          dotPoints: isolatedPlotPoints(plotPoints),
         };
       }),
     [visibleSeries, widget.color, options.seriesColors],
+  );
+  // Coverage comes from every series in the result, not only the plotted ones, so "No samples" is true for the whole
+  // result. It is measured on the unsampled points, so downsampling can neither hide nor invent a gap.
+  const coverage = useMemo(
+    () => series.map((entry) => seriesCoverage(entry.points, sampleCadence(entry.points))),
+    [series],
   );
   // The plotted current and prior samples define one time domain. TanStack's x scale, the shared cursor, events,
   // the stale tail and the no-sample bands all map time through it, so every overlay sits on its samples.
@@ -326,12 +334,12 @@ function TimeSeriesChart({
   );
   const dataStart = plottedTimes.length ? Math.min(...plottedTimes) : undefined;
   const dataEnd = plottedTimes.length ? Math.max(...plottedTimes) : undefined;
-  // Stale tail: rangeEnd lies beyond the latest observation by more than the limit. It is judged on the unzoomed
-  // series and only for a complete result. Without staleAfterSeconds, the limit is two expected intervals. That is a
-  // factual "expected samples missing" rule, not a verdict on the source.
+  // Stale tail: rangeEnd lies beyond the latest observation of any series in the result by more than the limit. It is
+  // judged on the unzoomed series and only for a complete result. Without staleAfterSeconds, the limit is two expected
+  // intervals. That is a factual "expected samples missing" rule, not a verdict on the source.
   const staleTail = useMemo(() => {
     if (embedded || zoom || truncated || rangeEnd === undefined || !Number.isFinite(rangeEnd)) return undefined;
-    const latest = series.slice(0, MAX_SERIES).flatMap((entry) => {
+    const latest = series.flatMap((entry) => {
       const last = latestPoint(entry);
       return last ? [{ entry, last }] : [];
     });
@@ -368,16 +376,18 @@ function TimeSeriesChart({
   const visibleEvents = eventsInView.slice(0, 20);
   const eventTop = !showAxis ? 8 : separateUnit ? 18 : height < 130 ? 4 : 10;
   const eventBottom = !showAxis ? 8 : options.xAxisLabel ? 47 : 29;
-  // No-sample bands: time that no plotted series observes. They are measured on the unsampled series, so downsampling
-  // can neither invent nor hide a gap. The stale tail owns everything after the latest observation.
+  // No-sample bands: time that no series in the result observes. A truncated result may simply lack samples, so it
+  // draws no bands and no tail. The stale tail owns everything after the latest observation.
   const bands = useMemo(() => {
-    if (embedded || dataStart === undefined || dataEnd === undefined || dataEnd <= dataStart) return [];
-    const holes = uncoveredIntervals(data.map((entry) => entry.coverage), [dataStart, dataEnd]);
+    if (embedded || truncated || dataStart === undefined || dataEnd === undefined || dataEnd <= dataStart) return [];
+    const holes = uncoveredIntervals(coverage, [dataStart, dataEnd]);
     return staleTail
       ? holes.flatMap((hole) => hole.from >= staleTail.from ? [] : [{ from: hole.from, to: Math.min(hole.to, staleTail.from) }])
       : holes;
-  }, [data, embedded, dataStart, dataEnd, staleTail]);
+  }, [coverage, embedded, truncated, dataStart, dataEnd, staleTail]);
   const visibleBands = embedded || emptyZoom ? [] : bands;
+  const intervalCount = visibleBands.length + (staleTail ? 1 : 0);
+  const gapsHidden = !embedded && !!truncated && dataStart !== undefined;
   const tailBox = staleTail ? bandBox(staleTail.from, staleTail.to) : undefined;
 
   const definition = useMemo(
@@ -410,14 +420,17 @@ function TimeSeriesChart({
             stroke: entry.color,
             strokeWidth: options.lineWidth ?? 1.8,
             curve: CURVES[options.curve ?? "linear"],
-            points: entry.plotPoints.some(
-              (point, position, points) =>
-                point.value !== null &&
-                (position === 0 || points[position - 1].value === null) &&
-                (position === points.length - 1 ||
-                  points[position + 1].value === null),
-            ),
           }),
+          // An isolated observation has no segment, so it gets its own dot. The dots are decorative: they never take focus
+          // or hover, so each observation is still visited once, on the line.
+          ...(entry.dotPoints.some((point) => point.value !== null) ? [decorative(lineY(entry.dotPoints, {
+            id: `isolated-${index}`,
+            x: "timestamp",
+            y: "value",
+            stroke: entry.color,
+            strokeWidth: 0,
+            points: true,
+          }))] : []),
           ]),
         ],
         scales: {
@@ -566,7 +579,12 @@ function TimeSeriesChart({
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
           style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= domain[0] && threshold.value <= domain[1]).map((threshold, index) => <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} style={{ left: cursorLeft, right: !showAxis ? 8 : 12, top: eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom), borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>)}
+        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= domain[0] && threshold.value <= domain[1]).map((threshold, index) => {
+          const top = eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
+          // The label sits above its line at the left end, where the newest data on the right is never covered.
+          // It moves below the line when there is less than 16px above it inside the plot.
+          return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: cursorLeft, right: !showAxis ? 8 : 12, top, borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
+        })}
         {eventEnd > eventStart && visibleEvents.map((event, index) => {
           const at = Date.parse(event.timestamp), finish = event.endTimestamp ? Date.parse(event.endTimestamp) : at;
           const position = xAt;
@@ -576,7 +594,14 @@ function TimeSeriesChart({
       </div>
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {emptyCurrent && previousData.length > 0 && <span role="status" className={styles.notice}>No current observations in this window; the dashed lines show the preceding period.</span>}
-      {visibleBands.length > 0 && <span className={styles.notice}>No samples in {visibleBands.length} {visibleBands.length === 1 ? "interval" : "intervals"}; first {dateTimeFormat.format(new Date(visibleBands[0].from))}–{dateTimeFormat.format(new Date(visibleBands[0].to))}</span>}
+      {gapsHidden && <span className={styles.notice}>Gaps not shown: the provider result was truncated</span>}
+      {intervalCount > 0 && <details className={styles.gapDetails} data-gap-intervals>
+        <summary>No samples in {intervalCount} {intervalCount === 1 ? "interval" : "intervals"}</summary>
+        <ul tabIndex={0} aria-label="No-sample intervals">
+          {visibleBands.map((band) => <li key={`${band.from}-${band.to}`}>{dateTimeFormat.format(new Date(band.from))}–{dateTimeFormat.format(new Date(band.to))}</li>)}
+          {staleTail && <li>{dateTimeFormat.format(new Date(staleTail.from))}–{dateTimeFormat.format(new Date(staleTail.to))}, after the latest sample</li>}
+        </ul>
+      </details>}
       {staleTail && <span className={styles.notice}>Latest sample {dateTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series">

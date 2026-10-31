@@ -30,6 +30,7 @@ import {
   EmptyState,
 } from "./chart-renderers";
 import {
+  isolatedPlotPoints,
   plotTimeDomain,
   sampleCadence,
   seriesCoverage,
@@ -1184,5 +1185,32 @@ describe("time-series gap helpers", () => {
     const [start, end] = plotTimeDomain(1_000_000, 1_000_000);
     expect(start).toBeLessThan(1_000_000);
     expect(end).toBeGreaterThan(1_000_000);
+  });
+
+  it("covers an isolated observation with a zero-width instant, so the holes either side of it stay apart", () => {
+    // Review repro: samples at 1, 2, 3, 10, 20, 21 and 22 s. The sample at 10 s has no covered neighbour.
+    const isolated = samples([[1, 5], [2, 6], [3, 7], [10, 8], [20, 9], [21, 9], [22, 9]]);
+    const coverage = seriesCoverage(isolated, sampleCadence(isolated));
+    expect(coverage).toContainEqual({ from: 10000, to: 10000 });
+    expect(uncoveredIntervals([coverage], [1000, 22000])).toEqual([
+      { from: 3000, to: 10000 },
+      { from: 10000, to: 20000 },
+    ]);
+    // A lone observation covers only its own instant.
+    expect(uncoveredIntervals([seriesCoverage(samples([[5, 1]]), null)], [1000, 9000])).toEqual([
+      { from: 1000, to: 5000 },
+      { from: 5000, to: 9000 },
+    ]);
+    // An instant outside the domain covers nothing inside it.
+    expect(uncoveredIntervals([[{ from: 30000, to: 30000 }]], [1000, 9000])).toEqual([{ from: 1000, to: 9000 }]);
+  });
+
+  it("gives a dot only to an observation that no plotted neighbour reaches, and keeps every plotted time", () => {
+    const plotted = withGapBreaks(samples([[1, 5], [2, 6], [3, 7], [10, 8], [20, 9], [21, 9]]), 1000);
+    const dots = isolatedPlotPoints(plotted);
+    expect(dots).toHaveLength(plotted.length);
+    expect(dots.map((point) => [point.timestamp, point.value]).filter(([, value]) => value !== null)).toEqual([[10000, 8]]);
+    // A pair of neighbours, and a run, draw their own segments, so none of their points needs a dot.
+    expect(isolatedPlotPoints(samples([[1, 1], [2, 2], [3, 3]])).every((point) => point.value === null)).toBe(true);
   });
 });

@@ -1169,3 +1169,18 @@ it("offers the same baseline presentation in the chart Tooltips tab", () => {
   expect(screen.getByLabelText("Tooltip heading")).toHaveAttribute("placeholder", "Widget title");
   expect(screen.getByRole("switch", { name: "Show unit in tooltip reading" })).toBeChecked();
 });
+
+it("offers the stale-sample threshold for time series as well as single values", () => {
+  const callbacks = props();
+  const { unmount } = render(<WidgetEditor {...callbacks} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+  expect(screen.getByText(/Time series: hatch the time after the latest sample when it is older than this before the range end/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Hatch after latest sample when older than (seconds)"), { target: { value: "600" } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+  expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "timeseries", options: expect.objectContaining({ staleAfterSeconds: 600 }) }));
+  unmount();
+  render(<WidgetEditor {...props()} widget={{ ...widget, type: "stat" }} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+  expect(screen.getByLabelText("Warn when last valid sample is older than (seconds)")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Hatch after latest sample when older than (seconds)")).toBeNull();
+});

@@ -4,7 +4,7 @@
   height: 100%;
   min-height: 0;
   width: 100%;
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   min-width: 0;
   container: insight-widget / size;
 }
@@ -34,17 +34,19 @@
   /* Own stacking context: no-sample bands sit at z-index -1, beneath the TanStack SVG. */
   isolation: isolate;
 }
-.eventLine { position: absolute; width: 0; border-left: 1.5px dashed var(--gamma-muted, #697c73); opacity: .8; pointer-events: none; }
-.thresholdGuide { position: absolute; border-top: 1.25px dashed; pointer-events: none; z-index: 1; color: var(--widget-text, var(--gamma-ink, #27332e)); }
-.thresholdGuide > span { position: absolute; right: 4px; bottom: 3px; padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); font-size: 12px; font-weight: 500; line-height: 1.3; white-space: nowrap; }
+.eventLine { position: absolute; width: 0; border-left: 1.5px dashed var(--gamma-muted, #52636f); opacity: .8; pointer-events: none; }
+.thresholdGuide { position: absolute; border-top: 1.25px dashed; pointer-events: none; z-index: 1; color: var(--widget-text, var(--gamma-ink, #223139)); --threshold-halo: var(--widget-background, var(--gamma-bg, #ffffff)); }
+/* The label sits at the left end of its line. A 1px halo in the widget background keeps it legible over data, with no box. */
+.thresholdGuide > span { position: absolute; left: 4px; bottom: 3px; font-size: 12px; font-weight: 500; line-height: 1.3; white-space: nowrap; text-shadow: 1px 0 0 var(--threshold-halo), -1px 0 0 var(--threshold-halo), 0 1px 0 var(--threshold-halo), 0 -1px 0 var(--threshold-halo); }
+.thresholdGuide[data-label-placement="below"] > span { bottom: auto; top: 3px; }
 /* Hatched time with no samples. Gridlines, lines and dots paint over it; the band itself never takes pointer input. */
 .noSampleBand { position: absolute; z-index: -1; pointer-events: none; }
-.noSampleLabel { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); color: var(--widget-text, var(--gamma-muted, #626e65)); font-size: 12px; line-height: 1.3; white-space: nowrap; }
-.eventRange { position: absolute; background: var(--gamma-muted, #697c73); opacity: .16; pointer-events: none; }
+.noSampleLabel { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); color: var(--widget-text, var(--gamma-muted, #52636f)); font-size: 12px; line-height: 1.3; white-space: nowrap; }
+.eventRange { position: absolute; background: var(--gamma-muted, #52636f); opacity: .16; pointer-events: none; }
 .eventRange[data-severity="info"] { background: var(--gamma-chart-1, #2867b9); }
 .eventRange[data-severity="warning"] { background: var(--gamma-chart-4, #977017); }
 .eventRange[data-severity="critical"] { background: var(--gamma-danger, #b4473d); }
-.eventLine::before { content: ""; position: absolute; left: -3px; top: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--gamma-muted, #697c73); }
+.eventLine::before { content: ""; position: absolute; left: -3px; top: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--gamma-muted, #52636f); }
 .eventLine[data-severity="info"] { border-color: var(--gamma-chart-1, #2867b9); }
 .eventLine[data-severity="info"]::before { background: var(--gamma-chart-1, #2867b9); }
 .eventLine[data-severity="warning"] { border-color: var(--gamma-chart-4, #977017); }
@@ -73,7 +75,7 @@
   border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border));
   font-size: 11px;
   line-height: 1.35;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .chartFooter {
   display: flex;
@@ -94,7 +96,7 @@
 .barLegend:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
 /* The hatched key matches the 8px colour keys; "No data" is quieter than a latest value. */
 .barLegend .noDataKey { width: 8px; height: 8px; border-radius: 1px; }
-.barLegend .noDataValue { color: var(--widget-text, var(--gamma-muted, #626e65)); font-weight: 400; }
+.barLegend .noDataValue { color: var(--widget-text, var(--gamma-muted, #52636f)); font-weight: 400; }
 
 .chartFooter > :only-child { margin-left: auto; }
 @container insight-widget (max-width: 360px) {
@@ -142,9 +144,16 @@
 }
 .notice {
   font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   margin-left: auto;
 }
+/* The interval list keeps every no-sample time reachable from the keyboard and by touch. It scrolls inside a capped
+   height, so a long list never squeezes the plot. */
+.gapDetails { margin-left: auto; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted, #52636f)); }
+.gapDetails > summary { cursor: pointer; }
+.gapDetails > summary:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+.gapDetails > ul { margin: 2px 0 0; padding-left: 16px; max-height: 96px; overflow: auto; }
+.gapDetails > ul:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
 .limitNotice {
   flex: none;
   font-size: 11px;
@@ -156,7 +165,7 @@
   border: 1px solid var(--gamma-border, #dfe4db) !important;
   box-shadow: var(--gamma-shadow-mid, 0 8px 28px rgb(39 51 46 / 8%)) !important;
   background: var(--widget-background, var(--gamma-bg, #ffffff)) !important;
-  color: var(--widget-text, var(--gamma-ink, #27332e)) !important;
+  color: var(--widget-text, var(--gamma-ink, #223139)) !important;
   border-radius: var(--gamma-radius-control, 9px) !important;
   font:
     12px/1.6 var(--font-sans),
@@ -180,10 +189,10 @@
   padding: 18px;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .state strong {
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   font-weight: 500;
 }
 .state p {
@@ -243,12 +252,12 @@
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.15;
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   overflow-wrap: anywhere;
 }
 .statUnit {
   font-size: 14px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   margin-left: 7px;
   letter-spacing: 0;
   font-weight: 450;
@@ -256,7 +265,7 @@
 .statMeta {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -280,7 +289,7 @@
   justify-content: space-between;
   gap: 16px;
   font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .statExtra span {
   overflow: hidden;
@@ -288,7 +297,7 @@
   white-space: nowrap;
 }
 .statExtra strong {
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   font-weight: 500;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -320,7 +329,7 @@
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--gamma-muted, #626e65) transparent;
+  scrollbar-color: var(--gamma-muted, #52636f) transparent;
 }
 .traceListContainer {
   display: flex;
@@ -333,7 +342,7 @@
   flex: none;
   margin: 0;
   padding: 5px 8px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   font-size: 11px;
   line-height: 1.4;
 }
@@ -348,7 +357,7 @@
   position: sticky;
   top: 0;
   background: var(--widget-background, var(--gamma-bg, #ffffff));
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
@@ -359,11 +368,11 @@
 .table td {
   padding: 8px;
   border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border, #dfe4db));
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   vertical-align: middle;
 }
 .table td:first-child {
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -377,7 +386,7 @@
 .operation {
   display: block;
   font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -394,7 +403,7 @@
   left: 0;
   bottom: -4px;
   height: 2px;
-  background: var(--gamma-muted, #626e65);
+  background: var(--gamma-muted, #52636f);
   border-radius: 2px;
 }
 .traceSuccess {
@@ -408,7 +417,7 @@
   white-space: nowrap;
 }
 .statusNeutral {
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .statusSuccess {
   color: var(--widget-text, var(--gamma-success, #327959));

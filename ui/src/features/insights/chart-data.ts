@@ -269,11 +269,25 @@ function observedSteps(points: readonly Point[], cadence: number | null) {
   return steps;
 }
 
-/** Intervals one series observes: consecutive observed samples with no gap between them. */
+/**
+ * Intervals one series observes: consecutive observed samples with no gap between them. An observed sample that
+ * neither neighbouring step covers is still an observation, so it covers a zero-width instant. That keeps the holes
+ * on either side of an isolated sample apart instead of merging them into one band.
+ */
 export function seriesCoverage(points: readonly Point[], cadence: number | null): TimeInterval[] {
-  return observedSteps(points, cadence)
+  const steps = observedSteps(points, cadence);
+  const intervals: TimeInterval[] = steps
     .filter((step) => !step.gap)
     .map(({ from, to }) => ({ from, to }));
+  inTimeOrder(points)
+    .filter(observed)
+    .forEach((sample, index) => {
+      const before = index > 0 ? steps[index - 1] : undefined;
+      const after: (typeof steps)[number] | undefined = steps[index];
+      const covered = (before && !before.gap) || (after && !after.gap);
+      if (!covered) intervals.push({ from: sample.timestamp, to: sample.timestamp });
+    });
+  return intervals.sort((a, b) => a.from - b.from || a.to - b.to);
 }
 
 /** Gap intervals of one series: the steps that `seriesCoverage` leaves out. */
@@ -307,6 +321,18 @@ export function withGapBreaks(points: readonly Point[], cadence: number | null):
 }
 
 /**
+ * The plotted points that no line segment reaches: an observed point with no observed plotted neighbour. Each needs
+ * its own dot. Every other point keeps its time but loses its value, so a points-only line draws one dot per isolated
+ * sample and never joins two of them across a gap. Pass the plotted points, after gap breaks and downsampling.
+ */
+export function isolatedPlotPoints(points: readonly Point[]): Point[] {
+  const seen = (index: number) => index >= 0 && index < points.length && observed(points[index]);
+  return points.map((point, index) =>
+    observed(point) && !seen(index - 1) && !seen(index + 1) ? point : { ...point, value: null },
+  );
+}
+
+/**
  * Holes in the union of several coverages, within `domain`. A time is uncovered only when no series observes it,
  * so one series with a gap does not hide the samples another series still has.
  */
@@ -316,10 +342,11 @@ export function uncoveredIntervals(
 ): TimeInterval[] {
   const [start, end] = domain;
   if (!(end > start)) return [];
+  // A zero-width interval is an isolated observation: it covers its instant and splits the holes around it.
   const covered = coverages
     .flat()
     .map(({ from, to }) => ({ from: Math.max(start, from), to: Math.min(end, to) }))
-    .filter((interval) => interval.to > interval.from)
+    .filter((interval) => interval.to >= interval.from)
     .sort((a, b) => a.from - b.from);
   const holes: TimeInterval[] = [];
   let cursor = start;

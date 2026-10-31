@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { WidgetVisualization } from "./charts";
@@ -122,5 +123,135 @@ describe("time-series gaps", () => {
     expect(cursors).toHaveLength(2);
     expect(parseFloat(cursors[0].style.left)).toBeCloseTo(xs(segments(chartNamed("Short"))[0])[2], 0);
     expect(parseFloat(cursors[1].style.left)).toBeCloseTo(xs(segments(chartNamed("Long"))[0])[2], 0);
+  });
+
+  // Review repro: samples at 1, 2, 3, 10, 20, 21 and 22 s. The sample at 10 s is isolated.
+  const isolated = plot(line("api", [[1, 5], [2, 6], [3, 7], [10, 8], [20, 9], [21, 9], [22, 9]]));
+  const intervalItems = (container: HTMLElement) => [...container.querySelectorAll("[data-gap-intervals] li")].map((item) => item.textContent);
+
+  it("splits the hole at an isolated sample, so two bands replace one band across it", () => {
+    const { container } = render(<WidgetVisualization widget={widget} result={isolated} />);
+    const bands = [...container.querySelectorAll<HTMLElement>("[data-no-sample-band]")];
+    expect(bands.map((band) => [band.getAttribute("data-from"), band.getAttribute("data-to")])).toEqual([["3000", "10000"], ["10000", "20000"]]);
+    expect(bands[0]).toHaveAttribute("aria-label", `No samples from ${fullDateTimeFormat.format(new Date(3000))} to ${fullDateTimeFormat.format(new Date(10000))}`);
+    expect(bands[1]).toHaveAttribute("aria-label", `No samples from ${fullDateTimeFormat.format(new Date(10000))} to ${fullDateTimeFormat.format(new Date(20000))}`);
+    const intervals = container.querySelector<HTMLElement>("[data-gap-intervals]")!;
+    expect(within(intervals).getByText("No samples in 2 intervals")).toBeInTheDocument();
+    expect(intervalItems(container)).toEqual([
+      `${dateTimeFormat.format(new Date(3000))}–${dateTimeFormat.format(new Date(10000))}`,
+      `${dateTimeFormat.format(new Date(10000))}–${dateTimeFormat.format(new Date(20000))}`,
+    ]);
+  });
+
+  it("draws a dot on the isolated sample only, never on every sample of the series", () => {
+    const { container } = render(<WidgetVisualization widget={widget} result={isolated} />);
+    const chart = chartNamed();
+    const dots = chart.querySelectorAll("circle");
+    expect(dots).toHaveLength(1);
+    // The dot sits on the isolated sample's own x, which is the single-sample segment in the middle.
+    expect(Number(dots[0].getAttribute("cx"))).toBeCloseTo(xs(segments(chart)[1])[0], 0);
+    expect(container.querySelectorAll("[data-no-sample-band]")).toHaveLength(2);
+  });
+
+  it("keeps one dot for one isolated sample in a long series, not one per sample", () => {
+    const samples: [number, number | null][] = [];
+    for (let second = 0; second < 100; second++) samples.push([second, second % 7]);
+    samples.push([110, 3]);
+    for (let second = 120; second < 200; second++) samples.push([second, second % 5]);
+    render(<WidgetVisualization widget={widget} result={plot(line("api", samples))} />);
+    expect(chartNamed().querySelectorAll("circle")).toHaveLength(1);
+  });
+
+  it("visits each observation exactly once from the keyboard, including the isolated one", () => {
+    render(<WidgetVisualization widget={widget} result={isolated} />);
+    const chart = chartNamed();
+    const observed = () => screen.queryByRole("tooltip")?.querySelector("[data-observation-timestamp]")?.getAttribute("data-observation-timestamp") ?? null;
+    act(() => chart.focus());
+    const visited = [observed()];
+    for (let step = 0; step < 6; step++) {
+      fireEvent.keyDown(chart, { key: "ArrowRight" });
+      visited.push(observed());
+    }
+    expect(visited).toEqual(["1000", "2000", "3000", "10000", "20000", "21000", "22000"]);
+  });
+
+  it("draws no bands and no stale tail for a truncated result, and says the gaps are not shown", () => {
+    const truncated = { ...gapped, truncated: true };
+    const view = (result: QueryResult) => (
+      <DashboardWindowProvider value={{ rangeEnd: 20_000 }}>
+        <WidgetVisualization widget={widget} result={result} />
+      </DashboardWindowProvider>
+    );
+    const { container, rerender } = render(view(truncated));
+    expect(container.querySelector("[data-no-sample-band]")).toBeNull();
+    expect(container.querySelector("[data-stale-tail]")).toBeNull();
+    expect(screen.getByText("Gaps not shown: the provider result was truncated")).toBeInTheDocument();
+    rerender(view(gapped));
+    expect(container.querySelectorAll("[data-no-sample-band]")).toHaveLength(1);
+    expect(screen.queryByText("Gaps not shown: the provider result was truncated")).toBeNull();
+  });
+
+  it("decides where data is missing from every series in the result, not only the first twelve plotted", () => {
+    // Twelve plotted series that report one sample each, then a thirteenth that covers the 3-7 s gap.
+    const others = Array.from({ length: 11 }, (_, index) => line(`steady-${index}`, [[1, 1]]));
+    const covering = line("cover", Array.from({ length: 8 }, (_, index) => [index + 1, 1] as [number, number]));
+    const { container } = render(<WidgetVisualization widget={widget} result={plot(line("api", [[1, 5], [2, 6], [3, 7], [7, 8], [8, 9]]), ...others, covering)} />);
+    expect(screen.getByText(/First 12 of 13 series/)).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-no-sample-band]")).toHaveLength(0);
+  });
+
+  it("takes the stale tail's last sample from every series in the result", () => {
+    const others = Array.from({ length: 11 }, (_, index) => line(`steady-${index}`, [[1, 1]]));
+    const late = line("late", Array.from({ length: 9 }, (_, index) => [index + 1, 1] as [number, number]));
+    const { container } = render(
+      <DashboardWindowProvider value={{ rangeEnd: 20_000 }}>
+        <WidgetVisualization widget={widget} result={plot(line("api", [[1, 5], [2, 6], [3, 7], [4, 8], [5, 9]]), ...others, late)} />
+      </DashboardWindowProvider>,
+    );
+    const tail = container.querySelector<HTMLElement>("[data-stale-tail]")!;
+    expect(tail).toHaveAttribute("data-from", "9000");
+    expect(screen.getByText(`Latest sample ${dateTimeFormat.format(new Date(9000))}, before the end of the range.`)).toBeInTheDocument();
+  });
+
+  it("lists the stale tail with the other no-sample intervals", () => {
+    const view = (
+      <DashboardWindowProvider value={{ rangeEnd: 20_000 }}>
+        <WidgetVisualization widget={widget} result={plot(line("api", [[1, 5], [2, 6], [3, 7], [4, 8], [5, 9]]))} />
+      </DashboardWindowProvider>
+    );
+    const { container } = render(view);
+    const intervals = container.querySelector<HTMLElement>("[data-gap-intervals]")!;
+    expect(within(intervals).getByText("No samples in 1 interval")).toBeInTheDocument();
+    expect(intervalItems(container)).toEqual([`${dateTimeFormat.format(new Date(5000))}–${dateTimeFormat.format(new Date(20000))}, after the latest sample`]);
+  });
+});
+
+describe("threshold guide labels", () => {
+  const guided: Widget = { id: "requests", title: "Requests", type: "timeseries", providerId: "metrics", query: "requests", unit: "req", layout: { x: 0, y: 0, w: 6, h: 4 } };
+  const samples = Array.from({ length: 9 }, (_, index) => ({ timestamp: (index + 1) * 1000, value: index + 1 }));
+
+  it("sets each label at the left end of its line, dropping it below only when no room is left above", () => {
+    const configured = { ...guided, options: { thresholds: [{ value: 9, color: "#b64a3a", label: "Ceiling" }, { value: 4, color: "#53876a", label: "Target" }] } };
+    render(<WidgetVisualization widget={configured} result={{ series: [{ name: "api", labels: {}, points: samples }] }} />);
+    const ceiling = screen.getByRole("img", { name: "Ceiling: 9 req" });
+    const target = screen.getByRole("img", { name: "Target: 4 req" });
+    // The ceiling sits within 16px of the plot top, so its label moves below the line.
+    expect(ceiling).toHaveAttribute("data-label-placement", "below");
+    expect(target).toHaveAttribute("data-label-placement", "above");
+    expect(within(ceiling).getByText("Ceiling")).toBeInTheDocument();
+    expect(within(target).getByText("Target")).toBeInTheDocument();
+  });
+});
+
+describe("time-series styling tokens", () => {
+  it("falls back to the light theme's muted and ink tokens, so an unthemed chart keeps the same contrast", () => {
+    // Vitest runs from ui/, the same way insights-theme.test.tsx reads the theme file.
+    const css = readFileSync("src/features/insights/charts.module.css", "utf8");
+    const theme = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
+    const lightToken = (name: string) => theme.match(new RegExp(`${name}: (#[0-9a-fA-F]{6});`))?.[1].toLowerCase();
+    const fallbacks = (name: string) => new Set([...css.matchAll(new RegExp(`var\\(--gamma-${name}, (#[0-9a-fA-F]{6})\\)`, "g"))].map((match) => match[1].toLowerCase()));
+    expect(fallbacks("muted")).toEqual(new Set([lightToken("--gamma-muted")]));
+    expect(fallbacks("ink")).toEqual(new Set([lightToken("--gamma-ink")]));
+    expect(css).not.toMatch(/#626e65|#697c73|#27332e/);
   });
 });
