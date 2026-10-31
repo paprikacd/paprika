@@ -103,6 +103,8 @@
 .history { height: 48px; position: relative; margin: 8px 0; }
 .history > svg { position: static; width: 100%; height: 48px; opacity: .85; mask-image: none; }
 .note { margin: 7px 0 0; font-size: 11px; line-height: 1.4; color: var(--gamma-muted); }
+/* The stack-total trend is a figure with its own caption; the default figure margin would push it out of the inspector. */
+.stackTotal { margin: 0; }
 @media (pointer: coarse) { .inspectorActions button { min-height: 44px; min-width: 44px; } }
 
 .heatmapFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 4px 3px 0; flex: 0 0 auto; }

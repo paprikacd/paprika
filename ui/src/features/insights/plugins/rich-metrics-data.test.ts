@@ -252,6 +252,62 @@ describe("distribution quantiles and gap states", () => {
   });
 });
 
+describe("stacked columns, partial stacks and totals", () => {
+  it("counts a track as not started until its first observation, and as missing from then on", () => {
+    const data = buildMetricPlot([series("A", [1, null, 3]), series("B", [null, 2, null])], {});
+    expect(data.columns.map(column => [column.missing, column.notStarted])).toEqual([[[], [1]], [[0], []], [[1], []]]);
+  });
+  it("keeps a track that reported before a zoomed window missing inside it when the unzoomed history is given", () => {
+    const full = [series("A", [1, 2, 3]), series("B", [5, null, 6])];
+    const zoomed = full.map(entry => ({ ...entry, points: entry.points.filter(point => point.timestamp >= 2000) }));
+    expect(buildMetricPlot(zoomed, {}, false, full).columns.map(column => [column.missing, column.notStarted])).toEqual([[[1], []], [[], []]]);
+  });
+  it("stacks the reporting tracks of an incomplete column on the complete stack's running sums", () => {
+    const data = buildMetricPlot([series("A", [2, 2]), series("B", [3, null]), series("C", [-1, -1])], {});
+    expect(data.columns[0]).toMatchObject({ total: 4, partial: [] });
+    expect(data.columns[1]).toMatchObject({ total: null, missing: [1], notStarted: [] });
+    expect(data.columns[1].partial).toEqual([{ index: 0, lower: 0, upper: 2 }, { index: 2, lower: 0, upper: -1 }]);
+    const signed = buildMetricPlot([series("A", [2, 2]), series("B", [-3, null]), series("C", [1, 1])], {});
+    expect(signed.columns[1].partial).toEqual([{ index: 0, lower: 0, upper: 2 }, { index: 2, lower: 2, upper: 3 }]);
+  });
+  it("reports a stack total only for a complete, finite column", () => {
+    const data = buildMetricPlot([series("A", [4, 8, 1e308]), series("B", [3, null, 1e308]), series("C", [1, 2, 0])], {});
+    expect(data.totals.map(total => total.value)).toEqual([8, null, null]);
+    expect(data.columns[2]).toMatchObject({ total: null, overflow: true, partial: [] });
+    expect(data.overflowColumns).toBe(1);
+  });
+  it("keeps totals at every unsampled timestamp while columns follow the displayed samples", () => {
+    const values = Array.from({ length: 100 }, (_, index) => index === 25 ? null : index);
+    const data = buildMetricPlot([series("A", values), series("B", values.map(value => value === null ? null : 1))], { maxPoints: 12 });
+    expect(data.timestamps).toHaveLength(12);
+    expect(data.columns.map(column => column.timestamp)).toEqual(data.timestamps);
+    expect(data.totals).toHaveLength(100);
+    expect(data.totals.slice(0, 3).map(total => total.value)).toEqual([1, 2, 3]);
+    expect(data.totals[25]).toEqual({ timestamp: 26000, value: null });
+  });
+  it("gives directional columns empty stack data", () => {
+    const data = buildMetricPlot([series("in", [4, null], { direction: "inbound" }), series("out", [1, 2], { direction: "outbound" })], {}, true);
+    expect(data.columns).toEqual([
+      { timestamp: 1000, total: null, missing: [], notStarted: [], partial: [] },
+      { timestamp: 2000, total: null, missing: [], notStarted: [], partial: [] },
+    ]);
+    expect(data.totals).toEqual([{ timestamp: 1000, value: null }, { timestamp: 2000, value: null }]);
+  });
+  it("includes partial stacks in the bar-mode domain, and leaves the area-mode domain to complete stacks", () => {
+    const spike = [series("A", [1, 1, 50]), series("B", [null, 1, null])];
+    expect(buildMetricPlot(spike, {}).domain).toEqual([0, 2]);
+    expect(buildMetricPlot(spike, stackedConfigSchema.parse({ display: "bar" })).domain).toEqual([0, 50]);
+    // With no complete column, bar mode still shows the reporting stacks instead of an empty [0, 1] axis.
+    const sparse = [series("A", [null, 40]), series("B", [7, null])];
+    expect(buildMetricPlot(sparse, stackedConfigSchema.parse({ display: "bar" })).domain).toEqual([0, 40]);
+  });
+  it("omits a column whose reporting stack overflows, even when another series has not started", () => {
+    const data = buildMetricPlot([series("A", [1e308]), series("B", [1e308]), series("C", [null])], stackedConfigSchema.parse({ display: "bar" }));
+    expect(data.columns[0]).toMatchObject({ overflow: true, partial: [], total: null, notStarted: [2] });
+    expect(data.overflowColumns).toBe(1);
+  });
+});
+
 describe("sampling priority", () => {
   it("keeps a missing column over a peak, and a peak over magnitude", () => {
     expect(sampleTimeIndices(10, 4, () => false, index => index)).toEqual([0, 4, 8, 9]);

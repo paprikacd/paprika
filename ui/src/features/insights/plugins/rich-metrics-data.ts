@@ -145,9 +145,38 @@ function metricStatistics(points: Map<number, number | null>): MetricStatistics 
   }
   return { current, currentTimestamp, mean, max, finiteSamples, totalSamples: points.size };
 }
+/** A track's stacked bounds in an incomplete column. The running sums are the complete stack's, over the reporting tracks only. */
+export interface MetricPartial {
+  index: number;
+  lower: number;
+  upper: number;
+}
+/** One time column, aligned with the sampled timestamps. Track indices are listed in track order. */
+export interface MetricColumn {
+  timestamp: number;
+  /** The stack height when every track reports and the stack is finite. Null otherwise. */
+  total: number | null;
+  /** Tracks that reported at an earlier time and have no finite value here. */
+  missing: number[];
+  /** Tracks with no finite value up to and including this time. They have not started, so bar mode draws nothing for them. */
+  notStarted: number[];
+  /** Bounds of the reporting tracks in an incomplete column. Empty for complete, overflowed and directional columns. */
+  partial: MetricPartial[];
+  /** Set only when the stack exceeds the finite range. The column is then omitted from the drawing. */
+  overflow?: boolean;
+}
+/** The stack total at one unsampled timestamp. Null where the stack is incomplete or overflowed. */
+export interface MetricTotal {
+  timestamp: number;
+  value: number | null;
+}
 export interface MetricPlotData {
   tracks: MetricTrack[];
   timestamps: number[];
+  /** Aligned with `timestamps`. */
+  columns: MetricColumn[];
+  /** Every unsampled timestamp, so the stack-total trend keeps its gaps when display sampling drops columns. */
+  totals: MetricTotal[];
   domain: [number, number];
   sampled: boolean;
   omittedSeries: number;
@@ -155,12 +184,20 @@ export interface MetricPlotData {
   overflowColumns: number;
 }
 
-export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | DirectionalConfig, directional = false): MetricPlotData {
+/**
+ * `history` is the unzoomed series for the same tracks, in the same order. A zoomed window passes it so a track that
+ * reported before the window counts as missing inside it, not as not started. Without it, `series` is the history.
+ */
+export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | DirectionalConfig, directional = false, history = series): MetricPlotData {
   const selected = series.slice(0, config.maxSeries ?? 8);
   const maps = selected.map(observations);
   const timestamps = [...new Set(maps.flatMap(map => [...map.keys()]))].sort((a, b) => a - b);
+  const bars = !directional && "display" in config && config.display === "bar";
+  // A track has started from its first finite observation. Before that it has no value and no placeholder.
+  const firstFinite = history.slice(0, config.maxSeries ?? 8).map(entry => entry.points.reduce((first, point) => validTimestamp(point.timestamp) && finite(point.value) && point.timestamp < first ? point.timestamp : first, Infinity));
   let invalidValues = 0, overflowColumns = 0;
   const cells: MetricCell[][] = selected.map(() => []);
+  const columns: MetricColumn[] = [], totals: MetricTotal[] = [];
   const direction = config as DirectionalConfig;
   for (const timestamp of timestamps) {
     const values = maps.map(map => map.get(timestamp) ?? null);
@@ -184,11 +221,36 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
       cells[index].push({ timestamp, value, lower, upper });
     });
     if (overflow) {
-      overflowColumns++;
       // The whole stack at this instant is incomplete; retaining the first
       // layer would falsely present a partial total as the full observation.
       for (const track of cells) Object.assign(track[track.length - 1], { lower: null, upper: null, overflow: true });
     }
+    const column: MetricColumn = { timestamp, total: !directional && complete && !overflow ? positive + negative : null, missing: [], notStarted: [], partial: [] };
+    let partialOverflow = false;
+    if (!directional) {
+      for (const [index, value] of values.entries()) {
+        if (!finite(value)) (firstFinite[index] <= timestamp ? column.missing : column.notStarted).push(index);
+      }
+      if (!complete) {
+        // An incomplete column still stacks its reporting tracks with the complete stack's running sums,
+        // so a partial stack is never drawn with a different baseline.
+        let partialPositive = 0, partialNegative = 0;
+        for (const [index, value] of values.entries()) {
+          if (!finite(value)) continue;
+          const lower = value >= 0 ? partialPositive : partialNegative, upper = lower + value;
+          if (!finite(upper)) partialOverflow = true;
+          if (value >= 0) partialPositive = upper; else partialNegative = upper;
+          column.partial.push({ index, lower, upper });
+        }
+      }
+    }
+    if (overflow || partialOverflow) {
+      overflowColumns++;
+      column.overflow = true;
+      column.partial = [];
+    }
+    columns.push(column);
+    totals.push({ timestamp, value: column.total });
   }
   const indices = sampleTimeIndices(timestamps.length, config.maxPoints ?? 120,
     index => cells.some(track => track[index].upper === null),
@@ -199,6 +261,11 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
     low = Math.min(low, cell.lower, cell.upper);
     high = Math.max(high, cell.lower, cell.upper);
   }
+  // Bar mode also draws the reporting tracks of incomplete columns, so their partial stacks must not be clipped.
+  if (bars) for (const column of columns) for (const part of column.partial) {
+    low = Math.min(low, part.lower, part.upper);
+    high = Math.max(high, part.lower, part.upper);
+  }
   if (low === high) { low = Math.min(0, low); high = Math.max(1, high); }
   if (directional && direction.symmetricAxis) {
     const extent = Math.max(Math.abs(low), Math.abs(high));
@@ -206,7 +273,7 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
   }
   return {
     tracks: selected.map((entry, index) => ({ series: entry, name: seriesName(entry, index), index, cells: indices.map(i => cells[index][i]), statistics: metricStatistics(maps[index]) })),
-    timestamps: indices.map(i => timestamps[i]), domain: [low, high], sampled: indices.length < timestamps.length,
+    timestamps: indices.map(i => timestamps[i]), columns: indices.map(i => columns[i]), totals, domain: [low, high], sampled: indices.length < timestamps.length,
     omittedSeries: series.length - selected.length, invalidValues, overflowColumns,
   };
 }

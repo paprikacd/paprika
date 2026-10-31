@@ -430,3 +430,120 @@ describe("rich metric renderers", () => {
     }
   });
 });
+
+describe("stacked bars with missing and not-started series", () => {
+  // checkout reports at every time. search misses 2000 after reporting 1000. notifications starts at 3000.
+  const stacked: QueryResult = { series: [
+    { name: "checkout", labels: { service: "checkout" }, points: [{ timestamp: 1000, value: 4 }, { timestamp: 2000, value: 8 }, { timestamp: 3000, value: 6 }] },
+    { name: "search", labels: { service: "search" }, points: [{ timestamp: 1000, value: 2 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 1 }] },
+    { name: "notifications", labels: { service: "notifications" }, points: [{ timestamp: 3000, value: 5 }] },
+  ] };
+  const bar: Widget = { ...widget, config: { display: "bar" } };
+  const barChart = (result: QueryResult, onContextChange?: (value: unknown) => void) => render(<StackedTimeseries widget={bar} result={result} onContextChange={onContextChange} />);
+
+  it("draws one hatched cap for a missing series and partial stacks for reporting ones, but no cap before a series starts", () => {
+    const { container } = barChart(stacked);
+    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(1);
+    const cap = container.querySelector<SVGRectElement>('[data-missing-series="search"]')!;
+    expect(cap).toHaveAttribute("aria-hidden", "true");
+    expect(cap).toHaveAttribute("height", "8");
+    expect(cap).toHaveAttribute("stroke-dasharray", "2 2");
+    expect(cap.getAttribute("fill")).toMatch(/-hatch\)$/);
+    expect(container.querySelector('pattern[id$="-hatch"]')).toBeInTheDocument();
+    expect(cap.querySelector("title")).toHaveTextContent("search: no value at");
+    expect(container.querySelectorAll("rect[data-partial-stack]")).toHaveLength(3);
+    expect(screen.getByText("Hatched caps mark series with no value at that time. Series that have not started are left out of the stack.")).toBeInTheDocument();
+  });
+  it("places each cap above its partial stack at the same width, and keeps caps and partial stacks inside the plot", () => {
+    const { container } = barChart(stacked);
+    const clip = container.querySelector("clipPath rect")!;
+    const left = Number(clip.getAttribute("x")), right = left + Number(clip.getAttribute("width"));
+    const cap = container.querySelector<SVGRectElement>('[data-missing-series="search"]')!;
+    const stackAtCap = [...container.querySelectorAll('g[data-series="checkout"] rect[data-partial-stack]')].find(rect => rect.getAttribute("x") === cap.getAttribute("x"))!;
+    expect(Number(cap.getAttribute("y")) + Number(cap.getAttribute("height"))).toBeCloseTo(Number(stackAtCap.getAttribute("y")) - 1);
+    expect(cap.getAttribute("width")).toBe(stackAtCap.getAttribute("width"));
+    for (const element of container.querySelectorAll("[data-partial-stack], [data-missing-series]")) {
+      expect(Number(element.getAttribute("x"))).toBeGreaterThanOrEqual(left);
+      expect(Number(element.getAttribute("x")) + Number(element.getAttribute("width"))).toBeLessThanOrEqual(right);
+    }
+  });
+  it("clamps a cap inside the top of the plot instead of drawing it above the clip", () => {
+    const topped: QueryResult = { series: [
+      { name: "a", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 10 }] },
+      { name: "b", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: null }] },
+    ] };
+    const { container } = barChart(topped);
+    const clip = container.querySelector("clipPath rect")!;
+    const cap = container.querySelector<SVGRectElement>('[data-missing-series="b"]')!;
+    expect(Number(cap.getAttribute("y"))).toBeGreaterThanOrEqual(Number(clip.getAttribute("y")));
+  });
+  it("explains an incomplete time in the inspector with the known sum and the series that have not started", () => {
+    barChart(stacked);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(inspector).toHaveTextContent("1 of 3 series report at this time, so the stack total is unavailable. Known series sum to 8.00 req/s. notifications: no samples yet.");
+    expect(within(inspector).getByRole("list", { name: "Series at selected time" })).toHaveTextContent("No observation");
+  });
+  it("does not quote a sum when no series reports at an incomplete time", () => {
+    const none: QueryResult = { series: [
+      { name: "a", labels: {}, points: [{ timestamp: 1000, value: 2 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 3 }] },
+      { name: "b", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 4 }] },
+    ] };
+    const { container } = barChart(none);
+    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(2);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(inspector).toHaveTextContent("No series reports at this time, so the stack total is unavailable.");
+    expect(inspector).not.toHaveTextContent("Known series sum");
+  });
+  it("shows the stack-total trend only for a pinned bar observation, with its caption", () => {
+    barChart(stacked);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    expect(screen.queryByRole("img", { name: "History for Stack total" })).not.toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: "Enter" });
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(within(inspector).getByRole("img", { name: "History for Stack total" })).toBeInTheDocument();
+    expect(within(inspector).getByText("Stack total; gaps where a series has no value")).toBeInTheDocument();
+    expect(inspector.querySelectorAll("[data-stat-sparkline]")).toHaveLength(2);
+  });
+  it("hover and click resolve the series under the pointer at incomplete times, including a cap", () => {
+    const bounds = vi.spyOn(SVGElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height: 240, top: 0, left: 0, right: 600, bottom: 240, toJSON: () => ({}) });
+    try {
+      const select = vi.fn();
+      const { container } = barChart(stacked, select);
+      const chart = screen.getByRole("group", { name: /Request outcomes/ });
+      const center = (element: Element) => ({ clientX: Number(element.getAttribute("x")) + Number(element.getAttribute("width")) / 2, clientY: Number(element.getAttribute("y")) + Number(element.getAttribute("height")) / 2 });
+      // The cap above search at 2000 belongs to search, not to the first track.
+      fireEvent.click(chart, { ...center(container.querySelector('[data-missing-series="search"]')!), clientY: Number(container.querySelector('[data-missing-series="search"]')!.getAttribute("y")) + 4 });
+      expect(select).toHaveBeenLastCalledWith({ series: "search", labels: { service: "search" }, value: null });
+      // Partial bands at 1000 are searched by their own extent. Track zero is not the default.
+      const [searchFirst] = container.querySelectorAll('g[data-series="search"] rect[data-partial-stack]');
+      fireEvent.click(chart, center(searchFirst));
+      expect(select).toHaveBeenLastCalledWith({ series: "search", labels: { service: "search" }, value: 2 });
+      const [checkoutSecond] = [...container.querySelectorAll('g[data-series="checkout"] rect[data-partial-stack]')].slice(1);
+      fireEvent.click(chart, center(checkoutSecond));
+      expect(select).toHaveBeenLastCalledWith({ series: "checkout", labels: { service: "checkout" }, value: 8 });
+    } finally { bounds.mockRestore(); }
+  });
+  it("keeps area mode unchanged: no caps, partial stacks, hatch patterns or stack-total trend", () => {
+    const { container } = render(<StackedTimeseries widget={widget} result={stacked} />);
+    expect(container.querySelectorAll("[data-missing-series], [data-partial-stack], pattern")).toHaveLength(0);
+    expect(screen.getByText("Incomplete timestamps leave gaps in the stack")).toBeInTheDocument();
+    const chart = screen.getByRole("group", { name: /Stacked observations/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "Enter" });
+    expect(screen.queryByRole("img", { name: "History for Stack total" })).not.toBeInTheDocument();
+  });
+  it("omits and discloses an incomplete column whose reporting values overflow, without drawing caps for it", () => {
+    const overflowing: QueryResult = { series: [
+      { name: "a", labels: {}, points: [{ timestamp: 1000, value: 1e308 }, { timestamp: 2000, value: 1 }] },
+      { name: "b", labels: {}, points: [{ timestamp: 1000, value: 1e308 }, { timestamp: 2000, value: 1 }] },
+      { name: "c", labels: {}, points: [{ timestamp: 2000, value: 1 }] },
+    ] };
+    const { container } = barChart(overflowing);
+    expect(screen.getByText(/1 time column omitted.*stack.*finite/i)).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-missing-series], [data-partial-stack]")).toHaveLength(0);
+  });
+});

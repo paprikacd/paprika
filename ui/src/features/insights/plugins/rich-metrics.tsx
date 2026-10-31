@@ -32,6 +32,8 @@ const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)
 const densityPalette = ["var(--gamma-density-0, #13a0ab)", "var(--gamma-density-1, #119ca5)", "var(--gamma-density-2, #0f979f)", "var(--gamma-density-3, #0d939a)", "var(--gamma-density-4, #0a8f94)", "var(--gamma-density-5, #088a8e)", "var(--gamma-density-6, #068689)", "var(--gamma-density-7, #078187)", "var(--gamma-density-8, #087d84)", "var(--gamma-density-9, #087881)", "var(--gamma-density-10, #09747e)", "var(--gamma-density-11, #096f7b)", "var(--gamma-density-12, #096a79)", "var(--gamma-density-13, #086576)", "var(--gamma-density-14, #076073)", "var(--gamma-density-15, #065b70)", "var(--gamma-density-16, #05556d)", "var(--gamma-density-17, #03506b)", "var(--gamma-density-18, #034b67)", "var(--gamma-density-19, #024663)", "var(--gamma-density-20, #02415f)", "var(--gamma-density-21, #013d5b)", "var(--gamma-density-22, #013857)", "var(--gamma-density-23, #003353)"];
 /** Histogram rows with at most this many buckets are shown while hovering; pinned rows always show them. */
 const hoverHistogramLimit = 12;
+/** Bar-mode caps are fixed-size and never encode a value. Each sits above the stack, one step higher per missing series. */
+const capHeight = 8, capStep = 9;
 const readoutClock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 const stamp = (timestamp: number) => new Date(timestamp).toISOString();
 const localEventTime = (timestamp: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(timestamp));
@@ -404,7 +406,9 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const [selection, setSelection] = useState<{ source: QueryResult; window: ObservationWindow; previous?: QueryResult }>();
   const zoom = selection?.source === result ? selection.window : undefined;
   const selectedSeries = useMemo(() => zoom ? seriesInWindow(fullSeries, zoom) : fullSeries, [fullSeries, zoom]);
-  const data = useMemo(() => buildMetricPlot(selectedSeries, config, directional), [selectedSeries, config, directional]);
+  const data = useMemo(() => buildMetricPlot(selectedSeries, config, directional, fullSeries), [selectedSeries, config, directional, fullSeries]);
+  const bars = !directional && "display" in config && config.display === "bar";
+  const stackTotal = useMemo(() => ({ name: "Stack total", labels: {}, points: data.totals }), [data.totals]);
   const prior = useMemo(() => zoom && selection?.previous ? metricPriorPeriod(fullSeries, selection.previous.series ?? [], zoom, directional) : [], [fullSeries, selection, zoom, directional]);
   const previousPlot = useMemo(() => prior.length ? buildMetricPlot(prior.map(entry => entry.shifted), config, directional) : undefined, [prior, config, directional]);
   const canOverlay = useCallback((current: MetricSeries[], previous: MetricSeries[], window: ObservationWindow) => {
@@ -419,7 +423,9 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const displayTimes = data.timestamps.length ? data.timestamps : previousPlot?.timestamps ?? [];
   const currentDrawable = data.tracks.some(track => track.cells.some(cell => cell.upper !== null));
   const previousDrawable = previousPlot?.tracks.some(track => track.cells.some(cell => cell.upper !== null)) ?? false;
-  const emptyZoom = !!zoom && !currentDrawable && !previousDrawable;
+  // Bar mode draws the reporting tracks of incomplete columns, so a window holding only partial stacks is not empty.
+  const currentPartial = bars && data.columns.some(column => column.partial.length > 0);
+  const emptyZoom = !!zoom && !currentDrawable && !currentPartial && !previousDrawable;
   const domain: [number, number] = previousPlot ? [Math.min(data.domain[0], previousPlot.domain[0]), Math.max(data.domain[1], previousPlot.domain[1])] : data.domain;
   const minTime = zoom?.start ?? displayTimes[0] ?? 0, span = zoom ? zoom.end - zoom.start : (displayTimes.at(-1) ?? minTime) - minTime;
   const ticks = Array.from({ length: height < 150 ? 3 : 5 }, (_, index) => {
@@ -444,18 +450,56 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     const labels = data.tracks[index]?.series.labels ?? {};
     return resolveSeriesColor(labels, config.seriesColors, index === 0 && widget.color ? widget.color : palette[index % palette.length]);
   };
+  // Bar geometry is shared by complete bars, partial stacks, caps and hover, so they stay aligned.
+  const barAt = (column: number) => {
+    const time = data.timestamps;
+    const interval = Math.min(column ? x(time[column]) - x(time[column - 1]) : Infinity, column < time.length - 1 ? x(time[column + 1]) - x(time[column]) : Infinity);
+    const barWidth = Math.max(1, Math.min(36, Number.isFinite(interval) ? interval * .75 : plotWidth * .5));
+    return { x: Math.max(left, Math.min(width - right - barWidth, x(time[column]) - barWidth / 2)), width: barWidth };
+  };
+  // The positive top of an incomplete stack is its highest reporting bound, or the baseline when every reporting track is negative.
+  const stackTop = (column: number) => y(Math.max(0, ...data.columns[column].partial.map(part => part.upper)));
+  const capTop = (column: number, rank: number) => Math.max(top, stackTop(column) - capStep * (rank + 1));
+  // A track's vertical extent at a time: its complete bounds, or in bar mode its partial stack.
+  const extent = (index: number, column: number) => {
+    const cell = data.tracks[index].cells[column];
+    if (cell.lower !== null && cell.upper !== null) return { lower: cell.lower, upper: cell.upper };
+    return bars ? data.columns[column].partial.find(part => part.index === index) : undefined;
+  };
+  const incomplete = (column: number) => data.columns[column].missing.length + data.columns[column].notStarted.length > 0;
+  const incompleteNote = (column: number) => {
+    const { missing, notStarted } = data.columns[column];
+    const reporting = data.tracks.length - missing.length - notStarted.length;
+    const known = data.tracks.reduce((sum, track) => sum + (track.cells[column].value ?? 0), 0);
+    // With no reporting series there is no known sum, and a zero would read as an observed total.
+    const status = reporting === 0 ? "No series reports at this time, so the stack total is unavailable."
+      : `${reporting} of ${data.tracks.length} series report at this time, so the stack total is unavailable. Known series sum to ${formatMetric(known, widget.unit, false, widget.options?.decimals)}.`;
+    const names = notStarted.map(index => data.tracks[index].name).join(", ");
+    return names ? `${status} ${names}: no samples yet.` : status;
+  };
   const observation = (row: number, column: number): Observation => {
     const track = data.tracks[row], cell = track.cells[column];
-    return { row, column, value: cell.value, timestamp: cell.timestamp, series: track.series, name: track.name, unit: widget.unit, color: color(row), note: directional ? "Outbound is drawn below zero; this is the original nonnegative observation." : cell.overflow ? "Recorded value; the stack exceeds the finite numeric range at this timestamp." : cell.upper === null && cell.value !== null ? "Recorded value; the stack is unavailable because another series is missing at this timestamp." : "Original observation, not the cumulative stacked height." };
+    const note = directional ? "Outbound is drawn below zero; this is the original nonnegative observation."
+      : data.columns[column].overflow ? "Recorded value; the stack exceeds the finite numeric range at this timestamp."
+      : bars && incomplete(column) ? incompleteNote(column)
+      : cell.upper === null && cell.value !== null ? "Recorded value; the stack is unavailable because another series is missing at this timestamp."
+      : "Original observation, not the cumulative stacked height.";
+    return { row, column, value: cell.value, timestamp: cell.timestamp, series: track.series, name: track.name, unit: widget.unit, color: color(row), note };
   };
   const locate = (event: PointerEvent<SVGSVGElement>) => {
     const point = coordinates(event, width, height);
     if (point.x < left || point.x > width - right || point.y < top || point.y > height - bottom) return;
     const column = data.timestamps.reduce((nearest, time, index) => Math.abs(x(time) - point.x) < Math.abs(x(data.timestamps[nearest]) - point.x) ? index : nearest, 0);
+    if (bars && !data.columns[column].overflow) {
+      // A cap sits above its stack and belongs to one missing track, so caps are tested before the bands.
+      const bar = barAt(column);
+      const capped = data.columns[column].missing.find((_, rank) => point.x >= bar.x && point.x <= bar.x + bar.width && point.y >= capTop(column, rank) && point.y <= capTop(column, rank) + capHeight);
+      if (capped !== undefined) return observation(capped, column);
+    }
     let row = 0, distance = Infinity;
-    data.tracks.forEach((track, index) => {
-      const cell = track.cells[column]; if (cell.upper === null || cell.lower === null) return;
-      const upper = y(cell.upper), lower = y(cell.lower);
+    data.tracks.forEach((_, index) => {
+      const span = extent(index, column); if (!span) return;
+      const upper = y(span.upper), lower = y(span.lower);
       const next = directional ? Math.abs(point.y - upper) : point.y >= Math.min(upper, lower) && point.y <= Math.max(upper, lower) ? 0 : Math.min(Math.abs(point.y - upper), Math.abs(point.y - lower));
       if (next < distance) { row = index; distance = next; }
     });
@@ -472,7 +516,6 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     event.preventDefault(); inspection.show(observation(Math.max(0, Math.min(data.tracks.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
   };
   if (!data.tracks.length || (!displayTimes.length && !zoom)) return <EmptyState />;
-  const bars = !directional && "display" in config && config.display === "bar";
   const authored = !directional && "annotations" in config ? config.annotations ?? [] : [];
   const inView = widget.annotationSource && !props.embedded && !embeddedChart ? eventData.events.filter(event => { const at = Date.parse(event.timestamp); return at <= minTime + span && Date.parse(event.endTimestamp ?? event.timestamp) >= minTime }) : [];
   const queried = inView.slice(0, 20);
@@ -481,6 +524,11 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const displayLabels = compactSeriesLabels(data.tracks.map(track => track.series));
   const legendRevision = JSON.stringify([widget.unit, widget.options?.decimals, config.legendDisplay, data.tracks.map(track => [track.name, track.cells.at(-1)?.value, track.statistics])]);
   const formatSummary = (value: number | null) => value === null ? "No data" : formatMetric(value, widget.unit, false, widget.options?.decimals);
+  // Pinned bar detail only: the stack total's trend, with gaps where the stack is incomplete. Area mode keeps its inspector.
+  const stackFooter = bars && inspection.active?.pinned && data.totals.some(total => total.value !== null) ? <figure className={styles.stackTotal} data-stack-total="">
+    <div className={styles.history}><StatSparkline series={stackTotal} name={stackTotal.name} color="var(--gamma-muted)" unit={widget.unit} /></div>
+    <figcaption className={styles.note}>Stack total; gaps where a series has no value</figcaption>
+  </figure> : undefined;
   return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>
     <div className={styles.plot} ref={ref}>
@@ -489,6 +537,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         onPointerMove={event => { if (!data.timestamps.length) return; const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
         onClick={event => { if (!data.timestamps.length) return; const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
         <defs><clipPath id={`${id}-clip`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>
+        {bars && <PlotHatchDefs id={id} />}
         {ticks.map((value, index) => <g key={index}>{widget.options?.showGrid !== false && <line x1={left} x2={width - right} y1={y(value)} y2={y(value)} className={styles.gridLine} />}{showAxis && <text data-value-axis x={left - 7} y={y(value)} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[index]}</text>}</g>)}
         <line x1={left} x2={width - right} y1={y(0)} y2={y(0)} className={styles.baseline} />
         {annotations.filter(event => event.endAt !== undefined && event.endAt > event.at).map((event, index) => <rect key={`range-${index}`} data-annotation-interval data-annotation-timestamp={event.timestamp} x={x(Math.max(minTime, event.at))} y={top} width={Math.max(0, x(Math.min(minTime + span, event.endAt!)) - x(Math.max(minTime, event.at)))} height={plotHeight} className={styles.annotationRange} data-severity={event.severity ?? "unclassified"} pointerEvents="none" aria-hidden="true" />)}
@@ -499,15 +548,22 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
           {segments(track.cells).map((segment, part) => <path key={part} data-prior-path d={`M${segment.map(cell => `${number(x(cell.timestamp))},${number(y(cell.upper!))}`).join("L")}`} fill="none" stroke={color(prior[index].index)} strokeWidth={widget.options?.lineWidth ?? 1.6} strokeDasharray="5 4" strokeOpacity={.8} />)}
         </g>)}{data.tracks.map((track, index) => <g key={index} data-series={track.name}>
           {bars ? track.cells.map((cell, column) => {
-            if (cell.upper === null || cell.lower === null) return null;
-            const interval = Math.min(column ? x(cell.timestamp) - x(track.cells[column - 1].timestamp) : Infinity, column < track.cells.length - 1 ? x(track.cells[column + 1].timestamp) - x(cell.timestamp) : Infinity);
-            const barWidth = Math.max(1, Math.min(36, Number.isFinite(interval) ? interval * .75 : plotWidth * .5));
-            return <rect key={cell.timestamp} x={Math.max(left, Math.min(width - right - barWidth, x(cell.timestamp) - barWidth / 2))} y={Math.min(y(cell.lower), y(cell.upper))} width={barWidth} height={Math.max(cell.value === 0 ? 1 : .5, Math.abs(y(cell.upper) - y(cell.lower)))} fill={color(index)} fillOpacity={.82} data-raw-value={cell.value ?? "unknown"}><title>{track.name}: {formatMetric(cell.value!, widget.unit, false, widget.options?.decimals)} · {stamp(cell.timestamp)}</title></rect>;
+            const bar = barAt(column);
+            if (cell.upper === null || cell.lower === null) {
+              // An incomplete column draws only the stack of its reporting tracks. A missing or not-started track has no bar here.
+              const part = data.columns[column].partial.find(entry => entry.index === index);
+              if (!part) return null;
+              return <rect key={cell.timestamp} x={bar.x} y={Math.min(y(part.lower), y(part.upper))} width={bar.width} height={Math.max(cell.value === 0 ? 1 : .5, Math.abs(y(part.upper) - y(part.lower)))} fill={color(index)} fillOpacity={.82} data-raw-value={cell.value ?? "unknown"} data-partial-stack="true"><title>{track.name}: {formatMetric(cell.value!, widget.unit, false, widget.options?.decimals)} · {stamp(cell.timestamp)}</title></rect>;
+            }
+            return <rect key={cell.timestamp} x={bar.x} y={Math.min(y(cell.lower), y(cell.upper))} width={bar.width} height={Math.max(cell.value === 0 ? 1 : .5, Math.abs(y(cell.upper) - y(cell.lower)))} fill={color(index)} fillOpacity={.82} data-raw-value={cell.value ?? "unknown"}><title>{track.name}: {formatMetric(cell.value!, widget.unit, false, widget.options?.decimals)} · {stamp(cell.timestamp)}</title></rect>;
           }) : segments(track.cells).map((segment, part) => {
             const forward = segment.map(cell => `${number(x(cell.timestamp))},${number(y(cell.upper!))}`), back = segment.toReversed().map(cell => `${number(x(cell.timestamp))},${number(y(cell.lower!))}`);
             return <g key={part}><path d={`M${forward.join("L")}L${back.join("L")}Z`} fill={color(index)} fillOpacity={directional ? .16 : .48} /><path d={`M${forward.join("L")}`} fill="none" stroke={color(index)} strokeWidth={widget.options?.lineWidth ?? 1.6} strokeLinejoin="round" />{segment.length === 1 && <circle cx={x(segment[0].timestamp)} cy={y(segment[0].upper!)} r={2.5} fill={color(index)} />}</g>;
           })}
-        </g>)}</g>
+        </g>)}{bars && data.columns.flatMap((column, index) => column.overflow ? [] : column.missing.map((track, rank) => {
+          const bar = barAt(index);
+          return <rect key={`${index}-${track}`} x={bar.x} y={capTop(index, rank)} width={bar.width} height={capHeight} fill={plotHatchFill(id)} stroke={color(track)} strokeWidth={1.25} strokeDasharray="2 2" data-missing-series={data.tracks[track].name} aria-hidden="true"><title>{`${data.tracks[track].name}: no value at ${stamp(column.timestamp)}`}</title></rect>;
+        }))}</g>
         {annotations.map((event, index) => <g key={`${event.timestamp}-${index}`} aria-hidden="true">
           {event.at >= minTime && <><line data-annotation-timestamp={event.timestamp} x1={x(event.at)} x2={x(event.at)} y1={top} y2={height - bottom} className={styles.annotationLine} data-severity={event.severity ?? "unclassified"} pointerEvents="none" />
           <circle cx={x(event.at)} cy={top + 4} r={3} className={styles.annotationMarker} data-severity={event.severity ?? "unclassified"} pointerEvents="none" /></>}
@@ -515,7 +571,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         {cursorTime !== undefined && <line x1={x(cursorTime)} x2={x(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
         {showAxis && timeTicks(displayTimes, plotWidth).map(index => <text key={index} x={x(displayTimes[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === displayTimes.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(displayTimes[index], span)}</text>)}
       </svg>}
-      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} peers={data.tracks.map((track, index) => ({ name: track.name, display: displayLabels[index], color: color(index), value: track.cells[inspection.active!.observation.column].value }))} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
+      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} peers={data.tracks.map((track, index) => ({ name: track.name, display: displayLabels[index], color: color(index), value: track.cells[inspection.active!.observation.column].value }))} footer={stackFooter} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
     {widget.options?.showLegend !== false && <SeriesLegend table={tableLegend} revision={legendRevision}>{tableLegend ? <table className={styles.legendTable}>
       <caption>Raw returned observations. Current is the latest sample, including missing values. Mean is the arithmetic mean of finite samples; max is the largest finite sample. Statistics use all returned samples before display sampling.</caption>
@@ -545,7 +601,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && inView.length > queried.length && <p>{inView.length - queried.length} additional events in view omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.truncated && <p>Event source response is partial.</p>}
-    <Notices truncated={result.truncated}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>Incomplete timestamps leave gaps in the stack</span>}</Notices>
+    <Notices truncated={result.truncated}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
   </div>;
 }
 
