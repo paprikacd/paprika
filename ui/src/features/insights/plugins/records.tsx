@@ -16,6 +16,8 @@ import styles from "./records.module.css"
 import { StyledRecordCell, parseRecordHistory, tableCellStyleError, tableCellStylesSchema, tableTextPalette } from "./record-table-cells"
 import { useInsightsTheme } from "../insights-theme"
 import { useDashboardWindow } from "../dashboard-window"
+import { PlotHatchDefs, plotHatchFill } from "../plot-hatch"
+import hatchStyles from "../plot-hatch.module.css"
 
 const key = z.string().min(1).max(128)
 const tableConfig = z.strictObject({
@@ -564,7 +566,7 @@ export function RecordTreemap({
         role="group"
         aria-label={widget.title}
       >
-        {colorMissing && <defs><pattern id={missingPattern} width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#e2e6e2" /><path d="M-2 2L2 -2M0 8L8 0M6 10L10 6" stroke="#a6b0a8" strokeWidth="1" /></pattern></defs>}
+        {colorMissing && <PlotHatchDefs id={missingPattern} />}
         {group >= 0 && tree.children?.map(node => node.x1 - node.x0 >= 60 && <text key={node.data.name} x={node.x0 + 4} y={node.y0 + 14} fill="currentColor" fontSize="11">{node.data.name}</text>)}
         {leaves.map((leaf, index) => {
           const row = leaf.data.row!,
@@ -620,7 +622,7 @@ export function RecordTreemap({
                 width={leaf.x1 - leaf.x0}
                 height={leaf.y1 - leaf.y0}
                 rx={3}
-                fill={color < 0 ? `var(--record-color-${index % 6})` : colorStyle?.fill ?? `url(#${missingPattern})`}
+                fill={color < 0 ? `var(--record-color-${index % 6})` : colorStyle?.fill ?? plotHatchFill(missingPattern)}
                 data-treemap-color-value={colorValue ?? undefined}
               />
               {tileWidth > 52 && tileHeight > 26 && (
@@ -658,7 +660,7 @@ export function RecordTreemap({
       {color >= 0 && <div className={styles.treeColorLegend} role="group" aria-label="Treemap color scale">
         <span>{frame.columns[color].label ?? frame.columns[color].key}</span>
         {colorValues.length > 0 ? <><span>{formatMetric(colorMin, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), false, widget.options?.decimals)}</span><span className={styles.treeColorGradient} aria-hidden="true" /><span>{formatMetric(colorMax, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), false, widget.options?.decimals)}</span></> : <span>No numeric color values</span>}
-        {colorMissing && <span className={styles.treeMissingKey}>No data</span>}
+        {colorMissing && <span className={styles.treeMissingKey}><i className={`${hatchStyles.hatch} ${hatchStyles.swatch}`} aria-hidden="true" />No data</span>}
       </div>}
       <Note frame={frame}>
         {positive.length < frame.rows.length && (

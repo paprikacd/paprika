@@ -9,6 +9,20 @@ function Harness() {
   const { theme, resolvedTheme, setTheme } = useInsightsTheme();
   return <div data-testid="scope" data-insights-theme={resolvedTheme}><InsightsThemeControl value={theme} onChange={setTheme} /></div>;
 }
+/**
+ * Each block's tokens, sliced as the legibility test below does. The compact block inherits the dark
+ * block's other tokens (such as --gamma-warning), so its effective set merges the two, as the cascade does.
+ */
+function themeTokenSets() {
+  const css = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
+  const tokens = (block: string): Record<string, string> => Object.fromEntries([...block.matchAll(/(--gamma-[\w-]+):\s*(#[\da-f]{6})/g)].map((match) => [match[1], match[2]]));
+  const dark = tokens(css.split('.scope[data-insights-theme="dark"]')[1].split("}")[0]);
+  return {
+    light: tokens(css.split('.scope[data-insights-theme="dark"]')[0]),
+    dark,
+    compact: { ...dark, ...tokens(css.split('.scope[data-insights-theme="dark"][data-density="compact"]')[1].split("}")[0]) },
+  };
+}
 afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
 
 describe("dashboard appearance", () => {
@@ -100,6 +114,34 @@ describe("dashboard appearance", () => {
       expect(contrastRatio(tokens["--gamma-chart-axis"], tokens["--gamma-bg"])).toBeGreaterThanOrEqual(4.5);
       for (let index = 1; index <= 8; index++)
         expect(contrastRatio(tokens[`--gamma-chart-${index}`], tokens["--gamma-bg"])).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps the 24-step density ramp complete, ordered by luminance, and at least 3:1 against its page", () => {
+    const sets = themeTokenSets();
+    for (const [name, direction] of [["light", -1], ["dark", 1], ["compact", 1]] as const) {
+      const tokens = sets[name];
+      const ramp = Array.from({ length: 24 }, (_, index) => tokens[`--gamma-density-${index}`]);
+      for (const color of ramp) expect(color).toMatch(/^#[\da-f]{6}$/);
+      // Contrast against black is (L + 0.05) / 0.05, so it orders colours by relative luminance.
+      const luminance = ramp.map((color) => contrastRatio(color, "#000000"));
+      for (let index = 1; index < luminance.length; index++) expect(Math.sign(luminance[index] - luminance[index - 1])).toBe(direction);
+      for (const color of ramp) expect(contrastRatio(color, tokens["--gamma-bg"])).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps hatch and warning marks at least 3:1 against the empty chart fill in every block", () => {
+    for (const tokens of Object.values(themeTokenSets())) {
+      expect(contrastRatio(tokens["--gamma-chart-hatch"], tokens["--gamma-chart-empty"])).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(tokens["--gamma-warning"], tokens["--gamma-chart-empty"])).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps the empty chart fill visibly, but quietly, apart from the page background", () => {
+    for (const tokens of Object.values(themeTokenSets())) {
+      const ratio = contrastRatio(tokens["--gamma-chart-empty"], tokens["--gamma-bg"]);
+      expect(ratio).toBeGreaterThanOrEqual(1.1);
+      expect(ratio).toBeLessThanOrEqual(1.25);
     }
   });
 });
