@@ -117,8 +117,11 @@ function servicePulse(): RepositoryExample {
   b.stat("availability", "Availability", availability, 3, "%")
   b.add("request-history", "Request rate over time", requests, "timeseries", [0, 3, 8, 6], "req/s", { display: "area" })
   const buckets = [10, 25, 50, 100, 250, 500, "+Inf"]
-  const cumulative = [18, 56, 116, 216, 310, 358, 380]
-  const histogram = b.metrics("latency-buckets", "Service latency distribution", b.scoped(buckets.map((bucket, index) => ({ name: `≤ ${bucket} ms`, labels: { le: String(bucket) }, base: cumulative[index], variation: 3 }))))
+  // Cumulative counts put p95 in the 100-250 ms bucket early and in 250-500 ms later, as the open +Inf bucket
+  // grows over the range (trend 16.2). Only the last two windows then have p95 in overflow.
+  const cumulative = [40, 130, 230, 300, 370, 376, 380]
+  // A scrape gap: every bucket is absent at the same two timestamps, so that window is missing rather than zero.
+  const histogram = b.metrics("latency-buckets", "Service latency distribution", b.scoped(buckets.map((bucket, index) => ({ name: `≤ ${bucket} ms`, labels: { le: String(bucket) }, base: cumulative[index], variation: index >= 5 ? 0 : 3, ...(index === 6 ? { trend: 16.2 } : {}), gaps: [{ from: 0.45, to: 0.47 }] }))))
   b.plugin("latency-distribution", "Latency distribution", histogram, "distribution-heatmap", "metrics", [8, 3, 4, 6], { bucketLabel: "le", bucketUnit: "ms", densityUnit: "observations/s", maxColumns: 48 }, "ms")
   b.add("error-history", "Errors over time", errors, "timeseries", [0, 9, 4, 5], "%", { display: "area", min: 0 })
   const states = b.metrics("states", "Service component health", b.scoped(["api", "worker", "database", "cache"].map((name, index) => ({ name, labels: { component: name }, base: index === 1 ? 0.75 : 1, variation: index === 1 ? 0.24 : 0, ...(index === 3 ? { gaps: [{ from: 0.38, to: 0.44 }] } : {}) })), 1))
@@ -156,11 +159,13 @@ function edgeWatch(): RepositoryExample {
   b.stat("connections", "Active connections", b.scalar("connections", "Active connection count", 18432, 600), 3, "", { decimals: 0 })
   const flow = b.metrics("flow", "Gateway directional traffic", b.scoped([{ name: "Inbound", labels: { direction: "inbound" }, base: 842.15, variation: 100 }, { name: "Outbound", labels: { direction: "outbound" }, base: 218.46, variation: 35 }]))
   b.plugin("flow", "Traffic flow", flow, "directional-traffic", "metrics", [0, 3, 8, 6], { directionLabel: "direction", outboundValue: "outbound" }, "Mb/s")
-  const destinations = b.metrics("destinations", "Gateway destination traffic", b.scoped(["api.example.test", "cdn.example.test", "assets.example.test", "events.example.test"].map((host, index) => ({ name: host, labels: { destination: host }, base: 320 / (index + 1), variation: 12 }))))
+  // assets never reports in this range: its bar keeps its slot with no valid sample.
+  const destinations = b.metrics("destinations", "Gateway destination traffic", b.scoped(["api.example.test", "cdn.example.test", "assets.example.test", "events.example.test"].map((host, index) => ({ name: host, labels: { destination: host }, base: host === "assets.example.test" ? null : 320 / (index + 1), variation: 12 }))))
   b.add("destinations", "Traffic by destination", destinations, "bar", [8, 3, 4, 6], "Mb/s")
   const locations = b.records("locations", "Observed connection locations", [text("label", "Location"), number("latitude", "Latitude"), number("longitude", "Longitude"), number("value", "Connections"), text("status", "Status")], (_choice, index) => [["Melbourne", -37.81, 144.96, 1240 - index * 400, "Allowed"], ["Singapore", 1.35, 103.82, 3400 - index * 900, "Allowed"], ["Frankfurt", 50.11, 8.68, 1820 + index * 400, "Challenged"], ["Virginia", 37.43, -78.65, 2180 - index * 600, "Allowed"], ["Tokyo", 35.68, 139.69, 840 + index * 300, "Blocked"]])
   b.plugin("locations", "Connection locations", locations, "connection-map", "records", [0, 9, 4, 5], { latitude: "latitude", longitude: "longitude", label: "label", value: "value", status: "status" })
-  const outcomes = b.metrics("outcomes", "Gateway request outcomes", b.scoped([{ name: "Allowed", labels: { outcome: "allowed" }, base: 700, variation: 45 }, { name: "Challenged", labels: { outcome: "challenged" }, base: 90, variation: 20 }, { name: "Blocked", labels: { outcome: "blocked" }, base: 18, variation: 6 }]))
+  // Challenged reports, then goes missing for three timestamps mid-range, so its stack is incomplete there.
+  const outcomes = b.metrics("outcomes", "Gateway request outcomes", b.scoped([{ name: "Allowed", labels: { outcome: "allowed" }, base: 700, variation: 45 }, { name: "Challenged", labels: { outcome: "challenged" }, base: 90, variation: 20, gaps: [{ from: 0.42, to: 0.48 }] }, { name: "Blocked", labels: { outcome: "blocked" }, base: 18, variation: 6 }]))
   b.plugin("outcomes", "Request outcomes", outcomes, "stacked-timeseries", "metrics", [4, 9, 4, 5], { display: "bar", maxPoints: 28 }, "req/s")
   const risks = b.records("risks", "Recent gateway actions", [text("source", "Source"), text("rule", "Rule"), number("requests", "Requests"), text("status", "Status")], (_choice, index) => [["192.0.2.14", "Rate limit", 124 + index * 20, "Blocked"], ["198.51.100.27", "Bot challenge", 37 + index * 10, "Challenged"], ["203.0.113.8", "Known client", 245 - index * 40, "Allowed"]])
   b.plugin("risks", "Recent gateway actions", risks, "record-table", "records", [8, 9, 4, 5], { columns: ["source", "rule", "requests", "status"], pageSize: 5 })
@@ -193,7 +198,9 @@ function reliabilityRoom(): RepositoryExample {
   b.stat("target", "SLO target", target, 1, "%", { showSparkline: false })
   b.stat("budget", "Budget remaining", budget, 2, "%", { showSparkline: false })
   b.stat("incidents", "Recorded incidents", b.scalar("incident-count", "Recorded incident count", 3, 0, 2 / 3), 3, "", { decimals: 0, showSparkline: false })
-  const burn = b.metrics("burn", "Availability burn rates", b.scoped([{ name: "1h burn rate", labels: { window: "1h" }, base: 1.42, variation: 0.9 }, { name: "6h burn rate", labels: { window: "6h" }, base: 0.81, variation: 0.3 }], 1.7))
+  // A collection gap, then a stale tail: both burn series stop reporting well before the range end.
+  const burnGaps = [{ from: 0.38, to: 0.45 }, { from: 0.8, to: 1 }]
+  const burn = b.metrics("burn", "Availability burn rates", b.scoped([{ name: "1h burn rate", labels: { window: "1h" }, base: 1.42, variation: 0.9, gaps: burnGaps }, { name: "6h burn rate", labels: { window: "6h" }, base: 0.81, variation: 0.3, gaps: burnGaps }], 1.7))
   b.add("burn", "Availability burn rate", burn, "timeseries", [0, 3, 8, 6], "×", { min: 0, thresholds: [{ value: 2, color: "#ad7b29", label: "2× burn threshold" }] })
   b.plugin("budget-meter", "Remaining error budget", budget, "threshold-gauge", "metrics", [8, 3, 4, 6], { display: "segmented", label: "Remaining proportion", segments: 30 }, "%", { min: 0, max: 100, thresholds: [{ value: 0, color: "#c5584f", label: "Exhausting" }, { value: 25, color: "#ad7b29", label: "At risk" }, { value: 50, color: "#36876c", label: "Available" }] })
   const incidents = b.records("incidents", "October incident records", [time("date", "Started (UTC)"), text("label", "Incident"), number("value", "Duration", "min"), text("status", "State")], (_choice, index) => index ? [["2026-10-10T09:10:00Z", "Queue saturation", 23, "Resolved"], ["2026-10-22T15:00:00Z", "Upstream latency", 14, "Resolved"]] : [["2026-10-05T18:37:00Z", "Connection pool exhaustion", 72, "Resolved"], ["2026-10-10T03:14:00Z", "Elevated error rate", 22, "Resolved"], ["2026-10-16T10:21:00Z", "Third-party latency", 56, "Resolved"]])
