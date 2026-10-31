@@ -39,6 +39,7 @@ import { portal } from "@tanstack/charts/tooltip/portal";
 import type { QueryResult, Widget, WidgetOptions, Threshold } from "./schema";
 import styles from "./charts.module.css";
 import hatchStyles from "./plot-hatch.module.css";
+import { PlotHatchSvg, plotHatchFill } from "./plot-hatch";
 import configStyles from "./chart-styles.module.css";
 import eventStyles from "./plugins/rich-metrics.module.css";
 import contextStyles from "./widget-context.module.css";
@@ -637,15 +638,41 @@ function TimeSeriesChart({
   );
 }
 
+/** One row per displayed series. A series with no valid sample keeps its row (`noData`), so TanStack reserves its band. */
+type BarRow = {
+  name: string;
+  displayName: string;
+  seriesIndex: number;
+  label: string;
+} & (
+  | { noData: false; value: number; timestamp: number; color: string }
+  // A plot datum needs a numeric timestamp. NaN is never read: TanStack emits no point for a no-data row.
+  | { noData: true; value: null; timestamp: number; color: undefined }
+);
+const BAR_NO_AXIS_MARGIN = 8;
+
+/** TanStack's default bar domain: zero-inclusive over the finite values, then niced to `count` ticks. */
+function barDomain(values: readonly number[], count: number): [number, number] {
+  let minimum = 0;
+  let maximum = 0;
+  for (const value of values) {
+    minimum = Math.min(minimum, value);
+    maximum = Math.max(maximum, value);
+  }
+  return scaleLinear().domain(minimum === maximum ? [0, 1] : [minimum, maximum]).nice(count).domain();
+}
+
+/** The count TanStack nices the y scale to (`resolveTickCount` in @tanstack/charts): the axis tick count, or
+ * without an axis the default 48px spacing over the plot, clamped to 2 to 7 ticks. */
+function barNiceCount(showAxis: boolean, axisTicks: number, height: number) {
+  return showAxis ? axisTicks : Math.max(2, Math.min(7, Math.floor((height - 2 * BAR_NO_AXIS_MARGIN) / 48)));
+}
+
 function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
   const { ref, width, height } = usePlotSize();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
-  const associateDescription = useCallback(
-    ({ svg }: { svg: SVGSVGElement }) => {
-      if (descriptionId) svg.setAttribute("aria-describedby", descriptionId);
-    },
-    [descriptionId],
-  );
+  const hatch = useId();
+  const emptyNoticeId = `${hatch}-empty`;
   const ticks = responsiveChartTicks(width, height);
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
@@ -654,41 +681,54 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
   const displayLabels = useMemo(() => compactSeriesLabels(series.slice(0, MAX_SERIES)), [series]);
   const rows = useMemo(
     () =>
-      series.slice(0, MAX_SERIES).flatMap((entry, index) => {
+      series.slice(0, MAX_SERIES).map((entry, index): BarRow => {
+        const base = {
+          name: seriesName(entry, index),
+          displayName: displayLabels[index],
+          seriesIndex: index,
+          label: String(index + 1),
+        };
         const point = latestPoint(entry);
-        return point
-          ? [
-              {
-                name: seriesName(entry, index),
-                displayName: displayLabels[index],
-                seriesIndex: index,
-                label: String(index + 1),
-                value: point.value,
-                timestamp: point.timestamp,
-                color:
-                  thresholdForValue(point.value, options.thresholds)?.color ??
-                  (index === 0 && widget.color
-                    ? widget.color
-                    : PALETTE[index % PALETTE.length]),
-              },
-            ]
-          : [];
+        if (!point)
+          return { ...base, noData: true, value: null, timestamp: Number.NaN, color: undefined };
+        return {
+          ...base,
+          noData: false,
+          value: point.value,
+          timestamp: point.timestamp,
+          color:
+            thresholdForValue(point.value, options.thresholds)?.color ??
+            (index === 0 && widget.color
+              ? widget.color
+              : PALETTE[index % PALETTE.length]),
+        };
       }),
     [series, widget.color, options.thresholds, displayLabels],
   );
+  const noDataRows = useMemo(() => rows.filter((row) => row.noData), [rows]);
+  const values = useMemo(() => rows.flatMap((row) => (row.noData ? [] : [row.value])), [rows]);
   const domain = useMemo(
     () =>
       resolveChartDomain(
         rows.map((row) => ({
           name: row.name,
           labels: {},
-          points: [{ timestamp: row.timestamp, value: row.value }],
+          points: row.noData ? [] : [{ timestamp: row.timestamp, value: row.value }],
         })),
         options,
       ),
     [rows, options],
   );
-  const { left: axisLeft, separateUnit } = chartYAxisLayout(rows.map(row => row.value).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel);
+  // With no-data rows the y domain is fixed here rather than left to TanStack, so the placeholder can span its exact ends.
+  const yDomain = useMemo(
+    () =>
+      domain ??
+      (noDataRows.length
+        ? barDomain(values, barNiceCount(showAxis, ticks.y, height))
+        : undefined),
+    [domain, noDataRows.length, values, showAxis, ticks.y, height],
+  );
+  const { left: axisLeft, separateUnit } = chartYAxisLayout(values.concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel);
   const definition = useMemo(
     () =>
       defineChart({
@@ -696,11 +736,28 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
           barY(rows, {
             x: "label",
             y: "value",
-            fill: (row) => row.color,
+            fill: (row) => (row.noData ? "none" : row.color),
             maxThickness: 42,
             radius: 3,
             inset: 3,
           }),
+          // Decorative: it takes no focus or tooltip. The explicit y domain keeps its ends from changing the scale.
+          ...(yDomain && noDataRows.length
+            ? [
+                decorative(
+                  barY(noDataRows, {
+                    id: "no-data",
+                    x: "label",
+                    y1: yDomain[0],
+                    y2: yDomain[1],
+                    fill: plotHatchFill(hatch),
+                    maxThickness: 42,
+                    radius: 3,
+                    inset: 3,
+                  }),
+                ),
+              ]
+            : []),
         ],
         scales: {
           x: {
@@ -739,8 +796,8 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
                 },
           },
           y: {
-            scale: domain ? scaleLinear().domain(domain) : scaleLinear,
-            nice: !domain,
+            scale: yDomain ? scaleLinear().domain(yDomain) : scaleLinear,
+            nice: !yDomain,
             grid:
               options.showGrid === false
                 ? false
@@ -769,7 +826,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
           },
         },
         margin: !showAxis
-          ? { top: 8, right: 8, bottom: 8, left: 8 }
+          ? { top: BAR_NO_AXIS_MARGIN, right: BAR_NO_AXIS_MARGIN, bottom: BAR_NO_AXIS_MARGIN, left: BAR_NO_AXIS_MARGIN }
           : {
               top: separateUnit ? 18 : height < 130 ? 4 : 12,
               right: 10,
@@ -791,16 +848,20 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
                   sticky: true,
                   className: styles.tooltip,
                   format: (point) =>
-                    `${point.datum.name}\nLatest valid sample · ${dateTimeFormat.format(new Date(point.datum.timestamp))}\n${formatMetricDetails(point.datum.value, widget.unit, options.decimals)}`,
+                    point.datum.noData
+                      ? ""
+                      : `${point.datum.name}\nLatest valid sample · ${dateTimeFormat.format(new Date(point.datum.timestamp))}\n${formatMetricDetails(point.datum.value, widget.unit, options.decimals)}`,
                 },
       }),
     [
       rows,
+      noDataRows,
+      yDomain,
+      hatch,
       widget.unit,
       axisLeft,
       separateUnit,
       options,
-      domain,
       ticks.y,
       width,
       height,
@@ -809,6 +870,28 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
       tooltipEnabled,
       plotTooltip.extension,
     ],
+  );
+  const noDataSentence =
+    noDataRows.length === 1
+      ? "1 series has no valid sample in this range."
+      : noDataRows.length
+        ? `${noDataRows.length} series have no valid sample in this range.`
+        : "";
+  const accessibleDescription = [
+    embedded
+      ? "Latest valid value for each series."
+      : "Latest value for each series. Use arrow keys to explore values.",
+    noDataSentence,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  // An embedded chart is described by its sub-widget's text, so the notice gets a hidden node of its own.
+  const associateDescription = useCallback(
+    ({ svg }: { svg: SVGSVGElement }) => {
+      const described = [descriptionId, noDataRows.length ? emptyNoticeId : ""].filter(Boolean).join(" ");
+      if (described) svg.setAttribute("aria-describedby", described);
+    },
+    [descriptionId, emptyNoticeId, noDataRows.length],
   );
   return (
     <div className={styles.chart}>
@@ -836,21 +919,30 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
           onRender={embedded ? associateDescription : plotTooltip.onRender}
           onFocusChange={tooltipEnabled ? plotTooltip.onFocusChange : undefined}
           onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
-          ariaDescription={
-            embedded
-              ? "Latest valid value for each series."
-              : "Latest value for each series. Use arrow keys to explore values."
-          }
+          ariaDescription={accessibleDescription}
         />
+        {noDataRows.length > 0 && <PlotHatchSvg id={hatch} />}
+        {embedded && noDataRows.length > 0 && <span id={emptyNoticeId} className={styles.srOnly}>{noDataSentence}</span>}
       </div>
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {options.showLegend !== false && (
         <div className={`${styles.legend} ${styles.barLegend}`} role="list" aria-label="Latest values by category" tabIndex={0}>
-          {rows.map((row) => <span className={styles.legendItem} role="listitem" key={row.seriesIndex} title={row.name}>
-            <span className={styles.swatch} aria-hidden="true" style={{ background: row.color }} />
-            <span className={styles.legendName}>{row.displayName === row.name ? row.name : <><span aria-hidden="true">{row.displayName}</span><span className={styles.srOnly}>{row.name}</span></>}</span>
-            <span className={styles.legendValue} aria-label={`${row.name}, latest valid sample: ${formatMetricDetails(row.value, widget.unit, options.decimals)} at ${new Date(row.timestamp).toISOString()}`} data-legend-value={row.value} data-legend-timestamp={row.timestamp}>{formatMetric(row.value, widget.unit, false, options.decimals)}</span>
-          </span>)}
+          {rows.map((row) => {
+            const name = row.displayName === row.name ? row.name : <><span aria-hidden="true">{row.displayName}</span><span className={styles.srOnly}>{row.name}</span></>;
+            return row.noData ? (
+              <span className={styles.legendItem} role="listitem" key={row.seriesIndex} title={row.name} data-no-data-series={row.name}>
+                <span className={`${hatchStyles.hatch} ${hatchStyles.swatch} ${styles.noDataKey}`} aria-hidden="true" />
+                <span className={styles.legendName}>{name}</span>
+                <span className={`${styles.legendValue} ${styles.noDataValue}`}>No data</span>
+              </span>
+            ) : (
+              <span className={styles.legendItem} role="listitem" key={row.seriesIndex} title={row.name}>
+                <span className={styles.swatch} aria-hidden="true" style={{ background: row.color }} />
+                <span className={styles.legendName}>{name}</span>
+                <span className={styles.legendValue} aria-label={`${row.name}, latest valid sample: ${formatMetricDetails(row.value, widget.unit, options.decimals)} at ${new Date(row.timestamp).toISOString()}`} data-legend-value={row.value} data-legend-timestamp={row.timestamp}>{formatMetric(row.value, widget.unit, false, options.decimals)}</span>
+              </span>
+            );
+          })}
         </div>
       )}
       {!embedded && <ChartDataInspector widget={widget} series={series} />}

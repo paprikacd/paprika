@@ -92,6 +92,9 @@
 .barLegend .legendItem { max-width: none; width: 100%; gap: 5px; }
 .barLegend .swatch { width: 8px; height: 8px; border-radius: 1px; }
 .barLegend:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+/* The hatched key matches the 8px colour keys; "No data" is quieter than a latest value. */
+.barLegend .noDataKey { width: 8px; height: 8px; border-radius: 1px; }
+.barLegend .noDataValue { color: var(--widget-text, var(--gamma-muted, #626e65)); font-weight: 400; }
 
 .chartFooter > :only-child { margin-left: auto; }
 @container insight-widget (max-width: 360px) {
