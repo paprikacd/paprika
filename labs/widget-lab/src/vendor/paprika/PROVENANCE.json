@@ -20,11 +20,12 @@
     "Shared local time-window state, timestamp-preserving filtering and horizontal pointer brushing, with exact UTC range inputs, Undo and Reset.",
     "Shared focus-ring and tick-label presentation refinements; svgAnimation remains disabled.",
     "Optional registry-owned validateInput(result, config) and intrinsic/fill layout metadata for loaded-data editor acceptance and compound chart hosts.",
-    "Optional config-field binding metadata declares accepted source types, units, semantic roles and explicit unbound values for the shared editor."
+    "Optional config-field binding metadata declares accepted source types, units, semantic roles and explicit unbound values for the shared editor.",
+    "Host-owned WidgetLoadingProvider supplies presentation-only initial and refresh states without changing Widget or QueryResult. Retained empty results also show refresh status."
   ],
   "patch": {
     "path": "docs/paprika-reference-renderer.patch",
-    "sha256": "66e2736d5d452541c57723685dca81f41551f84b700898462f9626c83bb229e6",
+    "sha256": "7aeee68a7e3b59f1796bc3166cd45f9b418032f44d196a1dcef82b994d2f59ac",
     "path_root": "lab project root",
     "generator": "docs/regenerate-paprika-provenance.py",
     "basis": "Exact blobs at the recorded upstream commit, compared with the current copied files."
@@ -32,9 +33,9 @@
   "hash_algorithm": "SHA-256",
   "sha256_field_meaning": "Current local file hash; upstream_sha256 preserves the pinned base hash. Added files have a null upstream_sha256.",
   "file_status_counts": {
-    "added": 6,
-    "modified": 11,
-    "unchanged": 48
+    "added": 7,
+    "modified": 13,
+    "unchanged": 46
   },
   "declared_runtime_dependencies": {
     "@tanstack/charts": "1.1.0",
@@ -153,17 +154,17 @@
     },
     {
       "path": "ui/src/features/insights/charts.module.css",
-      "status": "unchanged",
+      "status": "modified",
       "upstream_sha256": "ea7004c201229df7f4a6fbd19f574349985a019d0c7e46c5abf4b60da2a7c63b",
-      "local_sha256": "ea7004c201229df7f4a6fbd19f574349985a019d0c7e46c5abf4b60da2a7c63b",
-      "sha256": "ea7004c201229df7f4a6fbd19f574349985a019d0c7e46c5abf4b60da2a7c63b"
+      "local_sha256": "6f3357fe92e5f8ec11cf7ec6155c33b2dbbf5def26337d95331f61f935a6398a",
+      "sha256": "6f3357fe92e5f8ec11cf7ec6155c33b2dbbf5def26337d95331f61f935a6398a"
     },
     {
       "path": "ui/src/features/insights/charts.tsx",
-      "status": "unchanged",
+      "status": "modified",
       "upstream_sha256": "c69e3b5c731ae63a72a788717abbd82d0f3384031a447c3799f8274f1a2107f7",
-      "local_sha256": "c69e3b5c731ae63a72a788717abbd82d0f3384031a447c3799f8274f1a2107f7",
-      "sha256": "c69e3b5c731ae63a72a788717abbd82d0f3384031a447c3799f8274f1a2107f7"
+      "local_sha256": "d42dd2d3536a9f9619f5af36504cde59e01104a138e0a3185515d3ca19fd4724",
+      "sha256": "d42dd2d3536a9f9619f5af36504cde59e01104a138e0a3185515d3ca19fd4724"
     },
     {
       "path": "ui/src/features/insights/drilldown.ts",
@@ -521,6 +522,13 @@
       "upstream_sha256": "e1af3b042953b7d31fa97301fc8e996222472a4d533925d2c56ba6011a3145b3",
       "local_sha256": "e1af3b042953b7d31fa97301fc8e996222472a4d533925d2c56ba6011a3145b3",
       "sha256": "e1af3b042953b7d31fa97301fc8e996222472a4d533925d2c56ba6011a3145b3"
+    },
+    {
+      "path": "ui/src/features/insights/widget-loading.tsx",
+      "status": "added",
+      "upstream_sha256": null,
+      "local_sha256": "5949af5dd23d6d9d0ebdee0646577740676e03087ff04672a8f2d63a67d9f2f5",
+      "sha256": "5949af5dd23d6d9d0ebdee0646577740676e03087ff04672a8f2d63a67d9f2f5"
     },
     {
       "path": "ui/src/features/insights/widget-presentation.tsx",

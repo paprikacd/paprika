@@ -23,7 +23,7 @@ export function DistributedReplicationTracks(props: WidgetRendererProps) {
   const maxLag = Math.max(40, ...samples.map(p => commitLag(p) ?? 0)), lagDomain = Math.ceil(maxLag / 50) * 50, lagY = (value: number) => lagTop + lagHeight - value / lagDomain * lagHeight;
   const selectedGroup = groups.find(g => g.id === selection.selected) ?? groups[0];
   const configuredObservation = selectedGroup ? nearestSample(selectedGroup.samples, cfg.selectedTimestamp ?? selectedGroup.samples.at(-1)!.timestamp) : undefined;
-  const current = inspection.item, displayed = current ?? configuredObservation;
+  const current = inspection.item, displayed = current ?? configuredObservation, emphasizedReplica = current?.replicaId ?? selection.selected;
   const brush = useTimeWindowBrush({ enabled: interactive && windowState.enabled, revision: result, window,
     point: (clientX, clientY) => { if (!svg.current) return null; const p = svgPoint(svg.current, clientX, clientY), fraction = Math.max(0, Math.min(1, (p.x - left) / plotWidth)); return { x: left + fraction * plotWidth, y: p.y, timestamp: window.start + fraction * (window.end - window.start), inPlot: p.x >= left && p.x <= width - right && p.y >= top && p.y <= height - 25 }; },
     commit: windowState.commit, onStart: inspection.dismiss,
@@ -49,6 +49,7 @@ export function DistributedReplicationTracks(props: WidgetRendererProps) {
       <div className="ds-brush-host" style={{ width }} {...brush.handlers}>
         <svg ref={svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" tabIndex={inspect ? 0 : undefined} aria-label="Replication index tracks with common index scale. Drag horizontally to zoom this chart, or use exact UTC controls. Arrow keys inspect observations."
           onPointerMove={event => inspection.setHover(atPointer(event)?.id ?? null)}
+          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) inspection.setHover(null); }}
           onClick={event => { const sample = atPointer(event as unknown as PointerEvent<SVGSVGElement>); if (sample) choose(sample, event.currentTarget); }}
           onKeyDown={event => {
             if (!inspect || !selectedGroup || event.target !== event.currentTarget) return;
@@ -62,7 +63,7 @@ export function DistributedReplicationTracks(props: WidgetRendererProps) {
           {groups.map((group, row) => {
             const latest = snapshot.find(p => p.replicaId === group.id)!, y = top + row * rowHeight, active = selection.selected === group.id;
             return <g key={group.id}>
-              <rect x="1" y={y} width={width - 2} height={rowHeight} fill={active ? `color-mix(in srgb, ${C.cyan} 7%, transparent)` : 'transparent'} stroke={active ? C.cyan : 'var(--gamma-border)'} strokeWidth={active ? 1 : .5} pointerEvents="none"/>
+              <rect className="ds-track-row" data-inspected={current?.replicaId === group.id} x="1" y={y} width={width - 2} height={rowHeight} fill={active ? `color-mix(in srgb, ${C.cyan} 7%, transparent)` : 'transparent'} stroke={active ? C.cyan : 'var(--gamma-border)'} strokeWidth={active ? 1 : .5} pointerEvents="none"/>
               <g role={interactive ? 'button' : undefined} tabIndex={interactive ? 0 : undefined} aria-label={`Inspect ${group.id}; current applied ${formatIndex(latest.applied)}; ${commitLag(latest) === null ? 'current lag unknown' : `${commitLag(latest)} entries behind leader commit`}`} onFocus={() => inspection.setHover(latest.id)} onBlur={() => inspection.setHover(null)} onClick={event => { event.stopPropagation(); choose(latest, event.currentTarget); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(latest, event.currentTarget); } }}>
                 <rect x="0" y={y} width={left - 5} height={rowHeight} fill="transparent"/>
                 <circle cx="11" cy={y + 15} r="4" fill={replicaColor(latest)}/><text x="22" y={y + 19} className="ds-value">{group.id}</text><text x="22" y={y + 36} className="ds-axis">{formatIndex(latest.applied)}</text>
@@ -79,11 +80,11 @@ export function DistributedReplicationTracks(props: WidgetRendererProps) {
           {cfg.showLag && <g>
             <text x="8" y={lagTop - 12} className="ds-axis">Behind leader commit · entries</text>
             {[0, lagDomain / 2, lagDomain].map(value => <g key={value}><line x1={left} x2={width - right} y1={lagY(value)} y2={lagY(value)} className="ds-grid"/><text x={left - 8} y={lagY(value) + 4} textAnchor="end" className="ds-axis">{value}</text></g>)}
-            <g clipPath={`url(#${uid}-clip)`} pointerEvents="none">{groups.map(group => <path key={group.id} d={steppedPath(group.samples.map(p => ({ timestamp: p.timestamp, value: commitLag(p) })), x, lagY)} fill="none" stroke={replicaColor(snapshot.find(n => n.replicaId === group.id)!)} strokeWidth={selection.selected === group.id ? 2 : 1.2} opacity={!selection.selected || selection.selected === group.id ? 1 : .5}/>)}</g>
+            <g clipPath={`url(#${uid}-clip)`} pointerEvents="none">{groups.map(group => <path key={group.id} className="ds-lag-series" data-muted={!!emphasizedReplica && emphasizedReplica !== group.id} d={steppedPath(group.samples.map(p => ({ timestamp: p.timestamp, value: commitLag(p) })), x, lagY)} fill="none" stroke={replicaColor(snapshot.find(n => n.replicaId === group.id)!)} strokeWidth={emphasizedReplica === group.id ? 2 : 1.2}/>)}</g>
           </g>}
           <g clipPath={`url(#${uid}-clip)`} pointerEvents="none">
             {termChanges.map(p => <g key={p.id}><line x1={x(p.timestamp)} x2={x(p.timestamp)} y1={top} y2={height - 25} stroke={C.red} strokeDasharray="4 4"/><text x={x(p.timestamp) + 5} y={top + 12} className="ds-axis" style={{ fill: C.red }}>Term {p.term}</text></g>)}
-            {displayed && <g><line x1={x(displayed.timestamp)} x2={x(displayed.timestamp)} y1={top} y2={height - 25} stroke={C.cyan} strokeDasharray="2 4"/>{displayed.applied !== null && <circle cx={x(displayed.timestamp)} cy={indexY(displayed.applied, groups.findIndex(g => g.id === displayed.replicaId))} r="3.5" fill={C.violet} stroke="var(--gamma-ink)"/>}</g>}
+            {displayed && <g><line x1={x(displayed.timestamp)} x2={x(displayed.timestamp)} y1={top} y2={height - 25} stroke={C.cyan} strokeDasharray="2 4"/>{displayed.applied !== null && <g className="ds-point-focus"><circle cx={x(displayed.timestamp)} cy={indexY(displayed.applied, groups.findIndex(g => g.id === displayed.replicaId))} r="6" fill="none" stroke={C.violet} strokeOpacity=".65"/><circle cx={x(displayed.timestamp)} cy={indexY(displayed.applied, groups.findIndex(g => g.id === displayed.replicaId))} r="3.5" fill={C.violet} stroke="var(--gamma-bg)" strokeWidth="1.4"/></g>}{cfg.showReceived && displayed.received !== null && <circle cx={x(displayed.timestamp)} cy={indexY(displayed.received, groups.findIndex(g => g.id === displayed.replicaId))} r="3" fill="var(--gamma-bg)" stroke={C.cyan} strokeWidth="1.5"/>}{cfg.showLag && commitLag(displayed) !== null && <circle cx={x(displayed.timestamp)} cy={lagY(commitLag(displayed)!)} r="3.5" fill={replicaColor(displayed)} stroke="var(--gamma-bg)" strokeWidth="1.4"/>}</g>}
           </g>
           {brush.preview && <rect pointerEvents="none" x={Math.min(brush.preview.x1, brush.preview.x2)} y={top} width={Math.abs(brush.preview.x2 - brush.preview.x1)} height={height - top - 25} fill={C.cyan} fillOpacity=".13" stroke={C.cyan}/>}
         </svg>

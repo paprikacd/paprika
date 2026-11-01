@@ -127,6 +127,7 @@ def main() -> int:
             "Shared focus-ring and tick-label presentation refinements; svgAnimation remains disabled.",
             "Optional registry-owned validateInput(result, config) and intrinsic/fill layout metadata for loaded-data editor acceptance and compound chart hosts.",
             "Optional config-field binding metadata declares accepted source types, units, semantic roles and explicit unbound values for the shared editor.",
+            "Host-owned WidgetLoadingProvider supplies presentation-only initial and refresh states without changing Widget or QueryResult. Retained empty results also show refresh status.",
         ],
         "patch": {
             "path": "docs/paprika-reference-renderer.patch",

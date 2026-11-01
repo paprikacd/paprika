@@ -55,6 +55,8 @@ The branch does not change a deployed cluster or merge into `master`. The self-c
 
 ## Refresh the export
 
+The initial `labs/widget-lab-export.json` is an import snapshot of source commit `29b22f4c919e7f821f18d64b96baa71b0966ca42`. Further extensions to this PR are maintained directly in `labs/widget-lab` and tracked by Git. That snapshot remains historical provenance; it is not a current-file integrity manifest after downstream edits. The exporter intentionally refuses to overwrite those independent edits. The copied Paprika renderer has its own current per-file manifest and reproducible patch, regenerated with `docs/regenerate-paprika-provenance.py` inside the lab.
+
 After committing the separate Widget Lab source, run from the Paprika repository root:
 
 ```sh

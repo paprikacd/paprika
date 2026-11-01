@@ -11,6 +11,7 @@ import theme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.
 import { MiniTrace } from '../reference/ReferenceShared';
 import { allocationColor, allocationRecords, allocationTreemapConfig, financePanels, FINANCE_AS_OF, type AllocationRecord, type FinanceWindow } from './finance-data';
 import './FinanceLens.css';
+import { labMotionStyle, useLabMotion } from '../components/lab/motion';
 
 const money = (value: number, digits = 0) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value);
 const compactMoney = (value: number) => value >= 1e6 ? `$${(value / 1e6).toFixed(2)}m` : `$${(value / 1000).toFixed(1)}k`;
@@ -95,6 +96,7 @@ function Panel({ title, description, action, className = '', children }: { title
 }
 
 export function FinanceLens({ onEdit }: { onEdit?: FinanceLensEdit }) {
+  const motion = useLabMotion();
   const [days, setDays] = useState<FinanceWindow>(30), [overrides, setOverrides] = useState<Record<string, Widget>>({}), [context, setContext] = useState<DrilldownContext | null>(null);
   const data = useMemo(() => financePanels(days), [days]);
   const { summary, history } = data;
@@ -109,7 +111,7 @@ export function FinanceLens({ onEdit }: { onEdit?: FinanceLensEdit }) {
     { label: 'Equity allocation', value: summary.equityWeight.toFixed(2), unit: '%', delta: `${summary.sectors.length - 1} sectors`, sub: 'Market value / total portfolio', icon: ChartNoAxesCombined, meter: summary.equityWeight, color: '#a184f2' },
     { label: 'Cash reserve', value: money(summary.cash, 0), unit: 'USD', delta: `${(100 - summary.equityWeight).toFixed(2)}% weight`, sub: 'Closing balance · no leverage', icon: Coins, meter: 100 - summary.equityWeight, color: '#f4c05f' },
   ];
-  return <div className={`${theme.scope} finance-lens`} data-insights-theme="dark">
+  return <div className={`${theme.scope} finance-lens`} data-insights-theme="dark" style={labMotionStyle(motion.reduced)}>
     <div className="finance-heading"><div><p>PAPRIKA / FINANCE</p><h1>Portfolio briefing</h1><span>Core allocation <i/> Synthetic portfolio · closing snapshot</span></div><div className="finance-heading-tools"><span className="finance-snapshot">30 Oct 2026 · 20:00 UTC</span><label>Performance window<select aria-label="Finance performance window" value={days} onChange={event => setDays(Number(event.target.value) as FinanceWindow)}><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={180}>Last 180 days</option></select></label></div></div>
     <div className="finance-metrics">{metrics.map(metric => <section key={metric.label} className="finance-metric" style={{ '--finance-metric-color': metric.color } as CSSProperties}><div className="finance-metric-icon"><metric.icon size={21}/></div><div className="finance-metric-label">{metric.label}</div><div className="finance-metric-value">{metric.value}<span>{metric.unit}</span></div><span className="finance-metric-delta">{metric.delta}</span><p>{metric.sub}</p>{metric.trace ? <div className="finance-metric-spark"><MiniTrace values={metric.trace} color={metric.color} height={29}/></div> : <div className="finance-metric-meter" aria-hidden="true"><i style={{width:`${metric.meter}%`}}/></div>}</section>)}</div>
     <ChartCursorProvider><div className="finance-grid">

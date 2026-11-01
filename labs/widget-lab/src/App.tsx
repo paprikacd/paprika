@@ -1,7 +1,9 @@
-import { lazy, Suspense, useEffect, useState, type CSSProperties } from 'react';
-import { Activity, ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, FlaskConical, LayoutDashboard, Maximize2, Minimize2, Moon, Network, Pause, Play, ShieldCheck, Sun } from 'lucide-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, FlaskConical, LayoutDashboard, Maximize2, Minimize2, Moon, Network, Pause, Play, ShieldCheck, Sun } from 'lucide-react';
 import { GammaButton } from './vendor/paprika/ui/src/features/insights/gamma/button';
-import { MotionProvider, useLabMotion } from './components/lab/motion';
+import { labMotionStyle, MotionProvider, useLabMotion } from './components/lab/motion';
+import { StudyLoading } from './components/lab/StudyLoading';
+import { LabWidgetLoadingProvider } from './components/lab/WidgetLoading';
 import { DashboardNavigation } from './components/DashboardNavigation';
 import gammaTheme from './vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
 import './observatory.css';
@@ -23,7 +25,7 @@ function PaprikaMark() {
 export function App() {
   const [route,setRoute] = useState(location.hash);
   useEffect(() => { const update=()=>setRoute(location.hash); window.addEventListener('hashchange',update); return()=>window.removeEventListener('hashchange',update); }, []);
-  return <MotionProvider><DashboardNavigation route={route}/>{isLensRoute(route) ? <Suspense fallback={<div className="study-loading">Loading dashboard lens…</div>}><LensStudio key={route} lens={route.slice(1) as import('./lenses/LensStudio').LensId}/></Suspense> : route === '#charts' ? <Suspense fallback={<div className="study-loading">Loading chart library…</div>}><ChartCatalog /></Suspense> : route.startsWith('#lab-') || route === '#baseline' ? <Observatory /> : <Suspense fallback={<div className="study-loading">Loading reference study…</div>}><ReferenceStudio /></Suspense>}</MotionProvider>;
+  return <MotionProvider><LabWidgetLoadingProvider><DashboardNavigation route={route}/>{isLensRoute(route) ? <Suspense fallback={<StudyLoading label="Loading dashboard lens"/>}><LensStudio key={route} lens={route.slice(1) as import('./lenses/LensStudio').LensId}/></Suspense> : route === '#charts' ? <Suspense fallback={<StudyLoading label="Loading chart library" variant="bars"/>}><ChartCatalog /></Suspense> : route.startsWith('#lab-') || route === '#baseline' ? <Observatory /> : <Suspense fallback={<StudyLoading label="Loading reference study"/>}><ReferenceStudio /></Suspense>}</LabWidgetLoadingProvider></MotionProvider>;
 }
 
 function Observatory() {
@@ -34,18 +36,11 @@ function Observatory() {
   const motion = useLabMotion();
   // Inline tokens deliberately change with the effective preference: Gamma's
   // portal inheritance observes this style attribute while inspectors are open.
-  const motionStyle = {
-    '--gamma-duration': motion.reduced ? '0ms' : '180ms',
-    '--gamma-motion-duration': motion.reduced ? '0ms' : '150ms',
-    '--gamma-motion-update-duration': motion.reduced ? '0ms' : '360ms',
-    '--gamma-duration-fast': motion.reduced ? '0ms' : '120ms',
-    '--gamma-duration-base': motion.reduced ? '0ms' : '180ms',
-    '--gamma-duration-slow': motion.reduced ? '0ms' : '320ms',
-  } as CSSProperties;
+  const motionStyle = labMotionStyle(motion.reduced);
   useEffect(() => { const change = () => { if (!['#lab-edge', '#lab-reliability', '#baseline'].includes(location.hash)) return; setStudy(currentStudy()); setGuide(false); }; window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
   if (study === 'baseline') return <>
     <div className="baseline-return"><a href="#lab-edge"><ArrowLeft size={15} />Back to new studies</a><span>Iteration 01 · original widget lab</span></div>
-    <Suspense fallback={<div className="study-loading">Loading original lab…</div>}><BaselineApp /></Suspense>
+    <Suspense fallback={<StudyLoading label="Loading original lab"/>}><BaselineApp /></Suspense>
   </>;
   return <div className={`${gammaTheme.scope} obs-app`} data-insights-theme={theme} data-motion={motion.reduced ? 'reduced' : 'auto'} data-motion-preference={motion.preference} style={motionStyle}>
     <a className="skip-link" href="#study-content" onClick={event => { event.preventDefault(); const main = document.getElementById('study-content'); main?.focus(); main?.scrollIntoView({ block: 'start' }); }}>Skip to widgets</a>
@@ -73,7 +68,7 @@ function Observatory() {
       </header>
       {guide && <section className="obs-guide" aria-label="Evaluation notes"><div><strong>Two studies, one design system</strong><p>Compare the compact metrics, ranked tables and rich chart inspectors with the Edge Watch and Reliability Room references. All telemetry is deterministic and synthetic.</p></div><div><strong>Try the edges</strong><p>Inspect with arrow keys and Enter, then advance the snapshot or start Demo replay. Changed metrics receive one brief emphasis; their values update immediately. Reduced motion preserves the same observations and replay cadence. Use panel information buttons for units, interval conventions and accounting details.</p></div><a href="https://chatgpt.com/space/page_6ae45839b6b88191acaffee32e79ef34" target="_blank" rel="noreferrer">Open visual references<ArrowUpRight size={14}/></a></section>}
       <main className={`obs-canvas ${narrow ? 'obs-canvas-narrow' : ''}`} id="study-content" tabIndex={-1}>
-        <Suspense fallback={<div className="study-loading"><Activity size={20}/><span>Loading study…</span></div>}>
+        <Suspense fallback={<StudyLoading label="Loading study"/>}>
           {study === 'edge' ? <EdgeWatch theme={theme} narrow={narrow}/> : <ReliabilityRoom theme={theme} narrow={narrow}/>}
         </Suspense>
       </main>

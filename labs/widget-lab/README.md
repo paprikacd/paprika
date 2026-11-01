@@ -93,6 +93,16 @@ npm run build
 
 The production build is emitted to `dist/`. `npm run build` includes TypeScript checking. The automated tests cover numerical semantics and the chart adapters; browser interaction and visual evaluation remain separate checks.
 
+## Motion and loading extension
+
+The current PR extends the existing Kubernetes Fleet (`#kubernetes-fleet`), Performance Workbench (`#performance-workbench`) and Distributed Systems (`#distributed-systems`) lenses with exact point rings, linked hover/focus emphasis, keyboard-operated quantile legends and clearer selected marks. Geometry and values update immediately; short appearance transitions honor the shared Motion preference and the operating system.
+
+In **Chart library** (`#charts`), use **Loading preview** to inspect initial loading and retained-data refresh for each chart family. These are labelled simulations held until you choose Ready. Real lazy-route loading uses the same visual language. Line, bars, table, matrix and topology placeholders are presentation only and cannot be inspected as observations. The refresh indicator preserves the current chart, including its empty state. No new chart or animation dependency is added.
+
+The design borrows interaction patterns from [Bklit charts](https://bklit.com/charts), preserving Paprika's existing Gamma theme, normalized data and trusted renderer registry. See [DESIGN.md](DESIGN.md#states-and-motion) and [UX-CONTRACT.md](UX-CONTRACT.md#motion-and-demo-replay) for ownership, reduced motion and selection invalidation. This remains the isolated evaluation application introduced by PR #168.
+
+For a resource-constrained test runner, `npm test -- --maxWorkers=2` runs the complete suite with bounded concurrency. Build, semantic/render tests and source review are separate from rendered browser validation.
+
 ## Iteration 04 implementation
 
 The reference studies use Barlow for body/table text and Roboto for panel titles and metric digits, with separate Edge and Reliability palettes. Native SVG supplies the line and area geometry, map, outcome stacks and state marks. The `reference-timeseries` plugin is a local trusted-registry extension with strict configuration, deterministic results, preserved null gaps and Mb/s or burn-multiple units. Its authored source geometry is independent of the retained analytical adapters.

@@ -204,8 +204,20 @@ describe('performance registered authoring and passive previews', () => {
     for (const feature of performanceChartCatalog) for (const preset of ['ready', 'empty'] as const) {
       const fixture = makePerformanceCatalogFixture(feature.id, preset), owner = getWidgetDefinition('plugin', feature.id)!;
       const markup = renderToStaticMarkup(createElement(owner.render, { ...fixture, embedded: true }));
-      expect(markup).not.toMatch(/NaN|Infinity|tabindex="0"/);
+      expect(markup).not.toMatch(/NaN|Infinity|tabindex="0"|role="button"/);
       expect(markup).not.toMatch(/\bheight="-\d|\bwidth="-\d/);
     }
+  });
+  it('offers named quantile emphasis controls while hiding the legend leaves all measured paths unchanged', () => {
+    const fixture = makePerformanceCatalogFixture('performance-latency-density');
+    const owner = getWidgetDefinition('plugin', 'performance-latency-density')!;
+    const render = (widget = fixture.widget, embedded = false) => renderToStaticMarkup(createElement(owner.render, { ...fixture, widget, embedded }));
+    const standard = render(), hidden = render({ ...fixture.widget, options: { ...fixture.widget.options, showLegend: false } });
+    expect(standard.match(/aria-label="Emphasize p(?:50|95|99) latency"/g)).toHaveLength(3);
+    expect(hidden).not.toContain('Emphasize p');
+    const paths = (html: string) => [...html.matchAll(/<path d="([^"]*)"/g)].map(match => match[1]);
+    expect(paths(hidden)).toEqual(paths(standard));
+    expect(render(fixture.widget, true)).not.toContain('Emphasize p');
+    expect(render({ ...fixture.widget, config: { ...fixture.widget.config, showQuantiles: false } })).not.toContain('Emphasize p');
   });
 });

@@ -35,14 +35,17 @@
 @media (prefers-reduced-motion:reduce) { .domain-inspector { animation:none; } }
 @container lens-preview (max-width:760px) { .domain-lens { padding:10px; }.domain-heading { align-items:flex-start; }.domain-controls { width:100%; gap:8px 12px; }.domain-metrics > section { flex-basis:42%; }.domain-heading-title h1 { font-size:18px; } }
 @container lens-preview (max-width:450px) { .domain-lens { padding:8px; }.domain-controls { display:grid; grid-template-columns:minmax(0,1fr); }.domain-controls label { justify-content:space-between; }.domain-controls select { max-width:210px; }.domain-panel { padding:8px; }.domain-metrics > section { padding:9px; }.domain-metrics strong { font-size:21px; } }
-/* Reveal surfaces once on mount; never tween metric values or axis geometry. */
-.domain-panel.domain-motion-auto,.domain-metrics[data-motion=auto] { animation:domain-panel-enter 280ms cubic-bezier(.2,.7,.2,1) both; }
-.domain-panel.domain-motion-auto:nth-child(2) { animation-delay:25ms; }.domain-panel.domain-motion-auto:nth-child(3) { animation-delay:50ms; }.domain-panel.domain-motion-auto:nth-child(4) { animation-delay:75ms; }.domain-panel.domain-motion-auto:nth-child(n+5) { animation-delay:90ms; }
+/* Data is complete immediately; only local interaction emphasis transitions. */
+.domain-panel { transition:border-color var(--gamma-duration-fast,120ms) ease-out; }
+.domain-panel:focus-within { border-color:color-mix(in srgb,var(--gamma-chart-1) 45%,var(--gamma-border)); }
+.domain-controls button,.domain-control,.domain-edit,.domain-inspector button { transition:background-color var(--gamma-duration-fast,120ms) ease-out,border-color var(--gamma-duration-fast,120ms) ease-out,color var(--gamma-duration-fast,120ms) ease-out; }
+.domain-controls button:hover:not(:disabled),.domain-control:hover:not(:disabled),.domain-edit:hover:not(:disabled),.domain-inspector button:hover:not(:disabled) { background:var(--gamma-surface-2); border-color:var(--gamma-muted); color:var(--gamma-ink); }
+.domain-controls button:active:not(:disabled),.domain-control:active:not(:disabled),.domain-edit:active:not(:disabled) { background:var(--gamma-surface); }
+.domain-controls button:disabled,.domain-control:disabled,.domain-edit:disabled { cursor:default; opacity:.5; }
 .domain-chart-host :is(rect,path,circle)[role=button],.domain-chart-host g[role=button] { transition:opacity 120ms ease,fill-opacity 120ms ease; }
 .domain-chart-host [role=button]:focus-visible { outline:2px solid var(--gamma-chart-1); outline-offset:2px; }
 .domain-inspector[data-motion=reduced],.domain-motion-reduced,.domain-metrics[data-motion=reduced] { animation:none; }
 .domain-motion-reduced :is(rect,path,circle,g) { transition:none; }
-@keyframes domain-panel-enter { from { opacity:.45; transform:translateY(4px); } to { opacity:1; transform:none; } }
 @media(prefers-reduced-motion:reduce) { .domain-panel.domain-motion-auto,.domain-metrics[data-motion=auto],.domain-inspector { animation:none; }.domain-chart-host :is(rect,path,circle,g) { transition:none; } }
 /* Transient hover evidence overlays its own plot; committed pins join layout. */
 .domain-chart-host .domain-inspector[data-pinned=false] { position:absolute; right:8px; bottom:10px; z-index:12; width:min(340px,calc(100% - 16px)); box-sizing:border-box; margin:0; pointer-events:none; border-color:color-mix(in srgb,var(--gamma-chart-1) 35%,var(--gamma-border)); box-shadow:0 6px 20px #0005; }

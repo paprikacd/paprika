@@ -74,3 +74,22 @@
 @container lens-preview (max-width:1050px) { .performance-density-panel,.performance-profile-panel { grid-column:span 7; }.performance-phase-panel,.performance-evidence-panel { grid-column:span 5; }.performance-trace-panel { grid-column:span 8; }.performance-span-panel { grid-column:span 4; }.performance-selected-function { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @container lens-preview (max-width:780px) { .performance-layout { grid-template-columns:minmax(0,1fr); }.performance-layout>* { grid-column:1; }.performance-span-panel .domain-detail-values { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 15px; }.performance-breadcrumbs .performance-reset { margin-left:0; }.performance-profile-scope { width:100%; }.performance-trace-scope { margin-top:2px; } }
 @container lens-preview (max-width:420px) { .performance-chart-key { align-items:flex-start; }.performance-selected-function { grid-template-columns:1fr 1fr; padding:8px; }.performance-span-panel .domain-detail-values { grid-template-columns:1fr; }.performance-subheading { gap:7px 10px; }.performance-subheading strong { width:100%; }.performance-evidence-values { align-items:flex-start; }.performance-toolbar>span:last-child { margin-left:0; }.performance-phase-table th:first-child,.performance-phase-table td:first-child { width:53%; }.performance-phase-table th,.performance-phase-table td { padding-left:3px; padding-right:3px; } }
+
+/* Series identity and position never tween with pointer movement. */
+.performance-quantile-legend { gap:4px; padding:0; }
+.performance-quantile-legend button { display:inline-flex; align-items:center; gap:6px; min-height:26px; padding:3px 7px; border:1px solid transparent; border-radius:var(--gamma-radius-small,4px); background:transparent; color:var(--gamma-muted); font:inherit; cursor:pointer; }
+.performance-quantile-legend button:hover,.performance-quantile-legend button[data-active=true] { background:var(--gamma-surface-2); border-color:var(--gamma-border); color:var(--gamma-ink); }
+.performance-quantile-legend button[aria-pressed=true] { border-color:var(--gamma-chart-1); }
+.performance-quantile-legend button:focus-visible { outline:2px solid var(--gamma-accent); outline-offset:2px; }
+.performance-quantile { transition:opacity var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.performance-quantile[data-muted=true] { opacity:.72; }
+.performance-trace-hit { transition:fill var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.performance-span-mark,.performance-frame-mark { transition:fill-opacity var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out),opacity var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.performance-trace-row[role=button]:is(:hover,:focus-visible) .performance-span-mark { fill-opacity:1; }
+.performance-trace-row[role=button]:focus-visible .performance-span-mark,.performance-frame[role=button]:focus-visible .performance-frame-mark { stroke:var(--gamma-accent); stroke-width:2; }
+.performance-evidence-row { transition:border-color var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.performance-evidence-row:focus-within { border-color:var(--gamma-accent); }
+.performance-action,.performance-toolbar button,.performance-breadcrumbs button,.performance-profile-breadcrumbs button,.performance-quantile-legend button { transition:background-color var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out),border-color var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out),color var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.performance-action:hover:not(:disabled),.performance-toolbar button:hover:not(:disabled),.performance-breadcrumbs button:hover:not(:disabled),.performance-profile-breadcrumbs button:hover:not(:disabled) { background:var(--gamma-surface-2); border-color:var(--gamma-muted); color:var(--gamma-ink); }
+.performance-action:active:not(:disabled),.performance-toolbar button:active:not(:disabled),.performance-quantile-legend button:active { background:var(--gamma-surface); }
+@media(prefers-reduced-motion:reduce) { .performance-chart :is(button,path,rect,g,section) { transition:none; } }

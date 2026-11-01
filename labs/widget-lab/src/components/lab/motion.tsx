@@ -1,6 +1,18 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 export type MotionPreference = 'auto' | 'reduced';
+
+/** Apply on the theme scope so portalled Gamma surfaces inherit the effective preference. */
+export function labMotionStyle(reduced: boolean): CSSProperties {
+  return {
+    '--gamma-duration': reduced ? '0ms' : '180ms',
+    '--gamma-motion-duration': reduced ? '0ms' : '150ms',
+    '--gamma-motion-update-duration': reduced ? '0ms' : '360ms',
+    '--gamma-duration-fast': reduced ? '0ms' : '120ms',
+    '--gamma-duration-base': reduced ? '0ms' : '180ms',
+    '--gamma-duration-slow': reduced ? '0ms' : '320ms',
+  } as CSSProperties;
+}
 type ReplayRegistration = { token: symbol; advance: () => void };
 
 interface LabMotion {

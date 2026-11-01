@@ -23,7 +23,7 @@ export function KubernetesPlacement({ widget, result, embedded, onContextChange 
   const host = useRef<HTMLDivElement>(null), width = usePlotWidth(host, 740), columns = width >= 520 ? 3 : width >= 370 ? 2 : 1;
   const zones = [...new Set(nodes.map(n => n.zone!))].sort(), gap = 9, zoneWidth = (width - gap * (columns - 1)) / columns, zoneHeight = 344, height = Math.ceil(zones.length / columns) * (zoneHeight + gap) - gap;
   const enabled = !embedded && widget.options?.showTooltip !== false, inspect = useInspection(entities, result, enabled, selectionId);
-  const selectedNode = nodeFor(entities, selectionId), active = inspect.item, uid = `fleet-${useId().replaceAll(':', '')}`;
+  const selectedNode = nodeFor(entities, selectionId), active = inspect.item, activeNode = active ? nodeFor(entities, active.id) : '', uid = `fleet-${useId().replaceAll(':', '')}`;
   const summaries = useMemo(() => new Map(entities.filter(e => e.kind !== 'container').map(entity => [entity.id, resourceSummary(entities, entity.id)])), [entities]);
   const capacityOf = (node: FleetEntity) => cfg.resource === 'cpu' ? node.cpuAllocatable! : node.memoryAllocatable!;
   const zoneCapacity = new Map(zones.map(zone => [zone, nodes.filter(node => node.zone === zone).reduce((n, node) => n + capacityOf(node), 0)]));
@@ -55,12 +55,13 @@ export function KubernetesPlacement({ widget, result, embedded, onContextChange 
             const nw = tile.x1 - tile.x0, nh = tile.y1 - tile.y0, available = node.status === 'Ready', pressure = request / capacity >= cfg.pressure, selected = selectedNode === node.id;
             const children = pods.filter(p => p.nodeId === node.id), childValues = children.map(p => { const s = summaries.get(p.id)!; return { id: p.id, value: cfg.resource === 'cpu' ? s.cpuRequested : s.memoryRequested }; });
             const slack = Math.max(0, capacity - request), inner = tiles([...childValues, { id: '__unrequested', value: slack }], nw - 6, nh - 22, 1.3);
-            return <g key={node.id} transform={`translate(${tile.x0} ${tile.y0})`} data-kube-node={node.id}>
-              <rect width={nw} height={nh} fill={available ? 'var(--gamma-surface)' : `url(#${uid}-unknown)`} stroke={selected ? C.cyan : pressure ? C.amber : 'var(--gamma-border)'} strokeWidth={selected || pressure ? 2 : 1} {...events(node, true)}/>
+            return <g key={node.id} transform={`translate(${tile.x0} ${tile.y0})`} data-kube-node={node.id} data-inspected={activeNode === node.id} className="kube-placement-node">
+              <rect className="kube-placement-boundary" width={nw} height={nh} fill={available ? 'var(--gamma-surface)' : `url(#${uid}-unknown)`} stroke={selected ? C.cyan : pressure ? C.amber : 'var(--gamma-border)'} strokeWidth={selected || pressure ? 2 : 1} {...events(node, true)}/>
               {available && cfg.showPods && <g transform="translate(3 3)">{inner.map(cell => { const pod = children.find(p => p.id === cell.data.id), cw = cell.x1 - cell.x0, ch = cell.y1 - cell.y0; if (cw <= 0 || ch <= 0) return null;
-                return pod ? <rect key={pod.id} x={cell.x0} y={cell.y0} width={cw} height={ch} fill={namespaceColor(pod.namespace)} fillOpacity={selectionId === pod.id ? .92 : .46} stroke={selectionId === pod.id || active?.id === pod.id ? C.orange : namespaceColor(pod.namespace)} strokeWidth=".7" {...events(pod, selected)}><title>{pod.name} · {fleetNumber(cell.value ?? 0)} {cfg.resource === 'cpu' ? 'requested cores' : 'requested GiB'}</title></rect> : <rect key="slack" x={cell.x0} y={cell.y0} width={cw} height={ch} fill="var(--gamma-bg)" pointerEvents="none"/>;
+                return pod ? <rect key={pod.id} className="kube-pod-mark" data-active={selectionId === pod.id || active?.id === pod.id} x={cell.x0} y={cell.y0} width={cw} height={ch} fill={namespaceColor(pod.namespace)} fillOpacity={selectionId === pod.id ? .92 : .46} stroke={selectionId === pod.id || active?.id === pod.id ? C.orange : namespaceColor(pod.namespace)} strokeWidth={selectionId === pod.id || active?.id === pod.id ? 1.5 : .7} {...events(pod, selected)}><title>{pod.name} · {fleetNumber(cell.value ?? 0)} {cfg.resource === 'cpu' ? 'requested cores' : 'requested GiB'}</title></rect> : <rect key="slack" x={cell.x0} y={cell.y0} width={cw} height={ch} fill="var(--gamma-bg)" pointerEvents="none"/>;
               })}</g>}
-              <text x="3" y={nh - 5} className={selected ? 'kube-emphasis' : ''} pointerEvents="none">{nw > 100 ? node.name : `N · ${node.name.slice(-2)}`}</text>
+              {activeNode === node.id && <rect x="2" y="2" width={Math.max(0, nw - 4)} height={Math.max(0, nh - 4)} fill="none" stroke="var(--gamma-ink)" strokeOpacity=".75" strokeWidth="1" pointerEvents="none" aria-hidden="true"/>}
+              <text x="3" y={nh - 5} className={selected || activeNode === node.id ? 'kube-emphasis' : ''} pointerEvents="none">{nw > 100 ? node.name : `N · ${node.name.slice(-2)}`}</text>
             </g>;
           })}</g>
         </g>;

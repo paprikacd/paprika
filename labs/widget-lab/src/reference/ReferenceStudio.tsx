@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { Bell, ChartNoAxesColumnIncreasing, Database, FileText, LayoutGrid, Search, Settings, X } from 'lucide-react';
 import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
 import gammaTheme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
-import { useLabMotion } from '../components/lab/motion';
+import { labMotionStyle, useLabMotion } from '../components/lab/motion';
 import { PaprikaMark, NetworkMark } from './ReferenceShared';
 import { ReferenceEdge } from './ReferenceEdge';
 import { ReferenceReliability } from './ReferenceReliability';
@@ -50,7 +50,7 @@ export function ReferenceStudio() {
   ].filter(item=>item.label.toLowerCase().includes(search.toLowerCase()));
   return <div ref={viewportRef} className="ref-viewport" data-actual={actual} data-layout={reflow?'reflow':'literal'} data-preview={previewWidth??undefined} style={{height:reflow?undefined:988*scale,width:previewWidth&&!actual?layoutWidth:undefined,marginInline:previewWidth?'auto':undefined}}>
     {previewWidth!==null&&<div className="ref-preview-bar"><span>Viewport preview · {layoutWidth}px</span><button onClick={()=>preview(null)}>Return to auto</button></div>}
-    <div className={`${gammaTheme.scope} ref-app`} data-study={study} data-layout={reflow?'reflow':'literal'} data-density={layoutWidth<640?'mobile':layoutWidth<1200?'tablet':'desktop'} data-insights-theme="dark" data-motion={motion.reduced?'reduced':'auto'} style={{transform:reflow?'none':`scale(${scale})`,'--ref-layout-width':`${layoutWidth}px`} as CSSProperties}>
+    <div className={`${gammaTheme.scope} ref-app`} data-study={study} data-layout={reflow?'reflow':'literal'} data-density={layoutWidth<640?'mobile':layoutWidth<1200?'tablet':'desktop'} data-insights-theme="dark" data-motion={motion.reduced?'reduced':'auto'} style={{...labMotionStyle(motion.reduced),transform:reflow?'none':`scale(${scale})`,'--ref-layout-width':`${layoutWidth}px`} as CSSProperties}>
     <h1 className="ref-page-title">PAPRIKA / {study==='edge'?'EDGE WATCH':'RELIABILITY ROOM'}</h1><p className="ref-page-subtitle">Concept • synthetic data{study==='edge'?' (demo)':''}</p><div className="ref-outer-frame"/>
     <aside className="ref-rail" aria-label="Paprika navigation"><a className="ref-rail-logo" href="#edge" aria-label="Paprika Edge Watch"><PaprikaMark/></a><nav>
       <a className={study==='edge'?'ref-rail-selected':undefined} href="#edge" aria-current={study==='edge'?'page':undefined} aria-label="Edge Watch" title="Edge Watch"><LayoutGrid size={26} fill="currentColor" strokeWidth={0}/></a>

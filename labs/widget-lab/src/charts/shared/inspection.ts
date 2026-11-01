@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { resolveInspectionState } from './inspection-state';
 
 /** One inspection lifecycle for compound charts. Selection never mutates source data. */
 export function useInspection<T extends { id: string }>(items: T[], revision: unknown, enabled = true, externalSelection?: string, selectionKey: (item: T) => string = item => item.id) {
@@ -7,23 +8,14 @@ export function useInspection<T extends { id: string }>(items: T[], revision: un
   const trigger = useRef<HTMLElement | SVGElement | null>(null);
   const returningFocus = useRef(false);
   const previous = useRef({ revision, externalSelection });
-  const current = useRef({ items, selectionKey });
-  current.current = { items, selectionKey };
+  const resolved = resolveInspectionState({ hover, pinned }, previous.current,
+    { revision, externalSelection }, items, enabled, selectionKey);
   useEffect(() => {
-    const selectionChanged = previous.current.externalSelection !== externalSelection;
-    const sourceChanged = previous.current.revision !== revision;
     previous.current = { revision, externalSelection };
-    if (!selectionChanged && !sourceChanged) return;
-    setHover(null);
-    // A mark click may be echoed by a linked host. Keep that exact pin; a
-    // different external selection or a new source revision dismisses it.
-    setPinned(id => {
-      const item = current.current.items.find(row => row.id === id);
-      return selectionChanged && item && externalSelection !== undefined && current.current.selectionKey(item) === externalSelection ? id : null;
-    });
-  }, [revision, externalSelection]);
-  useEffect(() => { if (!enabled) { setHover(null); setPinned(null); } }, [enabled]);
-  const item = enabled ? items.find(row => row.id === (pinned ?? hover)) : undefined;
+    if (resolved.hover !== hover) setHover(resolved.hover);
+    if (resolved.pinned !== pinned) setPinned(resolved.pinned);
+  }, [revision, externalSelection, hover, pinned, resolved.hover, resolved.pinned]);
+  const item = enabled ? items.find(row => row.id === (resolved.pinned ?? resolved.hover)) : undefined;
   const dismiss = () => {
     setHover(null); setPinned(null);
     returningFocus.current = true;
@@ -31,7 +23,7 @@ export function useInspection<T extends { id: string }>(items: T[], revision: un
     returningFocus.current = false;
   };
   return {
-    item, hover, pinned,
+    item, hover: resolved.hover, pinned: resolved.pinned,
     setHover: (id: string | null) => { if (!returningFocus.current && (enabled || id === null)) setHover(id); },
     select: (id: string, target?: HTMLElement | SVGElement) => {
       if (!enabled || !items.some(row => row.id === id)) return;

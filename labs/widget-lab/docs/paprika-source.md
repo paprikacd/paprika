@@ -50,6 +50,8 @@ For another checkout, replace the `--upstream` path with a local clone containin
 
 ## Canonical entry points
 
+The motion/loading extension also patches `charts.tsx` and `charts.module.css`, and adds `widget-loading.tsx`. The new `WidgetLoadingProvider` is a host-owned render slot for initial loading and background refresh; it imports only React and the existing widget type. The lab supplies the visual components from outside the vendor boundary. The persisted widget schema and normalized result contract are unchanged. See the current generated manifest and patch for the complete file inventory; the earlier owner list above describes the original reference pass.
+
 Paths below are relative to `src/vendor/paprika/ui/src/features/insights/`.
 
 | Need | Export and file |

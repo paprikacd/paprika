@@ -6,7 +6,8 @@ import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insi
 import theme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
 import './LensStudio.css';
 import type { LensId } from './lens-routes';
-import { useLabMotion } from '../components/lab/motion';
+import { labMotionStyle, useLabMotion } from '../components/lab/motion';
+import { StudyLoading } from '../components/lab/StudyLoading';
 export type { LensId } from './lens-routes';
 
 // Every direct lens route shares the core renderers and editor alternatives.
@@ -45,7 +46,7 @@ export function LensStudio({ lens }: { lens: LensId }) {
   const [editing, setEditing] = useState<{ widget: Widget; result: QueryResult; apply: (next: Widget) => void } | null>(null);
   const edit: EditLensWidget = (widget, result, apply) => setEditing({ widget, result, apply });
   const Component=lens==='website'||lens==='infrastructure'?null:lensComponents[lens];
-  return <div className={`${theme.scope} obs-app lens-studio`} data-insights-theme="dark">
+  return <div className={`${theme.scope} obs-app lens-studio`} data-insights-theme="dark" data-motion={motion.reduced ? 'reduced' : 'auto'} style={labMotionStyle(motion.reduced)}>
     <header className="lens-toolbar" aria-label="Lens presentation">
       <span><FlaskConical size={13}/>Synthetic data</span>
       <label className="lens-canvas-control"><span>Canvas</span><select aria-label="Lens canvas width" value={canvasWidth} onChange={event => setCanvasWidth(event.target.value)}><option value="auto">Auto width</option><option value="768">Tablet · 768px</option><option value="390">Mobile · 390px</option></select></label>
@@ -53,7 +54,7 @@ export function LensStudio({ lens }: { lens: LensId }) {
     </header>
     <div className="lens-canvas" data-preview-width={canvasWidth} style={{width:canvasWidth === 'auto' ? '100%' : `min(100%, ${canvasWidth}px)`}}>
     {canvasWidth !== 'auto' && <div className="lens-canvas-caption">{canvasWidth}px layout preview<button onClick={() => setCanvasWidth('auto')}>Return to auto</button></div>}
-    <Suspense fallback={<div className="study-loading">Loading {lens} lens…</div>}>
+    <Suspense fallback={<StudyLoading label={`Loading ${lens.replaceAll('-', ' ')} lens`}/> }>
       {Component?<Component onEdit={edit}/>:<OperationsLenses kind={lens as 'website'|'infrastructure'} onEdit={edit}/>}
     </Suspense>
     </div>

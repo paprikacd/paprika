@@ -25,6 +25,7 @@ import type { DrilldownContext } from "./drilldown";
 import { widgetTextColor } from "./appearance";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
+import { useWidgetLoadingPresentation } from "./widget-loading";
 export {
   downsamplePoints,
   formatMetric,
@@ -107,6 +108,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
 }: WidgetVisualizationProps) {
   // Registered plugins may arrive after a host loads an optional bundle.
   useWidgetDefinitions();
+  const renderLoading = useWidgetLoadingPresentation();
   const definition = getWidgetDefinition(widget);
   const resetKey = useMemo(
     () => ({ widget, result, definition }),
@@ -129,7 +131,11 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       </div>
     );
   if (loading && !result)
-    return (
+    return renderLoading ? (
+      <div className={styles.loadingFrame}>
+        {renderLoading({ widget, phase: "initial" })}
+      </div>
+    ) : (
       <div className={styles.state} role="status" aria-label="Loading widget">
         <span className={styles.loading} />
         <span>Querying data source…</span>
@@ -137,7 +143,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
     );
   const series = result?.series ?? [];
   const textColor = widgetTextColor(widget.options);
-  if (
+  const empty = (
     !result ||
     (widget.type !== "plugin" &&
       (widgetKind(widget) === "traces"
@@ -145,8 +151,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
         : widget.type === "heatmap" || widget.type === "table"
           ? !series.length
           : !series.some((entry) => latestPoint(entry))))
-  )
-    return <EmptyState />;
+  );
   return (
     <div
       className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
@@ -158,26 +163,34 @@ export const WidgetVisualization = memo(function WidgetVisualization({
           "--widget-background": widget.options?.background,
         } as CSSProperties
       }
-      aria-busy={!!loading}
     >
-      {result?.truncated && (
-        <p className={styles.limitNotice} role="status">
-          Provider result limit reached. Narrow the query to see more.
-        </p>
-      )}
-      <RendererBoundary
-        key={`${definition.id}:${widget.id}`}
-        resetKey={resetKey}
-      >
-        <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
-          <RegisteredRenderer
-            widget={widget}
-            result={result}
-            definition={definition}
-            onContextChange={onContextChange}
-          />
-        </TooltipWidgetDataProvider>
-      </RendererBoundary>
+      <div className={styles.renderingSurface} aria-busy={!!loading}>
+        {empty || !result ? <EmptyState /> : (
+          <>
+            {result.truncated && (
+              <p className={styles.limitNotice} role="status">
+                Provider result limit reached. Narrow the query to see more.
+              </p>
+            )}
+            <RendererBoundary
+              key={`${definition.id}:${widget.id}`}
+              resetKey={resetKey}
+            >
+              <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
+                <RegisteredRenderer
+                  widget={widget}
+                  result={result}
+                  definition={definition}
+                  onContextChange={onContextChange}
+                />
+              </TooltipWidgetDataProvider>
+            </RendererBoundary>
+          </>
+        )}
+      </div>
+      {/* Keep the status outside the busy region so its announcement is not deferred. */}
+      {loading && (renderLoading?.({ widget, phase: "refresh" }) ??
+        <span className={styles.refreshNotice} role="status">Refreshing data…</span>)}
     </div>
   );
 });

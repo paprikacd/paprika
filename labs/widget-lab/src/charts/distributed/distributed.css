@@ -22,3 +22,20 @@
 .ds-chart .domain-note { margin:7px 0 0; line-height:1.45; }
 @container (max-width:740px) { .ds-topology-layout { grid-template-columns:minmax(0,1fr); }.ds-quorum-summary { min-height:0; }.ds-quorum-summary .domain-detail-values { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 15px; }.ds-quorum-summary .domain-detail-values > div { display:block; }.ds-quorum-summary .domain-detail-values dd { text-align:left; margin-top:3px; }.ds-topology-evidence .domain-detail-values { grid-template-columns:repeat(2,minmax(0,1fr)); }.ds-topology-evidence .domain-inspector { max-height:none; } }
 @container (max-width:390px) { .ds-topology-evidence .domain-detail-values,.ds-quorum-summary .domain-detail-values { grid-template-columns:1fr; } }
+
+/* Linked emphasis leaves matrix colors, indices and ownership widths unchanged. */
+.ds-topology-edge,.ds-lag-series { transition:opacity var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.ds-topology-edge[data-muted=true],.ds-lag-series[data-muted=true] { opacity:.72; }
+.ds-replica-boundary,.ds-track-row { transition:fill var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.ds-replica-node[data-active=true] .ds-replica-boundary { fill:var(--gamma-surface-2); }
+.ds-replica-node[role=button]:focus-visible .ds-replica-boundary { stroke:var(--gamma-accent); stroke-width:2; }
+.ds-track-row[data-inspected=true] { fill:color-mix(in srgb,var(--gamma-chart-1) 7%,transparent); stroke:var(--gamma-chart-1); }
+.ds-peer-table th[data-inspected=true] { color:var(--gamma-ink); background:color-mix(in srgb,var(--gamma-chart-1) 15%,var(--gamma-bg)); }
+.ds-peer-table td[data-related=true] { border-color:color-mix(in srgb,var(--gamma-chart-1) 45%,var(--gamma-border)); }
+.ds-peer-value[data-active=true] { outline:2px solid var(--gamma-chart-1); outline-offset:-2px; }
+.ds-peer-value:focus-visible { outline:2px solid var(--gamma-accent); outline-offset:-2px; }
+.ds-shard-flow path { transition:fill-opacity var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.ds-chart .ds-action { transition:background-color var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out),border-color var(--gamma-duration-fast,120ms) var(--gamma-ease-standard,ease-out); }
+.ds-chart .ds-action:hover:not(:disabled) { background:var(--gamma-surface-2); border-color:var(--gamma-muted); }
+.ds-chart .ds-action:active:not(:disabled) { background:var(--gamma-surface); }
+@media(prefers-reduced-motion:reduce) { .ds-chart :is(button,path,rect,g) { transition:none; } }
