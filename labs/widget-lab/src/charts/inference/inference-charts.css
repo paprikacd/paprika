@@ -15,7 +15,7 @@
 .inference-rack-cell:hover { filter:brightness(1.18); }
 .inference-rack-cell span { opacity:0; color:#f4fbff; font:10px Barlow,sans-serif; }
 .inference-rack-cell:hover span,.inference-rack-cell:focus-visible span { opacity:1; }
-.inference-rack-cell[aria-pressed="true"] { outline:2px solid var(--gamma-accent); outline-offset:1px; z-index:1; }
+.inference-rack-cell[aria-pressed="true"],.inference-rack-cell[data-selected="true"] { outline:2px solid var(--gamma-accent); outline-offset:1px; z-index:1; }
 .inference-rack-cell:disabled { opacity:1; cursor:default; }
 .inference-unknown { background:repeating-linear-gradient(130deg,#203b48 0px,#203b48 2px,#526b78 2px,#526b78 3px); }
 .inference-rack-absent { min-height:27px; background:#09202a; border:1px dashed #19333e; border-radius:3px; }
@@ -59,7 +59,7 @@
 .inference-scatter-legend button i { width:7px; height:7px; border-radius:50%; }
 .inference-scatter-legend button:disabled { opacity:1; cursor:default; }
 .inference-chart-empty { min-height:100px; height:100%; display:flex; flex-direction:column; gap:8px; align-items:center; justify-content:center; color:#8fabb9; text-align:center; font-size:12px; }
-.inference-rack :focus-visible,.inference-scatter :focus-visible,.inference-flow :focus-visible { outline:2px solid var(--gamma-accent); outline-offset:2px; }
+.inference-rack :focus-visible,.inference-scatter :focus-visible,.inference-flow :focus-visible,.inference-inspector :focus-visible { outline:2px solid var(--gamma-accent); outline-offset:2px; }
 @container inference-rack (max-width:630px) { .inference-rack-layout[data-details="true"] { grid-template-columns:minmax(0,1fr); height:auto; }.inference-device-inspector { border-left:0; border-top:1px solid #1d3a46; padding:12px 0 0; }.inference-device-inspector dl { display:grid; grid-template-columns:1fr 1fr; column-gap:22px; }.inference-device-history { height:50px; }.inference-rack { height:auto; }.inference-rack-key { padding-bottom:10px; } }
 @keyframes inference-detail-in { from { opacity:0; transform:translateY(-2px); } to { opacity:1; transform:translateY(0); } }
 @media(prefers-reduced-motion:reduce) { .inference-inspector { animation:none; }.inference-rack-cell { transition:none; } }

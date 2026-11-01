@@ -22,6 +22,8 @@ import type { InspectionWindow } from "./observation-inspector-data";
 import type { Widget } from "./schema";
 import styles from "./chart-styles.module.css";
 import { useChartCursorPublisher } from "./chart-cursor";
+import { restoreTooltipFocus } from "./tooltip-focus";
+import { useTooltipHandoff } from "./tooltip-interaction";
 
 export interface PlotDatum extends Point {
   seriesIndex: number;
@@ -60,9 +62,12 @@ export function usePlotTooltip(
   const armedRevision = useRef<unknown>(null);
   const restoringFocus = useRef(false);
   const [active, setActive] = useState<ActivePoint | null>(null);
+  const activeAnchor = useRef<SVGSVGElement | null>(null);
+  activeAnchor.current = active?.anchor ?? null;
   const interaction = useRef({ panel: false, focused: false });
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const clearHide = useCallback(() => clearTimeout(timer.current), []);
+  const handoff = useTooltipHandoff();
+  const clearHide = useCallback(() => { clearTimeout(timer.current); timer.current = undefined; handoff.release(); }, [handoff]);
   const dismiss = useCallback(() => {
     clearHide();
     const restoreFocus = document.getElementById(id)?.contains(document.activeElement);
@@ -71,16 +76,20 @@ export function usePlotTooltip(
     restoringFocus.current = true;
     setActive(null);
     scene.current?.clear();
-    if (restoreFocus) scene.current?.svg.focus({ preventScroll: true });
+    if (restoreFocus) restoreTooltipFocus(scene.current?.svg);
     restoringFocus.current = false;
   }, [clearHide, id]);
   const scheduleHide = useCallback(() => {
-    clearHide();
+    if (!activeAnchor.current) return;
+    handoff.hold(activeAnchor.current);
+    if (timer.current !== undefined) return;
     timer.current = setTimeout(() => {
+      timer.current = undefined;
       if (!interaction.current.panel && !interaction.current.focused)
         setActive((current) => (current?.pinned ? current : null));
+      handoff.release();
     }, 180);
-  }, [clearHide]);
+  }, [handoff]);
   useEffect(() => {
     // A pinned observation belongs to its exact result/configuration, never a refresh.
     armedRevision.current = null;
@@ -117,7 +126,7 @@ export function usePlotTooltip(
       const anchor = scene.current?.svg;
       if (!anchor || !series[point.datum.seriesIndex]) return;
       clearHide();
-      setActive((current) => ({
+      setActive((current) => current?.pinned && current.revision === revision ? current : ({
         point,
         anchor,
         pinned: current?.revision === revision && current.pinned,
@@ -182,19 +191,6 @@ export function usePlotTooltip(
     }),
     [id],
   );
-  useEffect(() => {
-    if (!current) return;
-    const anchor = current.anchor;
-    const previous = anchor.getAttribute("aria-describedby");
-    anchor.setAttribute(
-      "aria-describedby",
-      [previous, id].filter(Boolean).join(" "),
-    );
-    return () => {
-      if (previous) anchor.setAttribute("aria-describedby", previous);
-      else anchor.removeAttribute("aria-describedby");
-    };
-  }, [current, id]);
   const entry = current ? series[current.point.datum.seriesIndex] : undefined;
   const point = current
     ? {
@@ -226,6 +222,8 @@ export function usePlotTooltip(
         <ObservationTooltip
           id={id}
           anchor={current.anchor}
+          pinned={current.pinned}
+          options={widget.options}
           anchorRect={anchorRect}
           preferSide
           compact={widget.options?.inspectorDensity === "compact"}

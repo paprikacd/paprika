@@ -1,6 +1,9 @@
+import { restoreTooltipFocus } from '../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { useTooltipDismiss } from '../components/lab/useTooltipDismiss';
+import { ChartTooltip } from '../components/lab/ChartTooltip';
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { hierarchy, treemap } from 'd3-hierarchy';
-import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, ChevronRight, CircleHelp, Coins, Maximize2, Pencil, TrendingUp, Wallet, X } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, ChevronRight, CircleHelp, Coins, Maximize2, TrendingUp, Wallet, X } from 'lucide-react';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
 import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
@@ -11,6 +14,7 @@ import theme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.
 import { MiniTrace } from '../reference/ReferenceShared';
 import { allocationColor, allocationRecords, allocationTreemapConfig, financePanels, FINANCE_AS_OF, type AllocationRecord, type FinanceWindow } from './finance-data';
 import './FinanceLens.css';
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { labMotionStyle, useLabMotion } from '../components/lab/motion';
 
 const money = (value: number, digits = 0) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value);
@@ -31,9 +35,12 @@ export function AllocationTreemap({ widget, result, onContextChange, embedded }:
   const activeGroup = group && groups.includes(group) ? group : null;
   const visible = useMemo(() => activeGroup ? source.records.filter(record => record.group === activeGroup) : source.records, [source.records, activeGroup]);
   const displayedTotal = visible.reduce((sum, record) => sum + record.value, 0);
-  const active = visible.find(record => record.id === selected);
   const inspectable = !embedded && widget.options?.showTooltip !== false;
-  useEffect(() => { setSelected(null); setPinned(false); }, [result, activeGroup, config.label, config.value, config.group, config.change]);
+  const inspectionRevision = useMemo(() => ({ result, activeGroup, label: config.label, value: config.value, group: config.group, change: config.change }), [result, activeGroup, config.label, config.value, config.group, config.change]);
+  const currentRevision = useRef(inspectionRevision);
+  const active = currentRevision.current === inspectionRevision && inspectable ? visible.find(record => record.id === selected) : undefined;
+  const hoverDismiss = useTooltipDismiss({ onDismiss: () => setSelected(null), pinned, revision: inspectionRevision, enabled: inspectable });
+  useEffect(() => { currentRevision.current = inspectionRevision; setSelected(null); setPinned(false); }, [inspectionRevision]);
   useEffect(() => { if (!inspectable) { setSelected(null); setPinned(false); } }, [inspectable]);
   useEffect(() => {
     const element = body.current; if (!element) return;
@@ -49,23 +56,23 @@ export function AllocationTreemap({ widget, result, onContextChange, embedded }:
   const leaves = layout.leaves();
   function inspect(record: AllocationRecord, pin: boolean) {
     if (!inspectable) return;
-    setSelected(record.id); if (pin) setPinned(true);
+    hoverDismiss.cancel(); setSelected(record.id); if (pin) setPinned(true);
     if (pin) onContextChange?.({ series: record.label, value: record.value, labels: { holding: record.label, sector: record.group, change: record.change === null ? 'Unknown' : String(record.change), weight: String(record.value / source.total * 100), currency: widget.unit || 'USD' } });
   }
   function focusCell(index: number) { const record = leaves[Math.max(0, Math.min(leaves.length - 1, index))]?.data.record; if (record) cellRefs.current.get(record.id)?.focus(); }
-  function close() { setSelected(null); setPinned(false); svg.current?.focus({ preventScroll: true }); }
-  const drill = (next: string | null) => { setGroup(next); setSelected(null); setPinned(false); };
+  function close() { hoverDismiss.cancel(); setSelected(null); setPinned(false); restoreTooltipFocus(svg.current); }
+  const drill = (next: string | null) => { hoverDismiss.cancel(); setGroup(next); setSelected(null); setPinned(false); };
   if (!source.records.length) return <div className="finance-tree-empty">No positive allocation values to display.{source.zero > 0 && <span>{source.zero} zero-value positions have no area.</span>}</div>;
   return <div className="finance-tree" data-embedded={embedded || undefined} data-allocation-scope={activeGroup ?? 'portfolio'}>
     {!embedded && <div className="finance-tree-breadcrumb"><button onClick={() => drill(null)} disabled={!activeGroup}>Portfolio</button>{activeGroup && <><ChevronRight size={12}/><span>{activeGroup}</span><button className="finance-tree-reset" onClick={() => drill(null)}><Maximize2 size={11}/>Reset view</button></>}<small>{visible.length} holdings · {compactMoney(displayedTotal)}</small></div>}
-    <div className="finance-tree-body" ref={body} onPointerLeave={() => { if (!pinned) setSelected(null); }}>
+    <div className="finance-tree-body" ref={body} onPointerLeave={hoverDismiss.schedule} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hoverDismiss.schedule(); }}>
       <svg ref={svg} viewBox={`0 0 ${size.width} ${size.height}`} tabIndex={-1} role="group" aria-label={widget.title} aria-description="Area represents market value. Color represents one-day percentage change, with zero at the neutral midpoint. Select a holding for exact values. Select a sector heading to drill in; Portfolio resets the view." onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); close(); } }}>
         {!activeGroup && layout.children?.map(node => <g key={node.data.name} className="finance-tree-sector" role={embedded ? undefined : 'button'} tabIndex={embedded ? undefined : 0} aria-label={`Open ${node.data.name} sector`} onClick={() => !embedded && drill(node.data.name)} onKeyDown={event => { if (!embedded && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); drill(node.data.name); } }}><rect x={node.x0} y={node.y0} width={node.x1 - node.x0} height={Math.min(21, node.y1 - node.y0)} rx={2} fill="#102a35"/><text x={node.x0 + 7} y={node.y0 + 15}>{node.data.name}<tspan fill="#87aaba"> {((node.value ?? 0) / source.total * 100).toFixed(1)}%</tspan></text><title>Open {node.data.name} · {money(node.value ?? 0, 2)}</title></g>)}
         {leaves.map((leaf, index) => {
           const record = leaf.data.record!; if (!record) return null;
-          const width = leaf.x1 - leaf.x0, height = leaf.y1 - leaf.y0, chosen = record.id === selected;
+          const width = leaf.x1 - leaf.x0, height = leaf.y1 - leaf.y0, chosen = record.id === active?.id;
           const label = `${record.label}: ${money(record.value, 2)}, ${(record.value / source.total * 100).toFixed(2)}% of portfolio, day change ${record.change === null ? 'unknown' : `${signed(record.change)}%`}`;
-          return <g key={record.id} ref={element => { if (element) cellRefs.current.set(record.id, element); else cellRefs.current.delete(record.id); }} className="finance-tree-cell" role={inspectable ? 'button' : 'img'} tabIndex={inspectable ? 0 : undefined} aria-label={label} aria-pressed={inspectable ? chosen && pinned : undefined} onPointerEnter={() => { if (!pinned) inspect(record, false); }} onFocus={() => { if (!pinned) inspect(record, false); }} onClick={() => inspect(record, true)} onKeyDown={event => {
+          return <g key={record.id} ref={element => { if (element) cellRefs.current.set(record.id, element); else cellRefs.current.delete(record.id); }} className="finance-tree-cell" role={inspectable ? 'button' : 'img'} tabIndex={inspectable ? 0 : undefined} aria-label={label} aria-pressed={inspectable ? chosen && pinned : undefined} onPointerEnter={() => { if (!pinned) inspect(record, false); }} onPointerLeave={hoverDismiss.schedule} onBlur={hoverDismiss.schedule} onFocus={() => { if (!pinned) inspect(record, false); }} onClick={() => inspect(record, true)} onKeyDown={event => {
             if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); focusCell(event.key === 'Home' ? 0 : event.key === 'End' ? leaves.length - 1 : index + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1)); }
             else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); inspect(record, true); }
           }}>
@@ -76,7 +83,7 @@ export function AllocationTreemap({ widget, result, onContextChange, embedded }:
           </g>;
         })}
       </svg>
-      {inspectable && active && <section className="finance-tree-inspector" aria-label={`${active.label} allocation details`}><header><span>{pinned ? 'Pinned holding' : 'Holding detail'}</span><button onClick={close} aria-label="Close allocation details"><X size={13}/></button></header><strong>{active.label} <small>{active.name}</small></strong><div className="finance-tree-amount">{money(active.value, widget.options?.decimals ?? 2)}</div><dl><div><dt>Portfolio weight</dt><dd>{(active.value / source.total * 100).toFixed(2)}%</dd></div><div><dt>1 day change</dt><dd className={active.change !== null && active.change < 0 ? 'is-negative' : 'is-positive'}>{active.change === null ? 'Unknown' : `${signed(active.change)}%`}</dd></div><div><dt>Sector</dt><dd>{active.group}</dd></div></dl><footer>{!activeGroup && <button onClick={() => drill(active.group)}>Open sector<ChevronRight size={12}/></button>}<button onClick={() => setPinned(value => !value)}>{pinned ? 'Unpin' : 'Pin holding'}</button></footer></section>}
+      {inspectable && active && <ChartTooltip pinned={pinned} onClose={close} onLeave={hoverDismiss.schedule}><section className="finance-tree-inspector" aria-label={`${active.label} allocation details`}><header><span>{pinned ? 'Pinned holding' : 'Holding detail'}</span><button onClick={close} aria-label="Close allocation details"><X size={13}/></button></header><strong>{active.label} <small>{active.name}</small></strong><div className="finance-tree-amount">{money(active.value, widget.options?.decimals ?? 2)}</div><dl><div><dt>Portfolio weight</dt><dd>{(active.value / source.total * 100).toFixed(2)}%</dd></div><div><dt>1 day change</dt><dd className={active.change !== null && active.change < 0 ? 'is-negative' : 'is-positive'}>{active.change === null ? 'Unknown' : `${signed(active.change)}%`}</dd></div><div><dt>Sector</dt><dd>{active.group}</dd></div></dl><footer>{!activeGroup && <button onClick={() => drill(active.group)}>Open sector<ChevronRight size={12}/></button>}<button onClick={() => { hoverDismiss.cancel(); setPinned(value => !value); }}>{pinned ? 'Unpin' : 'Pin holding'}</button></footer></section></ChartTooltip>}
     </div>
     {widget.options?.showLegend !== false && <div className="finance-tree-legend"><span>Area <strong>Market value</strong></span><span>1D change</span><div className="finance-tree-color-key"><i style={{ background: allocationColor(-config.colorLimit, config.colorLimit) }}/><i style={{ background: allocationColor(-config.colorLimit / 2, config.colorLimit) }}/><i style={{ background: allocationColor(0, config.colorLimit) }}/><i style={{ background: allocationColor(config.colorLimit / 2, config.colorLimit) }}/><i style={{ background: allocationColor(config.colorLimit, config.colorLimit) }}/></div><span>−{config.colorLimit}%</span><span>0</span><span>+{config.colorLimit}%</span></div>}
     {(source.omitted > 0 || source.zero > 0 || result.records?.truncated) && <p className="finance-tree-note">{source.omitted > 0 && `${source.omitted} invalid or missing positions omitted. `}{source.zero > 0 && `${source.zero} zero-value positions have no area. `}{result.records?.truncated && 'Partial source response.'}</p>}
@@ -97,13 +104,13 @@ function Panel({ title, description, action, className = '', children }: { title
 
 export function FinanceLens({ onEdit }: { onEdit?: FinanceLensEdit }) {
   const motion = useLabMotion();
-  const [days, setDays] = useState<FinanceWindow>(30), [overrides, setOverrides] = useState<Record<string, Widget>>({}), [context, setContext] = useState<DrilldownContext | null>(null);
+  const [days, setDays] = useState<FinanceWindow>(30), [context, setContext] = useState<DrilldownContext | null>(null);
   const data = useMemo(() => financePanels(days), [days]);
   const { summary, history } = data;
   const periodReturn = history.at(-1)!.portfolio, benchmarkReturn = history.at(-1)!.benchmark;
-  const current = (panel: { widget: Widget; result: QueryResult }) => overrides[panel.widget.id] ?? panel.widget;
-  const edit = (panel: { widget: Widget; result: QueryResult }) => onEdit?.(current(panel), panel.result, next => setOverrides(previous => ({ ...previous, [panel.widget.id]: next })));
-  const editAction = (panel: { widget: Widget; result: QueryResult }) => onEdit && <button className="finance-panel-edit" aria-label={`Edit ${current(panel).title}`} onClick={() => edit(panel)}><Pencil size={13}/><span>Edit</span></button>;
+  const panels = useDashboardPanels(onEdit);
+  const current = (panel: { widget: Widget; result: QueryResult }) => panels.current(panel.widget);
+  const editAction = panels.actions;
   const bestSector = summary.sectors.reduce((best, sector) => sector.dayPnl > best.dayPnl ? sector : best, summary.sectors[0]);
   const metrics = [
     { label: 'Net asset value', value: money(summary.value, 0), unit: 'USD', delta: `${signed(summary.dayChange)}% today`, sub: `${summary.dayPnl < 0 ? '−' : '+'}${money(Math.abs(summary.dayPnl), 0)} unrealized change`, icon: Wallet, trace: history.map(point => point.portfolio), color: '#00d7b5' },

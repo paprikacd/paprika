@@ -2,6 +2,10 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import { scaleLinear } from 'd3-scale';
 import { area, line } from 'd3-shape';
 import { X } from 'lucide-react';
+import { ChartTooltip } from '../../components/lab/ChartTooltip';
+import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
+import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
+import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
 import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
 import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
 import { cohortCells, cohortConfig, countConfig, countRows, controlConfig, controlSamples, density, distributionConfig, histogram, intervalConfig, intervalRows, sampleGroups, stageFlow, flowConfig } from './data';
@@ -17,19 +21,22 @@ function useCanvas(min = 360) {
 function useInspect(props: WidgetRendererProps) {
   const [id, setId] = useState<string | null>(null), [pinned, setPinned] = useState(false), host = useRef<HTMLDivElement>(null), origin = useRef<Element | null>(null), currentContext = useRef<DrilldownContext | null>(null), restoringFocus = useRef(false);
   const enabled = !props.embedded && props.widget.options?.showTooltip !== false;
-  useEffect(() => { setId(null); setPinned(false); }, [props.result, enabled]);
-  const clear = () => { setId(null); setPinned(false); if (origin.current && origin.current.ownerDocument.activeElement !== origin.current) { restoringFocus.current = true; (origin.current as HTMLElement).focus?.({ preventScroll: true }); restoringFocus.current = false; } };
-  const togglePin = () => { if (!pinned && currentContext.current) props.onContextChange?.(currentContext.current); setPinned(!pinned); };
+  const signature = JSON.stringify(props.widget.config ?? {}), revision = useMemo(() => ({ result: props.result, signature }), [props.result, signature]);
+  const dismiss = useTooltipDismiss({ onDismiss: () => setId(null), pinned, revision, enabled });
+  useEffect(() => { setId(null); setPinned(false); currentContext.current = null; }, [revision, enabled]);
+  const clear = () => { dismiss.cancel(); setId(null); setPinned(false); if (origin.current && isObservationTooltipTarget(origin.current.ownerDocument.activeElement)) { restoringFocus.current = true; restoreTooltipFocus(origin.current as HTMLElement); restoringFocus.current = false; } };
+  const togglePin = () => { dismiss.cancel(); if (!pinned && currentContext.current) props.onContextChange?.(currentContext.current); setPinned(!pinned); };
   const marks = (key: string, label: string, context: DrilldownContext) => ({ role: enabled ? 'button' : 'img', tabIndex: enabled ? 0 : undefined, 'data-analytics-mark': true, 'aria-label': label, 'aria-pressed': enabled ? id === key && pinned : undefined,
-    onPointerEnter: (e: React.PointerEvent) => { if (enabled && !pinned) { origin.current = e.currentTarget; currentContext.current = context; setId(key); } }, onFocus: (e: React.FocusEvent) => { if (enabled && !pinned && !restoringFocus.current) { origin.current = e.currentTarget; currentContext.current = context; setId(key); } },
-    onClick: (e: React.MouseEvent) => { if (enabled) { origin.current = e.currentTarget; currentContext.current = context; setId(key); setPinned(true); props.onContextChange?.(context); } },
+    onPointerEnter: (e: React.PointerEvent) => { dismiss.cancel(); if (enabled && !pinned) { origin.current = e.currentTarget; currentContext.current = context; setId(key); } }, onPointerLeave: dismiss.schedule,
+    onFocus: (e: React.FocusEvent) => { dismiss.cancel(); if (enabled && !pinned && !restoringFocus.current) { origin.current = e.currentTarget; currentContext.current = context; setId(key); } }, onBlur: (e: React.FocusEvent) => { if (isObservationTooltipTarget(e.relatedTarget)) dismiss.cancel(); else dismiss.schedule(); },
+    onClick: (e: React.MouseEvent) => { dismiss.cancel(); if (enabled) { origin.current = e.currentTarget; currentContext.current = context; setId(key); setPinned(true); props.onContextChange?.(context); } },
     onKeyDown: (e: React.KeyboardEvent) => { if (!enabled) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); origin.current = e.currentTarget; currentContext.current = context; setId(key); setPinned(true); props.onContextChange?.(context); } else if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') { const all = [...(host.current?.querySelectorAll<HTMLElement>('[data-analytics-mark]') ?? [])]; const index = all.indexOf(e.currentTarget as HTMLElement), delta = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1; e.preventDefault(); all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : Math.min(all.length - 1, Math.max(0, index + delta))]?.focus(); } }
   });
-  return { id, pinned, clear, marks, host, enabled, togglePin, shell: { onPointerLeave: () => { if (!pinned) setId(null); }, onBlur: (e: React.FocusEvent) => { if (!pinned && !e.currentTarget.contains(e.relatedTarget as Node | null)) setId(null); }, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Escape' && id) { e.preventDefault(); e.stopPropagation(); clear(); } } } };
+  return { id, pinned, clear, marks, host, enabled, togglePin, leave: dismiss.schedule, shell: { onPointerEnter: dismiss.cancel, onPointerLeave: dismiss.schedule, onBlur: (e: React.FocusEvent) => { if (isObservationTooltipTarget(e.relatedTarget)) dismiss.cancel(); else if (!e.currentTarget.contains(e.relatedTarget as Node | null)) dismiss.schedule(); }, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Escape' && id) { e.preventDefault(); e.stopPropagation(); clear(); } } } };
 }
 function Inspector({ title, inspection, children }: { title: string; inspection: ReturnType<typeof useInspect>; children: ReactNode }) {
   if (!inspection.enabled || !inspection.id) return null;
-  return <aside className="analytics-inspector" aria-label={title + ' details'}><header><span>{inspection.pinned ? 'Pinned observation' : 'Observation'}</span><button aria-label="Close observation details" onClick={inspection.clear}><X size={14}/></button></header><strong>{title}</strong><dl>{children}</dl><button className="analytics-pin" onClick={inspection.togglePin}>{inspection.pinned ? 'Unpin observation' : 'Pin observation'}</button></aside>;
+  return <ChartTooltip pinned={inspection.pinned} onClose={inspection.clear} onLeave={inspection.leave}><aside className="analytics-inspector" aria-label={title + ' details'}><header><span>{inspection.pinned ? 'Pinned observation' : 'Observation'}</span><button aria-label="Close observation details" onClick={inspection.clear}><X size={14}/></button></header><strong>{title}</strong><dl>{children}</dl><button className="analytics-pin" onClick={inspection.togglePin}>{inspection.pinned ? 'Unpin observation' : 'Pin observation'}</button></aside></ChartTooltip>;
 }
 function Detail({ label, value }: { label: string; value: ReactNode }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
 function Empty({ children }: { children: ReactNode }) { return <div className="analytics-empty">{children}</div>; }

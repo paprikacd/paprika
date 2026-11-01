@@ -8,6 +8,7 @@ import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy
 import { fitEquirectangular } from '../spatial/model';
 import { budgetSteps, budgetTerms, budgetTotal, contactTimelineConfig, groundPoints, groundTrackConfig, groupByPass, isObstructed, linkBudgetConfig, nearestAt, orbitalDuration, orbitalUtc, skyPoints, skyPosition, skyplotConfig, splitDateline, summarizePasses, type OrbitalPass } from './model';
 import './orbital.css';
+import { usePassSelection } from './usePassSelection';
 
 const satelliteColor = (satellite: string) => ({ 'AST-07': C.cyan, 'AST-03': C.violet, 'AST-11': C.mint, 'AST-05': C.blue, 'AST-08': C.amber, 'AST-12': C.orange }[satellite] ?? C.cyan);
 const stationColor = (station: string) => ({ Hobart: C.cyan, Perth: C.violet, Svalbard: C.mint, Alaska: C.amber }[station] ?? C.muted);
@@ -17,17 +18,8 @@ function localPoint(svg: SVGSVGElement, clientX: number, clientY: number) { cons
 function Empty({ children = 'No orbital observations in this result.' }: { children?: string }) { return <div className="orbital-empty">{children}</div>; }
 function Swatch({ color, children }: { color: string; children: React.ReactNode }) { return <span><i style={{ background: color }}/>{children}</span>; }
 
-function usePassSelection(props: WidgetRendererProps, configured?: string, configuredTimestamp?: number) {
-  const [selected, setSelected] = useState(configured ?? ''), [timestamp, setTimestamp] = useState(configuredTimestamp);
-  const revision = useRef(props.result);
-  useEffect(() => { setSelected(configured ?? ''); }, [configured]);
-  useEffect(() => { setTimestamp(configuredTimestamp); }, [configuredTimestamp]);
-  useEffect(() => { if (revision.current !== props.result) { revision.current = props.result; setSelected(configured ?? ''); setTimestamp(configuredTimestamp); } }, [props.result, configured, configuredTimestamp]);
-  const choose = (id: string, time?: number) => { setSelected(id); setTimestamp(time); props.onContextChange?.({ series: id, labels: { passId: id, timestamp: time === undefined ? '' : String(time) } }); };
-  return { selected, timestamp, choose };
-}
-function PassPicker({ passes, selected, onSelect, label = 'Inspect orbital pass' }: { passes: { id: string; satellite: string; station: string }[]; selected: string; onSelect: (id: string) => void; label?: string }) {
-  return <label className="orbital-pass-picker">Pass<select aria-label={label} value={selected} onChange={e => onSelect(e.target.value)}><option value="">Choose a pass</option>{passes.map(p => <option key={p.id} value={p.id}>{p.satellite} · {p.station} · {p.id.slice(-2)}</option>)}</select></label>;
+function PassPicker({ passes, selected, onSelect, label = 'Inspect orbital pass' }: { passes: { id: string; satellite: string; station: string }[]; selected: string; onSelect: (id: string, target?: HTMLSelectElement) => void; label?: string }) {
+  return <label className="orbital-pass-picker">Pass<select aria-label={label} value={selected} onChange={e => onSelect(e.target.value, e.currentTarget)}><option value="">Choose a pass</option>{passes.map(p => <option key={p.id} value={p.id}>{p.satellite} · {p.station} · {p.id.slice(-2)}</option>)}</select></label>;
 }
 
 export function OrbitalGroundTrack(props: WidgetRendererProps) {
@@ -38,17 +30,18 @@ export function OrbitalGroundTrack(props: WidgetRendererProps) {
   const choices = useMemo(() => groups.map(g => ({ ...g.points[0], id: g.id, mid: (g.points[0].acquisition + g.points[0].loss) / 2 })), [groups]);
   const selection = usePassSelection(props, cfg.selectedPass, cfg.selectedTimestamp), inspect = !embedded && widget.options?.showTooltip !== false;
   const inspection = useInspection(choices, result, inspect, selection.selected);
-  const activeId = inspection.item?.id ?? selection.selected, active = choices.find(p => p.id === activeId);
+  const inspected = inspection.item, linked = choices.find(p => p.id === selection.selected);
+  const activeId = inspected?.id ?? selection.selected, active = choices.find(p => p.id === activeId);
   const activePoints = groups.find(g => g.id === activeId)?.points ?? [];
-  const marker = active ? nearestAt(activePoints, active.id === selection.selected ? selection.timestamp ?? active.mid : active.mid) : undefined;
+  const marker = active ? nearestAt(activePoints, inspected ? inspected.mid : selection.timestamp ?? active.mid) : undefined;
   const plot = useRef<HTMLDivElement>(null), width = usePlotWidth(plot, 650), height = Math.max(180, Math.round(width / 2)), svg = useRef<SVGSVGElement>(null);
   const [view, setView] = useState(INITIAL_GEO_VIEW), viewRef = useRef<GeoViewport>(view), [touch, setTouch] = useState(false);
   const uid = useId().replaceAll(':', ''), extent = { width, height }, projection = fitEquirectangular({ west: -180, east: 180, north: 90, south: -90 }, width, height);
   const dragging = useRef<{ id: number; start: GeoPoint; view: GeoViewport; passId: string | null; moved: boolean } | null>(null);
   const touches = useRef(new Map<number, GeoPoint>()), pinch = useRef<{ view: GeoViewport; points: [GeoPoint, GeoPoint] } | null>(null);
   const update = (candidate: GeoViewport) => { viewRef.current = constrainGeoView(candidate, extent); setView(viewRef.current); };
-  const clear = () => { inspection.dismiss(); selection.choose(''); svg.current?.focus({ preventScroll: true }); };
-  const choose = (id: string) => { if (!inspect) return; const p = choices.find(row => row.id === id); selection.choose(id, p?.mid); inspection.dismiss(); };
+  const clear = inspection.dismiss;
+  const choose = (id: string, target?: HTMLElement | SVGElement) => { if (!inspect) return; const p = choices.find(row => row.id === id); if (!p) { selection.choose(''); inspection.dismiss(); return; } inspection.select(p.id, target ?? svg.current ?? undefined); selection.choose(id, p.mid); };
   useEffect(() => { update(viewRef.current); }, [width, height]);
   useEffect(() => {
     const element = svg.current; if (!element || embedded) return;
@@ -69,12 +62,12 @@ export function OrbitalGroundTrack(props: WidgetRendererProps) {
     if (Math.hypot(p.x - drag.start.x, p.y - drag.start.y) > 4) drag.moved = true;
     if (drag.moved) { inspection.setHover(null); update(panGeoBy(drag.view, { x: p.x - drag.start.x, y: p.y - drag.start.y }, extent)); }
   };
-  const up = (event: PointerEvent<SVGSVGElement>) => { const drag = dragging.current; cancel(event.pointerId); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (drag && !drag.moved && drag.passId) choose(drag.passId); };
+  const up = (event: PointerEvent<SVGSVGElement>) => { const drag = dragging.current; cancel(event.pointerId); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (drag && !drag.moved && drag.passId) choose(drag.passId, event.currentTarget); };
   const zoom = (factor: number) => update(zoomGeoAt(viewRef.current, factor, { x: width / 2, y: height / 2 }, extent));
   const project = (lon: number, lat: number) => geoToScreen(projection.project(lon, lat), view);
   const key = (event: KeyboardEvent<SVGSVGElement>) => {
     if (embedded) return;
-    if (event.key === 'Escape' && (activeId || dragging.current || pinch.current)) { event.preventDefault(); event.stopPropagation(); cancel(); clear(); return; }
+    if (event.key === 'Escape' && (inspection.item || dragging.current || pinch.current)) { event.preventDefault(); event.stopPropagation(); cancel(); clear(); return; }
     if (event.target !== event.currentTarget) return;
     const directions: Record<string, GeoPoint> = { ArrowLeft: { x: 45, y: 0 }, ArrowRight: { x: -45, y: 0 }, ArrowUp: { x: 0, y: 45 }, ArrowDown: { x: 0, y: -45 } };
     if (directions[event.key]) { event.preventDefault(); update(panGeoBy(viewRef.current, directions[event.key], extent)); }
@@ -84,7 +77,7 @@ export function OrbitalGroundTrack(props: WidgetRendererProps) {
   };
   if (!points.length) return <Empty/>;
   const stations = [...new Map(choices.map(p => [p.station, p])).values()];
-  return <div className="orbital-chart" data-orbital-map data-map-zoom={view.k} onKeyDown={event => { if (event.key === 'Escape' && (activeId || dragging.current || pinch.current)) { event.preventDefault(); event.stopPropagation(); cancel(); clear(); } }}>
+  return <div className="orbital-chart" data-orbital-map data-map-zoom={view.k} onPointerLeave={() => inspection.setHover(null)} onKeyDown={event => { if (event.key === 'Escape' && (inspection.item || dragging.current || pinch.current)) { event.preventDefault(); event.stopPropagation(); cancel(); clear(); } }}>
     <div className="orbital-map-layout">
       <div className="orbital-map-main" ref={plot}>
         <svg ref={svg} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Orbital ground tracks. Scroll to zoom, arrows pan, plus or minus zoom, Home resets." tabIndex={embedded ? undefined : 0} onKeyDown={key} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={e => cancel(e.pointerId)} onLostPointerCapture={e => cancel(e.pointerId)} style={{ touchAction: touch ? 'none' : 'pan-y' }}>
@@ -96,7 +89,7 @@ export function OrbitalGroundTrack(props: WidgetRendererProps) {
               {cfg.showGraticule && [-120, -60, 0, 60, 120].map(lon => { const p = projection.project(lon, 90); return <line key={lon} x1={p.x} x2={p.x} y1="0" y2={height} className="orbital-grid" vectorEffect="non-scaling-stroke"/>; })}
               {cfg.showGraticule && [-60, -30, 0, 30, 60].map(lat => { const p = projection.project(0, lat); return <line key={lat} x1="0" x2={width} y1={p.y} y2={p.y} className="orbital-grid" vectorEffect="non-scaling-stroke"/>; })}
             </g>
-            {[...groups].sort((a, b) => Number(a.id === activeId) - Number(b.id === activeId)).map(group => <g key={group.id} data-pass-id={group.id} role={inspect ? 'button' : undefined} tabIndex={inspect ? 0 : undefined} aria-label={`Inspect ground track ${group.points[0].satellite} at ${group.points[0].station}`} aria-pressed={inspect ? selection.selected === group.id : undefined} opacity={!activeId || group.id === activeId ? 1 : .33} onFocus={() => inspection.setHover(group.id)} onBlur={() => inspection.setHover(null)} onPointerEnter={() => { if (!dragging.current) inspection.setHover(group.id); }} onPointerLeave={() => inspection.setHover(null)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(group.id); } }}>
+            {[...groups].sort((a, b) => Number(a.id === activeId) - Number(b.id === activeId)).map(group => <g key={group.id} data-pass-id={group.id} role={inspect ? 'button' : undefined} tabIndex={inspect ? 0 : undefined} aria-label={`Inspect ground track ${group.points[0].satellite} at ${group.points[0].station}`} aria-pressed={inspect ? selection.selected === group.id : undefined} opacity={!activeId || group.id === activeId ? 1 : .33} onFocus={() => inspection.setHover(group.id)} onBlur={() => inspection.setHover(null)} onPointerEnter={() => { if (!dragging.current) inspection.setHover(group.id); }} onPointerLeave={() => inspection.setHover(null)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(group.id, event.currentTarget); } }}>
               {group.points.slice(1).map((p, i) => splitDateline([group.points[i], p]).map((segment, j) => <g key={`${p.id}-${j}`}><path d={path(segment.map(v => project(v.longitude, v.latitude)))} fill="none" stroke={cfg.showEclipse && p.eclipse ? C.muted : satelliteColor(p.satellite)} strokeWidth={group.id === activeId ? 2 : 1.1} strokeDasharray={cfg.showEclipse && p.eclipse ? '2 4' : p.phase === 'predicted' ? '5 4' : undefined}/>{inspect && <path d={path(segment.map(v => project(v.longitude, v.latitude)))} fill="none" stroke="transparent" strokeWidth="15"/>}</g>))}
             </g>)}
             {stations.map(p => { const position = project(p.stationLon, p.stationLat); return <g key={p.station} pointerEvents="none"><circle cx={position.x} cy={position.y} r="4" fill={stationColor(p.station)} stroke="var(--gamma-surface)" strokeWidth="1.5"/>{cfg.showLabels && <text x={Math.min(width - 60, position.x + 8)} y={Math.max(14, position.y - 7)} className="orbital-map-label">{p.station}</text>}</g>; })}
@@ -106,10 +99,13 @@ export function OrbitalGroundTrack(props: WidgetRendererProps) {
         </svg>
         {!embedded && <div className="orbital-map-tools"><button aria-label="Zoom in orbital map" onClick={() => zoom(1.5)} disabled={view.k >= 8}><Plus size={15}/></button><button aria-label="Zoom out orbital map" onClick={() => zoom(1 / 1.5)} disabled={view.k <= 1}><Minus size={15}/></button><button aria-label="Reset orbital map" onClick={() => { cancel(); update(INITIAL_GEO_VIEW); setTouch(false); }}><RotateCcw size={14}/><span>Fit</span></button><span>{view.k.toFixed(1)}×</span><button aria-pressed={touch} onClick={() => { cancel(); setTouch(v => !v); }}>Touch {touch ? 'on' : 'off'}</button>{view.k > 1 && <span className="orbital-pan">{([['←', 50, 0, 'west'], ['↑', 0, 50, 'north'], ['↓', 0, -50, 'south'], ['→', -50, 0, 'east']] as const).map(([label, x, y, direction]) => <button key={direction} aria-label={`Pan orbital map ${direction}`} onClick={() => update(panGeoBy(viewRef.current, { x, y }, extent))}>{label}</button>)}</span>}</div>}
       </div>
-      {!embedded && <aside className="orbital-map-evidence">{inspect && active ? <DomainInspector title={`${active.satellite} / ${active.station}`} onClose={clear} pinned={selection.selected === active.id}><DetailValues items={[
-        ['Acquisition', `${orbitalUtc(active.acquisition, true)} UTC`], ['Loss', `${orbitalUtc(active.loss, true)} UTC`], ['Duration', orbitalDuration(active.loss - active.acquisition)], ['Track sample', marker ? `${orbitalUtc(marker.timestamp, true)} UTC` : 'Unknown'], ['Altitude', marker ? `${number(marker.altitude)} km` : 'Unknown'], ['Coordinates', marker ? `${number(marker.latitude, 2)}°, ${number(marker.longitude, 2)}°` : 'Unknown'], ['Illumination', marker?.eclipse ? 'Eclipse segment' : 'Sunlit segment'],
-      ]}/></DomainInspector> : <div className="orbital-evidence-hint"><strong>Inspect a contact</strong><p>Select a track to link the station skyplot, contact window and margin budget.</p></div>}</aside>}
+      {!embedded && <aside className="orbital-map-evidence"><div className="orbital-evidence-hint"><strong>{linked ? `${linked.satellite} / ${linked.station}` : 'Inspect a contact'}</strong><p>Select a track to link the station skyplot, contact window and margin budget.</p>{linked && <DetailValues items={[
+        ['Acquisition', `${orbitalUtc(linked.acquisition, true)} UTC`], ['Loss', `${orbitalUtc(linked.loss, true)} UTC`], ['Duration', orbitalDuration(linked.loss - linked.acquisition)],
+      ]}/>}</div></aside>}
     </div>
+    {inspect && inspected && active && <DomainInspector title={`${active.satellite} / ${active.station}`} onClose={clear} pinned={!!inspection.pinned}><DetailValues items={[
+        ['Acquisition', `${orbitalUtc(active.acquisition, true)} UTC`], ['Loss', `${orbitalUtc(active.loss, true)} UTC`], ['Duration', orbitalDuration(active.loss - active.acquisition)], ['Track sample', marker ? `${orbitalUtc(marker.timestamp, true)} UTC` : 'Unknown'], ['Altitude', marker ? `${number(marker.altitude)} km` : 'Unknown'], ['Coordinates', marker ? `${number(marker.latitude, 2)}°, ${number(marker.longitude, 2)}°` : 'Unknown'], ['Illumination', marker?.eclipse ? 'Eclipse segment' : 'Sunlit segment'],
+      ]}/></DomainInspector>}
     {!embedded && inspect && cfg.showPassPicker && <PassPicker passes={choices} selected={selection.selected} onSelect={choose}/>}
     {widget.options?.showLegend !== false && <div className="orbital-legend"><Swatch color={C.cyan}>Selected track</Swatch><span>━━ Past</span><span>┄┄ Predicted</span>{cfg.showEclipse && <span>··· Eclipse</span>}<span>Synthetic trajectories · scroll to zoom</span></div>}
   </div>;
@@ -121,9 +117,10 @@ export function OrbitalSkyplot(props: WidgetRendererProps) {
   const selection = usePassSelection(props, cfg.selectedPass ?? passes[0]?.id, cfg.selectedTimestamp), selected = passes.find(p => p.id === selection.selected), inspect = !embedded && widget.options?.showTooltip !== false;
   const station = selected?.station, shown = passes.filter(p => !station || p.station === station), ref = useRef<HTMLDivElement>(null), width = usePlotWidth(ref, 380), svg = useRef<SVGSVGElement>(null);
   const side = Math.min(width, 300), cx = width / 2, cy = side / 2 + 7, radius = side / 2 - 35, height = side + 14;
-  const inspection = useInspection(points, result, inspect, selection.selected), current = inspection.item ?? (selected ? nearestAt(selected.samples, selection.timestamp ?? (selected.start + selected.end) / 2) : undefined);
-  const choose = (id: string, timestamp?: number) => { if (!inspect) return; const p = passes.find(row => row.id === id); selection.choose(id, timestamp ?? (p ? (p.start + p.end) / 2 : undefined)); inspection.dismiss(); };
-  const clear = () => { inspection.dismiss(); selection.choose(''); svg.current?.focus({ preventScroll: true }); };
+  const inspection = useInspection(points, result, inspect, selection.selected, point => point.passId), current = inspection.item;
+  const linkedSample = selected ? nearestAt(selected.samples, selection.timestamp ?? (selected.start + selected.end) / 2) : undefined, marker = current ?? linkedSample;
+  const choose = (id: string, timestamp?: number, target?: HTMLElement | SVGElement) => { if (!inspect) return; const pass = passes.find(row => row.id === id), sample = pass ? nearestAt(pass.samples, timestamp ?? (pass.start + pass.end) / 2) : undefined; if (!sample) { selection.choose(''); inspection.dismiss(); return; } inspection.select(sample.id, target ?? svg.current ?? undefined); selection.choose(id, sample.timestamp); };
+  const clear = inspection.dismiss;
   const toPoint = (azimuth: number, elevation: number) => { const p = skyPosition(azimuth, elevation, radius); return { x: cx + p.x, y: cy + p.y }; };
   const uid = useId().replaceAll(':', '');
   const maskOuter = Array.from({ length: 16 }, (_, i) => toPoint(120 + i * 3, 0)), maskInner = Array.from({ length: 16 }, (_, i) => toPoint(165 - i * 3, 18));
@@ -133,33 +130,33 @@ export function OrbitalSkyplot(props: WidgetRendererProps) {
     const nearest = candidates.reduce<{ id: string; d: number } | null>((best, p) => { const point = toPoint(p.azimuth, p.elevation), d = Math.hypot(point.x - local.x, point.y - local.y); return !best || d < best.d ? { id: p.id, d } : best; }, null);
     if (!nearest || nearest.d > 22) { inspection.setHover(null); return; }
     const p = points.find(sample => sample.id === nearest.id)!;
-    if (pin) choose(p.passId, p.timestamp); else inspection.setHover(p.id);
+    if (pin) choose(p.passId, p.timestamp, event.currentTarget); else inspection.setHover(p.id);
   };
   if (!points.length) return <Empty/>;
   if (!selected) return <div className="orbital-chart" ref={ref}><Empty>Select a contact to inspect its station skyplot.</Empty>{!embedded && inspect && cfg.showPassPicker && <PassPicker passes={passes} selected="" onSelect={id => choose(id)} label="Select skyplot pass"/>}</div>;
-  return <div className="orbital-chart orbital-skyplot" ref={ref} onKeyDown={event => { if (event.key === 'Escape' && (current || selection.selected)) { event.preventDefault(); event.stopPropagation(); clear(); } }}>
+  return <div className="orbital-chart orbital-skyplot" ref={ref} onKeyDown={event => { if (event.key === 'Escape' && (current || inspection.pinned)) { event.preventDefault(); event.stopPropagation(); clear(); } }}>
     <div className="orbital-plot-context"><strong>{station ?? 'All stations'}</strong><span>Predicted access · azimuth / elevation</span></div>
     <svg ref={svg} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${station ?? 'All stations'} polar skyplot. North is zero azimuth. Zenith is the centre.`} tabIndex={inspect ? 0 : undefined} onPointerMove={event => onPointer(event)} onPointerLeave={() => inspection.setHover(null)} onClick={event => onPointer(event as unknown as PointerEvent<SVGSVGElement>, true)} onKeyDown={event => {
       if (!inspect || !selected || event.target !== event.currentTarget) return;
-      const index = Math.max(0, selected.samples.findIndex(p => p.id === current?.id));
-      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); choose(selected.id, selected.samples[Math.max(0, Math.min(selected.samples.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)))].timestamp); }
-    }}>
+      const index = Math.max(0, selected.samples.findIndex(p => p.id === marker?.id));
+      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); const sample = selected.samples[Math.max(0, Math.min(selected.samples.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)))]; if (inspection.pinned) choose(selected.id, sample.timestamp, event.currentTarget); else inspection.setHover(sample.id); } else if ((event.key === 'Enter' || event.key === ' ') && marker) { event.preventDefault(); choose(marker.passId, marker.timestamp, event.currentTarget); }
+    }} onBlur={() => inspection.setHover(null)}>
       <defs><pattern id={`${uid}-mask`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" x2="0" y1="0" y2="5" stroke="var(--gamma-muted)" strokeWidth="1"/></pattern></defs>
       {[0, 30, 60].map(elevation => <circle key={elevation} cx={cx} cy={cy} r={radius * (90 - elevation) / 90} className="orbital-grid" fill="none"/>)}
       {Array.from({ length: 12 }, (_, i) => i * 30).map(angle => { const p = toPoint(angle, 0); return <line key={angle} x1={cx} y1={cy} x2={p.x} y2={p.y} className="orbital-grid"/>; })}
       {cfg.showMask && <path d={`${path([...maskOuter, ...maskInner])}Z`} fill={`url(#${uid}-mask)`} stroke={C.muted} strokeDasharray="3 4"/>}
       {([['N', 0], ['E', 90], ['S', 180], ['W', 270]] as const).map(([name, angle]) => { const p = skyPosition(angle, 0, radius + 21); return <text key={name} x={cx + p.x} y={cy + p.y + 4} textAnchor="middle" className="orbital-axis">{name} {angle}°</text>; })}
       {[0, 30, 60, 90].map(elevation => { const p = toPoint(38, elevation); return <text key={elevation} x={p.x + 5} y={p.y - 3} className="orbital-axis">{elevation}°</text>; })}
-      {shown.map(pass => <g key={pass.id} role={inspect ? 'button' : undefined} tabIndex={inspect ? 0 : undefined} aria-label={`Inspect sky pass ${pass.satellite} ${orbitalUtc(pass.start)} UTC`} aria-pressed={inspect ? selection.selected === pass.id : undefined} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(pass.id); } }} onClick={event => { event.stopPropagation(); if (svg.current) onPointer({ currentTarget: svg.current, clientX: event.clientX, clientY: event.clientY } as PointerEvent<SVGSVGElement>, true); }}>
+      {shown.map(pass => <g key={pass.id} role={inspect ? 'button' : undefined} tabIndex={inspect ? 0 : undefined} aria-label={`Inspect sky pass ${pass.satellite} ${orbitalUtc(pass.start)} UTC`} aria-pressed={inspect ? selection.selected === pass.id : undefined} onFocus={() => { const sample = nearestAt(pass.samples, (pass.start + pass.end) / 2); if (sample) inspection.setHover(sample.id); }} onBlur={() => inspection.setHover(null)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(pass.id, undefined, event.currentTarget); } }} onClick={event => { event.stopPropagation(); if (svg.current) onPointer({ currentTarget: svg.current, clientX: event.clientX, clientY: event.clientY } as PointerEvent<SVGSVGElement>, true); }}>
         <path d={path(pass.samples.map(p => toPoint(p.azimuth, p.elevation)))} fill="none" stroke={satelliteColor(pass.satellite)} strokeWidth={pass.id === selection.selected ? 2.1 : 1.2} opacity={!selected || pass.id === selected.id ? 1 : .65}/>
         {inspect && <path d={path(pass.samples.map(p => toPoint(p.azimuth, p.elevation)))} fill="none" stroke="transparent" strokeWidth="12"/>}
         {pass.samples.filter((_, i) => i % 5 === 0).map((p, i) => { const position = toPoint(p.azimuth, p.elevation); return <g key={p.id} pointerEvents="none"><circle cx={position.x} cy={position.y} r="2.2" fill={satelliteColor(p.satellite)}/>{cfg.showTimeLabels && pass.id === selection.selected && i % 2 === 0 && <text x={position.x + 7} y={position.y - 6} className="orbital-axis" fill={satelliteColor(p.satellite)}>{orbitalUtc(p.timestamp)}</text>}</g>; })}
       </g>)}
-      {current && <g pointerEvents="none"><circle cx={toPoint(current.azimuth, current.elevation).x} cy={toPoint(current.azimuth, current.elevation).y} r="5" fill="var(--gamma-surface)" stroke={C.cyan} strokeWidth="2"/></g>}
+      {marker && <g pointerEvents="none"><circle cx={toPoint(marker.azimuth, marker.elevation).x} cy={toPoint(marker.azimuth, marker.elevation).y} r="5" fill="var(--gamma-surface)" stroke={C.cyan} strokeWidth="2"/></g>}
     </svg>
     {!embedded && inspect && cfg.showPassPicker && <PassPicker passes={passes} selected={selection.selected} onSelect={id => choose(id)} label="Select skyplot pass"/>}
-    {!embedded && inspect && selected && <label className="orbital-sample-slider">Observation<input type="range" min="0" max={selected.samples.length - 1} step="1" aria-label="Skyplot observation" value={Math.max(0, selected.samples.findIndex(p => p.id === current?.id))} onChange={event => choose(selected.id, selected.samples[Number(event.target.value)].timestamp)}/><span>{current ? orbitalUtc(current.timestamp, true) : '—'} UTC</span></label>}
-    {inspect && current && <DomainInspector title={`${current.satellite} · ${orbitalUtc(current.timestamp, true)} UTC`} onClose={clear} pinned={!!selection.selected}><DetailValues items={[
+    {!embedded && inspect && selected && <label className="orbital-sample-slider">Observation<input type="range" min="0" max={selected.samples.length - 1} step="1" aria-label="Skyplot observation" value={Math.max(0, selected.samples.findIndex(p => p.id === marker?.id))} onChange={event => choose(selected.id, selected.samples[Number(event.target.value)].timestamp)}/><span>{marker ? orbitalUtc(marker.timestamp, true) : '—'} UTC</span></label>}
+    {inspect && current && <DomainInspector title={`${current.satellite} · ${orbitalUtc(current.timestamp, true)} UTC`} onClose={clear} pinned={!!inspection.pinned}><DetailValues items={[
       ['Azimuth', `${number(current.azimuth)}°`], ['Elevation', `${number(current.elevation)}°`], ['Link margin', `${number(current.margin)} dB`], ['Mask', isObstructed(current.azimuth, current.elevation) ? 'Inside illustrative obstruction' : 'Clear of illustrative obstruction'],
     ]}/></DomainInspector>}
     {widget.options?.showLegend !== false && <div className="orbital-legend">{shown.map(p => <Swatch key={p.id} color={satelliteColor(p.satellite)}>{p.satellite} · {orbitalUtc(p.start)}</Swatch>)}{cfg.showMask && <span>Hatched: illustrative horizon mask</span>}</div>}
@@ -170,6 +167,7 @@ export function OrbitalContactTimeline(props: WidgetRendererProps) {
   const { widget, result, embedded } = props, cfg = useMemo(() => contactTimelineConfig.parse(widget.config ?? {}), [widget.config]);
   const points = useMemo(() => skyPoints(result.records), [result]), passes = useMemo(() => summarizePasses(points), [points]);
   const selection = usePassSelection(props, cfg.selectedPass, cfg.selectedTimestamp), selected = passes.find(p => p.id === selection.selected), inspect = !embedded && widget.options?.showTooltip !== false;
+  const inspection = useInspection(passes, result, inspect, selection.selected), inspected = inspection.item;
   const ref = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), width = usePlotWidth(ref, 800), uid = useId().replaceAll(':', '');
   const extent = passes.length ? { start: Math.floor(Math.min(...passes.map(p => p.start)) / 3600000) * 3600000, end: Math.ceil(Math.max(...passes.map(p => p.end)) / 3600000) * 3600000 } : null;
   const windowState = useChartTimeWindow(extent, result, 30000), window = windowState.window;
@@ -178,20 +176,20 @@ export function OrbitalContactTimeline(props: WidgetRendererProps) {
   const x = (timestamp: number) => left + (timestamp - window.start) / (window.end - window.start) * plotWidth;
   const yMargin = (value: number) => marginTop + signalHeight - (value + 5) / 25 * signalHeight, yThroughput = (value: number) => throughputTop + signalHeight - value / 60 * signalHeight;
   const brush = useTimeWindowBrush({ enabled: !embedded && windowState.enabled, revision: result, window, point: (clientX, clientY) => { if (!svg.current) return null; const p = localPoint(svg.current, clientX, clientY); return { x: Math.max(left, Math.min(width - right, p.x)), y: p.y, timestamp: window.start + Math.max(0, Math.min(1, (p.x - left) / plotWidth)) * (window.end - window.start), inPlot: p.x >= left && p.x <= width - right && p.y >= top && p.y <= height - 20 }; }, commit: windowState.commit, onStart: () => {} });
-  const choose = (pass: OrbitalPass) => { if (inspect) selection.choose(pass.id, (pass.start + pass.end) / 2); };
-  const clear = () => { selection.choose(''); svg.current?.focus({ preventScroll: true }); };
+  const choose = (pass: OrbitalPass, target?: HTMLElement | SVGElement) => { if (!inspect) return; inspection.select(pass.id, target ?? svg.current ?? undefined); selection.choose(pass.id, (pass.start + pass.end) / 2); };
+  const clear = inspection.dismiss;
   const observed = selected ? nearestAt(selected.samples, selection.timestamp ?? (selected.start + selected.end) / 2) : undefined;
   const tickCount = width < 470 ? 4 : 7, ticks = Array.from({ length: tickCount }, (_, i) => window.start + i * (window.end - window.start) / (tickCount - 1));
   const signalPath = (samples: typeof points, field: 'margin' | 'throughput', y: (n: number) => number) => { let open = false; return samples.map(p => { if (p[field] === null) { open = false; return ''; } const d = `${open ? 'L' : 'M'}${x(p.timestamp)},${y(p[field]!)}`; open = true; return d; }).join(' '); };
   if (!points.length) return <Empty/>;
-  return <div className="orbital-chart orbital-timeline" ref={ref} onKeyDown={event => { if (event.key === 'Escape' && selection.selected && !brush.active) { event.preventDefault(); event.stopPropagation(); clear(); } }}>
+  return <div className="orbital-chart orbital-timeline" ref={ref} onKeyDown={event => { if (event.key === 'Escape' && inspection.item && !brush.active) { event.preventDefault(); event.stopPropagation(); clear(); } }}>
     <div className="orbital-brush-host" {...brush.handlers}>
       <svg ref={svg} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} tabIndex={inspect ? 0 : undefined} role="img" aria-label="Predicted contact intervals and linked link-margin and throughput tracks. Drag horizontally to zoom this chart.">
         <defs><clipPath id={`${uid}-time`}><rect x={left} y={top} width={plotWidth} height={height - top - 18}/></clipPath><pattern id={`${uid}-unknown`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" x2="0" y1="0" y2="5" stroke="var(--gamma-muted)" strokeWidth="1"/></pattern></defs>
         {ticks.map(t => <g key={t}><line x1={x(t)} x2={x(t)} y1={top} y2={height - 24} className="orbital-grid"/><text x={x(t)} y="16" textAnchor="middle" className="orbital-axis">{orbitalUtc(t)}</text><text x={x(t)} y={height - 4} textAnchor="middle" className="orbital-axis">{orbitalUtc(t)}</text></g>)}
         {rows.map((satellite, i) => <g key={satellite}><text x={left - 8} y={top + i * rowHeight + 17} textAnchor="end" className="orbital-axis">{satellite}</text><line x1={left} x2={width - right} y1={top + (i + 1) * rowHeight} y2={top + (i + 1) * rowHeight} className="orbital-grid"/></g>)}
         <g clipPath={`url(#${uid}-time)`}>
-          {passes.map(p => <g key={p.id} role={inspect ? 'button' : undefined} tabIndex={inspect ? 0 : undefined} aria-label={`Select contact ${p.satellite} at ${p.station}, ${orbitalUtc(p.start)} UTC`} aria-pressed={inspect ? selection.selected === p.id : undefined} onClick={() => choose(p)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(p); } }}>
+          {passes.map(p => <g key={p.id} role={inspect ? 'button' : undefined} tabIndex={inspect ? 0 : undefined} aria-label={`Select contact ${p.satellite} at ${p.station}, ${orbitalUtc(p.start)} UTC`} aria-pressed={inspect ? selection.selected === p.id : undefined} onPointerEnter={() => inspection.setHover(p.id)} onPointerLeave={() => inspection.setHover(null)} onFocus={() => inspection.setHover(p.id)} onBlur={() => inspection.setHover(null)} onClick={event => choose(p, event.currentTarget)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(p, event.currentTarget); } }}>
             <rect x={x(p.start)} y={top + rows.indexOf(p.satellite) * rowHeight + 5} width={Math.max(1, x(p.end) - x(p.start))} height="17" rx="1" fill={stationColor(p.station)} opacity={!selection.selected || selection.selected === p.id ? .95 : .5} stroke={selection.selected === p.id ? 'var(--gamma-ink)' : 'none'} strokeWidth="1.5"/>
             {inspect && <rect x={x(p.start) - 3} y={top + rows.indexOf(p.satellite) * rowHeight} width={Math.max(20, x(p.end) - x(p.start) + 6)} height={rowHeight} fill="transparent"/>}
           </g>)}
@@ -213,10 +211,10 @@ export function OrbitalContactTimeline(props: WidgetRendererProps) {
       </svg>
     </div>
     {!embedded && <div className="orbital-timeline-tools"><TimeWindowControls state={windowState} compact description="Zoom changes only contact and signal plot bounds. Selected pass, predicted totals and other panels retain their source scope."/>{selected && <button onClick={() => windowState.commit({ start: Math.max(windowState.full.start, selected.start - 60000), end: Math.min(windowState.full.end, selected.end + 60000) })}>Focus selected pass</button>}</div>}
-    {!embedded && inspect && cfg.showPassPicker && <PassPicker passes={passes} selected={selection.selected} onSelect={id => { const p = passes.find(pass => pass.id === id); if (p) choose(p); else clear(); }} label="Select contact interval"/>}
+    {!embedded && inspect && cfg.showPassPicker && <PassPicker passes={passes} selected={selection.selected} onSelect={(id, target) => { const p = passes.find(pass => pass.id === id); if (p) choose(p, target); else { selection.choose(''); clear(); } }} label="Select contact interval"/>}
     {widget.options?.showLegend !== false && <div className="orbital-legend">{[...new Set(passes.map(p => p.station))].map(station => <Swatch key={station} color={stationColor(station)}>{station}</Swatch>)}<span>Signals exist only during predicted contacts</span>{cfg.showUncertainty && <span>Band: supplied margin uncertainty ±1σ</span>}</div>}
-    {inspect && selected && <DomainInspector title={`${selected.satellite} / ${selected.station} · predicted contact`} onClose={clear}><DetailValues items={[
-      ['UTC interval', `${orbitalUtc(selected.start, true)} – ${orbitalUtc(selected.end, true)}`], ['Duration', orbitalDuration(selected.end - selected.start)], ['Minimum margin', `${number(selected.minMargin)} dB`], ['Predicted volume', selected.volumeMB === null ? 'Unknown · incomplete samples' : `${number(selected.volumeMB / 1000, 2)} GB`], ['Signal coverage', `${number(selected.coverage * 100)}%`],
+    {inspect && inspected && <DomainInspector title={`${inspected.satellite} / ${inspected.station} · predicted contact`} onClose={clear} pinned={!!inspection.pinned}><DetailValues items={[
+      ['UTC interval', `${orbitalUtc(inspected.start, true)} – ${orbitalUtc(inspected.end, true)}`], ['Duration', orbitalDuration(inspected.end - inspected.start)], ['Minimum margin', `${number(inspected.minMargin)} dB`], ['Predicted volume', inspected.volumeMB === null ? 'Unknown · incomplete samples' : `${number(inspected.volumeMB / 1000, 2)} GB`], ['Signal coverage', `${number(inspected.coverage * 100)}%`],
     ]}/></DomainInspector>}
   </div>;
 }

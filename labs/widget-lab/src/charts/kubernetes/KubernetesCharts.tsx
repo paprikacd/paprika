@@ -77,14 +77,14 @@ export function KubernetesResourceTrend({ widget, result, embedded, onContextCha
   const extent = data.length ? { start: data[0].timestamp, end: data.at(-1)!.timestamp } : null, view = useChartTimeWindow(extent, result, 5 * 60000);
   const visible = data.filter(p => p.timestamp >= view.window.start && p.timestamp <= view.window.end), x = scaleLinear().domain([view.window.start, view.window.end]).range([left, width - right]);
   const enabled = !embedded && widget.options?.showTooltip !== false, inspect = useInspection(visible, result, enabled, cfg.selectedAt === null ? undefined : String(cfg.selectedAt), row => String(row.timestamp));
-  const active = inspect.item ?? (enabled ? visible.find(row => row.timestamp === cfg.selectedAt) : undefined), uid = `kube-trend-${useId().replaceAll(':', '')}`;
+  const observation = inspect.item, active = observation ?? visible.find(row => row.timestamp === cfg.selectedAt), uid = `kube-trend-${useId().replaceAll(':', '')}`;
   const fields: { label: string; unit: string; key: 'cpuUsed' | 'memoryUsed' | 'networkRx'; other: 'cpuRequested' | 'memoryRequested' | 'networkTx'; color: string; otherColor: string }[] = [{ label: 'Workload CPU', unit: 'cores', key: 'cpuUsed', other: 'cpuRequested', color: C.cyan, otherColor: C.blue }, { label: 'Memory', unit: 'GiB', key: 'memoryUsed', other: 'memoryRequested', color: C.violet, otherColor: C.blue }, ...(cfg.showNetwork ? [{ label: 'Network', unit: 'Mb/s', key: 'networkRx' as const, other: 'networkTx' as const, color: C.cyan, otherColor: C.violet }] : [])];
   const position = (clientX: number, clientY: number) => {
     const node = svg.current; if (!node) return null;
     const matrix = node.getScreenCTM(), rect = node.getBoundingClientRect(), p = matrix ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()) : { x: (clientX - rect.left) * width / rect.width, y: (clientY - rect.top) * height / rect.height };
     const xx = Math.max(left, Math.min(width - right, p.x)); return { x: xx, y: p.y, timestamp: x.invert(xx), inPlot: p.x >= left && p.x <= width - right && p.y >= 22 && p.y <= strip * count - 13 };
   };
-  const clear = () => { inspect.dismiss(); onContextChange?.({ labels: { clearTime: 'true' } }); };
+  const clear = inspect.dismiss;
   const brush = useTimeWindowBrush({ enabled: !embedded && view.enabled, revision: result, window: view.window, point: position, commit: view.commit, onStart: clear });
   const at = (timestamp: number, pin: boolean, target?: SVGElement) => {
     if (!enabled || !visible.length) return;
@@ -92,9 +92,9 @@ export function KubernetesResourceTrend({ widget, result, embedded, onContextCha
     if (pin) { inspect.select(nearest.id, target); onContextChange?.({ series: nearest.scopeLabel, value: nearest.cpuUsed, labels: { scopeId: nearest.scopeId, timestamp: String(nearest.timestamp) } }); } else if (!inspect.pinned) inspect.setHover(nearest.id);
   };
   if (!data.length) return <div className="domain-empty">No Kubernetes resource time observations</div>;
-  return <div ref={host} className="kube-chart" onKeyDown={event => { if (event.key === 'Escape' && active && !brush.active) { event.preventDefault(); event.stopPropagation(); clear(); } }}>
+  return <div ref={host} className="kube-chart" onKeyDown={event => { if (event.key === 'Escape' && observation && !brush.active) { event.preventDefault(); event.stopPropagation(); clear(); } }}>
     <div className="kube-brush" {...brush.handlers}><svg ref={svg} width={width} height={height} role="group" aria-label={`${widget.title}. Drag to zoom, arrows inspect, Enter pins.`} tabIndex={enabled ? 0 : undefined}
-      onPointerMove={event => { if (brush.active) return; const p = position(event.clientX, event.clientY); if (p?.inPlot) at(p.timestamp, false); else inspect.setHover(null); }} onPointerLeave={() => inspect.setHover(null)} onFocus={() => { if (!active && visible[0]) inspect.setHover(visible[0].id); }} onBlur={() => inspect.setHover(null)} onClick={event => { const p = position(event.clientX, event.clientY); if (p?.inPlot) at(p.timestamp, true, event.currentTarget); }}
+      onPointerMove={event => { if (brush.active) return; const p = position(event.clientX, event.clientY); if (p?.inPlot) at(p.timestamp, false); else inspect.setHover(null); }} onPointerLeave={() => inspect.setHover(null)} onFocus={() => { const row = active ?? visible[0]; if (!inspect.item && row) inspect.setHover(row.id); }} onBlur={() => inspect.setHover(null)} onClick={event => { const p = position(event.clientX, event.clientY); if (p?.inPlot) at(p.timestamp, true, event.currentTarget); }}
       onKeyDown={event => { if (!enabled) return; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const index = visible.findIndex(p => p.id === active?.id), next = visible[Math.max(0, Math.min(visible.length - 1, (index < 0 ? 0 : index) + (event.key === 'ArrowRight' ? 1 : -1)))]; if (next) { if (inspect.pinned) inspect.dismiss(); inspect.setHover(next.id); } } else if (event.key === 'Enter' && active) { event.preventDefault(); at(active.timestamp, true, event.currentTarget); } }}>
       <defs>{fields.map(field => <linearGradient key={field.key} id={`${uid}-${field.key}`} x1="0" x2="0" y1="0" y2="1"><stop stopColor={field.color} stopOpacity=".35"/><stop offset="1" stopColor={field.color} stopOpacity=".02"/></linearGradient>)}</defs>
       {active && <line pointerEvents="none" x1={x(active.timestamp)} x2={x(active.timestamp)} y1="22" y2={strip * count - 13} stroke="var(--gamma-ink)" strokeDasharray="4 3" strokeOpacity=".65"/>}
@@ -118,8 +118,8 @@ export function KubernetesResourceTrend({ widget, result, embedded, onContextCha
     </svg></div>
     {widget.options?.showLegend !== false && <div className="domain-legend"><span>Solid: observed usage{cfg.showNetwork ? ' / ingress' : ''}</span>{cfg.showRequested && <span>Dashed: request</span>}{cfg.showNetwork && <span>Violet network: egress</span>}<span>{data.at(-1)!.observed}/{data.at(-1)!.expected} containers observed</span></div>}
     {!embedded && view.enabled && <TimeWindowControls state={view} compact description="Zoom changes this chart window. Snapshot requests, placement and other panels retain their original scope."/>}
-    {active && <DomainInspector title={`${active.scopeLabel} · ${fleetTime(active.timestamp)} UTC`} pinned={!!inspect.pinned || cfg.selectedAt !== null} onClose={clear}><DetailValues items={[
-      ['Timestamp', new Date(active.timestamp).toISOString()], ['CPU observed / requested', `${fleetNumber(active.cpuUsed, 4)} / ${fleetNumber(active.cpuRequested, 4)} cores`], ['Memory observed / requested', `${fleetNumber(active.memoryUsed, 4)} / ${fleetNumber(active.memoryRequested, 4)} GiB`], ['Network ingress / egress', `${fleetNumber(active.networkRx, 4)} / ${fleetNumber(active.networkTx, 4)} Mb/s`], ['Coverage', `${active.observed} / ${active.expected} containers · missing values excluded from observed sums`],
+    {observation && <DomainInspector title={`${observation.scopeLabel} · ${fleetTime(observation.timestamp)} UTC`} pinned={!!inspect.pinned} onClose={clear}><DetailValues items={[
+      ['Timestamp', new Date(observation.timestamp).toISOString()], ['CPU observed / requested', `${fleetNumber(observation.cpuUsed, 4)} / ${fleetNumber(observation.cpuRequested, 4)} cores`], ['Memory observed / requested', `${fleetNumber(observation.memoryUsed, 4)} / ${fleetNumber(observation.memoryRequested, 4)} GiB`], ['Network ingress / egress', `${fleetNumber(observation.networkRx, 4)} / ${fleetNumber(observation.networkTx, 4)} Mb/s`], ['Coverage', `${observation.observed} / ${observation.expected} containers · missing values excluded from observed sums`],
     ]}/></DomainInspector>}
   </div>;
 }

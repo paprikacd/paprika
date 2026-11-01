@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { ArrowRight, Bookmark, Clock3, X } from 'lucide-react';
 import { area, line } from 'd3-shape';
 import { scaleLinear, scaleUtc } from 'd3-scale';
@@ -7,14 +7,18 @@ import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from '../vendor/paprika/ui/src/features/insights/widget-registry';
 import { useChartCursorPublisher } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
 import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
-import { Dot, MiniTrace } from './ReferenceShared';
+import { Dot, MiniTrace, RefPanel } from './ReferenceShared';
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
+import { ChartTooltip } from '../components/lab/ChartTooltip';
+import { restoreTooltipFocus } from '../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { useTooltipDismiss } from '../components/lab/useTooltipDismiss';
 import { edgeIngressProfile, edgeEgressProfile, burnOneHourProfile, burnSixHourProfile } from './reference-profiles';
 import './ReferenceCharts.css';
 import {edgeHistoryIngress,edgeHistoryEgress} from './reference-mini-profiles';
 import { formatWindowDuration, minimumTimeWindow, nearestTimeIndex, observationsInWindow, timeWindowExtent } from '../vendor/paprika/ui/src/features/insights/time-window';
 import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../vendor/paprika/ui/src/features/insights/time-window-controls';
 import { referenceBandLabel, referenceChartLayout, referenceTickAnchor } from './reference-chart-layout';
-import { authoredSelection, referenceSource, selectedObservationIndex, selectionAfterResultChange, type ReferenceSelection } from './reference-selection';
+import { referenceSource, selectedObservationIndex, selectionAfterResultChange, type ReferenceSelection } from './reference-selection';
 
 export const referenceChartConfig = z.strictObject({ kind: z.enum(['edge','reliability']), service: z.string().max(80).default('uptime-api'), gateway: z.string().max(80).default('edge-01'), phase: z.number().int().min(0).max(100000).default(0) });
 type Kind = 'edge'|'reliability';
@@ -47,9 +51,12 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
   const id=useId().replace(/:/g,''), svgRef=useRef<SVGSVGElement>(null), publisher=useChartCursorPublisher();
   const series=result.series??[], n=series[0]?.points.length??0;
   const observations={points:series[0]?.points??[],source:referenceSource(series[0]?.labels)};
-  const [selection,setSelection]=useState<ReferenceSelection>(()=>authoredSelection(observations,initialIndex[kind],!!embedded));
+  const [selection,setSelection]=useState<ReferenceSelection>(null);
   const pinned=selection?.pinned??false;
+  const detailTrigger=useRef<HTMLButtonElement|null>(null), returningFocus=useRef(false);
+  const inspectable=!embedded&&widget.options?.showTooltip!==false;
   const [detail,setDetail]=useState<'query'|'events'|null>(null);
+  const dismissal=useTooltipDismiss({onDismiss:()=>{setSelection(null);setDetail(null);publisher.clear(widget.id);},pinned,revision:result,enabled:inspectable});
   const wrapperRef=useRef<HTMLDivElement>(null), baseWidth=edge?946:933;
   const [layout,setLayout]=useState({reflow:true,width:baseWidth});
   useLayoutEffect(()=>{
@@ -79,35 +86,39 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
       const local=new DOMPoint(clientX,clientY).matrixTransform(matrix.inverse());
       const px=Math.max(plot.left,Math.min(plot.left+plot.width,local.x));
       return {x:px,y:local.y,timestamp:timeAtX(px),inPlot:local.x>=plot.left&&local.x<=plot.left+plot.width&&local.y>=plot.top&&local.y<=plot.top+plot.height};
-    },commit:windowState.commit,onStart:()=>{setSelection(null);setDetail(null);publisher.clear(widget.id);},
+    },commit:windowState.commit,onStart:()=>{dismissal.cancel();setSelection(null);setDetail(null);publisher.clear(widget.id);},
   });
   const previousWindow=useRef(`${windowState.window.start}:${windowState.window.end}`);
   useEffect(()=>{const key=`${windowState.window.start}:${windowState.window.end}`;if(previousWindow.current!==key){previousWindow.current=key;setSelection(null);setDetail(null);publisher.clear(widget.id);}},[windowState.window.start,windowState.window.end,publisher,widget.id]);
-  const selectedIndex=selectedObservationIndex(observations.points,selection,windowState.window);
+  const liveSelection=selection?.source===observations.source?selection:null;
+  const selectedIndex=inspectable?selectedObservationIndex(observations.points,liveSelection,windowState.window):null;
   const stamp=selectedIndex===null?undefined:series[0]?.points[selectedIndex]?.timestamp;
   const values=selectedIndex===null?[]:[0,1].map(index=>series[index]?.points[selectedIndex]?.value??null);
   const colors=edge?['#00d9f3','#9868f3']:['#00b9ff','#9754fa'];
   const names=edge?['Ingress','Egress']:['1h burn rate','6h burn rate'];
-  // Runs before paint. A replaced result clears inspection and dismissals; only a pin whose timestamp and source survive is kept. Nothing is re-pinned on refresh.
-  useLayoutEffect(()=>{ setSelection(previous=>embedded?null:selectionAfterResultChange(previous,observations)); setDetail(null); },[result,embedded]);
+  // Runs before paint. A replaced result clears transient inspection and dismissals; a pin survives only while its exact timestamp and source are still present. Nothing is re-pinned on refresh.
+  useLayoutEffect(()=>{ setSelection(previous=>inspectable?selectionAfterResultChange(previous,observations):null); setDetail(null); },[result,kind,inspectable]);
   useEffect(()=>{ if(stamp!==undefined)publisher.publish(widget.id,stamp,pinned);else publisher.clear(widget.id);return()=>publisher.clear(widget.id); },[stamp,pinned,publisher,widget.id]);
-  const close=()=>{setSelection(null);svgRef.current?.focus({preventScroll:true});};
-  useEffect(()=>{const escape=(event:globalThis.KeyboardEvent)=>{if(event.key!=='Escape'||!svgRef.current?.parentElement?.contains(document.activeElement))return;event.preventDefault();if(detail){setDetail(null);svgRef.current?.parentElement?.querySelector<HTMLButtonElement>('.ref-inspector footer button')?.focus({preventScroll:true});}else{setSelection(null);svgRef.current?.focus({preventScroll:true});}};document.addEventListener('keydown',escape);return()=>document.removeEventListener('keydown',escape);},[detail]);
+  const close=()=>{dismissal.cancel();setSelection(null);setDetail(null);publisher.clear(widget.id);returningFocus.current=true;restoreTooltipFocus(svgRef.current);returningFocus.current=false;};
+  const closeDetail=()=>{setDetail(null);restoreTooltipFocus(detailTrigger.current);};
+  const openDetail=(next:'query'|'events',trigger:HTMLButtonElement)=>{dismissal.cancel();detailTrigger.current=trigger;setSelection(current=>current&&{...current,pinned:true});setDetail(next);};
+  const centerSelection=():ReferenceSelection=>{const points=series[0]?.points??[],center=nearestTimeIndex(points,(windowState.window.start+windowState.window.end)/2,windowState.window);return center===null?null:{timestamp:points[center].timestamp,pinned:false,source:observations.source};};
   const observe=(event:Pick<PointerEvent<SVGSVGElement>,'currentTarget'|'clientX'|'clientY'>, pin=false)=>{
-    if(embedded || brush.active || (pinned&&!pin))return;
+    if(!inspectable || brush.active || (pinned&&!pin))return;
     const matrix=event.currentTarget.getScreenCTM();if(!matrix)return;
     const px=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse()).x;
     const index=nearestTimeIndex(series[0]?.points??[],timeAtX(Math.max(plot.left,Math.min(plot.left+plot.width,px))),windowState.window);
     if(index===null)return;
-    setSelection({timestamp:series[0].points[index].timestamp,pinned:pin,source:observations.source});
+    dismissal.cancel();setSelection({timestamp:series[0].points[index].timestamp,pinned:pin,source:observations.source});
     if(pin)onContextChange?.({series:names[0],labels:series[0]?.labels??{},value:series[0]?.points[index]?.value??null});
   };
   const keyboard=(event:KeyboardEvent<SVGSVGElement>)=>{
-    if(embedded)return;
+    if(!inspectable)return;
+    dismissal.cancel();
     if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){
       event.preventDefault();const indices=(series[0]?.points??[]).map((point,index)=>({point,index})).filter(({point})=>point.timestamp>=windowState.window.start&&point.timestamp<=windowState.window.end).map(({index})=>index);
       if(indices.length){const points=series[0].points,anchor=selection?points.findIndex(point=>point.timestamp===selection.timestamp):initialIndex[kind];const target=event.key==='Home'?indices[0]:event.key==='End'?indices.at(-1)!:indices[Math.max(0,Math.min(indices.length-1,Math.max(0,indices.indexOf(anchor))+(event.key==='ArrowRight'?1:-1)))];setSelection({timestamp:points[target].timestamp,pinned:false,source:observations.source});}else setSelection(current=>current&&{...current,pinned:false});
-    }else if(event.key==='Enter'||event.key===' '){event.preventDefault();const points=series[0]?.points??[],center=nearestTimeIndex(points,(windowState.window.start+windowState.window.end)/2,windowState.window);setSelection(current=>{const base=current??(center===null?null:{timestamp:points[center].timestamp,pinned:false,source:observations.source});return base&&{...base,pinned:!(current?.pinned??false)};});}else if(event.key==='Escape'){event.preventDefault();close();}
+    }else if(event.key==='Enter'||event.key===' '){event.preventDefault();const base=selection??centerSelection();if(base)setSelection({...base,pinned:!(selection?.pinned??false)});}else if(event.key==='Escape'){event.preventDefault();if(detail)closeDetail();else close();}
   };
   const yTicks=edge?[1200,800,400,0,-400,-800,-1200]:[8,4,2,1,0];
   const sourceXTicks=edge?['13:10','13:15','13:20','13:25','13:30','13:35','13:40']:['May 01','May 04','May 07','May 10','May 13','May 16','May 19','May 22','May 25','May 28','May 31'];
@@ -132,7 +143,7 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
   const legendValues=names.map((_,index)=>selectedIndex===null?(windowState.zoomed?observationsInWindow(series[index]?.points??[],windowState.window).at(-1)?.value??null:series[index]?.points[Math.min(initialIndex[kind],n-1)]?.value??null):values[index]);
   return <div ref={wrapperRef} className={`ref-chart ref-chart-${kind}`} data-responsive={layout.reflow} data-window-active={windowState.zoomed} data-time-axis={temporal?'elapsed':'reference-calibration'}>
     {!embedded&&extent&&<TimeWindowControls state={windowState} compact/>}
-    <svg ref={svgRef} className="ref-chart-svg" width={width} height={svgHeight} viewBox={`0 0 ${width} ${svgHeight}`} role="img" aria-label={edge?'Network traffic chart':'Availability burn rate chart'} aria-description="Synthetic reference reconstruction. Arrow keys inspect, Enter pins, Escape closes. Drag horizontally to change this chart window; Time window provides exact UTC bounds, Undo and Reset. Dashboard values remain unchanged." tabIndex={embedded?-1:0} {...brush.handlers} style={{touchAction: 'pan-y',userSelect:'none'}} onPointerMove={event=>{if(!brush.active)observe(event);}} onPointerLeave={()=>{brush.handlers.onPointerLeave();if(!pinned&&!brush.active)setSelection(null);}} onClick={event=>observe(event,true)} onKeyDown={keyboard}>
+    <svg ref={svgRef} className="ref-chart-svg" width={width} height={svgHeight} viewBox={`0 0 ${width} ${svgHeight}`} role="img" aria-label={edge?'Network traffic chart':'Availability burn rate chart'} aria-description="Synthetic reference reconstruction. Arrow keys inspect, Enter pins, Escape closes. Drag horizontally to change this chart window; Time window provides exact UTC bounds, Undo and Reset. Dashboard values remain unchanged." tabIndex={inspectable?0:-1} {...brush.handlers} style={{touchAction: 'pan-y',userSelect:'none'}} onPointerMove={event=>{if(!brush.active)observe(event);}} onPointerLeave={()=>{brush.handlers.onPointerLeave();if(!pinned&&!brush.active)dismissal.schedule();}} onFocus={()=>{if(inspectable&&!pinned&&!returningFocus.current){dismissal.cancel();setSelection(current=>current??centerSelection());}}} onBlur={()=>{if(!pinned)dismissal.schedule();}} onClick={event=>observe(event,true)} onKeyDown={keyboard}>
       <defs>
         <clipPath id={`plot-${id}`}><rect x={plot.left} y={plot.top} width={plot.width} height={plot.height}/></clipPath>
         {colors.map((color,s)=><linearGradient key={color} id={`area-${id}-${s}`} gradientUnits="userSpaceOnUse" x1="0" x2="0" y1={s===1&&edge?plot.top+plot.height:plot.top} y2={y(0)}><stop offset="0" stopColor={color} stopOpacity={edge ? .74 : .45}/><stop offset="1" stopColor={color} stopOpacity={edge ? .38 : .04}/></linearGradient>)}
@@ -150,23 +161,27 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
       {xTicks.map((label,i)=><text key={label} x={tickPositions[i]} y={plot.top+plot.height+(edge?24:21)} textAnchor={layout.reflow?referenceTickAnchor(tickPositions[i],label.length*7,width):'middle'} className="ref-chart-tick">{label}</text>)}
     </svg>
     <div className="ref-chart-legend">{names.map((name,i)=><span key={name}><Dot color={colors[i]}/>{edge?`${name} (${i?'outbound, −':'inbound, +'})`:name}{!edge&&<strong style={{color:i?'#00efbc':undefined}}>{legendValues[i]===null?'No data':`${legendValues[i].toFixed(2)}x`}</strong>}</span>)}{!edge&&<><span><i className="ref-threshold-key"/>2x threshold</span><span><i className="ref-incident-key"/>Incident</span><span className="ref-unknown-key-label"><i className="ref-unknown-key"/>Unknown data</span></>}</div>
-    {selectedIndex!==null&&!embedded&&<section className="ref-inspector" aria-label="Pinned observation" data-pinned={pinned}>
+    {selectedIndex!==null&&inspectable&&<ChartTooltip pinned={pinned} onClose={reason=>{if(detail&&(reason===undefined||reason==='escape'||reason==='close'))closeDetail();else close();}}><section className="ref-inspector" aria-label={pinned?'Pinned observation':'Observation'} data-pinned={pinned}>
       <button className="ref-inspector-close" aria-label="Close observation" onClick={close}><X size={12}/></button>
       <div className="ref-inspector-time">{edge?<Clock3 size={16}/>:<Bookmark size={15}/>}<time dateTime={new Date(stamp!).toISOString()}>{dateText}</time></div>
       <div className="ref-inspector-values">{names.map((name,s)=><div key={name}><span><Dot color={colors[s]}/>{name}</span><strong>{values[s]===null?'No data':`${values[s]?.toFixed(2)}${edge?' Mb/s':'x'}`}</strong></div>)}</div>
       {!edge&&<div className="ref-inspector-slo"><span>SLO<strong>99.90%</strong></span><span>Achieved<strong>99.96%</strong></span></div>}
       <div className="ref-inspector-context"><span>Source<strong>{edge?'192.0.2.14':cfg.service}</strong></span>{edge&&<span>Gateway<strong>{cfg.gateway}</strong></span>}</div>
       <div className="ref-inspector-histories">{names.map((name,s)=><div className="ref-inspector-history" key={name}><span>{temporal?`${name} (window)`:edge?`${name} (hist)`:`${s?'6h':'1h'} (24h)`}</span><div><MiniTrace values={edge&&!temporal?[...(s?edgeHistoryEgress:edgeHistoryIngress)]:seriesValues(s)} color={colors[s]} height={edge?25:23} min={edge&&!temporal?0:undefined} max={edge&&!temporal?25:undefined} fill/></div></div>)}</div>
-      <footer><button onClick={()=>setDetail(edge?'query':'events')}>{edge?'Inspect query':'View events'}<ArrowRight size={16}/></button><button onClick={()=>setDetail(edge?'events':'query')}>{edge?'View events':'Inspect query'}<ArrowRight size={16}/></button></footer>
-    </section>}
-    {detail&&<div className="ref-chart-detail" role="dialog" aria-modal="true" aria-label={detail==='query'?'Reference query details':'Reference event context'}><header><strong>{detail==='query'?'Reference query details':'Reference event context'}</strong><button onClick={()=>{setDetail(null);svgRef.current?.parentElement?.querySelector<HTMLButtonElement>('.ref-inspector footer button')?.focus({preventScroll:true});}} aria-label="Close chart detail"><X size={16}/></button></header>{detail==='query'?<><p>Authored synthetic reference fixture · {edge?cfg.gateway:cfg.service}</p><p>The geometry and initial labels reconstruct the supplied concept. Occluded trace segments are deterministic reconstructions. The unzoomed desktop axis follows the artwork; zoomed and reflowed plots use actual source timestamps. The chart window changes this plot only and leaves dashboard summaries unchanged.</p><code>{edge?'reference.edge.traffic{gateway="'+cfg.gateway+'"}':'reference.slo.burn{service="'+cfg.service+'"}'}</code><table><thead><tr><th>Series</th><th>Selected observation</th></tr></thead><tbody>{names.map((name,i)=><tr key={name}><td>{name}</td><td>{values[i]?.toFixed(2)??'No data'} {edge?'Mb/s':'x'}</td></tr>)}</tbody></table></>:<><p>Selected observation: {dateText} UTC. The record below is authored reference context; it is not inferred from this timestamp.</p><p>{edge?'May 29, 2024 13:35:12 UTC · edge-01':'May 16, 2024 10:21:00 UTC · payment-api'}</p><p>{edge?'geo-block: country · 124 blocked requests':'Increased latency from third-party dependency (payments-gateway)'}</p><a href={edge?'#reliability':'#edge'}>Open {edge?'Reliability Room':'Edge Watch'}<ArrowRight size={14}/></a></>}</div>}
+      <footer><button onClick={event=>openDetail(edge?'query':'events',event.currentTarget)}>{edge?'Inspect query':'View events'}<ArrowRight size={16}/></button><button onClick={event=>openDetail(edge?'events':'query',event.currentTarget)}>{edge?'View events':'Inspect query'}<ArrowRight size={16}/></button></footer>
+    {detail&&<div className="ref-chart-detail" role="region" aria-label={detail==='query'?'Reference query details':'Reference event context'}><header><strong>{detail==='query'?'Reference query details':'Reference event context'}</strong><button onClick={closeDetail} aria-label="Close chart detail"><X size={16}/></button></header>{detail==='query'?<><p>Authored synthetic reference fixture · {edge?cfg.gateway:cfg.service}</p><p>The geometry and initial labels reconstruct the supplied concept. Occluded trace segments are deterministic reconstructions. The unzoomed desktop axis follows the artwork; zoomed and reflowed plots use actual source timestamps. The chart window changes this plot only and leaves dashboard summaries unchanged.</p><code>{edge?'reference.edge.traffic{gateway="'+cfg.gateway+'"}':'reference.slo.burn{service="'+cfg.service+'"}'}</code><table><thead><tr><th>Series</th><th>Selected observation</th></tr></thead><tbody>{names.map((name,i)=><tr key={name}><td>{name}</td><td>{values[i]?.toFixed(2)??'No data'} {edge?'Mb/s':'x'}</td></tr>)}</tbody></table></>:<><p>Selected observation: {dateText} UTC. The record below is authored reference context; it is not inferred from this timestamp.</p><p>{edge?'May 29, 2024 13:35:12 UTC · edge-01':'May 16, 2024 10:21:00 UTC · payment-api'}</p><p>{edge?'geo-block: country · 124 blocked requests':'Increased latency from third-party dependency (payments-gateway)'}</p><a href={edge?'#reliability':'#edge'}>Open {edge?'Reliability Room':'Edge Watch'}<ArrowRight size={14}/></a></>}</div>}
+    </section></ChartTooltip>}
   </div>;
 }
 
-if(!getWidgetDefinition('plugin','reference-timeseries'))registerWidgetPlugin({id:'reference-timeseries',label:'Reference time series',description:'An authored concept reconstruction with exact reference geometry and keyboard inspection',dataKind:'metrics',render:ReferenceChartRenderer,parseConfig:config=>referenceChartConfig.parse(config),styleControls:[]});
+if(!getWidgetDefinition('plugin','reference-timeseries'))registerWidgetPlugin({id:'reference-timeseries',label:'Reference time series',description:'An authored concept reconstruction with exact reference geometry and keyboard inspection',dataKind:'metrics',render:ReferenceChartRenderer,parseConfig:config=>referenceChartConfig.parse(config),styleControls:['tooltips']});
 
-export function ReferenceTimeseries({kind,service='uptime-api',gateway='edge-01',phase=0}:{kind:Kind;service?:string;gateway?:string;phase?:number}) {
+export function ReferenceTimeseries({kind,service='uptime-api',gateway='edge-01',phase=0,panel}:{kind:Kind;service?:string;gateway?:string;phase?:number;panel?:{title:string;info?:string;className?:string;actions?:ReactNode}}) {
   const result=useMemo(()=>makeReferenceResult(kind,service,phase,gateway),[kind,service,phase,gateway]);
-  const widget=useMemo<Widget>(()=>({id:`reference-${kind}`,title:kind==='edge'?'Network traffic':'Availability burn rate',type:'plugin',pluginId:'reference-timeseries',dataKind:'metrics',providerId:'reference-fixture',query:`reference.${kind}`,unit:kind==='edge'?'Mb/s':'x',layout:{x:0,y:0,w:8,h:4},config:{kind,service,gateway,phase}}),[kind,service,gateway,phase]);
-  return <WidgetVisualization widget={widget} result={result}/>;
+  const title=panel?.title??(kind==='edge'?'Network traffic':'Availability burn rate');
+  const source=useMemo<Widget>(()=>({id:`reference-${kind}`,title,type:'plugin',pluginId:'reference-timeseries',dataKind:'metrics',providerId:'reference-fixture',query:`reference.${kind}`,unit:kind==='edge'?'Mb/s':'x',layout:{x:0,y:0,w:8,h:4},config:{kind,service,gateway,phase}}),[kind,service,gateway,phase,title]);
+  const panels=useDashboardPanels(), selection={kind,service,gateway,phase};
+  const widget=panels.current(source,selection), actions=panels.actions({widget:source,result},selection);
+  const chart=<WidgetVisualization widget={widget} result={result}/>;
+  return panel?<RefPanel title={widget.title} info={panel.info} className={panel.className} action={<div className="dashboard-reference-actions">{panel.actions}{actions}</div>}>{chart}</RefPanel>:<>{actions}{chart}</>;
 }

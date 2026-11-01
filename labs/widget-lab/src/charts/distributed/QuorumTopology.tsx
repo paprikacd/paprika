@@ -53,16 +53,17 @@ export function DistributedQuorumTopology(props: WidgetRendererProps) {
         </svg>
       </div>
       {!embedded && <aside className="ds-topology-evidence">
-        {inspect && inspected ? <DomainInspector title={`Replica ${inspected.replicaId}`} onClose={inspection.dismiss} pinned={!!inspection.pinned}><ReplicaValues row={inspected}/>{inspection.pinned && <ReplicaDrillAction row={inspected} onOpen={() => selection.choose(inspected.replicaId, inspected.shardId, inspected.timestamp, 'open-replica')}/>}</DomainInspector> : <div className="ds-quorum-summary" data-state={quorum.status}>
+        <div className="ds-quorum-summary" data-state={quorum.status}>
           <strong>{quorum.status === 'reachable' ? 'Majority reachable' : quorum.status === 'unavailable' ? 'Majority unavailable' : 'Quorum unknown'}</strong>
           <p>{quorum.reachable} of {quorum.voters} voters reachable. A majority requires {quorum.required}.</p>
           <DetailValues items={[
             ['Leader', leader?.replicaId ?? 'Unknown'], ['Term', formatIndex(leader?.term)], ['Reachable voters', `${quorum.reachable} / ${quorum.voters}`], ['Unavailable / unknown', `${quorum.unavailable} / ${quorum.unknown}`], ['Caught up to commit', `${quorum.caughtUp} / ${nodes.length}`], ['Snapshot', `${distributedUtc(nodes[0].timestamp, true)} UTC`],
           ]}/>
           <p>Reachability and commitment are separate evidence. Select a member for exact indices.</p>
-        </div>}
+        </div>
       </aside>}
     </div>
+    {inspect && inspected && <DomainInspector title={`Replica ${inspected.replicaId}`} onClose={inspection.dismiss} pinned={!!inspection.pinned}><ReplicaValues row={inspected}/>{inspection.pinned && <ReplicaDrillAction row={inspected} onOpen={() => selection.choose(inspected.replicaId, inspected.shardId, inspected.timestamp, 'open-replica')}/>}</DomainInspector>}
     <p className="domain-note">{cfg.showIndices ? 'Edge labels: entries between follower applied index and supplied leader commit. ' : ''}Dashed members retain last-seen metadata; current indices stay unknown.</p>
   </div>;
 }

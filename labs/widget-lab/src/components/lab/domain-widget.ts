@@ -3,7 +3,7 @@ import type { Widget } from '../../vendor/paprika/ui/src/features/insights/schem
 /** Presentation changes follow a renderer; query identity follows the current lens. */
 export function mergeDomainWidget(source: Widget, override: Widget | null, selection?: Widget['config']): Widget {
   const sameRenderer = !override || (source.type === override.type && source.pluginId === override.pluginId);
-  const merged = { ...source, ...override, id: source.id, providerId: source.providerId, query: source.query };
+  const merged = { ...source, ...override, id: source.id, providerId: source.providerId, query: source.query, queryRef: source.queryRef, layout: source.layout };
   if (merged.type === 'plugin') return { ...merged, config: sameRenderer
     ? { ...source.config, ...override?.config, ...selection }
     : override?.config ?? {} };

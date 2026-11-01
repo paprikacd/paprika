@@ -1,3 +1,4 @@
+import { DashboardEditControls, useDashboardPanels } from './components/lab/DashboardWorkbench';
 import { useMemo, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, ChevronRight, FlaskConical, GitCommitHorizontal, Info, Maximize2, Minimize2, Moon, RefreshCw, Sun, TableProperties, X, TriangleAlert } from 'lucide-react';
 import { ChartCursorProvider } from './vendor/paprika/ui/src/features/insights/chart-cursor';
@@ -24,6 +25,7 @@ const SCENARIOS = [
 const REGION_OPTIONS = [{ value: 'all', label: 'All regions' }, ...REGIONS.map(region => ({ value: region.id, label: region.shortLabel, description: region.id }))];
 
 export function BaselineApp() {
+  const panels = useDashboardPanels();
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [scenario, setScenario] = useState<Scenario>('regression');
   const [region, setRegion] = useState<RegionId | 'all'>('all');
@@ -64,7 +66,7 @@ export function BaselineApp() {
     <a className="skip-link" href="#dashboard">Skip to widgets</a>
     <header className="topbar">
       <div className="brand"><span className="wordmark">paprika</span><span className="brand-divider" /><span>Insights</span><ChevronRight size={14} /><strong>Widget lab</strong></div>
-      <div className="top-actions"><span className="synthetic-label"><FlaskConical size={14} />Synthetic telemetry</span><GammaButton variant="ghost" size="sm" iconOnly aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</GammaButton></div>
+      <div className="top-actions"><DashboardEditControls/><span className="synthetic-label"><FlaskConical size={14} />Synthetic telemetry</span><GammaButton variant="ghost" size="sm" iconOnly aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</GammaButton></div>
     </header>
 
     <main className="workspace">
@@ -93,11 +95,11 @@ export function BaselineApp() {
         <ChartCursorProvider key={scopeKey}>
           <div id="dashboard" className="dashboard" tabIndex={-1}>
             <div className="primary-grid">
-              <Panel id="latency" title="Request latency" description="p95 and p50 · pooled one-minute histograms" className="latency-panel" action={<span className="panel-tag">Milliseconds</span>}>
+              <Panel id="latency" title={panels.current(LATENCY_WIDGET).title} description="p95 and p50 · pooled one-minute histograms" className="latency-panel" action={<><span className="panel-tag">Milliseconds</span>{panels.actions({widget:LATENCY_WIDGET,result:latencyResult??results.latency})}</>}>
                 <div className="latency-summary"><div className="metric-block"><span className="metric-label">Window p95</span><div className="metric-value" data-testid="latency-summary">{panelState === 'ready' ? latency(summary.p95Ms) : '—'}<span>ms</span></div></div><div className="comparison-block">{panelState === 'ready' ? <><div className="comparison-values"><span>{latency(comparison.before.p95Ms)}</span><ArrowRight size={15} /><strong>{latency(comparison.after.p95Ms)} ms</strong><span className="change-label">{comparisonPartial ? 'Partial comparison' : <>{comparison.p95RelativeChange !== null && comparison.p95RelativeChange > 0 && <ArrowUpRight size={13} />}{signedPercent(comparison.p95RelativeChange)}</>}</span></div><span>Earlier vs later {comparison.durationMs / 60_000}-minute windows{comparison.excludedLeadingMs > 0 ? ' · first minute excluded' : ''}</span>{comparisonPartial && <span>Observed requests · coverage {(comparison.before.coverageRatio * 100).toFixed(1)}% → {(comparison.after.coverageRatio * 100).toFixed(1)}%</span>}</> : <span>Previewing the {panelState} state</span>}</div></div>
                 <div className="event-note"><GitCommitHorizontal size={15} /><span><strong>v2.8.1</strong> deployed at {clockTime(selected.deploymentMs)}{!showEvent && ' · outside this window'}</span><span>Context, not attribution</span></div>
                 <div className="chart-box primary-chart">
-                  <WidgetVisualization widget={LATENCY_WIDGET} result={latencyResult} loading={panelState === 'loading'} error={panelState === 'error' ? 'Synthetic provider unavailable. Restore the Data state in the evaluation guide.' : undefined} />
+                  <WidgetVisualization widget={panels.current(LATENCY_WIDGET)} result={latencyResult} loading={panelState === 'loading'} error={panelState === 'error' ? 'Synthetic provider unavailable. Restore the Data state in the evaluation guide.' : undefined} />
                   {showEvent && panelState === 'ready' && <span aria-hidden="true" className="deployment-guide" style={{ left: `calc(${eventRatio * 100}% + ${54 - 66 * eventRatio}px)` }} />}
                 </div>
                 <div className="panel-footnote"><span>Percentiles are histogram estimates.</span><span>{summary.complete ? 'Complete coverage' : `${Math.round(summary.coverageRatio * 100)}% observed coverage`}</span></div>
@@ -110,18 +112,18 @@ export function BaselineApp() {
             <ObservationBar timeline={timeline} />
 
             <div className="signals-grid">
-              <Panel id="traffic" title="Request volume" description="One-minute request counts ÷ 60 seconds" className="traffic-panel">
+              <Panel id="traffic" title={panels.current(TRAFFIC_WIDGET).title} action={panels.actions({widget:TRAFFIC_WIDGET,result:results.traffic})} description="One-minute request counts ÷ 60 seconds" className="traffic-panel">
                 <div className="signal-summary"><div className="signal-value" data-testid="traffic-summary">{rate(summary.meanRequestRate)}<span>req/s</span></div><span>Mean of complete intervals</span><strong>{integer(summary.totalRequests)} requests observed</strong></div>
-                <div className="chart-box signal-chart"><WidgetVisualization widget={TRAFFIC_WIDGET} result={results.traffic} /></div>
+                <div className="chart-box signal-chart"><WidgetVisualization widget={panels.current(TRAFFIC_WIDGET)} result={results.traffic} /></div>
               </Panel>
-              <Panel id="error-rate" title="Error rate" description="Failed requests ÷ total requests" className="error-panel">
+              <Panel id="error-rate" title={panels.current(ERROR_WIDGET).title} action={panels.actions({widget:ERROR_WIDGET,result:results.errors})} description="Failed requests ÷ total requests" className="error-panel">
                 <div className="signal-summary"><div className="signal-value" data-testid="error-summary">{percentage(summary.errorRatio)}</div><span>Weighted over this window</span><strong>{integer(summary.totalErrors)} failed requests</strong></div>
-                <div className="chart-box signal-chart"><WidgetVisualization widget={ERROR_WIDGET} result={results.errors} /></div>
+                <div className="chart-box signal-chart"><WidgetVisualization widget={panels.current(ERROR_WIDGET)} result={results.errors} /></div>
               </Panel>
             </div>
 
-            <Panel id="distribution" title="Latency distribution" description="Request counts per latency bucket, per minute" action={<span className="panel-tag">Count density</span>}>
-              <div className="chart-box distribution-chart"><WidgetVisualization widget={DISTRIBUTION_WIDGET} result={results.distribution} /></div>
+            <Panel id="distribution" title={panels.current(DISTRIBUTION_WIDGET).title} description="Request counts per latency bucket, per minute" action={<><span className="panel-tag">Count density</span>{panels.actions({widget:DISTRIBUTION_WIDGET,result:results.distribution})}</>}>
+              <div className="chart-box distribution-chart"><WidgetVisualization widget={panels.current(DISTRIBUTION_WIDGET)} result={results.distribution} /></div>
               <div className="panel-footnote"><span>Discrete latency buckets · color encodes request count.</span><span>Missing cells are outlined; observed zero is a value.</span></div>
             </Panel>
           </div>

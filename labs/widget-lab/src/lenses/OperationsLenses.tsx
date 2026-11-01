@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type CSSProperties } from 'react';
-import { Activity, CircleCheck, CircleHelp, Clock3, Globe2, Pencil, Server, ShieldCheck, X } from 'lucide-react';
+import { Activity, CircleCheck, CircleHelp, Clock3, Globe2, Server, ShieldCheck, X } from 'lucide-react';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
 import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
@@ -12,15 +13,15 @@ export type OperationsLensEdit = (widget: Widget, result: QueryResult, apply: (n
 
 export function OperationsLenses({ kind, onEdit }: { kind: OperationsKind; onEdit?: OperationsLensEdit }) {
   const [minutes, setMinutes] = useState<60 | 180>(180), [notes, setNotes] = useState(false);
-  const [overrides, setOverrides] = useState<Record<string, Widget>>({});
+  const panels = useDashboardPanels(onEdit);
   const website = useMemo(() => buildWebsiteLens(minutes), [minutes]);
   const infrastructure = useMemo(buildInfrastructureLens, []);
   const isWebsite = kind === 'website';
   const axisTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const panel = (source: OperationsPanel, className = '', stat = false) => {
-    const active = overrides[source.widget.id] ?? source.widget;
+    const active = panels.current(source.widget);
     return <section className={`operations-panel ${className} ${stat ? 'operations-kpi' : ''}`} key={active.id} style={source.accent ? { '--operations-accent': source.accent } as CSSProperties : undefined}>
-      <header><h2>{active.title}</h2><div className="operations-panel-actions"><details><summary aria-label={`About ${active.title}`}><CircleHelp size={13}/></summary><p>{source.caption}. Deterministic synthetic observations as of {new Date(OPERATIONS_AS_OF).toISOString().slice(0,16).replace('T',' ')} UTC. Presentation edits keep the same data.</p></details>{onEdit && <button aria-label={`Edit ${active.title}`} onClick={() => onEdit(active, source.result, next => setOverrides(previous => ({ ...previous, [source.widget.id]: next })))}><Pencil size={12}/><span>Edit</span></button>}</div></header>
+      <header><h2>{active.title}</h2><div className="operations-panel-actions"><details><summary aria-label={`About ${active.title}`}><CircleHelp size={13}/></summary><p>{source.caption}. Deterministic synthetic observations as of {new Date(OPERATIONS_AS_OF).toISOString().slice(0,16).replace('T',' ')} UTC. Presentation edits keep the same data.</p></details>{panels.actions(source)}</div></header>
       <div className="operations-panel-chart"><WidgetVisualization widget={active} result={source.result}/></div>
       <p className="operations-panel-caption">{source.caption}</p>
     </section>;

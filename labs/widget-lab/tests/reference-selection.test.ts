@@ -1,6 +1,8 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { makeReferenceResult } from '../src/reference/ReferenceCharts';
-import { authoredSelection, referenceSource, selectedObservationIndex, selectionAfterResultChange, type ReferenceObservations, type ReferenceSelection } from '../src/reference/reference-selection';
+import { makeReferenceResult, ReferenceTimeseries } from '../src/reference/ReferenceCharts';
+import { referenceSource, selectedObservationIndex, selectionAfterResultChange, type ReferenceObservations, type ReferenceSelection } from '../src/reference/reference-selection';
 
 const observe = (result: ReturnType<typeof makeReferenceResult>): ReferenceObservations => ({
   points: result.series![0].points,
@@ -11,11 +13,13 @@ const EDGE_AUTHORED = Date.UTC(2024, 4, 29, 13, 32, 8);
 const RELIABILITY_AUTHORED = Date.UTC(2024, 4, 16, 10, 40);
 
 describe('reference inspection lifecycle', () => {
-  it('mounts on the authored observation as a pin, and never inspects an embedded chart', () => {
-    const edge = observe(makeReferenceResult('edge'));
-    expect(authoredSelection(edge, 202, false)).toEqual({ timestamp: EDGE_AUTHORED, pinned: true, source: edge.source });
-    expect(authoredSelection(edge, 202, true)).toBeNull();
-    expect(authoredSelection({ points: [], source: edge.source }, 202, false)).toBeNull();
+  it('mounts with no inspection, so the authored fixture value is not presented as a pinned reading', () => {
+    // The authored mount pin was removed upstream; the chart renders with no selection until someone inspects it.
+    for (const kind of ['edge', 'reliability'] as const) {
+      const html = renderToStaticMarkup(createElement(ReferenceTimeseries, { kind }));
+      expect(html, kind).not.toContain('ref-inspector');
+      expect(html, kind).not.toContain('data-pinned="true"');
+    }
   });
 
   it('keeps a dismissal dismissed through replay ticks and never re-pins on refresh', () => {

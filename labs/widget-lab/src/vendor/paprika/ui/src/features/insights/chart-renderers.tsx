@@ -10,7 +10,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { ruleY } from "@tanstack/charts/rule";
 import { scaleTime } from "d3-scale";
 import { signedAreaGradient, calendarTick, horizontalPlotBounds, temporalPosition, timeAxisValue } from "./chart-presentation";
@@ -18,6 +17,10 @@ import { areaY } from "@tanstack/charts/area";
 import { barY } from "@tanstack/charts/bar";
 import { focusGroupX, focusNearestX } from "@tanstack/charts/focus";
 import { usePlotTooltip } from "./plot-tooltip";
+import { ObservationTooltip } from "./observation-tooltip";
+import { restoreTooltipFocus } from "./tooltip-focus";
+import { useTooltipHandoff } from "./tooltip-interaction";
+export { ObservationTooltip } from "./observation-tooltip";
 import { useChartCursor } from "./chart-cursor";
 import { minimumTimeWindow, observationsInWindow, timeWindowExtent } from "./time-window";
 import { TimeBrushOverlay, TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from "./time-window-controls";
@@ -27,8 +30,6 @@ import { Chart } from "@tanstack/charts/react";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { defineChart } from "@tanstack/charts/scene";
-import { tooltip } from "@tanstack/charts/tooltip";
-import { portal } from "@tanstack/charts/tooltip/portal";
 import type { QueryResult, Widget, WidgetOptions, Threshold } from "./schema";
 import styles from "./charts.module.css";
 import configStyles from "./chart-styles.module.css";
@@ -66,7 +67,6 @@ import {
 import { lockBodyScroll } from "./gamma/scroll-lock";
 import { GammaButton } from "./gamma/button";
 import { GammaSelect } from "./gamma/select";
-import { inheritGammaTheme } from "./gamma/inherit-theme";
 import {
   contextKey,
   metricContext,
@@ -92,16 +92,6 @@ const PALETTE = [
 ];
 const MAX_SERIES = 12;
 const MAX_ROWS = 100;
-const themedPortal: typeof portal = {
-  ...portal,
-  id: "paprika-themed-portal",
-  create(context, options) {
-    const stopTheme = inheritGammaTheme(context.container, context.element);
-    const instance = portal.create(context, options);
-    return { ...instance, destroy() { stopTheme(); instance.destroy(); } };
-  },
-};
-
 const chartTheme = {
   foreground: "var(--gamma-ink, #27332e)",
   muted: "var(--gamma-chart-axis, var(--gamma-muted, #626e65))",
@@ -394,19 +384,7 @@ function TimeSeriesChart({
             : focusGroupX,
         focusRing: { radius: 4, fill: "var(--gamma-bg)", strokeWidth: 2 },
         svgAnimation: false,
-        tooltip:
-          options.showTooltip === false
-            ? false
-            : tooltipEnabled
-              ? { use: plotTooltip.extension, sticky: true }
-              : {
-                  use: tooltip,
-                  portal: themedPortal,
-                  sticky: true,
-                  className: styles.tooltip,
-                  format: (point) =>
-                    `${point.datum.series}\n${dateTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : "No data"}`,
-                },
+        tooltip: tooltipEnabled ? { use: plotTooltip.extension, sticky: true } : false,
       }),
     [
       data,
@@ -651,19 +629,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
         theme: configuredTheme(options),
         svgAnimation: false,
         focus: embedded ? false : tooltipEnabled ? focusNearestX : undefined,
-        tooltip:
-          options.showTooltip === false
-            ? false
-            : tooltipEnabled
-              ? { use: plotTooltip.extension, sticky: true }
-              : {
-                  use: tooltip,
-                  portal: themedPortal,
-                  sticky: true,
-                  className: styles.tooltip,
-                  format: (point) =>
-                    `${point.datum.name}\nLatest valid sample · ${dateTimeFormat.format(new Date(point.datum.timestamp))}\n${formatMetricDetails(point.datum.value, widget.unit, options.decimals)}`,
-                },
+        tooltip: tooltipEnabled ? { use: plotTooltip.extension, sticky: true } : false,
       }),
     [
       rows,
@@ -1351,183 +1317,6 @@ function thresholdRange(
   return `≥ ${exactMetric(thresholds[index].value, unit)}${next ? ` and < ${exactMetric(next.value, unit)}` : ""}`;
 }
 
-export function ObservationTooltip({
-  id,
-  anchor,
-  anchorRect,
-  preferSide = false,
-  compact = false,
-  onDismiss,
-  onEnter,
-  onLeave,
-  children,
-}: {
-  id: string;
-  anchor: Element;
-  anchorRect?: () => DOMRect;
-  preferSide?: boolean;
-  compact?: boolean;
-  onDismiss: () => void;
-  onEnter: () => void;
-  onLeave: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<ReturnType<
-    typeof placeHeatmapTooltip
-  > | null>(null);
-  useLayoutEffect(() => {
-    let frame = 0;
-    const stopTheme = ref.current ? inheritGammaTheme(anchor, ref.current) : undefined;
-    const update = () => {
-      const element = ref.current;
-      if (!element || !anchor.isConnected) return;
-      const viewport = window.visualViewport;
-      const visibleViewport = {
-        width: viewport?.width ?? window.innerWidth,
-        height: viewport?.height ?? window.innerHeight,
-        left: viewport?.offsetLeft,
-        top: viewport?.offsetTop,
-      };
-      const anchorBounds = anchorRect?.() ?? anchor.getBoundingClientRect();
-      const limits = heatmapTooltipSizeLimit(anchorBounds, visibleViewport);
-      element.style.maxWidth = `${limits.width}px`;
-      const candidate = preferSide
-        ? placePlotTooltip(
-            anchorBounds,
-            element.getBoundingClientRect(),
-            visibleViewport,
-          )
-        : null;
-      const useSide =
-        candidate?.placement === "left" || candidate?.placement === "right";
-      // Side panels leave neighboring lines reachable; vertical panels must
-      // scroll before they can overlap the trigger that pins or dismisses them.
-      element.style.maxHeight = `${
-        useSide
-          ? Math.max(0, Math.min(560, visibleViewport.height - 24))
-          : limits.height
-      }px`;
-      const bounds = element.getBoundingClientRect();
-      const next = useSide
-        ? placePlotTooltip(anchorBounds, bounds, visibleViewport)
-        : placeHeatmapTooltip(anchorBounds, bounds, visibleViewport);
-      setPosition((previous) =>
-        previous?.left === next.left &&
-        previous?.top === next.top &&
-        previous?.placement === next.placement
-          ? previous
-          : next,
-      );
-    };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(update);
-    };
-    update();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(schedule);
-    if (ref.current) observer?.observe(ref.current);
-    observer?.observe(anchor);
-    window.addEventListener("resize", schedule);
-    window.addEventListener("scroll", schedule, true);
-    window.visualViewport?.addEventListener("resize", schedule);
-    window.visualViewport?.addEventListener("scroll", schedule);
-    return () => {
-      stopTheme?.();
-      cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("resize", schedule);
-      window.removeEventListener("scroll", schedule, true);
-      window.visualViewport?.removeEventListener("resize", schedule);
-      window.visualViewport?.removeEventListener("scroll", schedule);
-    };
-  }, [anchor, anchorRect, preferSide]);
-  useEffect(() => {
-    const pointer = (event: PointerEvent) => {
-      if (
-        !anchor.contains(event.target as Node) &&
-        !ref.current?.contains(event.target as Node)
-      )
-        onDismiss();
-    };
-    const keyboard = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        // A fading hover card must not swallow Escape from another chart.
-        if (anchor.contains(event.target as Node) || ref.current?.contains(event.target as Node))
-          event.stopPropagation();
-        onDismiss();
-        return;
-      }
-      const element = ref.current;
-      if (
-        element &&
-        (event.target === anchor || element.contains(event.target as Node)) &&
-        ["PageDown", "PageUp", "Home", "End"].includes(event.key)
-      ) {
-        // A tooltip does not take focus away from its trigger. Let keyboard
-        // users inspect every label while keeping the chart's tab order intact.
-        event.preventDefault();
-        event.stopPropagation();
-        const maximum = Math.max(
-          0,
-          element.scrollHeight - element.clientHeight,
-        );
-        const page = Math.max(48, Math.round(element.clientHeight * 0.8));
-        element.scrollTop =
-          event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? maximum
-              : Math.max(
-                  0,
-                  Math.min(
-                    maximum,
-                    element.scrollTop +
-                      (event.key === "PageDown" ? page : -page),
-                  ),
-                );
-      }
-    };
-    document.addEventListener("pointerdown", pointer, true);
-    document.addEventListener("keydown", keyboard, true);
-    return () => {
-      document.removeEventListener("pointerdown", pointer, true);
-      document.removeEventListener("keydown", keyboard, true);
-    };
-  }, [anchor, onDismiss]);
-  return createPortal(
-    <div
-      ref={ref}
-      id={id}
-      role="tooltip"
-      className={configStyles.heatmapTooltip}
-      data-inspector-density={compact ? "compact" : undefined}
-      style={{
-        left: position?.left ?? 0,
-        top: position?.top ?? 0,
-        visibility: position ? "visible" : "hidden",
-      }}
-      data-placement={position?.placement}
-      onPointerEnter={onEnter}
-      onPointerLeave={onLeave}
-      onFocusCapture={onEnter}
-      onBlurCapture={(event) => {
-        if (
-          !event.currentTarget.contains(event.relatedTarget as Node | null) &&
-          !anchor.contains(event.relatedTarget as Node | null)
-        )
-          onLeave();
-      }}
-    >
-      {children}
-    </div>,
-    document.body,
-  );
-}
-
 /** Pointer preview and click/tap pinning share the same keyboard-readable panel. */
 export function ObservationDetails({
   label,
@@ -1555,16 +1344,28 @@ export function ObservationDetails({
     revision: unknown;
   } | null>(null);
   const interaction = useRef({ focused: false, hovered: false, panel: false });
+  const returningFocus = useRef(false), activeAnchor = useRef<Element | null>(null);
+  activeAnchor.current = active?.anchor ?? null;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const clearHide = useCallback(() => clearTimeout(timer.current), []);
+  const handoff = useTooltipHandoff();
+  const clearHide = useCallback(() => { clearTimeout(timer.current); timer.current = undefined; handoff.release(); }, [handoff]);
   const dismiss = useCallback(() => {
     clearHide();
     interaction.current.panel = false;
+    const restore = document.getElementById(id)?.contains(document.activeElement);
     setActive(null);
-  }, [clearHide]);
+    if (restore && activeAnchor.current instanceof HTMLElement && activeAnchor.current.isConnected) {
+      returningFocus.current = true;
+      restoreTooltipFocus(activeAnchor.current);
+      returningFocus.current = false;
+    }
+  }, [clearHide, id]);
   const scheduleHide = useCallback(() => {
-    clearHide();
+    if (!activeAnchor.current) return;
+    handoff.hold(activeAnchor.current);
+    if (timer.current !== undefined) return;
     timer.current = setTimeout(() => {
+      timer.current = undefined;
       const state = interaction.current;
       setActive((current) =>
         current &&
@@ -1575,8 +1376,9 @@ export function ObservationDetails({
           ? null
           : current,
       );
+      handoff.release();
     }, 180);
-  }, [clearHide]);
+  }, [handoff]);
   useEffect(() => clearHide, [clearHide]);
   useEffect(() => {
     if (!externalAnchor || !enabled) return;
@@ -1627,15 +1429,13 @@ export function ObservationDetails({
           scheduleHide();
         }}
         onFocus={(event) => {
+          if (returningFocus.current) return;
           interaction.current.focused = true;
           onSelect?.();
           show(event.currentTarget);
         }}
         onBlur={() => {
           interaction.current.focused = false;
-          setActive((current) =>
-            current ? { ...current, pinned: false } : null,
-          );
           scheduleHide();
         }}
         onClick={(event) => {
@@ -1650,6 +1450,7 @@ export function ObservationDetails({
         <ObservationTooltip
           id={id}
           anchor={active.anchor}
+          pinned={active.pinned}
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.panel = true;
@@ -1959,23 +1760,36 @@ export function Heatmap({
     undefined,
   );
   const tooltipId = useId();
+  const returningFocus = useRef(false), activeAnchor = useRef<HTMLButtonElement | null>(null);
+  activeAnchor.current = active?.anchor ?? null;
   const options = widget.options ?? EMPTY_OPTIONS;
   const thresholds = options.thresholds?.length
     ? options.thresholds
     : DEFAULT_HEATMAP_THRESHOLDS;
+  const handoff = useTooltipHandoff();
   const clearHide = useCallback(() => {
     clearTimeout(hideTimer.current);
     hideTimer.current = undefined;
-  }, []);
+    handoff.release();
+  }, [handoff]);
   const dismiss = useCallback(() => {
     clearHide();
 
     interaction.current.tooltipHovered = false;
+    const restore = document.getElementById(tooltipId)?.contains(document.activeElement);
     setActive(null);
-  }, [clearHide]);
+    if (restore && activeAnchor.current?.isConnected) {
+      returningFocus.current = true;
+      restoreTooltipFocus(activeAnchor.current);
+      returningFocus.current = false;
+    }
+  }, [clearHide, tooltipId]);
   const scheduleHide = useCallback(() => {
-    clearHide();
+    if (!activeAnchor.current) return;
+    handoff.hold(activeAnchor.current);
+    if (hideTimer.current !== undefined) return;
     hideTimer.current = setTimeout(() => {
+      hideTimer.current = undefined;
       const state = interaction.current;
       setActive((current) =>
         current &&
@@ -1986,8 +1800,9 @@ export function Heatmap({
           ? null
           : current,
       );
+      handoff.release();
     }, 180);
-  }, [clearHide]);
+  }, [handoff]);
   useEffect(() => clearHide, [clearHide]);
   const cells = useMemo(
     () =>
@@ -2118,6 +1933,7 @@ export function Heatmap({
                 scheduleHide();
               }}
               onFocus={(event) => {
+                if (returningFocus.current) return;
                 onContextChange?.({
                   series: cell.name,
                   labels: cell.labels,
@@ -2137,9 +1953,6 @@ export function Heatmap({
               onBlur={() => {
                 interaction.current.focused = null;
 
-                setActive((current) =>
-                  current?.pinned ? { ...current, pinned: false } : current,
-                );
                 scheduleHide();
               }}
               onClick={(event) => {
@@ -2185,6 +1998,7 @@ export function Heatmap({
         <ObservationTooltip
           id={tooltipId}
           anchor={active.anchor}
+          pinned={active.pinned}
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.tooltipHovered = true;

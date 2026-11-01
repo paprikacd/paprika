@@ -15,11 +15,11 @@
 .orbital-land { fill:color-mix(in srgb,var(--gamma-chart-1) 14%,var(--gamma-surface)); stroke:color-mix(in srgb,var(--gamma-muted) 38%,transparent); stroke-width:.5px; }
 .orbital-map-layout { display:grid; grid-template-columns:minmax(0,1fr) 188px; gap:10px; align-items:start; }
 .orbital-map-main { min-width:0; }
-.orbital-map-evidence .domain-inspector { margin-top:0; min-height:240px; padding:9px; }
+
 .orbital-map-evidence .domain-detail-values { grid-template-columns:minmax(0,1fr); gap:8px; }
 .orbital-map-evidence .domain-detail-values > div { display:flex; justify-content:space-between; flex-wrap:wrap; gap:3px 7px; padding-bottom:4px; border-bottom:1px solid var(--gamma-border); }
 .orbital-map-evidence .domain-detail-values dd { margin:0; font-size:12px; }
-.orbital-map-evidence .domain-inspector > header strong { font-size:13px; }
+
 .orbital-evidence-hint { border:1px dashed var(--gamma-border); border-radius:4px; padding:12px; min-height:145px; color:var(--gamma-muted); line-height:1.5; }
 .orbital-evidence-hint strong { color:var(--gamma-ink); font-size:13px; }
 .orbital-map-tools,.orbital-pan { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
@@ -38,9 +38,9 @@
 .orbital-sample-slider input { min-width:90px; flex:1; accent-color:var(--gamma-chart-1); }
 .orbital-sample-slider > span { font-variant-numeric:tabular-nums; color:var(--gamma-ink); }
 .orbital-skyplot .domain-detail-values { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 10px; }
-.orbital-skyplot .domain-inspector { padding:8px 10px; }
-.orbital-skyplot .domain-inspector > header { margin-bottom:5px; }
-.orbital-skyplot .domain-inspector > header strong { font-size:13px; }
+
+
+
 .orbital-skyplot .domain-detail-values dd { font-size:12px; }
 .orbital-brush-host { position:relative; touch-action:pan-y; user-select:none; }
 .orbital-timeline-tools { display:flex; flex-wrap:wrap; gap:7px 10px; align-items:center; }
@@ -60,6 +60,6 @@
 .orbital-profile-sample-controls output { min-width:94px; color:var(--gamma-ink); text-align:right; }
 .orbital-profile-unknown-swatch { border:1px dashed var(--gamma-muted); border-radius:1px!important; }
 @container (max-width:410px) { .orbital-profile-summary { gap:8px; }.orbital-profile-summary dd { font-size:16px; }.orbital-profile-sample-controls output { width:100%; text-align:center; } }
-@container (max-width:610px) { .orbital-map-layout { grid-template-columns:minmax(0,1fr); }.orbital-map-evidence .domain-inspector { min-height:0; }.orbital-map-evidence .domain-detail-values { grid-template-columns:repeat(2,minmax(0,1fr)); }.orbital-map-evidence .domain-detail-values > div { display:block; }.orbital-map-evidence .domain-detail-values dd { margin-top:3px; }.orbital-evidence-hint { min-height:0; }.orbital-map-evidence .domain-inspector > header { margin-bottom:5px; } }
+@container (max-width:610px) { .orbital-map-layout { grid-template-columns:minmax(0,1fr); }.orbital-map-evidence .domain-detail-values { grid-template-columns:repeat(2,minmax(0,1fr)); }.orbital-map-evidence .domain-detail-values > div { display:block; }.orbital-map-evidence .domain-detail-values dd { margin-top:3px; }.orbital-evidence-hint { min-height:0; } }
 @media (prefers-reduced-motion:reduce) { .orbital-chart * { scroll-behavior:auto; } }
-@container (min-width:700px) { .orbital-map-layout { grid-template-columns:minmax(0,1fr); }.orbital-map-evidence .domain-inspector { min-height:0; }.orbital-map-evidence .domain-detail-values { grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px 14px; }.orbital-map-evidence .domain-detail-values > div { display:block; padding-bottom:0; border:0; }.orbital-map-evidence .domain-detail-values dd { margin-top:3px; }.orbital-map-evidence .domain-inspector > header { margin-bottom:8px; } }
+@container (min-width:700px) { .orbital-map-layout { grid-template-columns:minmax(0,1fr); }.orbital-map-evidence .domain-detail-values { grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px 14px; }.orbital-map-evidence .domain-detail-values > div { display:block; padding-bottom:0; border:0; }.orbital-map-evidence .domain-detail-values dd { margin-top:3px; } }

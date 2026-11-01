@@ -1,3 +1,4 @@
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { Activity, ArrowUpRight, Check, ChevronLeft, ChevronRight, Clock3, Info, RefreshCw, ShieldCheck, Target, TriangleAlert, X } from 'lucide-react';
 import { ChartCursorProvider, useChartCursor } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
@@ -43,6 +44,7 @@ function BurnReadout({ points }: { points: BurnPoint[] }) {
 }
 
 export function ReliabilityRoom({ theme, narrow }: { theme: 'dark' | 'light'; narrow: boolean }) {
+  const panels = useDashboardPanels(), burnWidget = panels.current(BURN_WIDGET);
   const [scope, setScope] = useState<ReliabilityScope>('all');
   const [days, setDays] = useState<ReliabilityWindow>(30);
   const [scenario, setScenario] = useState<ReliabilityScenario>('incident');
@@ -139,8 +141,8 @@ export function ReliabilityRoom({ theme, narrow }: { theme: 'dark' | 'light'; na
 
     <ChartCursorProvider key={`${scope}-${days}-${scenario}-${revision}`}>
       <div className={styles.mainGrid}>
-        <Panel title="Availability burn rate" subtitle="Request-weighted 1-hour and 6-hour windows. 1× means the observed error ratio equals the 0.10% allowed error ratio." actions={<span className={styles.subtle}>{days === 1 ? '24h' : `${days}d`} · 1× budget pace</span>} className={styles.burnPanel}>
-          <div className={styles.chart}><WidgetVisualization widget={BURN_WIDGET} result={result} /></div>
+        <Panel title={burnWidget.title} subtitle="Request-weighted 1-hour and 6-hour windows. 1× means the observed error ratio equals the 0.10% allowed error ratio." actions={<><span className={styles.subtle}>{days === 1 ? '24h' : `${days}d`} · 1× budget pace</span>{panels.actions({widget:BURN_WIDGET,result})}</>} className={styles.burnPanel}>
+          <div className={styles.chart}><WidgetVisualization widget={burnWidget} result={result} /></div>
           <BurnReadout points={points} />
         </Panel>
         <Panel title="Services needing attention" subtitle={`All services · ${days}-day window · ranked by remaining budget`} actions={scope !== 'all' ? <GammaButton size="sm" variant="ghost" onClick={() => selectService('all')}>All services</GammaButton> : undefined}>

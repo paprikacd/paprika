@@ -13,13 +13,6 @@ export function referenceSource(labels: Readonly<Record<string, string>> | undef
   return Object.entries(labels ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('|');
 }
 
-/** The literal artwork's inspection, applied on mount only. Embedded charts never inspect. */
-export function authoredSelection(observations: ReferenceObservations, index: number, embedded: boolean): ReferenceSelection {
-  if (embedded || !observations.points.length) return null;
-  const point = observations.points[Math.min(index, observations.points.length - 1)];
-  return { timestamp: point.timestamp, pinned: true, source: observations.source };
-}
-
 /**
  * Applied when a result replaces the one on screen. Transient inspection and dismissals
  * are cleared, and nothing is re-pinned. An explicit pin survives only while its exact

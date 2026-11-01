@@ -107,6 +107,17 @@
 .paprika-geo-detail dd { margin: 0; display: flex; align-items: center; justify-content: flex-end; gap: 5px; overflow-wrap: anywhere; text-align: right; font-variant-numeric: tabular-nums; }
 .paprika-geo-detail dd i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 
+/* Floating content inherits the shared popup's theme, independently of the map DOM. */
+.paprika-geo-detail[data-tooltip-content] {
+  --geo-target-size: 26px;
+  --paprika-map-detail-ink: var(--gamma-ink, #d9ecff);
+  --paprika-map-muted: var(--gamma-muted, #a8c3d1);
+  --paprika-map-border: var(--gamma-border, #224351);
+  --paprika-map-focus: var(--gamma-chart-1, #43dcef);
+  font: inherit;
+}
+.paprika-geo-detail[data-tooltip-content] > button { min-width: 26px; min-height: 26px; }
+
 /* Adaptive instruments keep the projection's aspect ratio while their stage
    follows available panel width. Symbol geometry uses final CSS pixels. */
 .paprika-geo-map[data-geo-responsive=true] { height:auto; min-width:0; container:geo-map / inline-size; }

@@ -1,3 +1,6 @@
+import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
+import { ChartTooltip } from '../../components/lab/ChartTooltip';
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { area, line } from 'd3-shape';
 import { scaleLinear, scaleUtc } from 'd3-scale';
@@ -24,7 +27,7 @@ export function AlignedTelemetry({widget,result,embedded,onContextChange}:Widget
   const series=result.series??[];
   const wrapper=useRef<HTMLDivElement>(null),svg=useRef<SVGSVGElement>(null),width=useWidth(wrapper),uid=useId().replaceAll(':','');
   const publisher=useChartCursorPublisher();
-  const [selected,setSelected]=useState<number|null>(null),[pinned,setPinned]=useState(false);
+  const [selectedValue,setSelected]=useState<number|null>(null),[pinned,setPinned]=useState(false);
   const extent=useMemo(()=>timeWindowExtent(series),[series]);
   const minimum=useMemo(()=>extent?minimumTimeWindow(series,extent):1,[series,extent]);
   const windowState=useChartTimeWindow(extent,result,minimum);
@@ -36,17 +39,21 @@ export function AlignedTelemetry({widget,result,embedded,onContextChange}:Widget
   const x=scaleLinear().domain([windowState.window.start,windowState.window.end]).range([plot.left,width-plot.right]);
   const ticks=scaleUtc().domain([new Date(windowState.window.start),new Date(windowState.window.end)]).ticks(Math.max(2,Math.min(7,Math.floor(plot.width/90))));
   const interactive=!embedded&&widget.options?.showTooltip!==false;
+  const inspectionRevision=useMemo(()=>({result,start:windowState.window.start,end:windowState.window.end,interactive}),[result,windowState.window.start,windowState.window.end,interactive]);
+  const currentRevision=useRef(inspectionRevision);
+  const selected=currentRevision.current===inspectionRevision?selectedValue:null;
   const clear=()=>{setSelected(null);setPinned(false);publisher.clear(widget.id);};
-  const dismiss=()=>{clear();svg.current?.focus({preventScroll:true});};
-  useEffect(()=>{clear();},[result,windowState.window.start,windowState.window.end,interactive]);
+  const hoverDismiss=useTooltipDismiss({onDismiss:clear,pinned,revision:inspectionRevision,enabled:interactive});
+  const dismiss=()=>{hoverDismiss.cancel();clear();restoreTooltipFocus(svg.current);};
+  useEffect(()=>{currentRevision.current=inspectionRevision;clear();},[inspectionRevision]);
   useEffect(()=>{if(selected!==null)publisher.publish(widget.id,selected,pinned);else publisher.clear(widget.id);return()=>publisher.clear(widget.id);},[selected,pinned,publisher,widget.id]);
   const point=(clientX:number,clientY:number)=>{const matrix=svg.current?.getScreenCTM();if(!matrix)return null;const p=new DOMPoint(clientX,clientY).matrixTransform(matrix.inverse());return{x:Math.max(plot.left,Math.min(width-plot.right,p.x)),y:p.y,timestamp:x.invert(Math.max(plot.left,Math.min(width-plot.right,p.x))),inPlot:p.x>=plot.left&&p.x<=width-plot.right&&p.y>=21&&p.y<=plotBottom};};
-  const brush=useTimeWindowBrush({enabled:!embedded&&windowState.enabled,revision:result,window:windowState.window,point,commit:windowState.commit,onStart:clear});
-  const inspect=(timestamp:number,pin=false)=>{if(!interactive)return;setSelected(timestamp);setPinned(pin);if(pin)onContextChange?.({series:'Aligned telemetry',labels:{timestamp:new Date(timestamp).toISOString(),service:series[0]?.labels.service??''}});};
-  const pointer=(event:{clientX:number;clientY:number},pin=false)=>{if(!interactive||brush.active||(pinned&&!pin))return;const p=point(event.clientX,event.clientY);if(!p?.inPlot)return;const index=nearestTimeIndex(eligible.map(timestamp=>({timestamp,value:0})),p.timestamp);if(index!==null)inspect(eligible[index],pin);};
+  const brush=useTimeWindowBrush({enabled:!embedded&&windowState.enabled,revision:result,window:windowState.window,point,commit:windowState.commit,onStart:()=>{hoverDismiss.cancel();clear();}});
+  const inspect=(timestamp:number,pin=false)=>{if(!interactive||!eligible.includes(timestamp))return;hoverDismiss.cancel();setSelected(timestamp);setPinned(pin);if(pin)onContextChange?.({series:'Aligned telemetry',labels:{timestamp:new Date(timestamp).toISOString(),service:series[0]?.labels.service??''}});};
+  const pointer=(event:{clientX:number;clientY:number},pin=false)=>{if(!interactive||brush.active||(pinned&&!pin))return;const p=point(event.clientX,event.clientY);if(!p?.inPlot){hoverDismiss.schedule();return;}const index=nearestTimeIndex(eligible.map(timestamp=>({timestamp,value:0})),p.timestamp);if(index!==null)inspect(eligible[index],pin);};
   const exact=selected===null?[]:telemetryAt(series,selected);
   if(!series.length)return <div className="incident-empty">No telemetry in this result.</div>;
-  return <div ref={wrapper} className="aligned-telemetry" data-shared-window-start={windowState.window.start} data-shared-window-end={windowState.window.end} onPointerLeave={()=>{if(!pinned&&!brush.active)clear();}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null)&&!pinned)clear();}} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
+  return <div ref={wrapper} className="aligned-telemetry" data-shared-window-start={windowState.window.start} data-shared-window-end={windowState.window.end} onPointerLeave={()=>{if(!brush.active)hoverDismiss.schedule();}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))hoverDismiss.schedule();}} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
     {!embedded&&<TimeWindowControls state={windowState} compact/>}
     <svg ref={svg} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={widget.title} aria-description="Separate units share the same UTC time axis. Drag any lane to zoom all lanes; Time window offers exact input, Undo and Reset. Arrow keys inspect, Enter pins, Escape closes." tabIndex={embedded?-1:0} {...brush.handlers} onPointerMove={event=>pointer(event)} onClick={event=>pointer(event,true)} onKeyDown={event=>{
       if(!interactive)return;
@@ -82,7 +89,7 @@ export function AlignedTelemetry({widget,result,embedded,onContextChange}:Widget
       {config.showEvents&&['deployment','incident'].map((kind,row)=><g key={kind}><text x="2" y={plotBottom+32+row*20} className="incident-svg-muted">{kind==='deployment'?'Deploy':'Incident'}</text><line x1={plot.left} x2={width-plot.right} y1={plotBottom+28+row*20} y2={plotBottom+28+row*20} className="incident-gridline"/>{config.events.filter(e=>e.kind===kind&&e.start<=windowState.window.end&&(e.end??e.start)>=windowState.window.start).map(event=>{const left=x(Math.max(event.start,windowState.window.start)),end=x(Math.min(event.end??event.start,windowState.window.end));return <g key={event.id}><rect x={left} y={plotBottom+21+row*20} width={Math.max(4,end-left)} height={13} rx="1" fill={kind==='incident'?'#c44f5a':'#15b9a7'} opacity={kind==='incident'?.65:.9}/>{width>460&&<text x={Math.min(left+8,width-145)} y={plotBottom+32+row*20} fill="#e0eff4">{event.label}</text>}<title>{event.label} · {utc(event.start)} UTC{event.end?` – ${utc(event.end)}`:''}</title></g>;})}</g>)}
     </svg>
     {widget.options?.showLegend!==false&&<div className="incident-chart-legend">{config.tracks.map(track=><span key={track.name}><i style={{background:track.color}}/>{track.label} <small>{track.unit}</small></span>)}<span><i className="is-hatched"/>Unknown</span><span className="incident-utc">UTC · 10s source samples</span></div>}
-    {interactive&&selected!==null&&<section className="incident-time-inspector" aria-label="Aligned telemetry details"><header><strong>{pinned?'Pinned':'Inspecting'} · {utc(selected)} UTC</strong><button onClick={dismiss} aria-label="Close telemetry details"><X size={13}/></button></header><div>{config.tracks.map(track=>{const value=exact.find(item=>item.name===track.name)?.value;return <article key={track.name}><span style={{color:track.color}}>{track.label}</span><strong>{value===null||value===undefined?'No telemetry':`${value.toFixed(track.decimals)} ${track.unit}`}</strong><div className="incident-mini-history"><Sparkline values={(series.find(s=>s.name===track.name)?.points??[]).map(p=>p.value)} color={track.color} height={30}/></div></article>;})}</div><footer>{series[0]?.labels.service} · exact same-time samples<button onClick={()=>setPinned(!pinned)}>{pinned?'Unpin observation':'Pin observation'}</button></footer></section>}
+    {interactive&&selected!==null&&<ChartTooltip pinned={pinned} onClose={dismiss} onLeave={hoverDismiss.schedule}><section className="incident-time-inspector" aria-label="Aligned telemetry details"><header><strong>{pinned?'Pinned':'Inspecting'} · {utc(selected)} UTC</strong><button onClick={dismiss} aria-label="Close telemetry details"><X size={13}/></button></header><div>{config.tracks.map(track=>{const value=exact.find(item=>item.name===track.name)?.value;return <article key={track.name}><span style={{color:track.color}}>{track.label}</span><strong>{value===null||value===undefined?'No telemetry':`${value.toFixed(track.decimals)} ${track.unit}`}</strong><div className="incident-mini-history"><Sparkline values={(series.find(s=>s.name===track.name)?.points??[]).map(p=>p.value)} color={track.color} height={30}/></div></article>;})}</div><footer>{series[0]?.labels.service} · exact same-time samples<button onClick={()=>{hoverDismiss.cancel();setPinned(!pinned);}}>{pinned?'Unpin observation':'Pin observation'}</button></footer></section></ChartTooltip>}
   </div>;
 }
 
@@ -91,15 +98,15 @@ export function TraceWaterfall({widget,result,embedded,onContextChange}:WidgetRe
   const data=useMemo(()=>result.records?buildTraceSpans(result.records,config):null,[result.records,config]);
   const [search,setSearch]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(new Set()),[selected,setSelected]=useState<string|null>(null),[tab,setTab]=useState<'attributes'|'timing'>('attributes');
   const container=useRef<HTMLDivElement>(null),svg=useRef<SVGSVGElement>(null),measured=useWidth(container),uid=useId().replaceAll(':','');
-  const spanRefs=useRef(new Map<string,SVGGElement>());
+  const spanRefs=useRef(new Map<string,SVGGElement>()),sourceRevision=useRef(result);
   const interactive=!embedded&&widget.options?.showTooltip!==false;
   const extent=useMemo(()=>data&&data.duration>0?{start:0,end:data.duration}:null,[data]);
   const time=useChartTimeWindow(extent,result,1);
-  useEffect(()=>{setSelected(null);setCollapsed(new Set());},[result]);
+  useEffect(()=>{sourceRevision.current=result;setSelected(null);setCollapsed(new Set());},[result]);
   const rows=useMemo(()=>visibleTraceSpans(data?.spans??[],collapsed,search),[data,collapsed,search]);
   useEffect(()=>{if(!interactive||(selected!==null&&!rows.some(span=>span.id===selected)))setSelected(null);},[interactive,rows,selected]);
-  const selectedSpan=data?.byId.get(selected??'');
-  const dismiss=()=>{const target=selected?spanRefs.current.get(selected):null;setSelected(null);(target??svg.current)?.focus({preventScroll:true});};
+  const selectedSpan=interactive&&sourceRevision.current===result&&rows.some(span=>span.id===selected)?data?.byId.get(selected??''):undefined;
+  const dismiss=()=>{const target=selected?spanRefs.current.get(selected):null;setSelected(null);restoreTooltipFocus(target??svg.current);};
   const width=Math.max(620,measured),labelWidth=width>850?285:235,top=29,height=top+rows.length*config.rowHeight+5;
   const x=scaleLinear().domain([time.window.start,time.window.end]).range([labelWidth,width-62]);
   const tickValues=x.ticks(Math.max(3,Math.floor((width-labelWidth)/90)));
@@ -110,13 +117,13 @@ export function TraceWaterfall({widget,result,embedded,onContextChange}:WidgetRe
   if(!data?.spans.length)return <div className="incident-empty">No trace spans in this result.</div>;
   return <div className="incident-trace" data-trace-duration={data.duration} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
     {!embedded&&<div className="incident-trace-toolbar"><label><Search size={13}/><input aria-label="Search trace spans" placeholder="Search spans, services, status…" value={search} onChange={event=>setSearch(event.target.value)}/></label><span>{data.spans.length} spans · {data.duration.toLocaleString()}ms elapsed</span><button disabled={!selectedSpan} onClick={focusSelected}><Crosshair size={12}/>Focus selected</button>{time.canUndo&&<button onClick={time.undo}>Undo zoom</button>}<button onClick={time.reset} disabled={!time.zoomed}>Fit trace</button></div>}
-    <div className="incident-trace-layout" data-inspecting={interactive&&!!selectedSpan}>
+    <div className="incident-trace-layout">
       <div ref={container} className="incident-trace-scroll" tabIndex={0} aria-label="Trace span timeline; scroll horizontally at narrow widths">
         <svg ref={svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={widget.title} {...brush.handlers} onClick={event=>{if(event.target!==event.currentTarget||!interactive)return;const p=point(event.clientX,event.clientY);if(!p?.inPlot)return;const span=rows[Math.floor((p.y-top+4)/config.rowHeight)];if(span)select(span.id);}} style={{touchAction:'pan-y',userSelect:'none'}} tabIndex={-1}>
           <defs><clipPath id={`${uid}-traceclip`}><rect x={labelWidth} y={top-7} width={width-labelWidth-62} height={height-top+7}/></clipPath></defs>
           <text x="3" y="13" className="incident-svg-muted">Service / span</text><text x={labelWidth-13} y="13" textAnchor="end" className="incident-svg-muted">ms</text>
           {tickValues.map(tick=><g key={tick}><line x1={x(tick)} x2={x(tick)} y1={top-10} y2={height} className="incident-gridline"/><text x={x(tick)} y="13" textAnchor="middle" className="incident-svg-muted">{Math.round(tick)}</text></g>)}
-          {rows.map((span,index)=>{const y=top+index*config.rowHeight,active=span.id===selected,indent=Math.min(span.depth*12,labelWidth-130),color=span.status==='ERROR'?'#f4787d':span.service.includes('payment')?'#a289f5':'#13c7df';return <g key={span.id} className="incident-span-row" data-selected={active}>
+          {rows.map((span,index)=>{const y=top+index*config.rowHeight,active=span.id===selectedSpan?.id,indent=Math.min(span.depth*12,labelWidth-130),color=span.status==='ERROR'?'#f4787d':span.service.includes('payment')?'#a289f5':'#13c7df';return <g key={span.id} className="incident-span-row" data-selected={active}>
             <rect x="0" y={y-4} width={width} height={config.rowHeight} fill={active?'#103e4b':index%2===0?'#0a2029':'transparent'} stroke={active?'#24667a':'none'}/>
             {span.children.length>0&&!embedded&&<g role="button" tabIndex={0} aria-label={`${collapsed.has(span.id)?'Expand':'Collapse'} ${span.operation}`} aria-expanded={!collapsed.has(span.id)} onClick={()=>setCollapsed(previous=>{const next=new Set(previous);if(next.has(span.id))next.delete(span.id);else next.add(span.id);return next;})} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setCollapsed(previous=>{const next=new Set(previous);if(next.has(span.id))next.delete(span.id);else next.add(span.id);return next;});}}}><rect x={indent} y={y-2} width="20" height="21" fill="transparent"/>{collapsed.has(span.id)?<ChevronRight x={indent+2} y={y+1} size={12}/>:<ChevronDown x={indent+2} y={y+1} size={12}/>}</g>}
             <g ref={element=>{if(element)spanRefs.current.set(span.id,element);else spanRefs.current.delete(span.id);}} role={interactive?'button':'img'} tabIndex={interactive?0:undefined} aria-label={`Inspect span ${span.operation}, ${span.duration} milliseconds, ${span.status}`} aria-pressed={interactive?active:undefined} onClick={()=>select(span.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(span.id);}}}>
@@ -131,7 +138,7 @@ export function TraceWaterfall({widget,result,embedded,onContextChange}:WidgetRe
         </svg>
         {rows.length===0&&<div className="incident-empty">No spans match this search.</div>}
       </div>
-      {interactive&&selectedSpan&&<section className="incident-span-inspector" aria-label={`Span details for ${selectedSpan.operation}`}><header><strong><i style={{background:statusColor(selectedSpan.status)}}/>{selectedSpan.operation}</strong><button aria-label="Close span details" onClick={dismiss}><X size={14}/></button></header><div className="incident-span-big">{selectedSpan.duration.toLocaleString()}<span>ms</span><small>observed span duration</small></div><dl><div><dt>Service</dt><dd>{selectedSpan.service}</dd></div><div><dt>Status</dt><dd style={{color:statusColor(selectedSpan.status)}}>{selectedSpan.status}</dd></div><div><dt>Trace ID</dt><dd className="is-mono">{selectedSpan.traceId}</dd></div><div><dt>Span ID</dt><dd className="is-mono">{selectedSpan.id}</dd></div></dl><div className="incident-inspector-tabs"><button aria-pressed={tab==='attributes'} onClick={()=>setTab('attributes')}>Attributes</button><button aria-pressed={tab==='timing'} onClick={()=>setTab('timing')}>Timing</button></div>{tab==='attributes'?<dl><div><dt>Parent</dt><dd>{selectedSpan.parentId??'Root span'}</dd></div><div><dt>Children</dt><dd>{selectedSpan.children.length}</dd></div><div><dt>Fixture</dt><dd>Sampled request</dd></div></dl>:<dl><div><dt>Start offset</dt><dd>{selectedSpan.start}ms</dd></div><div><dt>End offset</dt><dd>{selectedSpan.end}ms</dd></div><div><dt>Share of elapsed</dt><dd>{data.duration>0?`${(selectedSpan.duration/data.duration*100).toFixed(2)}%`:'Unavailable · zero elapsed'}</dd></div></dl>}<p>Parallel spans overlap. Their durations are not added to obtain request latency.</p><button className="incident-inspector-action" onClick={focusSelected}><Crosshair size={13}/>Focus this interval</button></section>}
+      {interactive&&selectedSpan&&<ChartTooltip pinned={true} onClose={dismiss}><section className="incident-span-inspector" aria-label={`Span details for ${selectedSpan.operation}`}><header><strong><i style={{background:statusColor(selectedSpan.status)}}/>{selectedSpan.operation}</strong><button aria-label="Close span details" onClick={dismiss}><X size={14}/></button></header><div className="incident-span-big">{selectedSpan.duration.toLocaleString()}<span>ms</span><small>observed span duration</small></div><dl><div><dt>Service</dt><dd>{selectedSpan.service}</dd></div><div><dt>Status</dt><dd style={{color:statusColor(selectedSpan.status)}}>{selectedSpan.status}</dd></div><div><dt>Trace ID</dt><dd className="is-mono">{selectedSpan.traceId}</dd></div><div><dt>Span ID</dt><dd className="is-mono">{selectedSpan.id}</dd></div></dl><div className="incident-inspector-tabs"><button aria-pressed={tab==='attributes'} onClick={()=>setTab('attributes')}>Attributes</button><button aria-pressed={tab==='timing'} onClick={()=>setTab('timing')}>Timing</button></div>{tab==='attributes'?<dl><div><dt>Parent</dt><dd>{selectedSpan.parentId??'Root span'}</dd></div><div><dt>Children</dt><dd>{selectedSpan.children.length}</dd></div><div><dt>Fixture</dt><dd>Sampled request</dd></div></dl>:<dl><div><dt>Start offset</dt><dd>{selectedSpan.start}ms</dd></div><div><dt>End offset</dt><dd>{selectedSpan.end}ms</dd></div><div><dt>Share of elapsed</dt><dd>{data.duration>0?`${(selectedSpan.duration/data.duration*100).toFixed(2)}%`:'Unavailable · zero elapsed'}</dd></div></dl>}<p>Parallel spans overlap. Their durations are not added to obtain request latency.</p><button className="incident-inspector-action" onClick={focusSelected}><Crosshair size={13}/>Focus this interval</button></section></ChartTooltip>}
     </div><div className="incident-trace-note"><span>Offsets from request start · drag timeline to zoom · {Math.round(time.window.start)}–{Math.round(time.window.end)}ms</span><span>{result.records?.truncated?'Partial source trace':'One sampled request, not aggregate latency'}</span></div>
   </div>;
 }
@@ -203,7 +210,7 @@ export function ServiceDependency({widget,result,embedded,onContextChange}:Widge
   useEffect(()=>{if(!interactive)setSelected(null);},[interactive]);
   const node=data.nodes.find(n=>n.name===selected);
   const select=(name:string)=>{if(!interactive)return;setSelected(name);const item=data.nodes.find(n=>n.name===name)!;onContextChange?.({series:name,value:item.errorRate,labels:{service:name,requests:String(item.requests),errors:String(item.errors)}});};
-  const dismiss=()=>{const target=selected?nodeRefs.current.get(selected):null;setSelected(null);(target??svg.current)?.focus({preventScroll:true});};
+  const dismiss=()=>{const target=selected?nodeRefs.current.get(selected):null;setSelected(null);restoreTooltipFocus(target??svg.current);};
   const colour=(rate:number|null)=>rate===null?'#7895a4':rate>5?'#f4787d':rate>1?'#f5bd56':'#16d6b0';
   if(!data.nodes.length)return <div className="incident-empty">No dependency edges in this result.</div>;
   return <div className="incident-dependency" onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>

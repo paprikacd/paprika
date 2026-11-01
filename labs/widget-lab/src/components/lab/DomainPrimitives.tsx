@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Pencil, X } from 'lucide-react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { Panel } from './StudyPrimitives';
 import { WidgetVisualization } from '../../vendor/paprika/ui/src/features/insights/charts';
 import type { QueryResult, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
@@ -7,8 +6,9 @@ import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insi
 import type { EditLensWidget } from '../../lenses/LensStudio';
 import { useLabMotion } from './motion';
 import './DomainPrimitives.css';
-import { mergeDomainWidget } from './domain-widget';
+import { useDashboardPanels } from './DashboardWorkbench';
 export { useInspection } from '../../charts/shared/inspection';
+export { DomainInspector } from './DomainInspector';
 
 export const CHART_COLORS = {
   cyan: 'var(--gamma-chart-1)', violet: 'var(--gamma-chart-2)', mint: 'var(--gamma-success)',
@@ -46,19 +46,13 @@ export function DomainChartPanel({ panel, onEdit, className = '', height, captio
   selection?: Widget['config']; onContextChange?: (context: DrilldownContext) => void;
 }) {
   const { reduced } = useLabMotion();
-  const [override, setOverride] = useState<Widget | null>(null);
-  const identity = useRef(panel.widget.id);
-  useEffect(() => { if (identity.current !== panel.widget.id) { identity.current = panel.widget.id; setOverride(null); } }, [panel.widget.id]);
-  const widget = mergeDomainWidget(panel.widget, override, selection);
-  return <Panel title={widget.title} className={`domain-panel ${reduced ? 'domain-motion-reduced' : 'domain-motion-auto'} ${className}`} subtitle={caption ?? panel.caption} actions={onEdit && <button className="domain-edit" aria-label={`Edit ${widget.title}`} onClick={() => onEdit(widget, panel.result, setOverride)}><Pencil size={12}/><span>Edit</span></button>}>
+  const panels = useDashboardPanels(onEdit);
+  const widget = panels.current(panel.widget, selection);
+  return <Panel title={widget.title} className={`domain-panel ${reduced ? 'domain-motion-reduced' : 'domain-motion-auto'} ${className}`} subtitle={caption ?? panel.caption} actions={panels.actions(panel, selection)}>
     <div className="domain-chart-host" style={height ? { minHeight: height } : undefined}><WidgetVisualization widget={widget} result={panel.result} onContextChange={onContextChange}/></div>
   </Panel>;
 }
 
-export function DomainInspector({ title, children, onClose, pinned = true }: { title: string; children: ReactNode; onClose: () => void; pinned?: boolean }) {
-  const { reduced } = useLabMotion();
-  return <section className="domain-inspector" data-pinned={pinned} data-motion={reduced ? 'reduced' : 'auto'} role={pinned ? undefined : 'tooltip'} aria-label={`${title} details`}><header><div><small>{pinned ? 'Selected evidence' : 'Inspecting · click or Enter to pin'}</small><strong>{title}</strong></div>{pinned && <button aria-label={`Close ${title} details`} onClick={onClose}><X size={14}/></button>}</header>{children}</section>;
-}
 export function DetailValues({ items }: { items: [string, ReactNode][] }) {
   return <dl className="domain-detail-values">{items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }

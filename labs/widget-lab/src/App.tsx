@@ -8,6 +8,7 @@ import { DashboardNavigation } from './components/DashboardNavigation';
 import gammaTheme from './vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
 import './observatory.css';
 import { isLensRoute } from './lenses/lens-routes';
+import { DashboardWorkbench, DashboardEditControls } from './components/lab/DashboardWorkbench';
 
 const EdgeWatch = lazy(() => import('./studies/EdgeWatch').then(module => ({ default: module.EdgeWatch })));
 const ReliabilityRoom = lazy(() => import('./studies/ReliabilityRoom').then(module => ({ default: module.ReliabilityRoom })));
@@ -25,7 +26,7 @@ function PaprikaMark() {
 export function App() {
   const [route,setRoute] = useState(location.hash);
   useEffect(() => { const update=()=>setRoute(location.hash); window.addEventListener('hashchange',update); return()=>window.removeEventListener('hashchange',update); }, []);
-  return <MotionProvider><LabWidgetLoadingProvider><DashboardNavigation route={route}/>{isLensRoute(route) ? <Suspense fallback={<StudyLoading label="Loading dashboard lens"/>}><LensStudio key={route} lens={route.slice(1) as import('./lenses/LensStudio').LensId}/></Suspense> : route === '#charts' ? <Suspense fallback={<StudyLoading label="Loading chart library" variant="bars"/>}><ChartCatalog /></Suspense> : route.startsWith('#lab-') || route === '#baseline' ? <Observatory /> : <Suspense fallback={<StudyLoading label="Loading reference study"/>}><ReferenceStudio /></Suspense>}</LabWidgetLoadingProvider></MotionProvider>;
+  return <MotionProvider><LabWidgetLoadingProvider><DashboardWorkbench key={route}><DashboardNavigation route={route}/>{isLensRoute(route) ? <Suspense fallback={<StudyLoading label="Loading dashboard lens"/>}><LensStudio key={route} lens={route.slice(1) as import('./lenses/LensStudio').LensId}/></Suspense> : route === '#charts' ? <Suspense fallback={<StudyLoading label="Loading chart library" variant="bars"/>}><ChartCatalog /></Suspense> : route.startsWith('#lab-') || route === '#baseline' ? <Observatory /> : <Suspense fallback={<StudyLoading label="Loading reference study"/>}><ReferenceStudio /></Suspense>}</DashboardWorkbench></LabWidgetLoadingProvider></MotionProvider>;
 }
 
 function Observatory() {
@@ -58,6 +59,7 @@ function Observatory() {
         <div className="obs-brand"><span>paprika</span><ChevronRight size={13}/><strong>Widget lab</strong><span className="study-number">{study === 'edge' ? '02' : '03'}</span></div>
         <nav className="obs-study-tabs" aria-label="Dashboard studies"><a href="#lab-edge" aria-current={study === 'edge' ? 'page' : undefined}>Edge Watch</a><a href="#lab-reliability" aria-current={study === 'reliability' ? 'page' : undefined}>Reliability Room</a></nav>
         <div className="obs-top-actions">
+          <DashboardEditControls/>
           <span className="obs-fixture-label"><FlaskConical size={13}/>Synthetic data</span>
           {motion.hasReplay && <GammaButton size="sm" variant={motion.replaying ? 'secondary' : 'ghost'} aria-label={motion.replaying ? 'Pause demo replay' : 'Start demo replay'} aria-pressed={motion.replaying} onClick={motion.toggleReplay} title="Advance the synthetic snapshot every 1.8 seconds. Pauses when the tab is hidden.">{motion.replaying ? <Pause size={13}/> : <Play size={13}/>}Demo replay</GammaButton>}
           <GammaButton size="sm" variant="ghost" aria-label={motion.preference === 'reduced' ? 'Use automatic motion' : 'Reduce motion'} aria-pressed={motion.preference === 'reduced'} onClick={() => motion.setPreference(motion.preference === 'reduced' ? 'auto' : 'reduced')} title={motion.preference === 'auto' && motion.reduced ? 'Automatic motion is reduced by your operating system preference.' : 'Auto follows your operating system preference. Reduced removes decorative motion.'}>Motion {motion.preference === 'reduced' ? 'Reduced' : 'Auto'}</GammaButton>

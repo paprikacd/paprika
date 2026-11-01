@@ -21,11 +21,12 @@
     "Shared focus-ring and tick-label presentation refinements; svgAnimation remains disabled.",
     "Optional registry-owned validateInput(result, config) and intrinsic/fill layout metadata for loaded-data editor acceptance and compound chart hosts.",
     "Optional config-field binding metadata declares accepted source types, units, semantic roles and explicit unbound values for the shared editor.",
-    "Host-owned WidgetLoadingProvider supplies presentation-only initial and refresh states without changing Widget or QueryResult. Retained empty results also show refresh status."
+    "Host-owned WidgetLoadingProvider supplies presentation-only initial and refresh states without changing Widget or QueryResult. Retained empty results also show refresh status.",
+    "Shared ObservationTooltip and WidgetTooltipProvider own pointer/focus anchoring, viewport collision and bounded scrolling across canonical and lab chart families, with strict common tooltip placement and size options."
   ],
   "patch": {
     "path": "docs/paprika-reference-renderer.patch",
-    "sha256": "7aeee68a7e3b59f1796bc3166cd45f9b418032f44d196a1dcef82b994d2f59ac",
+    "sha256": "6ee5b9a5e0ea357bb2c2e1a21326286f99428bd1c065728988532918a9739c17",
     "path_root": "lab project root",
     "generator": "docs/regenerate-paprika-provenance.py",
     "basis": "Exact blobs at the recorded upstream commit, compared with the current copied files."
@@ -33,9 +34,9 @@
   "hash_algorithm": "SHA-256",
   "sha256_field_meaning": "Current local file hash; upstream_sha256 preserves the pinned base hash. Added files have a null upstream_sha256.",
   "file_status_counts": {
-    "added": 7,
+    "added": 12,
     "modified": 13,
-    "unchanged": 46
+    "unchanged": 47
   },
   "declared_runtime_dependencies": {
     "@tanstack/charts": "1.1.0",
@@ -70,8 +71,6 @@
     "@tanstack/charts/scales/band",
     "@tanstack/charts/scales/linear",
     "@tanstack/charts/scene",
-    "@tanstack/charts/tooltip",
-    "@tanstack/charts/tooltip/portal",
     "d3-hierarchy",
     "d3-scale",
     "d3-shape",
@@ -142,15 +141,15 @@
       "path": "ui/src/features/insights/chart-renderers.tsx",
       "status": "modified",
       "upstream_sha256": "a261271d0e2af733c57634c3db064c5e0e5759a9dbd97506dbf00834c2c7a0d0",
-      "local_sha256": "c0affb0c86d0862a1b0a79004fdbbc47450382689eeb5227fec908d0207dae8b",
-      "sha256": "c0affb0c86d0862a1b0a79004fdbbc47450382689eeb5227fec908d0207dae8b"
+      "local_sha256": "535b38bc2c6064ee7a72b52fdbbd1f3b7260920dc9b49280eb67999c5ee77555",
+      "sha256": "535b38bc2c6064ee7a72b52fdbbd1f3b7260920dc9b49280eb67999c5ee77555"
     },
     {
       "path": "ui/src/features/insights/chart-styles.module.css",
       "status": "modified",
       "upstream_sha256": "f0dd1c2f8bdcd5ef63c5ac79813fb4cfa3754513f9845bc44fb713b408575651",
-      "local_sha256": "3c483dd248268aab57ad6bb1faafd53177d56a566cd8297d39451b530cddbfda",
-      "sha256": "3c483dd248268aab57ad6bb1faafd53177d56a566cd8297d39451b530cddbfda"
+      "local_sha256": "9b17f722f0b839a862576a7f6d24d71e852dcd5caa56d7bdbc496e3e9d728143",
+      "sha256": "9b17f722f0b839a862576a7f6d24d71e852dcd5caa56d7bdbc496e3e9d728143"
     },
     {
       "path": "ui/src/features/insights/charts.module.css",
@@ -163,8 +162,8 @@
       "path": "ui/src/features/insights/charts.tsx",
       "status": "modified",
       "upstream_sha256": "c69e3b5c731ae63a72a788717abbd82d0f3384031a447c3799f8274f1a2107f7",
-      "local_sha256": "d42dd2d3536a9f9619f5af36504cde59e01104a138e0a3185515d3ca19fd4724",
-      "sha256": "d42dd2d3536a9f9619f5af36504cde59e01104a138e0a3185515d3ca19fd4724"
+      "local_sha256": "034edeabdce5f020737e8d5fda308da5650e010897145e5e344dbb1c0fd47ef0",
+      "sha256": "034edeabdce5f020737e8d5fda308da5650e010897145e5e344dbb1c0fd47ef0"
     },
     {
       "path": "ui/src/features/insights/drilldown.ts",
@@ -179,6 +178,13 @@
       "upstream_sha256": "874296affe5cf742bc0221b9cf5d25c5fb193d1d0856e6412a2b6a0ad427c370",
       "local_sha256": "874296affe5cf742bc0221b9cf5d25c5fb193d1d0856e6412a2b6a0ad427c370",
       "sha256": "874296affe5cf742bc0221b9cf5d25c5fb193d1d0856e6412a2b6a0ad427c370"
+    },
+    {
+      "path": "ui/src/features/insights/gamma/action-menu.tsx",
+      "status": "unchanged",
+      "upstream_sha256": "f14ec533a6cdf4149a911bdb589ecc6a3469d9b39b697486065c4beae4802863",
+      "local_sha256": "f14ec533a6cdf4149a911bdb589ecc6a3469d9b39b697486065c4beae4802863",
+      "sha256": "f14ec533a6cdf4149a911bdb589ecc6a3469d9b39b697486065c4beae4802863"
     },
     {
       "path": "ui/src/features/insights/gamma/button.tsx",
@@ -286,11 +292,18 @@
       "sha256": "736b6a52d8a4b5ad60aca38c474d0ce194a7e14ac152e12ab6c166f9c9cb77e8"
     },
     {
+      "path": "ui/src/features/insights/observation-tooltip.tsx",
+      "status": "added",
+      "upstream_sha256": null,
+      "local_sha256": "8ee5fd509c1e9a03a3d3c9251340395bf8f7667877ee88b29908cc3c220ff9a9",
+      "sha256": "8ee5fd509c1e9a03a3d3c9251340395bf8f7667877ee88b29908cc3c220ff9a9"
+    },
+    {
       "path": "ui/src/features/insights/plot-tooltip.tsx",
       "status": "modified",
       "upstream_sha256": "7528f4490dff9780cf57858bf60d89c1266bb0a9a558194e0812247e0f61671a",
-      "local_sha256": "60db84957d895d160410f46d2985d6ebfd29ac8ef0b01b2383e0ba6cd22634ff",
-      "sha256": "60db84957d895d160410f46d2985d6ebfd29ac8ef0b01b2383e0ba6cd22634ff"
+      "local_sha256": "4883e38c243f150e0777fe2948c408e202bc46e5e1992a6309fa46decde5c1eb",
+      "sha256": "4883e38c243f150e0777fe2948c408e202bc46e5e1992a6309fa46decde5c1eb"
     },
     {
       "path": "ui/src/features/insights/plugins/capacity-meter.module.css",
@@ -366,15 +379,15 @@
       "path": "ui/src/features/insights/plugins/rich-metrics.module.css",
       "status": "modified",
       "upstream_sha256": "57025c7591fe4fb58f1a7f4d7c5502bd61992095fac68a4ec715c4dc656cb2e2",
-      "local_sha256": "c3c0621856601213600116107fc643a661a2253a4b84bc4606f4eff1cc999773",
-      "sha256": "c3c0621856601213600116107fc643a661a2253a4b84bc4606f4eff1cc999773"
+      "local_sha256": "6b24d7f98a264005a96d5119f68dd0cf29f1cfdbafa3797b5f5ab7f4d147c344",
+      "sha256": "6b24d7f98a264005a96d5119f68dd0cf29f1cfdbafa3797b5f5ab7f4d147c344"
     },
     {
       "path": "ui/src/features/insights/plugins/rich-metrics.tsx",
       "status": "modified",
       "upstream_sha256": "db633b5234f274ddace7f45d1929711bc4dc134f7576877fc204d2dcb861719b",
-      "local_sha256": "fb84b28a1f0c8283aa08f141fa20feb3add5f9cfda25e7e185dad4e1149cf4cd",
-      "sha256": "fb84b28a1f0c8283aa08f141fa20feb3add5f9cfda25e7e185dad4e1149cf4cd"
+      "local_sha256": "e92b230d361e4e85e29fb550930cbd8ec223ac73d94420f8decb277ee65668e7",
+      "sha256": "e92b230d361e4e85e29fb550930cbd8ec223ac73d94420f8decb277ee65668e7"
     },
     {
       "path": "ui/src/features/insights/plugins/status-history.module.css",
@@ -436,8 +449,8 @@
       "path": "ui/src/features/insights/schema.ts",
       "status": "modified",
       "upstream_sha256": "c3678f2c208e2067a7515352bd17e8ee6adf9571691a30e81b1f3d61c7cf3d74",
-      "local_sha256": "40b2c402f5133086f9a754394c2460504d11a9474d2f05d47cf77bae13482a42",
-      "sha256": "40b2c402f5133086f9a754394c2460504d11a9474d2f05d47cf77bae13482a42"
+      "local_sha256": "b0387873a84dde5fa3ab484dcb7ec058c7f8dc71cbc8db6336326e0443dc3000",
+      "sha256": "b0387873a84dde5fa3ab484dcb7ec058c7f8dc71cbc8db6336326e0443dc3000"
     },
     {
       "path": "ui/src/features/insights/stat-sparkline.module.css",
@@ -480,6 +493,34 @@
       "upstream_sha256": "60a7fb45d3d1ae29c709e4066907423af1c1fd0857facb51c81ff3fb0f4032f8",
       "local_sha256": "60a7fb45d3d1ae29c709e4066907423af1c1fd0857facb51c81ff3fb0f4032f8",
       "sha256": "60a7fb45d3d1ae29c709e4066907423af1c1fd0857facb51c81ff3fb0f4032f8"
+    },
+    {
+      "path": "ui/src/features/insights/tooltip-dismiss.ts",
+      "status": "added",
+      "upstream_sha256": null,
+      "local_sha256": "4b92a81e007481a285bcb21f8393752b829ae4c75524f42a28fa5bd7b9d95f71",
+      "sha256": "4b92a81e007481a285bcb21f8393752b829ae4c75524f42a28fa5bd7b9d95f71"
+    },
+    {
+      "path": "ui/src/features/insights/tooltip-focus.ts",
+      "status": "added",
+      "upstream_sha256": null,
+      "local_sha256": "3ad9af8571e51ffd8dc7c9ed6a48a4d11d35f1fdc0f2995f5d907811e45a11d9",
+      "sha256": "3ad9af8571e51ffd8dc7c9ed6a48a4d11d35f1fdc0f2995f5d907811e45a11d9"
+    },
+    {
+      "path": "ui/src/features/insights/tooltip-interaction.tsx",
+      "status": "added",
+      "upstream_sha256": null,
+      "local_sha256": "d4da65e455caa0e11a0d502024433949d7b8026c4309b239705b9703e3a80366",
+      "sha256": "d4da65e455caa0e11a0d502024433949d7b8026c4309b239705b9703e3a80366"
+    },
+    {
+      "path": "ui/src/features/insights/tooltip-position.ts",
+      "status": "added",
+      "upstream_sha256": null,
+      "local_sha256": "755ad86accf421306794d860d37f1507b5580cbff4564892fc6e343c6aad48d5",
+      "sha256": "755ad86accf421306794d860d37f1507b5580cbff4564892fc6e343c6aad48d5"
     },
     {
       "path": "ui/src/features/insights/tooltip-query.tsx",

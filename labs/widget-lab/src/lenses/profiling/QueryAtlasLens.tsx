@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../../components/lab/DashboardWorkbench';
 import { useMemo, useState } from 'react';
-import { Braces, Code2, Download, Flame, Pencil, Upload, X } from 'lucide-react';
+import { Braces, Code2, Download, Flame, Upload, X } from 'lucide-react';
 import { Panel, Sparkline } from '../../components/lab/StudyPrimitives';
 import { WidgetVisualization } from '../../vendor/paprika/ui/src/features/insights/charts';
 import type { Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
@@ -13,12 +14,13 @@ registerProfilingCharts();
 function download(name:string,content:string,type='application/json'){const url=URL.createObjectURL(new Blob([content],{type}));const anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
 export function QueryAtlasLens({onEdit}:{onEdit?:EditLensWidget}){
- const [fixtureId,setFixtureId]=useState<ProfileFixtureId>('postgres-cpu'),[imported,setImported]=useState<ReturnType<typeof parseProfileText>|null>(null),[draft,setDraft]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[overrides,setOverrides]=useState<Record<string,Widget>>({}),[symbolSearch,setSymbolSearch]=useState('');
+ const [fixtureId,setFixtureId]=useState<ProfileFixtureId>('postgres-cpu'),[imported,setImported]=useState<ReturnType<typeof parseProfileText>|null>(null),[draft,setDraft]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[symbolSearch,setSymbolSearch]=useState('');
  const fixture=useMemo(()=>buildProfileFixture(fixtureId),[fixtureId]), profile=imported?.profile??fixture.profile, samples=imported?imported.samples:fixture.samples;
  const flame=useMemo(()=>{const panel=profilePanel(profile);panel.widget.title=profile.unit==='bytes'?'Allocation profile · aggregated call stacks':'CPU profile · aggregated call stacks';return panel;},[profile]);
  const timeline=useMemo(()=>samplePanel(samples??[]),[samples]), plan=useMemo(queryPlanPanel,[]), hot=useMemo(()=>profileHotFunctions(profile),[profile]);
- const current=(panel:ProfilePanel)=>overrides[panel.widget.id]??panel.widget;
- const edit=(panel:ProfilePanel)=>onEdit&&<button className="atlas-edit" aria-label={`Edit ${current(panel).title}`} onClick={()=>onEdit(current(panel),panel.result,next=>setOverrides(previous=>({...previous,[panel.widget.id]:next})))}><Pencil size={12}/><span>Edit</span></button>;
+  const panels = useDashboardPanels(onEdit);
+  const current = (panel: ProfilePanel) => panels.current(panel.widget);
+  const edit = panels.actions;
  const importProfile=(text:string)=>{try{const next=parseProfileText(text);if(next.profile.frames.length>1000||(next.samples?.length??0)>1000)throw new Error('This widget host supports at most 1,000 frames and 1,000 chronological samples per import. Narrow the source profile first.');setImported(next);setError('');setNotice(`Loaded ${next.format} · ${next.profile.frames.length} frames. This profile stays in the current browser session.`);}catch(e){setError(e instanceof Error?e.message:'Could not read this profile.');setNotice('');}};
  const exportProfile=()=>{try{download('paprika-profile.flamebearer.json',JSON.stringify(encodeFlamebearer(profile),null,2));setError('');}catch(e){setError((e as Error).message);}};
  const showPlan=!imported&&fixtureId==='postgres-cpu', filtered=hot.filter(row=>row.label.toLowerCase().includes(symbolSearch.toLowerCase())), duration=samples?.length?Math.max(...samples.map(sample=>sample.end))-Math.min(...samples.map(sample=>sample.start)):null;

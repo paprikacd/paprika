@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Activity, BatteryCharging, CircleHelp, Clock3, MapPinned, Pencil, RadioTower, Zap } from 'lucide-react';
+import { Activity, BatteryCharging, CircleHelp, Clock3, MapPinned, RadioTower, Zap } from 'lucide-react';
 import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
 import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
 import type { Widget } from '../vendor/paprika/ui/src/features/insights/schema';
@@ -15,10 +16,11 @@ registerLabCharts();registerGridCharts();
 const number=(n:number,digits=0)=>(Math.abs(n)<.5*10**-digits?0:n).toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits});
 
 export function GridOperationsLens({onEdit}:{onEdit?:EditLensWidget}) {
-  const [scenario,setScenario]=useState<GridScenario>('peak'),[window,setWindow]=useState<GridWindow>('day'),[overrides,setOverrides]=useState<Record<string,Widget>>({}),[context,setContext]=useState<DrilldownContext|null>(null);
+  const [scenario,setScenario]=useState<GridScenario>('peak'),[window,setWindow]=useState<GridWindow>('day'),[context,setContext]=useState<DrilldownContext|null>(null);
   const data=useMemo(()=>buildGridOperations(scenario,window),[scenario,window]);const {latest,panels}=data;
-  const current=(panel:GridPanel)=>overrides[panel.widget.id]??panel.widget;
-  const edit=(panel:GridPanel)=>onEdit&&<button className="grid-edit" aria-label={`Edit ${current(panel).title}`} onClick={()=>onEdit(current(panel),panel.result,next=>setOverrides(p=>({...p,[panel.widget.id]:next})))}><Pencil size={12}/><span>Edit</span></button>;
+  const editor = useDashboardPanels(onEdit);
+  const current = (panel: GridPanel) => editor.current(panel.widget);
+  const edit = editor.actions;
   const render=(source:GridPanel,className:string,extra?:ReactNode)=><Panel className={`grid-panel ${className}`} title={current(source).title} subtitle={source.caption} actions={edit(source)}><div className="grid-widget"><WidgetVisualization widget={current(source)} result={source.result} onContextChange={next=>setContext({...next,labels:{...next.labels,unit:source.widget.unit}})}/></div>{extra}<p className="grid-panel-footnote">{source.caption}</p></Panel>;
   const soc=latest.energy/BATTERY_CAPACITY_MWH*100;
   return <main className="grid-operations-lens">

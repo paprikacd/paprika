@@ -1,3 +1,4 @@
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { ArrowDown, ArrowUp, Clock3, Network, RefreshCw, ShieldBan, Table2, MousePointer2, Pin, Info } from 'lucide-react';
 import { MetricCard, Panel, Sparkline, StatusBadge } from '../components/lab/StudyPrimitives';
@@ -76,10 +77,11 @@ export function EdgeWatch({ theme, narrow }: { theme: 'dark' | 'light'; narrow: 
   const data = useMemo(() => buildEdgeTelemetry({ scenario, gateway, minutes, revision }), [scenario, gateway, minutes, revision]);
   const trafficPoints = resolution === '10s' ? data.samples10s : data.points;
   const results = useMemo(() => makeEdgeChartResult(data, resolution), [data, resolution]);
-  const widget: Widget = useMemo(() => {
+  const sourceWidget: Widget = useMemo(() => {
     const maximum = Math.max(200, Math.ceil(Math.max(...trafficPoints.map(point => point.ingressMbps ?? 0), ...trafficPoints.map(point => point.egressMbps ?? 0)) / 200) * 200);
-    return { id: 'edge-traffic', title: 'Gateway traffic', type: 'timeseries', providerId: 'synthetic-fixture', query: 'edge_traffic_fixture', unit: 'Mb/s', layout: { x: 0, y: 0, w: 8, h: 4 }, options: { display: 'area', curve: 'linear', showGrid: true, showLegend: true, showTooltip: true, decimals: 2, lineWidth: 1.6, fillOpacity: 0.28, fillStyle: 'gradient', gridX: true, timeAxis: 'calendar', axisUnit: 'caption', showZeroLine: true, inspectorDensity: 'compact', min: -maximum, max: maximum, tooltipView: { type: 'timeseries', source: { type: 'series' }, title: 'Selected series history', height: 80, showGrid: false, showAxis: false, showLegend: false, decimals: 2 } } };
+    return { id: 'edge-traffic', title: 'Traffic flow', type: 'timeseries', providerId: 'synthetic-fixture', query: 'edge_traffic_fixture', unit: 'Mb/s', layout: { x: 0, y: 0, w: 8, h: 4 }, options: { display: 'area', curve: 'linear', showGrid: true, showLegend: true, showTooltip: true, decimals: 2, lineWidth: 1.6, fillOpacity: 0.28, fillStyle: 'gradient', gridX: true, timeAxis: 'calendar', axisUnit: 'caption', showZeroLine: true, inspectorDensity: 'compact', min: -maximum, max: maximum, tooltipView: { type: 'timeseries', source: { type: 'series' }, title: 'Selected series history', height: 80, showGrid: false, showAxis: false, showLegend: false, decimals: 2 } } };
   }, [trafficPoints]);
+  const panels = useDashboardPanels(), widget = panels.current(sourceWidget);
   const filteredEvents = data.events.filter(event => rule === 'all' || event.rule === rule);
   const events = showAllEvents ? filteredEvents : filteredEvents.slice(0, 4);
   const destinationMaximum = Math.max(1, ...data.destinations.map(destination => destination.meanMbps));
@@ -102,7 +104,7 @@ export function EdgeWatch({ theme, narrow }: { theme: 'dark' | 'light'; narrow: 
     </div>
     <ChartCursorProvider key={scopeKey}>
       <div className={styles.primaryGrid}>
-        <Panel title="Traffic flow" subtitle={`${resolution} interval-ending synthetic observations. The 10s fixture partitions each minute into six integer-count buckets; it does not interpolate production telemetry. Egress is mirrored below zero. Window means use observed intervals; deltas compare equal ${half}m halves${minutes % 2 ? ', with the first minute excluded' : ''}.`} actions={<div className={styles.chartActions}><span className={styles.panelMeta}>Mb/s</span><div role="group" aria-label="Traffic fixture sampling" className={styles.samplingButtons}>{(['10s', '1m'] as const).map(value => <GammaButton key={value} size="sm" variant={resolution === value ? 'secondary' : 'ghost'} aria-pressed={resolution === value} onClick={() => setResolution(value)}>{value}</GammaButton>)}</div></div>} className={styles.flowPanel}>
+        <Panel title={widget.title} subtitle={`${resolution} interval-ending synthetic observations. The 10s fixture partitions each minute into six integer-count buckets; it does not interpolate production telemetry. Egress is mirrored below zero. Window means use observed intervals; deltas compare equal ${half}m halves${minutes % 2 ? ', with the first minute excluded' : ''}.`} actions={<div className={styles.chartActions}>{panels.actions({widget:sourceWidget,result:results})}<span className={styles.panelMeta}>Mb/s</span><div role="group" aria-label="Traffic fixture sampling" className={styles.samplingButtons}>{(['10s', '1m'] as const).map(value => <GammaButton key={value} size="sm" variant={resolution === value ? 'secondary' : 'ghost'} aria-pressed={resolution === value} onClick={() => setResolution(value)}>{value}</GammaButton>)}</div></div>} className={styles.flowPanel}>
           <div className={styles.trafficChart}><WidgetVisualization widget={widget} result={results} /></div>
           <EdgeObservation data={data} resolution={resolution} />
         </Panel>

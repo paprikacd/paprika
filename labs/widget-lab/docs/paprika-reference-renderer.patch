@@ -52,10 +52,11 @@ new file mode 100644
 diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx
 --- a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx
 +++ b/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx
-@@ -11,11 +11,16 @@
+@@ -10,20 +10,26 @@
+   useState,
    type ReactNode,
  } from "react";
- import { createPortal } from "react-dom";
+-import { createPortal } from "react-dom";
 +import { ruleY } from "@tanstack/charts/rule";
 +import { scaleTime } from "d3-scale";
 +import { signedAreaGradient, calendarTick, horizontalPlotBounds, temporalPosition, timeAxisValue } from "./chart-presentation";
@@ -63,13 +64,50 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
  import { barY } from "@tanstack/charts/bar";
  import { focusGroupX, focusNearestX } from "@tanstack/charts/focus";
  import { usePlotTooltip } from "./plot-tooltip";
++import { ObservationTooltip } from "./observation-tooltip";
++import { restoreTooltipFocus } from "./tooltip-focus";
++import { useTooltipHandoff } from "./tooltip-interaction";
++export { ObservationTooltip } from "./observation-tooltip";
  import { useChartCursor } from "./chart-cursor";
 +import { minimumTimeWindow, observationsInWindow, timeWindowExtent } from "./time-window";
 +import { TimeBrushOverlay, TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from "./time-window-controls";
  import { lineY } from "@tanstack/charts/line";
  import { decorative } from "@tanstack/charts/mark/decorative";
  import { Chart } from "@tanstack/charts/react";
-@@ -216,6 +221,7 @@
+ import { scaleBand } from "@tanstack/charts/scales/band";
+ import { scaleLinear } from "@tanstack/charts/scales/linear";
+ import { defineChart } from "@tanstack/charts/scene";
+-import { tooltip } from "@tanstack/charts/tooltip";
+-import { portal } from "@tanstack/charts/tooltip/portal";
+ import type { QueryResult, Widget, WidgetOptions, Threshold } from "./schema";
+ import styles from "./charts.module.css";
+ import configStyles from "./chart-styles.module.css";
+@@ -61,7 +67,6 @@
+ import { lockBodyScroll } from "./gamma/scroll-lock";
+ import { GammaButton } from "./gamma/button";
+ import { GammaSelect } from "./gamma/select";
+-import { inheritGammaTheme } from "./gamma/inherit-theme";
+ import {
+   contextKey,
+   metricContext,
+@@ -87,16 +92,6 @@
+ ];
+ const MAX_SERIES = 12;
+ const MAX_ROWS = 100;
+-const themedPortal: typeof portal = {
+-  ...portal,
+-  id: "paprika-themed-portal",
+-  create(context, options) {
+-    const stopTheme = inheritGammaTheme(context.container, context.element);
+-    const instance = portal.create(context, options);
+-    return { ...instance, destroy() { stopTheme(); instance.destroy(); } };
+-  },
+-};
+-
+ const chartTheme = {
+   foreground: "var(--gamma-ink, #27332e)",
+   muted: "var(--gamma-chart-axis, var(--gamma-muted, #626e65))",
+@@ -216,6 +211,7 @@
    series: Series[];
  }) {
    const { ref, width, height } = usePlotSize();
@@ -77,7 +115,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
    const cursor = useChartCursor();
    const { embedded, showAxis, descriptionId } = useWidgetPresentation();
    const associateDescription = useCallback(
-@@ -228,14 +234,39 @@
+@@ -228,14 +224,39 @@
    const options = widget.options ?? EMPTY_OPTIONS;
    const tooltipEnabled =
      !embedded && options.showTooltip !== false;
@@ -119,13 +157,12 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
          name: seriesName(entry, index),
          latest: latestPoint(entry),
          color:
-@@ -248,37 +279,29 @@
+@@ -248,37 +269,29 @@
            seriesIndex: index,
          })),
        })),
 -    [series, widget.color],
-+    [visibleSeries, widget.color],
-   );
+-  );
 -  const timeSpan = useMemo(() => {
 -    const bounds = data.flatMap((entry) =>
 -      entry.points.length
@@ -137,6 +174,8 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
 -  const cursorBounds = data.flatMap(entry => entry.points.length ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp] : []);
 -  const cursorStart = Math.min(...cursorBounds), cursorEnd = Math.max(...cursorBounds);
 -  const cursorLeft = !showAxis ? 8 : options.yAxisLabel ? 74 : 54;
++    [visibleSeries, widget.color],
++  );
 +  const timeSpan = windowState.window.end - windowState.window.start;
 +  const cursorStart = windowState.window.start, cursorEnd = windowState.window.end;
    const cursorX = cursor && !embedded && cursor.timestamp >= cursorStart && cursor.timestamp <= cursorEnd && cursorEnd > cursorStart
@@ -166,7 +205,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
                      curve: CURVES[options.curve ?? "linear"],
                    }),
                  ),
-@@ -286,7 +309,7 @@
+@@ -286,7 +299,7 @@
              : []),
            lineY(entry.points, {
              id: `line-${index}`,
@@ -175,7 +214,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
              y: "value",
              // Shared timestamps still need distinct groups for nearest-line focus.
              z: "seriesIndex",
-@@ -302,9 +325,13 @@
+@@ -302,9 +315,13 @@
              ),
            }),
          ]),
@@ -190,7 +229,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
              axis: !showAxis
                ? false
                : {
-@@ -316,7 +343,7 @@
+@@ -316,7 +333,7 @@
                      count: ticks.x,
                      line: false,
                      padding: 10,
@@ -199,7 +238,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
                    },
                    tickLabels: {
                      opacity: 1,
-@@ -333,6 +360,7 @@
+@@ -333,6 +350,7 @@
                  ? false
                  : {
                      stroke: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
@@ -207,7 +246,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
                    },
              axis: !showAxis
                ? false
-@@ -342,10 +370,10 @@
+@@ -342,10 +360,10 @@
                      : undefined,
                    line: false,
                    ticks: {
@@ -220,7 +259,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
                    },
                    tickLabels: {
                      opacity: 1,
-@@ -355,14 +383,7 @@
+@@ -355,14 +373,7 @@
                  },
            },
          },
@@ -236,15 +275,26 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
          clip: true,
          theme: configuredTheme(options),
          // Built-in strategy identity preserves TanStack's segment hit testing.
-@@ -371,6 +392,7 @@
+@@ -371,30 +382,26 @@
            : tooltipEnabled
              ? focusNearestX
              : focusGroupX,
 +        focusRing: { radius: 4, fill: "var(--gamma-bg)", strokeWidth: 2 },
          svgAnimation: false,
-         tooltip:
-           options.showTooltip === false
-@@ -388,13 +410,20 @@
+-        tooltip:
+-          options.showTooltip === false
+-            ? false
+-            : tooltipEnabled
+-              ? { use: plotTooltip.extension, sticky: true }
+-              : {
+-                  use: tooltip,
+-                  portal: themedPortal,
+-                  sticky: true,
+-                  className: styles.tooltip,
+-                  format: (point) =>
+-                    `${point.datum.series}\n${dateTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : "No data"}`,
+-                },
++        tooltip: tooltipEnabled ? { use: plotTooltip.extension, sticky: true } : false,
        }),
      [
        data,
@@ -265,7 +315,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
        showAxis,
        embedded,
        tooltipEnabled,
-@@ -403,21 +432,20 @@
+@@ -403,21 +410,20 @@
    );
  
    return (
@@ -294,7 +344,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
          <Chart
            definition={definition}
            height={height}
-@@ -428,11 +456,12 @@
+@@ -428,11 +434,12 @@
            onRender={embedded ? associateDescription : plotTooltip.onRender}
            onFocusChange={tooltipEnabled ? plotTooltip.onFocusChange : undefined}
            onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
@@ -310,7 +360,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
        </div>
        {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
        {options.showLegend !== false && (
-@@ -467,9 +496,10 @@
+@@ -467,9 +474,10 @@
                </span>
              </span>
            ))}
@@ -322,34 +372,367 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/s
        </div>}
        {plotTooltip.panel}
        {series.length > MAX_SERIES && (
-@@ -1326,6 +1356,7 @@
-   anchor,
-   anchorRect,
-   preferSide = false,
-+  compact = false,
-   onDismiss,
-   onEnter,
-   onLeave,
-@@ -1335,6 +1366,7 @@
-   anchor: Element;
-   anchorRect?: () => DOMRect;
-   preferSide?: boolean;
-+  compact?: boolean;
-   onDismiss: () => void;
-   onEnter: () => void;
-   onLeave: () => void;
-@@ -1472,6 +1504,7 @@
-       id={id}
-       role="tooltip"
-       className={configStyles.heatmapTooltip}
-+      data-inspector-density={compact ? "compact" : undefined}
-       style={{
-         left: position?.left ?? 0,
-         top: position?.top ?? 0,
+@@ -621,19 +629,7 @@
+         theme: configuredTheme(options),
+         svgAnimation: false,
+         focus: embedded ? false : tooltipEnabled ? focusNearestX : undefined,
+-        tooltip:
+-          options.showTooltip === false
+-            ? false
+-            : tooltipEnabled
+-              ? { use: plotTooltip.extension, sticky: true }
+-              : {
+-                  use: tooltip,
+-                  portal: themedPortal,
+-                  sticky: true,
+-                  className: styles.tooltip,
+-                  format: (point) =>
+-                    `${point.datum.name}\nLatest valid sample · ${dateTimeFormat.format(new Date(point.datum.timestamp))}\n${formatMetricDetails(point.datum.value, widget.unit, options.decimals)}`,
+-                },
++        tooltip: tooltipEnabled ? { use: plotTooltip.extension, sticky: true } : false,
+       }),
+     [
+       rows,
+@@ -1321,180 +1317,6 @@
+   return `≥ ${exactMetric(thresholds[index].value, unit)}${next ? ` and < ${exactMetric(next.value, unit)}` : ""}`;
+ }
+ 
+-export function ObservationTooltip({
+-  id,
+-  anchor,
+-  anchorRect,
+-  preferSide = false,
+-  onDismiss,
+-  onEnter,
+-  onLeave,
+-  children,
+-}: {
+-  id: string;
+-  anchor: Element;
+-  anchorRect?: () => DOMRect;
+-  preferSide?: boolean;
+-  onDismiss: () => void;
+-  onEnter: () => void;
+-  onLeave: () => void;
+-  children: ReactNode;
+-}) {
+-  const ref = useRef<HTMLDivElement>(null);
+-  const [position, setPosition] = useState<ReturnType<
+-    typeof placeHeatmapTooltip
+-  > | null>(null);
+-  useLayoutEffect(() => {
+-    let frame = 0;
+-    const stopTheme = ref.current ? inheritGammaTheme(anchor, ref.current) : undefined;
+-    const update = () => {
+-      const element = ref.current;
+-      if (!element || !anchor.isConnected) return;
+-      const viewport = window.visualViewport;
+-      const visibleViewport = {
+-        width: viewport?.width ?? window.innerWidth,
+-        height: viewport?.height ?? window.innerHeight,
+-        left: viewport?.offsetLeft,
+-        top: viewport?.offsetTop,
+-      };
+-      const anchorBounds = anchorRect?.() ?? anchor.getBoundingClientRect();
+-      const limits = heatmapTooltipSizeLimit(anchorBounds, visibleViewport);
+-      element.style.maxWidth = `${limits.width}px`;
+-      const candidate = preferSide
+-        ? placePlotTooltip(
+-            anchorBounds,
+-            element.getBoundingClientRect(),
+-            visibleViewport,
+-          )
+-        : null;
+-      const useSide =
+-        candidate?.placement === "left" || candidate?.placement === "right";
+-      // Side panels leave neighboring lines reachable; vertical panels must
+-      // scroll before they can overlap the trigger that pins or dismisses them.
+-      element.style.maxHeight = `${
+-        useSide
+-          ? Math.max(0, Math.min(560, visibleViewport.height - 24))
+-          : limits.height
+-      }px`;
+-      const bounds = element.getBoundingClientRect();
+-      const next = useSide
+-        ? placePlotTooltip(anchorBounds, bounds, visibleViewport)
+-        : placeHeatmapTooltip(anchorBounds, bounds, visibleViewport);
+-      setPosition((previous) =>
+-        previous?.left === next.left &&
+-        previous?.top === next.top &&
+-        previous?.placement === next.placement
+-          ? previous
+-          : next,
+-      );
+-    };
+-    const schedule = () => {
+-      cancelAnimationFrame(frame);
+-      frame = requestAnimationFrame(update);
+-    };
+-    update();
+-    const observer =
+-      typeof ResizeObserver === "undefined"
+-        ? undefined
+-        : new ResizeObserver(schedule);
+-    if (ref.current) observer?.observe(ref.current);
+-    observer?.observe(anchor);
+-    window.addEventListener("resize", schedule);
+-    window.addEventListener("scroll", schedule, true);
+-    window.visualViewport?.addEventListener("resize", schedule);
+-    window.visualViewport?.addEventListener("scroll", schedule);
+-    return () => {
+-      stopTheme?.();
+-      cancelAnimationFrame(frame);
+-      observer?.disconnect();
+-      window.removeEventListener("resize", schedule);
+-      window.removeEventListener("scroll", schedule, true);
+-      window.visualViewport?.removeEventListener("resize", schedule);
+-      window.visualViewport?.removeEventListener("scroll", schedule);
+-    };
+-  }, [anchor, anchorRect, preferSide]);
+-  useEffect(() => {
+-    const pointer = (event: PointerEvent) => {
+-      if (
+-        !anchor.contains(event.target as Node) &&
+-        !ref.current?.contains(event.target as Node)
+-      )
+-        onDismiss();
+-    };
+-    const keyboard = (event: KeyboardEvent) => {
+-      if (event.key === "Escape") {
+-        // A fading hover card must not swallow Escape from another chart.
+-        if (anchor.contains(event.target as Node) || ref.current?.contains(event.target as Node))
+-          event.stopPropagation();
+-        onDismiss();
+-        return;
+-      }
+-      const element = ref.current;
+-      if (
+-        element &&
+-        (event.target === anchor || element.contains(event.target as Node)) &&
+-        ["PageDown", "PageUp", "Home", "End"].includes(event.key)
+-      ) {
+-        // A tooltip does not take focus away from its trigger. Let keyboard
+-        // users inspect every label while keeping the chart's tab order intact.
+-        event.preventDefault();
+-        event.stopPropagation();
+-        const maximum = Math.max(
+-          0,
+-          element.scrollHeight - element.clientHeight,
+-        );
+-        const page = Math.max(48, Math.round(element.clientHeight * 0.8));
+-        element.scrollTop =
+-          event.key === "Home"
+-            ? 0
+-            : event.key === "End"
+-              ? maximum
+-              : Math.max(
+-                  0,
+-                  Math.min(
+-                    maximum,
+-                    element.scrollTop +
+-                      (event.key === "PageDown" ? page : -page),
+-                  ),
+-                );
+-      }
+-    };
+-    document.addEventListener("pointerdown", pointer, true);
+-    document.addEventListener("keydown", keyboard, true);
+-    return () => {
+-      document.removeEventListener("pointerdown", pointer, true);
+-      document.removeEventListener("keydown", keyboard, true);
+-    };
+-  }, [anchor, onDismiss]);
+-  return createPortal(
+-    <div
+-      ref={ref}
+-      id={id}
+-      role="tooltip"
+-      className={configStyles.heatmapTooltip}
+-      style={{
+-        left: position?.left ?? 0,
+-        top: position?.top ?? 0,
+-        visibility: position ? "visible" : "hidden",
+-      }}
+-      data-placement={position?.placement}
+-      onPointerEnter={onEnter}
+-      onPointerLeave={onLeave}
+-      onFocusCapture={onEnter}
+-      onBlurCapture={(event) => {
+-        if (
+-          !event.currentTarget.contains(event.relatedTarget as Node | null) &&
+-          !anchor.contains(event.relatedTarget as Node | null)
+-        )
+-          onLeave();
+-      }}
+-    >
+-      {children}
+-    </div>,
+-    document.body,
+-  );
+-}
+-
+ /** Pointer preview and click/tap pinning share the same keyboard-readable panel. */
+ export function ObservationDetails({
+   label,
+@@ -1522,16 +1344,28 @@
+     revision: unknown;
+   } | null>(null);
+   const interaction = useRef({ focused: false, hovered: false, panel: false });
++  const returningFocus = useRef(false), activeAnchor = useRef<Element | null>(null);
++  activeAnchor.current = active?.anchor ?? null;
+   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+-  const clearHide = useCallback(() => clearTimeout(timer.current), []);
++  const handoff = useTooltipHandoff();
++  const clearHide = useCallback(() => { clearTimeout(timer.current); timer.current = undefined; handoff.release(); }, [handoff]);
+   const dismiss = useCallback(() => {
+     clearHide();
+     interaction.current.panel = false;
++    const restore = document.getElementById(id)?.contains(document.activeElement);
+     setActive(null);
+-  }, [clearHide]);
++    if (restore && activeAnchor.current instanceof HTMLElement && activeAnchor.current.isConnected) {
++      returningFocus.current = true;
++      restoreTooltipFocus(activeAnchor.current);
++      returningFocus.current = false;
++    }
++  }, [clearHide, id]);
+   const scheduleHide = useCallback(() => {
+-    clearHide();
++    if (!activeAnchor.current) return;
++    handoff.hold(activeAnchor.current);
++    if (timer.current !== undefined) return;
+     timer.current = setTimeout(() => {
++      timer.current = undefined;
+       const state = interaction.current;
+       setActive((current) =>
+         current &&
+@@ -1542,8 +1376,9 @@
+           ? null
+           : current,
+       );
++      handoff.release();
+     }, 180);
+-  }, [clearHide]);
++  }, [handoff]);
+   useEffect(() => clearHide, [clearHide]);
+   useEffect(() => {
+     if (!externalAnchor || !enabled) return;
+@@ -1594,15 +1429,13 @@
+           scheduleHide();
+         }}
+         onFocus={(event) => {
++          if (returningFocus.current) return;
+           interaction.current.focused = true;
+           onSelect?.();
+           show(event.currentTarget);
+         }}
+         onBlur={() => {
+           interaction.current.focused = false;
+-          setActive((current) =>
+-            current ? { ...current, pinned: false } : null,
+-          );
+           scheduleHide();
+         }}
+         onClick={(event) => {
+@@ -1617,6 +1450,7 @@
+         <ObservationTooltip
+           id={id}
+           anchor={active.anchor}
++          pinned={active.pinned}
+           onDismiss={dismiss}
+           onEnter={() => {
+             interaction.current.panel = true;
+@@ -1926,23 +1760,36 @@
+     undefined,
+   );
+   const tooltipId = useId();
++  const returningFocus = useRef(false), activeAnchor = useRef<HTMLButtonElement | null>(null);
++  activeAnchor.current = active?.anchor ?? null;
+   const options = widget.options ?? EMPTY_OPTIONS;
+   const thresholds = options.thresholds?.length
+     ? options.thresholds
+     : DEFAULT_HEATMAP_THRESHOLDS;
++  const handoff = useTooltipHandoff();
+   const clearHide = useCallback(() => {
+     clearTimeout(hideTimer.current);
+     hideTimer.current = undefined;
+-  }, []);
++    handoff.release();
++  }, [handoff]);
+   const dismiss = useCallback(() => {
+     clearHide();
+ 
+     interaction.current.tooltipHovered = false;
++    const restore = document.getElementById(tooltipId)?.contains(document.activeElement);
+     setActive(null);
+-  }, [clearHide]);
++    if (restore && activeAnchor.current?.isConnected) {
++      returningFocus.current = true;
++      restoreTooltipFocus(activeAnchor.current);
++      returningFocus.current = false;
++    }
++  }, [clearHide, tooltipId]);
+   const scheduleHide = useCallback(() => {
+-    clearHide();
++    if (!activeAnchor.current) return;
++    handoff.hold(activeAnchor.current);
++    if (hideTimer.current !== undefined) return;
+     hideTimer.current = setTimeout(() => {
++      hideTimer.current = undefined;
+       const state = interaction.current;
+       setActive((current) =>
+         current &&
+@@ -1953,8 +1800,9 @@
+           ? null
+           : current,
+       );
++      handoff.release();
+     }, 180);
+-  }, [clearHide]);
++  }, [handoff]);
+   useEffect(() => clearHide, [clearHide]);
+   const cells = useMemo(
+     () =>
+@@ -2085,6 +1933,7 @@
+                 scheduleHide();
+               }}
+               onFocus={(event) => {
++                if (returningFocus.current) return;
+                 onContextChange?.({
+                   series: cell.name,
+                   labels: cell.labels,
+@@ -2104,9 +1953,6 @@
+               onBlur={() => {
+                 interaction.current.focused = null;
+ 
+-                setActive((current) =>
+-                  current?.pinned ? { ...current, pinned: false } : current,
+-                );
+                 scheduleHide();
+               }}
+               onClick={(event) => {
+@@ -2152,6 +1998,7 @@
+         <ObservationTooltip
+           id={tooltipId}
+           anchor={active.anchor}
++          pinned={active.pinned}
+           onDismiss={dismiss}
+           onEnter={() => {
+             interaction.current.tooltipHovered = true;
 diff --git a/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css b/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css
 --- a/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css
 +++ b/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css
-@@ -131,6 +131,80 @@
+@@ -124,13 +124,89 @@
+   color: var(--gamma-ink, #27332e);
+   overflow-wrap: anywhere;
+   text-align: left;
+-}
++  transition-property: none;
++}
++.observationTooltipContent { min-width: 0; flex: 0 0 auto; }
+ .tooltipHeader {
+   display: flex;
+   flex-direction: column;
    gap: 3px;
    padding: 11px 14px 0;
  }
@@ -425,12 +808,12 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css
 +@media (pointer: coarse) { .richInspectorHeader > button, .richInspectorFooter button, .richInspectorDetails > summary { min-height: 44px; }.richInspectorHeader > button { min-width: 44px; } }
 +.heatmapTooltip[data-inspector-density="compact"] .tooltipFooter { padding: 6px 12px; }
 +.heatmapTooltip[data-inspector-density="compact"] .tooltipFooter[data-pinned] { color: var(--gamma-chart-1); }
-+@keyframes inspectorReveal { from { opacity: .4; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
++@keyframes inspectorReveal { from { opacity: .4; } to { opacity: 1; } }
 +@media (prefers-reduced-motion: reduce) { .heatmapTooltip[data-inspector-density="compact"] { animation: none; } }
  .tooltipEyebrow {
    color: var(--gamma-muted, #626e65);
    font-size: 11px;
-@@ -559,3 +633,5 @@
+@@ -559,3 +635,5 @@
    > button[data-gamma-button][data-variant="quiet"] {
    color: var(--widget-text, var(--gamma-muted));
  }
@@ -478,15 +861,16 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/charts.module.css b/src
 diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor/paprika/ui/src/features/insights/charts.tsx
 --- a/src/vendor/paprika/ui/src/features/insights/charts.tsx
 +++ b/src/vendor/paprika/ui/src/features/insights/charts.tsx
-@@ -25,6 +25,7 @@
+@@ -25,6 +25,8 @@
  import { widgetTextColor } from "./appearance";
  import { useEmbeddedWidget } from "./widget-presentation";
  import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
 +import { useWidgetLoadingPresentation } from "./widget-loading";
++import { WidgetTooltipProvider } from "./tooltip-interaction";
  export {
    downsamplePoints,
    formatMetric,
-@@ -107,6 +108,7 @@
+@@ -107,6 +109,7 @@
  }: WidgetVisualizationProps) {
    // Registered plugins may arrive after a host loads an optional bundle.
    useWidgetDefinitions();
@@ -494,7 +878,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor
    const definition = getWidgetDefinition(widget);
    const resetKey = useMemo(
      () => ({ widget, result, definition }),
-@@ -129,7 +131,11 @@
+@@ -129,7 +132,11 @@
        </div>
      );
    if (loading && !result)
@@ -507,7 +891,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor
        <div className={styles.state} role="status" aria-label="Loading widget">
          <span className={styles.loading} />
          <span>Querying data source…</span>
-@@ -137,7 +143,7 @@
+@@ -137,7 +144,7 @@
      );
    const series = result?.series ?? [];
    const textColor = widgetTextColor(widget.options);
@@ -516,7 +900,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor
      !result ||
      (widget.type !== "plugin" &&
        (widgetKind(widget) === "traces"
-@@ -145,8 +151,7 @@
+@@ -145,10 +152,10 @@
          : widget.type === "heatmap" || widget.type === "table"
            ? !series.length
            : !series.some((entry) => latestPoint(entry))))
@@ -524,9 +908,13 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor
 -    return <EmptyState />;
 +  );
    return (
-     <div
+-    <div
++    <WidgetTooltipProvider
++      options={widget.options}
        className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
-@@ -158,26 +163,34 @@
+       style={
+         {
+@@ -158,26 +165,34 @@
            "--widget-background": widget.options?.background,
          } as CSSProperties
        }
@@ -550,6 +938,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor
 -          />
 -        </TooltipWidgetDataProvider>
 -      </RendererBoundary>
+-    </div>
 +      <div className={styles.renderingSurface} aria-busy={!!loading}>
 +        {empty || !result ? <EmptyState /> : (
 +          <>
@@ -577,7 +966,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor
 +      {/* Keep the status outside the busy region so its announcement is not deferred. */}
 +      {loading && (renderLoading?.({ widget, phase: "refresh" }) ??
 +        <span className={styles.refreshNotice} role="status">Refreshing data…</span>)}
-     </div>
++    </WidgetTooltipProvider>
    );
  });
 diff --git a/src/vendor/paprika/ui/src/features/insights/observation-inspector-data.ts b/src/vendor/paprika/ui/src/features/insights/observation-inspector-data.ts
@@ -773,10 +1162,244 @@ new file mode 100644
 +    <footer className={styles.richInspectorFooter}><GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13}/>{pinned ? 'Unpin observation' : 'Pin observation'}</GammaButton><span>Esc to close</span></footer>
 +  </div>;
 +}
+diff --git a/src/vendor/paprika/ui/src/features/insights/observation-tooltip.tsx b/src/vendor/paprika/ui/src/features/insights/observation-tooltip.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/observation-tooltip.tsx
+@@ -0,0 +1,229 @@
++"use client";
++
++import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
++import { createPortal } from 'react-dom';
++import type { WidgetOptions } from './schema';
++import { inheritGammaTheme } from './gamma/inherit-theme';
++import { createTooltipInteractionStore, isObservationTooltipTarget, useWidgetTooltip, type TooltipEscapeEvent } from './tooltip-interaction';
++import { limitTooltipSize, positionObservationTooltip, type TooltipAnchor, type TooltipViewport } from './tooltip-position';
++import { withTooltipDismissReason, type TooltipDismissReason } from './tooltip-focus';
++import styles from './chart-styles.module.css';
++
++export { isObservationTooltipTarget, useWidgetTooltip, WidgetTooltipProvider } from './tooltip-interaction';
++
++export interface ObservationTooltipProps {
++  id?: string;
++  anchor?: Element | null;
++  anchorRect?: () => TooltipAnchor;
++  pinned?: boolean;
++  options?: WidgetOptions;
++  compact?: boolean;
++  /** Kept for callers of the previous owner; automatic placement now tries both sides. */
++  preferSide?: boolean;
++  className?: string;
++  label?: string;
++  onDismiss: (reason?: TooltipDismissReason) => void;
++  onEnter?: () => void;
++  onLeave?: () => void;
++  children: ReactNode;
++}
++
++/** One portal, viewport/collision policy, and pointer owner for every observation inspector. */
++export function ObservationTooltip({ id: suppliedId, anchor, anchorRect, pinned = false, options, compact,
++  className = '', label, onDismiss, onEnter, onLeave, children }: ObservationTooltipProps) {
++  const generatedId = useId(), id = suppliedId ?? generatedId;
++  const scope = useWidgetTooltip();
++  const scoped = scope !== null;
++  const localStore = useRef<ReturnType<typeof createTooltipInteractionStore> | null>(null);
++  if (!localStore.current) localStore.current = createTooltipInteractionStore();
++  const store = scope?.store ?? localStore.current;
++  const panelToken = useRef(Symbol('observation-tooltip')).current;
++  const activeOwner = useSyncExternalStore(store.subscribePanelOwner, store.getPanelOwner, () => null);
++  const ownsPanel = activeOwner === panelToken;
++  const [mountedOrigin, setMountedOrigin] = useState<Element | null>(null);
++  const origin = anchor ?? scope?.hostRef.current ?? mountedOrigin;
++  const effective = options ?? scope?.options;
++  const disabled = effective?.showTooltip === false;
++  const dense = compact ?? effective?.inspectorDensity === 'compact';
++  const panelRef = useRef<HTMLDivElement>(null), contentRef = useRef<HTMLDivElement>(null);
++  const previousPin = useRef(false), frozenAnchor = useRef<TooltipAnchor | null>(null), lastAnchor = useRef<TooltipAnchor | null>(null);
++  const callbacks = useRef({ onDismiss, onEnter, onLeave, anchorRect });
++  useLayoutEffect(() => { callbacks.current = { onDismiss, onEnter, onLeave, anchorRect }; });
++  useLayoutEffect(() => { setMountedOrigin(anchor ?? scope?.hostRef.current ?? null); }, [anchor, scope?.hostRef]);
++  useLayoutEffect(() => {
++    if (!origin || disabled) return;
++    const retire = () => withTooltipDismissReason('superseded', () => callbacks.current.onDismiss('superseded'));
++    // Per-cell renderers may request several panels. A pinned owner wins over
++    // transient hover; explicit selection may replace it without moving focus.
++    if (!store.claimPanel(panelToken, pinned, retire)) retire();
++  }, [origin, disabled, store, panelToken, pinned]);
++  useLayoutEffect(() => () => {
++    previousPin.current = false; frozenAnchor.current = null; lastAnchor.current = null;
++    store.releasePanel(panelToken);
++  }, [origin, disabled, store, panelToken]);
++
++  useLayoutEffect(() => {
++    const panel = panelRef.current;
++    if (!origin || !panel || disabled || !ownsPanel) return;
++    const ownerDocument = origin.ownerDocument, ownerWindow = ownerDocument.defaultView;
++    if (!ownerWindow) return;
++    const stopTheme = inheritGammaTheme(origin, panel);
++    const computed = ownerWindow.getComputedStyle(origin);
++    panel.style.fontFamily = computed.getPropertyValue('--font-sans').trim() || computed.fontFamily;
++    const viewport = (): TooltipViewport => ({
++      left: ownerWindow.visualViewport?.offsetLeft ?? 0,
++      top: ownerWindow.visualViewport?.offsetTop ?? 0,
++      width: ownerWindow.visualViewport?.width ?? (ownerDocument.documentElement.clientWidth || ownerWindow.innerWidth),
++      height: ownerWindow.visualViewport?.height ?? ownerWindow.innerHeight,
++    });
++    const resolveAnchor = (): TooltipAnchor => {
++      const interaction = store.getSnapshot();
++      if (interaction.kind === 'pointer') return { left: interaction.x, right: interaction.x, top: interaction.y, bottom: interaction.y };
++      if (callbacks.current.anchorRect) return callbacks.current.anchorRect();
++      const focused = interaction.anchor;
++      return focused?.isConnected && origin.contains(focused) ? focused.getBoundingClientRect() : origin.getBoundingClientRect();
++    };
++    if (pinned && (!previousPin.current || !frozenAnchor.current)) frozenAnchor.current = lastAnchor.current ?? resolveAnchor();
++    if (!pinned) frozenAnchor.current = null;
++    previousPin.current = pinned;
++    let frame = 0, disposed = false;
++    let measured = { width: 0, height: 0 };
++    const update = (remeasure = false) => {
++      if (disposed || !origin.isConnected || store.getPanelOwner() !== panelToken) return;
++      const visibleViewport = viewport();
++      const limits = limitTooltipSize({ width: effective?.tooltipMaxWidth ?? (dense ? 292 : 330), height: effective?.tooltipMaxHeight ?? 560 }, visibleViewport);
++      const widthChanged = panel.style.width !== `${limits.width}px`;
++      if (widthChanged) { panel.style.width = `${limits.width}px`; panel.style.maxWidth = `${limits.width}px`; }
++      if (remeasure || widthChanged || measured.height === 0) {
++        // Measure natural content, not the previous placement's shortened scroll box.
++        measured = { width: limits.width, height: Math.min(limits.height, Math.max(contentRef.current?.getBoundingClientRect().height ?? 0, panel.scrollHeight) + 2) };
++      }
++      let reference = frozenAnchor.current ?? resolveAnchor();
++      if (!pinned && (store.isPanelEngaged() || store.isHandoffActive(origin)) && lastAnchor.current) reference = lastAnchor.current;
++      lastAnchor.current = reference;
++      const next = positionObservationTooltip(reference, { width: limits.width, height: Math.min(measured.height, limits.height) }, visibleViewport,
++        effective?.tooltipPlacement ?? 'auto', effective?.tooltipOffset ?? 12);
++      panel.style.maxHeight = `${next.height}px`;
++      panel.style.left = `${next.left}px`;
++      panel.style.top = `${next.top}px`;
++      panel.style.visibility = 'visible';
++      panel.dataset.placement = next.placement;
++      panel.dataset.anchorMode = pinned ? 'pinned' : store.getSnapshot().kind;
++    };
++    const schedule = () => { if (!frame) frame = ownerWindow.requestAnimationFrame(() => { frame = 0; update(true); }); };
++    // Direct manipulation is immediate: no animation, debounce, or chart rerender.
++    const stopPointer = store.subscribe(change => {
++      if ((change === 'pointer' || change === 'keyboard' || change === 'handoff') && !pinned && !store.isPanelEngaged() && !store.isHandoffActive(origin)) update();
++    });
++    const localPointer = (event: Event) => {
++      const pointer = event as PointerEvent;
++      if (!isObservationTooltipTarget(pointer.target)) store.pointer(pointer.clientX, pointer.clientY, pointer.target instanceof Element ? pointer.target : origin);
++    };
++    const localKeyboard = (event: Event) => { if (!isObservationTooltipTarget(event.target)) store.keyboard(event.target instanceof Element ? event.target : origin); };
++    if (!scoped) { origin.addEventListener('pointermove', localPointer); origin.addEventListener('keydown', localKeyboard, true); }
++    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(schedule);
++    observer?.observe(origin); observer?.observe(panel);
++    if (contentRef.current) observer?.observe(contentRef.current);
++    ownerWindow.addEventListener('resize', schedule);
++    ownerWindow.addEventListener('scroll', schedule, true);
++    ownerWindow.visualViewport?.addEventListener('resize', schedule);
++    ownerWindow.visualViewport?.addEventListener('scroll', schedule);
++    update(true);
++    return () => {
++      disposed = true; stopPointer(); stopTheme(); observer?.disconnect();
++      ownerWindow.cancelAnimationFrame(frame);
++      origin.removeEventListener('pointermove', localPointer);
++      origin.removeEventListener('keydown', localKeyboard, true);
++      ownerWindow.removeEventListener('resize', schedule);
++      ownerWindow.removeEventListener('scroll', schedule, true);
++      ownerWindow.visualViewport?.removeEventListener('resize', schedule);
++      ownerWindow.visualViewport?.removeEventListener('scroll', schedule);
++    };
++  }, [origin, store, scoped, pinned, disabled, ownsPanel, panelToken, dense, effective?.tooltipPlacement, effective?.tooltipOffset, effective?.tooltipMaxWidth, effective?.tooltipMaxHeight]);
++
++  useLayoutEffect(() => {
++    if (!origin || disabled || !ownsPanel) return;
++    let described: Element | null = null, added = false;
++    const clear = () => {
++      if (described && added) {
++        const remaining = (described.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(token => token && token !== id);
++        if (remaining.length) described.setAttribute('aria-describedby', remaining.join(' '));
++        else described.removeAttribute('aria-describedby');
++      }
++      described = null; added = false;
++    };
++    const update = () => {
++      if (store.getPanelOwner() !== panelToken || described && (pinned || store.isPanelEngaged() || store.isHandoffActive(origin))) return;
++      const interaction = store.getSnapshot();
++      const target = interaction.kind === 'keyboard' && interaction.anchor?.isConnected && origin.contains(interaction.anchor) ? interaction.anchor : origin;
++      if (target === described) return;
++      clear(); described = target;
++      const existing = (target.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
++      added = !existing.includes(id);
++      if (added) target.setAttribute('aria-describedby', [...existing, id].join(' '));
++    };
++    update(); const stop = store.subscribe(update);
++    return () => { stop(); clear(); };
++  }, [origin, disabled, ownsPanel, panelToken, pinned, id, store]);
++
++  useLayoutEffect(() => {
++    if (!origin || disabled || !ownsPanel) return;
++    const ownerDocument = origin.ownerDocument;
++    const dismiss = (reason: TooltipDismissReason) => withTooltipDismissReason(reason, () => callbacks.current.onDismiss(reason));
++    const pointer = (event: PointerEvent) => {
++      if (store.getPanelOwner() !== panelToken) return;
++      if (event.target instanceof Node && !origin.contains(event.target) && !panelRef.current?.contains(event.target)) dismiss('outside');
++    };
++    const keyboard = (event: KeyboardEvent) => {
++      if (store.getPanelOwner() !== panelToken) return;
++      const panel = panelRef.current, target = event.target instanceof Node ? event.target : null;
++      const inside = !!target && (origin.contains(target) || !!panel?.contains(target));
++      if (event.key === 'Escape' || event.defaultPrevented) return;
++      if (!panel || !inside) return;
++      if (event.key === 'Tab' && !event.shiftKey && pinned && !!target && origin.contains(target)) {
++        const first = panel.querySelector<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]');
++        if (first) { event.preventDefault(); first.focus({ preventScroll: true }); }
++      }
++      // Home/End on the chart belong to first/last-observation navigation.
++      if (!target || !panel.contains(target) || !['PageDown', 'PageUp', 'Home', 'End'].includes(event.key) || (target instanceof Element && target.matches('input,textarea,select,[contenteditable=true]'))) return;
++      event.preventDefault(); event.stopPropagation();
++      const maximum = Math.max(0, panel.scrollHeight - panel.clientHeight), page = Math.max(48, Math.round(panel.clientHeight * .8));
++      panel.scrollTop = event.key === 'Home' ? 0 : event.key === 'End' ? maximum : Math.max(0, Math.min(maximum, panel.scrollTop + (event.key === 'PageDown' ? page : -page)));
++    };
++    const escape = (event: TooltipEscapeEvent) => {
++      if (event.key !== 'Escape' || event.defaultPrevented || store.getPanelOwner() !== panelToken) return false;
++      const panel = panelRef.current, target = event.target instanceof Element ? event.target : null;
++      const inside = !!target && (origin.contains(target) || !!panel?.contains(target));
++      const pointerOwned = !pinned && (origin.matches(':hover') || panel?.matches(':hover'));
++      if (!inside && !pointerOwned) return false;
++      // A nested listbox/menu/dialog owns its own first Escape. Listen in the
++      // bubble phase so its native/React handler can consume the event first.
++      if (target?.closest('[role="listbox"],[role="menu"],[role="combobox"][aria-expanded="true"],[aria-haspopup][aria-expanded="true"]')) return false;
++      const nested = target?.closest('dialog[open],[role="dialog"]');
++      if (nested && nested !== panel && !nested.contains(origin) && !nested.contains(panel)) return false;
++      event.preventDefault(); event.stopPropagation(); dismiss('escape'); return true;
++    };
++    ownerDocument.addEventListener('pointerdown', pointer, true);
++    ownerDocument.addEventListener('keydown', keyboard, true);
++    ownerDocument.addEventListener('keydown', escape);
++    const stopEscape = store.registerEscape(escape);
++    return () => { stopEscape(); ownerDocument.removeEventListener('pointerdown', pointer, true); ownerDocument.removeEventListener('keydown', keyboard, true); ownerDocument.removeEventListener('keydown', escape); };
++  }, [origin, disabled, pinned, ownsPanel, panelToken, store]);
++
++  if (!origin || disabled || !ownsPanel || typeof document === 'undefined') return null;
++  const portalContainer = origin.closest<HTMLElement>('dialog[open],[role="dialog"][aria-modal="true"]') ?? origin.ownerDocument.body;
++  return createPortal(<div ref={panelRef} id={id} role={pinned ? 'dialog' : 'tooltip'} aria-label={pinned ? label ?? 'Pinned observation' : label}
++    className={`${styles.heatmapTooltip} ${className}`} data-observation-tooltip="" data-pinned={pinned || undefined}
++    data-inspector-density={dense ? 'compact' : 'comfortable'}
++    style={{ visibility: 'hidden' }}
++    onPointerEnter={() => { store.setPanelHovered(panelToken, true); callbacks.current.onEnter?.(); }}
++    onPointerLeave={() => { callbacks.current.onLeave?.(); store.setPanelHovered(panelToken, false); }}
++    onFocusCapture={() => { store.setPanelFocused(panelToken, true); callbacks.current.onEnter?.(); }}
++    onBlurCapture={event => {
++      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
++        if (!origin.contains(event.relatedTarget as Node | null)) callbacks.current.onLeave?.();
++        store.setPanelFocused(panelToken, false);
++      }
++    }}
++  ><div ref={contentRef} className={styles.observationTooltipContent} data-observation-tooltip-content="">{children}</div></div>, portalContainer);
++}
 diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx
 --- a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx
 +++ b/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx
-@@ -16,7 +16,9 @@
+@@ -16,10 +16,14 @@
  } from "@tanstack/charts";
  import { MetricDetails, ObservationTooltip } from "./chart-renderers";
  import { TooltipSubWidget } from "./tooltip-widgets";
@@ -787,7 +1410,12 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
  import type { Widget } from "./schema";
  import styles from "./chart-styles.module.css";
  import { useChartCursorPublisher } from "./chart-cursor";
-@@ -31,6 +33,7 @@
++import { restoreTooltipFocus } from "./tooltip-focus";
++import { useTooltipHandoff } from "./tooltip-interaction";
+ 
+ export interface PlotDatum extends Point {
+   seriesIndex: number;
+@@ -31,6 +35,7 @@
    height: number;
    points: readonly PlotPoint[];
    clear: () => void;
@@ -795,7 +1423,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
  }
  interface ActivePoint {
    point: PlotPoint;
-@@ -44,25 +47,33 @@
+@@ -44,34 +49,52 @@
    widget: Widget,
    series: Series[],
    enabled: boolean,
@@ -814,35 +1442,55 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
    const armedRevision = useRef<unknown>(null);
 +  const restoringFocus = useRef(false);
    const [active, setActive] = useState<ActivePoint | null>(null);
++  const activeAnchor = useRef<SVGSVGElement | null>(null);
++  activeAnchor.current = active?.anchor ?? null;
    const interaction = useRef({ panel: false, focused: false });
    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-   const clearHide = useCallback(() => clearTimeout(timer.current), []);
+-  const clearHide = useCallback(() => clearTimeout(timer.current), []);
++  const handoff = useTooltipHandoff();
++  const clearHide = useCallback(() => { clearTimeout(timer.current); timer.current = undefined; handoff.release(); }, [handoff]);
    const dismiss = useCallback(() => {
      clearHide();
 +    const restoreFocus = document.getElementById(id)?.contains(document.activeElement);
-     interaction.current.panel = false;
++    interaction.current.panel = false;
 +    armedRevision.current = null;
 +    restoringFocus.current = true;
-     setActive(null);
-     scene.current?.clear();
--  }, [clearHide]);
-+    if (restoreFocus) scene.current?.svg.focus({ preventScroll: true });
++    setActive(null);
++    scene.current?.clear();
++    if (restoreFocus) restoreTooltipFocus(scene.current?.svg);
 +    restoringFocus.current = false;
 +  }, [clearHide, id]);
-   const scheduleHide = useCallback(() => {
-     clearHide();
-     timer.current = setTimeout(() => {
-@@ -72,6 +83,9 @@
-   }, [clearHide]);
-   useEffect(() => {
-     // A pinned observation belongs to its exact result/configuration, never a refresh.
++  const scheduleHide = useCallback(() => {
++    if (!activeAnchor.current) return;
++    handoff.hold(activeAnchor.current);
++    if (timer.current !== undefined) return;
++    timer.current = setTimeout(() => {
++      timer.current = undefined;
++      if (!interaction.current.panel && !interaction.current.focused)
++        setActive((current) => (current?.pinned ? current : null));
++      handoff.release();
++    }, 180);
++  }, [handoff]);
++  useEffect(() => {
++    // A pinned observation belongs to its exact result/configuration, never a refresh.
 +    armedRevision.current = null;
-+    interaction.current.panel = false;
-+    setActive(null);
+     interaction.current.panel = false;
+     setActive(null);
+-    scene.current?.clear();
+-  }, [clearHide]);
+-  const scheduleHide = useCallback(() => {
+-    clearHide();
+-    timer.current = setTimeout(() => {
+-      if (!interaction.current.panel && !interaction.current.focused)
+-        setActive((current) => (current?.pinned ? current : null));
+-    }, 180);
+-  }, [clearHide]);
+-  useEffect(() => {
+-    // A pinned observation belongs to its exact result/configuration, never a refresh.
      scene.current?.clear();
      return clearHide;
    }, [revision, enabled, clearHide]);
-@@ -85,6 +99,10 @@
+@@ -85,6 +108,10 @@
          height: context.scene.height,
          points: context.scene.points,
          clear: () => context.interaction.setControlledFocus(null),
@@ -853,7 +1501,36 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
        };
      },
      [],
-@@ -185,6 +203,7 @@
+@@ -99,7 +126,7 @@
+       const anchor = scene.current?.svg;
+       if (!anchor || !series[point.datum.seriesIndex]) return;
+       clearHide();
+-      setActive((current) => ({
++      setActive((current) => current?.pinned && current.revision === revision ? current : ({
+         point,
+         anchor,
+         pinned: current?.revision === revision && current.pinned,
+@@ -164,19 +191,6 @@
+     }),
+     [id],
+   );
+-  useEffect(() => {
+-    if (!current) return;
+-    const anchor = current.anchor;
+-    const previous = anchor.getAttribute("aria-describedby");
+-    anchor.setAttribute(
+-      "aria-describedby",
+-      [previous, id].filter(Boolean).join(" "),
+-    );
+-    return () => {
+-      if (previous) anchor.setAttribute("aria-describedby", previous);
+-      else anchor.removeAttribute("aria-describedby");
+-    };
+-  }, [current, id]);
+   const entry = current ? series[current.point.datum.seriesIndex] : undefined;
+   const point = current
+     ? {
+@@ -185,6 +199,7 @@
        }
      : undefined;
    return {
@@ -861,7 +1538,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
      extension,
      onRender,
      onFocusChange,
-@@ -193,6 +212,7 @@
+@@ -193,6 +208,7 @@
        armedRevision.current = revision;
      },
      onFocus: () => {
@@ -869,15 +1546,19 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
        armedRevision.current = revision;
        interaction.current.focused = true;
        clearHide();
-@@ -208,6 +228,7 @@
+@@ -206,8 +222,11 @@
+         <ObservationTooltip
+           id={id}
            anchor={current.anchor}
++          pinned={current.pinned}
++          options={widget.options}
            anchorRect={anchorRect}
            preferSide
 +          compact={widget.options?.inspectorDensity === "compact"}
            onDismiss={dismiss}
            onEnter={() => {
              interaction.current.panel = true;
-@@ -225,7 +246,26 @@
+@@ -225,7 +244,26 @@
              data-observation-timestamp={String(point.timestamp)}
              data-observation-series={entry.name}
            >
@@ -905,7 +1586,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
                series={entry}
                index={current.point.datum.seriesIndex}
                point={point}
-@@ -236,8 +276,8 @@
+@@ -236,8 +274,8 @@
                    ? "Latest valid sample"
                    : "Selected observation"
                }
@@ -916,7 +1597,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/
                view={widget.options.tooltipView}
                series={entry}
                seriesIndex={current.point.datum.seriesIndex}
-@@ -245,14 +285,14 @@
+@@ -245,14 +283,14 @@
                unit={widget.unit}
                color={current.point.color || widget.color}
              />}
@@ -996,13 +1677,12 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-da
 diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css
 --- a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css
 +++ b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css
-@@ -55,14 +55,8 @@
+@@ -55,14 +55,6 @@
  .unknownKey::before { content: ""; width: 10px; height: 8px; border: 1px dashed var(--gamma-muted); background: var(--gamma-surface); }
  .notices { flex-shrink: 0; display: flex; gap: 4px 12px; flex-wrap: wrap; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
  .notices:not(:empty) { padding: 4px 3px 0; }
 -.inspector { position: absolute; z-index: 5; right: 9px; top: 8px; width: min(260px, calc(100% - 18px)); max-height: calc(100% - 16px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; background: var(--widget-background, var(--gamma-bg)); color: var(--widget-text, var(--gamma-ink)); border: 1px solid var(--gamma-border); border-radius: 6px; padding: 12px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
-+.inspector { position: absolute; z-index: 5; right: 9px; top: 8px; width: min(330px, calc(100% - 18px)); max-height: calc(100% - 16px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; background: var(--widget-background, var(--gamma-bg)); color: var(--widget-text, var(--gamma-ink)); border: 1px solid var(--gamma-border); border-radius: 6px; padding: 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
- .inspector:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
+-.inspector:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
 -.inspectorActions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; color: var(--gamma-muted); font-size: 11px; }
 -.inspectorActions button { flex-shrink: 0; }
 -.history { height: 48px; position: relative; margin: 8px 0; }
@@ -1015,7 +1695,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.mo
 diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx
 --- a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx
 +++ b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx
-@@ -1,11 +1,10 @@
+@@ -1,11 +1,15 @@
  "use client";
  
  import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
@@ -1027,44 +1707,127 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.ts
 -import { StatSparkline } from "../stat-sparkline";
 +import { calendarTick, horizontalPlotBounds, temporalPosition } from "../chart-presentation";
 +import { RichObservationInspector } from "../observation-inspector";
++import { ObservationTooltip } from "../observation-tooltip";
++import { useTooltipDismiss } from "../tooltip-dismiss";
++import { restoreTooltipFocus } from "../tooltip-focus";
++import type { TooltipAnchor } from "../tooltip-position";
++import type { WidgetOptions } from "../schema";
  import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
  import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation";
  import { useChartCursor, useChartCursorPublisher } from "../chart-cursor";
-@@ -110,19 +109,24 @@
-     }
+@@ -76,9 +80,12 @@
+   const publisher = useChartCursorPublisher();
+   const root = useRef<HTMLDivElement>(null);
+   const restoringFocus = useRef(false);
++  const trigger = useRef<SVGSVGElement | null>(null);
+   const setRoot = useCallback((element: HTMLDivElement | null) => { root.current = element; }, []);
+-  const [state, setState] = useState<{ observation: Observation; pinned: boolean; result: unknown; signature: string }>();
++  const [state, setState] = useState<{ observation: Observation; pinned: boolean; result: unknown; signature: string; anchor: SVGSVGElement | null }>();
+   const active = state?.result === result && state.signature === signature && enabled ? state : undefined;
++  const revision = useMemo(() => ({ result, signature }), [result, signature]);
++  const dismissal = useTooltipDismiss({ onDismiss: () => setState(undefined), pinned: !!active?.pinned, revision, enabled });
+   const timestamp = active?.observation.timestamp, pinned = active?.pinned;
+   useEffect(() => {
+     if (timestamp !== undefined) publisher.publish(widget.id, timestamp, pinned);
+@@ -86,44 +93,64 @@
+     return () => publisher.clear(widget.id);
+   }, [publisher, widget.id, timestamp, pinned, result, signature]);
+   useEffect(() => {
+-    if (!enabled) return;
+-    const close = (event: globalThis.PointerEvent) => { if (event.target instanceof Node && !root.current?.contains(event.target)) setState(undefined); };
+-    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setState(undefined); };
+-    document.addEventListener("pointerdown", close); document.addEventListener("keydown", escape);
+-    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
+-  }, [enabled]);
+-  const show = (observation: Observation, pinned = false) => {
++    // The render guard hides stale evidence immediately; clearing the stored
++    // observation prevents it returning if a previous source is revisited.
++    setState(current => current && (current.result !== result || current.signature !== signature || !enabled) ? undefined : current);
++  }, [result, signature, enabled]);
++  const show = (observation: Observation, pinned = false, target?: SVGSVGElement) => {
+     if (!enabled || (active?.pinned && !pinned)) return;
+-    setState({ observation, pinned, result, signature });
++    dismissal.cancel();
++    const anchor = target ?? root.current?.querySelector<SVGSVGElement>('svg[role="group"]') ?? null;
++    trigger.current = anchor;
++    setState(current => {
++      const sameSource = current?.result === result && current.signature === signature;
++      if (sameSource && current.pinned && !pinned) return current;
++      // The shared store moves the portal directly. Keep chart geometry and
++      // rich histories stable while the pointer remains on the same sample.
++      if (sameSource && current.pinned === pinned && current.anchor === anchor && current.observation.row === observation.row && current.observation.column === observation.column) return current;
++      return { observation, pinned, result, signature, anchor };
++    });
+     if (pinned) onContextChange?.({ series: observation.name, labels: observation.series.labels, value: observation.value });
    };
-   const focus = (observation: Observation) => { if (enabled && !active && !restoringFocus.current) show(observation); };
+   const dismiss = () => {
+-    const inspector = root.current?.querySelector("[data-rich-metric-inspector]");
+-    const returnFocus = inspector?.contains(document.activeElement);
++    dismissal.cancel();
+     setState(undefined);
+-    if (returnFocus) {
+-      // A dismissed inspector returns keyboard users to its chart. This focus
+-      // event must not immediately create another transient observation.
+-      restoringFocus.current = true;
+-      root.current?.querySelector<SVGSVGElement>('svg[role="group"][tabindex="0"]')?.focus({ preventScroll: true });
+-      restoringFocus.current = false;
+-    }
+-  };
+-  const focus = (observation: Observation) => { if (enabled && !active && !restoringFocus.current) show(observation); };
 -  return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave: () => { if (!active?.pinned) setState(undefined); } };
 -}
 -
 -function Inspector({ observation, pinned, decimals, onPin, onClose, id }: { observation: Observation; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string }) {
-+  const togglePin = () => {
-+    if (!active) return;
-+    setState({ ...active, pinned: !active.pinned });
-+    if (!active.pinned) onContextChange?.({ series: active.observation.name, labels: active.observation.series.labels, value: active.observation.value });
-+  };
-+  return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, togglePin,
-+    leave: () => { if (!active?.pinned && !root.current?.contains(document.activeElement)) setState(undefined); },
-+    blur: (target: EventTarget | null) => { if (!active?.pinned && !(target instanceof Node && root.current?.contains(target))) setState(undefined); },
-+  };
-+}
-+
-+function Inspector({ observation, title, series, colors, pinned, decimals, onPin, onClose, id }: { observation: Observation; title: string; series?: MetricSeries[]; colors?: string[]; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string }) {
-+  const displayedSeries = useMemo(() => series ?? [observation.series], [series, observation.series]);
-   return <section id={id} className={styles.inspector} aria-label="Observation details" data-rich-metric-inspector tabIndex={pinned ? 0 : undefined}
-     onKeyDown={event => {
-       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
-     }}>
+-  return <section id={id} className={styles.inspector} aria-label="Observation details" data-rich-metric-inspector tabIndex={pinned ? 0 : undefined}
+-    onKeyDown={event => {
+-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+-    }}>
 -    <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={onClose}><X size={14} /></GammaButton></div>
 -    <MetricDetails series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" />
 -    {observation.note && <p className={styles.note}>{observation.note}</p>}
 -    <div className={styles.history}><StatSparkline series={observation.series} name={observation.name} color={observation.color} unit={observation.unit} /></div>
 -    <GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />{pinned ? "Unpin observation" : "Pin observation"}</GammaButton>
-+    <RichObservationInspector title={title} series={displayedSeries} selectedSeriesIndex={series ? observation.row : 0} timestamp={observation.timestamp} unit={observation.unit} decimals={decimals} colors={colors ?? [observation.color]} note={observation.note} pinned={pinned} onPin={onPin} onClose={onClose}/>
-   </section>;
+-  </section>;
++    // Shared outside dismissal preserves the user's new focus. Explicit Close
++    // or Escape returns to the chart without reopening the observation.
++    restoringFocus.current = true;
++    restoreTooltipFocus(trigger.current);
++    restoringFocus.current = false;
++  };
++  const focus = (observation: Observation, target: SVGSVGElement) => { if (enabled && !active && !restoringFocus.current) show(observation, false, target); };
++  const togglePin = () => {
++    if (!active) return;
++    dismissal.cancel();
++    setState({ ...active, pinned: !active.pinned });
++    if (!active.pinned) onContextChange?.({ series: active.observation.name, labels: active.observation.series.labels, value: active.observation.value });
++  };
++  return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, togglePin,
++    enter: dismissal.cancel, leave: dismissal.schedule, blur: dismissal.schedule,
++  };
++}
++
++export function RichMetricInspector({ observation, title, series, colors, pinned, decimals, onPin, onClose, onEnter, onLeave, id, anchor, anchorRect, options }: {
++  observation: Observation; title: string; series?: MetricSeries[]; colors?: string[]; pinned: boolean; decimals?: number;
++  onPin: () => void; onClose: () => void; onEnter: () => void; onLeave: () => void; id: string;
++  anchor: SVGSVGElement | null; anchorRect: () => TooltipAnchor; options?: WidgetOptions;
++}) {
++  const displayedSeries = useMemo(() => series ?? [observation.series], [series, observation.series]);
++  return <ObservationTooltip id={id} anchor={anchor} anchorRect={anchorRect} pinned={pinned} options={options} label="Observation details" onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
++    <div data-rich-metric-inspector>
++      <RichObservationInspector title={title} series={displayedSeries} selectedSeriesIndex={series ? observation.row : 0} timestamp={observation.timestamp} unit={observation.unit} decimals={decimals} colors={colors ?? [observation.color]} note={observation.note} pinned={pinned} onPin={onPin} onClose={onClose}/>
++    </div>
++  </ObservationTooltip>;
++}
++
++function observationAnchor(anchor: SVGSVGElement | null, width: number, height: number, x: number, y: number): TooltipAnchor {
++  const box = anchor?.getBoundingClientRect();
++  const left = box ? box.left + x * box.width / Math.max(1, width) : 0;
++  const top = box ? box.top + y * box.height / Math.max(1, height) : 0;
++  return { left: left - 3, right: left + 3, top: top - 3, bottom: top + 3 };
  }
  
-@@ -181,9 +185,11 @@
+ function timeTicks(timestamps: number[], width: number) {
+@@ -181,9 +208,11 @@
    const sharedCursor = useChartCursor();
    const { showAxis, descriptionId } = useWidgetPresentation();
    const unit = config.bucketUnit || widget.unit, densityUnit = config.densityUnit ?? "observations/s";
@@ -1077,7 +1840,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.ts
    const cellWidth = plotWidth / Math.max(1, data.timestamps.length), cellHeight = plotHeight / Math.max(1, data.rows.length);
    // Keep every bucket cell inspectable while thinning labels to the actual
    // available height. Short panels must not stack text over adjacent rows.
-@@ -192,11 +198,11 @@
+@@ -192,11 +221,11 @@
    const axisStride = Math.max(1, Math.ceil(16 / cellHeight));
    const axisRows = new Set(data.rows.map((_, index) => index).filter(index => index % axisStride === 0));
    const timeStart = data.timestamps[0] ?? 0, timeSpan = (data.timestamps.at(-1) ?? timeStart) - timeStart;
@@ -1091,17 +1854,27 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.ts
    };
    const locate = (event: PointerEvent<SVGSVGElement>) => {
      const point = coordinates(event, width, height);
-@@ -216,25 +222,27 @@
-     inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
+@@ -211,30 +240,33 @@
+     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
+     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
+     else if (event.key === "ArrowUp") row++; else if (event.key === "ArrowDown") row--;
+-    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true); return; } else return;
++    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, event.currentTarget); return; } else return;
+     event.preventDefault();
+-    inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
++    inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, event.currentTarget);
    };
    if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
 -  return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
-+  return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={event => inspection.blur(event.relatedTarget)}>
++  return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={inspection.blur}>
      <div className={styles.plot} ref={ref}>
        <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
-         onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
-         onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
-         onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
+-        onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
+-        onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
+-        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
++        onFocus={event => inspection.focus(observation(0, data.timestamps.length - 1), event.currentTarget)}
++        onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value, false, event.currentTarget); else inspection.leave(); }}
++        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true, event.currentTarget); }}>
 +        <defs><clipPath id={`${id}-plot`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>
          {data.rows.map((row, rowIndex) => <g key={row.upper}>
            {showAxis && axisRows.has(rowIndex) && <text data-value-axis x={left - 8} y={top + (data.rows.length - rowIndex - .5) * cellHeight} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[rowIndex]}</text>}
@@ -1122,11 +1895,12 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.ts
 +        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{widget.options?.timeAxis === 'calendar' ? calendarTick(data.timestamps[index], timeSpan) : formatTimeTick(data.timestamps[index], timeSpan)}</text>)}
        </svg>
 -      {inspection.active && inspection.detailsEnabled && <Inspector id={id} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
-+      {inspection.active && inspection.detailsEnabled && <Inspector id={id} title={widget.title} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} />}
++      {inspection.active && inspection.detailsEnabled && <RichMetricInspector id={id} title={widget.title} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} onEnter={inspection.enter} onLeave={inspection.leave} options={widget.options} anchor={inspection.active.anchor}
++        anchorRect={() => observationAnchor(inspection.active?.anchor ?? null, width, height, columnX(inspection.active!.observation.timestamp), top + (data.rows.length - inspection.active!.observation.row - .5) * cellHeight)} />}
      </div>
      <div className={styles.heatmapFooter}>
      {widget.options?.showLegend !== false && <div className={styles.densityLegend} aria-label={`Color encodes bucket ${densityUnit}`}><span>0</span><div>{densityPalette.map(color => <i key={color} style={{ background: color }} />)}</div><span>{formatMetric(data.max, densityUnit, false, widget.options?.decimals)}</span><span className={styles.unknownKey}>Missing</span></div>}
-@@ -258,6 +266,7 @@
+@@ -258,6 +290,7 @@
    const config = useMemo(() => directional ? directionalConfigSchema.parse(widget.config ?? {}) : stackedConfigSchema.parse(widget.config ?? {}), [directional, widget.config]);
    const signature = JSON.stringify([widget.id, config, widget.unit, widget.options, directional]);
    const data = useMemo(() => buildMetricPlot(result.series ?? [], config, directional), [result, config, directional]);
@@ -1134,7 +1908,7 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.ts
    const { root: inspectionRoot, ...inspection } = useInspection(props, signature), { ref, width, height } = useSize(), id = useId();
    const sharedCursor = useChartCursor();
    const { showAxis, descriptionId } = useWidgetPresentation();
-@@ -273,7 +282,7 @@
+@@ -273,7 +306,7 @@
    const color = (index: number) => index === 0 && widget.color ? widget.color : palette[index % palette.length];
    const observation = (row: number, column: number): Observation => {
      const track = data.tracks[row], cell = track.cells[column];
@@ -1143,16 +1917,35 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.ts
    };
    const locate = (event: PointerEvent<SVGSVGElement>) => {
      const point = coordinates(event, width, height);
-@@ -302,7 +311,7 @@
+@@ -294,21 +327,21 @@
+     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
+     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
+     else if (event.key === "ArrowUp") row--; else if (event.key === "ArrowDown") row++;
+-    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true); return; } else return;
+-    event.preventDefault(); inspection.show(observation(Math.max(0, Math.min(data.tracks.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
++    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, event.currentTarget); return; } else return;
++    event.preventDefault(); inspection.show(observation(Math.max(0, Math.min(data.tracks.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, event.currentTarget);
+   };
+   if (!data.tracks.length || !data.timestamps.length) return <EmptyState />;
+   const bars = !directional && "display" in config && config.display === "bar";
    const tableLegend = config.legendDisplay === "table";
    const legendRevision = JSON.stringify([widget.unit, widget.options?.decimals, config.legendDisplay, data.tracks.map(track => [track.name, track.cells.at(-1)?.value, track.statistics])]);
    const formatSummary = (value: number | null) => value === null ? "No data" : formatMetric(value, widget.unit, false, widget.options?.decimals);
 -  return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave}>
-+  return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={event => inspection.blur(event.relatedTarget)}>
++  return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={inspection.blur}>
      <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>
      <div className={styles.plot} ref={ref}>
        <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${directional ? "Outbound traffic below zero" : "Stacked observations"}.${inspection.enabled ? " Arrow keys inspect values; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
-@@ -324,9 +333,9 @@
+-        onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
+-        onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
+-        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
++        onFocus={event => inspection.focus(observation(0, data.timestamps.length - 1), event.currentTarget)}
++        onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value, false, event.currentTarget); else inspection.leave(); }}
++        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true, event.currentTarget); }}>
+         <defs><clipPath id={`${id}-clip`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>
+         {ticks.map((value, index) => <g key={value}>{widget.options?.showGrid !== false && <line x1={left} x2={width - right} y1={y(value)} y2={y(value)} className={styles.gridLine} />}{showAxis && <text data-value-axis x={left - 7} y={y(value)} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[index]}</text>}</g>)}
+         <line x1={left} x2={width - right} y1={y(0)} y2={y(0)} className={styles.baseline} />
+@@ -324,9 +357,10 @@
            })}
          </g>)}</g>
          {cursorTime !== undefined && <line x1={x(cursorTime)} x2={x(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
@@ -1160,7 +1953,8 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.ts
 +        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={x(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{widget.options?.timeAxis === 'calendar' ? calendarTick(data.timestamps[index], span) : formatTimeTick(data.timestamps[index], span)}</text>)}
        </svg>
 -      {inspection.active && inspection.detailsEnabled && <Inspector id={id} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
-+      {inspection.active && inspection.detailsEnabled && <Inspector id={id} title={widget.title} series={inspectorSeries} colors={data.tracks.map((_, index) => color(index))} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} />}
++      {inspection.active && inspection.detailsEnabled && <RichMetricInspector id={id} title={widget.title} series={inspectorSeries} colors={data.tracks.map((_, index) => color(index))} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} onEnter={inspection.enter} onLeave={inspection.leave} options={widget.options} anchor={inspection.active.anchor}
++        anchorRect={() => { const sample = inspection.active!.observation, cell = data.tracks[sample.row].cells[sample.column]; return observationAnchor(inspection.active?.anchor ?? null, width, height, x(sample.timestamp), cell.upper === null ? top + plotHeight / 2 : y(cell.upper)); }} />}
      </div>
      {widget.options?.showLegend !== false && <SeriesLegend table={tableLegend} revision={legendRevision}>{tableLegend ? <table className={styles.legendTable}>
        <caption>Raw returned observations. Current is the latest sample, including missing values. Mean is the arithmetic mean of finite samples; max is the largest finite sample. Statistics use all returned samples before display sampling.</caption>
@@ -1176,8 +1970,14 @@ diff --git a/src/vendor/paprika/ui/src/features/insights/schema.ts b/src/vendor/
    showGrid: z.boolean().optional(),
    showAxis: z.boolean().optional(),
    showLegend: z.boolean().optional(),
-@@ -327,6 +327,18 @@
+@@ -325,8 +325,24 @@
+     showValues: z.boolean().optional(),
+     showSparkline: z.boolean().optional(),
      showTooltip: z.boolean().optional(),
++    tooltipPlacement: z.enum(["auto", "top", "right", "bottom", "left"]).optional(),
++    tooltipOffset: z.number().int().min(0).max(40).optional(),
++    tooltipMaxWidth: z.number().int().min(220).max(640).optional(),
++    tooltipMaxHeight: z.number().int().min(160).max(800).optional(),
      tooltipView: tooltipViewSchema.optional(),
      showGrid: z.boolean().optional(),
 +    gridX: z.boolean().optional(),
@@ -1447,6 +2247,327 @@ new file mode 100644
 +  if (seconds < 3600) return `${Number((seconds / 60).toFixed(1))}m`;
 +  if (seconds < 86400) return `${Number((seconds / 3600).toFixed(1))}h`;
 +  return `${Number((seconds / 86400).toFixed(1))}d`;
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/tooltip-dismiss.ts b/src/vendor/paprika/ui/src/features/insights/tooltip-dismiss.ts
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/tooltip-dismiss.ts
+@@ -0,0 +1,75 @@
++"use client";
++
++import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
++import { useTooltipHandoff, useWidgetTooltip } from './tooltip-interaction';
++
++type DismissState = { pinned: boolean; enabled: boolean; engaged: boolean };
++
++/** Bounded handoff across the gap between an observation and its portalled inspector. */
++export function createTooltipDismissController(getState: () => DismissState, onDismiss: () => void, onHoldChange: (held: boolean) => void = () => undefined) {
++  let timer: ReturnType<typeof setTimeout> | undefined;
++  let pending = false, disposed = false, engaged = getState().engaged, ignoreDisengagement = false;
++  const stopTimer = () => { clearTimeout(timer); timer = undefined; };
++  const cancel = () => { pending = false; stopTimer(); engaged = getState().engaged; ignoreDisengagement = false; onHoldChange(false); };
++  const reset = () => { cancel(); engaged = getState().engaged; ignoreDisengagement = engaged; };
++  const arm = () => {
++    stopTimer();
++    const state = getState();
++    if (disposed || !state.enabled || state.pinned) { pending = false; onHoldChange(false); return; }
++    if (state.engaged) return;
++    timer = setTimeout(() => {
++      timer = undefined;
++      const current = getState();
++      if (!pending || disposed || !current.enabled || current.pinned) { pending = false; onHoldChange(false); return; }
++      if (current.engaged) return;
++      pending = false;
++      try { onDismiss(); } finally { onHoldChange(false); }
++    }, 180);
++  };
++  return {
++    schedule: () => { if (!disposed) { pending = true; onHoldChange(true); if (timer === undefined) arm(); } },
++    cancel,
++    reset,
++    engagementChanged: () => {
++      const next = getState().engaged;
++      if (engaged === next) return;
++      engaged = next;
++      if (next) { ignoreDisengagement = false; stopTimer(); }
++      else if (ignoreDisengagement) { ignoreDisengagement = false; if (pending) arm(); }
++      else { pending = true; onHoldChange(true); arm(); }
++    },
++    dispose: () => { disposed = true; cancel(); },
++  };
++}
++
++/** Ordinary pointer/blur dismissal never restores focus; explicit Close/Escape stays with the owner. */
++export function useTooltipDismiss({ onDismiss, pinned, revision, enabled = true }: {
++  onDismiss: () => void;
++  pinned: boolean;
++  revision: unknown;
++  enabled?: boolean;
++}) {
++  const scope = useWidgetTooltip(), store = scope?.store;
++  const handoff = useTooltipHandoff();
++  const observedOwner = useRef<Element | null>(null);
++  const focusOwner = (anchor: Element | null) => anchor?.closest('[tabindex],button,a[href],input,select,textarea') ?? anchor;
++  const latest = useRef({ onDismiss, pinned, enabled });
++  useLayoutEffect(() => { latest.current = { onDismiss, pinned, enabled }; });
++  const controller = useMemo(() => createTooltipDismissController(
++    () => {
++      const sourceFocus = store?.getSourceFocus();
++      return { pinned: latest.current.pinned, enabled: latest.current.enabled,
++        engaged: !!store && (store.isPanelEngaged() || !!sourceFocus?.keyboard && observedOwner.current !== null && observedOwner.current === focusOwner(sourceFocus.anchor)) };
++    },
++    () => { observedOwner.current = null; latest.current.onDismiss(); },
++    held => { if (held) handoff.hold(observedOwner.current); else handoff.release(); },
++  ), [store, handoff]);
++  useLayoutEffect(() => { observedOwner.current = null; controller.reset(); return controller.reset; }, [controller, revision, enabled]);
++  useLayoutEffect(() => { controller.cancel(); }, [controller, pinned]);
++  useEffect(() => {
++    const stop = store?.subscribe(change => { if (change === 'owner') controller.reset(); else controller.engagementChanged(); });
++    return () => { stop?.(); controller.cancel(); };
++  }, [store, controller]);
++  const cancel = useCallback(() => { observedOwner.current = focusOwner(store?.getSnapshot().anchor ?? null); controller.cancel(); }, [store, controller]);
++  return useMemo(() => ({ schedule: controller.schedule, cancel }), [controller, cancel]);
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/tooltip-focus.ts b/src/vendor/paprika/ui/src/features/insights/tooltip-focus.ts
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/tooltip-focus.ts
+@@ -0,0 +1,24 @@
++export type TooltipDismissReason = 'outside' | 'superseded' | 'escape' | 'close';
++type FocusTarget = Pick<HTMLElement, 'isConnected' | 'focus'>;
++
++// Dismiss callbacks are synchronous. Nested owners retain the outer pointer
++// event's focus policy, including when an inner owner performs an explicit close.
++let passiveDismissalDepth = 0;
++let restoringFocusDepth = 0;
++export const isRestoringTooltipFocus = () => restoringFocusDepth > 0;
++
++export function withTooltipDismissReason<T>(reason: TooltipDismissReason, dismiss: () => T): T {
++  const passive = reason === 'outside' || reason === 'superseded';
++  if (passive) passiveDismissalDepth++;
++  try { return dismiss(); }
++  finally { if (passive) passiveDismissalDepth--; }
++}
++
++/** Close/Escape returns focus; passive dismissal keeps the user's new focus target. */
++export function restoreTooltipFocus(target: FocusTarget | null | undefined): boolean {
++  if (passiveDismissalDepth || !target?.isConnected) return false;
++  restoringFocusDepth++;
++  try { target.focus({ preventScroll: true }); }
++  finally { restoringFocusDepth--; }
++  return true;
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/tooltip-interaction.tsx b/src/vendor/paprika/ui/src/features/insights/tooltip-interaction.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/tooltip-interaction.tsx
+@@ -0,0 +1,138 @@
++"use client";
++
++import { createContext, useContext, useEffect, useMemo, useRef, type HTMLAttributes, type RefObject } from 'react';
++import type { WidgetOptions } from './schema';
++import { isRestoringTooltipFocus } from './tooltip-focus';
++
++export interface TooltipInteraction {
++  kind: 'pointer' | 'keyboard';
++  x: number;
++  y: number;
++  anchor: Element | null;
++}
++export type TooltipEscapeEvent = Pick<KeyboardEvent, 'key' | 'target' | 'defaultPrevented' | 'preventDefault' | 'stopPropagation'>;
++export type TooltipStoreChange = 'pointer' | 'keyboard' | 'boundary' | 'handoff' | 'owner';
++
++/** The store updates the open portal only; moving a pointer never rerenders a chart. */
++export function createTooltipInteractionStore() {
++  let snapshot: TooltipInteraction = { kind: 'keyboard', x: 0, y: 0, anchor: null };
++  let hovered = false, focused = false, sourceFocused = false;
++  let sourceFocusAnchor: Element | null = null, sourceFocusKeyboard = false;
++  let panelOwner: { token: symbol; pinned: boolean; onReplaced: () => void } | null = null;
++  const listeners = new Set<(change: TooltipStoreChange) => void>();
++  const ownerListeners = new Set<() => void>();
++  const escapeHandlers: ((event: TooltipEscapeEvent) => boolean)[] = [];
++  const handoffs = new Map<symbol, Element | null>();
++  const publish = (change: TooltipStoreChange = 'boundary') => { for (const listener of listeners) listener(change); };
++  const publishOwner = () => { publish('owner'); for (const listener of ownerListeners) listener(); };
++  return {
++    getSnapshot: () => snapshot,
++    subscribe: (listener: (change: TooltipStoreChange) => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
++    pointer: (x: number, y: number, anchor: Element | null) => {
++      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
++      snapshot = { kind: 'pointer', x, y, anchor }; publish('pointer');
++    },
++    keyboard: (anchor: Element | null) => { snapshot = { ...snapshot, kind: 'keyboard', anchor }; publish('keyboard'); },
++    getPanelOwner: () => panelOwner?.token ?? null,
++    subscribePanelOwner: (listener: () => void) => { ownerListeners.add(listener); return () => { ownerListeners.delete(listener); }; },
++    claimPanel: (token: symbol, pinned: boolean, onReplaced: () => void) => {
++      if (panelOwner?.token === token) { panelOwner.pinned = pinned; panelOwner.onReplaced = onReplaced; return true; }
++      if (panelOwner?.pinned && !pinned) return false;
++      const previous = panelOwner;
++      panelOwner = { token, pinned, onReplaced };
++      hovered = false; focused = false; handoffs.clear();
++      publishOwner(); previous?.onReplaced();
++      return true;
++    },
++    releasePanel: (token: symbol) => {
++      if (panelOwner?.token !== token) return;
++      panelOwner = null; hovered = false; focused = false; handoffs.clear(); publishOwner();
++    },
++    setPanelHovered: (token: symbol, value: boolean) => { if (panelOwner?.token === token && hovered !== value) { hovered = value; publish(); } },
++    setPanelFocused: (token: symbol, value: boolean) => { if (panelOwner?.token === token && focused !== value) { focused = value; publish(); } },
++    isPanelEngaged: () => hovered || focused,
++    setSourceFocused: (value: boolean, anchor: Element | null = snapshot.anchor, keyboard = snapshot.kind === 'keyboard') => {
++      if (sourceFocused === value && (!value || sourceFocusAnchor === anchor && sourceFocusKeyboard === keyboard)) return;
++      sourceFocused = value; sourceFocusAnchor = value ? anchor : null; sourceFocusKeyboard = value && keyboard; publish();
++    },
++    isSourceFocused: () => sourceFocused,
++    getSourceFocus: () => sourceFocused ? { anchor: sourceFocusAnchor, keyboard: sourceFocusKeyboard } : null,
++    setHandoff: (token: symbol, active: boolean, anchor: Element | null = snapshot.anchor) => {
++      if (active) { if (handoffs.has(token)) return; handoffs.set(token, anchor); }
++      else if (!handoffs.delete(token)) return;
++      publish('handoff');
++    },
++    isHandoffActive: (origin?: Element | null) => [...handoffs.values()].some(anchor => !origin || !anchor || origin === anchor || origin.contains(anchor)),
++    registerEscape: (handler: (event: TooltipEscapeEvent) => boolean) => {
++      escapeHandlers.push(handler);
++      return () => { const index = escapeHandlers.indexOf(handler); if (index >= 0) escapeHandlers.splice(index, 1); };
++    },
++    handleEscape: (event: TooltipEscapeEvent) => {
++      if (event.key !== 'Escape' || event.defaultPrevented) return false;
++      for (const handler of [...escapeHandlers].reverse()) if (handler(event)) return true;
++      return false;
++    },
++  };
++}
++
++export type TooltipInteractionStore = ReturnType<typeof createTooltipInteractionStore>;
++export interface WidgetTooltipScope { store: TooltipInteractionStore; hostRef: RefObject<HTMLDivElement | null>; options?: WidgetOptions }
++const TooltipContext = createContext<WidgetTooltipScope | null>(null);
++export const useWidgetTooltip = () => useContext(TooltipContext);
++
++/** A dismissal owner holds only its own source while the pointer crosses to the popup. */
++export function useTooltipHandoff() {
++  const store = useWidgetTooltip()?.store;
++  const token = useRef(Symbol('tooltip-handoff'));
++  const controls = useMemo(() => ({
++    hold: (anchor?: Element | null) => store?.setHandoff(token.current, true, anchor),
++    release: () => store?.setHandoff(token.current, false),
++  }), [store]);
++  useEffect(() => controls.release, [controls]);
++  return controls;
++}
++
++export function isObservationTooltipTarget(target: EventTarget | null): boolean {
++  return typeof Element !== 'undefined' && target instanceof Element && !!target.closest('[data-observation-tooltip]');
++}
++
++/** Replace the existing widget host div so layout and containment stay unchanged. */
++export function WidgetTooltipProvider({ options, children, ...props }: HTMLAttributes<HTMLDivElement> & { options?: WidgetOptions }) {
++  const hostRef = useRef<HTMLDivElement>(null);
++  const store = useMemo(createTooltipInteractionStore, []);
++  const scope = useMemo(() => ({ store, hostRef, options }), [store, options]);
++  const pointer = (event: React.PointerEvent<HTMLDivElement>) => {
++    if (isObservationTooltipTarget(event.target)) return;
++    store.pointer(event.clientX, event.clientY, event.target instanceof Element ? event.target : hostRef.current);
++  };
++  return <TooltipContext.Provider value={scope}><div {...props} ref={hostRef} data-widget-tooltip-scope=""
++    onPointerOverCapture={event => { pointer(event); props.onPointerOverCapture?.(event); }}
++    onPointerMoveCapture={event => { pointer(event); props.onPointerMoveCapture?.(event); }}
++    onPointerDownCapture={event => { pointer(event); props.onPointerDownCapture?.(event); }}
++    onKeyDownCapture={event => {
++      if (!isObservationTooltipTarget(event.target)) store.keyboard(event.target instanceof Element ? event.target : hostRef.current);
++      props.onKeyDownCapture?.(event);
++    }}
++    onKeyDown={event => {
++      props.onKeyDown?.(event);
++      if (!event.defaultPrevented && !event.isPropagationStopped()) store.handleEscape(event);
++    }}
++    onFocusCapture={event => {
++      if (isRestoringTooltipFocus()) {
++        store.setSourceFocused(true);
++        event.stopPropagation();
++        return;
++      }
++      if (!isObservationTooltipTarget(event.target)) {
++        const keyboard = store.getSnapshot().kind === 'keyboard' || event.target.matches(':focus-visible');
++        if (keyboard) store.keyboard(event.target);
++        store.setSourceFocused(true, event.target, keyboard);
++      }
++      props.onFocusCapture?.(event);
++    }}
++    onBlurCapture={event => {
++      if (!isObservationTooltipTarget(event.target) && !event.currentTarget.contains(event.relatedTarget as Node | null)) store.setSourceFocused(false);
++      props.onBlurCapture?.(event);
++    }}
++  >{children}</div></TooltipContext.Provider>;
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/tooltip-position.ts b/src/vendor/paprika/ui/src/features/insights/tooltip-position.ts
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/tooltip-position.ts
+@@ -0,0 +1,64 @@
++/** All coordinates are CSS pixels in the layout viewport, including visualViewport offsets. */
++export interface TooltipAnchor { left: number; right: number; top: number; bottom: number }
++export interface TooltipViewport { width: number; height: number; left?: number; top?: number }
++export type TooltipPlacement = 'auto' | 'top' | 'right' | 'bottom' | 'left';
++export type TooltipSide = Exclude<TooltipPlacement, 'auto'>;
++export interface TooltipSize { width: number; height: number }
++export interface TooltipPosition extends TooltipSize { left: number; top: number; placement: TooltipSide }
++
++const finite = (value: number, fallback = 0) => Number.isFinite(value) ? value : fallback;
++const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(value, Math.max(low, high)));
++
++export function tooltipViewportBounds(viewport: TooltipViewport) {
++  const width = Math.max(0, finite(viewport.width)), height = Math.max(0, finite(viewport.height));
++  const marginX = Math.min(12, width / 2), marginY = Math.min(12, height / 2);
++  const left = finite(viewport.left ?? 0) + marginX, top = finite(viewport.top ?? 0) + marginY;
++  return { left, top, right: left + width - marginX * 2, bottom: top + height - marginY * 2,
++    width: width - marginX * 2, height: height - marginY * 2 };
++}
++
++export function limitTooltipSize(size: TooltipSize, viewport: TooltipViewport): TooltipSize {
++  const bounds = tooltipViewportBounds(viewport);
++  return { width: clamp(finite(size.width), 0, bounds.width), height: clamp(finite(size.height), 0, bounds.height) };
++}
++
++/** Flip the preferred side, shift on its other axis, and contain oversized content. */
++export function positionObservationTooltip(
++  anchor: TooltipAnchor,
++  desired: TooltipSize,
++  viewport: TooltipViewport,
++  preferred: TooltipPlacement = 'auto',
++  offset = 12,
++): TooltipPosition {
++  const bounds = tooltipViewportBounds(viewport), size = limitTooltipSize(desired, viewport);
++  const gap = clamp(finite(offset, 12), 0, 40);
++  const origin = {
++    left: clamp(finite(anchor.left, bounds.left), bounds.left, bounds.right),
++    right: clamp(finite(anchor.right, bounds.left), bounds.left, bounds.right),
++    top: clamp(finite(anchor.top, bounds.top), bounds.top, bounds.bottom),
++    bottom: clamp(finite(anchor.bottom, bounds.top), bounds.top, bounds.bottom),
++  };
++  const available = {
++    right: Math.max(0, bounds.right - origin.right - gap),
++    left: Math.max(0, origin.left - bounds.left - gap),
++    bottom: Math.max(0, bounds.bottom - origin.bottom - gap),
++    top: Math.max(0, origin.top - bounds.top - gap),
++  };
++  const opposite: Record<TooltipSide, TooltipSide> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
++  const defaults: TooltipSide[] = ['right', 'left', 'bottom', 'top'];
++  const sides = preferred === 'auto' ? defaults : [preferred, opposite[preferred], ...defaults.filter(side => side !== preferred && side !== opposite[preferred])];
++  let placement = sides.find(side => available[side] >= (side === 'left' || side === 'right' ? size.width : size.height));
++  let height = size.height;
++  if (!placement) {
++    // Preserve readable width in a narrow viewport and scroll the shorter panel.
++    placement = available.bottom >= available.top ? 'bottom' : 'top';
++    if (available[placement] >= Math.min(64, size.height)) height = Math.min(height, available[placement]);
++  }
++  const point = origin.left === origin.right && origin.top === origin.bottom;
++  const centerX = (origin.left + origin.right - size.width) / 2;
++  const centerY = point ? origin.top + gap : (origin.top + origin.bottom - height) / 2;
++  const rawLeft = placement === 'right' ? origin.right + gap : placement === 'left' ? origin.left - gap - size.width : point ? origin.left + gap : centerX;
++  const rawTop = placement === 'bottom' ? origin.bottom + gap : placement === 'top' ? origin.top - gap - height : centerY;
++  return { left: clamp(rawLeft, bounds.left, bounds.right - size.width), top: clamp(rawTop, bounds.top, bounds.bottom - height),
++    width: size.width, height, placement };
 +}
 diff --git a/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css b/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css
 --- a/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css
