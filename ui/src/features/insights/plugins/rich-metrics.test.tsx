@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries, registerRichMetricPlugins } from "./rich-metrics";
 import { getWidgetDefinition } from "../widget-registry";
+import { DashboardWindowProvider } from "../dashboard-window";
+import { formatMetric } from "../chart-renderers";
 import { ChartCursorProvider } from "../chart-cursor";
 import { EmbeddedWidgetProvider } from "../widget-presentation";
 import { fullDateTimeFormat } from "../chart-data";
@@ -545,7 +547,7 @@ describe("stacked bars with missing and not-started series", () => {
     fireEvent.keyDown(chart, { key: "Enter" });
     const inspector = screen.getByRole("region", { name: "Observation details" });
     expect(within(inspector).getByRole("img", { name: "History for Stack total" })).toBeInTheDocument();
-    expect(within(inspector).getByText("Stack total of the series shown that report at each time; gaps where a started series has no value")).toBeInTheDocument();
+    expect(within(inspector).getByText("Stack total of the series shown that report at each time; gaps where a series is missing a value")).toBeInTheDocument();
     expect(inspector.querySelectorAll("[data-stat-sparkline]")).toHaveLength(2);
   });
   it("hover and click resolve the series under the pointer at incomplete times, including a cap", () => {
@@ -596,29 +598,93 @@ describe("stacked bars with missing and not-started series", () => {
     expect(bar).toHaveAttribute("data-partial-stack", "true");
     expect(Number(bar.getAttribute("height"))).toBeCloseTo(Number(clip.getAttribute("height")), 5);
   });
-  it("does not hatch a series after its last sample, and names when it stopped", () => {
-    // old reports at 1-3 s, new starts at 4 s and steady reports throughout. Nothing is missing, so no cap is drawn.
+  it("hatches a series through its reporting grace, then names when it stopped", () => {
+    // old reports at 1-3 s, new starts at 4 s and steady reports throughout. old's grace is two of its one-second cadence,
+    // so it is missing at 4 and 5 s, where its caps stand and the total is null. At 6 s it has ended and needs no cap.
     const churn: QueryResult = { series: [
       { name: "old", labels: { pod: "old" }, points: [1, 2, 3].map(second => ({ timestamp: second * 1000, value: 2 })) },
       { name: "new", labels: { pod: "new" }, points: [4, 5, 6].map(second => ({ timestamp: second * 1000, value: 2 })) },
       { name: "steady", labels: { pod: "steady" }, points: [1, 2, 3, 4, 5, 6].map(second => ({ timestamp: second * 1000, value: 1 })) },
     ] };
     const { container } = barChart(churn);
-    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-missing-series]")).toHaveLength(2);
+    expect(container.querySelectorAll('[data-missing-series="old"]')).toHaveLength(2);
     const chart = screen.getByRole("group", { name: /Request outcomes/ });
     fireEvent.focus(chart);
     expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent(`2 of 3 series report at this time. Their stack total is 3.00 req/s. old: no samples since ${fullDateTimeFormat.format(new Date(3000))}.`);
     for (let step = 0; step < 5; step++) fireEvent.keyDown(chart, { key: "ArrowLeft" });
     expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("2 of 3 series report at this time. Their stack total is 3.00 req/s. new: no samples yet.");
     fireEvent.keyDown(chart, { key: "Enter" });
-    expect(screen.getByText("Stack total of the series shown that report at each time; gaps where a started series has no value")).toBeInTheDocument();
+    expect(screen.getByText("Stack total of the series shown that report at each time; gaps where a series is missing a value")).toBeInTheDocument();
+  });
+  it("draws a cap, not an ended series, for one that misses only its newest sample, and quotes no total", () => {
+    const lag: QueryResult = { series: [
+      { name: "a", labels: { service: "a" }, points: [1, 2, 3, 4, 5, 6].map(second => ({ timestamp: second * 1000, value: 10 })) },
+      { name: "b", labels: { service: "b" }, points: [1, 2, 3, 4, 5, 6].map(second => ({ timestamp: second * 1000, value: 10 })) },
+      { name: "c", labels: { service: "c" }, points: [1, 2, 3, 4, 5, 6].map(second => ({ timestamp: second * 1000, value: second === 6 ? null : 10 })) },
+    ] };
+    const { container } = barChart(lag);
+    expect(container.querySelectorAll('[data-missing-series="c"]')).toHaveLength(1);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("2 of 3 series report at this time, so the stack total is unavailable. Known series sum to 20.00 req/s. c: no value at this time.");
+  });
+  it("names no series as ended or not started on a truncated result, so every absence is missing", () => {
+    // b and c stop at 3 s. On a cut result that could be the cut, so their later absences are missing, never ended.
+    const cut: QueryResult = { truncated: true, series: [
+      { name: "a", labels: { service: "a" }, points: [1, 2, 3, 4, 5, 6].map(second => ({ timestamp: second * 1000, value: 1 })) },
+      { name: "b", labels: { service: "b" }, points: [1, 2, 3].map(second => ({ timestamp: second * 1000, value: 1 })) },
+      { name: "c", labels: { service: "c" }, points: [1, 2, 3].map(second => ({ timestamp: second * 1000, value: 1 })) },
+    ] };
+    const { container } = barChart(cut);
+    // One cap per column where b and c are missing: 4, 5 and 6 s.
+    expect(container.querySelectorAll('[data-missing-series="b, c"]')).toHaveLength(3);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    fireEvent.focus(chart);
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(inspector).toHaveTextContent("1 of 3 series report at this time, so the stack total is unavailable. Known series sum to 1.00 req/s. b, c: no value at this time.");
+    expect(inspector).not.toHaveTextContent("no samples since");
+  });
+  it("clears a keyboard inspection on a refresh, so a cached result that returns after a pointer leave does not revive it", async () => {
+    const view = barChart(stacked);
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    act(() => chart.focus());
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+    view.rerender(<StackedTimeseries widget={bar} result={{ ...stacked }} />);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    fireEvent.pointerLeave(view.container.firstElementChild!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+    view.rerender(<StackedTimeseries widget={bar} result={stacked} />);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+  });
+  it("keeps a previous-period overlay's partial stacks off the axis, because the overlay draws only complete stacks", async () => {
+    // The previous period has a 100 in a column where b is missing. The overlay never draws that partial stack, so the axis stays at the current 2.
+    const current: QueryResult = { series: [
+      { name: "a", labels: { service: "a" }, points: [4, 5, 6].map(second => ({ timestamp: second * 1000, value: 1 })) },
+      { name: "b", labels: { service: "b" }, points: [4, 5, 6].map(second => ({ timestamp: second * 1000, value: 1 })) },
+    ] };
+    const previous: QueryResult = { series: [
+      { name: "a", labels: { service: "a" }, points: [2, 3, 4].map(second => ({ timestamp: second * 1000, value: second === 3 ? 100 : 1 })) },
+      { name: "b", labels: { service: "b" }, points: [2, 3, 4].map(second => ({ timestamp: second * 1000, value: second === 3 ? null : 1 })) },
+    ] };
+    const fetch = vi.fn(async () => previous);
+    const overlayWidget: Widget = { ...bar, id: "signal", title: "Traffic", config: { display: "bar", maxPoints: 24 } };
+    const { container } = render(<DashboardWindowProvider value={{ previous: fetch }}><StackedTimeseries widget={overlayWidget} result={current} /></DashboardWindowProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Compare window for Traffic" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare previous period" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Overlay previous period" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Overlay previous period" }));
+    expect(container.querySelectorAll("[data-prior-path]").length).toBeGreaterThan(0);
+    const ticks = [...container.querySelectorAll("text[data-value-axis]")];
+    expect(ticks.at(-1)?.textContent).toBe(formatMetric(2, "req/s", true, widget.options?.decimals));
   });
   it("says when the stack total leaves out series beyond the maximum plotted", () => {
     const three: QueryResult = { series: ["a", "b", "c"].map(name => ({ name, labels: { service: name }, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 2 }] })) };
     render(<StackedTimeseries widget={{ ...bar, config: { display: "bar", maxSeries: 2 } }} result={three} />);
     const chart = screen.getByRole("group", { name: /Request outcomes/ });
     fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "Enter" });
-    expect(screen.getByText("Stack total of the series shown that report at each time; gaps where a started series has no value · 1 hidden series not included")).toBeInTheDocument();
+    expect(screen.getByText("Stack total of the series shown that report at each time; gaps where a series is missing a value · 1 hidden series not included")).toBeInTheDocument();
   });
   it("keeps area mode's overflow count and notes unchanged when an incomplete column's reporting values overflow", () => {
     const overflowing: QueryResult = { series: [

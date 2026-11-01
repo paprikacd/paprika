@@ -15,6 +15,7 @@ import { compactSeriesLabels } from "../series-display";
 import { validTimestamp } from "../widget-context";
 import { useAnnotationEvents } from "../annotation-events";
 import { TimeWindowLens } from "../time-window-lens";
+import { useTooltipWidgetData } from "../tooltip-widget-data";
 import { seriesInWindow, type ObservationWindow } from "../time-window";
 import type { QueryResult } from "../schema";
 import { metricPriorPeriod } from "./metric-prior-period";
@@ -105,6 +106,10 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const restoringFocus = useRef(false);
   const setRoot = useCallback((element: HTMLDivElement | null) => { root.current = element; }, []);
   const [state, setState] = useState<{ observation: Observation; pinned: boolean; owner: InspectionOwner; result: unknown; signature: string }>();
+  // A new result ends the inspection rather than hiding it, so a cached result that returns later cannot revive it. The
+  // reset runs during render, so React discards the stale observation before anything with the new result is committed.
+  const [seenResult, setSeenResult] = useState(result);
+  if (seenResult !== result) { setSeenResult(result); setState(undefined); }
   const active = state?.result === result && state.signature === signature && enabled ? state : undefined;
   const timestamp = active?.observation.timestamp, pinned = active?.pinned;
   useEffect(() => {
@@ -428,11 +433,14 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const [selection, setSelection] = useState<{ source: QueryResult; window: ObservationWindow; previous?: QueryResult }>();
   const zoom = selection?.source === result ? selection.window : undefined;
   const selectedSeries = useMemo(() => zoom ? seriesInWindow(fullSeries, zoom) : fullSeries, [fullSeries, zoom]);
-  const data = useMemo(() => buildMetricPlot(selectedSeries, config, directional, fullSeries), [selectedSeries, config, directional, fullSeries]);
+  // A truncated result, or one a tooltip host truncated, makes every absence missing: never ended and never not started.
+  const parentData = useTooltipWidgetData(), truncated = result.truncated === true || parentData?.result.truncated === true, staleAfterSeconds = widget.options?.staleAfterSeconds;
+  const data = useMemo(() => buildMetricPlot(selectedSeries, config, directional, fullSeries, { truncated, staleAfterSeconds }), [selectedSeries, config, directional, fullSeries, truncated, staleAfterSeconds]);
   const bars = !directional && "display" in config && config.display === "bar";
   const stackTotal = useMemo(() => ({ name: "Stack total", labels: {}, points: data.totals }), [data.totals]);
   const prior = useMemo(() => zoom && selection?.previous ? metricPriorPeriod(fullSeries, selection.previous.series ?? [], zoom, directional) : [], [fullSeries, selection, zoom, directional]);
-  const previousPlot = useMemo(() => prior.length ? buildMetricPlot(prior.map(entry => entry.shifted), config, directional) : undefined, [prior, config, directional]);
+  const priorTruncated = selection?.previous?.truncated === true;
+  const previousPlot = useMemo(() => prior.length ? buildMetricPlot(prior.map(entry => entry.shifted), config, directional, undefined, { truncated: priorTruncated, staleAfterSeconds }) : undefined, [prior, config, directional, priorTruncated, staleAfterSeconds]);
   const canOverlay = useCallback((current: MetricSeries[], previous: MetricSeries[], window: ObservationWindow) => {
     const matched = metricPriorPeriod(current, previous, window, directional);
     return matched.length > 0 && buildMetricPlot(matched.map(entry => entry.shifted), config, directional).tracks.some(track => track.cells.some(cell => cell.upper !== null));
@@ -448,7 +456,9 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   // Bar mode draws the reporting tracks of incomplete columns, so a window holding only partial stacks is not empty.
   const currentPartial = bars && data.columns.some(column => column.partial.length > 0);
   const emptyZoom = !!zoom && !currentDrawable && !currentPartial && !previousDrawable;
-  const domain: [number, number] = previousPlot ? [Math.min(data.domain[0], previousPlot.domain[0]), Math.max(data.domain[1], previousPlot.domain[1])] : data.domain;
+  // The overlay draws only complete stacks, so in bar mode only their bounds may widen the axis. Partial stacks it never draws would stretch it.
+  const overlayDomain = previousPlot && (bars ? previousPlot.completeDomain : previousPlot.domain);
+  const domain: [number, number] = overlayDomain ? [Math.min(data.domain[0], overlayDomain[0]), Math.max(data.domain[1], overlayDomain[1])] : data.domain;
   const minTime = zoom?.start ?? displayTimes[0] ?? 0, span = zoom ? zoom.end - zoom.start : (displayTimes.at(-1) ?? minTime) - minTime;
   const ticks = Array.from({ length: height < 150 ? 3 : 5 }, (_, index) => {
     const fraction = index / (height < 150 ? 2 : 4);
@@ -570,7 +580,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   // Pinned bar detail only: the stack total's trend, with gaps where the stack is incomplete. Area mode keeps its inspector.
   const stackFooter = bars && inspection.active?.pinned && data.totals.some(total => total.value !== null) ? <figure className={styles.stackTotal} data-stack-total="">
     <div className={styles.history}><StatSparkline series={stackTotal} name={stackTotal.name} color="var(--gamma-muted)" unit={widget.unit} /></div>
-    <figcaption className={styles.note}>Stack total of the series shown that report at each time; gaps where a started series has no value{hiddenSeries > 0 && ` · ${hiddenSeries} hidden series not included`}</figcaption>
+    <figcaption className={styles.note}>Stack total of the series shown that report at each time; gaps where a series is missing a value{hiddenSeries > 0 && ` · ${hiddenSeries} hidden series not included`}</figcaption>
   </figure> : undefined;
   return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>

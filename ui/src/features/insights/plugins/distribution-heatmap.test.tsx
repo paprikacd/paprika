@@ -282,4 +282,18 @@ describe("distribution heatmap states and p95", () => {
       expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
     } finally { bounds.mockRestore(); }
   });
+  it("clears a keyboard heatmap inspection on a refresh, so a cached result that returns after a pointer leave does not revive it", async () => {
+    const first: QueryResult = { series: [series("10", [1, 1, 1]), series("50", [2, 2, 2]), series("+Inf", [3, 3, 3])] };
+    const { container, rerender } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={first} />);
+    const chart = screen.getByRole("group", { name: /histogram buckets/ });
+    fireEvent.focus(chart);
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={{ series: first.series }} />);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    fireEvent.pointerLeave(container.firstElementChild!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={first} />);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+  });
 });

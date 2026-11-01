@@ -67,7 +67,8 @@ describe("histogram distributions", () => {
     const values = Array.from({ length: 100 }, (_, index) => index === 28 ? null : index);
     const data = buildDistribution([bucket("1", values), bucket("2", values.map(value => value === null ? null : value + 1))], { maxBuckets: 1, maxColumns: 8 });
     expect(data.rows).toHaveLength(1); expect(data.omittedBuckets).toBe(1);
-    expect(data.timestamps).toHaveLength(8); expect(data.sampled).toBe(true);
+    // The missing column's bucket keeps that column and its densest one, so the output is two wider than its six buckets.
+    expect(data.timestamps).toHaveLength(9); expect(data.sampled).toBe(true);
     expect(data.rows[0].cells.some(cell => cell.timestamp === 29000 && cell.value === null)).toBe(true);
   });
 });
@@ -260,7 +261,7 @@ describe("distribution quantiles and gap states", () => {
     expect(shown.quantiles[1]).toMatchObject({ gap: "missing", hiddenGap: false });
     expect(shown.merged).toMatchObject({ missing: 1, hiddenMissing: 0 });
   });
-  it("forces only the window to quote through sampling, so later overflow windows compete by magnitude", () => {
+  it("keeps the window to quote and each overflow run's edges, so other overflow windows compete by magnitude", () => {
     // Windows 0 and 10 have finite p95s; every other window's p95 is in +Inf. Window 10 is by far the densest.
     const first = Array.from({ length: 40 }, (_, index) => index === 0 ? 10 : index === 10 ? 500 : 0);
     const inf = Array.from({ length: 40 }, (_, index) => index === 0 ? 10 : index === 10 ? 500 : 10);
@@ -268,26 +269,42 @@ describe("distribution quantiles and gap states", () => {
     expect(data.quantiles.map(window => window.p95?.overflow)).toContain(true);
     expect(data.quantiles[0].p95?.overflow).toBe(false);
     expect(data.highest).toMatchObject({ timestamp: 2000, p95: { overflow: true } });
-    // The first overflow window is forced. The densest window in its sampling interval survives over the other overflow windows.
+    // The first overflow window is forced. Overflow 1-9 is one run, so its last window (10 s) is protected too, and the
+    // densest window in the interval (11 s) is kept beside it. Window 8 is neither a run edge nor the densest, so it is dropped.
     expect(data.timestamps).toContain(2000);
+    expect(data.timestamps).toContain(10000);
     expect(data.timestamps).toContain(11000);
     expect(data.timestamps).not.toContain(8000);
+  });
+  it("keeps the first and last window of every overflow run in a long window, not only the first excursion", () => {
+    // Overflow at 101 s and 401 s out of 600 windows: each p95 lies in +Inf, and each one-window run is protected.
+    const n = 600, overflowAt = [100, 400];
+    const b10 = Array.from({ length: n }, (_, i) => overflowAt.includes(i) ? 50 : 90);
+    const b50 = Array.from({ length: n }, (_, i) => overflowAt.includes(i) ? 80 : 99);
+    const inf = Array.from({ length: n }, () => 100);
+    const data = buildDistribution([bucket("10", b10), bucket("50", b50), bucket("+Inf", inf)], { maxColumns: 60 });
+    expect(data.quantiles.filter(window => window.p95?.overflow).map(window => window.timestamp)).toEqual([101000, 401000]);
+    expect(data.highest).toMatchObject({ timestamp: 101000, p95: { overflow: true } });
+    expect(data.timestamps.length).toBeLessThanOrEqual(120);
   });
 });
 
 describe("stacked columns, partial stacks and totals", () => {
-  it("counts a track as not started before its first observation, missing between observations, and ended after its last", () => {
+  it("counts a track as not started before its first observation and missing after it, while a trailing absence is inside its grace", () => {
+    // B has one sample, so it has no cadence of its own. A has too few samples for a peer cadence, so B's trailing absence
+    // has no grace that it could outlast and stays missing.
     const data = buildMetricPlot([series("A", [1, null, 3]), series("B", [null, 2, null])], {});
-    expect(data.columns.map(column => [column.missing, column.notStarted, column.ended])).toEqual([[[], [1], []], [[0], [], []], [[], [], [1]]]);
+    expect(data.columns.map(column => [column.missing, column.notStarted, column.ended])).toEqual([[[], [1], []], [[0], [], []], [[1], [], []]]);
   });
-  it("keeps a series that ended from counting as missing, so the stack total survives pod churn", () => {
-    // old reports at 1-3 s, new starts at 4 s, steady reports throughout.
+  it("keeps a series that ended from counting as missing once its grace has passed, so the stack total survives pod churn", () => {
+    // old reports at 1-3 s, new starts at 4 s, steady reports throughout. old's grace is two of its one-second cadence,
+    // so at 4 and 5 s it is missing and the total is null. At 6 s it has ended and the total returns.
     const old = series("old", [2, 2, 2, null, null, null]), fresh = series("new", [null, null, null, 2, 2, 2]), steady = series("steady", [1, 1, 1, 1, 1, 1]);
     const data = buildMetricPlot([steady, old, fresh], stackedConfigSchema.parse({ display: "bar" }));
     expect(data.columns.map(column => [column.missing, column.notStarted, column.ended])).toEqual([
-      [[], [2], []], [[], [2], []], [[], [2], []], [[], [], [1]], [[], [], [1]], [[], [], [1]],
+      [[], [2], []], [[], [2], []], [[], [2], []], [[1], [], []], [[1], [], []], [[], [], [1]],
     ]);
-    expect(data.totals.map(total => total.value)).toEqual([3, 3, 3, 3, 3, 3]);
+    expect(data.totals.map(total => total.value)).toEqual([3, 3, 3, null, null, 3]);
     expect(data.tracks.map(track => track.lastFinite)).toEqual([6000, 3000, 6000]);
   });
   it("reports each track's last finite time from the unzoomed history, or null when it never reported", () => {
@@ -303,8 +320,9 @@ describe("stacked columns, partial stacks and totals", () => {
   it("stacks the reporting tracks of an incomplete column on the complete stack's running sums", () => {
     const data = buildMetricPlot([series("A", [2, 2]), series("B", [3, null]), series("C", [-1, -1])], {});
     expect(data.columns[0]).toMatchObject({ total: 4, partial: [] });
-    // B ended after its only sample at 1 s, so the total is over the reporting series A and C.
-    expect(data.columns[1]).toMatchObject({ total: 1, missing: [], notStarted: [], ended: [1] });
+    // B's only sample is at 1 s, so its absence at 2 s is inside its grace: it is missing, the total is null, and the
+    // partial stack still stacks A and C on the complete stack's running sums.
+    expect(data.columns[1]).toMatchObject({ total: null, missing: [1], notStarted: [], ended: [] });
     expect(data.columns[1].partial).toEqual([{ index: 0, lower: 0, upper: 2 }, { index: 2, lower: 0, upper: -1 }]);
     const signed = buildMetricPlot([series("A", [2, 2]), series("B", [-3, null]), series("C", [1, 1])], {});
     expect(signed.columns[1].partial).toEqual([{ index: 0, lower: 0, upper: 2 }, { index: 2, lower: 2, upper: 3 }]);
@@ -345,6 +363,40 @@ describe("stacked columns, partial stacks and totals", () => {
     expect(data.columns[0]).toMatchObject({ overflow: true, partial: [], total: null, notStarted: [2] });
     expect(data.overflowColumns).toBe(1);
   });
+  it("keeps a series that misses only its newest sample missing rather than ended, so the newest total is null", () => {
+    const data = buildMetricPlot([series("a", [10, 10, 10, 10, 10, 10]), series("b", [10, 10, 10, 10, 10, 10]), series("c", [10, 10, 10, 10, 10, null])], stackedConfigSchema.parse({ display: "bar" }));
+    expect(data.columns.at(-1)).toMatchObject({ total: null, missing: [2], ended: [], notStarted: [] });
+    expect(data.totals.at(-1)?.value).toBeNull();
+  });
+  it("treats the skill's [4, 7, null] tail the same way: missing at its final sample, with no total", () => {
+    const data = buildMetricPlot([series("tail", [4, 7, null]), series("steady", [1, 1, 1]), series("other", [2, 2, 2])], stackedConfigSchema.parse({ display: "bar" }));
+    expect(data.columns.at(-1)).toMatchObject({ total: null, missing: [0], ended: [] });
+    expect(data.columns[1]).toMatchObject({ total: 10, missing: [] });
+  });
+  it("ends a missing track only once its trailing absence outlasts two cadences, and the total then returns", () => {
+    const tracks = [series("a", [10, 10, 10, 10, 10, 10]), series("b", [10, 10, 10, 10, 10, 10]), series("c", [10, 10, 10, null, null, null])];
+    const barConfig = stackedConfigSchema.parse({ display: "bar" });
+    const data = buildMetricPlot(tracks, barConfig);
+    expect(data.columns.map(column => [column.missing, column.ended])).toEqual([[[], []], [[], []], [[], []], [[2], []], [[2], []], [[], [2]]]);
+    expect(data.totals.map(total => total.value)).toEqual([30, 30, 30, null, null, 20]);
+    // The widget's staleAfterSeconds lengthens the grace when it outlasts two cadences.
+    const stale = buildMetricPlot(tracks, barConfig, false, undefined, { staleAfterSeconds: 10 });
+    expect(stale.columns.map(column => column.ended)).toEqual([[], [], [], [], [], []]);
+    expect(stale.columns.at(-1)?.missing).toEqual([2]);
+  });
+  it("gives a track with fewer than three samples its peers' median cadence, so its own short life does not decide the end", () => {
+    const data = buildMetricPlot([series("short", [5, 5, null, null, null, null]), series("a", [10, 10, 10, 10, 10, 10]), series("b", [10, 10, 10, 10, 10, 10])], stackedConfigSchema.parse({ display: "bar" }));
+    expect(data.columns.slice(2).map(column => [column.missing, column.ended])).toEqual([[[0], []], [[0], []], [[], [0]], [[], [0]]]);
+  });
+  it("makes every absence missing on a truncated result, so no series is called ended or not started", () => {
+    // old reports at 1-3 s and new at 4-6 s. On a cut result an absence may be a cut, so it is never an end or a late start.
+    const old = series("old", [2, 2, 2, null, null, null]), fresh = series("new", [null, null, null, 2, 2, 2]), steady = series("steady", [1, 1, 1, 1, 1, 1]);
+    const data = buildMetricPlot([steady, old, fresh], stackedConfigSchema.parse({ display: "bar" }), false, undefined, { truncated: true });
+    expect(data.columns.map(column => [column.missing, column.notStarted, column.ended])).toEqual([
+      [[2], [], []], [[2], [], []], [[2], [], []], [[1], [], []], [[1], [], []], [[1], [], []],
+    ]);
+    expect(data.columns.every(column => column.total === null)).toBe(true);
+  });
 });
 
 describe("sampling priority", () => {
@@ -353,6 +405,10 @@ describe("sampling priority", () => {
     expect(sampleTimeIndices(10, 4, () => false, index => index, index => index === 3)).toEqual([0, 3, 8, 9]);
     expect(sampleTimeIndices(10, 4, index => index === 2, index => index, index => index === 3)).toEqual([0, 2, 8, 9]);
     expect(sampleTimeIndices(10, 4, index => index === 5, () => 0)).toEqual([0, 1, 5, 9]);
+  });
+  it("with twoPerBucket keeps a bucket's protected column and its peak, and never more than twice the limit", () => {
+    expect(sampleTimeIndices(10, 4, index => index === 2, index => index, () => false, { twoPerBucket: true })).toEqual([0, 2, 4, 8, 9]);
+    expect(sampleTimeIndices(1000, 12, () => true, index => index, () => false, { twoPerBucket: true }).length).toBeLessThanOrEqual(24);
   });
 });
 
@@ -375,15 +431,45 @@ describe("bar-mode sampling, domain and overflow", () => {
     expect(data.timestamps).not.toContain(152000);
     expect(data.domain).toEqual([0, 15]);
   });
-  it("does not stretch the bar axis to a spike that sampling drops beside the edge of an incomplete run", () => {
-    // late starts at 151 s, so the last incomplete column (150 s) must be kept. It shares a sampling bucket with the 149 s spike.
+  it("keeps a spike at 149 s next to a series that starts at 151 s, and lets the spike set the bar domain", () => {
+    // Regression for the M3 review input: a 1000 spike at 149 s, beside a series that starts at 151 s, must be drawn and must set the domain.
     const data = buildMetricPlot([
       series("a", Array.from({ length: 300 }, (_, index) => index === 148 ? 1000 : 10)),
       series("late", Array.from({ length: 300 }, (_, index) => index >= 150 ? 5 : null)),
     ], bars);
-    expect(data.timestamps).toContain(150000);
-    expect(data.timestamps).not.toContain(149000);
-    expect(data.domain).toEqual([0, 15]);
+    expect(data.timestamps).toContain(149000);
+    expect(data.tracks[0].cells.find(cell => cell.timestamp === 149000)?.value).toBe(1000);
+    expect(data.domain).toEqual([0, 1000]);
+  });
+  it("keeps a cap and a spike that share a sampling bucket, so sampling never trades one for the other", () => {
+    // b misses only 148 s, so its cap run's edge is at 148 s, and a spikes to 1000 at 149 s, the next column in the same bucket.
+    const data = buildMetricPlot([
+      series("a", Array.from({ length: 300 }, (_, index) => index === 148 ? 1000 : 10)),
+      series("b", Array.from({ length: 300 }, (_, index) => index === 147 ? null : 5)),
+    ], bars);
+    expect(data.timestamps).toContain(148000);
+    expect(data.columns.find(column => column.timestamp === 148000)?.missing).toEqual([1]);
+    expect(data.timestamps).toContain(149000);
+    expect(data.domain[1]).toBeGreaterThanOrEqual(1005);
+  });
+  it("keeps every one-sample gap of a steady series inside churn, so each gap's cap survives sampling", () => {
+    // Forty offsets of six single-sample gaps. old stops at 10 s and other reports throughout, so each gap is a one-column cap run.
+    for (let offset = 0; offset < 40; offset++) {
+      const gaps = Array.from({ length: 6 }, (_, k) => 20 + offset + k * 45);
+      const data = buildMetricPlot([
+        series("steady", Array.from({ length: 300 }, (_, index) => gaps.includes(index + 1) ? null : 10)),
+        series("old", Array.from({ length: 300 }, (_, index) => index < 10 ? 5 : null)),
+        series("other", Array.from({ length: 300 }, () => 3)),
+      ], bars);
+      expect(data.sampled).toBe(true);
+      for (const gap of gaps) expect(data.columns.find(column => column.timestamp === gap * 1000)?.missing, `gap ${gap} s`).toEqual([0]);
+    }
+  });
+  it("reports the bounds of complete stacks alone, so an overlay of this plot never widens the axis to partial stacks", () => {
+    // The previous-period overlay draws complete stacks only. Its partial 100 must not reach the axis it is merged into.
+    const data = buildMetricPlot([series("a", [1, 100, 1]), series("b", [1, null, 1])], bars);
+    expect(data.domain).toEqual([0, 100]);
+    expect(data.completeDomain).toEqual([0, 2]);
   });
   it("counts an incomplete column as overflowing only in bar mode, as before partial stacks existed", () => {
     const overflowing = [series("a", [1e308, 1]), series("b", [1e308, 1]), series("c", [null, 1])];
