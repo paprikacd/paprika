@@ -226,7 +226,7 @@ jobs:
           version: v3.21.2
 
       - name: Set up Task
-        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
 
       - name: Verify OIDC Secret rendering
         run: bash hack/test-oidc-secret-rendering.sh
@@ -349,7 +349,7 @@ jobs:
         uses: ./.github/actions/reclaim-runner-disk
 
       - name: Install Task
-        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
           version: 3.52.0
 
