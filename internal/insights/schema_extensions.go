@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	// Embedded zone data keeps time.LoadLocation working in the alpine runtime image, which ships no zoneinfo.
+	_ "time/tzdata"
 )
 
 var folderUnsafe = regexp.MustCompile(`[\x00-\x1f\x7f\\]`)
@@ -20,7 +22,7 @@ func validateDashboardExtensions(root map[string]json.RawMessage) error {
 		field    string
 		validate func(json.RawMessage) error
 	}{
-		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange},
+		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange}, {"timeZone", validateDashboardTimeZone},
 	} {
 		if raw, ok := root[check.field]; ok {
 			if err := check.validate(raw); err != nil {
@@ -44,6 +46,20 @@ func validateDashboardFolder(raw json.RawMessage) error {
 		if segment == "" || trimJS(segment) != segment || segment == "." || segment == ".." {
 			return errors.New("folder must not contain empty, dot, or parent segments")
 		}
+	}
+	return nil
+}
+
+// validateDashboardTimeZone mirrors the UI's check: the name must load as an IANA zone, and "Local" is refused because it
+// names whichever zone the host happens to use.
+func validateDashboardTimeZone(raw json.RawMessage) error {
+	var zone string
+	const invalid = "timeZone must be an IANA time zone name such as Europe/London or UTC"
+	if json.Unmarshal(raw, &zone) != nil || zone == "" || stringUnits(zone) > 64 || zone != trimJS(zone) || zone == "Local" {
+		return errors.New(invalid)
+	}
+	if _, err := time.LoadLocation(zone); err != nil {
+		return errors.New(invalid)
 	}
 	return nil
 }
@@ -169,7 +185,7 @@ func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors"})
+	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors"})
 	if err != nil {
 		return err
 	}
@@ -178,7 +194,7 @@ func validateWidgetOptions(raw json.RawMessage) error {
 			return err
 		}
 	}
-	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetFlags, validateWidgetAppearance, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
+	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetTooltipPlacement, validateWidgetFlags, validateWidgetAppearance, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
 		if err := check(options); err != nil {
 			return err
 		}
@@ -246,8 +262,8 @@ func validateTooltipPresentation(view map[string]json.RawMessage) error {
 func validateTooltipHeight(view map[string]json.RawMessage) error {
 	if value, ok := view["height"]; ok {
 		var height float64
-		if json.Unmarshal(value, &height) != nil || !slices.Contains([]float64{120, 160, 200, 320}, height) {
-			return errors.New("tooltip widget height must be 120, 160, 200, or 320")
+		if json.Unmarshal(value, &height) != nil || !slices.Contains([]float64{80, 120, 160, 200, 320}, height) {
+			return errors.New("tooltip widget height must be 80, 120, 160, 200, or 320")
 		}
 	}
 	return nil
@@ -416,6 +432,28 @@ func validateWidgetAppearance(options map[string]json.RawMessage) error {
 		}
 	}
 	return validateWidgetEnum(options, "curve", []string{"linear", "step", "monotone"}, "curve must be linear, step, or monotone")
+}
+
+// validateWidgetTooltipPlacement checks the observation inspector settings with the ranges the UI schema publishes.
+// Unset keeps the renderer's defaults, and a value outside its range is refused rather than clamped.
+func validateWidgetTooltipPlacement(options map[string]json.RawMessage) error {
+	if err := validateWidgetEnum(options, "tooltipPlacement", []string{"auto", "top", "right", "bottom", "left"}, "tooltipPlacement must be auto, top, right, bottom, or left"); err != nil {
+		return err
+	}
+	for _, bound := range []struct {
+		field    string
+		min, max float64
+	}{{"tooltipOffset", 0, 40}, {"tooltipMaxWidth", 220, 640}, {"tooltipMaxHeight", 160, 800}} {
+		value, ok := options[bound.field]
+		if !ok {
+			continue
+		}
+		var n float64
+		if json.Unmarshal(value, &n) != nil || !finite(n) || !validNumberRange(n, bound.min, bound.max) {
+			return fmt.Errorf("%s must be from %g to %g", bound.field, bound.min, bound.max)
+		}
+	}
+	return nil
 }
 
 func validateWidgetEnum(options map[string]json.RawMessage, field string, allowed []string, message string) error {

@@ -293,7 +293,7 @@ export const tooltipSourceSchema = z.discriminatedUnion("type", [
 ])
 export const tooltipViewSchema = z.strictObject({
   type: z.enum(widgetTypes),
-  height: z.union([z.literal(120), z.literal(160), z.literal(200), z.literal(320)]).optional(),
+  height: z.union([z.literal(80), z.literal(120), z.literal(160), z.literal(200), z.literal(320)]).optional(),
   showGrid: z.boolean().optional(),
   showAxis: z.boolean().optional(),
   showLegend: z.boolean().optional(),
@@ -335,6 +335,11 @@ export const widgetOptionsSchema = z
     tooltipValueLabel: z.string().max(80).optional(),
     tooltipShowUnit: z.boolean().optional(),
     tooltipDecimals: z.number().int().min(0).max(8).optional(),
+    // Observation inspector placement; WP-A3's readTooltipPlacement reads these from options.
+    tooltipPlacement: z.enum(["auto", "top", "right", "bottom", "left"]).optional(),
+    tooltipOffset: z.number().min(0).max(40).optional(),
+    tooltipMaxWidth: z.number().min(220).max(640).optional(),
+    tooltipMaxHeight: z.number().min(160).max(800).optional(),
     tooltipView: tooltipViewSchema.optional(),
     showGrid: z.boolean().optional(),
     decimals: z.number().int().min(0).max(8).optional(),
@@ -461,6 +466,32 @@ export const widgetSchema = z
     }
   })
 
+// Canonical IANA spellings by lowercase name. Intl accepts a zone in any letter case, but the server matches exact names.
+const canonicalTimeZones = new Map<string, string>(
+  typeof Intl.supportedValuesOf === "function"
+    ? Intl.supportedValuesOf("timeZone").map((name) => [name.toLowerCase(), name] as const)
+    : [],
+)
+
+/** An IANA zone name the runtime can format, spelled as the server spells it. "Local" is refused because it names whichever zone the host happens to use. */
+export function isValidTimeZone(zone: string): boolean {
+  if (!zone || zone.length > 64 || zone !== zone.trim() || zone === "Local") return false
+  const canonical = canonicalTimeZones.get(zone.toLowerCase())
+  if (canonical !== undefined && canonical !== zone) return false
+  // UTC has no listed canonical entry, so its capitals are enforced here.
+  if (zone.toLowerCase() === "utc" && zone !== "UTC") return false
+  try {
+    return Boolean(new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone)
+  } catch {
+    return false
+  }
+}
+export const timeZoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isValidTimeZone, "Use an IANA time zone name, such as Europe/London or UTC")
+
 export const dashboardSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -488,6 +519,8 @@ export const dashboardSchema = z
       )
       .optional(),
     customTimeRange: customTimeRangeSchema.optional(),
+    /** The dashboard's time labels. Omitted, they use the viewer's browser zone. */
+    timeZone: timeZoneSchema.optional(),
     variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
     timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
     refreshInterval: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60)]),

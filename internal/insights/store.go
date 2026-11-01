@@ -210,7 +210,7 @@ func validateDashboard(id string, document Dashboard) error {
 	if !validID.MatchString(id) || len(document) > maxDocumentBytes {
 		return errors.New("dashboard id or size is invalid")
 	}
-	root, err := requireObjectShape(document, []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}, []string{"description", "folder", "customTimeRange", "variables"})
+	root, err := requireObjectShape(document, []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}, []string{"description", "folder", "customTimeRange", "timeZone", "variables"})
 	if err != nil {
 		return err
 	}

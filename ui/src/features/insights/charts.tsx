@@ -26,6 +26,7 @@ import { widgetTextColor } from "./appearance";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
 import { GammaButton } from "./gamma/button";
+import { WidgetInitialLoading, useWidgetLoadingPresentation } from "./widget-loading";
 export {
   downsamplePoints,
   formatMetric,
@@ -103,8 +104,8 @@ function RegisteredRenderer({
 }
 
 // State renderers need the same measured container as populated charts.
-function WidgetStateFrame({ children }: { children: ReactNode }) {
-  return <div className={styles.visualization} data-widget-state-frame="">{children}</div>;
+function WidgetStateFrame({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
+  return <div className={`${styles.visualization}${busy ? ` ${styles.loadingFrame}` : ""}`} data-widget-state-frame="" aria-busy={busy || undefined}>{children}</div>;
 }
 
 export const WidgetVisualization = memo(function WidgetVisualization({
@@ -119,6 +120,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
 }: WidgetVisualizationProps) {
   // Registered plugins may arrive after a host loads an optional bundle.
   useWidgetDefinitions();
+  const loadingPresentation = useWidgetLoadingPresentation();
   const definition = getWidgetDefinition(widget);
   const resetKey = useMemo(
     () => ({ widget, result, definition }),
@@ -147,12 +149,12 @@ export const WidgetVisualization = memo(function WidgetVisualization({
         <span>Waiting to load…</span>
       </div></WidgetStateFrame>
     );
+  // The initial load alone shows placeholders. A refresh keeps the last result visible and never announces itself.
   if (loading && !result)
     return (
-      <WidgetStateFrame><div className={styles.state} role="status" aria-label="Loading widget">
-        <span className={styles.loading} />
-        <span>Querying data source…</span>
-      </div></WidgetStateFrame>
+      <WidgetStateFrame busy>
+        <WidgetInitialLoading widget={widget} />
+      </WidgetStateFrame>
     );
   const series = result?.series ?? [];
   const textColor = widgetTextColor(widget.options);
@@ -168,7 +170,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
     return <WidgetStateFrame><EmptyState partial={!!(result?.truncated || result?.records?.truncated)} /></WidgetStateFrame>;
   return (
     <div
-      className={`${styles.visualization} ${naturalHeight ? styles.intrinsicStat : ""} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
+      className={`${styles.visualization} ${naturalHeight ? styles.intrinsicStat : ""} ${configStyles.visualization} ${textColor ? configStyles.customText : ""} ${loading && loadingPresentation ? styles.refreshHost : ""}`}
       style={
         {
           background: widget.options?.background,
@@ -179,6 +181,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       }
       aria-busy={!!loading}
     >
+      {loading && loadingPresentation && <div className={styles.refreshNotice}>{loadingPresentation({ widget, phase: "refresh" })}</div>}
       {(result?.truncated || result?.records?.truncated) && (
         <p className={styles.limitNotice} role="status">
           Provider response may be incomplete. Narrow the query or check the data source.

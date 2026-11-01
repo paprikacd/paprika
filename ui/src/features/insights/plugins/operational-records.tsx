@@ -229,9 +229,13 @@ export function IncidentCalendar(props: WidgetRendererProps) {
   </div>
 }
 
-/** Bundled renderers only. Persisted configuration maps scalar columns; it cannot load code. */
-export function registerOperationalRecordPlugins() {
-  const entries: Omit<WidgetPlugin, "dataKind">[] = [
+/**
+ * The bundled record renderer registrations. Exported so a host can replace one renderer and keep the rest of its
+ * configuration (fields, defaults and style controls) identical. Bundled renderers only: persisted configuration maps
+ * scalar columns and cannot load code.
+ */
+export function operationalRecordPluginEntries(): Omit<WidgetPlugin, "dataKind">[] {
+  return [
     {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with exact record inspection",render:ConnectionMap,parseConfig:(config:unknown)=>connectionMapConfig.parse(config??{}),
       defaultConfig:{latitude:"latitude",longitude:"longitude",label:"label",display:"markers",showLocations:true},
       styleControls:["unit","decimals","legend","tooltips","color"],
@@ -245,5 +249,9 @@ export function registerOperationalRecordPlugins() {
       styleControls:["unit","decimals","legend","tooltips"],
       configFields:[{key:"date",label:"Date field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const},{key:"label",label:"Event label field",kind:"text" as const},{key:"status",label:"Status field",kind:"text" as const},{key:"aggregation",label:"Daily aggregation",kind:"select" as const,options:[{value:"count",label:"Count records"},{value:"sum",label:"Sum values"},{value:"max",label:"Maximum value"}]},{key:"colorMode",label:"Day colors",kind:"select" as const,options:[{value:"intensity",label:"Value intensity"},{value:"thresholds",label:"Value thresholds"}],help:"Threshold colors apply to the aggregated value; missing observations stay unknown."},{key:"months",label:"Months",kind:"number" as const,min:1,max:6},{key:"endDate",label:"End month date",kind:"text" as const,placeholder:"YYYY-MM-DD",help:"Optional. Otherwise the latest recorded UTC date anchors the displayed months."}]},
   ]
-  for(const entry of entries) if(!getWidgetDefinition("plugin",entry.id)) registerWidgetPlugin({...entry,dataKind:"records"})
+}
+
+/** Bundled renderers only. Persisted configuration maps scalar columns; it cannot load code. */
+export function registerOperationalRecordPlugins() {
+  for(const entry of operationalRecordPluginEntries()) if(!getWidgetDefinition("plugin",entry.id)) registerWidgetPlugin({...entry,dataKind:"records"})
 }

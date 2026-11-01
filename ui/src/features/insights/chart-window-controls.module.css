@@ -1,0 +1,93 @@
+.controls {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--widget-text, var(--gamma-ink, #223139));
+  font-size: 12px;
+  line-height: 1.4;
+}
+.track {
+  position: relative;
+  height: 22px;
+  margin: 0 7px;
+}
+.track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--gamma-chart-grid, var(--gamma-border, #d9e2e5));
+}
+.trackFill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--gamma-chart-1, var(--gamma-accent, #bd512d));
+  opacity: .6;
+  pointer-events: none;
+}
+.handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  box-sizing: border-box;
+  border: 2px solid var(--gamma-chart-1, var(--gamma-accent, #bd512d));
+  border-radius: 50%;
+  background: var(--widget-background, var(--gamma-bg, #ffffff));
+  cursor: ew-resize;
+  touch-action: none;
+}
+.handle:focus-visible {
+  outline: 2px solid var(--gamma-focus-ring, var(--gamma-accent, #bd512d));
+  outline-offset: 2px;
+}
+.summary {
+  margin: 0;
+  color: var(--widget-text, var(--gamma-muted, #52636f));
+  font-variant-numeric: tabular-nums;
+}
+.pending {
+  color: var(--gamma-warning, var(--gamma-muted, #52636f));
+}
+.note {
+  margin: 0;
+  color: var(--gamma-muted, #52636f);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.actions > button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--gamma-border, #d9e2e5);
+  border-radius: var(--gamma-radius-control, 6px);
+  background: var(--widget-background, var(--gamma-bg, #ffffff));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.actions > button:focus-visible {
+  outline: 2px solid var(--gamma-focus-ring, var(--gamma-accent, #bd512d));
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .handle {
+    width: 24px;
+    height: 24px;
+    margin: -12px 0 0 -12px;
+  }
+  .actions > button {
+    min-height: 44px;
+  }
+}

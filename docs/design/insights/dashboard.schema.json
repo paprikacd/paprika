@@ -46,6 +46,11 @@
       ],
       "additionalProperties": false
     },
+    "timeZone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "variables": {
       "maxItems": 20,
       "type": "array",
@@ -432,6 +437,31 @@
                 "minimum": 0,
                 "maximum": 8
               },
+              "tooltipPlacement": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "top",
+                  "right",
+                  "bottom",
+                  "left"
+                ]
+              },
+              "tooltipOffset": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 40
+              },
+              "tooltipMaxWidth": {
+                "type": "number",
+                "minimum": 220,
+                "maximum": 640
+              },
+              "tooltipMaxHeight": {
+                "type": "number",
+                "minimum": 160,
+                "maximum": 800
+              },
               "tooltipView": {
                 "type": "object",
                 "properties": {
@@ -449,6 +479,10 @@
                   },
                   "height": {
                     "anyOf": [
+                      {
+                        "type": "number",
+                        "const": 80
+                      },
                       {
                         "type": "number",
                         "const": 120
@@ -1147,5 +1181,5 @@
   },
   "title": "Paprika Insights dashboard",
   "description": "Version 1 of the portable Paprika Insights dashboard document.",
-  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names."
+  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, IANA timeZone names the runtime can format (Local is refused), safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names."
 }

@@ -173,3 +173,86 @@ func TestAuthoringSchemaRequiresAuthenticationAndKnownKind(t *testing.T) {
 		require.Equal(t, tc.status, w.Code, w.Body.String())
 	}
 }
+
+func TestDashboardTimeZoneValidation(t *testing.T) {
+	for _, zone := range []string{"UTC", "Europe/London", "America/New_York", "Etc/GMT+5"} {
+		document, err := json.Marshal(zone)
+		require.NoError(t, err)
+		require.NoError(t, validateDashboard("demo", extendedDashboard("", `"timeZone":`+string(document))), zone)
+	}
+	// Letter case is part of an IANA name: the browser's check refuses the same spellings.
+	for _, zone := range []string{"", "Local", "Not/AZone", " UTC", "../etc/passwd", strings.Repeat("A", 65), "europe/london", "utc"} {
+		document, err := json.Marshal(zone)
+		require.NoError(t, err)
+		require.Error(t, validateDashboard("demo", extendedDashboard("", `"timeZone":`+string(document))), "zone %q must be refused", zone)
+	}
+	require.Error(t, validateDashboard("demo", extendedDashboard("", `"timeZone":null`)), "null is not a zone")
+	require.Error(t, validateDashboard("demo", extendedDashboard("", `"timeZone":5`)), "a number is not a zone")
+}
+
+func TestDashboardTimeZoneSavesAndLoads(t *testing.T) {
+	s, _ := testService(t)
+	body, err := json.Marshal(map[string]any{
+		"schemaVersion": 1, "id": "zoned-overview", "title": "Zoned overview",
+		"timeRange": "1h", "refreshInterval": 0, "timeZone": "Europe/London", "widgets": []any{},
+	})
+	require.NoError(t, err)
+	require.NoError(t, validateDashboard("zoned-overview", body))
+	w := request(t, s.Handler(), http.MethodPut, "/api/dashboards/zoned-overview", body, map[string]string{"If-None-Match": "*"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	loaded := request(t, s.Handler(), http.MethodGet, "/api/dashboards/zoned-overview", nil, nil)
+	require.Equal(t, http.StatusOK, loaded.Code, loaded.Body.String())
+	require.JSONEq(t, string(body), loaded.Body.String())
+}
+
+func TestTooltipViewHeightIncludesCompactHistory(t *testing.T) {
+	for _, height := range []string{"80", "120", "320"} {
+		require.NoError(t, validateDashboard("demo", extendedDashboard(`"type":"heatmap","options":{"tooltipView":{"type":"timeseries","height":`+height+`}}`, "")), height)
+	}
+	for _, height := range []string{"79", "81", "100"} {
+		require.Error(t, validateDashboard("demo", extendedDashboard(`"type":"heatmap","options":{"tooltipView":{"type":"timeseries","height":`+height+`}}`, "")), height)
+	}
+}
+
+func TestAuthoringSchemaDescribesDashboardTimeZone(t *testing.T) {
+	s, _ := testService(t)
+	w := request(t, s.Handler(), http.MethodGet, "/api/schemas/dashboard", nil, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var response authoringSchemaResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.Contains(t, strings.Join(response.Notes, "\n"), "timeZone?:IANA time zone name", "authors must discover the dashboard zone option")
+	require.Contains(t, string(response.Schema), `"timeZone"`)
+	require.LessOrEqual(t, w.Body.Len(), maxSchemaResponseBytes)
+}
+
+func TestWidgetTooltipPlacementBounds(t *testing.T) {
+	accepted := []string{
+		`"tooltipPlacement":"auto"`, `"tooltipPlacement":"top"`, `"tooltipPlacement":"right"`, `"tooltipPlacement":"bottom"`, `"tooltipPlacement":"left"`,
+		`"tooltipOffset":0`, `"tooltipOffset":40`, `"tooltipMaxWidth":220`, `"tooltipMaxWidth":640`, `"tooltipMaxHeight":160`, `"tooltipMaxHeight":800`,
+	}
+	for _, options := range accepted {
+		require.NoError(t, validateDashboard("demo", extendedDashboard(`"type":"timeseries","options":{`+options+`}`, "")), options)
+	}
+	refused := []string{
+		`"tooltipPlacement":"center"`, `"tooltipPlacement":"TOP"`, `"tooltipPlacement":""`,
+		`"tooltipOffset":-1`, `"tooltipOffset":41`, `"tooltipOffset":"8"`,
+		`"tooltipMaxWidth":219`, `"tooltipMaxWidth":641`,
+		`"tooltipMaxHeight":159`, `"tooltipMaxHeight":801`,
+	}
+	for _, options := range refused {
+		require.Error(t, validateDashboard("demo", extendedDashboard(`"type":"timeseries","options":{`+options+`}`, "")), options)
+	}
+}
+
+func TestAuthoringSchemaDescribesTooltipPlacement(t *testing.T) {
+	s, _ := testService(t)
+	w := request(t, s.Handler(), http.MethodGet, "/api/schemas/dashboard", nil, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var response authoringSchemaResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	notes := strings.Join(response.Notes, "\n")
+	require.Contains(t, notes, "options.tooltipPlacement?:auto|top|right|bottom|left", "authors must discover the inspector placement options")
+	require.Contains(t, notes, "options.tooltipMaxHeight?:160..800")
+	require.Contains(t, string(response.Schema), `"tooltipMaxHeight"`)
+	require.LessOrEqual(t, w.Body.Len(), maxSchemaResponseBytes)
+}

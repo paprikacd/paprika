@@ -368,7 +368,10 @@ export interface DistributionRow {
   lower: number;
   upper: number;
   labels: Record<string, string>;
+  /** Drawn cells, aligned with the sampled `timestamps`. */
   cells: DistributionCell[];
+  /** Every window's non-cumulative observation for this bucket, before display sampling. Inspection reads exact values here. */
+  sourceCells: DistributionCell[];
 }
 /**
  * `ok`: a complete window with at least one observation. `empty`: complete, with zero observations.
@@ -521,11 +524,15 @@ export function buildDistribution(series: MetricSeries[], config: DistributionCo
     column => Math.max(0, ...shown.map((_, index) => bucketCells[index][column].value ?? 0)),
     column => column === highestColumn,
     { twoPerBucket: true, edge: column => overflowAt(column) && (!overflowAt(column - 1) || !overflowAt(column + 1)) });
-  const rows: DistributionRow[] = shown.map((upper, index) => ({
-    lower: index ? bounds[index - 1] : -Infinity, upper,
-    labels: { ...commonLabels, [bucketLabel]: Number.isFinite(upper) ? String(upper) : "+Inf" },
-    cells: allTimes.map((timestamp, column) => ({ timestamp, ...bucketCells[index][column] })),
-  }));
+  // The full row is built before sampling. Drawn cells are sampled below, but `sourceCells` keeps every window for exact inspection.
+  const rows: DistributionRow[] = shown.map((upper, index) => {
+    const sourceCells = allTimes.map((timestamp, column) => ({ timestamp, ...bucketCells[index][column] }));
+    return {
+      lower: index ? bounds[index - 1] : -Infinity, upper,
+      labels: { ...commonLabels, [bucketLabel]: Number.isFinite(upper) ? String(upper) : "+Inf" },
+      sourceCells, cells: sourceCells,
+    };
+  });
   const invalidCells = rows.reduce((sum, row) => sum + row.cells.filter(cell => cell.state === "invalid").length, 0);
   const max = rows.reduce((maximum, row) => row.cells.reduce((value, cell) => Math.max(value, cell.value ?? 0), maximum), 0);
   const minPositive = rows.reduce<number | null>((minimum, row) => row.cells.reduce<number | null>((value, cell) => cell.value !== null && cell.value > 0 && (value === null || cell.value < value) ? cell.value : value, minimum), null);

@@ -49,7 +49,7 @@ export interface TooltipRendererContext {
   readonly points: readonly Readonly<Point>[];
   readonly unit: string;
   readonly color: string;
-  readonly height: 120 | 160 | 200 | 320;
+  readonly height: 80 | 120 | 160 | 200 | 320;
   readonly view: Readonly<Omit<TooltipView, "source">>;
   readonly result: QueryResult;
   readonly queried: boolean;
@@ -169,7 +169,7 @@ export function buildTooltipContext(
       ),
     unit: view.unit ?? unit,
     color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) || chartTokenColor.test(color) ? color : DEFAULT_TOOLTIP_COLOR),
-    height: [120, 160, 200, 320].includes(view.height ?? 160)
+    height: [80, 120, 160, 200, 320].includes(view.height ?? 160)
       ? (view.height ?? 160)
       : 160,
     showGrid: view.showGrid !== false,
@@ -589,7 +589,7 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
               ? {
                   line: false,
                   ticks: {
-                    count: height === 120 ? 2 : 3,
+                    count: height <= 120 ? 2 : 3,
                     line: false,
                     format: (value: number) =>
                       formatMetric(value, unit, true, context.view.decimals),
