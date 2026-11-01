@@ -296,8 +296,8 @@ type CompareProps = {
 };
 
 /**
- * The window controls beside a chart. Two keyboard-adjustable handles edit a pending selection, which applies only on
- * Enter or Apply. The Compare window dialog stays as the non-drag path, and is shown when `compare` is supplied.
+ * The window controls beside a chart. Two handles, moved by keyboard or by dragging, edit a pending selection, which
+ * applies only on Enter or Apply. The Compare window dialog stays as the non-drag path, and is shown when `compare` is supplied.
  */
 export function ChartWindowControls({ state, selection, compare, label = "Chart window" }: {
   state: ChartWindowState;
@@ -341,6 +341,37 @@ function SelectionTrack({ state, selection, timeZone }: { state: ChartWindowStat
   const span = Math.max(1, full.end - full.start);
   const at = (time: number) => ((time - full.start) / span) * 100;
   const { start, end } = selection.selection;
+  const track = useRef<HTMLDivElement>(null);
+  // The handle a pointer is dragging, and the pointer's grip on it in client pixels, so the handle never jumps to the pointer.
+  const drag = useRef<{ edge: WindowEdge; pointerId: number; grip: number } | null>(null);
+  const latest = useRef(selection);
+  useLayoutEffect(() => {
+    latest.current = selection;
+  });
+  // Escape belongs to a handle. The observation inspector dismisses on Escape from a document capture listener, which runs
+  // before any element handler, so only a window capture listener can keep the key from it. The key ends a drag and
+  // cancels the pending edit; it never resets the zoom and never reaches the chart.
+  useEffect(() => {
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || !(event.target instanceof Node) || !track.current?.contains(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      drag.current = null;
+      latest.current.cancel();
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, []);
+  // Client pixels to time, on the track's own scale: the handles are placed with the same percentages.
+  const timeAt = (clientX: number) => {
+    const bounds = track.current?.getBoundingClientRect();
+    return bounds && bounds.width > 0 ? full.start + ((clientX - bounds.left) / bounds.width) * span : null;
+  };
+  const endDrag = (event: PointerEvent<HTMLSpanElement>) => {
+    if (drag.current?.pointerId !== event.pointerId) return;
+    drag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   const onKeyDown = (edge: WindowEdge) => (event: KeyboardEvent<HTMLSpanElement>) => {
     const step = event.shiftKey ? 10 : 1;
@@ -375,12 +406,6 @@ function SelectionTrack({ state, selection, timeZone }: { state: ChartWindowStat
           return handled();
         }
         return;
-      case "Escape":
-        if (selection.pending) {
-          selection.cancel();
-          return handled();
-        }
-        return;
       default:
         return;
     }
@@ -402,10 +427,26 @@ function SelectionTrack({ state, selection, timeZone }: { state: ChartWindowStat
       className={styles.handle}
       style={{ left: `${at(value)}%` }}
       onKeyDown={onKeyDown(edge)}
+      onPointerDown={event => {
+        const bounds = track.current?.getBoundingClientRect();
+        if (!event.isPrimary || event.button !== 0 || !bounds || bounds.width <= 0) return;
+        drag.current = { edge, pointerId: event.pointerId, grip: event.clientX - (bounds.left + (at(value) / 100) * bounds.width) };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={event => {
+        const active = drag.current;
+        if (active?.pointerId !== event.pointerId) return;
+        // The moved edge is clamped to the extent and kept a minimum span from the opposite edge, as a keyboard step is.
+        const time = timeAt(event.clientX - active.grip);
+        if (time !== null) selection.moveEdge(active.edge, time);
+      }}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
     />;
   };
 
-  return <div className={styles.track} data-window-track="">
+  return <div ref={track} className={styles.track} data-window-track="">
     <span className={styles.trackFill} style={{ left: `${at(start)}%`, width: `${Math.max(0, at(end) - at(start))}%` }} aria-hidden="true" />
     {handle("start")}
     {handle("end")}

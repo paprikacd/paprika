@@ -11,6 +11,7 @@ import {
   type ChartWindowState,
 } from "./chart-window-controls";
 import type { Series } from "./chart-data";
+import { registerTooltipEscape } from "./tooltip-interaction";
 import type { ChartTimeWindow } from "./time-window";
 
 const extent: ChartTimeWindow = { start: 0, end: 10_000 };
@@ -321,5 +322,166 @@ describe("window controls", () => {
     render(<Harness bounds={{ start: 0, end: 50 }} />);
     expect(screen.getByText("Not enough distinct times to zoom into.")).toBeInTheDocument();
     expect(screen.queryByRole("slider")).toBeNull();
+  });
+
+  describe("handle drag", () => {
+    // The track is 1 000 px over the 10 000-unit extent, so one pixel is ten units and the handles sit at its two ends.
+    function measureTrack(container: HTMLElement) {
+      const element = container.querySelector<HTMLElement>("[data-window-track]")!;
+      vi.spyOn(element, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 22, width: 1000, height: 22, toJSON: () => ({}) });
+    }
+    const press = (handle: HTMLElement, clientX: number, init: Record<string, unknown> = {}) => fireEvent.pointerDown(handle, { pointerId: 1, button: 0, isPrimary: true, clientX, ...init });
+    const move = (handle: HTMLElement, clientX: number) => fireEvent.pointerMove(handle, { pointerId: 1, buttons: 1, clientX });
+    const release = (handle: HTMLElement, clientX: number) => fireEvent.pointerUp(handle, { pointerId: 1, clientX });
+
+    it("moves a handle with the pointer as a pending selection, which applies only on Apply", () => {
+      const { container } = render(<Harness />);
+      measureTrack(container);
+      const start = screen.getByRole("slider", { name: "Window start" });
+      press(start, 0);
+      move(start, 300);
+      expect(start).toHaveAttribute("aria-valuenow", "3000");
+      expect(screen.getByText(/Pending selection/)).toBeInTheDocument();
+      expect(container.querySelector("[data-chart-window-zoomed]")).toBeNull();
+      release(start, 300);
+      expect(container.querySelector("[data-chart-window-zoomed]")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Apply window" }));
+      expect(container.querySelector("[data-chart-window-start]")).toHaveAttribute("data-chart-window-start", "3000");
+      expect(container.querySelector("[data-chart-window-zoomed]")).not.toBeNull();
+    });
+
+    it("stops a dragged edge a minimum span from the opposite edge, and never past the extent", () => {
+      const { container } = render(<Harness />);
+      measureTrack(container);
+      const start = screen.getByRole("slider", { name: "Window start" });
+      const end = screen.getByRole("slider", { name: "Window end" });
+      press(end, 1000);
+      move(end, 0);
+      expect(end).toHaveAttribute("aria-valuenow", "100");
+      expect(start).toHaveAttribute("aria-valuenow", "0");
+      release(end, 0);
+      // The end handle now sits 10 px in, so the press lands on it.
+      press(end, 10);
+      move(end, 5000);
+      expect(end).toHaveAttribute("aria-valuenow", "10000");
+      release(end, 5000);
+    });
+
+    it("keeps the moving edge a minimum span short of the pending opposite edge", () => {
+      const { container } = render(<Harness />);
+      measureTrack(container);
+      const start = screen.getByRole("slider", { name: "Window start" });
+      const end = screen.getByRole("slider", { name: "Window end" });
+      press(end, 1000);
+      move(end, 500);
+      expect(end).toHaveAttribute("aria-valuenow", "5000");
+      release(end, 500);
+      press(start, 0);
+      move(start, 900);
+      expect(start).toHaveAttribute("aria-valuenow", "4900");
+      release(start, 900);
+    });
+
+    it("moves the handle by the pointer's travel, so it never jumps to the pointer", () => {
+      const { container } = render(<Harness />);
+      measureTrack(container);
+      const start = screen.getByRole("slider", { name: "Window start" });
+      press(start, 10);
+      move(start, 310);
+      expect(start).toHaveAttribute("aria-valuenow", "3000");
+      release(start, 310);
+    });
+
+    it("ignores secondary buttons, so only a primary press grabs a handle", () => {
+      const { container } = render(<Harness />);
+      measureTrack(container);
+      const start = screen.getByRole("slider", { name: "Window start" });
+      press(start, 0, { button: 2 });
+      move(start, 300);
+      expect(start).toHaveAttribute("aria-valuenow", "0");
+      release(start, 300);
+    });
+
+    it("cancels the pending edit on Escape and stops following the pointer", () => {
+      const { container } = render(<Harness />);
+      measureTrack(container);
+      const start = screen.getByRole("slider", { name: "Window start" });
+      press(start, 0);
+      move(start, 300);
+      expect(start).toHaveAttribute("aria-valuenow", "3000");
+      fireEvent.keyDown(start, { key: "Escape" });
+      expect(start).toHaveAttribute("aria-valuenow", "0");
+      expect(screen.queryByRole("button", { name: "Apply window" })).toBeNull();
+      move(start, 600);
+      expect(start).toHaveAttribute("aria-valuenow", "0");
+      release(start, 600);
+      expect(container.querySelector("[data-chart-window-zoomed]")).toBeNull();
+    });
+  });
+
+  describe("Escape on a handle", () => {
+    it("cancels only the handle edit, and does not close an open observation inspector", () => {
+      const inspector = vi.fn();
+      const unregister = registerTooltipEscape(Symbol("inspector"), inspector);
+      try {
+        render(<Harness />);
+        const start = screen.getByRole("slider", { name: "Window start" });
+        fireEvent.keyDown(start, { key: "PageUp" });
+        expect(start).toHaveAttribute("aria-valuenow", "1000");
+        expect(fireEvent.keyDown(start, { key: "Escape" })).toBe(false);
+        expect(start).toHaveAttribute("aria-valuenow", "0");
+        expect(screen.queryByRole("button", { name: "Apply window" })).toBeNull();
+        expect(inspector).not.toHaveBeenCalled();
+      } finally {
+        unregister();
+      }
+    });
+
+    it("stops at the handle even when nothing is pending, and keeps a committed zoom", () => {
+      const inspector = vi.fn();
+      const unregister = registerTooltipEscape(Symbol("inspector"), inspector);
+      try {
+        const { container } = render(<Harness />);
+        const end = screen.getByRole("slider", { name: "Window end" });
+        fireEvent.keyDown(end, { key: "ArrowLeft" });
+        fireEvent.keyDown(end, { key: "Enter" });
+        expect(container.querySelector("[data-chart-window-end]")).toHaveAttribute("data-chart-window-end", "9900");
+        fireEvent.keyDown(end, { key: "Escape" });
+        expect(inspector).not.toHaveBeenCalled();
+        expect(container.querySelector("[data-chart-window-zoomed]")).not.toBeNull();
+        expect(container.querySelector("[data-chart-window-end]")).toHaveAttribute("data-chart-window-end", "9900");
+      } finally {
+        unregister();
+      }
+    });
+
+    it("stops the key at the handle, so no document listener in either phase sees it", () => {
+      const seen = vi.fn();
+      const listener = (event: globalThis.KeyboardEvent) => seen(event.key);
+      document.addEventListener("keydown", listener, true);
+      document.addEventListener("keydown", listener);
+      try {
+        render(<Harness />);
+        fireEvent.keyDown(screen.getByRole("slider", { name: "Window end" }), { key: "Escape" });
+        expect(seen).not.toHaveBeenCalled();
+        fireEvent.keyDown(document.body, { key: "Escape" });
+        expect(seen).toHaveBeenCalledTimes(2);
+      } finally {
+        document.removeEventListener("keydown", listener, true);
+        document.removeEventListener("keydown", listener);
+      }
+    });
+
+    it("leaves Escape pressed elsewhere to the open inspector", () => {
+      const inspector = vi.fn();
+      const unregister = registerTooltipEscape(Symbol("inspector"), inspector);
+      try {
+        render(<Harness />);
+        fireEvent.keyDown(document.body, { key: "Escape" });
+        expect(inspector).toHaveBeenCalledTimes(1);
+      } finally {
+        unregister();
+      }
+    });
   });
 });

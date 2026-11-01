@@ -10,6 +10,7 @@
   position: relative;
   height: 22px;
   margin: 0 7px;
+  user-select: none;
 }
 .track::before {
   content: "";

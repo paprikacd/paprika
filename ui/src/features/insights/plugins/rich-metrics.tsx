@@ -367,11 +367,10 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         <rect x={left} y={top} width={plotWidth} height={plotHeight} className={heatmapStyles.plotBackground} aria-hidden="true" />
         {timeTicks(data.timestamps, plotWidth).map(index => <line key={index} x1={columnX(data.timestamps[index])} x2={columnX(data.timestamps[index])} y1={top} y2={top + plotHeight} className={heatmapStyles.gridLine} aria-hidden="true" />)}
         {gaps.map((gap, index) => <rect key={index} x={gap.left} y={top} width={Math.max(0, gap.right - gap.left)} height={plotHeight} fill={plotHatchFill(id)} pointerEvents="none" aria-hidden="true" data-heatmap-gap />)}
-        {data.rows.map((row, rowIndex) => <g key={row.upper}>
-          {showAxis && axisRows.has(rowIndex) && <text data-value-axis x={left - 8} y={top + (data.rows.length - rowIndex - .5) * cellHeight} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[rowIndex]}</text>}
-          <g className={chartEntrance.revealMarks}>{row.cells.map((cell, column) => <rect key={cell.timestamp} x={columns[column].left} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={columns[column].width} height={Math.max(.1, cellHeight - 1)} fill={cellFill(cell)} data-bucket-value={cell.value ?? "unknown"} data-bucket-state={cell.state} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}>{(embeddedChart || props.embedded) && <title>{cellTitle(row, cell)}</title>}</rect>)}</g>
-        </g>)}
-        <g className={chartEntrance.revealMarks}>{quantile.d !== "" && <>
+        {showAxis && <g>{data.rows.map((_, rowIndex) => axisRows.has(rowIndex) && <text key={rowIndex} data-value-axis x={left - 8} y={top + (data.rows.length - rowIndex - .5) * cellHeight} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[rowIndex]}</text>)}</g>}
+        {/* One entering group per plot. The value-axis labels sit outside it and never move; the cells, the p95 line and its chevrons draw in as one clip. */}
+        <g className={chartEntrance.revealMarks}>{data.rows.map((row, rowIndex) => <g key={row.upper}>{row.cells.map((cell, column) => <rect key={cell.timestamp} x={columns[column].left} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={columns[column].width} height={Math.max(.1, cellHeight - 1)} fill={cellFill(cell)} data-bucket-value={cell.value ?? "unknown"} data-bucket-state={cell.state} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}>{(embeddedChart || props.embedded) && <title>{cellTitle(row, cell)}</title>}</rect>)}</g>)}
+          {quantile.d !== "" && <>
           <path d={quantile.d} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4.6} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-halo />
           {/* With an overflow run the whole line is dashed, then the finite runs are drawn solid over it, so an overflow run and its joins are dashed. */}
           <path d={quantile.d} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeDasharray={overflowRun ? "4 3" : undefined} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-line data-quantile-overflow={overflowRun || undefined} />
@@ -604,9 +603,9 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         {/* Individual marks are visual only. The focusable chart exposes one
             accessible summary and keyboard navigation into exact observations;
             exposing hundreds of SVG titles as images makes that path unusable. */}
-        <g clipPath={`url(#${id}-clip)`} aria-hidden="true" data-metric-marks>{previousPlot?.tracks.map((track, index) => <g key={`prior-${index}`} data-prior-series={prior[index].index} className={chartEntrance.revealMarks} pointerEvents="none" aria-hidden="true">
+        <g clipPath={`url(#${id}-clip)`} aria-hidden="true" data-metric-marks>{/* One entering group per plot: the prior overlay and every series draw in as one clip. The caps keep their own fade. */}<g className={chartEntrance.revealMarks}>{previousPlot?.tracks.map((track, index) => <g key={`prior-${index}`} data-prior-series={prior[index].index} pointerEvents="none" aria-hidden="true">
           {segments(track.cells).map((segment, part) => <path key={part} data-prior-path d={`M${segment.map(cell => `${number(x(cell.timestamp))},${number(y(cell.upper!))}`).join("L")}`} fill="none" stroke={color(prior[index].index)} strokeWidth={widget.options?.lineWidth ?? 1.6} strokeDasharray="5 4" strokeOpacity={.8} />)}
-        </g>)}{data.tracks.map((track, index) => <g key={index} data-series={track.name} className={chartEntrance.revealMarks}>
+        </g>)}{data.tracks.map((track, index) => <g key={index} data-series={track.name}>
           {bars ? track.cells.map((cell, column) => {
             const bar = barAt(column);
             if (cell.upper === null || cell.lower === null) {
@@ -620,7 +619,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
             const forward = segment.map(cell => `${number(x(cell.timestamp))},${number(y(cell.upper!))}`), back = segment.toReversed().map(cell => `${number(x(cell.timestamp))},${number(y(cell.lower!))}`);
             return <g key={part}><path d={`M${forward.join("L")}L${back.join("L")}Z`} fill={color(index)} fillOpacity={directional ? .16 : .48} /><path d={`M${forward.join("L")}`} fill="none" stroke={color(index)} strokeWidth={widget.options?.lineWidth ?? 1.6} strokeLinejoin="round" />{segment.length === 1 && <circle cx={x(segment[0].timestamp)} cy={y(segment[0].upper!)} r={2.5} fill={color(index)} />}</g>;
           })}
-        </g>)}{bars && <g className={chartEntrance.fadeMarks}>{data.columns.map((column, index) => {
+        </g>)}</g>{bars && <g className={chartEntrance.fadeMarks}>{data.columns.map((column, index) => {
           // One cap per incomplete column, however many series are missing. A single missing series sets its colour.
           if (column.overflow || !column.missing.length) return null;
           const bar = barAt(index), names = column.missing.map(track => data.tracks[track].name).join(", ");
