@@ -19,10 +19,11 @@ describe('domain panel applied visualization ownership', () => {
   });
   it('retains presentation overrides while new source scope and lens selection remain current', () => {
     const { flow } = buildGridBalance();
-    const override = { ...flow.widget, title: 'Available resources', config: { ...flow.widget.config, showValues: false, selectedAsset: 'wind' } };
-    const source = { ...flow.widget, providerId: 'new-provider', query: 'fixture.low-wind' };
+    const override = { ...flow.widget, title: 'Available resources', queryRef: { id: 'old-query' }, config: { ...flow.widget.config, showValues: false, selectedAsset: 'wind' } };
+    const source = { ...flow.widget, providerId: 'new-provider', query: 'fixture.low-wind', queryRef: { id: 'current-query' }, layout: { ...flow.widget.layout, w: 4 } };
     const merged = mergeDomainWidget(source, override, { selectedAsset: 'gas' });
-    expect(merged).toMatchObject({ title: 'Available resources', providerId: 'new-provider', query: 'fixture.low-wind' });
+    expect(merged).toMatchObject({ title: 'Available resources', providerId: 'new-provider', query: 'fixture.low-wind', queryRef: { id: 'current-query' } });
+    expect(merged.layout).toBe(source.layout);
     expect(merged.config).toMatchObject({ showValues: false, selectedAsset: 'gas' });
     expect(source.config?.showValues).toBe(true);
   });

@@ -1,8 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
 import { ArrowLeft, FlaskConical } from 'lucide-react';
-import { WidgetEditor } from '../editor/WidgetEditor';
+import { DashboardEditControls, type EditDashboardWidget } from '../components/lab/DashboardWorkbench';
 import { registerLabCharts } from '../charts/register-lab-charts';
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
 import theme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
 import './LensStudio.css';
 import type { LensId } from './lens-routes';
@@ -38,27 +37,25 @@ const KubernetesFleetLens=lazy(()=>import('./kubernetes/KubernetesFleetLens').th
 const PerformanceWorkbenchLens=lazy(()=>import('./performance/PerformanceWorkbenchLens').then(m=>({default:m.PerformanceWorkbenchLens})));
 const DistributedSystemsLens=lazy(()=>import('./distributed/DistributedSystemsLens').then(m=>({default:m.DistributedSystemsLens})));
 const lensComponents={'distributed-systems':DistributedSystemsLens,'kubernetes-fleet':KubernetesFleetLens,'performance-workbench':PerformanceWorkbenchLens,'grid-balance':GridBalanceLens,'trial-evidence':TrialEvidenceLens,'wafer-intelligence':WaferIntelligenceLens,'orbital-contact':OrbitalContactLens,finance:FinanceLens,'market-risk':MarketRiskLens,'inference-fleet':InferenceFleetLens,'incident-room':IncidentRoomLens,'grid-operations':GridOperationsLens,'query-atlas':QueryAtlasLens,'journey-retention':JourneyRetentionLens,'factory-quality':FactoryQualityLens,'experiment-studio':ExperimentStudioLens,'logistics-control':LogisticsLens,'spectrum-observatory':SpectrumLens,'coastal-observatory':CoastalLens,'threat-hunt':ThreatHuntLens,'production-planner':ProductionPlannerLens,'materials-lab':MaterialsLabLens};
-export type EditLensWidget = (widget: Widget, result: QueryResult, apply: (next: Widget) => void) => void;
+export type EditLensWidget = EditDashboardWidget;
 
 export function LensStudio({ lens }: { lens: LensId }) {
   const motion = useLabMotion();
   const [canvasWidth, setCanvasWidth] = useState('auto');
-  const [editing, setEditing] = useState<{ widget: Widget; result: QueryResult; apply: (next: Widget) => void } | null>(null);
-  const edit: EditLensWidget = (widget, result, apply) => setEditing({ widget, result, apply });
   const Component=lens==='website'||lens==='infrastructure'?null:lensComponents[lens];
   return <div className={`${theme.scope} obs-app lens-studio`} data-insights-theme="dark" data-motion={motion.reduced ? 'reduced' : 'auto'} style={labMotionStyle(motion.reduced)}>
     <header className="lens-toolbar" aria-label="Lens presentation">
       <span><FlaskConical size={13}/>Synthetic data</span>
+      <DashboardEditControls/>
       <label className="lens-canvas-control"><span>Canvas</span><select aria-label="Lens canvas width" value={canvasWidth} onChange={event => setCanvasWidth(event.target.value)}><option value="auto">Auto width</option><option value="768">Tablet · 768px</option><option value="390">Mobile · 390px</option></select></label>
       <label className="lens-canvas-control"><span>Motion</span><select aria-label="Lens motion preference" value={motion.preference} onChange={event => motion.setPreference(event.target.value as 'auto' | 'reduced')}><option value="auto">Auto{motion.reduced && motion.preference === 'auto' ? ' · system reduced' : ''}</option><option value="reduced">Reduced</option></select></label>
     </header>
     <div className="lens-canvas" data-preview-width={canvasWidth} style={{width:canvasWidth === 'auto' ? '100%' : `min(100%, ${canvasWidth}px)`}}>
     {canvasWidth !== 'auto' && <div className="lens-canvas-caption">{canvasWidth}px layout preview<button onClick={() => setCanvasWidth('auto')}>Return to auto</button></div>}
     <Suspense fallback={<StudyLoading label={`Loading ${lens.replaceAll('-', ' ')} lens`}/> }>
-      {Component?<Component onEdit={edit}/>:<OperationsLenses kind={lens as 'website'|'infrastructure'} onEdit={edit}/>}
+      {Component?<Component/>:<OperationsLenses kind={lens as 'website'|'infrastructure'}/>}
     </Suspense>
     </div>
     <footer className="lens-studio-footer"><a href="#edge"><ArrowLeft size={12}/>Edge Watch & Reliability Room</a><span>Local design studies · source data and query scope stay explicit</span></footer>
-    {editing && <WidgetEditor widget={editing.widget} result={editing.result} onApply={editing.apply} onClose={() => setEditing(null)}/>}
   </div>;
 }

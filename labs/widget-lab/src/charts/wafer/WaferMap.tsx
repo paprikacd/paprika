@@ -32,13 +32,14 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
   const point = (d: Pick<WaferDie, 'xMm' | 'yMm'>) => ({ x: cx + d.xMm * scale, y: cy - d.yMm * scale });
   const uid = `wafer-${useId().replaceAll(':', '')}`, extent = { width, height }, enabled = !embedded && widget.options?.showTooltip !== false;
   const [view, setView] = useState<GeoViewport>(INITIAL_GEO_VIEW), camera = useRef(view);
-  const [selected, setSelected] = useState<string | null>(cfg.selectedDieId || null), [touch, setTouch] = useState(false);
+  const [selectedState, setSelected] = useState<string | null>(cfg.selectedDieId || null), [touch, setTouch] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null), [search, setSearch] = useState('');
   const [exactPage, setExactPage] = useState(0);
-  const inspect = useInspection(visible, result, enabled, cfg.selectedDieId);
-  const active = visible.find(d => d.id === selected) ?? inspect.item;
-  const rovingId = waferFocusId(visible, focusId, selected);
   const sourceRevision = useRef(result), selectionRequest = useRef(cfg.selectedDieId), frame = useRef<number | null>(null);
+  const requested = sourceRevision.current !== result || selectionRequest.current !== cfg.selectedDieId ? cfg.selectedDieId : selectedState;
+  const selected = visible.some(die => die.id === requested) ? requested || null : null;
+  const inspect = useInspection(visible, result, enabled, cfg.selectedDieId), active = inspect.item;
+  const rovingId = waferFocusId(visible, focusId, selected);
   const marks = useRef(new Map<string, SVGRectElement>()), pointers = useRef(new Map<number, GeoPoint>());
   const drag = useRef<{ origin: GeoPoint; view: GeoViewport; candidate: string | null } | null>(null);
   const pinch = useRef<{ points: [GeoPoint, GeoPoint]; view: GeoViewport } | null>(null), moved = useRef(false), suppressClick = useRef(false);
@@ -79,10 +80,9 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
   useEffect(() => {
     const newRequest = selectionRequest.current !== cfg.selectedDieId;
     if (newRequest) { selectionRequest.current = cfg.selectedDieId; setSelected(visible.some(d => d.id === cfg.selectedDieId) ? cfg.selectedDieId : null); }
-    if (sourceRevision.current !== result) { sourceRevision.current = result; if (!newRequest) { setSelected(null); signal(null); } setSearch(''); setExactPage(0); }
+    if (sourceRevision.current !== result) { sourceRevision.current = result; setSelected(visible.some(die => die.id === cfg.selectedDieId) ? cfg.selectedDieId : null); setSearch(''); setExactPage(0); }
   }, [result, cfg.selectedDieId]);
-  useEffect(() => { if (selected && !visible.some(d => d.id === selected)) clear(); setExactPage(0); }, [cfg.filter]);
-  useEffect(() => { if (!enabled) setSelected(null); }, [enabled]);
+  useEffect(() => { if (selectedState && !visible.some(d => d.id === selectedState)) clear(); setExactPage(0); }, [cfg.filter]);
   useEffect(() => { update(camera.current, true); }, [width, height]);
   useEffect(() => {
     const node = svg.current; if (!node || embedded) return;
@@ -119,8 +119,8 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
   if (!dies.length) return <div className="domain-empty">No wafer die observations</div>;
 
   return <div className="wafer-chart wafer-map" data-wafer-map data-map-zoom={view.k.toFixed(3)} onKeyDown={event => {
-    if (event.key === 'Escape' && (active || drag.current || pinch.current)) { event.preventDefault(); event.stopPropagation(); stopGesture(); clear(); }
-  }} onPointerLeave={() => { if (!selected) inspect.setHover(null); }}>
+    if (event.key === 'Escape' && (active || drag.current || pinch.current)) { event.preventDefault(); event.stopPropagation(); stopGesture(); inspect.dismiss(); }
+  }} onPointerLeave={() => inspect.setHover(null)}>
     {!embedded && <div className="wafer-controls"><div className="wafer-camera-controls">
       <button className="domain-control" aria-label="Zoom in wafer" disabled={view.k >= 8} onClick={() => zoom(1.5)}><Plus size={15}/></button>
       <button className="domain-control" aria-label="Zoom out wafer" disabled={view.k <= 1} onClick={() => zoom(1 / 1.5)}><Minus size={15}/></button>
@@ -144,13 +144,13 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
           <circle cx={cx} cy={cy} r={board / 2} fill="var(--gamma-bg)" stroke={C.muted} strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
           {cfg.showGrid && coordinateTicks.map(t => <g key={t} className="wafer-grid"><line x1={cx + t * scale} x2={cx + t * scale} y1={cy - board / 2} y2={cy + board / 2} vectorEffect="non-scaling-stroke"/><line x1={cx - board / 2} x2={cx + board / 2} y1={cy - t * scale} y2={cy - t * scale} vectorEffect="non-scaling-stroke"/></g>)}
           <g clipPath={`url(#${uid}-wafer)`}>{visible.map(die => {
-            const p = point(die), side = die.dieSizeMm * scale * (1 - cfg.cellGap), selectedMark = die.id === active?.id;
+            const p = point(die), side = die.dieSizeMm * scale * (1 - cfg.cellGap), selectedMark = die.id === active?.id || die.id === selected;
             return <rect key={die.id} ref={node => { if (node) marks.current.set(die.id, node); else marks.current.delete(die.id); }} x={p.x - side / 2} y={p.y - side / 2} width={side} height={side} rx=".25"
               data-wafer-die={die.id} role={enabled ? 'button' : undefined} tabIndex={enabled ? die.id === rovingId ? 0 : -1 : undefined}
               aria-label={`Inspect die ${dieLabel(die)}`} aria-pressed={enabled ? selected === die.id : undefined}
               fill={die.bin === 'untested' ? `url(#${uid}-unknown)` : cfg.colorMode === 'leakage' && die.bin !== 'excluded' ? leakageColor(die.leakageNA) : WAFER_COLORS[die.bin]}
-              opacity={die.bin === 'excluded' ? .7 : 1} stroke={selectedMark ? C.orange : 'none'} strokeWidth={selectedMark ? 2.5 : 0} vectorEffect="non-scaling-stroke"
-              onPointerEnter={() => { if (enabled && !selected) inspect.setHover(die.id); }} onFocus={() => { if (enabled && !selected) inspect.setHover(die.id); }} onBlur={() => { if (!selected) inspect.setHover(null); }}
+              opacity={die.bin === 'excluded' ? .7 : 1} stroke={die.id === active?.id ? C.orange : die.id === selected ? C.cyan : 'none'} strokeWidth={selectedMark ? 2.5 : 0} vectorEffect="non-scaling-stroke"
+              onPointerEnter={() => { if (enabled && !inspect.pinned) inspect.setHover(die.id); }} onFocus={() => { if (enabled && !inspect.pinned) inspect.setHover(die.id); }} onPointerLeave={() => inspect.setHover(null)} onBlur={() => inspect.setHover(null)}
               onClick={event => { if (suppressClick.current) { suppressClick.current = false; return; } if (!moved.current) choose(die.id, event.currentTarget); }}
               onKeyDown={event => {
                 if (!enabled) return;
@@ -169,11 +169,11 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
           return <g key={t}>{xp >= pad.left && xp <= width - 10 && <text x={xp} y={height - 20} textAnchor="middle">{t}</text>}{yp > 9 && yp < height - pad.bottom && <text x={pad.left - 7} y={yp + 4} textAnchor="end">{t}</text>}</g>;
         })}<text x={cx} y={height - 3} textAnchor="middle">X (mm)</text><text transform={`translate(12 ${height / 2}) rotate(-90)`} textAnchor="middle">Y (mm)</text></g>}
       </svg>
-    </div>{enabled && active && <DomainInspector title={`Die C${signed(active.column)} / R${signed(active.row)}`} pinned={!!selected} onClose={clear}><DetailValues items={[
+    </div>{enabled && active && <DomainInspector title={`Die C${signed(active.column)} / R${signed(active.row)}`} pinned={!!inspect.pinned} onClose={inspect.dismiss}><DetailValues items={[
       ['Final bin', BIN_LABEL[active.bin]], ['Leakage', active.leakageNA === null ? 'Not measured' : `${waferNumber(active.leakageNA, 3)} nA`],
       ['Physical X / Y', `${signed(active.xMm)} / ${signed(active.yMm)} mm`], ['Etch chamber', active.chamber],
       ['Probe · UTC', active.probeAt === null ? 'Not tested' : new Date(active.probeAt).toISOString().slice(11, 19)],
-    ]}/>{!selected && <button className="wafer-pin" onClick={() => choose(active.id)}>Pin die</button>}</DomainInspector>}</div>
+    ]}/>{!inspect.pinned && <button className="wafer-pin" onClick={() => choose(active.id)}>Pin die</button>}</DomainInspector>}</div>
     {widget.options?.showLegend !== false && <div className="domain-legend">{cfg.colorMode === 'bin' ? DIE_BINS.map(bin => <span key={bin}><i style={{ background: WAFER_COLORS[bin], ...(bin === 'untested' ? { backgroundImage: 'repeating-linear-gradient(135deg,transparent 0 2px,var(--gamma-ink) 2px 3px)' } : {}) }}/>{BIN_LABEL[bin]}</span>) : <><span>Leakage · nA</span><i className="wafer-color-scale"/><span>≤0.1 → ≥150 · log colour</span><span>Hatch: untested · grey: unmeasured</span></>}</div>}
     {!embedded && <><div className="wafer-controls"><label>Inspect die <select className="domain-control" aria-label="Inspect wafer die" value={selected ?? ''} onChange={event => event.target.value ? choose(event.target.value, event.currentTarget) : clear()} disabled={!enabled}><option value="">Choose a die</option>{visible.map(d => <option key={d.id} value={d.id}>{dieLabel(d)}</option>)}</select></label>
       <button className="domain-control" aria-pressed={touch} onClick={() => { stopGesture(); setTouch(v => !v); }}>Touch pan {touch ? 'on' : 'off'}</button>

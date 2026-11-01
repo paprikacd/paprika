@@ -7,11 +7,22 @@ import { MATERIAL_CANDIDATES, materialFrame, SCHEDULE_TASKS, scheduleFrame, THRE
 import { explorationChartCatalog, makeExplorationCatalogFixture } from '../src/catalog/exploration-fixtures';
 import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
 import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { ThreatHuntLens } from '../src/lenses/exploration/ThreatHuntLens';
 
 const task=(id:string,start:number,end:number,predecessors:string[]=[],resource=id):ScheduleTask=>({id,label:id,group:'Test',resource,start,end,baselineStart:start,baselineEnd:end,predecessors,progress:0});
 const material=(id:string,density:number|null,strength:number|null,extra:Partial<MaterialCandidate>={}):MaterialCandidate=>({id,density,strength,matrix:40,fibre:40,filler:20,cost:20,recycled:25,replicates:10,...extra});
 
 describe('Threat Hunt evidence contracts',()=>{
+ it('keeps investigation evidence in the dashboard layout without an implicit popup',()=>{
+  const html=renderToStaticMarkup(createElement(ThreatHuntLens));
+  const sidebar=html.match(/<aside class="xp-inspector" aria-label="Investigation evidence">[\s\S]*?<\/aside>/)?.[0];
+  expect(sidebar).toBeDefined();
+  expect(sidebar).toContain('svc-ci → api-02');
+  expect(sidebar).toContain('Observed events');
+  expect(sidebar).toContain('Event counts · five-minute bins');
+  expect(sidebar).toContain('Clear investigation selection');
+  expect(html).not.toContain('data-observation-tooltip');
+ });
  it('reconciles each directed matrix count with the same captured event IDs',()=>{
   const events=threatEvents(threatFrame()),matrix=relationMatrix(events);
   expect(matrix.entities).toHaveLength(18);expect(matrix.relations).toHaveLength(21);

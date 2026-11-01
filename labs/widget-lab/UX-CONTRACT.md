@@ -104,7 +104,7 @@ The primary dashboard navigation is available above every routed view, including
 | Independent geography | Two shared GeoMap instances | Map cameras and selections are instance-local. Risk thresholds name their metric; coordinates do not themselves imply risk. |
 | Live authoring | WidgetEditor and editor-model with existing Widget/plugin schemas | Maintain applied configuration, editable draft and last valid preview. Guided controls and JSON share validation. Invalid input blocks Apply while keeping the draft and valid chart available. |
 | Visualization compatibility | Editor model and trusted registry | Verify required fields/mappings as well as data kind. Preserve the authored custom mapping when switching to a compatible table and back. |
-| Apply/Discard | Catalogue or lens panel state | Apply accepts a validated session override; Discard retains the previous configuration. No provider call or durable Save is implied. Restore focus to the initiating Edit action. |
+| Apply/Discard | Route-local DashboardWorkbench | Apply accepts a validated session override; Discard retains the previous configuration. No provider call or durable Save is implied. Restore focus to the initiating Edit action. |
 | Data and query workspace | Loaded normalized result and read-only query context | Exact records retain nulls, units and timestamps; pagination/caps are disclosed. Query metadata never implies that an executable backend exists. |
 | Lens reflow | LensStudio container and family CSS | Recompute at the measured width; stack panels, retain readable marks and use local table scrolling. Width previews are presentation choices with unchanged source values. |
 
@@ -154,7 +154,7 @@ Production Planner keeps baseline, applied schedule and pending proposal separat
 
 Seven added lenses contribute 30 registered chart families; total 26 lenses and 81 examples. New intrinsic layout comes from the registry descriptor; the legacy ID set remains only a fallback. Optional `validateInput` runs with actual loaded results for preview, Apply and draft history. Config validity alone is insufficient: missing columns, wrong types, inconsistent dimensions and invalid domain accounting block promotion while preserving draft text and the last valid chart.
 
-A shared selection hook distinguishes a host echo of the same selected entity from an unrelated external selection. Composite cells explicitly map to their host entity key. Hover is transient, pinned evidence persists, and Escape dismisses active inspection before an editor can close. Hover tooltips overlay their chart; committed details join normal flow. Drill-downs expose scope and a route back to the parent, and do not silently alter population denominators or local chart time windows.
+A shared selection hook distinguishes a host echo of the same selected entity from an unrelated external selection. Composite cells explicitly map to their host entity key. Hover is transient, pinned evidence persists, and Escape dismisses active inspection before an editor can close. Hover and pinned observations use the same viewport-bounded portal. Hover tracks the pointer; deliberate pins freeze their anchor while remaining responsive to viewport changes. Drill-downs expose scope and a route back to the parent, and do not silently alter population denominators or local chart time windows.
 
 Entrance animation changes surface opacity and a 4px offset over 280ms, never metric values, axes or a claimed live signal. The existing motion context applies both operating-system and explicit Reduced preferences. Short opacity emphasis supports hovering; decorative motion is removed under reduced mode. Current source provider/query identity survives presentation overrides as filters and entity scopes change.
 
@@ -197,3 +197,17 @@ Grid Balance reflows its two-column comparisons into one column, with exact evid
 | Tables and short viewports | `RefPanel`, responsive CSS | Complete records remain in named, focusable local scroll regions. The page does not widen. Menus and dialogs fit the visible viewport; dashboard content determines document height. |
 
 Browser viewport verification and numerical geometry tests establish separate properties. This iteration checks 320–1920px browsing contexts and a 320 × 600px settings view. Physical-device touch, screen-reader and browser text-zoom coverage are not claimed.
+
+## Shared tooltip and dashboard editor follow-up
+
+| Contract | Owner | Required behavior |
+| --- | --- | --- |
+| Pointer position | `WidgetTooltipProvider`, `ObservationTooltip` | Record CSS-pixel pointer coordinates immediately; update only the open portal, without smoothing or chart rerenders. Focus/keyboard inspection anchors to the actual mark. |
+| Viewport bounds | `tooltip-position.ts` | Prefer the configured side, flip and shift as needed, account for visual viewport offsets, and clamp both dimensions with internal scrolling. Reposition on scroll, resize and content size changes. |
+| Popup lifecycle | `useTooltipDismiss`, canonical inspection owners | Bounded 180ms handoff to popup content; retain while hovered or focused. Click/Enter pins persist until explicit dismissal, source replacement or disabling. Ordinary departure never returns focus. |
+| Tooltip configuration | `TooltipSettings`, strict `WidgetOptions` | Separate section: visibility, density, placement, gap and maximum dimensions. Empty numeric values restore defaults; invalid input retains the last valid preview and blocks Apply. |
+| Common authoring | `DashboardWorkbench`, `useDashboardPanels`, `WidgetPanelActions` | Every canonical panel has one functional shared menu. Edit/Data/Configuration use the live widget and result; Reset restores that panel. Dashboard editing reveals direct actions and Done keeps session changes. |
+| Source identity | `mergeDomainWidget` | Applied presentation preserves current ID, provider, query, queryRef, layout and controlled scope. Result replacement revalidates an open editor without erasing an invalid draft. |
+| Persistence | Route-local workbench | No durable save or provider execution is implied. Leaving a route, reloading or Reset session edits restores defaults. |
+
+The literal references start without an automatic pin. Their query/event disclosure expands within the common popup and scrolls within the same viewport bounds. Historical screenshot comparison remains available; old fixed inspector placement is no longer an interaction requirement.

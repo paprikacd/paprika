@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { ChartTooltip } from '../../components/lab/ChartTooltip';
+import { restoreTooltipFocus, type TooltipDismissReason } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
 import { normalizeGeoLocations } from './geo-data';
 import type { GeoDecorationPoint, GeoGeometry, GeoLocation, GeoSeverity } from './geo-data';
 import { constrainGeoView, GEO_MAX_ZOOM, geoScreenUnits, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt } from './geo-viewport';
@@ -19,6 +21,8 @@ export type GeoMapProps = {
   interactive?: boolean;
   /** Hide inspection without disabling viewport navigation. */
   inspectable?: boolean;
+  /** Canonical widgets use the shared popup; supporting maps retain local evidence. */
+  detailPresentation?: 'inline' | 'tooltip';
   /** Host result/query revision: invalidate exact inspection without resetting navigation. */
   selectionRevision?: unknown;
   /** Optional host selection for linked regional evidence; undefined keeps local ownership. */
@@ -45,6 +49,15 @@ export interface GeoSelectionState {
   canInspect: boolean;
 }
 
+/** Superseding a popup retires its acknowledgement without erasing newer host context. */
+export function dismissGeoSelection(state: GeoSelectionState, reason?: TooltipDismissReason) {
+  const notifyClear = reason !== 'superseded';
+  return {
+    state: state.controlled && notifyClear ? state : { ...state, id: null, snapshot: null },
+    notifyClear,
+  };
+}
+
 /** One reconciliation step owns host requests and source invalidation together.
  * A stale controlled ID is acknowledged once and stays cleared until the host
  * changes its request or the user deliberately selects a current observation.
@@ -65,7 +78,7 @@ export function reconcileGeoSelection(previous: GeoSelectionState, input: {
 }
 
 /** Zoom is a local, query-free viewport transform; values and marker sizes never scale with it. */
-export function GeoMap({ label, locations, geometry, valueLabel = 'connections', classificationLabels, activeSeverity = null, maxPoints = 500, decoration = [], concept = false, responsive = false, interactive = true, inspectable = true, selectionRevision, selectedLocationId, onSelect }: GeoMapProps) {
+export function GeoMap({ label, locations, geometry, valueLabel = 'connections', classificationLabels, activeSeverity = null, maxPoints = 500, decoration = [], concept = false, responsive = false, interactive = true, inspectable = true, detailPresentation = 'inline', selectionRevision, selectedLocationId, onSelect }: GeoMapProps) {
   const canInspect = interactive && inspectable;
   const classification = (severity: GeoSeverity) => classificationLabels?.[severity] ?? (severity === 'unknown' ? 'Unclassified' : `${severity[0].toUpperCase()}${severity.slice(1)} risk`);
   const uid = `geo-${useId().replaceAll(':', '')}`;
@@ -174,11 +187,14 @@ export function GeoMap({ label, locations, geometry, valueLabel = 'connections',
   function reset() { stopGestures(); setTouchNavigation(false); immediate(INITIAL_GEO_VIEW); }
   function toggleTouchNavigation() { stopGestures(); setTouchNavigation(value => !value); }
   useEffect(() => { if (!interactive) { stopGestures(); setTouchNavigation(false); } }, [interactive]);
-  function clearSelection(restoreFocus = true) {
+  function clearSelection(restoreFocus = true, reason?: TooltipDismissReason) {
     const previous = selectedId;
-    if (selectedLocationId === undefined) setSelection({ ...selectionTransition.state, id: null, snapshot: null });
-    onSelect?.(null);
-    if (restoreFocus) (previous ? markerRefs.current.get(previous) : svgRef.current)?.focus({ preventScroll: true });
+    // A new inspector in this widget may already have emitted linked context.
+    // Superseding this popup only retires its local selection acknowledgement.
+    const dismissed = dismissGeoSelection(selectionTransition.state, reason);
+    if (dismissed.state !== selectionTransition.state) setSelection(dismissed.state);
+    if (dismissed.notifyClear) onSelect?.(null);
+    if (restoreFocus) restoreTooltipFocus(previous ? markerRefs.current.get(previous) : svgRef.current);
   }
   function inspect(point: typeof visible[number], toggle = true) {
     if (!canInspect) return;
@@ -236,6 +252,13 @@ export function GeoMap({ label, locations, geometry, valueLabel = 'connections',
     if (!pointers.current.size) setDragging(false);
   }
 
+  const detail = canInspect && selected ? <section className="paprika-geo-detail" aria-label={`Location details for ${selected.label}`} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); clearSelection(); } }}>
+    <span className="paprika-geo-detail-kicker">Selected location{concept ? ' · concept' : ''}</span>
+    <strong>{selected.label}</strong>
+    <div className="paprika-geo-detail-value">{selected.value === null ? <span>No observed value</span> : <><b>{number(selected.value)}</b><span>{valueLabel}</span></>}</div>
+    <dl><div><dt>Latitude</dt><dd>{selected.latitude}°</dd></div><div><dt>Longitude</dt><dd>{selected.longitude}°</dd></div><div><dt>Classification</dt><dd><i style={{ background: COLORS[selected.severity] }} aria-hidden="true"/>{classification(selected.severity)}</dd></div></dl>
+    <button type="button" aria-label="Close selected location" onClick={() => clearSelection()}>×</button>
+  </section> : null;
   return <div className="paprika-geo-map" style={{ '--geo-target-size': `${Math.max(responsive ? 30 : 26, 24 / controlScale)}px` } as CSSProperties} data-geo-responsive={responsive || undefined} data-geo-zoom={view.k.toFixed(3)} data-geo-x={view.x.toFixed(3)} data-geo-y={view.y.toFixed(3)} data-geo-locations={visible.length} data-geo-touch-navigation={interactive && touchNavigation ? 'on' : 'off'}>
     <p id={`${uid}-help`} className="paprika-geo-sr">{geometry.description}. {interactive ? <>Drag with a mouse to pan. Scroll over the map to zoom around the pointer. At the zoom limits, outward scrolling returns to the page. Ctrl or Command plus scroll remains browser zoom. Use plus and minus to zoom, arrows to pan, and Home to reset while the map has focus. {touchNavigation ? 'Touch navigation is on: drag or pinch to move and zoom the map. Turn off Touch navigation or reset to restore page touch gestures.' : 'Touch navigation is off: page scrolling and browser pinch remain available. Enable Touch navigation to drag or pinch the map.'}{canInspect && ' Location arrows move between observations; Enter selects. Escape closes details. The Locations menu offers the same observations.'}</> : 'Static location view.'}</p>
     <div className="paprika-geo-stage"><svg ref={svgRef} viewBox={`0 0 ${geometry.width} ${geometry.height}`} role="group" aria-label={label} aria-describedby={`${uid}-help`} tabIndex={interactive ? 0 : undefined} className={`paprika-geo-svg${interactive ? ' is-interactive' : ''}${interactive && dragging ? ' is-dragging' : ''}${interactive && touchNavigation ? ' is-touch-navigation' : ''}`} onKeyDown={interactive ? keyDown : undefined} onPointerDown={interactive ? pointerDown : undefined} onPointerMove={interactive ? pointerMove : undefined} onPointerUp={interactive ? pointerEnd : undefined} onPointerCancel={interactive ? pointerEnd : undefined} onLostPointerCapture={interactive ? pointerEnd : undefined} onClickCapture={interactive ? event => { if (moved.current) { event.preventDefault(); event.stopPropagation(); moved.current = false; } } : undefined}>
@@ -261,7 +284,7 @@ export function GeoMap({ label, locations, geometry, valueLabel = 'connections',
               if (next) { setFocusId(next.id); immediate(revealGeoPoint(viewRef.current, next, geometry)); markerRefs.current.get(next.id)?.focus({ preventScroll: true }); }
             }
           } : undefined}>
-            {canInspect && <title>{point.label} · {number(point.value)} {valueLabel} · {point.latitude}°, {point.longitude}°</title>}
+            {canInspect && <title>{`${point.label} · ${number(point.value)} ${valueLabel} · ${point.latitude}°, ${point.longitude}°`}</title>}
             <circle className="paprika-geo-halo" r={symbol(concept ? point.value !== null && Math.abs(point.value) > 1500 ? 10 : 5.5 : 7)} fill={`url(#${uid}-${point.severity})`} opacity={concept ? point.severity === 'high' ? .4 : .72 : .55} pointerEvents="none"/>
             <circle className="paprika-geo-hit" r={responsive ? symbol(14) : Math.max(14, 12 / cssScale)} fill="transparent" vectorEffect={responsive?'non-scaling-stroke':undefined}/>
             <circle className="paprika-geo-mark" r={symbol(concept ? RADII[point.severity] : 3)} fill={point.value === null ? 'var(--paprika-map-ocean-end, #03121c)' : COLORS[point.severity]} stroke={point.value === null ? COLORS[point.severity] : 'none'} vectorEffect={responsive?'non-scaling-stroke':undefined} pointerEvents="none"/>
@@ -289,13 +312,9 @@ export function GeoMap({ label, locations, geometry, valueLabel = 'connections',
     {(excluded > 0 || normalized.omitted > 0) && <div className="paprika-geo-warning" role="status">{excluded > 0 && `${excluded} invalid or duplicate location${excluded === 1 ? '' : 's'} excluded`}{excluded > 0 && normalized.omitted > 0 ? ' · ' : ''}{normalized.omitted > 0 && `${normalized.omitted} additional locations omitted`}</div>}
     {interactive && <span className="paprika-geo-hint" aria-hidden="true">Scroll to zoom · drag to pan</span>}
     </div>
-    {canInspect && selected && <section className="paprika-geo-detail" aria-label={`Location details for ${selected.label}`} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); clearSelection(); } }}>
-      <span className="paprika-geo-detail-kicker">Selected location{concept ? ' · concept' : ''}</span>
-      <strong>{selected.label}</strong>
-      <div className="paprika-geo-detail-value">{selected.value === null ? <span>No observed value</span> : <><b>{number(selected.value)}</b><span>{valueLabel}</span></>}</div>
-      <dl><div><dt>Latitude</dt><dd>{selected.latitude}°</dd></div><div><dt>Longitude</dt><dd>{selected.longitude}°</dd></div><div><dt>Classification</dt><dd><i style={{ background: COLORS[selected.severity] }} aria-hidden="true"/>{classification(selected.severity)}</dd></div></dl>
-      <button type="button" aria-label="Close selected location" onClick={() => clearSelection()}>×</button>
-    </section>}
+    {detail && (detailPresentation === 'tooltip'
+      ? <ChartTooltip key={selected!.id} pinned onClose={reason => clearSelection(true, reason)}>{detail}</ChartTooltip>
+      : detail)}
   </div>;
 }
 

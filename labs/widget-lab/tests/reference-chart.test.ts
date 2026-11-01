@@ -32,7 +32,7 @@ describe('authored reference chart contract', () => {
 
   it('registers one trusted metrics renderer with its strict parser and preserves built-ins', () => {
     const definition = getWidgetDefinition('plugin', 'reference-timeseries');
-    expect(definition).toMatchObject({ id: 'reference-timeseries', type: 'plugin', dataKind: 'metrics', styleControls: [] });
+    expect(definition).toMatchObject({ id: 'reference-timeseries', type: 'plugin', dataKind: 'metrics', styleControls: ['tooltips'] });
     expect(definition?.parseConfig?.({ kind: 'edge' })).toEqual(referenceChartConfig.parse({ kind: 'edge' }));
     expect(() => definition?.parseConfig?.({ kind: 'edge', unsupported: true })).toThrow();
     expect(getWidgetPlugins().filter(plugin => plugin.id === 'reference-timeseries')).toHaveLength(1);
@@ -117,7 +117,7 @@ describe('authored reference chart contract', () => {
     expect(secondary.series!.every(series => series.labels.fixture === 'reference concept')).toBe(true);
   });
 
-  it.each(cases)('renders the default $kind inspection through the registered owner without converting units', ({ kind, unit, values }) => {
+  it.each(cases)('starts $kind inspection unpinned and preserves the registered data and units', ({ kind, unit }) => {
     const result = makeReferenceResult(kind);
     const saved = structuredClone(result);
     const widget = widgetSchema.parse({
@@ -128,9 +128,12 @@ describe('authored reference chart contract', () => {
     });
     const definition = getWidgetDefinition(widget)!;
     const html = renderToStaticMarkup(createElement(definition.render, { widget, result }));
-    expect(html).toContain('Pinned observation');
+    expect(html).not.toContain('class="ref-inspector"');
     expect(html).toContain('Synthetic reference reconstruction');
-    for (const value of values) expect(html).toContain(`${value.toFixed(2)}${kind === 'edge' ? ' Mb/s' : 'x'}`);
+    expect(html).toContain('tabindex="0"');
+    const disabled = renderToStaticMarkup(createElement(definition.render, { widget: { ...widget, options: { showTooltip: false } }, result }));
+    expect(disabled).not.toContain('class="ref-inspector"');
+    expect(disabled).toMatch(/<svg[^>]*class="ref-chart-svg"[^>]*tabindex="-1"/);
     expect(result).toEqual(saved);
     const embedded = renderToStaticMarkup(createElement(definition.render, { widget, result, embedded: true }));
     expect(embedded).not.toContain('Pinned observation');
@@ -153,7 +156,7 @@ describe('authored reference chart contract', () => {
     expect(html).not.toContain('Pinned observation');
   });
 
-  it('keeps selected missing values unavailable in the Reliability legend and inspector', () => {
+  it('keeps missing reference values unavailable in the initial Reliability legend', () => {
     const result = makeReferenceResult('reliability');
     for (const series of result.series!) series.points[176].value = null;
     const widget = widgetSchema.parse({
@@ -163,9 +166,8 @@ describe('authored reference chart contract', () => {
     });
     const html = renderToStaticMarkup(createElement(getWidgetDefinition(widget)!.render, { widget, result }));
     const legend = html.match(/<div class="ref-chart-legend">(.*?)<\/div>/s)?.[1];
-    const inspector = html.match(/<section class="ref-inspector"(.*?)<\/section>/s)?.[1];
     expect(legend?.match(/No data/g)).toHaveLength(2);
-    expect(inspector?.match(/No data/g)).toHaveLength(2);
+    expect(html).not.toContain('class="ref-inspector"');
     expect(legend).not.toContain('1.42x');
     expect(legend).not.toContain('0.81x');
   });

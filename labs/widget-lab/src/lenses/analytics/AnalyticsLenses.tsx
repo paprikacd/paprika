@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../../components/lab/DashboardWorkbench';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pencil, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { scaleLinear } from 'd3-scale';
 import { line } from 'd3-shape';
 import { Panel, Sparkline } from '../../components/lab/StudyPrimitives';
@@ -18,8 +19,8 @@ const palette=['#13d0e5','#9e7ce8','#1bd2ae','#ffb951','#719fbd'];
 function Header({ title, eyebrow, children }: {title:string;eyebrow:string;children:ReactNode}) { return <header className="analytics-heading"><div><p>PAPRIKA / {eyebrow}</p><h1>{title}</h1></div><div className="analytics-controls">{children}</div><span className="analytics-synthetic"><i/>Concept · synthetic data</span></header>; }
 function Metric({label,value,detail}:{label:string;value:ReactNode;detail?:ReactNode}) { return <section><span>{label}</span><strong>{value}</strong>{detail&&<small>{detail}</small>}</section>; }
 function ChartPanel({panel,onEdit,height,className='',context,selection,caption}:{panel:AnalyticsPanel;onEdit?:EditLensWidget;height:number;className?:string;context?:(c:DrilldownContext)=>void;selection?:Widget['config'];caption?:string}) {
-  const [override,setOverride]=useState<Widget|null>(null), widget={...panel.widget,...override,config:{...panel.widget.config,...override?.config,...selection}};
-  return <Panel title={widget.title} className={'analytics-panel '+className} subtitle={caption} actions={onEdit&&<button className="analytics-edit" onClick={()=>onEdit(widget,panel.result,setOverride)} aria-label={'Edit '+widget.title}><Pencil size={12}/><span>Edit</span></button>}><div className="analytics-widget" style={{height}}><WidgetVisualization widget={widget} result={panel.result} onContextChange={context}/></div></Panel>;
+  const panels = useDashboardPanels(onEdit), widget = panels.current(panel.widget, selection);
+  return <Panel title={widget.title} className={'analytics-panel '+className} subtitle={caption} actions={panels.actions(panel, selection)}><div className="analytics-widget" style={{height}}><WidgetVisualization widget={widget} result={panel.result} onContextChange={context}/></div></Panel>;
 }
 function RetentionCurves({result,selected}:{result:AnalyticsPanel['result'];selected:string}) {
   const data=cohortCells(result.records!), names=[selected,...data.cohorts.filter(c=>c!==selected).filter((_,i)=>i%3===0)].slice(0,5), w=500,h=183,x=scaleLinear().domain([0,10]).range([44,w-16]),y=scaleLinear().domain([0,100]).range([h-38,15]);

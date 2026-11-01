@@ -28,6 +28,7 @@ The options below are implemented by this lab's copied renderer and strict schem
 | `showZeroLine: true` | A decorative `ruleY` mark draws an explicit zero reference using the quantitative scale. |
 | `referenceLines` | Up to eight strict `{ value, label, color?, style? }` entries create scale-owned rules and corresponding legend labels. `style` is solid or dashed; custom color is a validated six-digit hex value. Reliability uses the labelled 1× budget-pace reference. |
 | `inspectorDensity: 'compact'` | The tooltip owner opts into a compact surface, exact same-timestamp series values, selected-series history, useful tags, expandable metadata and explicit close/pin guidance. Comfortable presentation remains available. |
+| `tooltipPlacement`, `tooltipOffset`, `tooltipMaxWidth`, `tooltipMaxHeight` | Strict common presentation options consumed by `ObservationTooltip`: pointer/keyboard anchoring, preferred side with collision fallback, bounded dimensions and internal scrolling. |
 | `tooltipView.height: 80` | Schema, context type and mini-history owner all accept the compact history size. Detailed interval/reduction information remains reachable without repeating a large title block. |
 
 The patch also refines common focus-ring and tick-label presentation. New presentation flags are opt-in, but byte-for-byte behavior equivalence of every unconfigured renderer detail is not asserted. `svgAnimation` remains disabled: data geometry updates directly. Compact inspector appearance consumes `--gamma-motion-duration` (150ms in the study shell), and reduced-motion preferences remove that effect.
@@ -52,6 +53,8 @@ For another checkout, replace the `--upstream` path with a local clone containin
 
 The motion/loading extension also patches `charts.tsx` and `charts.module.css`, and adds `widget-loading.tsx`. The new `WidgetLoadingProvider` is a host-owned render slot for initial loading and background refresh; it imports only React and the existing widget type. The lab supplies the visual components from outside the vendor boundary. The persisted widget schema and normalized result contract are unchanged. See the current generated manifest and patch for the complete file inventory; the earlier owner list above describes the original reference pass.
 
+The tooltip follow-up extracts the floating owner into `observation-tooltip.tsx`, adds `tooltip-interaction.tsx`, `tooltip-position.ts`, `tooltip-focus.ts` and `tooltip-dismiss.ts`, and routes canonical/plugin hosts through `WidgetTooltipProvider`. Legacy exact inspector content is adapted outside the vendor boundary. The existing Gamma `action-menu.tsx` is copied unchanged from the pinned upstream source for shared panel/dashboard menus. The common tooltip fields are local schema extensions, recorded with the current hashes and patch.
+
 Paths below are relative to `src/vendor/paprika/ui/src/features/insights/`.
 
 | Need | Export and file |
@@ -60,6 +63,8 @@ Paths below are relative to `src/vendor/paprika/ui/src/features/insights/`.
 | Widget and result types; strict option validation | `Widget`, `QueryResult`, `widgetSchema` from `schema.ts` |
 | Shared timestamp cursor | `ChartCursorProvider`, `useChartCursor` from `chart-cursor.tsx` |
 | Theme scope | Default CSS Module export's `scope` from `gamma/gamma-theme.module.css` |
+| Common floating inspector | `ObservationTooltip` from `observation-tooltip.tsx`; position/store helpers alongside it |
+| Panel/dashboard menus | `GammaActionMenu` from `gamma/action-menu.tsx` |
 | Standard buttons | `GammaButton` from `gamma/button.tsx` |
 | Authored select/listbox | `GammaSelect` from `gamma/select.tsx` |
 | Controlled tab/tabpanel set | `GammaTabs` from `gamma/tabs.tsx` |

@@ -41,7 +41,7 @@ export function ZoomableConnectionMap(props: WidgetRendererProps) {
   const interactive = !embedded && widget.options?.showTooltip !== false;
   const observed = (location: Location) => location.value === null ? 'No observed value' : formatMetric(location.value, unit === 'percent' ? '%' : unit, false, widget.options?.decimals);
   return <div className={`${styles.wrapper} chart-catalog-map`} data-operational-chart="connection-map" data-map-extension="shared-zoom-viewport">
-    <GeoMap label={widget.title} locations={locations} geometry={geometry} valueLabel={unit || 'observed value'} interactive={!embedded} inspectable={interactive} maxPoints={config.maxPoints} selectionRevision={result}
+    <GeoMap label={widget.title} locations={locations} geometry={geometry} valueLabel={unit || 'observed value'} interactive={!embedded} inspectable={interactive} detailPresentation="tooltip" maxPoints={config.maxPoints} selectionRevision={result}
       onSelect={location => { const source = location ? data.locations.find(row => geographicIdentity(row) === location.id) : undefined; if (!embedded) onContextChange?.(source?.context ?? {}); }}/>
     {config.showLocations !== false && <div className={styles.locationList} aria-label="Location observations">
       {data.locations.map(location => <ObservationDetails key={geographicIdentity(location)} label={`Inspect location ${location.label}`} className={styles.locationRow} revision={result} enabled={interactive}

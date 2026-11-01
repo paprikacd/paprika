@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../../components/lab/DashboardWorkbench';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Anchor, Antenna, ArrowUpRight, Clock3, Pencil, Radio, Ship, Waves } from 'lucide-react';
+import { Anchor, Antenna, ArrowUpRight, Clock3, Radio, Ship, Waves } from 'lucide-react';
 import { Panel } from '../../components/lab/StudyPrimitives';
 import { ChartCursorProvider } from '../../vendor/paprika/ui/src/features/insights/chart-cursor';
 import { WidgetVisualization } from '../../vendor/paprika/ui/src/features/insights/charts';
@@ -25,9 +26,8 @@ function Metric({ label, value, detail, icon, tone = 'cyan' }: {label: string; v
 function ChartPanel({ panel, onEdit, selection, context, fixedHeight, className = '' }: {
   panel: SpatialPanel; onEdit?: EditLensWidget; selection?: Widget['config']; context?: (c: DrilldownContext) => void; fixedHeight?: number; className?: string;
 }) {
-  const [override, setOverride] = useState<Widget | null>(null);
-  const widget = useMemo(() => ({ ...panel.widget, ...override, config: { ...panel.widget.config, ...override?.config, ...selection } }), [panel.widget, override, selection]);
-  return <Panel title={widget.title} subtitle={panel.caption} className={'spatial-lens-panel '+className} actions={onEdit&&<button className="spatial-edit" aria-label={'Edit '+widget.title} onClick={()=>onEdit(widget,panel.result,setOverride)}><Pencil size={12}/><span>Edit</span></button>}><div className={fixedHeight?'spatial-lens-widget fixed':'spatial-lens-widget'} style={fixedHeight?{height:fixedHeight}:undefined}><WidgetVisualization widget={widget} result={panel.result} onContextChange={context}/></div></Panel>;
+  const panels = useDashboardPanels(onEdit), widget = panels.current(panel.widget, selection);
+  return <Panel title={widget.title} subtitle={panel.caption} className={'spatial-lens-panel '+className} actions={panels.actions(panel, selection)}><div className={fixedHeight?'spatial-lens-widget fixed':'spatial-lens-widget'} style={fixedHeight?{height:fixedHeight}:undefined}><WidgetVisualization widget={widget} result={panel.result} onContextChange={context}/></div></Panel>;
 }
 
 export function LogisticsLens({ onEdit }: { onEdit?: EditLensWidget }) {

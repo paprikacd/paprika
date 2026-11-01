@@ -5,6 +5,11 @@ import { EmptyState, formatMetric } from "../chart-renderers";
 import { formatTimeTick } from "../chart-data";
 import { calendarTick, horizontalPlotBounds, temporalPosition } from "../chart-presentation";
 import { RichObservationInspector } from "../observation-inspector";
+import { ObservationTooltip } from "../observation-tooltip";
+import { useTooltipDismiss } from "../tooltip-dismiss";
+import { restoreTooltipFocus } from "../tooltip-focus";
+import type { TooltipAnchor } from "../tooltip-position";
+import type { WidgetOptions } from "../schema";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation";
 import { useChartCursor, useChartCursorPublisher } from "../chart-cursor";
@@ -75,9 +80,12 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const publisher = useChartCursorPublisher();
   const root = useRef<HTMLDivElement>(null);
   const restoringFocus = useRef(false);
+  const trigger = useRef<SVGSVGElement | null>(null);
   const setRoot = useCallback((element: HTMLDivElement | null) => { root.current = element; }, []);
-  const [state, setState] = useState<{ observation: Observation; pinned: boolean; result: unknown; signature: string }>();
+  const [state, setState] = useState<{ observation: Observation; pinned: boolean; result: unknown; signature: string; anchor: SVGSVGElement | null }>();
   const active = state?.result === result && state.signature === signature && enabled ? state : undefined;
+  const revision = useMemo(() => ({ result, signature }), [result, signature]);
+  const dismissal = useTooltipDismiss({ onDismiss: () => setState(undefined), pinned: !!active?.pinned, revision, enabled });
   const timestamp = active?.observation.timestamp, pinned = active?.pinned;
   useEffect(() => {
     if (timestamp !== undefined) publisher.publish(widget.id, timestamp, pinned);
@@ -85,49 +93,64 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
     return () => publisher.clear(widget.id);
   }, [publisher, widget.id, timestamp, pinned, result, signature]);
   useEffect(() => {
-    if (!enabled) return;
-    const close = (event: globalThis.PointerEvent) => { if (event.target instanceof Node && !root.current?.contains(event.target)) setState(undefined); };
-    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setState(undefined); };
-    document.addEventListener("pointerdown", close); document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
-  }, [enabled]);
-  const show = (observation: Observation, pinned = false) => {
+    // The render guard hides stale evidence immediately; clearing the stored
+    // observation prevents it returning if a previous source is revisited.
+    setState(current => current && (current.result !== result || current.signature !== signature || !enabled) ? undefined : current);
+  }, [result, signature, enabled]);
+  const show = (observation: Observation, pinned = false, target?: SVGSVGElement) => {
     if (!enabled || (active?.pinned && !pinned)) return;
-    setState({ observation, pinned, result, signature });
+    dismissal.cancel();
+    const anchor = target ?? root.current?.querySelector<SVGSVGElement>('svg[role="group"]') ?? null;
+    trigger.current = anchor;
+    setState(current => {
+      const sameSource = current?.result === result && current.signature === signature;
+      if (sameSource && current.pinned && !pinned) return current;
+      // The shared store moves the portal directly. Keep chart geometry and
+      // rich histories stable while the pointer remains on the same sample.
+      if (sameSource && current.pinned === pinned && current.anchor === anchor && current.observation.row === observation.row && current.observation.column === observation.column) return current;
+      return { observation, pinned, result, signature, anchor };
+    });
     if (pinned) onContextChange?.({ series: observation.name, labels: observation.series.labels, value: observation.value });
   };
   const dismiss = () => {
-    const inspector = root.current?.querySelector("[data-rich-metric-inspector]");
-    const returnFocus = inspector?.contains(document.activeElement);
+    dismissal.cancel();
     setState(undefined);
-    if (returnFocus) {
-      // A dismissed inspector returns keyboard users to its chart. This focus
-      // event must not immediately create another transient observation.
-      restoringFocus.current = true;
-      root.current?.querySelector<SVGSVGElement>('svg[role="group"][tabindex="0"]')?.focus({ preventScroll: true });
-      restoringFocus.current = false;
-    }
+    // Shared outside dismissal preserves the user's new focus. Explicit Close
+    // or Escape returns to the chart without reopening the observation.
+    restoringFocus.current = true;
+    restoreTooltipFocus(trigger.current);
+    restoringFocus.current = false;
   };
-  const focus = (observation: Observation) => { if (enabled && !active && !restoringFocus.current) show(observation); };
+  const focus = (observation: Observation, target: SVGSVGElement) => { if (enabled && !active && !restoringFocus.current) show(observation, false, target); };
   const togglePin = () => {
     if (!active) return;
+    dismissal.cancel();
     setState({ ...active, pinned: !active.pinned });
     if (!active.pinned) onContextChange?.({ series: active.observation.name, labels: active.observation.series.labels, value: active.observation.value });
   };
   return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, togglePin,
-    leave: () => { if (!active?.pinned && !root.current?.contains(document.activeElement)) setState(undefined); },
-    blur: (target: EventTarget | null) => { if (!active?.pinned && !(target instanceof Node && root.current?.contains(target))) setState(undefined); },
+    enter: dismissal.cancel, leave: dismissal.schedule, blur: dismissal.schedule,
   };
 }
 
-function Inspector({ observation, title, series, colors, pinned, decimals, onPin, onClose, id }: { observation: Observation; title: string; series?: MetricSeries[]; colors?: string[]; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string }) {
+export function RichMetricInspector({ observation, title, series, colors, pinned, decimals, onPin, onClose, onEnter, onLeave, id, anchor, anchorRect, options }: {
+  observation: Observation; title: string; series?: MetricSeries[]; colors?: string[]; pinned: boolean; decimals?: number;
+  onPin: () => void; onClose: () => void; onEnter: () => void; onLeave: () => void; id: string;
+  anchor: SVGSVGElement | null; anchorRect: () => TooltipAnchor; options?: WidgetOptions;
+}) {
   const displayedSeries = useMemo(() => series ?? [observation.series], [series, observation.series]);
-  return <section id={id} className={styles.inspector} aria-label="Observation details" data-rich-metric-inspector tabIndex={pinned ? 0 : undefined}
-    onKeyDown={event => {
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
-    }}>
-    <RichObservationInspector title={title} series={displayedSeries} selectedSeriesIndex={series ? observation.row : 0} timestamp={observation.timestamp} unit={observation.unit} decimals={decimals} colors={colors ?? [observation.color]} note={observation.note} pinned={pinned} onPin={onPin} onClose={onClose}/>
-  </section>;
+  return <ObservationTooltip id={id} anchor={anchor} anchorRect={anchorRect} pinned={pinned} options={options} label="Observation details" onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
+    <div data-rich-metric-inspector>
+      <RichObservationInspector title={title} series={displayedSeries} selectedSeriesIndex={series ? observation.row : 0} timestamp={observation.timestamp} unit={observation.unit} decimals={decimals} colors={colors ?? [observation.color]} note={observation.note} pinned={pinned} onPin={onPin} onClose={onClose}/>
+    </div>
+  </ObservationTooltip>;
+}
+
+function observationAnchor(anchor: SVGSVGElement | null, width: number, height: number, x: number, y: number): TooltipAnchor {
+  const box = anchor?.getBoundingClientRect();
+  const left = box ? box.left + x * box.width / Math.max(1, width) : 0;
+  const top = box ? box.top + y * box.height / Math.max(1, height) : 0;
+  return { left: left - 3, right: left + 3, top: top - 3, bottom: top + 3 };
 }
 
 function timeTicks(timestamps: number[], width: number) {
@@ -217,17 +240,17 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row++; else if (event.key === "ArrowDown") row--;
-    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true); return; } else return;
+    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, event.currentTarget); return; } else return;
     event.preventDefault();
-    inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
+    inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, event.currentTarget);
   };
   if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
-  return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={event => inspection.blur(event.relatedTarget)}>
+  return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={inspection.blur}>
     <div className={styles.plot} ref={ref}>
       <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
-        onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
-        onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
-        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
+        onFocus={event => inspection.focus(observation(0, data.timestamps.length - 1), event.currentTarget)}
+        onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value, false, event.currentTarget); else inspection.leave(); }}
+        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true, event.currentTarget); }}>
         <defs><clipPath id={`${id}-plot`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>
         {data.rows.map((row, rowIndex) => <g key={row.upper}>
           {showAxis && axisRows.has(rowIndex) && <text data-value-axis x={left - 8} y={top + (data.rows.length - rowIndex - .5) * cellHeight} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[rowIndex]}</text>}
@@ -242,7 +265,8 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
         {cursorTime !== undefined && <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} clipPath={`url(#${id}-plot)`} className={styles.crosshair} data-shared-cursor={cursorTime} />}
         {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{widget.options?.timeAxis === 'calendar' ? calendarTick(data.timestamps[index], timeSpan) : formatTimeTick(data.timestamps[index], timeSpan)}</text>)}
       </svg>
-      {inspection.active && inspection.detailsEnabled && <Inspector id={id} title={widget.title} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} />}
+      {inspection.active && inspection.detailsEnabled && <RichMetricInspector id={id} title={widget.title} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} onEnter={inspection.enter} onLeave={inspection.leave} options={widget.options} anchor={inspection.active.anchor}
+        anchorRect={() => observationAnchor(inspection.active?.anchor ?? null, width, height, columnX(inspection.active!.observation.timestamp), top + (data.rows.length - inspection.active!.observation.row - .5) * cellHeight)} />}
     </div>
     <div className={styles.heatmapFooter}>
     {widget.options?.showLegend !== false && <div className={styles.densityLegend} aria-label={`Color encodes bucket ${densityUnit}`}><span>0</span><div>{densityPalette.map(color => <i key={color} style={{ background: color }} />)}</div><span>{formatMetric(data.max, densityUnit, false, widget.options?.decimals)}</span><span className={styles.unknownKey}>Missing</span></div>}
@@ -303,21 +327,21 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row--; else if (event.key === "ArrowDown") row++;
-    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true); return; } else return;
-    event.preventDefault(); inspection.show(observation(Math.max(0, Math.min(data.tracks.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
+    else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, event.currentTarget); return; } else return;
+    event.preventDefault(); inspection.show(observation(Math.max(0, Math.min(data.tracks.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, event.currentTarget);
   };
   if (!data.tracks.length || !data.timestamps.length) return <EmptyState />;
   const bars = !directional && "display" in config && config.display === "bar";
   const tableLegend = config.legendDisplay === "table";
   const legendRevision = JSON.stringify([widget.unit, widget.options?.decimals, config.legendDisplay, data.tracks.map(track => [track.name, track.cells.at(-1)?.value, track.statistics])]);
   const formatSummary = (value: number | null) => value === null ? "No data" : formatMetric(value, widget.unit, false, widget.options?.decimals);
-  return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={event => inspection.blur(event.relatedTarget)}>
+  return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={inspection.blur}>
     <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>
     <div className={styles.plot} ref={ref}>
       <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${directional ? "Outbound traffic below zero" : "Stacked observations"}.${inspection.enabled ? " Arrow keys inspect values; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
-        onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
-        onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
-        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
+        onFocus={event => inspection.focus(observation(0, data.timestamps.length - 1), event.currentTarget)}
+        onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value, false, event.currentTarget); else inspection.leave(); }}
+        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true, event.currentTarget); }}>
         <defs><clipPath id={`${id}-clip`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>
         {ticks.map((value, index) => <g key={value}>{widget.options?.showGrid !== false && <line x1={left} x2={width - right} y1={y(value)} y2={y(value)} className={styles.gridLine} />}{showAxis && <text data-value-axis x={left - 7} y={y(value)} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[index]}</text>}</g>)}
         <line x1={left} x2={width - right} y1={y(0)} y2={y(0)} className={styles.baseline} />
@@ -335,7 +359,8 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         {cursorTime !== undefined && <line x1={x(cursorTime)} x2={x(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
         {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={x(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{widget.options?.timeAxis === 'calendar' ? calendarTick(data.timestamps[index], span) : formatTimeTick(data.timestamps[index], span)}</text>)}
       </svg>
-      {inspection.active && inspection.detailsEnabled && <Inspector id={id} title={widget.title} series={inspectorSeries} colors={data.tracks.map((_, index) => color(index))} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} />}
+      {inspection.active && inspection.detailsEnabled && <RichMetricInspector id={id} title={widget.title} series={inspectorSeries} colors={data.tracks.map((_, index) => color(index))} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} onEnter={inspection.enter} onLeave={inspection.leave} options={widget.options} anchor={inspection.active.anchor}
+        anchorRect={() => { const sample = inspection.active!.observation, cell = data.tracks[sample.row].cells[sample.column]; return observationAnchor(inspection.active?.anchor ?? null, width, height, x(sample.timestamp), cell.upper === null ? top + plotHeight / 2 : y(cell.upper)); }} />}
     </div>
     {widget.options?.showLegend !== false && <SeriesLegend table={tableLegend} revision={legendRevision}>{tableLegend ? <table className={styles.legendTable}>
       <caption>Raw returned observations. Current is the latest sample, including missing values. Mean is the arithmetic mean of finite samples; max is the largest finite sample. Statistics use all returned samples before display sampling.</caption>

@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Activity, ArrowRightLeft, Clock3, Cpu, Database, Pencil, RotateCcw } from 'lucide-react';
+import { Activity, ArrowRightLeft, Clock3, Cpu, Database, RotateCcw } from 'lucide-react';
 import { registerInferenceCharts } from '../charts/inference/register';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { Panel } from '../components/lab/StudyPrimitives';
@@ -102,10 +103,11 @@ function InferenceLatencyPair({ histogram, queue, times, edit }: { histogram: In
 }
 
 export function InferenceFleetLens({ onEdit }: { onEdit?: EditLensWidget }) {
-  const [scope, setScope] = useState<InferenceScope>({ region: 'all', model: 'all', hours: 6 }), [overrides, setOverrides] = useState<Record<string, Widget>>({});
+  const [scope, setScope] = useState<InferenceScope>({ region: 'all', model: 'all', hours: 6 });
   const data = useMemo(() => buildInferenceFleet(scope), [scope]);
-  const current = (panel: InferencePanel) => overrides[panel.widget.id] ?? panel.widget;
-  const edit = (panel: InferencePanel) => onEdit && <button className="inference-edit" aria-label={`Edit ${current(panel).title}`} onClick={() => onEdit(current(panel), panel.result, next => setOverrides(previous => ({ ...previous, [panel.widget.id]: next })))}><Pencil size={12}/><span>Edit</span></button>;
+  const panels = useDashboardPanels(onEdit);
+  const current = (panel: InferencePanel) => panels.current(panel.widget);
+  const edit = panels.actions;
   const visual = (panel: InferencePanel) => <WidgetVisualization widget={current(panel)} result={panel.result}/>;
   const metrics = [{ label: 'Reporting capacity', value: `${data.summary.online}`, unit: `/ ${data.summary.gpus} GPUs`, icon: Cpu }, { label: 'Original requests', value: compact(data.summary.requestRate), unit: 'req/s', icon: ArrowRightLeft }, { label: 'Output throughput', value: compact(data.summary.tokens), unit: 'tokens/s', icon: Database }, { label: 'Pooled p95 TTFT', value: data.summary.p95 === null ? '—' : data.summary.p95.toFixed(0), unit: 'ms', icon: Clock3 }];
   return <main className="inference-lens">
@@ -113,7 +115,7 @@ export function InferenceFleetLens({ onEdit }: { onEdit?: EditLensWidget }) {
     <div className="inference-scope-strip"><div className="inference-scope-controls"><label>Region<select aria-label="Inference region" value={scope.region} onChange={event => setScope(previous => ({ ...previous, region: event.target.value }))}><option value="all">All regions</option>{INFERENCE_REGIONS.map(region => <option key={region}>{region}</option>)}</select></label><label>Models<select aria-label="Inference model" value={scope.model} onChange={event => setScope(previous => ({ ...previous, model: event.target.value }))}><option value="all">All 6 models</option>{INFERENCE_MODELS.map(model => <option key={model}>{model}</option>)}</select></label><label>Window<select aria-label="Inference time window" value={scope.hours} onChange={event => setScope(previous => ({ ...previous, hours: Number(event.target.value) as 1 | 6 }))}><option value={1}>Last 1 hour</option><option value={6}>Last 6 hours</option></select></label>{(scope.region !== 'all' || scope.model !== 'all' || scope.hours !== 6) && <button className="inference-reset" aria-label="Reset inference scope" onClick={() => setScope({ region: 'all', model: 'all', hours: 6 })}><RotateCcw size={13}/></button>}</div><div className="inference-metrics">{metrics.map(metric => <div key={metric.label}><metric.icon size={19}/><span><strong>{metric.value}<small>{metric.unit}</small></strong><em>{metric.label}</em></span></div>)}</div></div>
     <ChartCursorProvider><div className="inference-grid">
       <Panel title={current(data.rack).title} subtitle="Each cell is one supplied rack/slot device. Utilization uses a fixed 0–100% scale; hatching is unavailable telemetry, not zero. Click or use arrows and Enter to inspect a device." actions={edit(data.rack)} className="inference-rack-panel"><div className="inference-rack-chart">{visual(data.rack)}</div></Panel>
-      <InferenceLatencyPair histogram={{ ...data.histogram, widget: current(data.histogram) }} queue={{ ...data.queue, widget: current(data.queue) }} times={data.times} edit={edit}/>
+      <InferenceLatencyPair histogram={{ ...data.histogram, widget: current(data.histogram) }} queue={{ ...data.queue, widget: current(data.queue) }} times={data.times} edit={panel => panels.actionsFor(panel.widget, panel.result)}/>
       <Panel title={current(data.routing).title} subtitle="Every row records original region→model→outcome requests/s. The two sets of links share the same records, so every intermediate node conserves flow. Retry attempts are excluded. Snapshot rates follow the selected region/model, independent of historical view width." actions={edit(data.routing)} className="inference-routing-panel"><div className="inference-routing-chart">{visual(data.routing)}</div></Panel>
       <Panel title={current(data.scatter).title} subtitle="One point represents a paired model throughput and TTFT observation at the same five-minute timestamp. Both axes are logarithmic. Zero, negative and missing pairs are disclosed and excluded. Selecting a model in this legend filters only the scatter." actions={edit(data.scatter)} className="inference-scatter-panel"><div className="inference-scatter-chart">{visual(data.scatter)}</div></Panel>
       <Panel title={current(data.workloadPanel).title} subtitle="Exact snapshot evidence for the selected region and model. GPU capacity counts include devices with unavailable telemetry; reporting counts exclude them. Per-model p95 is estimated from each model’s histogram, while the fleet p95 is estimated separately from pooled compatible histograms." actions={edit(data.workloadPanel)} className="inference-workloads-panel"><div className="inference-workloads-chart">{visual(data.workloadPanel)}</div></Panel>

@@ -1,9 +1,33 @@
 import { ZodError, type ZodIssue } from 'zod';
-import { widgetKind, widgetSchema, type DataKind, type QueryResult, type Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import { widgetKind, widgetSchema, type DataKind, type QueryResult, type Widget, type WidgetOptions } from '../vendor/paprika/ui/src/features/insights/schema';
 import { getWidgetDefinition, type WidgetDefinition } from '../vendor/paprika/ui/src/features/insights/widget-registry';
 import { validateFieldBindings } from './field-bindings';
 
 export type DraftValidation = { widget: Widget; errors: [] } | { widget: null; errors: string[] };
+
+export type EditorStyleControl = NonNullable<WidgetDefinition['styleControls']>[number];
+
+/** The editor and renderer conversion use the same implemented-capability boundary. */
+export function editorStyleControls(widget: Widget, definition = getWidgetDefinition(widget)): readonly EditorStyleControl[] {
+  if (widget.type === 'plugin') return definition?.styleControls ?? [];
+  if (widget.type === 'timeseries' || widget.type === 'bar') return ['unit', 'decimals', 'color', 'legend', 'grid', 'tooltips'];
+  if (widget.type === 'stat') return ['unit', 'decimals', 'color', 'tooltips'];
+  return ['unit', 'decimals', 'tooltips'];
+}
+
+/** Clearing an optional input restores the runtime default without a serialized placeholder. */
+export function updateWidgetOption<K extends keyof WidgetOptions>(widget: Widget, key: K, value: WidgetOptions[K]): Widget {
+  const options = { ...widget.options };
+  if (value === undefined) delete options[key];
+  else options[key] = value;
+  return { ...widget, options };
+}
+
+const sharedTooltipKeys = ['showTooltip', 'inspectorDensity', 'tooltipPlacement', 'tooltipOffset', 'tooltipMaxWidth', 'tooltipMaxHeight'] as const;
+
+function sharedTooltipOptions(options?: WidgetOptions): WidgetOptions {
+  return Object.fromEntries(sharedTooltipKeys.flatMap(key => options?.[key] === undefined ? [] : [[key, options[key]]])) as WidgetOptions;
+}
 
 function issuePath(path: readonly PropertyKey[], fallback: string) {
   return path.reduce<string>((text, key) => typeof key === 'number' ? `${text}[${key}]` : `${text}${text ? '.' : ''}${String(key)}`, '') || fallback;
@@ -51,6 +75,11 @@ export function createEditorDraft(widget: Widget, result?: QueryResult): EditorD
   const validation = validateEditorWidget(copy, widgetKind(widget), result);
   return { draft: copy, preview: validation.widget ?? copy, errors: validation.errors, past: [], future: [] };
 }
+/** Source refreshes revalidate an open draft without becoming a presentation edit. */
+export function revalidateEditorDraft(state: EditorDraftState, kind: DataKind, result?: QueryResult): EditorDraftState {
+  const validation = validateEditorWidget(state.draft, kind, result);
+  return { ...state, preview: validation.widget ?? state.preview, errors: validation.errors };
+}
 export function reviseEditorDraft(state: EditorDraftState, draft: Widget, kind: DataKind, result?: QueryResult): EditorDraftState {
   const validation = validateEditorWidget(draft, kind, result);
   return { draft, preview: validation.widget ?? state.preview, errors: validation.errors, past: [...state.past, state.draft].slice(-40), future: [] };
@@ -70,7 +99,10 @@ export function visualizationCandidate(widget: Widget, definition: WidgetDefinit
   if (getWidgetDefinition(widget)?.id === definition.id) return widget;
   const { pluginId: _pluginId, dataKind: _dataKind, config: _config, ...common } = widget;
   const cached = remembered && getWidgetDefinition(remembered)?.id === definition.id ? remembered : undefined;
-  const options = cached?.options ?? { decimals: widget.options?.decimals, showLegend: true, showTooltip: true, ...definition.defaultOptions };
+  const supportsTooltip = definition.type !== 'plugin' || definition.styleControls?.includes('tooltips');
+  const options = cached?.options ?? { decimals: widget.options?.decimals, showLegend: true, showTooltip: true, ...definition.defaultOptions,
+    ...(supportsTooltip ? sharedTooltipOptions(widget.options) : {}),
+  };
   return definition.type === 'plugin'
     ? { ...common, type: 'plugin', pluginId: definition.id, dataKind: definition.dataKind, options, config: cached?.config ?? definition.defaultConfig ?? {} }
     : { ...common, type: definition.type, options };

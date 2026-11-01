@@ -128,6 +128,7 @@ def main() -> int:
             "Optional registry-owned validateInput(result, config) and intrinsic/fill layout metadata for loaded-data editor acceptance and compound chart hosts.",
             "Optional config-field binding metadata declares accepted source types, units, semantic roles and explicit unbound values for the shared editor.",
             "Host-owned WidgetLoadingProvider supplies presentation-only initial and refresh states without changing Widget or QueryResult. Retained empty results also show refresh status.",
+            "Shared ObservationTooltip and WidgetTooltipProvider own pointer/focus anchoring, viewport collision and bounded scrolling across canonical and lab chart families, with strict common tooltip placement and size options.",
         ],
         "patch": {
             "path": "docs/paprika-reference-renderer.patch",

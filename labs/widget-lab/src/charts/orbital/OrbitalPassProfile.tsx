@@ -1,38 +1,33 @@
-import { useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useId, useMemo, useRef, type PointerEvent } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
 import { nearestAt, orbitalDuration, orbitalUtc } from './model';
 import { passProfileConfig, passProfilePoints, profilePasses, profileSignalPath, qualifyProfile, type PassProfilePoint } from './pass-profile-model';
 import './orbital.css';
+import { usePassSelection } from './usePassSelection';
 
 const value = (n: number | null, decimals = 1) => n === null ? 'Unknown' : n.toLocaleString('en-US', { maximumFractionDigits: decimals });
 
 export function OrbitalPassProfile(props: WidgetRendererProps) {
-  const { widget, result, embedded, onContextChange } = props;
+  const { widget, result, embedded } = props;
   const cfg = useMemo(() => passProfileConfig.parse(widget.config ?? {}), [widget.config]);
   const points = useMemo(() => passProfilePoints(result.records, cfg), [result, cfg]);
   const passes = useMemo(() => profilePasses(points), [points]);
-  const [selectedId, setSelectedId] = useState(cfg.selectedPass ?? passes[0]?.id ?? '');
-  const [timestamp, setTimestamp] = useState(cfg.selectedTimestamp);
+  const selection = usePassSelection(props, cfg.selectedPass ?? passes[0]?.id, cfg.selectedTimestamp), selectedId = selection.selected;
   const inspectionEnabled = !embedded && widget.options?.showTooltip !== false;
-  const svg = useRef<SVGSVGElement>(null), container = useRef<HTMLDivElement>(null), width = usePlotWidth(container, 720);
-  const source = useRef(result), uid = useId().replaceAll(':', '');
-  useEffect(() => { setSelectedId(cfg.selectedPass ?? passes[0]?.id ?? ''); }, [cfg.selectedPass, passes[0]?.id]);
-  useEffect(() => { setTimestamp(cfg.selectedTimestamp); }, [cfg.selectedTimestamp]);
-  useEffect(() => {
-    if (source.current !== result) { source.current = result; setTimestamp(undefined); setSelectedId(cfg.selectedPass ?? passes[0]?.id ?? ''); }
-  }, [result, cfg.selectedPass, passes]);
+  const svg = useRef<SVGSVGElement>(null), container = useRef<HTMLDivElement>(null), width = usePlotWidth(container, 720), uid = useId().replaceAll(':', '');
   const active = passes.find(pass => pass.id === selectedId);
   const inspection = useInspection(points, result, inspectionEnabled, selectedId, point => point.passId);
-  const current = active ? inspection.item?.passId === active.id ? inspection.item : timestamp === undefined ? undefined : nearestAt(active.samples, timestamp) : undefined;
+  const current = active && inspection.item?.passId === active.id ? inspection.item : undefined;
+  const linked = active && selection.timestamp !== undefined ? nearestAt(active.samples, selection.timestamp) : undefined, marker = current ?? linked;
   const qualified = useMemo(() => active ? qualifyProfile(active, cfg) : null, [active, cfg]);
-  const selectPass = (id: string) => { inspection.dismiss(); setSelectedId(id); setTimestamp(undefined); onContextChange?.({ series: id, labels: { passId: id, timestamp: '' } }); };
-  const selectSample = (sample: PassProfilePoint) => {
-    setTimestamp(sample.timestamp); inspection.select(sample.id, svg.current ?? undefined);
-    onContextChange?.({ series: sample.passId, labels: { passId: sample.passId, timestamp: String(sample.timestamp) } });
+  const selectPass = (id: string) => selection.choose(id);
+  const selectSample = (sample: PassProfilePoint, target?: HTMLElement | SVGElement) => {
+    inspection.select(sample.id, target ?? svg.current ?? undefined);
+    selection.choose(sample.passId, sample.timestamp);
   };
-  const clearSample = () => { inspection.dismiss(); setTimestamp(undefined); onContextChange?.({ series: selectedId, labels: { passId: selectedId, timestamp: '' } }); };
+  const clearSample = inspection.dismiss;
   const picker = !embedded && inspectionEnabled && cfg.showPassPicker && <label className="orbital-pass-picker">Contact<select aria-label="Select pass profile" value={selectedId} onChange={event => selectPass(event.target.value)}><option value="">Choose a pass</option>{passes.map(pass => <option key={pass.id} value={pass.id}>{pass.satellite} · {pass.station} · {orbitalUtc(pass.start)}</option>)}</select></label>;
   if (!points.length) return <div className="orbital-empty">No orbital observations in this result.</div>;
   if (!active || !qualified) return <div className="orbital-chart" ref={container}><div className="orbital-empty">Select a contact to compare its elevation, margin and transfer opportunity.</div>{picker}</div>;
@@ -58,7 +53,7 @@ export function OrbitalPassProfile(props: WidgetRendererProps) {
     const sample = nearestAt(active.samples, active.start + (point.x - left) / plotWidth * (active.end - active.start));
     if (sample) { if (pin) selectSample(sample); else inspection.setHover(sample.id); }
   };
-  const currentIndex = current ? active.samples.findIndex(sample => sample.id === current.id) : -1;
+  const currentIndex = marker ? active.samples.findIndex(sample => sample.id === marker.id) : -1;
   const sampleStatus = !current ? '' : current.margin === null ? 'Unknown · margin unavailable' : current.elevation >= cfg.minimumElevation && current.margin >= cfg.minimumMargin ? current.throughput === null ? 'Meets thresholds · rate unknown' : 'Meets planning thresholds' : 'Outside planning thresholds';
   return <div className="orbital-chart orbital-profile" ref={container} data-orbital-pass-profile onKeyDown={event => { if (event.key === 'Escape' && (current || inspection.hover || inspection.pinned)) { event.preventDefault(); event.stopPropagation(); clearSample(); } }}>
     <div className="orbital-plot-context"><strong>{active.satellite} / {active.station}</strong><span>{orbitalUtc(active.start, true)}–{orbitalUtc(active.end, true)} UTC</span></div>
@@ -72,8 +67,8 @@ export function OrbitalPassProfile(props: WidgetRendererProps) {
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
         event.preventDefault(); event.stopPropagation();
         const index = event.key === 'Home' ? 0 : event.key === 'End' ? active.samples.length - 1 : Math.max(0, Math.min(active.samples.length - 1, currentIndex + (event.key === 'ArrowLeft' ? -1 : 1)));
-        if (inspection.pinned) selectSample(active.samples[index]); else inspection.setHover(active.samples[index].id);
-      } else if ((event.key === 'Enter' || event.key === ' ') && current) { event.preventDefault(); event.stopPropagation(); selectSample(current); }
+        if (inspection.pinned) selectSample(active.samples[index], event.currentTarget); else inspection.setHover(active.samples[index].id);
+      } else if ((event.key === 'Enter' || event.key === ' ') && current) { event.preventDefault(); event.stopPropagation(); selectSample(current, event.currentTarget); }
     }} onBlur={() => inspection.setHover(null)}>
       <defs><pattern id={`${uid}-missing`} patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(35)"><line x1="0" x2="0" y1="0" y2="7" stroke={C.muted} strokeWidth="1"/></pattern></defs>
       {lanes.map((lane, index) => {
@@ -88,15 +83,15 @@ export function OrbitalPassProfile(props: WidgetRendererProps) {
           {cfg.showThresholds && lane.threshold !== null && <line x1={left} x2={width - right} y1={y(lane.threshold)} y2={y(lane.threshold)} stroke={C.amber} strokeDasharray="4 4" strokeOpacity=".8"/>}
           <path d={profileSignalPath(active.samples, lane.field, cfg.maxGapSeconds * 1000, x, y)} fill="none" stroke={lane.color} strokeWidth="1.8"/>
           {cfg.showSampleMarkers && active.samples.filter(sample => sample[lane.field] !== null).map(sample => <circle key={sample.id} cx={x(sample.timestamp)} cy={y(sample[lane.field]!)} r="2" fill={lane.color}/>)}
-          {current && <g pointerEvents="none"><line x1={x(current.timestamp)} x2={x(current.timestamp)} y1={top} y2={top + laneHeight} stroke="var(--gamma-ink)" strokeOpacity=".75" strokeDasharray="2 3"/>{current[lane.field] !== null && <circle cx={x(current.timestamp)} cy={y(current[lane.field]!)} r="4" fill="var(--gamma-surface)" stroke={lane.color} strokeWidth="2"/>}</g>}
+          {marker && <g pointerEvents="none"><line x1={x(marker.timestamp)} x2={x(marker.timestamp)} y1={top} y2={top + laneHeight} stroke="var(--gamma-ink)" strokeOpacity=".75" strokeDasharray="2 3"/>{marker[lane.field] !== null && <circle cx={x(marker.timestamp)} cy={y(marker[lane.field]!)} r="4" fill="var(--gamma-surface)" stroke={lane.color} strokeWidth="2"/>}</g>}
         </g>;
       })}
       {ticks.map((tick, index) => <text key={tick} x={x(tick)} y={height - 9} textAnchor={index === 0 ? 'start' : index === ticks.length - 1 ? 'end' : 'middle'} className="orbital-axis">{orbitalUtc(tick, width >= 650)}</text>)}
     </svg>
-    {!embedded && inspectionEnabled && <div className="orbital-profile-sample-controls"><button aria-label="Previous profile observation" disabled={currentIndex === 0} onClick={() => selectSample(active.samples[Math.max(0, currentIndex - 1)])}><ChevronLeft size={16}/></button><label>Observation<input type="range" min="0" max={active.samples.length - 1} step="1" value={Math.max(0, currentIndex)} aria-label="Contact profile observation" onChange={event => selectSample(active.samples[Number(event.target.value)])}/></label><button aria-label="Next profile observation" disabled={currentIndex === active.samples.length - 1} onClick={() => selectSample(active.samples[Math.min(active.samples.length - 1, currentIndex + 1)])}><ChevronRight size={16}/></button><output>{current ? `${orbitalUtc(current.timestamp, true)} UTC` : 'Choose a sample'}</output></div>}
+    {!embedded && inspectionEnabled && <div className="orbital-profile-sample-controls"><button aria-label="Previous profile observation" disabled={currentIndex === 0} onClick={event => selectSample(active.samples[Math.max(0, currentIndex - 1)], event.currentTarget)}><ChevronLeft size={16}/></button><label>Observation<input type="range" min="0" max={active.samples.length - 1} step="1" value={Math.max(0, currentIndex)} aria-label="Contact profile observation" onChange={event => selectSample(active.samples[Number(event.target.value)], event.currentTarget)}/></label><button aria-label="Next profile observation" disabled={currentIndex === active.samples.length - 1} onClick={event => selectSample(active.samples[Math.min(active.samples.length - 1, currentIndex + 1)], event.currentTarget)}><ChevronRight size={16}/></button><output>{marker ? `${orbitalUtc(marker.timestamp, true)} UTC` : 'Choose a sample'}</output></div>}
     {picker}
     {widget.options?.showLegend !== false && <div className="orbital-legend">{cfg.showEligibleWindows && <span><i style={{ background: C.mint, borderRadius: 1 }}/>Qualifying interval</span>}<span><i className="orbital-profile-unknown-swatch"/>Unresolved signal interval</span><span>Linear between samples · gaps &gt; {cfg.maxGapSeconds}s stay unknown</span></div>}
-    {inspectionEnabled && current && <DomainInspector title={`${current.satellite} · ${orbitalUtc(current.timestamp, true)} UTC`} onClose={clearSample} pinned={!!inspection.pinned || timestamp !== undefined}><DetailValues items={[
+    {inspectionEnabled && current && <DomainInspector title={`${current.satellite} · ${orbitalUtc(current.timestamp, true)} UTC`} onClose={clearSample} pinned={!!inspection.pinned}><DetailValues items={[
       ['Elevation', `${value(current.elevation, 2)}°`], ['Link margin', current.margin === null ? 'Unknown' : `${value(current.margin, 2)} dB`], ['Throughput', current.throughput === null ? 'Unknown' : `${value(current.throughput, 2)} Mbps`], ['Planning eligibility', sampleStatus],
       ['Thresholds', `Elevation ≥ ${cfg.minimumElevation}° · margin ≥ ${cfg.minimumMargin} dB`], ['Source observation', current.id],
     ]}/></DomainInspector>}

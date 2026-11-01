@@ -26,6 +26,7 @@ import { widgetTextColor } from "./appearance";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
 import { useWidgetLoadingPresentation } from "./widget-loading";
+import { WidgetTooltipProvider } from "./tooltip-interaction";
 export {
   downsamplePoints,
   formatMetric,
@@ -153,7 +154,8 @@ export const WidgetVisualization = memo(function WidgetVisualization({
           : !series.some((entry) => latestPoint(entry))))
   );
   return (
-    <div
+    <WidgetTooltipProvider
+      options={widget.options}
       className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
       style={
         {
@@ -191,6 +193,6 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       {/* Keep the status outside the busy region so its announcement is not deferred. */}
       {loading && (renderLoading?.({ widget, phase: "refresh" }) ??
         <span className={styles.refreshNotice} role="status">Refreshing data…</span>)}
-    </div>
+    </WidgetTooltipProvider>
   );
 });

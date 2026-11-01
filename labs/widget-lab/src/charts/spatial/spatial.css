@@ -22,10 +22,10 @@
 .spatial-inspector>header {display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #21434f;padding-bottom:6px;}
 .spatial-inspector strong {font-size:14px;color:#ecf6ff;}
 .spatial-inspector header button {min-height:27px;padding:3px;display:flex;}
-.spatial-inspector dl {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:8px 20px;margin:10px 0 1px;}
-.spatial-inspector dl>div {display:flex;flex-direction:column;gap:3px;}
-.spatial-inspector dt {color:#85a6b9;font-size:11px;}
-.spatial-inspector dd {margin:0;color:#e2f0f8;font-size:13px;overflow-wrap:anywhere;}
+.spatial-inspector dl,.spatial-inspector-values {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:8px 20px;margin:10px 0 1px;}
+.spatial-inspector dl>div,.spatial-inspector-values>div {display:flex;flex-direction:column;gap:3px;}
+.spatial-inspector dt,.spatial-inspector-values dt {color:#85a6b9;font-size:11px;}
+.spatial-inspector dd,.spatial-inspector-values dd {margin:0;color:#e2f0f8;font-size:13px;overflow-wrap:anywhere;}
 .spatial-map-stage {position:relative;overflow:hidden;border:1px solid #123746;border-radius:4px;}
 .spatial-map-controls {position:absolute;left:10px;top:10px;display:flex;align-items:center;gap:4px;}
 .spatial-map-controls button {display:flex;align-items:center;justify-content:center;width:31px;height:31px;background:#08222eec;}

@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState } from 'react';
-import { Activity, ArrowUpRight, Clock3, FileText, Pencil, Plus, ShieldAlert, X } from 'lucide-react';
+import { Activity, ArrowUpRight, Clock3, FileText, Plus, ShieldAlert, X } from 'lucide-react';
 import { Panel, Sparkline } from '../components/lab/StudyPrimitives';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { registerIncidentCharts } from '../charts/incident/register';
@@ -19,12 +20,13 @@ const regions:GeoLocation[]=INCIDENT_REGIONS.map(region=>({id:region.id,label:re
 type PanelSource={widget:Widget;result:QueryResult};
 
 export function IncidentRoomLens({onEdit}:{onEdit?:EditLensWidget}) {
-  const [service,setService]=useState<IncidentService>('checkout-api'),[overrides,setOverrides]=useState<Record<string,Widget>>({}),[region,setRegion]=useState<string|null>(null);
+  const [service,setService]=useState<IncidentService>('checkout-api'),[region,setRegion]=useState<string|null>(null);
   const [evidence,setEvidence]=useState<(typeof INCIDENT_EVIDENCE)[number]|null>(null),[addingNote,setAddingNote]=useState(false),[note,setNote]=useState('');
   const [notes,setNotes]=useState([{time:'09:41',text:'Elevated checkout errors across multiple regions.'},{time:'09:43',text:'Payment latency and retry counts increased.'},{time:'09:49',text:'Partial recovery observed in EU West.'}]);
   const telemetry=useMemo(()=>incidentTelemetryPanel(service),[service]),dependency=useMemo(incidentDependencyPanel,[]),trace=useMemo(incidentTracePanel,[]);
-  const current=(panel:PanelSource)=>overrides[panel.widget.id]??panel.widget;
-  const edit=(panel:PanelSource)=>onEdit&&<button className="incident-edit" aria-label={`Edit ${current(panel).title}`} onClick={()=>onEdit(current(panel),panel.result,next=>setOverrides(previous=>({...previous,[panel.widget.id]:next})))}><Pencil size={12}/><span>Edit</span></button>;
+  const panels = useDashboardPanels(onEdit);
+  const current = (panel: PanelSource) => panels.current(panel.widget);
+  const edit = panels.actions;
   const errorTotal=INCIDENT_REGIONS.reduce((sum,item)=>sum+item.errors,0),activeRegion=INCIDENT_REGIONS.find(item=>item.id===region);
   return <main className="incident-room-lens">
     <header className="incident-room-heading"><div><p>PAPRIKA / SERVICES</p><h1>Incident Room <span>INC-2048</span><b>SEV 2</b></h1><span className="incident-heading-detail"><ShieldAlert size={13}/>Investigating · synthetic incident reconstruction</span></div><div className="incident-heading-tools"><label>Service<select aria-label="Incident service" value={service} onChange={event=>setService(event.target.value as IncidentService)}>{INCIDENT_SERVICES.map(item=><option value={item.id} key={item.id}>{item.id}</option>)}</select></label><span><Clock3 size={13}/>31 Oct 2026 · 09:30–10:00 UTC</span></div></header>

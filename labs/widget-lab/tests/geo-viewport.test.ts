@@ -1,10 +1,16 @@
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { GeoMap, reconcileGeoSelection, type GeoSelectionState } from '../src/charts/geo/GeoMap';
+import { describe, expect, it, vi } from 'vitest';
+import { dismissGeoSelection, GeoMap, reconcileGeoSelection, type GeoSelectionState } from '../src/charts/geo/GeoMap';
 import { normalizeGeoLocations } from '../src/charts/geo/geo-data';
 import type { GeoGeometry, GeoLocation } from '../src/charts/geo/geo-data';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt } from '../src/charts/geo/geo-viewport';
+
+// SSR exposes only the choice of the shared popup; the map's selection/content remain real.
+vi.mock('../src/components/lab/ChartTooltip', async () => {
+  const { createElement } = await import('react');
+  return { ChartTooltip: ({ pinned, children }: { pinned: boolean; children: ReactNode }) => createElement('div', { 'data-test-map-tooltip': pinned ? 'pinned' : 'transient' }, children) };
+});
 
 const extent = { width: 446, height: 174 };
 const point: GeoLocation = { id: 'melbourne', label: 'Melbourne', longitude: 144.9631, latitude: -37.8136, value: 0, severity: 'low' };
@@ -69,6 +75,42 @@ describe('geographic selection ownership', () => {
     expect(html).not.toContain('Location details for London');
     const disabled = renderToStaticMarkup(createElement(GeoMap,{label:'Read-only linked map',geometry,locations:input.locations,selectedLocationId:'melbourne',inspectable:false}));
     expect(disabled).not.toContain('Location details for');
+  });
+
+  it('uses the shared pinned popup only for the explicit widget presentation', () => {
+    const props = { label: 'Selected map', geometry, locations: input.locations, selectedLocationId: 'melbourne' };
+    const inline = renderToStaticMarkup(createElement(GeoMap, props));
+    const popup = renderToStaticMarkup(createElement(GeoMap, { ...props, detailPresentation: 'tooltip' }));
+    expect(inline).not.toContain('data-test-map-tooltip');
+    expect(popup).toContain('data-test-map-tooltip="pinned"');
+    for (const html of [inline, popup]) {
+      expect(html).toContain('Location details for Melbourne');
+      expect(html).toContain('<b>0</b>');
+      expect(html).toContain('-37.8136');
+      expect(html).toContain('144.9631');
+      expect(html).toContain('aria-label="Zoom in map"');
+      expect(html).toContain('data-geo-zoom="1.000"');
+    }
+    const disabled = renderToStaticMarkup(createElement(GeoMap, { ...props, detailPresentation: 'tooltip', inspectable: false }));
+    expect(disabled).not.toContain('data-test-map-tooltip');
+    expect(disabled).not.toContain('Location details for');
+  });
+
+  it('retires a superseded popup without clearing newer linked context or reopening a controlled request', () => {
+    const selected = reconcileGeoSelection(initial, { ...input, selectedLocationId: 'melbourne' }).state;
+    const superseded = dismissGeoSelection(selected, 'superseded');
+    expect(superseded.notifyClear).toBe(false);
+    expect(superseded.state.id).toBeNull();
+    expect(superseded.state.requestedId).toBe('melbourne');
+    const settled = reconcileGeoSelection(superseded.state, { ...input, selectedLocationId: 'melbourne' });
+    expect(settled.state.id).toBeNull();
+    expect(settled.notifyClear).toBe(false);
+    const explicit = dismissGeoSelection(selected, 'close');
+    expect(explicit.notifyClear).toBe(true);
+    expect(explicit.state).toBe(selected);
+    const local = dismissGeoSelection({ ...selected, controlled: false }, 'outside');
+    expect(local.state.id).toBeNull();
+    expect(local.notifyClear).toBe(true);
   });
 });
 

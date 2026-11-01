@@ -1,5 +1,6 @@
+import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, Clock3, Pencil, X } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Clock3, X } from 'lucide-react';
 import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
 import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
 import type { Widget } from '../vendor/paprika/ui/src/features/insights/schema';
@@ -18,11 +19,11 @@ const dollars = (value: number, decimals = 0) => new Intl.NumberFormat('en-US', 
 const signed = (value: number, decimals = 2) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value).toFixed(decimals)}`;
 
 export function MarketRiskLens({ onEdit }: { onEdit?: EditLensWidget }) {
-  const [days, setDays] = useState<MarketWindow>(30), [overrides, setOverrides] = useState<Record<string, Widget>>({}), [context, setContext] = useState<DrilldownContext | null>(null);
+  const [days, setDays] = useState<MarketWindow>(30), [context, setContext] = useState<DrilldownContext | null>(null);
   const data = useMemo(() => marketRiskPanels(days), [days]);
-  const current = (panel: MarketPanel) => overrides[panel.widget.id] ?? panel.widget;
-  const edit = (panel: MarketPanel) => onEdit?.(current(panel), panel.result, next => setOverrides(previous => ({ ...previous, [panel.widget.id]: next })));
-  const editAction = (panel: MarketPanel) => onEdit && <button className="market-edit" aria-label={`Edit ${current(panel).title}`} onClick={() => edit(panel)}><Pencil size={12}/><span>Edit</span></button>;
+  const panels = useDashboardPanels(onEdit);
+  const current = (panel: MarketPanel) => panels.current(panel.widget);
+  const editAction = panels.actions;
   const selected = MARKET_POSITIONS.find(position => position.symbol === context?.series || position.symbol === context?.labels?.symbol || position.symbol === context?.labels?.holding);
   const end = data.history.at(-1)!, worst = data.history.reduce((current, point) => point.drawdown < current.drawdown ? point : current, data.history[0]);
   const historyLabel = `${new Date(data.history[0].timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })} – 31 Oct`;
