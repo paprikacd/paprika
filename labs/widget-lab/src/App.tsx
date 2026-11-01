@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, FlaskConical, LayoutDashboard, Maximize2, Minimize2, Moon, Network, Pause, Play, ShieldCheck, Sun } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, FlaskConical, LayoutDashboard, Maximize2, Minimize2, Network, Pause, Play, ShieldCheck } from 'lucide-react';
 import { GammaButton } from '@insights/gamma/button';
-import { labMotionStyle, MotionProvider, useLabMotion } from './components/lab/motion';
+import { MotionProvider, useLabMotion } from './components/lab/motion';
+import { useGammaScope } from './components/lab/appearance';
 import { StudyLoading } from './components/lab/StudyLoading';
 import { LabWidgetLoadingProvider } from './components/lab/WidgetLoading';
 import { DashboardNavigation } from './components/DashboardNavigation';
@@ -31,19 +32,18 @@ export function App() {
 
 function Observatory() {
   const [study, setStudy] = useState<Study>(currentStudy);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [narrow, setNarrow] = useState(false);
   const [guide, setGuide] = useState(false);
   const motion = useLabMotion();
-  // Inline tokens deliberately change with the effective preference: Gamma's
-  // portal inheritance observes this style attribute while inspectors are open.
-  const motionStyle = labMotionStyle(motion.reduced);
+  // Appearance (System / Light / Dark) and motion come from the shared Gamma scope. The studies read
+  // production's compact dark tokens on desktop; the original baseline keeps standard density.
+  const scope = useGammaScope({ compact: study !== 'baseline' });
   useEffect(() => { const change = () => { if (!['#lab-edge', '#lab-reliability', '#baseline'].includes(location.hash)) return; setStudy(currentStudy()); setGuide(false); }; window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
   if (study === 'baseline') return <>
-    <div className="baseline-return"><a href="#lab-edge"><ArrowLeft size={15} />Back to new studies</a><span>Iteration 01 · original widget lab</span></div>
+    <div className={`${gammaTheme.scope} baseline-return`} {...scope}><a href="#lab-edge"><ArrowLeft size={15} />Back to new studies</a><span>Iteration 01 · original widget lab</span></div>
     <Suspense fallback={<StudyLoading label="Loading original lab"/>}><BaselineApp /></Suspense>
   </>;
-  return <div className={`${gammaTheme.scope} obs-app`} data-insights-theme={theme} data-motion={motion.reduced ? 'reduced' : 'auto'} data-motion-preference={motion.preference} style={motionStyle}>
+  return <div className={`${gammaTheme.scope} obs-app`} {...scope} data-motion-preference={motion.preference}>
     <a className="skip-link" href="#study-content" onClick={event => { event.preventDefault(); const main = document.getElementById('study-content'); main?.focus(); main?.scrollIntoView({ block: 'start' }); }}>Skip to widgets</a>
     <aside className="obs-rail" aria-label="Study navigation">
       <a className="obs-mark" href="#lab-edge" aria-label="Paprika Widget Lab"><PaprikaMark /></a>
@@ -63,14 +63,13 @@ function Observatory() {
           {motion.hasReplay && <GammaButton size="sm" variant={motion.replaying ? 'secondary' : 'ghost'} aria-label={motion.replaying ? 'Pause demo replay' : 'Start demo replay'} aria-pressed={motion.replaying} onClick={motion.toggleReplay} title="Advance the synthetic snapshot every 1.8 seconds. Pauses when the tab is hidden.">{motion.replaying ? <Pause size={13}/> : <Play size={13}/>}Demo replay</GammaButton>}
           <GammaButton size="sm" variant="ghost" aria-label={motion.preference === 'reduced' ? 'Use automatic motion' : 'Reduce motion'} aria-pressed={motion.preference === 'reduced'} onClick={() => motion.setPreference(motion.preference === 'reduced' ? 'auto' : 'reduced')} title={motion.preference === 'auto' && motion.reduced ? 'Automatic motion is reduced by your operating system preference.' : 'Auto follows your operating system preference. Reduced removes decorative motion.'}>Motion {motion.preference === 'reduced' ? 'Reduced' : 'Auto'}</GammaButton>
           <GammaButton size="sm" variant="ghost" iconOnly aria-label={narrow ? 'Use wide canvas' : 'Use narrow canvas'} aria-pressed={narrow} onClick={() => setNarrow(!narrow)}>{narrow ? <Maximize2 size={16}/> : <Minimize2 size={16}/>}</GammaButton>
-          <GammaButton size="sm" variant="ghost" iconOnly aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={16}/> : <Moon size={16}/>}</GammaButton>
           <GammaButton size="sm" variant="ghost" iconOnly aria-label="Evaluation notes" aria-expanded={guide} onClick={() => setGuide(!guide)}><BookOpen size={16}/></GammaButton>
         </div>
       </header>
       {guide && <section className="obs-guide" aria-label="Evaluation notes"><div><strong>Two studies, one design system</strong><p>Compare the compact metrics, ranked tables and rich chart inspectors with the Edge Watch and Reliability Room references. All telemetry is deterministic and synthetic.</p></div><div><strong>Try the edges</strong><p>Inspect with arrow keys and Enter, then advance the snapshot or start Demo replay. Changed metrics receive one brief emphasis; their values update immediately. Reduced motion preserves the same observations and replay cadence. Use panel information buttons for units, interval conventions and accounting details.</p></div></section>}
       <main className={`obs-canvas ${narrow ? 'obs-canvas-narrow' : ''}`} id="study-content" tabIndex={-1}>
         <Suspense fallback={<StudyLoading label="Loading study"/>}>
-          {study === 'edge' ? <EdgeWatch theme={theme} narrow={narrow}/> : <ReliabilityRoom theme={theme} narrow={narrow}/>}
+          {study === 'edge' ? <EdgeWatch theme={scope['data-insights-theme']} narrow={narrow}/> : <ReliabilityRoom theme={scope['data-insights-theme']} narrow={narrow}/>}
         </Suspense>
       </main>
       <footer className="obs-footer"><span><FlaskConical size={12}/>Dashboard studies · concept telemetry</span><a href="#baseline">Compare original lab<ArrowUpRight size={12}/></a><span className="obs-footer-brand"><PaprikaMark/>Paprika</span></footer>

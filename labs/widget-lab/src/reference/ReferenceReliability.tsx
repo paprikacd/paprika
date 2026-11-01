@@ -7,9 +7,9 @@ import { achievedAvailabilityProfile, targetAvailabilityProfile } from './refere
 import './ReferenceReliability.css';
 import {referenceTimelineStates} from './reference-timeline-profile';
 
-const GREEN = '#23eeb4';
-const AMBER = '#f8bf47';
-const RED = '#f84846';
+const GREEN = 'var(--gamma-success)';
+const AMBER = 'var(--gamma-warning)';
+const RED = 'var(--gamma-danger)';
 
 type Service = { name: string; availability: number; status: string; tone: 'red' | 'amber' | 'green' };
 /** Authored availability and status per service. Budget figures are derived from availability, never authored. */
@@ -60,10 +60,10 @@ function AuthoredAvailabilityProfile({ target = false, availability = 99.96 }: {
   const shift = target ? 0 : (99.96 - availability) / .2 * height;
   const path = profile.map((value,index) => `${index ? 'L' : 'M'}${index},${(value + shift).toFixed(2)}`).join(' ');
   return <svg className="ref-rel-authored-profile" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
-    <defs><linearGradient id={`availability-${id}`} gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="0" y2={height}><stop offset="0" stopColor="#00d7bf" stopOpacity=".30"/><stop offset="1" stopColor="#00c7b3" stopOpacity="0"/></linearGradient></defs>
+    <defs><linearGradient id={`availability-${id}`} gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="0" y2={height}><stop offset="0" stopColor="var(--gamma-success)" stopOpacity=".30"/><stop offset="1" stopColor="var(--gamma-success)" stopOpacity="0"/></linearGradient></defs>
     <path d={`${path} L${width},${height} L0,${height} Z`} fill={`url(#availability-${id})`}/>
-    {target && <><line x1="0" x2={width} y1="8" y2="8" stroke="#f4c242" strokeWidth="1.4" strokeDasharray="6 4"/><line x1="0" x2={width} y1="20" y2="20" stroke="#e3bf36" strokeOpacity=".65" strokeWidth="1" strokeDasharray="7 3"/></>}
-    <path d={path} fill="none" stroke={target ? '#1cd4b2' : '#0ae8cd'} strokeWidth="1.1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
+    {target && <><line x1="0" x2={width} y1="8" y2="8" stroke="var(--gamma-warning)" strokeWidth="1.4" strokeDasharray="6 4"/><line x1="0" x2={width} y1="20" y2="20" stroke="var(--gamma-warning)" strokeOpacity=".65" strokeWidth="1" strokeDasharray="7 3"/></>}
+    <path d={path} fill="none" stroke={target ? 'var(--gamma-success)' : 'var(--gamma-success)'} strokeWidth="1.1" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
   </svg>;
 }
 
@@ -155,7 +155,7 @@ function ServiceTimeline({ onSelect, adaptive }: { onSelect: (service: string) =
       return <button key={cell} id={`${gridId}-${row * TIMELINE_CELLS + cell}`} className={`ref-rel-state ref-rel-state-${state}`} style={state === 'healthy' ? { opacity: .82 + ((cell * 7 + row * 13) % 13) / 72 } : undefined} aria-label={`${name}, ${interval}, ${state}`} aria-pressed={selection?.service === name && selection.cell === cell} title={`${name} · ${interval} · ${state}`} tabIndex={cell === (selection?.service === name ? selection.cell : 0) ? 0 : -1} onKeyDown={event => onKeys(event,row,cell)} onClick={() => selectInterval(name,cell)}/>;
     })}</div></div>)}</div>
     <div className="ref-rel-timeline-ticks">{['May 01','May 04','May 07','May 10','May 13','May 16','May 19','May 22','May 25','May 28','May 31'].map(day => <span key={day}>{day}</span>)}</div>
-    <div className="ref-rel-timeline-legend"><span><Dot color={GREEN}/>Healthy (within SLO)</span><span><Dot color={AMBER}/>At risk (elevated burn)</span><span><Dot color={RED}/>Breaching (burn &gt; 2x)</span><span><Dot color="#6b8da2"/>No data (unknown)</span></div>
+    <div className="ref-rel-timeline-legend"><span><Dot color={GREEN}/>Healthy (within SLO)</span><span><Dot color={AMBER}/>At risk (elevated burn)</span><span><Dot color={RED}/>Breaching (burn &gt; 2x)</span><span><Dot color="var(--gamma-muted)"/>No data (unknown)</span></div>
     {adaptive && <div className="ref-rel-timeline-inspect" aria-label="Inspect timeline interval">
       <label htmlFor={`${gridId}-service`}>Inspect service<select id={`${gridId}-service`} value={inspectedService} onChange={event=>selectInterval(event.target.value,inspectedCell)}>{shown.map(name=><option key={name}>{name}</option>)}</select></label>
       <label htmlFor={`${gridId}-interval`}>Interval (UTC)<select id={`${gridId}-interval`} value={inspectedCell} onChange={event=>selectInterval(inspectedService,Number(event.target.value))}>{Array.from({length:TIMELINE_CELLS},(_,cell)=><option key={cell} value={cell}>{referenceTimelineInterval(cell)}</option>)}</select></label>
@@ -222,7 +222,7 @@ export function ReferenceReliability({ adaptive = false }: { adaptive?: boolean 
       <div className="ref-rel-toolbar-field ref-rel-slo-field"><label>SLO</label><RefSelect label="SLO" value="Availability" options={['Availability']}/></div>
       <div className="ref-rel-toolbar-field ref-rel-window-field"><label>Window</label><RefSelect label="Window" value={windowLabel} options={['30 days']} onChange={setWindowLabel}/></div>
       <div className="ref-rel-global-time"><Clock3 size={20}/><RefSelect value={`Last ${windowLabel}`} options={['Last 30 days']} onChange={value => setWindowLabel(value.replace('Last ',''))} label="Global time range"/></div>
-      <button className="ref-live ref-replay-neutral ref-rel-live" aria-label={motion.replaying ? 'Pause reference replay' : 'Play reference replay'} aria-pressed={motion.replaying} title={motion.replaying ? 'Pause the synthetic reference replay' : 'Play the authored reference fixture; one synthetic hour advances every 1.8 seconds'} onClick={motion.toggleReplay}><Dot color="#7d95a3"/>{motion.replaying ? 'Pause replay' : 'Fixture replay'}</button><span className="ref-rel-toolbar-divider"/>
+      <button className="ref-live ref-replay-neutral ref-rel-live" aria-label={motion.replaying ? 'Pause reference replay' : 'Play reference replay'} aria-pressed={motion.replaying} title={motion.replaying ? 'Pause the synthetic reference replay' : 'Play the authored reference fixture; one synthetic hour advances every 1.8 seconds'} onClick={motion.toggleReplay}><Dot color="var(--gamma-muted)"/>{motion.replaying ? 'Pause replay' : 'Fixture replay'}</button><span className="ref-rel-toolbar-divider"/>
       <button className="ref-rel-toolbar-icon" aria-label="Search services" aria-expanded={searchOpen} onClick={() => setSearchOpen(!searchOpen)}><Search size={22}/></button>
       <button className="ref-rel-toolbar-icon ref-rel-more" aria-label="Reliability view options" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><MoreVertical size={22}/></button>
     </div>

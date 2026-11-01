@@ -96,11 +96,13 @@ export function allocationRecords(frame: RecordFrame, config: AllocationConfig) 
 }
 
 /** A fixed zero-centred diverging scale. Display clipping never changes the exact change. */
+/** Gain and loss tint in Gamma tokens: the grid colour at zero, success or danger toward the clip limit. */
 export function allocationColor(change: number | null, limit = 3) {
-  if (change === null) return '#33424e';
+  if (change === null) return 'color-mix(in srgb, var(--gamma-muted) 30%, var(--gamma-chart-grid))';
   const magnitude = Math.min(1, Math.abs(change) / limit);
-  const base = [25, 55, 65], end = change < 0 ? [168, 54, 69] : [0, 135, 108];
-  return `#${base.map((channel, i) => Math.round(channel + (end[i] - channel) * magnitude).toString(16).padStart(2, '0')).join('')}`;
+  if (magnitude === 0) return 'var(--gamma-chart-grid)';
+  const token = change < 0 ? 'var(--gamma-danger)' : 'var(--gamma-success)';
+  return `color-mix(in srgb, ${token} ${Math.round(magnitude * 100)}%, var(--gamma-chart-grid))`;
 }
 
 const baseWidget = (id: string, title: string): Widget => ({ id, title, type: 'plugin', dataKind: 'records', pluginId: 'record-table', providerId: 'finance-fixture', query: 'synthetic.portfolio.closing_snapshot', unit: '', layout: { x: 0, y: 0, w: 6, h: 5 } });

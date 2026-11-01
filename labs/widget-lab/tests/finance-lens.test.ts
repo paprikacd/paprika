@@ -73,7 +73,9 @@ describe('finance lens accounting and allocation', () => {
   });
 
   it('uses a stable zero midpoint and clips only the visual color scale', () => {
-    expect(allocationColor(0)).toBe('#193741');
+    expect(allocationColor(0)).toBe('var(--gamma-chart-grid)');
+    expect(allocationColor(1)).toContain('var(--gamma-success)');
+    expect(allocationColor(-1)).toContain('var(--gamma-danger)');
     expect(allocationColor(null)).not.toBe(allocationColor(0));
     expect(allocationColor(-100)).toBe(allocationColor(-3));
     expect(allocationColor(100)).toBe(allocationColor(3));

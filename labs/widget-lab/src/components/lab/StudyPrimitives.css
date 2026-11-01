@@ -9,7 +9,7 @@
   padding: 9px 10px;
   border: 1px solid var(--gamma-border);
   border-radius: var(--gamma-radius-panel);
-  background: linear-gradient(120deg, color-mix(in srgb, var(--metric-color) 3%, var(--gamma-bg)), var(--gamma-bg));
+  background: color-mix(in srgb, var(--metric-color) 3%, var(--gamma-bg));
 }
 .lab-kpi-icon { display: grid; grid-column: 1; grid-row: 1; align-self: start; place-items: center; width: 28px; height: 28px; border-radius: var(--gamma-radius-control); color: var(--metric-color); background: color-mix(in srgb, var(--metric-color) 10%, transparent); }
 .lab-kpi-icon svg { width: 18px; height: 18px; stroke-width: 1.6; }

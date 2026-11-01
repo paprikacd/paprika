@@ -16,10 +16,10 @@ export function ReferenceEdge({onTools,onSearch,adaptive=false}:{onTools:()=>voi
   const gateway='edge-01', [phase,setPhase]=useState(0), [rule,setRule]=useState('All rules'), [traffic,setTraffic]=useState('All traffic'),[chosen,setChosen]=useState<string|null>(null);
   const motion=useLabMotion(); useDemoReplay(()=>setPhase(value=>(value+1)%100000));
   const cards=useMemo(()=>[
-    {label:'Ingress traffic',value:'842.15',unit:'Mb/s',color:'#00d9ef',Icon:ArrowDown,seed:1},
-    {label:'Egress traffic',value:'218.46',unit:'Mb/s',color:'#9a6afa',Icon:ArrowUp,seed:6},
-    {label:'Blocked traffic',value:'2.14',unit:'%',color:'#ff4e43',Icon:Ban,seed:12},
-    {label:'Active connections',value:'18,432',unit:'',color:'#ffbd32',Icon:NetworkMark,seed:23},
+    {label:'Ingress traffic',value:'842.15',unit:'Mb/s',color:'var(--gamma-chart-1)',Icon:ArrowDown,seed:1},
+    {label:'Egress traffic',value:'218.46',unit:'Mb/s',color:'var(--gamma-chart-2)',Icon:ArrowUp,seed:6},
+    {label:'Blocked traffic',value:'2.14',unit:'%',color:'var(--gamma-danger)',Icon:Ban,seed:12},
+    {label:'Active connections',value:'18,432',unit:'',color:'var(--gamma-warning)',Icon:NetworkMark,seed:23},
   ],[]);
   const rows=traffic==='Top 5 destinations'?DESTINATIONS.slice(0,5):DESTINATIONS;
   const events=rule==='All rules'?EVENTS:EVENTS.filter(row=>row[4]===rule);
@@ -30,11 +30,11 @@ export function ReferenceEdge({onTools,onSearch,adaptive=false}:{onTools:()=>voi
       <div className="ref-edge-field ref-edge-range"><span>Time range</span><RefSelect label="Time range" value="Last 30 minutes" options={['Last 30 minutes']}/></div>
       <div className="ref-edge-field ref-edge-resolution"><span>Resolution</span><RefSelect label="Resolution" value="1 min avg" options={['1 min avg']}/></div>
       <div className="ref-edge-global"><Clock3 size={21}/><RefSelect label="Global time range" value="Last 30 minutes" options={['Last 30 minutes']}/></div>
-      <button className="ref-live ref-replay-neutral ref-edge-demo" aria-label={motion.replaying?'Pause demo replay':'Play demo replay'} aria-pressed={motion.replaying} title="Play the authored Edge fixture; one synthetic minute advances every 1.8 seconds" onClick={motion.toggleReplay}><Dot color="#7d95a3"/>Demo data</button>
+      <button className="ref-live ref-replay-neutral ref-edge-demo" aria-label={motion.replaying?'Pause demo replay':'Play demo replay'} aria-pressed={motion.replaying} title="Play the authored Edge fixture; one synthetic minute advances every 1.8 seconds" onClick={motion.toggleReplay}><Dot color="var(--gamma-muted)"/>Demo data</button>
       <i className="ref-edge-divider"/><button className="ref-icon-button ref-edge-search" aria-label="Search dashboard" onClick={onSearch}><Search size={23}/></button><button className="ref-icon-button ref-edge-menu" aria-label="Dashboard options" onClick={onTools}><MoreVertical size={23}/></button>
     </div>
     {cards.map(({Icon,...card},index)=><section className={`ref-edge-metric ref-edge-metric-${index}`} key={card.label} aria-label={card.label}>
-      <div className="ref-edge-metric-icon" style={{color:index===3?'#00c5ee':card.color,background:`${index===3?'#00c5ee':card.color}19`}}><Icon size={31}/></div>
+      <div className="ref-edge-metric-icon" style={{color:index===3?'var(--gamma-chart-1)':card.color,background:`color-mix(in srgb, ${index===3?'var(--gamma-chart-1)':card.color} 10%, transparent)`}}><Icon size={31}/></div>
       <div className="ref-edge-metric-label">{card.label}</div><div className="ref-edge-metric-value">{card.value}<span>{card.unit}</span></div>
       <div className="ref-edge-metric-period">Fixture value</div>
       <div className="ref-edge-metric-spark"><MiniTrace values={[...metricTraces[index]]} color={card.color} height={30} min={0} max={30}/></div>
@@ -46,7 +46,7 @@ export function ReferenceEdge({onTools,onSearch,adaptive=false}:{onTools:()=>voi
     </RefPanel>
     <EdgeSupporting adaptive={adaptive}/>
     <RefPanel title="Recent blocked requests" className="ref-edge-events" scrollLabel="Blocked request records" action={<RefSelect label="Blocked request rule filter" value={rule} options={['All rules',...EVENTS.map(row=>row[4])]} onChange={setRule}/>}>
-      <table className="ref-edge-events-table"><colgroup><col style={{width:220}}/><col style={{width:301}}/><col style={{width:244}}/><col style={{width:360}}/><col style={{width:133}}/><col/></colgroup><thead><tr><th>Time (UTC)</th><th>Source</th><th>Destination</th><th>Rule</th><th>Count</th><th>Status</th></tr></thead><tbody>{events.map(row=><tr key={row[1]}><td><span>{row[0]}</span><span>{row[1]}</span></td><td>{row[2]}</td><td>{row[3]}</td><td>{row[4]}</td><td>{row[5]}</td><td><Dot color="#ff5145"/><span>Blocked</span></td></tr>)}</tbody></table>
+      <table className="ref-edge-events-table"><colgroup><col style={{width:220}}/><col style={{width:301}}/><col style={{width:244}}/><col style={{width:360}}/><col style={{width:133}}/><col/></colgroup><thead><tr><th>Time (UTC)</th><th>Source</th><th>Destination</th><th>Rule</th><th>Count</th><th>Status</th></tr></thead><tbody>{events.map(row=><tr key={row[1]}><td><span>{row[0]}</span><span>{row[1]}</span></td><td>{row[2]}</td><td>{row[3]}</td><td>{row[4]}</td><td>{row[5]}</td><td><Dot color="var(--gamma-danger)"/><span>Blocked</span></td></tr>)}</tbody></table>
     </RefPanel>
   </div>;
 }

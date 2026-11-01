@@ -1,17 +1,17 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, Braces, FlaskConical, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Braces, FlaskConical } from 'lucide-react';
 import { registerConceptCharts } from '../charts/register-concept-charts';
 import { ChartCursorProvider, useChartCursor } from '@insights/chart-cursor';
 import { WidgetVisualization } from '../renderer-extensions/charts';
 import { getWidgetDefinition } from '../renderer-extensions/widget-registry';
 import type { DrilldownContext } from '@insights/drilldown';
-import { useInsightsTheme } from '@insights/insights-theme';
 import themeStyles from '@insights/gamma/gamma-theme.module.css';
 import { allChartCatalog as chartCatalog, makeCatalogFixture, type CatalogId, type CatalogPreset } from './chart-fixtures';
 import { DashboardEditControls, useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import './ChartCatalog.css';
 import { hasIntrinsicChartLayout } from '../charts/intrinsic-chart-families';
-import { labMotionStyle, useLabMotion } from '../components/lab/motion';
+import { useLabMotion } from '../components/lab/motion';
+import { useGammaScope } from '../components/lab/appearance';
 
 registerConceptCharts();
 
@@ -33,7 +33,9 @@ export function ChartCatalog() {
   const [width, setWidth] = useState<'wide' | 'narrow'>('wide');
   const [context, setContext] = useState<DrilldownContext | null>(null);
   const panels = useDashboardPanels();
-  const { resolvedTheme, setTheme } = useInsightsTheme();
+  // Concept previews are reading views of the concept images: compact dark on desktop, like Edge Watch.
+  const scope = useGammaScope();
+  const conceptScope = useGammaScope({ compact: true });
   const feature = chartCatalog.find(item => item.id === selected)!;
   const fixture = useMemo(() => makeCatalogFixture(selected, preset), [selected, preset]);
   const activeWidget = panels.current(fixture.widget);
@@ -41,13 +43,12 @@ export function ChartCatalog() {
   const parsedConfig = useMemo(() => definition?.parseConfig?.(activeWidget.config) ?? activeWidget.config ?? {}, [definition, activeWidget]);
   useEffect(() => { setContext(null); }, [fixture.result]);
   const choose = (id: CatalogId) => { setSelected(id); setPreset('ready'); setLoadingState('ready'); setContext(null); panels.closeEditor(); };
-  return <div className={`${themeStyles.scope} obs-app chart-catalog`} data-insights-theme={resolvedTheme} data-motion={motion.reduced ? 'reduced' : 'auto'} style={labMotionStyle(motion.reduced)}>
+  return <div className={`${themeStyles.scope} obs-app chart-catalog`} {...scope}>
     <header className="catalog-header">
       <a href="#edge" className="catalog-back"><ArrowLeft size={16}/>Dashboard studies</a>
       <div className="catalog-title"><span>PAPRIKA / CHART LIBRARY</span><h1>Working chart coverage</h1></div>
       <DashboardEditControls/>
       <span className="catalog-fixture"><FlaskConical size={14}/>Synthetic data</span>
-      <button className="catalog-theme" aria-label={`Switch catalogue to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>{resolvedTheme === 'dark' ? <Sun size={17}/> : <Moon size={17}/>}</button>
     </header>
     <div className="catalog-layout">
       <nav className="catalog-nav" aria-label="Chart families"><label className="catalog-family-select">Chart family<select aria-label="Choose chart family" value={selected} onChange={event => choose(event.target.value as CatalogId)}>{[...new Set(chartCatalog.map(item=>item.group??'Core charts'))].map(group => <optgroup key={group} label={group}>{chartCatalog.filter(item => (item.group ?? 'Core charts') === group).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</optgroup>)}</select></label><p>{chartCatalog.length} working examples</p>{chartCatalog.map((item, index) => <Fragment key={item.id}>{(index === 0 || item.group !== chartCatalog[index - 1].group) && <h2 className="catalog-nav-group">{item.group ?? 'Core charts'}</h2>}<button onClick={() => choose(item.id)} aria-pressed={selected === item.id}><span>{String(index + 1).padStart(2, '0')}</span>{item.label}</button></Fragment>)}<div className="catalog-nav-note">Existing Paprika hosts, normalized data and trusted renderer extensions.<a href="#reliability">Reference composition<ArrowUpRight size={12}/></a></div></nav>
@@ -61,7 +62,7 @@ export function ChartCatalog() {
           {feature.lensHref && <a className="catalog-lens-link" href={feature.lensHref}>Open {feature.group}<ArrowUpRight size={12}/></a>}<span>{feature.group ? 'Reference dark theme · source data unchanged' : 'Presentation changes keep the same source data.'}</span>
         </div>
         <ChartCursorProvider key={selected}>
-          <section className={`catalog-preview ${width === 'narrow' ? 'is-narrow' : ''} ${feature.group ? `${themeStyles.scope} is-concept` : ''}`} data-insights-theme={feature.group ? 'dark' : undefined} style={feature.group ? labMotionStyle(motion.reduced) : undefined} aria-label={`${feature.label} working preview`}>
+          <section className={`catalog-preview ${width === 'narrow' ? 'is-narrow' : ''} ${feature.group ? `${themeStyles.scope} is-concept` : ''}`} {...(feature.group ? conceptScope : {})} aria-label={`${feature.label} working preview`}>
             <header><h3>{activeWidget.title}</h3><div className="catalog-panel-actions"><span>{activeWidget.unit || activeWidget.dataKind}</span>{panels.actions(fixture)}</div></header>{activeWidget.description&&<p className="catalog-panel-description">{activeWidget.description}</p>}
             <div className="catalog-chart-body" data-catalog-family={panels.overrides[fixture.widget.id] ? (activeWidget.pluginId ?? activeWidget.type) : selected} data-catalog-expanded={hasIntrinsicChartLayout(activeWidget)}><WidgetVisualization widget={activeWidget} result={loadingState === 'loading' ? undefined : fixture.result} loading={loadingState !== 'ready'} error={preset === 'error' ? 'Synthetic provider failure. Choose Observed data to recover the same chart.' : undefined} onContextChange={setContext}/></div>
           </section>

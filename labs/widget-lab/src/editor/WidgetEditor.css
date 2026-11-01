@@ -1,4 +1,4 @@
-.widget-editor { position:fixed; inset:0; z-index:1000; display:flex; flex-direction:column; background:var(--gamma-page); color:var(--gamma-ink); font:13px/1.4 Barlow,var(--gamma-font-sans),sans-serif; isolation:isolate; }
+.widget-editor { position:fixed; inset:0; z-index:1000; display:flex; flex-direction:column; background:var(--gamma-page); color:var(--gamma-ink); font:13px/1.4 Barlow,var(--gamma-font-ui),sans-serif; isolation:isolate; }
 .we-header { min-height:72px; display:flex; align-items:center; gap:12px; padding:12px 22px; border-bottom:1px solid var(--gamma-border); background:var(--gamma-sidebar,var(--gamma-bg)); flex:none; }
 .we-heading { min-width:0; margin-right:14px; }
 .we-heading > span { display:block; color:var(--gamma-muted); font-size:12px; margin-top:3px; }

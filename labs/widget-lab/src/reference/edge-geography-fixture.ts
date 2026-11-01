@@ -44,7 +44,7 @@ export const edgeGeoGeometry: GeoGeometry = {
 export const edgeGeoDecoration: GeoDecorationPoint[] = [
   ...worldSpeckles.map(([longitude, latitude, radius, opacity], index) => {
     const [x, y] = projectCity(longitude, latitude);
-    return { x, y, radius, opacity, color: index % 31 === 0 ? '#e4d875' : index % 53 === 0 ? '#f45737' : '#08c4dd', severity: 'low' as const };
+    return { x, y, radius, opacity, color: index % 31 === 0 ? 'var(--gamma-warning)' : index % 53 === 0 ? 'var(--gamma-accent)' : 'var(--gamma-chart-1)', severity: 'low' as const };
   }),
   ...cities.flatMap((city, index) => {
     const [x, y] = projectCity(city.lon, city.lat);
@@ -52,7 +52,7 @@ export const edgeGeoDecoration: GeoDecorationPoint[] = [
       const angle = noise(index * 200 + point * 3) * Math.PI * 2;
       const distance = Math.pow(noise(index * 100 + point * 11), .6) * (city.count > 20 ? 21 : 10);
       return { x: x + Math.cos(angle) * distance, y: y + Math.sin(angle) * distance * .62,
-        radius: .35 + noise(point * 7 + index) * .75, color: point % 11 === 0 ? '#ffbd30' : point % 17 === 0 ? '#fb4e43' : '#04d8ed',
+        radius: .35 + noise(point * 7 + index) * .75, color: point % 11 === 0 ? 'var(--gamma-warning)' : point % 17 === 0 ? 'var(--gamma-danger)' : 'var(--gamma-chart-1)',
         opacity: .35 + noise(point * 8 + index) * .6, severity: severities[city.level] };
     });
   }),
