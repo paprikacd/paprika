@@ -70,10 +70,16 @@ function locationPanel(kind: 'latency' | 'blocked'): OperationsPanel {
   const rows: RecordFrame['rows'] = cities.map(([id, city, latitude, longitude, latency, blocked]) => [id, city, latitude, longitude, isLatency ? latency : blocked, isLatency ? latency < 50 ? 'low' : latency < 180 ? 'medium' : 'high' : blocked < 60 ? 'low' : blocked < 150 ? 'medium' : 'high']);
   return { widget: widget(`infrastructure-map-${kind}`, isLatency ? 'World ping times' : 'Blocked request origins', isLatency ? 'ms' : 'requests', { type: 'plugin', pluginId: 'connection-map', dataKind: 'records', config: { latitude: 'latitude', longitude: 'longitude', label: 'city', value: 'value', status: 'classification', showLocations: false, maxPoints: 60 } }), result: { records: { columns, rows } }, caption: isLatency ? 'Latency risk: <50 / 50–179 / ≥180ms · latest RTT' : 'Source risk by blocked count: <60 / 60–149 / ≥150 · last 12h' };
 }
+/** Equal-weight mean of every plotted host at each sample. The fixture declares no host capacities, so each host counts once. */
+function equalWeightMean(hosts: number[][]) {
+  return hosts[0].map((_, i) => hosts.reduce((sum, host) => sum + host[i], 0) / hosts.length);
+}
 export function buildInfrastructureLens() {
   const times = Array.from({ length: 144 }, (_, i) => OPERATIONS_AS_OF - (143 - i) * 300000);
   const cpu = times.map((_, i) => round(29 + wave(i, 1) * 13 + 25 * Math.exp(-(((i - 72) / 11) ** 2))));
+  const cpuSecond = cpu.map((value, i) => round(value * .72 + Math.sin(i * .2) * 4));
   const memory = times.map((_, i) => round(57 + i * .055 + wave(i, 2) * 3));
+  const memorySecond = memory.map((value, i) => round(value * .7 + Math.sin(i * .13) * 2));
   const down = times.map((_, i) => round(318 + wave(i) * 92));
   const up = times.map((_, i) => round(71 + wave(i, 4) * 22));
   const storageRows: RecordFrame['rows'] = [
@@ -89,14 +95,14 @@ export function buildInfrastructureLens() {
   ], summaries: [
     stat('infrastructure-nodes', 'Nodes online', 'nodes', times.map(() => 12), '#27d8b0', '12 expected · latest snapshot'),
     stat('infrastructure-containers', 'Containers running', 'containers', times.map(() => 8), '#7db8ed', '8 desired · latest snapshot'),
-    stat('infrastructure-cpu-stat', 'CPU utilization', '%', cpu, '#f7bd54', 'Fleet mean · latest sample'),
-    stat('infrastructure-memory-stat', 'Memory utilized', '%', memory, '#a289f5', 'Allocated RAM · latest sample'),
+    stat('infrastructure-cpu-stat', 'CPU utilization', '%', equalWeightMean([cpu, cpuSecond]), '#f7bd54', 'Mean of 2 hosts · equal weight, capacity not declared · latest sample'),
+    stat('infrastructure-memory-stat', 'Memory utilized', '%', equalWeightMean([memory, memorySecond]), '#a289f5', 'Allocated RAM · mean of 2 hosts, equal weight · latest sample'),
     stat('infrastructure-download-stat', 'WAN download', 'Mb/s', down, '#11cde5', 'Measured rate · latest sample'),
     stat('infrastructure-uptime', 'Gateway uptime', 'days', times.map((_, i) => 22 + i / 288), '#27d8b0', 'Elapsed duration · no resets'),
   ], panels: {
     blocked: locationPanel('blocked'), latency: locationPanel('latency'),
-    cpu: metrics('infrastructure-cpu', 'Hypervisor CPU', '%', 'Five-minute samples · host utilization', times, [{ name: 'compute-01', values: cpu }, { name: 'compute-02', values: cpu.map((value, i) => round(value * .72 + Math.sin(i * .2) * 4)) }], { options: { ...options, max: 100 } }),
-    memory: metrics('infrastructure-memory', 'Host memory', '%', 'Allocated physical RAM · per-host percentage', times, [{ name: 'compute-01', values: memory }, { name: 'compute-02', values: memory.map((value, i) => round(value * .7 + Math.sin(i * .13) * 2)) }], { options: { ...options, max: 100 }, color: '#a289f5' }),
+    cpu: metrics('infrastructure-cpu', 'Hypervisor CPU', '%', 'Five-minute samples · host utilization', times, [{ name: 'compute-01', values: cpu }, { name: 'compute-02', values: cpuSecond }], { options: { ...options, max: 100 } }),
+    memory: metrics('infrastructure-memory', 'Host memory', '%', 'Allocated physical RAM · per-host percentage', times, [{ name: 'compute-01', values: memory }, { name: 'compute-02', values: memorySecond }], { options: { ...options, max: 100 }, color: '#a289f5' }),
     storage: { widget: widget('infrastructure-storage', 'Disk space usage', '', { type: 'plugin', pluginId: 'record-table', dataKind: 'records', config: { columns: ['mount', 'size', 'used', 'percent'], density: 'compact', showSearch: false, pageSize: 10, cellStyles: [{ column: 'percent', display: 'bar', min: 0, max: 100 }] } }), caption: 'Decimal GB · used / capacity · exact records', result: { records: { columns: [{ key: 'mount', label: 'Mounted on', type: 'string' }, { key: 'size', label: 'Size', type: 'number', unit: 'GB' }, { key: 'used', label: 'Used', type: 'number', unit: 'GB' }, { key: 'percent', label: 'Used', type: 'number', unit: '%' }], rows: storageRows } } } as OperationsPanel,
     network: metrics('infrastructure-network', 'WAN throughput / 12 hours', 'Mb/s', 'Independent download and upload rates · five-minute observations', times, [{ name: 'Download', values: down }, { name: 'Upload', values: up }], { options: { ...options, decimals: 2 }, color: '#11cde5' }),
   } };

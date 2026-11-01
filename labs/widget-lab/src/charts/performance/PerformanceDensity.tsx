@@ -4,7 +4,7 @@ import { area, line } from 'd3-shape';
 import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
 import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
-import { latencyDensity, performanceDensityConfig, performanceObservations } from './model';
+import { describeQuantile, latencyDensity, performanceDensityConfig, performanceObservations, stepDensityCell } from './model';
 import './performance.css';
 
 export const performanceNumber = (value: number | null | undefined, digits = 1) => value == null ? 'Unknown' : value.toLocaleString('en-US', { maximumFractionDigits: digits });
@@ -56,8 +56,13 @@ export function PerformanceLatencyDensity({ widget, result, embedded, onContextC
       <div className="performance-chart-key">{config.showQuantiles && widget.options?.showLegend !== false && <div className="domain-legend performance-quantile-legend" role="group" aria-label="Latency quantiles">{([['p50', C.cyan], ['p95', C.violet], ['p99', C.orange]] as const).map(([key, color]) => embedded ? <span key={key}><i style={{ background: color }}/>{key}</span> : <button key={key} type="button" aria-label={`Emphasize ${key} latency`} aria-pressed={pinnedQuantile === key} data-active={highlightedQuantile === key} data-muted={!!highlightedQuantile && highlightedQuantile !== key} onPointerEnter={() => setHoverQuantile(key)} onPointerLeave={() => setHoverQuantile(null)} onFocus={() => setHoverQuantile(key)} onBlur={() => setHoverQuantile(null)} onClick={() => setPinnedQuantile(pinnedQuantile === key ? null : key)} onKeyDown={event => { if (event.key === 'Escape' && highlightedQuantile) { event.preventDefault(); event.stopPropagation(); setPinnedQuantile(null); setHoverQuantile(null); } }}><i style={{ background: color }}/>{key}</button>)}</div>}<span>{config.build === 'after' ? 'Candidate' : 'Baseline'} · count per cell <i className="performance-density-ramp"/> 0–{maxCount}</span></div>
       <svg ref={svg} viewBox={`0 0 ${width} 204`} role="group" aria-label="Request latency heatmap, logarithmic milliseconds. Arrow keys inspect; Enter pins; drag to zoom time." tabIndex={enabled ? 0 : undefined} {...brush.handlers} onFocus={() => { if (!inspection.pinned) inspection.setHover(cells.find(cell => cell.count)?.id ?? null); }} onBlur={() => inspection.setHover(null)} onKeyDown={event => {
         if (!enabled || !cells.length) return;
-        const offset = event.key === 'ArrowRight' ? config.bins : event.key === 'ArrowLeft' ? -config.bins : event.key === 'ArrowUp' ? 1 : event.key === 'ArrowDown' ? -1 : 0;
-        if (offset) { event.preventDefault(); const index = cells.findIndex(cell => cell.id === active?.id), next = cells[Math.max(0, Math.min(cells.length - 1, Math.max(0, index) + offset))]; if (inspection.pinned) pin(next.id, event.currentTarget); else inspection.setHover(next.id); }
+        const visible = [...new Set(cells.map(cell => cell.bucket))];
+        const step = stepDensityCell(visible, config.bins, active ? { bucket: active.bucket, index: active.index } : null, event.key);
+        if (step) {
+          event.preventDefault();
+          const next = cells.find(cell => cell.bucket === step.bucket && cell.index === step.index);
+          if (next) { if (inspection.pinned) pin(next.id, event.currentTarget); else inspection.setHover(next.id); }
+        }
         if (event.key === 'Enter' && active) { event.preventDefault(); pin(active.id, event.currentTarget); }
       }}>
         <defs><clipPath id={`${uid}-heat`}><rect x="44" y="17" width={Math.max(1, width - 56)} height="154"/></clipPath><pattern id={`${uid}-missing`} width="6" height="6" patternUnits="userSpaceOnUse"><path d="M0,6L6,0" stroke={C.muted} strokeWidth=".7"/></pattern></defs>
@@ -80,10 +85,10 @@ export function PerformanceLatencyDensity({ widget, result, embedded, onContextC
         {[1, 10, 100, 1000, 10000, 100000].filter(value => value <= data.maximum).map(value => <text key={value} x={distributionX(value)} y="96" textAnchor={value === 1 ? 'start' : value === data.maximum ? 'end' : 'middle'} fill={C.muted}>{performanceNumber(value, 0)} ms</text>)}
       </svg>
       {active && bucket && <DomainInspector title={`${performanceClock(active.start)}–${performanceClock(active.end)} UTC · ${config.build === 'after' ? 'Candidate' : 'Baseline'}`} pinned={!!inspection.pinned} onClose={inspection.dismiss}>
-        <DetailValues items={[["Latency bin", `${performanceNumber(active.lower)}–${performanceNumber(active.upper)} ms`], ['Observed in bin', `${active.count} / ${active.total} requests`], ['Missing latency in interval', active.missing], ['Interval p99', `${performanceNumber(bucket.p99)} ms`]]}/>
+        <DetailValues items={[["Latency bin", `${performanceNumber(active.lower)}–${performanceNumber(active.upper)} ms`], ['Observed in bin', `${active.count} / ${active.total} requests`], ['Missing latency in interval', active.missing], ['Interval p99', describeQuantile(bucket.p99, bucket.quantileBasis.p99, bucket.count)]]}/>
         {representative && onContextChange && <button className="performance-action" onClick={() => onContextChange({ series: representative.route, value: representative.latency, labels: { action: 'trace', request: representative.pair, build: representative.version } })}>Open representative request · {representative.pair} →</button>}
       </DomainInspector>}
-      <p className="domain-note">Counts retain raw requests; quantiles are empirical. Distribution shares use each build’s observed denominator. Time zoom is local; full-window build distributions stay fixed.</p>
+      <p className="domain-note">Counts retain raw requests; quantiles are empirical, and an interval with fewer than 1/(1−q) samples reports its maximum. Distribution shares use each build’s observed denominator. Time zoom is local; full-window build distributions stay fixed.</p>
     </>}
   </div>;
 }

@@ -16,6 +16,8 @@ npm run dev
 
 Open the local URL printed by Vite. `#edge` opens Edge Watch, `#reliability` opens Reliability Room, and `#charts` opens the reusable chart catalogue. The visible dashboard selector exposes the other studies.
 
+The dev server listens on `127.0.0.1` only and keeps Vite's default host-header check, which accepts `localhost` and IP-address hosts and rejects other DNS names. To reach it from another device on your network, opt in explicitly with `WIDGET_LAB_HOST=0.0.0.0 npm run dev`. `PORT` selects the port (default 3000). Adding a DNS name requires an explicit `server.allowedHosts` entry in `labs/widget-lab/vite.config.ts`.
+
 ```sh
 npm test -- --maxWorkers=2   # default Vitest concurrency caused fixture timeouts here
 npm run typecheck

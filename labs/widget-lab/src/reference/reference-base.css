@@ -73,6 +73,11 @@
 .ref-modal{width:650px;max-height:800px;overflow:auto;background:#071d29;border:1px solid #2c586c;border-radius:8px;box-shadow:0 20px 80px #000b;padding:22px;color:#dbeaf5}
 .ref-modal header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.ref-modal h2{font-size:20px}.ref-modal p{font-size:14px;line-height:1.5;margin:8px 0}.ref-modal input{width:100%;background:#03121c;color:#dceaf7;border:1px solid #28546a;padding:10px;border-radius:4px;margin:8px 0 14px}.ref-modal .ref-modal-links{display:flex;gap:12px}.ref-modal a,.ref-modal button{color:#00baff}.ref-modal table{font-size:13px}.ref-modal td,.ref-modal th{padding:7px;border-bottom:1px solid #204252;text-align:left}
 @keyframes ref-live-pulse{0%,100%{box-shadow:0 0 0 0 #00ddb500}30%{box-shadow:0 0 0 4px #00ddb516}}
+/* A paused or replaying fixture is not a live feed: neutral tone, no pulse. */
+.ref-live.ref-replay-neutral{color:#b8cdd9!important;border-color:#25424d!important;background:#0a1d25!important}
+.ref-live.ref-replay-neutral[aria-pressed=true] .ref-dot{animation:none}
+/* The reliability pill widens to its label; the Edge pill keeps its fixed artboard width. */
+.ref-live.ref-rel-live.ref-replay-neutral{width:auto!important;min-width:80px!important;flex:0 0 auto!important}
 @media(prefers-reduced-motion:reduce){.ref-app *{animation:none!important;transition:none!important}}
 
 .ref-app[data-motion=reduced] *{animation:none!important;transition:none!important}

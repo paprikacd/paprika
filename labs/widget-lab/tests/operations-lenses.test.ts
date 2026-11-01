@@ -64,6 +64,31 @@ describe('operations lens data contracts', () => {
     }
   });
 
+  it('states the infrastructure fleet means from every plotted host, point by point, with equal weight', () => {
+    const { panels, summaries } = buildInfrastructureLens();
+    const cpuHosts = panels.cpu.result.series!, memoryHosts = panels.memory.result.series!;
+    expect(cpuHosts.map(host => host.name)).toEqual(['compute-01', 'compute-02']);
+    expect(memoryHosts.map(host => host.name)).toEqual(['compute-01', 'compute-02']);
+    const cpuStat = summaries.find(panel => panel.widget.id === 'infrastructure-cpu-stat')!;
+    const memoryStat = summaries.find(panel => panel.widget.id === 'infrastructure-memory-stat')!;
+    // Hand computation at the latest sample: (29.06 + 19.64) / 2 and (63.99 + 44.28) / 2.
+    expect(cpuHosts.map(host => host.points.at(-1)!.value)).toEqual([29.06, 19.64]);
+    expect(memoryHosts.map(host => host.points.at(-1)!.value)).toEqual([63.99, 44.28]);
+    expect(cpuStat.result.series![0].points.at(-1)!.value).toBeCloseTo(24.35, 9);
+    expect(memoryStat.result.series![0].points.at(-1)!.value).toBeCloseTo(54.135, 9);
+    for (const [stat, hosts] of [[cpuStat, cpuHosts], [memoryStat, memoryHosts]] as const) {
+      const mean = stat.result.series![0].points;
+      expect(mean).toHaveLength(hosts[0].points.length);
+      hosts[0].points.forEach((point, i) => {
+        expect(mean[i].timestamp).toBe(point.timestamp);
+        expect(mean[i].value).toBeCloseTo((point.value! + hosts[1].points[i].value!) / 2, 9);
+      });
+    }
+    expect(cpuStat.caption).toContain('equal weight');
+    expect(memoryStat.caption).toContain('equal weight');
+    expect(cpuStat.result.series![0].points.at(-1)!.value).not.toBe(29.06);
+  });
+
   it('routes every panel through an existing matching renderer and strict configuration parser', () => {
     const site = buildWebsiteLens(), infra = buildInfrastructureLens();
     const panels = [...site.summaries, ...Object.values(site.panels), ...infra.summaries, ...Object.values(infra.panels)];

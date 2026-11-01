@@ -1,5 +1,5 @@
 import { useId, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Clock3, MoreVertical, Search, TriangleAlert, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock3, MoreVertical, Search, TriangleAlert, X } from 'lucide-react';
 import { useDemoReplay, useLabMotion } from '../components/lab/motion';
 import { Dot, Info, RefPanel, RefSelect } from './ReferenceShared';
 import { ReferenceTimeseries } from './ReferenceCharts';
@@ -11,14 +11,15 @@ const GREEN = '#23eeb4';
 const AMBER = '#f8bf47';
 const RED = '#f84846';
 
-type Service = { name: string; availability: number; delta: number; budget: number; amount: string; status: string; tone: 'red' | 'amber' | 'green'; bar?: number };
-const SERVICES: Service[] = [
-  { name: 'payment-api', availability: 99.72, delta: -.18, budget: 14, amount: '8.64m / 10.00m', status: 'At risk', tone: 'red', bar: 83 },
-  { name: 'auth-api', availability: 99.88, delta: -.06, budget: 72, amount: '12.10m / 43.20m', status: 'At risk', tone: 'amber', bar: 30 },
-  { name: 'catalog-api', availability: 99.97, delta: .01, budget: 88, amount: '38.16m / 43.20m', status: 'Healthy', tone: 'green', bar: 88 },
-  { name: 'uptime-api', availability: 99.96, delta: .01, budget: 60, amount: '25.92m / 43.20m', status: 'Healthy', tone: 'green', bar: 60 },
-  { name: 'search-api', availability: 99.95, delta: -.02, budget: 70, amount: '30.24m / 43.20m', status: 'Healthy', tone: 'green', bar: 70 },
-  { name: 'worker-api', availability: 99.93, delta: -.04, budget: 44, amount: '19.00m / 43.20m', status: 'Monitoring', tone: 'amber', bar: 41 },
+type Service = { name: string; availability: number; status: string; tone: 'red' | 'amber' | 'green' };
+/** Authored availability and status per service. Budget figures are derived from availability, never authored. */
+export const SERVICES: Service[] = [
+  { name: 'payment-api', availability: 99.72, status: 'At risk', tone: 'red' },
+  { name: 'auth-api', availability: 99.88, status: 'At risk', tone: 'amber' },
+  { name: 'catalog-api', availability: 99.97, status: 'Healthy', tone: 'green' },
+  { name: 'uptime-api', availability: 99.96, status: 'Healthy', tone: 'green' },
+  { name: 'search-api', availability: 99.95, status: 'Healthy', tone: 'green' },
+  { name: 'worker-api', availability: 99.93, status: 'Monitoring', tone: 'amber' },
 ];
 const TIMELINE_SERVICES = ['uptime-api', 'payment-api', 'auth-api', 'catalog-api', 'search-api', 'worker-api'];
 const TIMELINE_CELLS = 85;
@@ -36,6 +37,14 @@ export function referenceTimeBudget(availability: number) {
   const consumedMinutes = (100 - availability) / 100 * 30 * 24 * 60;
   const remainingMinutes = allowedMinutes - consumedMinutes;
   return { allowedMinutes, consumedMinutes, remainingMinutes, remainingPercent: remainingMinutes / allowedMinutes * 100 };
+}
+/** Consumed share of the 43.20-minute allowance, clamped to the bar. The budget card and the service table both derive from it. */
+export function referenceConsumedShare(availability: number) {
+  const { consumedMinutes, allowedMinutes } = referenceTimeBudget(availability);
+  return Math.round(Math.max(0, Math.min(100, consumedMinutes / allowedMinutes * 100)) * 100) / 100;
+}
+export function serviceBudget(service: Pick<Service, 'availability'>) {
+  return { ...referenceTimeBudget(service.availability), share: referenceConsumedShare(service.availability) };
 }
 const INCIDENTS = [
   { day: 16, date: 'May 16, 2024', time: '10:21', service: 'payment-api', duration: '58m', cause: 'Increased latency from third-party dependency (payments-gateway)', impact: 'Elevated error rate (5xx) and timeouts', tone: 'red' },
@@ -75,8 +84,7 @@ function AvailabilityMetric({ service }: { service: Service }) {
     <div className="ref-rel-metric-icon ref-rel-green"><AvailabilityShield/></div>
     <div className="ref-rel-metric-name">Achieved availability <Info text="Synthetic reference snapshot. The headline is a time-based percentage over 30 days. The sparkline is an authored SVG silhouette measured from the concept image, not sampled provider telemetry."/></div>
     <div className="ref-rel-metric-value">{service.availability.toFixed(2)} <span>%</span></div>
-    <div className={`ref-rel-metric-delta ${service.delta >= 0 ? 'ref-rel-green' : 'ref-rel-red'}`}>{service.delta >= 0 ? <ArrowUp/> : <ArrowDown/>}{Math.abs(service.delta).toFixed(2)}%</div>
-    <div className="ref-rel-previous">vs. previous 30d</div>
+    <div className="ref-rel-previous">Fixture value</div>
     <div className="ref-rel-mini-axis"><span>100.00%</span><span>99.90%</span><span>99.80%</span></div>
     <div className="ref-rel-availability-trace"><div className="ref-rel-mini-target"/><AuthoredAvailabilityProfile availability={service.availability}/></div>
   </section>;
@@ -94,29 +102,28 @@ function TargetMetric() {
   </section>;
 }
 
-function BudgetMetric({ service }: { service: Service }) {
-  const { consumedMinutes: consumed, remainingMinutes: remaining, remainingPercent: percent } = referenceTimeBudget(service.availability);
-  const isDefault = service.name === 'uptime-api';
+export function BudgetMetric({ service }: { service: Service }) {
+  const { consumedMinutes: consumed, remainingMinutes: remaining, remainingPercent: percent, share } = serviceBudget(service);
   return <section className="ref-rel-metric ref-rel-budget" aria-label="Budget remaining">
     <div className="ref-rel-metric-icon ref-rel-green"><BudgetPie/></div>
-    <div className="ref-rel-metric-name">Budget remaining <Info text="Time-based synthetic SLO: 43.20 minutes allowed, minus 17.28 minutes consumed, leaves 25.92 minutes (60%). The reproduced source artwork uses an illustrative bar length; the exact values are shown alongside it. Service-table values are authored concept examples rather than a single reconciled measurement set."/></div>
+    <div className="ref-rel-metric-name">Budget remaining <Info text="Time-based synthetic SLO: 43.20 minutes allowed, minus 17.28 minutes consumed, leaves 25.92 minutes (60%). The bar is the consumed share of that allowance, capped at 100% once the budget is exhausted. The service table derives its budget figures from the same arithmetic."/></div>
     <div className={`ref-rel-metric-value ${percent < 0 ? 'ref-rel-red' : ''}`}>{percent.toFixed(2)} <span>%</span></div>
     <div className="ref-rel-budget-consumed">{consumed.toFixed(2)}m consumed / 43.20m allowed</div>
-    <div className="ref-rel-budget-track"><span style={{ width: `${isDefault ? 44.4 : Math.max(0, Math.min(100, consumed / 43.2 * 100))}%`, background: percent < 0 ? RED : undefined }}/></div>
+    <div className="ref-rel-budget-track"><span style={{ width: `${share}%`, background: percent < 0 ? RED : undefined }}/></div>
     <div className="ref-rel-budget-scale"><span>{consumed.toFixed(2)}m</span><span>{remaining.toFixed(2)}m remaining</span><span>43.20m</span></div>
   </section>;
 }
 
-function ServicesTable({ onSelect }: { onSelect: (service: string) => void }) {
+export function ServicesTable({ onSelect }: { onSelect: (service: string) => void }) {
   const [filter, setFilter] = useState('All services');
   const visible = SERVICES.filter(service => filter === 'All services' || service.tone !== 'green');
-  return <RefPanel title="Services needing attention" className="ref-rel-services" scrollLabel="Service reliability records" info="These are the illustrative service rows from the supplied design reference. Their independently authored budget amounts and percentages are reproduced for visual comparison, not treated as reconciled production accounting." action={<RefSelect value={filter} options={['All services', 'Needs attention']} onChange={setFilter} label="Service table filter"/>}>
-    <table className="ref-rel-service-table"><colgroup><col/><col/><col/><col/></colgroup><thead><tr><th>Service</th><th>Availability (30d)</th><th>Error budget</th><th>Status</th></tr></thead><tbody>{visible.map(service => <tr key={service.name}>
+  return <RefPanel title="Services needing attention" className="ref-rel-services" scrollLabel="Service reliability records" info="Availability is the authored 30-day value for each service. Error-budget percentages and amounts are derived from that availability with the same 43.20-minute arithmetic as the budget card; status labels are authored." action={<RefSelect value={filter} options={['All services', 'Needs attention']} onChange={setFilter} label="Service table filter"/>}>
+    <table className="ref-rel-service-table"><colgroup><col/><col/><col/><col/></colgroup><thead><tr><th>Service</th><th>Availability (30d)</th><th>Error budget</th><th>Status</th></tr></thead><tbody>{visible.map(service => { const budget = serviceBudget(service); return <tr key={service.name}>
       <td><button className="ref-rel-service-link" onClick={() => onSelect(service.name)}>{service.name}</button></td>
-      <td><div className="ref-rel-availability-cell"><span>{service.availability.toFixed(2)} %</span><span className={service.delta >= 0 ? 'ref-rel-green' : 'ref-rel-red'}>{service.delta >= 0 ? <ArrowUp/> : <ArrowDown/>}{Math.abs(service.delta).toFixed(2)}%</span></div></td>
-      <td><div className={`ref-rel-row-budget ref-rel-${service.tone}`}><span className="ref-rel-row-track"><i style={{ width: `${service.bar ?? service.budget}%` }}/></span><span>{service.budget}%</span></div><div className="ref-rel-budget-amount">{service.amount}</div></td>
+      <td><div className="ref-rel-availability-cell"><span>{service.availability.toFixed(2)} %</span></div></td>
+      <td><div className={`ref-rel-row-budget ref-rel-${service.tone}`}><span className="ref-rel-row-track"><i style={{ width: `${budget.share}%` }}/></span><span>{budget.remainingPercent.toFixed(2)}%</span></div><div className="ref-rel-budget-amount">{budget.consumedMinutes.toFixed(2)}m / 43.20m</div></td>
       <td><span className={`ref-rel-status ref-rel-${service.tone}`}><i/>{service.status}</span></td>
-    </tr>)}</tbody></table>
+    </tr>; })}</tbody></table>
   </RefPanel>;
 }
 
@@ -215,14 +222,14 @@ export function ReferenceReliability({ adaptive = false }: { adaptive?: boolean 
       <div className="ref-rel-toolbar-field ref-rel-slo-field"><label>SLO</label><RefSelect label="SLO" value="Availability" options={['Availability']}/></div>
       <div className="ref-rel-toolbar-field ref-rel-window-field"><label>Window</label><RefSelect label="Window" value={windowLabel} options={['30 days']} onChange={setWindowLabel}/></div>
       <div className="ref-rel-global-time"><Clock3 size={20}/><RefSelect value={`Last ${windowLabel}`} options={['Last 30 days']} onChange={value => setWindowLabel(value.replace('Last ',''))} label="Global time range"/></div>
-      <button className="ref-live ref-rel-live" aria-label={motion.replaying ? 'Pause reference replay' : 'Play reference replay'} aria-pressed={motion.replaying} title={motion.replaying ? 'Pause the synthetic reference replay' : 'Play the authored reference fixture; one synthetic hour advances every 1.8 seconds'} onClick={motion.toggleReplay}><Dot color={GREEN}/>{motion.replaying ? 'Pause' : 'Live'}</button><span className="ref-rel-toolbar-divider"/>
+      <button className="ref-live ref-replay-neutral ref-rel-live" aria-label={motion.replaying ? 'Pause reference replay' : 'Play reference replay'} aria-pressed={motion.replaying} title={motion.replaying ? 'Pause the synthetic reference replay' : 'Play the authored reference fixture; one synthetic hour advances every 1.8 seconds'} onClick={motion.toggleReplay}><Dot color="#7d95a3"/>{motion.replaying ? 'Pause replay' : 'Fixture replay'}</button><span className="ref-rel-toolbar-divider"/>
       <button className="ref-rel-toolbar-icon" aria-label="Search services" aria-expanded={searchOpen} onClick={() => setSearchOpen(!searchOpen)}><Search size={22}/></button>
       <button className="ref-rel-toolbar-icon ref-rel-more" aria-label="Reliability view options" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><MoreVertical size={22}/></button>
     </div>
     {searchOpen && <div className="ref-rel-search-popover" onKeyDown={event => {if(event.key === 'Escape')setSearchOpen(false);}}><label htmlFor="reference-service-search">Find a service</label><input id="reference-service-search" autoFocus value={search} onChange={event => setSearch(event.target.value)} placeholder="Service name…"/>{SERVICES.filter(item => item.name.includes(search)).map(item => <button key={item.name} onClick={() => {setServiceName(item.name);setSearchOpen(false);}}>{item.name}<span>{item.availability.toFixed(2)}%</span></button>)}</div>}
     {menuOpen && <div className="ref-rel-menu-popover" onKeyDown={event => {if(event.key === 'Escape')setMenuOpen(false);}}><button onClick={() => {if(motion.replaying)motion.toggleReplay();setPhase(0);setServiceName('uptime-api');setWindowLabel('30 days');setSelectedDay(null);setMenuOpen(false);}}>Reset reference view</button><a href="#edge">Open Edge Watch</a><a href="#baseline">Open original widget lab</a></div>}
     <AvailabilityMetric service={service}/><TargetMetric/><BudgetMetric service={service}/>
-    <RefPanel title="Availability burn rate (error budget)" className="ref-rel-burn" info="Illustrative one-hour and six-hour error-budget burn rates from the reference. The cyan and violet series share the displayed scale. The orange dashed rule is the 2x threshold; incident and unknown intervals are explicit. Live starts an authored fixture replay; it does not connect to a telemetry provider." action={<RefSelect value="All services" options={['All services']} label="Burn rate service scope"/>}><ReferenceTimeseries kind="reliability" service={serviceName} phase={phase}/></RefPanel>
+    <RefPanel title="Availability burn rate (error budget)" className="ref-rel-burn" info="Illustrative one-hour and six-hour error-budget burn rates from the reference. The cyan and violet series share the displayed scale. The orange dashed rule is the 2x threshold; incident and unknown intervals are explicit. Fixture replay starts an authored replay; it does not connect to a telemetry provider." action={<RefSelect value="All services" options={['All services']} label="Burn rate service scope"/>}><ReferenceTimeseries kind="reliability" service={serviceName} phase={phase}/></RefPanel>
     <ServicesTable onSelect={setServiceName}/><ServiceTimeline adaptive={adaptive} onSelect={setServiceName}/><IncidentCalendar selected={selectedDay} onSelect={setSelectedDay}/><RecentIncidents selectedDay={selectedDay} onClear={() => setSelectedDay(null)}/>
     {windowLabel !== '30 days' && <div className="ref-rel-window-note" role="status">Reference artwork uses a 30-day window. <button onClick={() => setWindowLabel('30 days')}>Restore reference window</button></div>}
   </div>;

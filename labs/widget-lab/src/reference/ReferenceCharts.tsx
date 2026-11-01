@@ -14,6 +14,7 @@ import {edgeHistoryIngress,edgeHistoryEgress} from './reference-mini-profiles';
 import { formatWindowDuration, minimumTimeWindow, nearestTimeIndex, observationsInWindow, timeWindowExtent } from '../vendor/paprika/ui/src/features/insights/time-window';
 import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../vendor/paprika/ui/src/features/insights/time-window-controls';
 import { referenceBandLabel, referenceChartLayout, referenceTickAnchor } from './reference-chart-layout';
+import { authoredSelection, referenceSource, selectedObservationIndex, selectionAfterResultChange, type ReferenceSelection } from './reference-selection';
 
 export const referenceChartConfig = z.strictObject({ kind: z.enum(['edge','reliability']), service: z.string().max(80).default('uptime-api'), gateway: z.string().max(80).default('edge-01'), phase: z.number().int().min(0).max(100000).default(0) });
 type Kind = 'edge'|'reliability';
@@ -45,8 +46,9 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
   const cfg=referenceChartConfig.parse(widget.config), kind=cfg.kind, edge=kind==='edge';
   const id=useId().replace(/:/g,''), svgRef=useRef<SVGSVGElement>(null), publisher=useChartCursorPublisher();
   const series=result.series??[], n=series[0]?.points.length??0;
-  const [selected,setSelected]=useState<number|null>(embedded?null:initialIndex[kind]);
-  const [pinned,setPinned]=useState(!embedded);
+  const observations={points:series[0]?.points??[],source:referenceSource(series[0]?.labels)};
+  const [selection,setSelection]=useState<ReferenceSelection>(()=>authoredSelection(observations,initialIndex[kind],!!embedded));
+  const pinned=selection?.pinned??false;
   const [detail,setDetail]=useState<'query'|'events'|null>(null);
   const wrapperRef=useRef<HTMLDivElement>(null), baseWidth=edge?946:933;
   const [layout,setLayout]=useState({reflow:true,width:baseWidth});
@@ -77,34 +79,35 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
       const local=new DOMPoint(clientX,clientY).matrixTransform(matrix.inverse());
       const px=Math.max(plot.left,Math.min(plot.left+plot.width,local.x));
       return {x:px,y:local.y,timestamp:timeAtX(px),inPlot:local.x>=plot.left&&local.x<=plot.left+plot.width&&local.y>=plot.top&&local.y<=plot.top+plot.height};
-    },commit:windowState.commit,onStart:()=>{setSelected(null);setPinned(false);setDetail(null);publisher.clear(widget.id);},
+    },commit:windowState.commit,onStart:()=>{setSelection(null);setDetail(null);publisher.clear(widget.id);},
   });
   const previousWindow=useRef(`${windowState.window.start}:${windowState.window.end}`);
-  useEffect(()=>{const key=`${windowState.window.start}:${windowState.window.end}`;if(previousWindow.current!==key){previousWindow.current=key;setSelected(null);setPinned(false);setDetail(null);publisher.clear(widget.id);}},[windowState.window.start,windowState.window.end,publisher,widget.id]);
-  const selectedIndex=selected===null||n===0||series[0].points[Math.min(selected,n-1)].timestamp<windowState.window.start||series[0].points[Math.min(selected,n-1)].timestamp>windowState.window.end?null:Math.min(selected,n-1);
+  useEffect(()=>{const key=`${windowState.window.start}:${windowState.window.end}`;if(previousWindow.current!==key){previousWindow.current=key;setSelection(null);setDetail(null);publisher.clear(widget.id);}},[windowState.window.start,windowState.window.end,publisher,widget.id]);
+  const selectedIndex=selectedObservationIndex(observations.points,selection,windowState.window);
   const stamp=selectedIndex===null?undefined:series[0]?.points[selectedIndex]?.timestamp;
   const values=selectedIndex===null?[]:[0,1].map(index=>series[index]?.points[selectedIndex]?.value??null);
   const colors=edge?['#00d9f3','#9868f3']:['#00b9ff','#9754fa'];
   const names=edge?['Ingress','Egress']:['1h burn rate','6h burn rate'];
-  useEffect(()=>{ setSelected(embedded?null:initialIndex[kind]);setPinned(!embedded);setDetail(null); },[result,kind,embedded]);
+  // Runs before paint. A replaced result clears inspection and dismissals; only a pin whose timestamp and source survive is kept. Nothing is re-pinned on refresh.
+  useLayoutEffect(()=>{ setSelection(previous=>embedded?null:selectionAfterResultChange(previous,observations)); setDetail(null); },[result,embedded]);
   useEffect(()=>{ if(stamp!==undefined)publisher.publish(widget.id,stamp,pinned);else publisher.clear(widget.id);return()=>publisher.clear(widget.id); },[stamp,pinned,publisher,widget.id]);
-  const close=()=>{setSelected(null);setPinned(false);svgRef.current?.focus({preventScroll:true});};
-  useEffect(()=>{const escape=(event:globalThis.KeyboardEvent)=>{if(event.key!=='Escape'||!svgRef.current?.parentElement?.contains(document.activeElement))return;event.preventDefault();if(detail){setDetail(null);svgRef.current?.parentElement?.querySelector<HTMLButtonElement>('.ref-inspector footer button')?.focus({preventScroll:true});}else{setSelected(null);setPinned(false);svgRef.current?.focus({preventScroll:true});}};document.addEventListener('keydown',escape);return()=>document.removeEventListener('keydown',escape);},[detail]);
+  const close=()=>{setSelection(null);svgRef.current?.focus({preventScroll:true});};
+  useEffect(()=>{const escape=(event:globalThis.KeyboardEvent)=>{if(event.key!=='Escape'||!svgRef.current?.parentElement?.contains(document.activeElement))return;event.preventDefault();if(detail){setDetail(null);svgRef.current?.parentElement?.querySelector<HTMLButtonElement>('.ref-inspector footer button')?.focus({preventScroll:true});}else{setSelection(null);svgRef.current?.focus({preventScroll:true});}};document.addEventListener('keydown',escape);return()=>document.removeEventListener('keydown',escape);},[detail]);
   const observe=(event:Pick<PointerEvent<SVGSVGElement>,'currentTarget'|'clientX'|'clientY'>, pin=false)=>{
     if(embedded || brush.active || (pinned&&!pin))return;
     const matrix=event.currentTarget.getScreenCTM();if(!matrix)return;
     const px=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse()).x;
     const index=nearestTimeIndex(series[0]?.points??[],timeAtX(Math.max(plot.left,Math.min(plot.left+plot.width,px))),windowState.window);
     if(index===null)return;
-    setSelected(index);setPinned(pin);
+    setSelection({timestamp:series[0].points[index].timestamp,pinned:pin,source:observations.source});
     if(pin)onContextChange?.({series:names[0],labels:series[0]?.labels??{},value:series[0]?.points[index]?.value??null});
   };
   const keyboard=(event:KeyboardEvent<SVGSVGElement>)=>{
     if(embedded)return;
     if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){
       event.preventDefault();const indices=(series[0]?.points??[]).map((point,index)=>({point,index})).filter(({point})=>point.timestamp>=windowState.window.start&&point.timestamp<=windowState.window.end).map(({index})=>index);
-      if(indices.length)setSelected(current=>event.key==='Home'?indices[0]:event.key==='End'?indices.at(-1)!:indices[Math.max(0,Math.min(indices.length-1,Math.max(0,indices.indexOf(current??initialIndex[kind]))+(event.key==='ArrowRight'?1:-1)))]);setPinned(false);
-    }else if(event.key==='Enter'||event.key===' '){event.preventDefault();if(selected===null)setSelected(nearestTimeIndex(series[0]?.points??[],(windowState.window.start+windowState.window.end)/2,windowState.window));setPinned(v=>!v);}else if(event.key==='Escape'){event.preventDefault();close();}
+      if(indices.length){const points=series[0].points,anchor=selection?points.findIndex(point=>point.timestamp===selection.timestamp):initialIndex[kind];const target=event.key==='Home'?indices[0]:event.key==='End'?indices.at(-1)!:indices[Math.max(0,Math.min(indices.length-1,Math.max(0,indices.indexOf(anchor))+(event.key==='ArrowRight'?1:-1)))];setSelection({timestamp:points[target].timestamp,pinned:false,source:observations.source});}else setSelection(current=>current&&{...current,pinned:false});
+    }else if(event.key==='Enter'||event.key===' '){event.preventDefault();const points=series[0]?.points??[],center=nearestTimeIndex(points,(windowState.window.start+windowState.window.end)/2,windowState.window);setSelection(current=>{const base=current??(center===null?null:{timestamp:points[center].timestamp,pinned:false,source:observations.source});return base&&{...base,pinned:!(current?.pinned??false)};});}else if(event.key==='Escape'){event.preventDefault();close();}
   };
   const yTicks=edge?[1200,800,400,0,-400,-800,-1200]:[8,4,2,1,0];
   const sourceXTicks=edge?['13:10','13:15','13:20','13:25','13:30','13:35','13:40']:['May 01','May 04','May 07','May 10','May 13','May 16','May 19','May 22','May 25','May 28','May 31'];
@@ -129,7 +132,7 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
   const legendValues=names.map((_,index)=>selectedIndex===null?(windowState.zoomed?observationsInWindow(series[index]?.points??[],windowState.window).at(-1)?.value??null:series[index]?.points[Math.min(initialIndex[kind],n-1)]?.value??null):values[index]);
   return <div ref={wrapperRef} className={`ref-chart ref-chart-${kind}`} data-responsive={layout.reflow} data-window-active={windowState.zoomed} data-time-axis={temporal?'elapsed':'reference-calibration'}>
     {!embedded&&extent&&<TimeWindowControls state={windowState} compact/>}
-    <svg ref={svgRef} className="ref-chart-svg" width={width} height={svgHeight} viewBox={`0 0 ${width} ${svgHeight}`} role="img" aria-label={edge?'Network traffic chart':'Availability burn rate chart'} aria-description="Synthetic reference reconstruction. Arrow keys inspect, Enter pins, Escape closes. Drag horizontally to change this chart window; Time window provides exact UTC bounds, Undo and Reset. Dashboard values remain unchanged." tabIndex={embedded?-1:0} {...brush.handlers} style={{touchAction: 'pan-y',userSelect:'none'}} onPointerMove={event=>{if(!brush.active)observe(event);}} onPointerLeave={()=>{brush.handlers.onPointerLeave();if(!pinned&&!brush.active)setSelected(null);}} onClick={event=>observe(event,true)} onKeyDown={keyboard}>
+    <svg ref={svgRef} className="ref-chart-svg" width={width} height={svgHeight} viewBox={`0 0 ${width} ${svgHeight}`} role="img" aria-label={edge?'Network traffic chart':'Availability burn rate chart'} aria-description="Synthetic reference reconstruction. Arrow keys inspect, Enter pins, Escape closes. Drag horizontally to change this chart window; Time window provides exact UTC bounds, Undo and Reset. Dashboard values remain unchanged." tabIndex={embedded?-1:0} {...brush.handlers} style={{touchAction: 'pan-y',userSelect:'none'}} onPointerMove={event=>{if(!brush.active)observe(event);}} onPointerLeave={()=>{brush.handlers.onPointerLeave();if(!pinned&&!brush.active)setSelection(null);}} onClick={event=>observe(event,true)} onKeyDown={keyboard}>
       <defs>
         <clipPath id={`plot-${id}`}><rect x={plot.left} y={plot.top} width={plot.width} height={plot.height}/></clipPath>
         {colors.map((color,s)=><linearGradient key={color} id={`area-${id}-${s}`} gradientUnits="userSpaceOnUse" x1="0" x2="0" y1={s===1&&edge?plot.top+plot.height:plot.top} y2={y(0)}><stop offset="0" stopColor={color} stopOpacity={edge ? .74 : .45}/><stop offset="1" stopColor={color} stopOpacity={edge ? .38 : .04}/></linearGradient>)}
