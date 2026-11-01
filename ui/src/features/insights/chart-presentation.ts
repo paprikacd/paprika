@@ -1,24 +1,37 @@
 import type { ChartLinearGradient } from "@tanstack/charts";
-import { isValidTimeZone } from "./schema";
+import { isFormattableTimeZone } from "./schema";
 
-/** The default fill opacity at the top of an area gradient. The gradient fades to transparent at zero. */
+/** The default fill opacity at the top of an area gradient. The gradient fades to transparent at the baseline. */
 export const DEFAULT_AREA_OPACITY = 0.28;
 
 /**
- * A zero-anchored area wash. Values above zero fade toward the zero line from the top, and values below it fade
- * toward zero from the bottom. The fill is a presentation of magnitude only, so it never shifts a value.
+ * The zero line within the visible domain: zero when the domain includes it, otherwise the plot edge nearest zero. An area
+ * closes at zero, so its fade has to meet this line. A domain that excludes zero would fade toward a zero off the plot.
  */
-export function signedAreaGradient(id: string, color: string, values: readonly (number | null)[], opacity = DEFAULT_AREA_OPACITY): ChartLinearGradient {
+export function visibleBaseline(domain: readonly [number, number] | undefined): number {
+  return domain ? Math.min(Math.max(0, domain[0]), domain[1]) : 0;
+}
+
+/**
+ * A baseline-anchored area wash. Its opacity peaks at the run's highest and lowest values and reaches zero at `baseline`,
+ * the visible zero line (see visibleBaseline). Values above the baseline fade toward it from the top, and values below it
+ * fade toward it from the bottom. The fill is a presentation of magnitude only, so it never shifts a value.
+ */
+export function signedAreaGradient(id: string, color: string, values: readonly (number | null)[], opacity = DEFAULT_AREA_OPACITY, baseline = 0): ChartLinearGradient {
   const finite = values.filter((value): value is number => value !== null && Number.isFinite(value));
+  // The path closes at zero, so the gradient spans the run's highest and lowest values together with zero.
   const low = finite.reduce((minimum, value) => Math.min(minimum, value), 0);
   const high = finite.reduce((maximum, value) => Math.max(maximum, value), 0);
-  // Offset of the zero line from the top of the gradient: 0 when all values are non-negative, 1 when all are non-positive.
-  const zero = high === low ? 1 : high / (high - low);
-  const stops = zero >= 1
-    ? [{ offset: 0, color, opacity }, { offset: 1, color, opacity: 0 }]
-    : zero <= 0
-      ? [{ offset: 0, color, opacity: 0 }, { offset: 1, color, opacity }]
-      : [{ offset: 0, color, opacity }, { offset: zero, color, opacity: 0 }, { offset: 1, color, opacity }];
+  // Offset of the baseline from the top of the gradient: 0 at the highest value, 1 at the lowest.
+  const at = high === low ? 1 : Math.min(1, Math.max(0, (high - baseline) / (high - low)));
+  // A side of the baseline is filled only where the run has data on it, so the closing zero never sets an edge.
+  const top = finite.some(value => value > baseline) ? opacity : 0;
+  const bottom = finite.some(value => value < baseline) ? opacity : 0;
+  const stops = at >= 1
+    ? [{ offset: 0, color, opacity: top }, { offset: 1, color, opacity: 0 }]
+    : at <= 0
+      ? [{ offset: 0, color, opacity: 0 }, { offset: 1, color, opacity: bottom }]
+      : [{ offset: 0, color, opacity: top }, { offset: at, color, opacity: 0 }, { offset: 1, color, opacity: bottom }];
   return { id, type: "linear", x1: 0, y1: 0, x2: 0, y2: 1, stops };
 }
 
@@ -27,7 +40,7 @@ const calendarFormats = new Map<string, CalendarFormats>();
 
 /** Formatters for one zone, cached. An unusable zone formats as UTC, so a label never throws. */
 function formatsFor(timeZone: string): CalendarFormats {
-  const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const zone = isFormattableTimeZone(timeZone) ? timeZone : "UTC";
   let formats = calendarFormats.get(zone);
   if (!formats) {
     formats = {
@@ -81,7 +94,7 @@ const CALENDAR_STEPS: readonly { grain: CalendarGrain; every: number; approx: nu
 const wallFormats = new Map<string, Intl.DateTimeFormat>();
 /** The zone's wall-clock fields. Unusable zones fall back to UTC, as elsewhere in this module. */
 function wallFormat(timeZone: string): Intl.DateTimeFormat {
-  const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const zone = isFormattableTimeZone(timeZone) ? timeZone : "UTC";
   let format = wallFormats.get(zone);
   if (!format) {
     format = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" });
@@ -153,7 +166,7 @@ function wallStarts(grain: CalendarGrain, every: number, from: number, to: numbe
  */
 export function calendarTicks(start: number, end: number, count: number, timeZone: string): CalendarTick[] {
   if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) return [];
-  const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const zone = isFormattableTimeZone(timeZone) ? timeZone : "UTC";
   const limit = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 4;
   const span = end - start;
   const step = CALENDAR_STEPS.find((candidate) => span / candidate.approx <= limit) ?? CALENDAR_STEPS.at(-1)!;
@@ -171,7 +184,7 @@ export function calendarTicks(start: number, end: number, count: number, timeZon
 
 const calendarLabelFormats = new Map<string, { time: Intl.DateTimeFormat; day: Intl.DateTimeFormat; month: Intl.DateTimeFormat; monthYear: Intl.DateTimeFormat }>();
 function labelFormats(timeZone: string) {
-  const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const zone = isFormattableTimeZone(timeZone) ? timeZone : "UTC";
   let formats = calendarLabelFormats.get(zone);
   if (!formats) {
     formats = {

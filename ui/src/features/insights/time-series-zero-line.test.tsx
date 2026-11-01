@@ -33,6 +33,15 @@ function fillGeometry(fill: Element) {
 
 const zeroGridline = (container: HTMLElement) => Number(container.querySelector('[data-ts-key="y-grid:number:0"]')!.getAttribute("y1"))
 
+/** The pixel of any value on the y scale, interpolated linearly between two of the drawn gridlines. */
+function pixelOfValue(container: HTMLElement, value: number) {
+  const [first, last] = [...container.querySelectorAll('[data-ts-key^="y-grid:number:"]')].map((grid) => ({
+    value: Number(grid.getAttribute("data-ts-key")!.split(":").pop()),
+    pixel: Number(grid.getAttribute("y1")),
+  }))
+  return first.pixel + ((value - first.value) * (last.pixel - first.pixel)) / (last.value - first.value)
+}
+
 describe("zero-anchored area fills", () => {
   it("anchors every run of a gapped series on the chart's zero gridline, so a gap does not move the zero line", () => {
     // The first run is positive and the second is negative. Both fades must reach transparency on the y = 0 gridline.
@@ -51,5 +60,16 @@ describe("zero-anchored area fills", () => {
     expect(top).toBeLessThan(zeroGridline(container))
     expect(bottom).toBeGreaterThan(zeroGridline(container))
     expect(zeroPixel).toBeCloseTo(zeroGridline(container), 6)
+  })
+
+  it("fades toward the plot's bottom edge when an explicit minimum puts zero off the plot, not toward the off-plot zero", () => {
+    // Zero is below the plot here, so the closing zero of the area lies beyond the bottom edge at the domain minimum, 50.
+    const raised: Widget = { ...timeseries, options: { display: "area", min: 50 } }
+    const { container } = render(<WidgetVisualization widget={raised} result={series([[1, 60], [2, 80], [3, 100]])} />)
+    const [fill] = container.querySelectorAll("g.ts-chart__area path")
+    const { stops, zeroPixel } = fillGeometry(fill)
+    expect(container.querySelector('[data-ts-key="y-grid:number:0"]')).toBeNull()
+    expect(stops.map((stop) => stop.opacity)).toEqual([0.28, 0, 0])
+    expect(zeroPixel).toBeCloseTo(pixelOfValue(container, 50), 6)
   })
 })

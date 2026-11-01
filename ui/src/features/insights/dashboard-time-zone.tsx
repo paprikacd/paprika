@@ -1,13 +1,16 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import { isValidTimeZone } from "./schema";
+import { isFormattableTimeZone, isValidTimeZone } from "./schema";
 
-/** The viewer's own zone. UTC is the explicit fallback where the runtime reports none. */
+/**
+ * The viewer's own zone, which renders even when the canonical list lacks it: the list validates saved dashboards only.
+ * UTC is the explicit fallback where the runtime reports no zone or cannot format the one it reports.
+ */
 export function browserTimeZone(): string {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (zone && isValidTimeZone(zone)) return zone;
+    if (zone && isFormattableTimeZone(zone)) return zone;
   } catch {
     // Some embedded runtimes omit zone data; UTC is the explicit fallback.
   }

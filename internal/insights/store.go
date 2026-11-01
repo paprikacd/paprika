@@ -62,8 +62,12 @@ func OpenStore(dir string) (*Store, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read dashboard document: %w", err)
 		}
-		if err := validateDashboard(id, data); err != nil {
+		staleZone, err := checkStoredDashboard(id, data)
+		if err != nil {
 			return nil, fmt.Errorf("invalid saved dashboard %s: %w", id, err)
+		}
+		if staleZone {
+			slog.Warn("saved dashboard time zone is not on the canonical list; viewers render it in their own zone", "dashboard", id)
 		}
 		totalBytes += len(data)
 		if dashboardStoreFull(len(s.documents), totalBytes) {
@@ -228,6 +232,30 @@ func validateDashboard(id string, document Dashboard) error {
 		return err
 	}
 	return validateDashboardWidgets(d.Widgets)
+}
+
+// checkStoredDashboard validates a document the store loads from disk. Its timeZone is exempt, so a stale, unknown or
+// malformed zone never stops the store from opening: the document is validated without the field and is kept exactly
+// as stored, and viewers render it in their own zone. The result reports a zone the canonical list lacks, so the caller
+// can name the document in a warning. Writes still pass through validateDashboard, which refuses such a zone.
+func checkStoredDashboard(id string, document Dashboard) (staleZone bool, err error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(document, &fields) != nil || fields == nil {
+		return false, validateDashboard(id, document)
+	}
+	zone, hasZone := fields["timeZone"]
+	if !hasZone {
+		return false, validateDashboard(id, document)
+	}
+	delete(fields, "timeZone")
+	unzoned, err := json.Marshal(fields)
+	if err != nil {
+		return false, fmt.Errorf("encode dashboard without its time zone: %w", err)
+	}
+	if err := validateDashboard(id, unzoned); err != nil {
+		return false, err
+	}
+	return !canonicalZone(zone), nil
 }
 
 var validWidgetColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)

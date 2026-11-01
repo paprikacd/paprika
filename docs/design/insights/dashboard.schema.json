@@ -50,7 +50,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "description": "IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). Omitted, labels use the viewer's browser zone."
+      "description": "IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of the calendar time axis, the observation inspector and the chart window labels; metric tooltips, linear axis ticks and other readouts always use the viewer's zone. Omitted, the labels above use the viewer's zone."
     },
     "variables": {
       "maxItems": 20,

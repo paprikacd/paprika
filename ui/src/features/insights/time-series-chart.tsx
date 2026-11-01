@@ -37,7 +37,7 @@ import {
   withGapBreaks,
 } from "./chart-data";
 import { useChartEntrance } from "./chart-entrance";
-import { calendarTickLabel, calendarTicks, DEFAULT_AREA_OPACITY, horizontalPlotBounds, signedAreaGradient, temporalPosition } from "./chart-presentation";
+import { calendarTickLabel, calendarTicks, DEFAULT_AREA_OPACITY, horizontalPlotBounds, signedAreaGradient, temporalPosition, visibleBaseline } from "./chart-presentation";
 import {
   EMPTY_OPTIONS,
   MAX_SERIES,
@@ -208,16 +208,18 @@ export function TimeSeriesChart({
     [visibleSeries, widget.color, options.seriesColors],
   );
   // One fill per observed run, so a gap never moves another run's zero line. Runs with the same stops share a gradient.
+  // Each fade meets the visible zero line, which is the plot edge nearest zero when the domain excludes zero.
+  const baseline = visibleBaseline(domain);
   const areaFills = useMemo(() => {
     const gradients = new Map<string, ChartLinearGradient>();
     const fills = options.display !== "area" ? [] : data.flatMap((entry, index) => observedRuns(entry.plotPoints).map((points, part) => {
-      const gradient = signedAreaGradient("", entry.color, points.map(point => point.value), options.fillOpacity ?? DEFAULT_AREA_OPACITY);
+      const gradient = signedAreaGradient("", entry.color, points.map(point => point.value), options.fillOpacity ?? DEFAULT_AREA_OPACITY, baseline);
       const key = JSON.stringify(gradient.stops);
       if (!gradients.has(key)) gradients.set(key, { ...gradient, id: `area-gradient-${gradients.size}` });
       return { series: index, id: `area-${index}-${part}`, gradientId: gradients.get(key)!.id, points };
     }));
     return { fills, gradients: [...gradients.values()] };
-  }, [data, options.display, options.fillOpacity]);
+  }, [data, options.display, options.fillOpacity, baseline]);
   // Coverage comes from every series in the result, not only the plotted ones, so "No samples" is true for the whole
   // result. It is measured on the unsampled points, so downsampling can neither hide nor invent a gap.
   const coverage = useMemo(

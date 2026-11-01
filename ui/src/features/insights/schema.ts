@@ -491,11 +491,11 @@ export function isCanonicalTimeZone(zone: string): boolean {
 
 const formattableTimeZones = new Map<string, boolean>()
 /**
- * A canonical zone this runtime can format. An older browser's ICU data can lack a newer name, so rendering falls back to
- * the viewer's zone for it instead of throwing. Saving still follows the canonical list alone.
+ * Whether this runtime can format `zone`. An older browser's ICU data can lack a newer name, so a zone it cannot format
+ * falls back at render instead of throwing. This check ignores the canonical list: the list validates saved dashboards,
+ * and the viewer's own zone renders whether or not the list holds it.
  */
-export function isValidTimeZone(zone: string): boolean {
-  if (!isCanonicalTimeZone(zone)) return false
+export function isFormattableTimeZone(zone: string): boolean {
   let formattable = formattableTimeZones.get(zone)
   if (formattable === undefined) {
     try {
@@ -507,12 +507,18 @@ export function isValidTimeZone(zone: string): boolean {
   }
   return formattable
 }
+
+/** A saved dashboard zone this runtime can render: on the canonical list, so a write accepts it, and formattable here. */
+export function isValidTimeZone(zone: string): boolean {
+  return isCanonicalTimeZone(zone) && isFormattableTimeZone(zone)
+}
+
 export const timeZoneSchema = z
   .string()
   .min(1)
   .max(64)
   .refine(isCanonicalTimeZone, "Use an IANA time zone name, such as Europe/London or UTC")
-  .describe("IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). Omitted, labels use the viewer's browser zone.")
+  .describe("IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of the calendar time axis, the observation inspector and the chart window labels; metric tooltips, linear axis ticks and other readouts always use the viewer's zone. Omitted, the labels above use the viewer's zone.")
 /**
  * How a stored dashboard reads its zone: any bounded string is kept as saved, so one dashboard's stale or unknown zone
  * never fails a list and rendering falls back to the viewer's zone. A value that is not a bounded string is dropped.
@@ -546,7 +552,7 @@ export const dashboardSchema = z
       )
       .optional(),
     customTimeRange: customTimeRangeSchema.optional(),
-    /** The dashboard's time labels. Omitted, they use the viewer's browser zone. */
+    /** The zone of the calendar axis, observation inspector and window labels. Omitted, they use the viewer's zone. */
     timeZone: timeZoneSchema.optional(),
     variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
     timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
@@ -581,6 +587,16 @@ export const dashboardSchema = z
  * kept as saved. Writes and imports still pass dashboardSchema, so a zone that is not canonical cannot be saved.
  */
 export const storedDashboardSchema = dashboardSchema.safeExtend({ timeZone: storedTimeZoneSchema })
+
+/**
+ * A stored dashboard in the form a write accepts, for copy and move. A zone the canonical list lacks is unset: it renders
+ * exactly as the stale value did, in the viewer's zone, and the server would refuse the stale value on the write.
+ */
+export function writableDashboard(input: unknown): Dashboard {
+  const stored = storedDashboardSchema.parse(input)
+  const { timeZone, ...unzoned } = stored
+  return dashboardSchema.parse(timeZone === undefined || isCanonicalTimeZone(timeZone) ? stored : unzoned)
+}
 
 export type Dashboard = z.infer<typeof dashboardSchema>
 export type Widget = z.infer<typeof widgetSchema>

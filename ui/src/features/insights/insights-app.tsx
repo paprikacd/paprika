@@ -47,6 +47,7 @@ import {
   customTimeRangeSchema,
   newDashboard,
   newWidget,
+  writableDashboard,
   MAX_WIDGETS,
   type Dashboard,
   type Widget,
@@ -830,7 +831,7 @@ export default function InsightsApp({
   function duplicateDashboard() {
     if (bundleImportActive.current) return
     ++openRequest.current
-    const copy = dashboardSchema.parse({
+    const copy = writableDashboard({
       ...dashboard,
       id: `dashboard-${crypto.randomUUID()}`,
       title: `${dashboard.title.slice(0, 113)} (copy)`,
@@ -899,7 +900,7 @@ export default function InsightsApp({
         mode === "example"
           ? { dashboard: existing, etag: undefined }
           : await client.get(id)
-      const moved = dashboardSchema.parse({ ...loaded.dashboard, folder })
+      const moved = writableDashboard({ ...loaded.dashboard, folder })
       if (mode === "example")
         writeExampleWorkspace(
           localStorage,

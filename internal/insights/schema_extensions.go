@@ -52,16 +52,22 @@ func validateDashboardFolder(raw json.RawMessage) error {
 
 // validateDashboardTimeZone accepts exactly the names in canonicalTimeZones, which the UI's timeZones list holds too.
 // Matching is exact and case-sensitive. Offsets, Local, Factory and posixrules are refused, and so is any other spelling.
+// Writes are checked this way; a stored zone is loaded through checkStoredDashboard, which never refuses it.
 func validateDashboardTimeZone(raw json.RawMessage) error {
-	var zone string
-	const invalid = "timeZone must be an IANA time zone name such as Europe/London or UTC"
-	if json.Unmarshal(raw, &zone) != nil {
-		return errors.New(invalid)
-	}
-	if _, ok := canonicalTimeZones[zone]; !ok {
-		return errors.New(invalid)
+	if !canonicalZone(raw) {
+		return errors.New("timeZone must be an IANA time zone name such as Europe/London or UTC")
 	}
 	return nil
+}
+
+// canonicalZone reports whether raw is a JSON string that names a zone on the canonical list.
+func canonicalZone(raw json.RawMessage) bool {
+	var zone string
+	if json.Unmarshal(raw, &zone) != nil {
+		return false
+	}
+	_, ok := canonicalTimeZones[zone]
+	return ok
 }
 
 func validateDashboardTimeRange(raw json.RawMessage) error {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarDateTime, calendarTick, calendarTickLabel, calendarTicks, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from "./chart-presentation";
+import { calendarDateTime, calendarTick, calendarTickLabel, calendarTicks, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue, visibleBaseline } from "./chart-presentation";
 
 const DAY = 86_400_000;
 // 2026-01-02T23:30:00Z: late evening in UTC, already the next morning in Tokyo.
@@ -35,6 +35,39 @@ describe("area gradient", () => {
 
   it("ignores unobserved and non-finite values, and keeps a zero line at the bottom when nothing is observed", () => {
     expect(signedAreaGradient("fill-d", "#000000", [null, Number.NaN, Number.POSITIVE_INFINITY]).stops.at(-1)).toEqual({ offset: 1, color: "#000000", opacity: 0 });
+  });
+
+  it("fades toward the visible baseline when the domain starts above zero, so the fade reaches the plot's bottom edge", () => {
+    // The domain starts at 50, so zero is off the plot. Values 60 to 100 span 100 down to zero, and the plot's bottom edge at 50 sits halfway down.
+    const gradient = signedAreaGradient("fill-e", "#2867b9", [60, 100], 0.28, 50);
+    expect(gradient.stops).toEqual([
+      { offset: 0, color: "#2867b9", opacity: 0.28 },
+      { offset: 0.5, color: "#2867b9", opacity: 0 },
+      { offset: 1, color: "#2867b9", opacity: 0 },
+    ]);
+  });
+
+  it("mirrors the raised-baseline fade for a series below a lowered baseline", () => {
+    // The domain ends at -50, so the plot's top edge is -50 and zero is off the plot above it.
+    const gradient = signedAreaGradient("fill-f", "#b4473d", [-100, -60], 0.28, -50);
+    expect(gradient.stops).toEqual([
+      { offset: 0, color: "#b4473d", opacity: 0 },
+      { offset: 0.5, color: "#b4473d", opacity: 0 },
+      { offset: 1, color: "#b4473d", opacity: 0.28 },
+    ]);
+  });
+
+  it("keeps a zero baseline exactly as before when the domain includes zero", () => {
+    expect(signedAreaGradient("fill-g", "#53876a", [3, -1, 2], 0.5, 0).stops).toEqual(signedAreaGradient("fill-g", "#53876a", [3, -1, 2], 0.5).stops);
+  });
+});
+
+describe("visible baseline", () => {
+  it("is zero when the domain includes it, and otherwise the plot edge nearest zero", () => {
+    expect(visibleBaseline(undefined)).toBe(0);
+    expect(visibleBaseline([-10, 110])).toBe(0);
+    expect(visibleBaseline([50, 110])).toBe(50);
+    expect(visibleBaseline([-110, -50])).toBe(-50);
   });
 });
 
