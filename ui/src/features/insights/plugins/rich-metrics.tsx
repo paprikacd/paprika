@@ -16,6 +16,10 @@ import { validTimestamp } from "../widget-context";
 import { useAnnotationEvents } from "../annotation-events";
 import { TimeWindowLens } from "../time-window-lens";
 import { useTooltipWidgetData } from "../tooltip-widget-data";
+import { useTooltipDismiss } from "../tooltip-dismiss";
+import { isRestoringTooltipFocus, restoreTooltipFocus, type TooltipDismissReason } from "../tooltip-focus";
+import { readTooltipPlacement } from "../tooltip-position";
+import { WidgetTooltipProvider } from "../tooltip-interaction";
 import { seriesInWindow, type ObservationWindow } from "../time-window";
 import type { QueryResult } from "../schema";
 import { metricPriorPeriod } from "./metric-prior-period";
@@ -104,8 +108,6 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const publisher = useChartCursorPublisher();
   const root = useRef<HTMLDivElement>(null);
   const panelHover = useRef(false);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const restoringFocus = useRef(false);
   const setRoot = useCallback((element: HTMLDivElement | null) => { root.current = element; }, []);
   const [state, setState] = useState<{ observation: Observation; pinned: boolean; owner: InspectionOwner; result: unknown; signature: string }>();
   // A new result ends the inspection rather than hiding it, so a cached result that returns later cannot revive it. The
@@ -119,48 +121,48 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
     else publisher.clear(widget.id);
     return () => publisher.clear(widget.id);
   }, [publisher, widget.id, timestamp, pinned, result, signature]);
+  // The hover grace is the shared controller. A pinned or keyboard inspection is never hidden by a pointer leaving the chart.
+  const hover = useTooltipDismiss({
+    onDismiss: () => setState(current => current?.pinned || current?.owner === "keyboard" ? current : undefined),
+    pinned: !!pinned,
+    revision: result,
+    enabled,
+    engaged: () => panelHover.current,
+  });
   useEffect(() => {
-    if (!enabled) return;
+    // With a details panel, the panel's own dismissal path handles pointer, focus and Escape. Without one, these listeners do.
+    if (!enabled || detailsEnabled) return;
     const close = (event: globalThis.PointerEvent) => { if (event.target instanceof Node && !root.current?.contains(event.target) && !panel?.contains(event.target)) setState(undefined); };
     const escape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setState(undefined); };
     document.addEventListener("pointerdown", close); document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
-  }, [enabled, panel]);
-  useEffect(() => () => clearTimeout(hideTimer.current), []);
+  }, [enabled, detailsEnabled, panel]);
   const show = (observation: Observation, pinned = false, owner: InspectionOwner = "pointer") => {
-    clearTimeout(hideTimer.current);
+    hover.cancel();
     if (!enabled || (active?.pinned && !pinned)) return;
     setState({ observation, pinned, owner, result, signature });
     if (pinned) onContextChange?.({ series: observation.name, labels: observation.series.labels, value: observation.value });
   };
-  const dismiss = () => {
-    clearTimeout(hideTimer.current);
-    const returnFocus = panel?.contains(document.activeElement);
+  // Explicit Close and Escape return keyboard users to the chart. A passive dismissal keeps the focus the user just moved to.
+  const dismiss = (reason: TooltipDismissReason = "close") => {
+    hover.cancel();
+    const returnFocus = (reason === "escape" || reason === "close") && !!panel?.contains(document.activeElement);
     setState(undefined);
-    if (returnFocus) {
-      // A dismissed inspector returns keyboard users to its chart. This focus
-      // event must not immediately create another transient observation.
-      restoringFocus.current = true;
-      root.current?.querySelector<SVGSVGElement>('svg[role="group"][tabindex="0"]')?.focus({ preventScroll: true });
-      restoringFocus.current = false;
-    }
+    if (returnFocus) restoreTooltipFocus(root.current?.querySelector<SVGSVGElement>('svg[role="group"][tabindex="0"]'));
   };
-  const focus = (observation: Observation) => { if (enabled && !active && !restoringFocus.current) show(observation); };
-  const enterPanel = () => { panelHover.current = true; clearTimeout(hideTimer.current); };
+  // Restoring focus to the chart must not create another transient observation.
+  const focus = (observation: Observation) => { if (enabled && !active && !isRestoringTooltipFocus()) show(observation); };
+  const enterPanel = () => { panelHover.current = true; hover.cancel(); };
   // A pointer leaving the chart ends a pointer inspection only. An inspection the arrow keys or Enter opened ends on
   // Escape, a dismissing pointer press or focus moving away, so a pointer that was over the chart cannot clear it.
-  const leave = () => {
-    panelHover.current = false;
-    clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => { if (!panelHover.current) setState(current => current?.pinned || current?.owner === "keyboard" ? current : undefined); }, 180);
-  };
+  const leave = () => { panelHover.current = false; hover.schedule(); };
   const focusPanel = () => { if (!panel) return false; panel.focus({ preventScroll: true }); return true; };
   return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave, enterPanel, focusPanel };
 }
 
-function Inspector({ widget, observation, peers, extra, footer, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; extra?: ReactNode; footer?: ReactNode; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
-  return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
-    <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={onClose}><X size={14} /></GammaButton></div>
+function Inspector({ widget, observation, peers, extra, footer, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; extra?: ReactNode; footer?: ReactNode; pinned: boolean; decimals?: number; onPin: () => void; onClose: (reason?: TooltipDismissReason) => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
+  return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} options={readTooltipPlacement(widget.options)} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
+    <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={() => onClose("close")}><X size={14} /></GammaButton></div>
     <div className={styles.inspectorDetails} data-observation-details>
       <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}>
         {observation.bucket && <span className={tooltipStyles.tooltipEyebrow}>Selected bucket: {observation.bucket}</span>}
@@ -266,7 +268,8 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
     catch (error) { if (error instanceof MetricDataError) return { error: error.message }; throw error; }
   }, [result, config]);
   if (prepared.error) return <div className={heatmapStyles.dataError} role="alert"><strong>Histogram data cannot be displayed</strong><p>{prepared.error}</p></div>;
-  return <DistributionHeatmapPlot {...props} config={config} fullData={prepared.data!} />;
+  // One provider per widget, so its inspectors share a single panel owner.
+  return <WidgetTooltipProvider><DistributionHeatmapPlot {...props} config={config} fullData={prepared.data!} /></WidgetTooltipProvider>;
 }
 
 function DistributionHeatmapPlot(props: WidgetRendererProps & { config: DistributionConfig; fullData: DistributionData }) {
@@ -345,7 +348,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const keys = (event: KeyboardEvent<SVGSVGElement>) => {
     if (!inspection.enabled) return;
     if (event.key === "Tab" && !event.shiftKey && inspection.active?.pinned && inspection.focusPanel()) { event.preventDefault(); return; }
-    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); inspection.dismiss(); return; }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); inspection.dismiss("escape"); return; }
     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row++; else if (event.key === "ArrowDown") row--;
@@ -563,7 +566,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const keys = (event: KeyboardEvent<SVGSVGElement>) => {
     if (!inspection.enabled) return;
     if (event.key === "Tab" && !event.shiftKey && inspection.active?.pinned && inspection.focusPanel()) { event.preventDefault(); return; }
-    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); inspection.dismiss(); return; }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); inspection.dismiss("escape"); return; }
     let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row--; else if (event.key === "ArrowDown") row++;
@@ -664,8 +667,8 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   </div>;
 }
 
-export function StackedTimeseries(props: WidgetRendererProps) { return <MetricPlot {...props} directional={false} />; }
-export function DirectionalTraffic(props: WidgetRendererProps) { return <MetricPlot {...props} directional />; }
+export function StackedTimeseries(props: WidgetRendererProps) { return <WidgetTooltipProvider><MetricPlot {...props} directional={false} /></WidgetTooltipProvider>; }
+export function DirectionalTraffic(props: WidgetRendererProps) { return <WidgetTooltipProvider><MetricPlot {...props} directional /></WidgetTooltipProvider>; }
 
 export function registerRichMetricPlugins() {
   if (!getWidgetDefinition("plugin", "distribution-heatmap")) registerWidgetPlugin({

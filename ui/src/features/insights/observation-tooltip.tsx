@@ -1,199 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { correctPortalPosition, installTooltipPointerTracking, placePointerTooltip, pointerOverAnchor } from "./tooltip-pointer";
+import { correctPortalPosition, installTooltipPointerTracking, pointerOverAnchor } from "./tooltip-pointer";
 import { inheritGammaTheme } from "./gamma/inherit-theme";
 import { GammaButton } from "./gamma/button";
 import { TooltipInstructions } from "./tooltip-instructions";
 import configStyles from "./chart-styles.module.css";
+import { placeTooltip, tooltipLimit, type TooltipObstacle, type TooltipPlacementOptions, type TooltipPosition, type TooltipTarget, type TooltipViewport } from "./tooltip-position";
+import { attachTooltipDismissal, useTooltipDismiss, type TooltipDismissalTarget } from "./tooltip-dismiss";
+import { isRestoringTooltipFocus, restoreTooltipFocus, tooltipFocusOwner, withTooltipDismissReason, type TooltipDismissReason } from "./tooltip-focus";
+import { registerNestedPanel, TooltipOwnerContext, tooltipScopeFor, useProvidedTooltipScope } from "./tooltip-interaction";
 
-interface TooltipViewport {
-  width: number;
-  height: number;
-  left?: number;
-  top?: number;
-}
-export function heatmapTooltipSizeLimit(
-  anchor: Pick<DOMRect, "top" | "bottom">,
-  viewport: TooltipViewport,
-) {
-  const above = anchor.top - (viewport.top ?? 0) - 22;
-  const below = (viewport.top ?? 0) + viewport.height - anchor.bottom - 22;
-  return {
-    width: Math.max(0, viewport.width - 24),
-    height: Math.max(
-      0,
-      Math.min(560, viewport.height - 24, Math.max(64, above, below)),
-    ),
-  };
-}
-export function placeHeatmapTooltip(
-  anchor: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
-  size: { width: number; height: number },
-  viewport: TooltipViewport,
-) {
-  const margin = 12;
-  const gap = 10;
-  const leftEdge = (viewport.left ?? 0) + margin;
-  const topEdge = (viewport.top ?? 0) + margin;
-  const rightEdge = (viewport.left ?? 0) + viewport.width - margin;
-  const bottomEdge = (viewport.top ?? 0) + viewport.height - margin;
-  const below = anchor.bottom + gap;
-  const above = anchor.top - gap - size.height;
-  const preferBelow = below + size.height <= bottomEdge || above < topEdge;
-  return {
-    left: Math.max(
-      leftEdge,
-      Math.min(
-        (anchor.left + anchor.right - size.width) / 2,
-        rightEdge - size.width,
-      ),
-    ),
-    top: Math.max(
-      topEdge,
-      Math.min(preferBelow ? below : above, bottomEdge - size.height),
-    ),
-    placement: preferBelow ? "bottom" : "top",
-  };
-}
+export {
+  heatmapTooltipSizeLimit,
+  outsideTooltipWidthLimit,
+  placeClearOutsideWidgetTooltip,
+  placeHeatmapTooltip,
+  placeOutsideWidgetTooltip,
+  placePlotTooltip,
+  placeTooltip,
+  readTooltipPlacement,
+} from "./tooltip-position";
+export type { TooltipPlacement, TooltipPlacementOptions, TooltipTarget } from "./tooltip-position";
+export { WidgetTooltipProvider } from "./tooltip-interaction";
+export type { TooltipDismissReason } from "./tooltip-focus";
 
-/** Leave the sample's vertical track exposed while inspecting adjacent lines. */
-export function placePlotTooltip(
-  anchor: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
-  size: { width: number; height: number },
-  viewport: TooltipViewport,
-) {
-  const margin = 12;
-  const gap = 16;
-  const leftEdge = (viewport.left ?? 0) + margin;
-  const rightEdge = (viewport.left ?? 0) + viewport.width - margin;
-  const right = anchor.right + gap;
-  const left = anchor.left - gap - size.width;
-  const fitsRight = right >= leftEdge && right + size.width <= rightEdge;
-  const fitsLeft = left >= leftEdge && left + size.width <= rightEdge;
-  if (!fitsRight && !fitsLeft) return placeHeatmapTooltip(anchor, size, viewport);
-  const topEdge = (viewport.top ?? 0) + margin;
-  const bottomEdge = (viewport.top ?? 0) + viewport.height - margin;
-  return {
-    left: fitsRight ? right : left,
-    top: Math.max(
-      topEdge,
-      Math.min(
-        (anchor.top + anchor.bottom - size.height) / 2,
-        bottomEdge - size.height,
-      ),
-    ),
-    placement: fitsRight ? "right" : "left",
-  };
-}
+/** Announces a new transient preview page-wide, so an older one closes. */
+const openedEvent = "paprika:observation-open";
 
-/** Prefer a free area outside the widget, so inspecting never covers its plot. */
-export function placeOutsideWidgetTooltip(
-  widget: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
-  anchor: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
-  size: { width: number; height: number },
-  viewport: TooltipViewport,
-) {
-  const margin = 12, gap = 10;
-  const left = (viewport.left ?? 0) + margin, right = (viewport.left ?? 0) + viewport.width - margin;
-  const top = (viewport.top ?? 0) + margin, bottom = (viewport.top ?? 0) + viewport.height - margin;
-  const maxHeight = Math.max(0, Math.min(560, bottom - top));
-  const clampedTop = Math.max(top, Math.min((anchor.top + anchor.bottom - size.height) / 2, bottom - Math.min(size.height, maxHeight)));
-  const rightStart = Math.max(left, widget.right + gap), leftStart = Math.min(right - size.width, widget.left - gap - size.width);
-  if (rightStart + size.width <= right)
-    return { left: rightStart, top: clampedTop, placement: "right", maxHeight, overlapsWidget: false };
-  if (leftStart >= left)
-    return { left: leftStart, top: clampedTop, placement: "left", maxHeight, overlapsWidget: false };
-  const aboveEnd = Math.min(bottom, widget.top - gap), belowStart = Math.max(top, widget.bottom + gap);
-  const above = Math.max(0, aboveEnd - top), below = Math.max(0, bottom - belowStart);
-  if (Math.max(above, below) >= 64) {
-    const useBelow = below >= above, available = Math.min(maxHeight, useBelow ? below : above);
-    return {
-      left: Math.max(left, Math.min((anchor.left + anchor.right - size.width) / 2, right - size.width)),
-      top: useBelow ? belowStart : aboveEnd - Math.min(size.height, available),
-      placement: useBelow ? "bottom" : "top", maxHeight: available, overlapsWidget: false,
-    };
-  }
-  // A full-viewport chart has no outside space. Hover previews pass pointer
-  // events through in this case; pinning makes the same panel interactive.
-  return { ...placePlotTooltip(anchor, size, viewport), maxHeight, overlapsWidget: true };
-}
-
-type TooltipRectangle = Pick<DOMRect, "left" | "right" | "top" | "bottom">;
-type TooltipObstacle = TooltipRectangle & { weight?: number };
-
-/** Prefer an unobstructed outside position when neighboring panels leave room.
- * When every outside position is occupied, keep the least-obscuring one and
- * retain the existing scrollable, pointer-transparent hover fallback. */
-export function placeClearOutsideWidgetTooltip(
-  widget: TooltipRectangle,
-  anchor: TooltipRectangle,
-  size: { width: number; height: number },
-  viewport: TooltipViewport,
-  obstacles: readonly TooltipObstacle[],
-) {
-  const baseline = placeOutsideWidgetTooltip(widget, anchor, size, viewport);
-  if (!obstacles.length || baseline.overlapsWidget) return baseline;
-  const left = (viewport.left ?? 0) + 12, right = (viewport.left ?? 0) + viewport.width - 12;
-  const top = (viewport.top ?? 0) + 12, bottom = (viewport.top ?? 0) + viewport.height - 12;
-  const gap = 10, maxHeight = Math.max(0, Math.min(560, bottom - top));
-  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
-  const overlap = (a: TooltipRectangle, b: TooltipRectangle) =>
-    Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
-    Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-  const candidates = [baseline];
-  const vertical = (placement: "top" | "bottom", boundary: number, available: number) => {
-    const limit = Math.min(maxHeight, available);
-    if (limit < 64 || right - left < size.width) return;
-    const height = Math.min(size.height, limit);
-    const y = placement === "top" ? boundary - height : boundary;
-    const xs = [(anchor.left + anchor.right - size.width) / 2, left, right - size.width,
-      ...obstacles.flatMap(rect => [rect.left - size.width - gap, rect.right + gap])];
-    for (const value of xs) candidates.push({ left: clamp(value, left, right - size.width), top: y, placement, maxHeight: limit, overlapsWidget: false });
-  };
-  const horizontal = (placement: "left" | "right", x: number) => {
-    if (x < left || x + size.width > right || maxHeight < 64) return;
-    const height = Math.min(size.height, maxHeight);
-    const ys = [(anchor.top + anchor.bottom - height) / 2, top, bottom - height,
-      ...obstacles.flatMap(rect => [rect.top - height - gap, rect.bottom + gap])];
-    for (const value of ys) candidates.push({ left: x, top: clamp(value, top, bottom - height), placement, maxHeight, overlapsWidget: false });
-  };
-  vertical("top", Math.min(bottom, widget.top - gap), Math.max(0, Math.min(bottom, widget.top - gap) - top));
-  vertical("bottom", Math.max(top, widget.bottom + gap), Math.max(0, bottom - Math.max(top, widget.bottom + gap)));
-  horizontal("left", widget.left - gap - size.width);
-  horizontal("right", widget.right + gap);
-  const score = (candidate: typeof baseline) => {
-    const height = Math.min(size.height, candidate.maxHeight);
-    const rect = { left: candidate.left, right: candidate.left + size.width, top: candidate.top, bottom: candidate.top + height };
-    return {
-      controls: obstacles.filter(obstacle => (obstacle.weight ?? 1) > 1).reduce((sum, obstacle) => sum + overlap(rect, obstacle), 0),
-      other: obstacles.filter(obstacle => (obstacle.weight ?? 1) <= 1).reduce((sum, obstacle) => sum + overlap(rect, obstacle), 0) + (size.height - height) * size.width,
-    };
-  };
-  return candidates.reduce((best, candidate) => {
-    const a = score(candidate), b = score(best);
-    return a.controls < b.controls || (a.controls === b.controls && a.other < b.other) ? candidate : best;
-  }, baseline);
-}
-
-/** Use a narrower inspector when it makes room beside the chart. */
-export function outsideTooltipWidthLimit(
-  widget: Pick<DOMRect, "left" | "right">,
-  viewport: TooltipViewport,
-) {
-  const left = (viewport.left ?? 0) + 12;
-  const right = (viewport.left ?? 0) + viewport.width - 12;
-  const available = Math.max(
-    0,
-    right - Math.max(left, widget.right + 10),
-    Math.min(right, widget.left - 10) - left,
-  );
-  // Below 240px, retain the comfortable width and try above/below instead.
-  return available >= 240 ? Math.min(330, available) : Math.max(0, right - left);
-}
-
-/** A transient overlay must not intercept pointer movement over another tile. */
+/** Whether the nearby dashboard widgets leave the tooltip's rectangle clear. */
 export function tooltipOverlapsOtherWidget(
   panel: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
   owner: Element,
@@ -205,6 +41,38 @@ export function tooltipOverlapsOtherWidget(
   });
 }
 
+type PanelPosition = TooltipPosition & {
+  pointer?: boolean;
+  overlapsOtherWidget?: boolean;
+  overlapsControls?: boolean;
+};
+
+const noOwner = () => null;
+
+export interface ObservationTooltipProps {
+  id: string;
+  anchor: Element;
+  anchorRect?: () => DOMRect;
+  preferSide?: boolean;
+  /** Home/End belong to an interactive history trigger, not panel scrolling. */
+  anchorOwnsHistoryKeys?: boolean;
+  avoidWidget?: boolean;
+  pinned?: boolean;
+  /** Placement, gap and size limits from the widget's tooltip settings. Unset fields keep the defaults. */
+  options?: TooltipPlacementOptions;
+  panelRef?: (element: HTMLDivElement | null) => void;
+  role?: "tooltip" | "region";
+  ariaLabel?: string;
+  className?: string;
+  tabIndex?: number;
+  /** Receives why the panel closed. Callers that ignore the reason need not read it. */
+  onDismiss: (reason?: TooltipDismissReason) => void;
+  onEnter?: () => void;
+  onLeave?: () => void;
+  children: ReactNode;
+}
+
+/** One panel for an observation. Its scope gives a pinned owner precedence, and its dismissal path is shared. */
 export function ObservationTooltip({
   id,
   anchor,
@@ -213,6 +81,7 @@ export function ObservationTooltip({
   anchorOwnsHistoryKeys = false,
   avoidWidget = false,
   pinned = false,
+  options,
   panelRef,
   role = "tooltip",
   ariaLabel,
@@ -222,53 +91,69 @@ export function ObservationTooltip({
   onEnter,
   onLeave,
   children,
-}: {
-  id: string;
-  anchor: Element;
-  anchorRect?: () => DOMRect;
-  preferSide?: boolean;
-  /** Home/End belong to an interactive history trigger, not panel scrolling. */
-  anchorOwnsHistoryKeys?: boolean;
-  avoidWidget?: boolean;
-  pinned?: boolean;
-  panelRef?: (element: HTMLDivElement | null) => void;
-  role?: "tooltip" | "region";
-  ariaLabel?: string;
-  className?: string;
-  tabIndex?: number;
-  onDismiss: () => void;
-  onEnter: () => void;
-  onLeave: () => void;
-  children: ReactNode;
-}) {
+}: ObservationTooltipProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const provided = useProvidedTooltipScope();
+  const store = useMemo(() => tooltipScopeFor(anchor, provided), [anchor, provided]);
+  const [token] = useState(() => Symbol("observation-tooltip"));
+  // An inspector rendered inside another panel nests under it and never competes with it.
+  const nestedUnder = useContext(TooltipOwnerContext), nested = nestedUnder !== null;
+  const owner = useSyncExternalStore(store.subscribe, store.getOwner, noOwner);
+  const ownsPanel = nested || owner === token;
   const [narrow, setNarrow] = useState(false);
   const [compactState, setCompactState] = useState({ anchor, pinned, minimized: false });
   if (compactState.anchor !== anchor || compactState.pinned !== pinned) {
     setCompactState({ anchor, pinned, minimized: false });
   }
   const minimized = narrow && pinned && compactState.anchor === anchor && compactState.pinned === pinned && compactState.minimized;
-  const dismissRef = useRef(onDismiss);
-  const pinnedRef = useRef(pinned);
+  const placementPreference = options?.placement, offset = options?.offset, maxWidth = options?.maxWidth, maxHeight = options?.maxHeight;
+  const settings = useMemo<TooltipPlacementOptions>(
+    () => ({ placement: placementPreference, offset, maxWidth, maxHeight }),
+    [placementPreference, offset, maxWidth, maxHeight],
+  );
+  const latest = useRef({ onDismiss, onEnter, onLeave, anchorRect });
   useLayoutEffect(() => {
-    dismissRef.current = onDismiss;
-    pinnedRef.current = pinned;
-  }, [onDismiss, pinned]);
+    latest.current = { onDismiss, onEnter, onLeave, anchorRect };
+  });
+  // What the dismissal bindings and the scope see of this panel. Null while it does not own the panel.
+  const dismissal = useRef<TooltipDismissalTarget | null>(null);
+  const dismissWith = useCallback((reason: TooltipDismissReason) => {
+    // Explicit Close and Escape return focus to the opener. Passive dismissal keeps the user's new focus.
+    const returnFocus = (reason === "escape" || reason === "close") && !!ref.current?.contains(document.activeElement);
+    withTooltipDismissReason(reason, () => latest.current.onDismiss(reason));
+    if (returnFocus) restoreTooltipFocus(tooltipFocusOwner(anchor));
+  }, [anchor]);
+  const retire = useCallback(() => dismissWith("superseded"), [dismissWith]);
+  // A pinned owner keeps the scope against transient previews. Claims are retried whenever the owner changes.
+  useLayoutEffect(() => {
+    if (!nested) store.claim(token, pinned, retire);
+  }, [store, token, nested, pinned, owner, retire]);
+  useLayoutEffect(() => {
+    if (nested) return;
+    return () => store.release(token);
+  }, [store, token, nested]);
+  // A nested panel is recorded under its parent, so working in it is working in the parent.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (nestedUnder === null || !ownsPanel || !element) return;
+    return registerNestedPanel(nestedUnder, token, element);
+  }, [nestedUnder, ownsPanel, token]);
   useEffect(() => {
     // A stationary pointer can acquire a new hover target after scrolling
     // while another chart still has focus. Keep transient previews singular;
-    // explicitly pinned observations remain under the user's control.
+    // explicitly pinned observations remain under the user's control. Nested
+    // inspectors belong to their panel, so they never announce themselves.
+    if (nested || !ownsPanel) return;
     const opened = (event: Event) => {
-      if ((event as CustomEvent<string>).detail !== id && !pinnedRef.current) dismissRef.current();
+      const panel = dismissal.current;
+      if ((event as CustomEvent<string>).detail !== id && panel && !panel.pinned) panel.dismiss("superseded");
     };
-    document.addEventListener("paprika:observation-open", opened);
-    document.dispatchEvent(new CustomEvent("paprika:observation-open", { detail: id }));
-    return () => document.removeEventListener("paprika:observation-open", opened);
-  }, [id]);
+    document.addEventListener(openedEvent, opened);
+    document.dispatchEvent(new CustomEvent(openedEvent, { detail: id }));
+    return () => document.removeEventListener(openedEvent, opened);
+  }, [id, nested, ownsPanel]);
   const assignRef = useCallback((element: HTMLDivElement | null) => { ref.current = element; panelRef?.(element); }, [panelRef]);
-  const [position, setPosition] = useState<ReturnType<
-    typeof placeHeatmapTooltip
-  > & { overlapsWidget?: boolean; overlapsOtherWidget?: boolean; overlapsControls?: boolean; pointer?: boolean } | null>(null);
+  const [position, setPosition] = useState<PanelPosition | null>(null);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || !position) return;
@@ -281,8 +166,10 @@ export function ObservationTooltip({
     const corrected = correctPortalPosition(position, actual, { width: element.offsetWidth, height: element.offsetHeight });
     element.style.left = `${corrected.left}px`;
     element.style.top = `${corrected.top}px`;
-  }, [position]);
+    // A panel that regains ownership is a new element, so its correction runs again.
+  }, [position, ownsPanel]);
   useLayoutEffect(() => {
+    if (!ownsPanel) return;
     let frame = 0;
     const stopPointer = installTooltipPointerTracking();
     const stopTheme = ref.current ? inheritGammaTheme(anchor, ref.current) : undefined;
@@ -290,7 +177,7 @@ export function ObservationTooltip({
       const element = ref.current;
       if (!element || !anchor.isConnected) return;
       const viewport = window.visualViewport;
-      const visibleViewport = {
+      const visibleViewport: TooltipViewport = {
         width: viewport?.width ?? window.innerWidth,
         height: viewport?.height ?? window.innerHeight,
         left: viewport?.offsetLeft,
@@ -298,13 +185,14 @@ export function ObservationTooltip({
       };
       setNarrow(visibleViewport.width < 600);
       const anchorBounds = anchorRect?.() ?? anchor.getBoundingClientRect();
-      const limits = heatmapTooltipSizeLimit(anchorBounds, visibleViewport);
       const pointer = !pinned ? pointerOverAnchor(anchor) : undefined;
       if (pointer) {
-        element.style.maxWidth = `${Math.max(0, visibleViewport.width - 24)}px`;
-        element.style.maxHeight = `${Math.max(0, Math.min(560, visibleViewport.height - 24))}px`;
-        const next = placePointerTooltip(pointer, element.getBoundingClientRect(), visibleViewport);
-        element.style.maxHeight = `${next.maxHeight}px`;
+        const target: TooltipTarget = { kind: "pointer", point: pointer };
+        const limit = tooltipLimit(target, visibleViewport, settings);
+        element.style.maxWidth = `${limit.width}px`;
+        element.style.maxHeight = `${limit.height}px`;
+        const next = placeTooltip(target, element.getBoundingClientRect(), visibleViewport, settings);
+        element.style.maxHeight = `${next.maxHeight ?? limit.height}px`;
         setPosition(previous => previous?.pointer && previous.left === next.left && previous.top === next.top && previous.placement === next.placement ? previous : { ...next, pointer: true });
         return;
       }
@@ -321,7 +209,7 @@ export function ObservationTooltip({
         const tooltipViewport = canvasBounds && canvasRight - canvasLeft >= 240
           ? { ...visibleViewport, left: canvasLeft, width: canvasRight - canvasLeft }
           : visibleViewport;
-        const obstacles = [...document.querySelectorAll("[data-widget-id], [data-tooltip-obstacle]")].flatMap(other => {
+        const obstacles: TooltipObstacle[] = [...document.querySelectorAll("[data-widget-id], [data-tooltip-obstacle]")].flatMap(other => {
           if (other === widget || other.contains(widget) || widget.contains(other)) return [];
           const bounds = other.getBoundingClientRect();
           const viewportLeft = tooltipViewport.left ?? 0, viewportTop = tooltipViewport.top ?? 0;
@@ -329,48 +217,31 @@ export function ObservationTooltip({
             ? [{ left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, weight: other.hasAttribute("data-tooltip-obstacle") ? 8 : 1 }]
             : [];
         });
-        element.style.maxWidth = `${outsideTooltipWidthLimit(widgetBounds, tooltipViewport)}px`;
+        const target: TooltipTarget = { kind: "outside", anchor: anchorBounds, widget: widgetBounds, obstacles };
         // Clear a previous placement's height restriction before measuring.
         // Otherwise an expanding tooltip is scored as if its clipped height
         // were its full height, and the second placement can choose a smaller
         // space without applying that new space's height limit.
-        element.style.maxHeight = `${Math.max(0, Math.min(560, tooltipViewport.height - 24))}px`;
-        const next = placeClearOutsideWidgetTooltip(widgetBounds, anchorBounds, element.getBoundingClientRect(), tooltipViewport, obstacles);
-        element.style.maxHeight = `${next.maxHeight}px`;
+        const limit = tooltipLimit(target, tooltipViewport, settings);
+        element.style.maxWidth = `${limit.width}px`;
+        element.style.maxHeight = `${limit.height}px`;
+        const next = placeTooltip(target, element.getBoundingClientRect(), tooltipViewport, settings);
+        element.style.maxHeight = `${next.maxHeight ?? limit.height}px`;
         const size = element.getBoundingClientRect();
         const overlapsOtherWidget = tooltipOverlapsOtherWidget({ left: next.left, right: next.left + size.width, top: next.top, bottom: next.top + size.height }, widget);
         const overlapsControls = obstacles.some(rect => rect.weight === 8 && next.left < rect.right && next.left + size.width > rect.left && next.top < rect.bottom && next.top + size.height > rect.top);
         setPosition(previous => !previous?.pointer && previous?.left === next.left && previous?.top === next.top && previous?.placement === next.placement && previous?.overlapsWidget === next.overlapsWidget && previous?.overlapsOtherWidget === overlapsOtherWidget && previous?.overlapsControls === overlapsControls ? previous : { ...next, overlapsOtherWidget, overlapsControls });
         return;
       }
-      element.style.maxWidth = `${limits.width}px`;
-      const candidate = preferSide
-        ? placePlotTooltip(
-            anchorBounds,
-            element.getBoundingClientRect(),
-            visibleViewport,
-          )
-        : null;
-      const useSide =
-        candidate?.placement === "left" || candidate?.placement === "right";
-      // Side panels leave neighboring lines reachable; vertical panels must
-      // scroll before they can overlap the trigger that pins or dismisses them.
-      element.style.maxHeight = `${
-        useSide
-          ? Math.max(0, Math.min(560, visibleViewport.height - 24))
-          : limits.height
-      }px`;
-      const bounds = element.getBoundingClientRect();
-      const next = useSide
-        ? placePlotTooltip(anchorBounds, bounds, visibleViewport)
-        : placeHeatmapTooltip(anchorBounds, bounds, visibleViewport);
-      setPosition((previous) =>
-        !previous?.pointer && previous?.left === next.left &&
-        previous?.top === next.top &&
-        previous?.placement === next.placement
-          ? previous
-          : next,
-      );
+      const target: TooltipTarget = { kind: "anchor", anchor: anchorBounds, preferSide };
+      const limit = tooltipLimit(target, visibleViewport, settings);
+      element.style.maxWidth = `${limit.width}px`;
+      element.style.maxHeight = `${limit.height}px`;
+      // The side depends only on the width, so one probe names the side, and that side sets the height limit.
+      const probe = placeTooltip(target, element.getBoundingClientRect(), visibleViewport, settings);
+      element.style.maxHeight = `${tooltipLimit(target, visibleViewport, settings, probe.placement).height}px`;
+      const next = placeTooltip(target, element.getBoundingClientRect(), visibleViewport, settings);
+      setPosition(previous => !previous?.pointer && previous?.left === next.left && previous?.top === next.top && previous?.placement === next.placement ? previous : next);
     };
     const schedule = () => {
       cancelAnimationFrame(frame);
@@ -410,33 +281,18 @@ export function ObservationTooltip({
       window.visualViewport?.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("scroll", schedule);
     };
-  }, [anchor, anchorRect, preferSide, avoidWidget, minimized, pinned]);
+  }, [anchor, anchorRect, preferSide, avoidWidget, minimized, pinned, ownsPanel, settings]);
+  // Outside-pointer, blur and Escape dismissal share one path. It reads the latest state, so it attaches once per ownership.
+  useLayoutEffect(() => {
+    dismissal.current = ownsPanel ? { anchor, panel: () => ref.current, pinned, dismiss: dismissWith } : null;
+  });
+  useLayoutEffect(() => {
+    if (!ownsPanel) return;
+    return attachTooltipDismissal(token, () => dismissal.current);
+  }, [ownsPanel, token]);
   useEffect(() => {
-    const pointer = (event: PointerEvent) => {
-      if (
-        !anchor.contains(event.target as Node) &&
-        !ref.current?.contains(event.target as Node)
-      )
-        onDismiss();
-    };
-    const focus = (event: FocusEvent) => {
-      if (!pinned && !anchor.contains(event.target as Node) && !ref.current?.contains(event.target as Node)) {
-        onDismiss();
-      }
-    };
+    if (!ownsPanel) return;
     const keyboard = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        // A focused Gamma menu/listbox owns the first Escape even though its
-        // panel is portaled away from the widget and observation tooltip.
-        if (event.target instanceof Element && event.target.closest("[data-gamma-portal]")) return;
-        // A fading hover card must not swallow Escape from another chart.
-        if (anchor.contains(event.target as Node) || ref.current?.contains(event.target as Node)) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        onDismiss();
-        return;
-      }
       const element = ref.current;
       if (
         element &&
@@ -470,15 +326,10 @@ export function ObservationTooltip({
                 );
       }
     };
-    document.addEventListener("pointerdown", pointer, true);
-    document.addEventListener("focusin", focus, true);
     document.addEventListener("keydown", keyboard, true);
-    return () => {
-      document.removeEventListener("pointerdown", pointer, true);
-      document.removeEventListener("focusin", focus, true);
-      document.removeEventListener("keydown", keyboard, true);
-    };
-  }, [anchor, onDismiss, pinned, role, anchorOwnsHistoryKeys]);
+    return () => document.removeEventListener("keydown", keyboard, true);
+  }, [anchor, anchorOwnsHistoryKeys, ownsPanel, pinned, role]);
+  if (!ownsPanel || typeof document === "undefined") return null;
   return createPortal(
     <div
       ref={assignRef}
@@ -508,7 +359,7 @@ export function ObservationTooltip({
           !event.currentTarget.contains(event.relatedTarget as Node | null) &&
           !anchor.contains(event.relatedTarget as Node | null)
         )
-          onLeave();
+          onLeave?.();
       }}
     >
       {pinned && avoidWidget && narrow && (minimized || position?.overlapsWidget || position?.overlapsOtherWidget || position?.overlapsControls) && (
@@ -516,21 +367,18 @@ export function ObservationTooltip({
           <GammaButton variant="ghost" size="sm" aria-label={minimized ? "Show inspector details" : "Minimize inspector"} aria-expanded={!minimized} aria-controls={`${id}-details`} onClick={() => setCompactState({ anchor, pinned, minimized: !minimized })}>
             {minimized ? "Show details" : "Minimize"}
           </GammaButton>
-          {minimized && <GammaButton variant="ghost" size="sm" aria-label="Close inspector" onClick={() => {
-            const returnFocus = ref.current?.contains(document.activeElement);
-            if (returnFocus && (anchor instanceof HTMLElement || anchor instanceof SVGElement)) anchor.focus({ preventScroll: true });
-            onDismiss();
-          }}>Close</GammaButton>}
+          {minimized && <GammaButton variant="ghost" size="sm" aria-label="Close inspector" onClick={() => dismissWith("close")}>Close</GammaButton>}
         </div>
       )}
-      <div id={`${id}-details`} hidden={minimized}>{children}</div>
+      <TooltipOwnerContext.Provider value={token}>
+        <div id={`${id}-details`} hidden={minimized}>{children}</div>
+      </TooltipOwnerContext.Provider>
     </div>,
     // Native dialogs occupy the browser top layer; a body portal would render
     // behind them even with a high z-index. Escape the chart within that layer.
     anchor.closest("dialog[open]") ?? document.body,
   );
 }
-
 
 /** Pointer preview and click/tap pinning share the same keyboard-readable panel. */
 export function ObservationDetails({
@@ -546,6 +394,7 @@ export function ObservationDetails({
   avoidWidget = true,
   selectOnFocus = true,
   tabIndex,
+  options,
 }: {
   label: string;
   children: ReactNode;
@@ -561,6 +410,8 @@ export function ObservationDetails({
   selectOnFocus?: boolean;
   /** A dense visual can expose individual observations through a separate keyboard-accessible explorer. */
   tabIndex?: number;
+  /** Placement, gap and size limits for the panel. */
+  options?: TooltipPlacementOptions;
 }) {
   const id = useId();
   const [active, setActive] = useState<{
@@ -569,36 +420,26 @@ export function ObservationDetails({
     revision: unknown;
   } | null>(null);
   const interaction = useRef({ focused: false, hovered: false, panel: false });
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const clearHide = useCallback(() => clearTimeout(timer.current), []);
-  const dismiss = useCallback(() => {
-    clearHide();
+  const hide = useTooltipDismiss({
+    // A pinned observation is only ever closed by its owner.
+    onDismiss: () => setActive(current => current && !current.pinned ? null : current),
+    pinned: !!active?.pinned,
+    revision,
+    enabled,
+    engaged: () => interaction.current.focused || interaction.current.hovered || interaction.current.panel,
+  });
+  const dismiss = () => {
+    hide.cancel();
     interaction.current.panel = false;
     setActive(null);
-  }, [clearHide]);
-  const scheduleHide = useCallback(() => {
-    clearHide();
-    timer.current = setTimeout(() => {
-      const state = interaction.current;
-      setActive((current) =>
-        current &&
-        !current.pinned &&
-        !state.focused &&
-        !state.hovered &&
-        !state.panel
-          ? null
-          : current,
-      );
-    }, 180);
-  }, [clearHide]);
-  useEffect(() => clearHide, [clearHide]);
+  };
   useEffect(() => enabled ? installTooltipPointerTracking() : undefined, [enabled]);
   useEffect(() => {
     if (!externalAnchor || !enabled) return;
     let disposed = false;
     const interactionState = interaction.current;
     interactionState.hovered = true;
-    clearHide();
+    hide.cancel();
     queueMicrotask(() => {
       if (!disposed)
         setActive((current) =>
@@ -610,14 +451,14 @@ export function ObservationDetails({
     return () => {
       disposed = true;
       interactionState.hovered = false;
-      scheduleHide();
+      hide.schedule();
     };
-  }, [externalAnchor, enabled, revision, clearHide, scheduleHide]);
+  }, [externalAnchor, enabled, revision, hide]);
   if (active && (active.revision !== revision || !enabled)) {
     setActive(null);
   }
   const show = (anchor: HTMLButtonElement, pinned = false) => {
-    clearHide();
+    hide.cancel();
     if (!enabled) return;
 
     setActive({ anchor, pinned, revision });
@@ -640,10 +481,12 @@ export function ObservationDetails({
         }}
         onPointerLeave={() => {
           interaction.current.hovered = false;
-          scheduleHide();
+          hide.schedule();
         }}
         onFocus={(event) => {
           interaction.current.focused = true;
+          // Returning focus to the trigger after a dismissal must not reopen or reselect.
+          if (isRestoringTooltipFocus()) return;
           if (selectOnFocus) onSelect?.();
           if (!active?.pinned) show(event.currentTarget);
         }}
@@ -651,7 +494,7 @@ export function ObservationDetails({
           interaction.current.focused = false;
           // Focus can move into the portaled content. Pinned observations
           // remain open until explicitly dismissed.
-          scheduleHide();
+          hide.schedule();
         }}
         onClick={(event) => {
           onSelect?.();
@@ -667,14 +510,15 @@ export function ObservationDetails({
           anchor={active.anchor}
           avoidWidget={avoidWidget}
           pinned={active.pinned}
+          options={options}
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.panel = true;
-            clearHide();
+            hide.cancel();
           }}
           onLeave={() => {
             interaction.current.panel = false;
-            scheduleHide();
+            hide.schedule();
           }}
         >
           {details}

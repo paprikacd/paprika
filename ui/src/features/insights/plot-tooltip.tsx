@@ -17,6 +17,9 @@ import type {
 import { MetricDetails } from "./metric-tooltip-content";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
+import { useTooltipDismiss } from "./tooltip-dismiss";
+import { isRestoringTooltipFocus } from "./tooltip-focus";
+import { readTooltipPlacement } from "./tooltip-position";
 import { TooltipSubWidget } from "./tooltip-widgets";
 import { TooltipInstructions } from "./tooltip-instructions";
 import { formatMetricDetails, seriesName, type Point, type Series } from "./chart-data";
@@ -84,29 +87,28 @@ export function usePlotTooltip(
   );
   const scene = useRef<PlotScene | null>(null);
   const armedRevision = useRef<unknown>(null);
+  const placement = useMemo(() => readTooltipPlacement(widget.options), [widget.options]);
   const [active, setActive] = useState<ActivePoint | null>(null);
   const [showAllPeers, setShowAllPeers] = useState(false);
   const interaction = useRef({ panel: false, focused: false });
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const clearHide = useCallback(() => clearTimeout(timer.current), []);
+  // The hover grace is shared with every other owner; a pinned observation is never hidden by it.
+  const hover = useTooltipDismiss({
+    onDismiss: () => setActive((current) => (current?.pinned ? current : null)),
+    pinned: active?.revision === revision && !!active.pinned,
+    revision,
+    enabled,
+    engaged: () => interaction.current.panel || interaction.current.focused,
+  });
   const dismiss = useCallback(() => {
-    clearHide();
+    hover.cancel();
     interaction.current.panel = false;
     setActive(null);
     scene.current?.clear();
-  }, [clearHide]);
-  const scheduleHide = useCallback(() => {
-    clearHide();
-    timer.current = setTimeout(() => {
-      if (!interaction.current.panel && !interaction.current.focused)
-        setActive((current) => (current?.pinned ? current : null));
-    }, 180);
-  }, [clearHide]);
+  }, [hover]);
   useEffect(() => {
     // A pinned observation belongs to its exact result/configuration, never a refresh.
     scene.current?.clear();
-    return clearHide;
-  }, [revision, enabled, clearHide]);
+  }, [revision, enabled]);
   const onRender = useCallback(
     <T extends PlotDatum, X extends ChartValue, Y extends ChartValue>(
       context: ChartRenderContext<T, X, Y>,
@@ -123,14 +125,15 @@ export function usePlotTooltip(
   );
   const onFocusChange = useCallback(
     (point: PlotPoint | null) => {
-      if (!enabled || armedRevision.current !== revision) return;
+      // Focus returned to the chart after a dismissal must not reopen the inspector it closed.
+      if (isRestoringTooltipFocus() || !enabled || armedRevision.current !== revision) return;
       if (!point) {
-        scheduleHide();
+        hover.schedule();
         return;
       }
       const anchor = scene.current?.svg;
       if (!anchor || !series[point.datum.seriesIndex]) return;
-      clearHide();
+      hover.cancel();
       const peers = widget.type === "timeseries" ? coincidentPoints(scene.current?.points ?? [], point, series) : [];
       setActive((current) => ({
         point,
@@ -140,7 +143,7 @@ export function usePlotTooltip(
         peers,
       }));
     },
-    [enabled, series, revision, clearHide, scheduleHide, widget.type],
+    [enabled, series, revision, hover, widget.type],
   );
   const onSelect = useCallback(
     (point: PlotPoint | null) => {
@@ -151,10 +154,10 @@ export function usePlotTooltip(
       }
       const anchor = scene.current?.svg;
       if (!anchor || !series[point.datum.seriesIndex]) return;
-      clearHide();
+      hover.cancel();
       setActive({ point, anchor, pinned: true, revision, peers: widget.type === "timeseries" ? coincidentPoints(scene.current?.points ?? [], point, series) : [] });
     },
-    [enabled, active, revision, series, dismiss, clearHide, widget.type],
+    [enabled, active, revision, series, dismiss, hover, widget.type],
   );
   const current = enabled && active?.revision === revision ? active : null;
   const selectedTimestamp = current?.point.datum.timestamp;
@@ -232,11 +235,11 @@ export function usePlotTooltip(
     onFocus: () => {
       armedRevision.current = revision;
       interaction.current.focused = true;
-      clearHide();
+      hover.cancel();
     },
     onBlur: () => {
       interaction.current.focused = false;
-      scheduleHide();
+      hover.schedule();
     },
     panel:
       current && entry && point ? (
@@ -247,14 +250,15 @@ export function usePlotTooltip(
           preferSide
           avoidWidget
           pinned={current.pinned}
+          options={placement}
           onDismiss={dismiss}
           onEnter={() => {
             interaction.current.panel = true;
-            clearHide();
+            hover.cancel();
           }}
           onLeave={() => {
             interaction.current.panel = false;
-            scheduleHide();
+            hover.schedule();
           }}
         >
           <div
