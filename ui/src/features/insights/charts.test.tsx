@@ -31,6 +31,7 @@ import {
 } from "./chart-renderers";
 import {
   bandLabelWidth,
+  fittingBandLabel,
   isolatedPlotPoints,
   plotTimeDomain,
   sampleCadence,
@@ -1270,9 +1271,22 @@ describe("time-series gap helpers", () => {
     expect(isolatedPlotPoints(samples([[1, 1], [2, 2], [3, 3]])).every((point) => point.value === null)).toBe(true);
   });
 
-  it("estimates a band label from its characters at 12px, plus padding", () => {
-    expect(bandLabelWidth("No samples")).toBeCloseTo(74, 5);
-    expect(bandLabelWidth("No samples since 11:48")).toBeCloseTo(153.2, 5);
+  it("estimates a band label at 5.8px per character plus 8px of padding, unless a measure answers for the text", () => {
+    expect(bandLabelWidth("No samples")).toBeCloseTo(66, 5);
+    expect(bandLabelWidth("No samples since 11:48")).toBeCloseTo(135.6, 5);
     expect(bandLabelWidth("")).toBeCloseTo(8, 5);
+    expect(bandLabelWidth("No samples", () => 60)).toBe(68);
+    expect(bandLabelWidth("No samples", () => undefined)).toBeCloseTo(66, 5);
+  });
+
+  it("picks the first label that fits a band, so the full label wins whenever both fit", () => {
+    const labels = ["No samples since 11:48", "No samples"];
+    expect(fittingBandLabel(labels, 136)).toBe(labels[0]);
+    expect(fittingBandLabel(labels, 135)).toBe(labels[1]);
+    expect(fittingBandLabel(labels, 65)).toBeUndefined();
+    // At 6px per character the full label is 140px and the short one 68px.
+    const sixPerCharacter = (text: string) => text.length * 6;
+    expect(fittingBandLabel(labels, 137, sixPerCharacter)).toBe(labels[1]);
+    expect(fittingBandLabel(labels, 140, sixPerCharacter)).toBe(labels[0]);
   });
 });

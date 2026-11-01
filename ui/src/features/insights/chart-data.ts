@@ -383,11 +383,31 @@ export function plotTimeDomain(start: number, end: number): [number, number] {
   return [start - offset, end + offset];
 }
 
+/** Horizontal padding of a band label: `padding: 0 4px` on each side (charts.module.css, `.noSampleLabel`). */
+const BAND_LABEL_PADDING = 8;
+/** Width of one character of a 12px band label. Used only when the browser cannot measure the text. */
+const ESTIMATED_LABEL_CHARACTER_WIDTH = 5.8;
+
 /**
- * Estimated rendered width of a 12px band label: about 6.6px per character plus 8px of padding. A label is drawn only
- * when its band is at least this wide, so the plot edge never clips it. The band's aria-label and the interval list
- * still carry the same times.
+ * Rendered width of a band label, padding included. `measure` gives the text's width in pixels, or undefined when the
+ * browser cannot measure it; the estimate of about 5.8px per character then stands in.
  */
-export function bandLabelWidth(text: string): number {
-  return text.length * 6.6 + 8;
+export function bandLabelWidth(
+  text: string,
+  measure?: (text: string) => number | undefined,
+): number {
+  return (measure?.(text) ?? text.length * ESTIMATED_LABEL_CHARACTER_WIDTH) + BAND_LABEL_PADDING;
+}
+
+/**
+ * The first of `labels` that fits a band `width` pixels wide, so the most informative label comes first. Undefined when
+ * none fits. A label wider than its band is left out rather than spilling into the neighbouring bands. The band's
+ * aria-label and the interval list still carry the times either way.
+ */
+export function fittingBandLabel(
+  labels: readonly string[],
+  width: number,
+  measure?: (text: string) => number | undefined,
+): string | undefined {
+  return labels.find((label) => bandLabelWidth(label, measure) <= width);
 }

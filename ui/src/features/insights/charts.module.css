@@ -41,7 +41,9 @@
 .thresholdGuide[data-label-placement="below"] > span { bottom: auto; top: 3px; }
 /* Hatched time with no samples. Gridlines, lines and dots paint over it; the band itself never takes pointer input. */
 .noSampleBand { position: absolute; z-index: -1; pointer-events: none; }
-.noSampleLabel { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); color: var(--widget-text, var(--gamma-muted, #52636f)); font-size: 12px; line-height: 1.3; white-space: nowrap; }
+/* Only the family is inherited: the label is measured in 400 12px of the plot's family (chart-renderers.tsx), so its weight,
+   style and letter spacing are pinned here to the same values. */
+.noSampleLabel { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); color: var(--widget-text, var(--gamma-muted, #52636f)); font-size: 12px; font-style: normal; font-weight: 400; letter-spacing: 0; line-height: 1.3; white-space: nowrap; }
 .eventRange { position: absolute; background: var(--gamma-muted, #52636f); opacity: .16; pointer-events: none; }
 .eventRange[data-severity="info"] { background: var(--gamma-chart-1, #2867b9); }
 .eventRange[data-severity="warning"] { background: var(--gamma-chart-4, #977017); }

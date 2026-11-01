@@ -1,14 +1,17 @@
 import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WidgetVisualization } from "./charts";
 import { ChartCursorProvider } from "./chart-cursor";
-import { dateTimeFormat, fullDateTimeFormat } from "./chart-data";
+import { bandLabelWidth, dateTimeFormat, fullDateTimeFormat, timeFormat } from "./chart-data";
 import { DashboardWindowProvider } from "./dashboard-window";
 import type { QueryResult, Widget } from "./schema";
 import { EmbeddedWidgetProvider } from "./widget-presentation";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 type Series = NonNullable<QueryResult["series"]>[number];
 const widget: Widget = { id: "requests", title: "Requests", type: "timeseries", providerId: "metrics", query: "requests", unit: "req", layout: { x: 0, y: 0, w: 6, h: 4 } };
@@ -256,41 +259,23 @@ describe("time-series gaps", () => {
   });
 
   it("draws a no-sample label only on a band at least as wide as the label, and keeps the band's times in its aria-label either way", () => {
-    // Samples at 1-20 s and 35-100 s leave a 15 s hole, about 66px in a 434px plot: wider than the old 56px rule, but
-    // narrower than the 74px that "No samples" needs, so it must not be labelled.
+    // Samples at 1-20 s and 34-100 s leave a 14 s hole, about 60px in the 427px plot: narrower than the 66px that
+    // "No samples" needs (estimate, or measured in a browser), so it must not be labelled.
     const narrowSamples: [number, number][] = [
       ...Array.from({ length: 20 }, (_, index) => [index + 1, 5] as [number, number]),
-      ...Array.from({ length: 66 }, (_, index) => [index + 35, 5] as [number, number]),
+      ...Array.from({ length: 67 }, (_, index) => [index + 34, 5] as [number, number]),
     ];
     const narrow = render(<WidgetVisualization widget={widget} result={plot(line("api", narrowSamples))} />);
     const narrowBand = narrow.container.querySelector<HTMLElement>("[data-no-sample-band]")!;
-    // "No samples" is estimated at 74px (10 characters at 6.6px, plus 8px of padding).
-    expect(parseFloat(narrowBand.style.width)).toBeLessThan(74);
+    expect(parseFloat(narrowBand.style.width)).toBeLessThan(bandLabelWidth("No samples"));
     expect(within(narrowBand).queryByText("No samples")).toBeNull();
-    expect(narrowBand).toHaveAttribute("aria-label", `No samples from ${fullDateTimeFormat.format(new Date(20000))} to ${fullDateTimeFormat.format(new Date(35000))}`);
+    expect(narrowBand).toHaveAttribute("aria-label", `No samples from ${fullDateTimeFormat.format(new Date(20000))} to ${fullDateTimeFormat.format(new Date(34000))}`);
     narrow.unmount();
     // The 3-7 s hole in the shared fixture is wide enough for its label.
     const { container } = render(<WidgetVisualization widget={widget} result={gapped} />);
     const wideBand = container.querySelector<HTMLElement>("[data-no-sample-band]")!;
-    expect(parseFloat(wideBand.style.width)).toBeGreaterThanOrEqual(74);
+    expect(parseFloat(wideBand.style.width)).toBeGreaterThanOrEqual(bandLabelWidth("No samples"));
     expect(within(wideBand).getByText("No samples")).toBeInTheDocument();
-  });
-
-  it("omits the stale tail's label when the tail is too narrow to hold it, and keeps the tail in its aria-label and interval list", () => {
-    // A 30 s tail after 1-100 s of samples is about 101px in a 434px plot. The label needs about 153px, so it is clipped
-    // and must be left out. The tail keeps its aria-label and its interval entry.
-    const samples = Array.from({ length: 100 }, (_, index) => [index + 1, 5] as [number, number]);
-    const { container } = render(
-      <DashboardWindowProvider value={{ rangeEnd: 130_000 }}>
-        <WidgetVisualization widget={widget} result={plot(line("api", samples))} />
-      </DashboardWindowProvider>,
-    );
-    const tail = container.querySelector<HTMLElement>("[data-stale-tail]")!;
-    // "No samples since 00:01" is estimated at 153px (22 characters), so the 101px tail cannot hold it.
-    expect(parseFloat(tail.style.width)).toBeLessThan(153.2);
-    expect(within(tail).queryByText(/No samples since/)).toBeNull();
-    expect(tail).toHaveAttribute("aria-label", `No samples after ${fullDateTimeFormat.format(new Date(100_000))}`);
-    expect(intervalItems(container)).toEqual([`${dateTimeFormat.format(new Date(100_000))}–${dateTimeFormat.format(new Date(130_000))}, after the latest sample`]);
   });
 
   it("closes an open interval list with Escape and returns focus to its summary", () => {
@@ -302,6 +287,83 @@ describe("time-series gaps", () => {
     fireEvent.keyDown(within(details).getByRole("list", { name: "No-sample intervals" }), { key: "Escape" });
     expect(details.open).toBe(false);
     expect(document.activeElement).toBe(summary);
+  });
+});
+
+describe("no-sample band labels", () => {
+  // Samples at 1-100 s, and a stale tail from 100 s to `rangeEnd`. The plot is 427px wide here (500px less the 61px y-axis
+  // and the 12px margin), so the tail is 427 * (rangeEnd - 100 s) / (rangeEnd - 1 s) wide: 215px at 200 s, 137px at 147 s,
+  // 99px at 130 s and 39px at 110 s.
+  const hundred = Array.from({ length: 100 }, (_, index) => [index + 1, 5] as [number, number]);
+  const tailAt = (rangeEnd: number) => (
+    <DashboardWindowProvider value={{ rangeEnd }}>
+      <WidgetVisualization widget={widget} result={plot(line("api", hundred))} />
+    </DashboardWindowProvider>
+  );
+  const tailOf = (container: HTMLElement) => container.querySelector<HTMLElement>("[data-stale-tail]")!;
+  const fullTailLabel = `No samples since ${timeFormat.format(new Date(100_000))}`;
+  const intervalItems = (container: HTMLElement) => [...container.querySelectorAll("[data-gap-intervals] li")].map((item) => item.textContent);
+
+  it("shows the time its samples stopped on a stale tail wide enough to hold it", () => {
+    const { container } = render(tailAt(200_000));
+    const tail = tailOf(container);
+    expect(parseFloat(tail.style.width)).toBeGreaterThanOrEqual(bandLabelWidth(fullTailLabel));
+    expect(within(tail).getByText(fullTailLabel)).toBeInTheDocument();
+    expect(tail).toHaveAttribute("aria-label", `No samples after ${fullDateTimeFormat.format(new Date(100_000))}`);
+  });
+
+  it("degrades a tail too narrow for that label to the short 'No samples', which needs no time", () => {
+    const { container } = render(tailAt(130_000));
+    const tail = tailOf(container);
+    // About 99px: short of the 136px full label, and enough for the 66px short one.
+    expect(parseFloat(tail.style.width)).toBeLessThan(bandLabelWidth(fullTailLabel));
+    expect(parseFloat(tail.style.width)).toBeGreaterThanOrEqual(bandLabelWidth("No samples"));
+    expect(within(tail).getByText("No samples")).toBeInTheDocument();
+    expect(within(tail).queryByText(/since/)).toBeNull();
+  });
+
+  it("leaves a tail that cannot hold even the short label unlabelled, and keeps its aria-label and interval entry", () => {
+    const { container } = render(tailAt(110_000));
+    const tail = tailOf(container);
+    expect(parseFloat(tail.style.width)).toBeLessThan(bandLabelWidth("No samples"));
+    expect(within(tail).queryByText(/No samples/)).toBeNull();
+    expect(tail).toHaveAttribute("aria-label", `No samples after ${fullDateTimeFormat.format(new Date(100_000))}`);
+    expect(intervalItems(container)).toEqual([`${dateTimeFormat.format(new Date(100_000))}–${dateTimeFormat.format(new Date(110_000))}, after the latest sample`]);
+  });
+
+  it("measures the label on the browser's canvas where there is one, so the measured width decides", () => {
+    // At 6px per character the full label is 140px, so the 137px tail takes the short label. The 135.6px estimate of the
+    // full label would have given that tail the full one.
+    const context = { font: "", measureText: vi.fn((text: string) => ({ width: text.length * 6 })) };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const { container } = render(tailAt(147_000));
+    const tail = tailOf(container);
+    expect(parseFloat(tail.style.width)).toBeGreaterThanOrEqual(bandLabelWidth(fullTailLabel));
+    expect(parseFloat(tail.style.width)).toBeLessThan(bandLabelWidth(fullTailLabel, (text) => text.length * 6));
+    expect(within(tail).getByText("No samples")).toBeInTheDocument();
+    expect(within(tail).queryByText(/since/)).toBeNull();
+    expect(context.measureText).toHaveBeenCalledWith(fullTailLabel);
+    expect(context.font).toMatch(/^400 12px /);
+  });
+
+  it("estimates the label from its characters where the browser has no canvas", () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const { container } = render(tailAt(147_000));
+    // The same 137px tail holds the full label at the 135.6px estimate.
+    const tail = tailOf(container);
+    expect(parseFloat(tail.style.width)).toBeGreaterThanOrEqual(bandLabelWidth(fullTailLabel));
+    expect(within(tail).getByText(fullTailLabel)).toBeInTheDocument();
+  });
+
+  it("pins the label's size, style, weight and spacing, so the font it renders is the font it is measured in", () => {
+    const css = readFileSync("src/features/insights/charts.module.css", "utf8");
+    const label = cssRule(css, ".noSampleLabel");
+    expect(label).toMatch(/font-size:\s*12px;/);
+    expect(label).toMatch(/font-style:\s*normal;/);
+    expect(label).toMatch(/font-weight:\s*400;/);
+    expect(label).toMatch(/letter-spacing:\s*0;/);
+    // The width estimate's padding is 8px: 4px on each side.
+    expect(label).toMatch(/padding:\s*0 4px;/);
   });
 });
 

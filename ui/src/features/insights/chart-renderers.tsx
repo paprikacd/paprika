@@ -46,8 +46,8 @@ import contextStyles from "./widget-context.module.css";
 import type { DrilldownContext } from "./drilldown";
 import { readableTextColor, widgetTextColor } from "./appearance";
 import {
-  bandLabelWidth,
   downsamplePoints,
+  fittingBandLabel,
   latestPoint,
   seriesName,
   formatMetric,
@@ -262,6 +262,31 @@ export function chartYAxisLayout(values: number[], unit: string, decimals?: numb
   return { separateUnit, left: Math.max(54, width) + (axisLabel ? 20 : 0) };
 }
 
+/**
+ * The 2D context that measures band labels. It is probed once, and probed again only when the canvas factory itself is
+ * replaced (a polyfill, or a test double), so a measurement never comes from a factory that is no longer in use.
+ */
+let labelCanvas: { factory: unknown; context: CanvasRenderingContext2D | null } = { factory: undefined, context: null };
+
+/** The width of `text` in a 12px band label of `family`, or undefined where the browser gives no 2D context (happy-dom). */
+function measureBandLabel(text: string, family: string): number | undefined {
+  const factory = typeof HTMLCanvasElement === "undefined" ? undefined : HTMLCanvasElement.prototype.getContext;
+  if (labelCanvas.factory !== factory) {
+    let context: CanvasRenderingContext2D | null = null;
+    try {
+      context = factory ? document.createElement("canvas").getContext("2d") : null;
+    } catch {
+      // No context from this browser, so the estimate in chart-data.ts stands in.
+    }
+    labelCanvas = { factory, context };
+  }
+  const { context } = labelCanvas;
+  if (!context) return undefined;
+  // The label inherits only the family. Its weight, style and letter spacing are pinned in charts.module.css to match.
+  context.font = `400 12px ${family}`;
+  return context.measureText(text).width;
+}
+
 function TimeSeriesChart({
   widget,
   series,
@@ -272,6 +297,12 @@ function TimeSeriesChart({
   onContextChange?: (context: DrilldownContext) => void;
 }) {
   const { ref, width, height } = usePlotSize();
+  // Band labels inherit the plot's font family, so they are measured in it. The family is read once, when the plot mounts.
+  const [labelFamily, setLabelFamily] = useState<string>();
+  useLayoutEffect(() => {
+    if (ref.current) setLabelFamily(getComputedStyle(ref.current).fontFamily || "sans-serif");
+  }, [ref]);
+  const measureLabel = labelFamily ? (text: string) => measureBandLabel(text, labelFamily) : undefined;
   const [selection, setSelection] = useState<{ source: Series[]; window: ObservationWindow; previous?: QueryResult }>();
   // Query/variable changes must never reuse a range selected from another result.
   const zoom = selection?.source === series ? selection.window : undefined;
@@ -390,7 +421,11 @@ function TimeSeriesChart({
   const intervalCount = visibleBands.length + (staleTail ? 1 : 0);
   const gapsHidden = !embedded && !!truncated && dataStart !== undefined;
   const tailBox = staleTail ? bandBox(staleTail.from, staleTail.to) : undefined;
-  const tailLabel = staleTail ? `No samples since ${timeFormat.format(new Date(staleTail.from))}` : "";
+  // The tail says when its samples stopped if it can hold that, and otherwise says "No samples". It is unlabelled only
+  // when neither fits.
+  const tailLabel = staleTail && tailBox
+    ? fittingBandLabel([`No samples since ${timeFormat.format(new Date(staleTail.from))}`, "No samples"], tailBox.width, measureLabel)
+    : undefined;
 
   const definition = useMemo(
     () =>
@@ -557,15 +592,16 @@ function TimeSeriesChart({
         {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
         {visibleBands.map((band) => {
           const box = bandBox(band.from, band.to);
+          // A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times.
+          const label = fittingBandLabel(["No samples"], box.width, measureLabel);
           return (
             <span key={`${band.from}-${band.to}`} role="img" aria-label={`No samples from ${fullDateTimeFormat.format(new Date(band.from))} to ${fullDateTimeFormat.format(new Date(band.to))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-no-sample-band data-from={band.from} data-to={band.to} style={{ ...box, top: eventTop, bottom: eventBottom }}>
-              {/* A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times. */}
-              {box.width >= bandLabelWidth("No samples") && <span aria-hidden="true" className={styles.noSampleLabel}>No samples</span>}
+              {label && <span aria-hidden="true" className={styles.noSampleLabel}>{label}</span>}
             </span>
           );
         })}
         {staleTail && tailBox && <span role="img" aria-label={`No samples after ${fullDateTimeFormat.format(new Date(staleTail.from))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-stale-tail data-from={staleTail.from} data-to={staleTail.to} style={{ ...tailBox, top: eventTop, bottom: eventBottom }}>
-          {tailBox.width >= bandLabelWidth(tailLabel) && <span aria-hidden="true" className={styles.noSampleLabel}>{tailLabel}</span>}
+          {tailLabel && <span aria-hidden="true" className={styles.noSampleLabel}>{tailLabel}</span>}
         </span>}
         {emptyZoom ? <div className={styles.state} role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <Chart
           definition={definition}
