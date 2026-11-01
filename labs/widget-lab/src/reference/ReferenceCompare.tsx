@@ -33,7 +33,7 @@ export function ReferenceCompare({ study, onClose }: ReferenceCompareProps) {
   const source = study === 'edge' ? 'edge-watch.png' : 'reliability-room.png';
   return <>
     <div className="ref-compare-source" aria-hidden="true" style={{ opacity: visible ? opacity / 100 : 0 }}>
-      <img src={`/reference/${source}`} width={1592} height={988} alt="" draggable={false}/>
+      <img src={`${import.meta.env.BASE_URL}reference/${source}`} width={1592} height={988} alt="" draggable={false}/>
     </div>
     <section className="ref-compare-controls" aria-label="Reference comparison controls">
       <div className="ref-compare-heading"><h2>Reference comparison</h2><button ref={closeButton} className="ref-compare-close" type="button" onClick={onClose} aria-label="Close reference comparison" title="Close comparison (Escape)">×</button></div>

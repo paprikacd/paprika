@@ -1,5 +1,5 @@
-@font-face{font-family:'Roboto Condensed';src:url('/fonts/RobotoCondensed-Variable.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:swap}
-@font-face{font-family:'Roboto';src:url('/fonts/Roboto-Variable.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:swap}
+@font-face{font-family:'Roboto Condensed';src:url('../fonts/RobotoCondensed-Variable.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:swap}
+@font-face{font-family:'Roboto';src:url('../fonts/Roboto-Variable.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:swap}
 .ref-viewport{position:relative;min-height:100vh;background:#05151e;overflow:clip}
 .ref-viewport[data-actual=true]{width:1592px;min-height:988px;overflow:visible}
 .ref-app{--ref-text:#e6edf7;--ref-muted:#aec5dd;--ref-border:#163443;--ref-grid:#153442;--ref-panel:#081c26;--ref-cyan:#00d9f3;--ref-violet:#9869f5;--ref-green:#00e5b3;--ref-amber:#ffbf35;--ref-red:#ff4c40;--ref-blue:#00b9ff;--ref-inspector:#03131b;--gamma-page:#061822;--gamma-bg:#081c26;--gamma-ink:#e6edf7;--gamma-muted:#aec5dd;--gamma-border:#163443;--gamma-font-sans:Barlow,sans-serif;--gamma-font-code:Barlow,sans-serif;width:1592px;height:988px;position:relative;transform-origin:top left;background:radial-gradient(ellipse at 82% 5%,#0b202d 0%,#071a26 40%,#04151d 100%);color:var(--ref-text);font-family:Barlow,sans-serif;font-size:14px;font-weight:400;line-height:1.25;font-variant-numeric:tabular-nums;isolation:isolate}

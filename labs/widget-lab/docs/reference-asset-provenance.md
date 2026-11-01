@@ -30,10 +30,10 @@ The new reference font binaries were retrieved from the official Google Fonts re
 
 | Asset | Retrieval source | SHA-256 |
 | --- | --- | --- |
-| `public/fonts/Roboto-Variable.ttf` | [Roboto variable font](https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto%5Bwdth,wght%5D.ttf) | `d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134` |
-| `public/fonts/RobotoCondensed-Variable.ttf` | [Roboto Condensed variable font](https://raw.githubusercontent.com/google/fonts/main/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf) | `dace262afcee68a5276f200d8026c57221735c0118ab5fda8c2c0d3dc409a8d0` |
+| `src/fonts/Roboto-Variable.ttf` | [Roboto variable font](https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto%5Bwdth,wght%5D.ttf) | `d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134` |
+| `src/fonts/RobotoCondensed-Variable.ttf` | [Roboto Condensed variable font](https://raw.githubusercontent.com/google/fonts/main/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf) | `dace262afcee68a5276f200d8026c57221735c0118ab5fda8c2c0d3dc409a8d0` |
 
-Both binaries retain their **SIL Open Font License 1.1** notices beside them: `Roboto-OFL.txt` and `RobotoCondensed-OFL.txt`. The notices credit the Roboto Project Authors. Their source files are [Roboto OFL](https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/OFL.txt) and [Roboto Condensed OFL](https://raw.githubusercontent.com/google/fonts/main/ofl/robotocondensed/OFL.txt). The Barlow files and `public/fonts/OFL.txt` belong to the earlier lab and remain retained.
+Both binaries retain their **SIL Open Font License 1.1** notices in `public/fonts/`, where they ship with the static build: `Roboto-OFL.txt` and `RobotoCondensed-OFL.txt`. The notices credit the Roboto Project Authors. Their source files are [Roboto OFL](https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/OFL.txt) and [Roboto Condensed OFL](https://raw.githubusercontent.com/google/fonts/main/ofl/robotocondensed/OFL.txt). The Barlow files (now in `src/fonts/`) and `public/fonts/OFL.txt` belong to the earlier lab and remain retained.
 
 These are candidate approximations to the raster reference, not a claim that the original concepts used these exact fonts. Rendered comparison selected the existing Barlow face for body content and Roboto for titles/metric values; Roboto Condensed was evaluated but proved too narrow and is not the chosen body face. Its retained binary and license document that study asset. Self-hosting makes the chosen typography independent of a runtime Google Fonts request.
 

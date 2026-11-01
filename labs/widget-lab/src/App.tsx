@@ -52,7 +52,6 @@ function Observatory() {
         <a href="#lab-reliability" aria-label="Reliability Room" title="Reliability Room" aria-current={study === 'reliability' ? 'page' : undefined}><ShieldCheck size={20}/></a>
         <a href="#baseline" aria-label="Original widget lab" title="Original widget lab"><LayoutDashboard size={19}/></a>
       </nav>
-      <a className="rail-reference" href="https://chatgpt.com/space/page_6ae45780924881918c18270064f72c2c" target="_blank" rel="noreferrer" aria-label="Open dashboard design references" title="Design references"><BookOpen size={18}/></a>
     </aside>
     <div className="obs-main">
       <header className="obs-topbar">
@@ -68,7 +67,7 @@ function Observatory() {
           <GammaButton size="sm" variant="ghost" iconOnly aria-label="Evaluation notes" aria-expanded={guide} onClick={() => setGuide(!guide)}><BookOpen size={16}/></GammaButton>
         </div>
       </header>
-      {guide && <section className="obs-guide" aria-label="Evaluation notes"><div><strong>Two studies, one design system</strong><p>Compare the compact metrics, ranked tables and rich chart inspectors with the Edge Watch and Reliability Room references. All telemetry is deterministic and synthetic.</p></div><div><strong>Try the edges</strong><p>Inspect with arrow keys and Enter, then advance the snapshot or start Demo replay. Changed metrics receive one brief emphasis; their values update immediately. Reduced motion preserves the same observations and replay cadence. Use panel information buttons for units, interval conventions and accounting details.</p></div><a href="https://chatgpt.com/space/page_6ae45839b6b88191acaffee32e79ef34" target="_blank" rel="noreferrer">Open visual references<ArrowUpRight size={14}/></a></section>}
+      {guide && <section className="obs-guide" aria-label="Evaluation notes"><div><strong>Two studies, one design system</strong><p>Compare the compact metrics, ranked tables and rich chart inspectors with the Edge Watch and Reliability Room references. All telemetry is deterministic and synthetic.</p></div><div><strong>Try the edges</strong><p>Inspect with arrow keys and Enter, then advance the snapshot or start Demo replay. Changed metrics receive one brief emphasis; their values update immediately. Reduced motion preserves the same observations and replay cadence. Use panel information buttons for units, interval conventions and accounting details.</p></div></section>}
       <main className={`obs-canvas ${narrow ? 'obs-canvas-narrow' : ''}`} id="study-content" tabIndex={-1}>
         <Suspense fallback={<StudyLoading label="Loading study"/>}>
           {study === 'edge' ? <EdgeWatch theme={theme} narrow={narrow}/> : <ReliabilityRoom theme={theme} narrow={narrow}/>}
