@@ -135,9 +135,10 @@ export const WidgetVisualization = memo(function WidgetVisualization({
         </p>
       </div></WidgetStateFrame>
     );
+  // A failed widget that reloads keeps its error in place and marks the frame busy, so the alert is not re-inserted on each refresh.
   if (error)
     return (
-      <WidgetStateFrame><div className={`${styles.state} ${styles.error}`} role="alert">
+      <WidgetStateFrame busy={loading}><div className={`${styles.state} ${styles.error}`} role="alert">
         <strong>Query failed</strong>
         <p>{error}</p>
         {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}

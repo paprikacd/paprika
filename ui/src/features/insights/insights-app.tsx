@@ -81,7 +81,7 @@ import { useMobileNavigation } from "./use-mobile-navigation"
 import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import { useDashboardHistory } from "./history"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
-import { DashboardCanvas } from "./canvas"
+import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
 import { useCanvasDensity } from "./canvas-density"
 import type { CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
@@ -335,6 +335,7 @@ export default function InsightsApp({
     return () => { active = false }
   }, [currentRoute, dashboard.variables, mode])
   const [queryFieldSnapshot, setQueryFieldSnapshot] = useState<QueryFieldSnapshot>();
+  const [queryResultSnapshot, setQueryResultSnapshot] = useState<WidgetResultSnapshot>();
   const currentWidget = dashboard.widgets.find(
     (widget) => widget.id === selected,
   )
@@ -1591,6 +1592,7 @@ export default function InsightsApp({
                 onSelect={selectWidget}
                 onLayout={layoutUpdate}
                 onQueryFields={setQueryFieldSnapshot}
+                onQueryResult={setQueryResultSnapshot}
               />
             ) : (
               <div className={styles.emptyCanvas}>
@@ -1720,6 +1722,7 @@ export default function InsightsApp({
                   range={range}
                   queryFetcher={fetcher}
                   queryFields={currentWidget.id === queryFieldSnapshot?.widgetId && queryFieldSnapshot.fetcher === fetcher && queryFieldSnapshot.key === queryConnectionKey(currentWidget, range) ? queryFieldSnapshot.fields : undefined}
+                  result={currentWidget.id === queryResultSnapshot?.widgetId && queryResultSnapshot.fetcher === fetcher ? queryResultSnapshot.result : undefined}
                   onClose={close}
                   onDraftValidityChange={setWidgetDraftValid}
                   onApply={(next) => {

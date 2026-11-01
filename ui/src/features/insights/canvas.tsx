@@ -16,7 +16,8 @@ import ReactGridLayout, {
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
-import { useWidgetQuery } from "./query";
+import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
+import { ChartEntranceContext, type ChartEntranceSlot } from "./chart-entrance";
 import { TooltipQueryProvider } from "./tooltip-query";
 import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
@@ -66,6 +67,30 @@ type Fetcher = (
   query: QueryRequest,
   signal: AbortSignal,
 ) => Promise<QueryResult>;
+/** The selected widget's latest result, reported with the fetcher it came from. */
+export interface WidgetResultSnapshot {
+  widgetId: string;
+  fetcher: Fetcher;
+  result?: QueryResult;
+}
+/**
+ * What a canvas keeps for one widget between remounts: the last outcome it showed and whether its draw-in has played.
+ * It lives with the canvas, so it ends with the page session and never reaches another user's session.
+ */
+interface WidgetMemory { retained?: RetainedQuery; entered: boolean }
+/** The query and draw-in records for one widget, backed by that widget's entry in the canvas memory. */
+function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; entrance: ChartEntranceSlot } {
+  return {
+    retention: {
+      read: () => memory.get(key)?.retained,
+      write: (retained) => { memory.set(key, { retained, entered: memory.get(key)?.entered ?? false }); },
+    },
+    entrance: {
+      entered: () => memory.get(key)?.entered ?? false,
+      markEntered: () => { memory.set(key, { retained: memory.get(key)?.retained, entered: true }); },
+    },
+  };
+}
 const Tile = memo(function Tile({
   widget,
   active,
@@ -82,7 +107,10 @@ const Tile = memo(function Tile({
   onDrilldown,
   onSelection,
   onQueryFields,
+  onQueryResult,
   onTimeRange,
+  memory,
+  memoryKey,
 }: {
   widget: Widget;
   active: boolean;
@@ -99,7 +127,10 @@ const Tile = memo(function Tile({
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
+  onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
   onTimeRange?: (window: ObservationWindow) => void;
+  memory: Map<string, WidgetMemory>;
+  memoryKey: string;
 }) {
   const recordCellStyles = widget.config?.cellStyles;
   const compactRecordDescription = referenceCompact && widget.type === "plugin" && widget.pluginId === "record-table" &&
@@ -127,6 +158,7 @@ const Tile = memo(function Tile({
     observer.observe(element.current);
     return () => observer.disconnect();
   }, []);
+  const memoryOf = useMemo(() => memoryFor(memory, memoryKey), [memory, memoryKey]);
   const { data, loading, error, refresh } = useWidgetQuery(widget, {
     fetcher,
     start,
@@ -134,6 +166,7 @@ const Tile = memo(function Tile({
     step: Math.max(1, Math.ceil((end - start) / 300)),
     enabled: active && visible && !savedQueryLoading && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
+    retention: memoryOf.retention,
   });
   // A paused, never-queried tile has no result yet; it is not an empty query
   // response. Keep that distinction through the observer-to-effect handoff.
@@ -159,6 +192,9 @@ const Tile = memo(function Tile({
   useEffect(() => {
     if (selected && onQueryFields) onQueryFields({ widgetId: widget.id, key: connectionKey, fetcher, fields: data && !error ? queryFields(data) : undefined });
   }, [selected, onQueryFields, widget.id, connectionKey, fetcher, data, error]);
+  useEffect(() => {
+    if (selected && onQueryResult) onQueryResult({ widgetId: widget.id, fetcher, result: data && !error ? data : undefined });
+  }, [selected, onQueryResult, widget.id, fetcher, data, error]);
   const contextScope = JSON.stringify([
     widget.providerId,
     widget.query,
@@ -328,7 +364,7 @@ const Tile = memo(function Tile({
       </div>}
       <div className={styles.visualization}>
         {active && (
-          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><WidgetVisualization
+          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetVisualization
             widget={widget}
             naturalHeight={naturalHeight}
             result={savedQueryLoading ? undefined : data}
@@ -344,7 +380,7 @@ const Tile = memo(function Tile({
             onContextChange={
               (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined
             }
-          /></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
+          /></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
         )}
       </div>
     </article>
@@ -367,6 +403,7 @@ export function DashboardCanvas({
   onDrilldown,
   onSelection,
   onQueryFields,
+  onQueryResult,
   onTimeRange,
   onModeChange,
 }: {
@@ -385,10 +422,19 @@ export function DashboardCanvas({
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
+  onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
   onTimeRange?: (window: ObservationWindow) => void;
   onModeChange?: (mode: CanvasMode) => void;
 }) {
   const library = useSavedQueryLibrary();
+  // Per canvas, keyed by dashboard and widget id. A tile that remounts (a breakpoint swap, a return to the view) reads
+  // its last outcome and draw-in record from here, so it neither shows a placeholder nor replays the draw-in.
+  const [memory] = useState(() => new Map<string, WidgetMemory>());
+  useEffect(() => {
+    // Forget widgets that were removed from this dashboard. Other dashboards keep theirs for a return visit.
+    const live = new Set(dashboard.widgets.map((widget) => `${dashboard.id}:${widget.id}`));
+    for (const key of memory.keys()) if (key.startsWith(`${dashboard.id}:`) && !live.has(key)) memory.delete(key);
+  }, [dashboard.id, dashboard.widgets, memory]);
   const { width, containerRef, mounted } = useContainerWidth({
     initialWidth: 1100,
   });
@@ -434,7 +480,10 @@ export function DashboardCanvas({
                   onDrilldown={onDrilldown}
                   onSelection={onSelection}
                   onQueryFields={onQueryFields}
+                  onQueryResult={onQueryResult}
                   onTimeRange={onTimeRange}
+                  memory={memory}
+                  memoryKey={`${dashboard.id}:${widget.id}`}
                 />
               </div>
             ));

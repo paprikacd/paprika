@@ -12,11 +12,23 @@ export type QueryFetcher = ((
   request: QueryRequest,
   signal: AbortSignal,
 ) => Promise<QueryResult>) & {
-  /** Stable identity of the fully resolved request, including binding errors. */
+  /**
+   * Stable identity of the resolved query: what it asks for once bindings and variables apply, with binding errors
+   * included. The time window (start, end, step) is not part of it: a window moves a series, it does not change it.
+   */
   requestIdentity?: (request: QueryRequest) => string;
   /** Changes when the underlying provider/scheduler is invalidated. */
   requestRevision?: QueryFetcher;
 };
+
+/** The request without its window. Requests that differ only in start, end or step are one series. */
+function withoutWindow(request: QueryRequest): Partial<QueryRequest> {
+  const series: Partial<QueryRequest> = { ...request };
+  delete series.start;
+  delete series.end;
+  delete series.step;
+  return series;
+}
 
 /** Keep query resolution authoritative while allowing unrelated variable
  * changes to retain an unchanged result and its interaction state. */
@@ -24,7 +36,7 @@ export function createResolvedQueryFetcher(scheduler: QueryFetcher, resolve: (re
   const fetcher: QueryFetcher = async (request, signal) => scheduler(resolve(request), signal);
   fetcher.requestRevision = scheduler;
   fetcher.requestIdentity = request => {
-    try { return JSON.stringify(["resolved", resolve(request)]); }
+    try { return JSON.stringify(["resolved", withoutWindow(resolve(request))]); }
     catch (error) { return JSON.stringify(["error", error instanceof Error ? error.message : "Invalid query"]); }
   };
   return fetcher;
@@ -191,10 +203,30 @@ export interface WidgetQueryOptions {
   enabled?: boolean;
   /** Coalesce live authoring changes without retaining a previous query’s data. */
   debounceMs?: number;
+  /** Where the host keeps this widget's last outcome, so a remounted widget does not start from a placeholder. */
+  retention?: QueryRetention;
+}
+
+/** The last outcome of one series, as a host keeps it between mounts. */
+export interface RetainedQuery {
+  series: string;
+  /** Set only for a fetcher without an identity: the series then belongs to that fetcher instance. */
+  unidentified?: QueryFetcher;
+  result?: QueryResult;
+  error?: string;
+}
+
+/** Where a host keeps a widget's RetainedQuery. The hook reads it once, on mount, and writes each settled request. */
+export interface QueryRetention {
+  read: () => RetainedQuery | undefined;
+  write: (retained: RetainedQuery) => void;
 }
 
 interface QueryState {
+  /** The request this outcome answers, and the series it belongs to. */
   key?: string;
+  series?: string;
+  unidentified?: QueryFetcher;
   fetcher?: QueryFetcher;
   data: QueryResult | undefined;
   loading: boolean;
@@ -224,6 +256,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     refreshInterval = 0,
     enabled = true,
     debounceMs = 0,
+    retention,
   } = options;
   const debounceRef = useRef(debounceMs);
   useEffect(() => { debounceRef.current = debounceMs; }, [debounceMs]);
@@ -231,8 +264,14 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
   const request: QueryRequest = { providerId, query, kind, start, end, step, ...(queryRef ? { queryRef } : {}) };
   const requestIdentity = fetcher.requestIdentity?.(request);
   const fetcherRevision = fetcher.requestIdentity ? fetcher.requestRevision ?? fetcher : fetcher;
+  // A series is what the widget asks for. Its window and step only move it through time, so they never start a new one.
+  const series = JSON.stringify([widget.id, providerId, query, kind, referenceKey, requestIdentity ?? null]);
+  // A fetcher without an identity may resolve differently after any change, so such a fetcher owns its series.
+  const unidentified = fetcher.requestIdentity ? undefined : fetcher;
   const fetcherRef = useRef(fetcher);
   useLayoutEffect(() => { fetcherRef.current = fetcher; }, [fetcher]);
+  const retentionRef = useRef(retention);
+  useLayoutEffect(() => { retentionRef.current = retention; }, [retention]);
   const key = JSON.stringify([
     providerId,
     query,
@@ -243,12 +282,12 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     referenceKey,
     requestIdentity,
   ]);
-  const [state, setState] = useState<QueryState>({
-    data: undefined,
-    loading: enabled,
-    error: null,
+  const [state, setState] = useState<QueryState>(() => {
+    const retained = retention?.read();
+    const kept = retained && retained.series === series && retained.unidentified === unidentified ? retained : undefined;
+    return { series, unidentified, data: kept?.result, error: kept?.error ?? null, loading: enabled };
   });
-  const runRef = useRef<() => void>(() => {});
+  const runRef = useRef<(manual?: boolean) => void>(() => {});
   const previousRequest = useRef<
     { key: string; fetcher: QueryFetcher } | undefined
   >(undefined);
@@ -267,18 +306,14 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       timer = undefined;
     };
 
-    async function run() {
+    async function run(manual = false) {
       clearTimer();
       controller?.abort();
       const requestGeneration = ++generation;
+      // An outcome is applied only to the request that asked for it, with the series it belongs to.
+      const owner = { key, series, unidentified, fetcher: fetcherRevision };
       if (!queryRef && (!providerId || !query.trim())) {
-        setState({
-          key,
-          fetcher: fetcherRevision,
-          data: undefined,
-          loading: false,
-          error: null,
-        });
+        setState({ ...owner, data: undefined, loading: false, error: null });
         return;
       }
       if (!enabled) {
@@ -289,7 +324,9 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       }
       controller = new AbortController();
       const signal = controller.signal;
-      setState((previous) => ({ ...previous, loading: true, error: null }));
+      // A manual retry clears the error, so the widget shows progress. An automatic refresh keeps the last outcome in
+      // place and marks the frame busy instead, so a failing widget does not flash between error and placeholder.
+      setState((previous) => ({ ...previous, loading: true, error: manual ? null : previous.error }));
       try {
         const data = await fetcherRef.current(
           {
@@ -304,20 +341,14 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
           signal,
         );
         if (!disposed && !signal.aborted && generation === requestGeneration) {
-          setState({ key, fetcher: fetcherRevision, data, loading: false, error: null });
+          setState({ ...owner, data, loading: false, error: null });
+          retentionRef.current?.write({ series, unidentified, result: data });
         }
       } catch (error) {
         if (!disposed && !signal.aborted && generation === requestGeneration) {
-          setState({
-            key,
-            fetcher: fetcherRevision,
-            data: undefined,
-            loading: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "The query could not be completed.",
-          });
+          const message = error instanceof Error ? error.message : "The query could not be completed.";
+          setState({ ...owner, data: undefined, loading: false, error: message });
+          retentionRef.current?.write({ series, unidentified, error: message });
         }
       } finally {
         if (
@@ -337,19 +368,25 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       if (!document.hidden && refreshInterval > 0) void run();
     }
 
-    runRef.current = () => {
-      void run();
+    runRef.current = (manual = false) => {
+      void run(manual);
     };
     // Defer the initial request so effect cleanup can cancel a StrictMode replay.
     queueMicrotask(() => {
       if (!disposed) {
         if (requestChanged)
-          setState({
-            key,
-            fetcher: fetcherRevision,
-            data: undefined,
-            loading: enabled,
-            error: null,
+          setState((previous) => {
+            // The same series keeps its last outcome visible while it reloads. Another series starts empty.
+            const sameSeries = previous.series === series && previous.unidentified === unidentified;
+            return {
+              key,
+              series,
+              unidentified,
+              fetcher: fetcherRevision,
+              data: sameSeries ? previous.data : undefined,
+              error: sameSeries ? previous.error : null,
+              loading: enabled,
+            };
           });
         if (requestChanged && debounceRef.current > 0 && enabled)
           timer = setTimeout(run, debounceRef.current);
@@ -377,14 +414,18 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     referenceKey,
     key,
     queryRef,
+    series,
+    unidentified,
   ]);
 
-  const refresh = useCallback(() => runRef.current(), []);
-  const current = state.key === key && state.fetcher === fetcherRevision;
+  // Manual refresh (Retry, Refresh) starts progress; the outcome of the series stays visible while it reloads.
+  const refresh = useCallback(() => runRef.current(true), []);
+  const sameSeries = state.series === series && state.unidentified === unidentified;
+  const current = sameSeries && state.key === key && state.fetcher === fetcherRevision;
   return {
-    data: current ? state.data : undefined,
+    data: sameSeries ? state.data : undefined,
     loading: current ? state.loading : enabled,
-    error: current ? state.error : null,
+    error: sameSeries ? state.error : null,
     refresh,
   };
 }

@@ -6,10 +6,10 @@ import { GammaSelect } from "./gamma/select";
 import { GammaSwitch } from "./gamma/switch";
 import {
   effectiveFieldBinding,
-  widgetInputIssues,
   type WidgetConfigField,
   type WidgetDefinition,
   type WidgetFieldBinding,
+  type WidgetInputIssue,
   type WidgetRecordType,
 } from "./widget-registry";
 import type { QueryResult, Widget } from "./schema";
@@ -60,6 +60,27 @@ function mappingMessages({ field, binding, entered, chosen, columns, partial, un
   return messages;
 }
 
+const issueMessageLimit = 200;
+const isIssue = (value: unknown): value is WidgetInputIssue =>
+  typeof value === "object" && value !== null && typeof (value as { message?: unknown }).message === "string";
+
+/**
+ * Runs the renderer's own data check here, not through widgetInputIssues, which replaces a thrown message with
+ * generic text. A thrown message reaches the author, bounded to 200 characters. A return that is not a list of
+ * issues becomes one issue, so a malformed check can neither pass silently nor break the editor.
+ */
+function rendererIssues(definition: WidgetDefinition | undefined, result: QueryResult, config: Record<string, unknown>): readonly WidgetInputIssue[] {
+  if (!definition?.validateInput) return [];
+  let returned: unknown;
+  try {
+    returned = definition.validateInput(result, config as Widget["config"]);
+  } catch (error) {
+    const message = typeof error === "string" ? error : error instanceof Error ? error.message : "";
+    return [{ message: message.slice(0, issueMessageLimit) || "The loaded result could not be checked for this widget." }];
+  }
+  return Array.isArray(returned) && returned.every(isIssue) ? returned : [{ message: "Validation returned an unexpected value" }];
+}
+
 /** Keep raw JSON and guided fields on the same draft; invalid JSON stays editable. */
 export function PluginConfigEditor({ definition, value, onChange, queryFields, result }: {
   definition?: WidgetDefinition;
@@ -86,7 +107,7 @@ export function PluginConfigEditor({ definition, value, onChange, queryFields, r
   };
   const columns = editorColumns(result, queryFields);
   const partial = !!(result?.truncated || result?.records?.truncated) || !!queryFields?.partial;
-  const issues = result && config ? widgetInputIssues(definition, result, config as Widget["config"]) : [];
+  const issues = result && config ? rendererIssues(definition, result, config) : [];
   return <div className={styles.stack}>
     {fields.length > 0 && <section aria-label="Visualization settings" className={styles.stack}>
       <h3>Visualization settings</h3>
@@ -132,10 +153,13 @@ export function PluginConfigEditor({ definition, value, onChange, queryFields, r
           {messages.map(message => <span key={message} className={styles.hint}>{message}</span>)}
         </label>;
       })}
-      {issues.length > 0 && <ul className={styles.hint} aria-label="Configuration issues">
-        {issues.map((issue, index) => <li key={`${index}:${issue.message}`}>{issue.message}</li>)}
-      </ul>}
     </section>}
+    {/* Issues sit outside the field section, so a plugin without guided fields still shows its check. */}
+    {issues.length > 0 && <div role="status" aria-live="polite">
+      <ul className={styles.hint} aria-label="Configuration issues">
+        {issues.map((issue, index) => <li key={`${index}:${issue.message}`}>{issue.message}</li>)}
+      </ul>
+    </div>}
     {definition?.id === "record-table" && config && <RecordTableStyleEditor config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}
     {(definition?.id === "stacked-timeseries" || definition?.id === "directional-traffic") && config && <SeriesColorEditor config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}
     {definition?.id === "stacked-timeseries" && config && <MetricAnnotationEditor config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}

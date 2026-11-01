@@ -75,7 +75,7 @@ function LoadingShape({ family }: { family: WidgetLoadingFamily }) {
 export function WidgetLoadingPlaceholder({ widget }: { widget: Pick<Widget, "type" | "pluginId"> }) {
   const hidden = useDocumentHidden();
   const family = widgetLoadingFamily(widget);
-  return <div className={styles.loadingPlaceholder} data-loading-family={family} data-motion={hidden ? "paused" : "auto"} aria-hidden="true">
+  return <div className={styles.loadingPlaceholder} data-loading-family={family} data-loading-motion={hidden ? "paused" : "auto"} aria-hidden="true">
     <LoadingShape family={family} />
   </div>;
 }

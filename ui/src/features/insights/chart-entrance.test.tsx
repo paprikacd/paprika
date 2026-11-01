@@ -1,8 +1,8 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { readFileSync } from "node:fs";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHART_REVEAL_MS, prefersReducedMotion, useChartEntrance } from "./chart-entrance";
+import { CHART_REVEAL_MS, ChartEntranceContext, prefersReducedMotion, useChartEntrance } from "./chart-entrance";
 
 const css = readFileSync("src/features/insights/chart-entrance.module.css", "utf8");
 const theme = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
@@ -88,9 +88,40 @@ describe("useChartEntrance", () => {
   });
 });
 
+describe("the widget's draw-in record", () => {
+  // A slot as a canvas keeps one per widget: the first chart of the widget to draw in records it for the widget's life.
+  function recordingSlot(alreadyEntered = false) {
+    let entered = alreadyEntered;
+    const slot = { entered: () => entered, markEntered: () => { entered = true; } };
+    const wrapper = ({ children }: { children: ReactNode }) => <ChartEntranceContext.Provider value={slot}>{children}</ChartEntranceContext.Provider>;
+    return { wrapper, recorded: () => entered };
+  }
+
+  it("draws in a widget's first chart and records that it has", () => {
+    const { wrapper, recorded } = recordingSlot();
+    const { result } = renderHook(() => useChartEntrance(), { wrapper });
+    expect(result.current).toBe(true);
+    expect(recorded()).toBe(true);
+  });
+
+  it("starts a remounted chart of an already drawn widget settled, with no reveal", () => {
+    const { wrapper } = recordingSlot(true);
+    const { result } = renderHook(() => useChartEntrance(), { wrapper });
+    expect(result.current).toBe(false);
+  });
+
+  it("leaves the record alone for an embedded sub-widget", () => {
+    const { wrapper, recorded } = recordingSlot();
+    const { result } = renderHook(() => useChartEntrance({ disabled: true }), { wrapper });
+    expect(result.current).toBe(false);
+    expect(recorded()).toBe(false);
+  });
+});
+
 describe("chart-entrance styles", () => {
   it("clips marks only while the reveal animates: no clip-path outside the keyframes, and no fill mode that would keep one", () => {
-    expect(rules).toMatch(/@keyframes reveal \{\s*from \{\s*clip-path: inset\(0 100% 0 0\);\s*\}\s*to \{\s*clip-path: inset\(0 0 0 0\);\s*\}\s*\}/);
+    // view-box measures every mark group against the same SVG viewport, so the wipe fronts line up across series.
+    expect(rules).toMatch(/@keyframes reveal \{\s*from \{\s*clip-path: inset\(0 100% 0 0\) view-box;\s*\}\s*to \{\s*clip-path: inset\(0 0 0 0\) view-box;\s*\}\s*\}/);
     expect(rules.replace(/@keyframes reveal \{[\s\S]*?\n\}/, "")).not.toMatch(/clip-path/);
     expect(rules).not.toMatch(/fill-mode|\bforwards\b|\bboth\b/);
   });

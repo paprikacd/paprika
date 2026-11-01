@@ -3,14 +3,15 @@
  * [data-chart-entering] animates, and only its mark groups: axes, grids, labels, guides and legends never
  * move. The clip is an animation with no fill mode, so it is gone when the animation ends and the marks return
  * to their static geometry. Durations come from --gamma-duration-reveal, which the reduced-motion blocks in
- * gamma-theme.module.css set to 0.
+ * gamma-theme.module.css set to 0. The `view-box` reference box measures every group against the same SVG
+ * viewport, so the wipe front sits at the same x in each series group rather than at each group's own width.
  */
 @keyframes reveal {
   from {
-    clip-path: inset(0 100% 0 0);
+    clip-path: inset(0 100% 0 0) view-box;
   }
   to {
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(0 0 0 0) view-box;
   }
 }
 

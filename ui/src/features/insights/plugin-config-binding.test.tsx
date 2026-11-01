@@ -128,8 +128,33 @@ describe("renderer data checks", () => {
     expect(screen.queryByRole("list", { name: "Configuration issues" })).not.toBeInTheDocument();
   });
 
-  it("reports a check that throws as an issue instead of accepting the data", () => {
+  it("reports a check that throws as an issue, carrying the thrown message", () => {
     editor(capacityDefinition(() => { throw new Error("boom"); }), { capacity: "limit" }, { result: loaded });
-    expect(screen.getByText("The loaded result could not be checked for this widget.")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Configuration issues" })).toHaveTextContent("boom");
+  });
+
+  it("bounds a thrown message to its first 200 characters", () => {
+    const long = "x".repeat(260);
+    editor(capacityDefinition(() => { throw new Error(long); }), { capacity: "limit" }, { result: loaded });
+    const [item] = screen.getAllByRole("listitem");
+    expect(item.textContent).toBe("x".repeat(200));
+  });
+
+  it("reports a check that returns something other than a list as one issue, without crashing", () => {
+    editor(capacityDefinition(() => undefined as unknown as WidgetInputIssue[]), { capacity: "limit" }, { result: loaded });
+    const items = within(screen.getByRole("list", { name: "Configuration issues" })).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Validation returned an unexpected value"]);
+  });
+
+  it("announces the issue list politely, as a status region", () => {
+    editor(capacityDefinition(() => [{ message: "Forecast rows are empty." }]), { capacity: "limit" }, { result: loaded });
+    const status = screen.getByRole("status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(within(status).getByRole("list", { name: "Configuration issues" })).toBeInTheDocument();
+  });
+
+  it("shows a check's issues for a plugin with no guided fields", () => {
+    editor(definition([], { validateInput: () => [{ message: "The result has no series." }] }), {}, { result: loaded });
+    expect(screen.getByRole("list", { name: "Configuration issues" })).toHaveTextContent("The result has no series.");
   });
 });

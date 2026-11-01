@@ -73,17 +73,19 @@ describe("motion", () => {
     hidden = true;
     const { container } = render(<WidgetLoadingPlaceholder widget={timeseries} />);
     const placeholder = () => container.querySelector("[data-loading-family]");
-    expect(placeholder()).toHaveAttribute("data-motion", "paused");
+    expect(placeholder()).toHaveAttribute("data-loading-motion", "paused");
+    expect(placeholder()).not.toHaveAttribute("data-motion");
     hidden = false;
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
-    expect(placeholder()).toHaveAttribute("data-motion", "auto");
+    expect(placeholder()).toHaveAttribute("data-loading-motion", "auto");
   });
 
   it("stops the shimmer under reduced motion, whether from the operating system or a Gamma scope", () => {
     const css = readFileSync(join(process.cwd(), "src/features/insights/charts.module.css"), "utf8");
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.loadingPlaceholder\[data-motion="auto"\] \{ animation: none; \}\s*\}/);
-    expect(css).toContain(':is([data-motion="reduced"]) .loadingPlaceholder[data-motion="auto"] { animation: none; }');
-    expect(css).toContain('.loadingPlaceholder[data-motion="paused"] { animation: none; }');
+    // The placeholder's own state lives in data-loading-motion; data-motion is only the Gamma scope's reduced-motion preference.
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.loadingPlaceholder\[data-loading-motion="auto"\] \{ animation: none; \}\s*\}/);
+    expect(css).toContain(':is([data-motion="reduced"]) .loadingPlaceholder[data-loading-motion="auto"] { animation: none; }');
+    expect(css).toContain('.loadingPlaceholder[data-loading-motion="paused"] { animation: none; }');
   });
 });
 
