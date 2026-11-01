@@ -67,8 +67,8 @@ describe("histogram distributions", () => {
     const values = Array.from({ length: 100 }, (_, index) => index === 28 ? null : index);
     const data = buildDistribution([bucket("1", values), bucket("2", values.map(value => value === null ? null : value + 1))], { maxBuckets: 1, maxColumns: 8 });
     expect(data.rows).toHaveLength(1); expect(data.omittedBuckets).toBe(1);
-    // The missing column's bucket keeps that column and its densest one, so the output is two wider than its six buckets.
-    expect(data.timestamps).toHaveLength(9); expect(data.sampled).toBe(true);
+    // Eight columns in all: the missing column's bucket keeps it beside the densest column, so one fewer bucket fits.
+    expect(data.timestamps).toHaveLength(8); expect(data.sampled).toBe(true);
     expect(data.rows[0].cells.some(cell => cell.timestamp === 29000 && cell.value === null)).toBe(true);
   });
 });
@@ -285,7 +285,7 @@ describe("distribution quantiles and gap states", () => {
     const data = buildDistribution([bucket("10", b10), bucket("50", b50), bucket("+Inf", inf)], { maxColumns: 60 });
     expect(data.quantiles.filter(window => window.p95?.overflow).map(window => window.timestamp)).toEqual([101000, 401000]);
     expect(data.highest).toMatchObject({ timestamp: 101000, p95: { overflow: true } });
-    expect(data.timestamps.length).toBeLessThanOrEqual(120);
+    expect(data.timestamps.length).toBeLessThanOrEqual(60);
   });
 });
 
@@ -406,9 +406,84 @@ describe("sampling priority", () => {
     expect(sampleTimeIndices(10, 4, index => index === 2, index => index, index => index === 3)).toEqual([0, 2, 8, 9]);
     expect(sampleTimeIndices(10, 4, index => index === 5, () => 0)).toEqual([0, 1, 5, 9]);
   });
-  it("with twoPerBucket keeps a bucket's protected column and its peak, and never more than twice the limit", () => {
-    expect(sampleTimeIndices(10, 4, index => index === 2, index => index, () => false, { twoPerBucket: true })).toEqual([0, 2, 4, 8, 9]);
-    expect(sampleTimeIndices(1000, 12, () => true, index => index, () => false, { twoPerBucket: true }).length).toBeLessThanOrEqual(24);
+  it("with twoPerBucket keeps a bucket's protected column and its peak within the limit", () => {
+    // Two per bucket would keep [0, 2, 4, 8, 9], one over the limit of 4. One bucket then keeps the protected 2 and the peak 8.
+    expect(sampleTimeIndices(10, 4, index => index === 2, index => index, () => false, { twoPerBucket: true })).toEqual([0, 2, 8, 9]);
+    expect(sampleTimeIndices(1000, 12, () => true, index => index, () => false, { twoPerBucket: true }).length).toBeLessThanOrEqual(12);
+  });
+  it("gives a missing column its bucket's protected slot over an edge that comes first in the bucket", () => {
+    // Bucket [1, 10) holds edge 5 before gap 7. The gap keeps the slot in every bucketing, and the edge is left out for lack of room.
+    expect(sampleTimeIndices(20, 4, index => index === 7, index => index, () => false, { edge: index => index === 5 })).toEqual([0, 7, 18, 19]);
+    expect(sampleTimeIndices(20, 4, index => index === 7, index => index, () => false, { twoPerBucket: true, edge: index => index === 5 })).toEqual([0, 7, 18, 19]);
+  });
+});
+
+// Deterministic pseudo-random inputs (mulberry32), so a failing case reproduces exactly.
+function seeded(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe("sampling budget", () => {
+  it("keeps the ends in order, stays within the limit, and keeps a lone missing column and a peak, for random inputs and limits", () => {
+    const random = seeded(7);
+    for (let trial = 0; trial < 500; trial++) {
+      const length = 1 + Math.floor(random() * 400), limit = 2 + Math.floor(random() * 130);
+      const gaps = new Set(Array.from({ length: Math.floor(random() * 40) }, () => Math.floor(random() * length)));
+      const edges = new Set(Array.from({ length: Math.floor(random() * 40) }, () => Math.floor(random() * length)));
+      const magnitudes = Array.from({ length }, () => Math.floor(random() * 50));
+      const spike = Math.floor(random() * length);
+      const kept = sampleTimeIndices(length, limit, index => gaps.has(index), index => magnitudes[index], index => index === spike, { twoPerBucket: true, edge: index => edges.has(index) });
+      const context = `length ${length}, limit ${limit}, gaps ${[...gaps].join(",")}, edges ${[...edges].join(",")}, spike ${spike}`;
+      expect(kept.length, context).toBeLessThanOrEqual(limit);
+      expect(kept.every((index, position) => position === 0 || index > kept[position - 1]), context).toBe(true);
+      if (length <= limit) continue;
+      expect(kept[0], context).toBe(0);
+      expect(kept.at(-1), context).toBe(length - 1);
+      // A lone missing column survives from a limit of three, and the peak survives from a limit of four.
+      const interior = [...gaps].filter(index => index > 0 && index < length - 1);
+      if (interior.length === 1 && limit >= 3) expect(kept, context).toContain(interior[0]);
+      if (spike > 0 && spike < length - 1 && limit >= 4) expect(kept, context).toContain(spike);
+    }
+  });
+  it("keeps a heatmap within maxColumns for random histograms and budgets", () => {
+    const random = seeded(11);
+    const cell = () => random() < 0.05 ? null : Math.floor(random() * 100);
+    for (let trial = 0; trial < 80; trial++) {
+      const windows = 2 + Math.floor(random() * 300), maxColumns = 8 + Math.floor(random() * 113);
+      const low = Array.from({ length: windows }, cell), mid = Array.from({ length: windows }, cell), high = Array.from({ length: windows }, cell);
+      const data = buildDistribution([bucket("10", low), bucket("50", mid), bucket("+Inf", high)], { maxColumns });
+      expect(data.timestamps.length, `${windows} windows, maxColumns ${maxColumns}`).toBeLessThanOrEqual(maxColumns);
+    }
+  });
+  it("keeps bar mode within maxPoints for random series and budgets", () => {
+    const random = seeded(13);
+    for (let trial = 0; trial < 80; trial++) {
+      const length = 2 + Math.floor(random() * 400), maxPoints = 12 + Math.floor(random() * 229);
+      const tracks = Array.from({ length: 1 + Math.floor(random() * 4) }, (_, track) => {
+        const start = Math.floor(random() * length);
+        return series(`track ${track}`, Array.from({ length }, (_, index) => index < start || random() < 0.05 ? null : Math.floor(random() * 100)));
+      });
+      const data = buildMetricPlot(tracks, stackedConfigSchema.parse({ display: "bar", maxPoints }));
+      expect(data.timestamps.length, `${length} columns, maxPoints ${maxPoints}`).toBeLessThanOrEqual(maxPoints);
+    }
+  });
+  it("keeps a 24-column heatmap within its budget when a window is missing, and keeps that window", () => {
+    // One missing window in a 200-window history, shown in 24 columns: the missing window must stay and the budget must hold.
+    const windows = 200, missingAt = 100;
+    const low = Array.from({ length: windows }, (_, index) => index === missingAt ? null : 1 + (index * 7) % 13);
+    const high = Array.from({ length: windows }, (_, index) => 20 + (index * 3) % 11);
+    const data = buildDistribution([bucket("10", low), bucket("+Inf", high)], { maxColumns: 24 });
+    expect(data.sampled).toBe(true);
+    expect(data.timestamps.length).toBeLessThanOrEqual(24);
+    expect(data.timestamps).toContain((missingAt + 1) * 1000);
+    expect(data.rows[0].cells.find(cell => cell.timestamp === (missingAt + 1) * 1000)).toMatchObject({ value: null, state: "missing" });
   });
 });
 

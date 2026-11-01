@@ -69,6 +69,19 @@ describe("distribution heatmap", () => {
     expect(cells().some(cell => cell.getAttribute("data-timestamp") === "38000" && cell.getAttribute("data-bucket-value") === "unknown")).toBe(true);
     expect(cells().some(cell => cell.getAttribute("data-timestamp") === "120000")).toBe(true);
   });
+  it("keeps a 24-column heatmap within its budget when a window is missing, and draws that window as missing", () => {
+    // A 200-window history with one missing window, shown in 24 columns. The missing window must stay, and the budget must hold.
+    const points = (values: (number | null)[]) => values.map((value, index) => ({ timestamp: (index + 1) * 1000, value }));
+    const data: QueryResult = { series: [
+      { name: "bucket 10", labels: { le: "10" }, points: points(Array.from({ length: 200 }, (_, index) => index === 100 ? null : 1 + (index * 7) % 13)) },
+      { name: "bucket +Inf", labels: { le: "+Inf" }, points: points(Array.from({ length: 200 }, (_, index) => 20 + (index * 3) % 11)) },
+    ] };
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, config: { maxColumns: 24, densityUnit: "events/s" } }} result={data} />);
+    const columns = new Set([...container.querySelectorAll<SVGRectElement>("[data-bucket-value]")].map(cell => cell.getAttribute("data-timestamp")));
+    expect(columns.size).toBeLessThanOrEqual(24);
+    expect(columns.has("101000")).toBe(true);
+    expect(container.querySelector('[data-timestamp="101000"][data-bucket-value="unknown"]')).not.toBeNull();
+  });
 });
 
 describe("distribution heatmap states and p95", () => {

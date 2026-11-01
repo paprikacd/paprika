@@ -56,29 +56,52 @@ function observations(series: MetricSeries) {
 }
 
 /**
- * Keep recorded timestamps only, one per output bucket. Inside a bucket the priority is: the first missing column (so
- * sampling never bridges a known gap), then a `peak` column, then the largest magnitude. Without a `peak` predicate this
- * is the magnitude rule alone. With `twoPerBucket`, a bucket keeps its first missing column and its peak column when they
- * differ, so a protected column never displaces the densest one. The output then holds at most 2 × limit columns.
+ * Keep recorded timestamps only, at most `limit` of them, always including the first and last. Inside a bucket the
+ * priority is: the first missing column (so sampling never bridges a known gap), then a `peak` column, then the largest
+ * magnitude. Without a `peak` predicate this is the magnitude rule alone.
+ *
+ * `options.edge` marks protected columns that give way to missing ones: a bucket that keeps one protected column keeps a
+ * missing column over an edge. With `twoPerBucket`, a bucket also keeps its peak beside its protected column, which can
+ * overshoot the budget. The bucket count then falls one at a time until the selection fits, so each bucket's protected
+ * column and peak survive at the coarser bucketing. Budget left over takes the remaining missing columns, then the
+ * remaining edges, in time order.
  */
-export function sampleTimeIndices(length: number, limit: number, missing: (index: number) => boolean, magnitude: (index: number) => number, peak: (index: number) => boolean = () => false, options: { twoPerBucket?: boolean } = {}) {
+export function sampleTimeIndices(length: number, limit: number, missing: (index: number) => boolean, magnitude: (index: number) => number, peak: (index: number) => boolean = () => false, options: { twoPerBucket?: boolean; edge?: (index: number) => boolean } = {}) {
   if (length <= limit) return Array.from({ length }, (_, i) => i);
-  const indices = [0];
-  for (let bucket = 0; bucket < limit - 2; bucket++) {
-    const start = 1 + Math.floor(bucket * (length - 2) / (limit - 2));
-    const end = 1 + Math.floor((bucket + 1) * (length - 2) / (limit - 2));
-    let protectedIndex = -1, selected = start, selectedPeak = peak(start);
-    for (let index = start; index < end; index++) {
-      if (protectedIndex < 0 && missing(index)) protectedIndex = index;
-      const isPeak = peak(index);
-      if (isPeak !== selectedPeak ? isPeak : magnitude(index) > magnitude(selected)) { selected = index; selectedPeak = isPeak; }
-    }
-    if (protectedIndex < 0) indices.push(selected);
-    else if (options.twoPerBucket && selected !== protectedIndex) indices.push(Math.min(protectedIndex, selected), Math.max(protectedIndex, selected));
-    else indices.push(protectedIndex);
+  // Two ends need two columns, so a budget below two keeps the newest column, or nothing.
+  if (limit < 2) return limit > 0 ? [length - 1] : [];
+  // Each predicate is read once per interior column; the bucket-count retries below reuse these flags.
+  const gapFlags = new Uint8Array(length), edgeFlags = new Uint8Array(length), peakFlags = new Uint8Array(length), weights = new Float64Array(length);
+  for (let index = 1; index < length - 1; index++) {
+    gapFlags[index] = missing(index) ? 1 : 0;
+    edgeFlags[index] = options.edge?.(index) ? 1 : 0;
+    peakFlags[index] = peak(index) ? 1 : 0;
+    weights[index] = magnitude(index);
   }
-  indices.push(length - 1);
-  return indices;
+  const interior = length - 2;
+  const select = (buckets: number) => {
+    const kept = new Set<number>();
+    for (let bucket = 0; bucket < buckets; bucket++) {
+      const start = 1 + Math.floor(bucket * interior / buckets), end = 1 + Math.floor((bucket + 1) * interior / buckets);
+      let selected = start, selectedPeak = peakFlags[start], firstGap = -1, firstEdge = -1;
+      for (let index = start; index < end; index++) {
+        if (firstGap < 0 && gapFlags[index] === 1) firstGap = index;
+        if (firstEdge < 0 && edgeFlags[index] === 1) firstEdge = index;
+        if (peakFlags[index] !== selectedPeak ? peakFlags[index] === 1 : weights[index] > weights[selected]) { selected = index; selectedPeak = peakFlags[index]; }
+      }
+      const protectedIndex = firstGap >= 0 ? firstGap : firstEdge;
+      if (protectedIndex < 0) kept.add(selected);
+      else if (options.twoPerBucket) { kept.add(selected); kept.add(protectedIndex); }
+      else kept.add(protectedIndex);
+    }
+    return kept;
+  };
+  // Try one bucket per column of budget first, then shorten the bucketing until the selection fits. Zero buckets always
+  // fit, since the two ends need only two columns.
+  let buckets = limit - 2, kept = select(buckets);
+  while (kept.size + 2 > limit) kept = select(--buckets);
+  for (const flags of [gapFlags, edgeFlags]) for (let index = 1; index < length - 1 && kept.size + 2 < limit; index++) if (flags[index] === 1) kept.add(index);
+  return [0, ...[...kept].sort((a, b) => a - b), length - 1];
 }
 
 export interface MetricCell {
@@ -290,19 +313,20 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
   }
   const incompleteAt = (index: number) => index >= 0 && index < timestamps.length && cells.some(track => track[index].upper === null);
   // Bar mode must keep what it draws: the edges of every cap run (a cap is the only sign of a missing track) and each
-  // track's first and last finite column, where its bars start and stop. A bucket keeps its protected column and its
-  // peak, so a magnitude peak next to an edge survives too. Area mode keeps every gap as before.
+  // track's first and last finite column, where its bars start and stop. A bucket keeps a cap edge over a track edge, and
+  // its peak beside either, so a magnitude peak next to an edge survives too. Area mode keeps every gap as before.
   const capRun = (index: number) => index >= 0 && index < columns.length && columns[index].missing.length > 0 && !columns[index].overflow;
+  const capEdge = (index: number) => capRun(index) && (!capRun(index - 1) || !capRun(index + 1));
   const edges = new Set<number>();
   for (const track of cells) {
     const first = track.findIndex(cell => cell.value !== null), last = track.findLastIndex(cell => cell.value !== null);
     if (first >= 0) { edges.add(first); edges.add(last); }
   }
   const indices = sampleTimeIndices(timestamps.length, config.maxPoints ?? 120,
-    bars ? index => edges.has(index) || (capRun(index) && (!capRun(index - 1) || !capRun(index + 1))) : incompleteAt,
+    bars ? capEdge : incompleteAt,
     // A bar column's magnitude is its largest bound, partial bounds included, so a partial spike survives sampling.
     index => Math.max(0, ...cells.map(track => Math.abs(track[index].upper ?? 0)), ...(bars ? columns[index].partial.flatMap(part => [Math.abs(part.lower), Math.abs(part.upper)]) : [])),
-    () => false, { twoPerBucket: bars });
+    () => false, { twoPerBucket: bars, edge: index => bars && edges.has(index) });
   // Bar mode scales to the columns it draws, so the axis never reflects a value that no bar shows. Area and
   // directional modes keep every returned column, as before. Only bar mode draws partial bounds.
   const scaled = bars ? indices : timestamps.map((_, index) => index);
@@ -490,11 +514,13 @@ export function buildDistribution(series: MetricSeries[], config: DistributionCo
   // A window with a missing or invalid bucket is a source gap. Empty windows are observed zeros, and unbounded windows
   // are all alike without a +Inf bucket, so neither takes sampling priority. An overflow run's first and last windows are
   // protected too: overflow moves counts into +Inf and lowers the densest bucket, so the magnitude rule alone drops them.
+  // They give way to a gap in the same bucket, so a gap is never sampled away for an edge.
   const overflowAt = (column: number) => column >= 0 && column < windows.length && windows[column].p95?.overflow === true;
   const indices = sampleTimeIndices(allTimes.length, config.maxColumns ?? 60,
-    column => windows[column].gap !== null || (overflowAt(column) && (!overflowAt(column - 1) || !overflowAt(column + 1))),
+    column => windows[column].gap !== null,
     column => Math.max(0, ...shown.map((_, index) => bucketCells[index][column].value ?? 0)),
-    column => column === highestColumn, { twoPerBucket: true });
+    column => column === highestColumn,
+    { twoPerBucket: true, edge: column => overflowAt(column) && (!overflowAt(column - 1) || !overflowAt(column + 1)) });
   const rows: DistributionRow[] = shown.map((upper, index) => ({
     lower: index ? bounds[index - 1] : -Infinity, upper,
     labels: { ...commonLabels, [bucketLabel]: Number.isFinite(upper) ? String(upper) : "+Inf" },
