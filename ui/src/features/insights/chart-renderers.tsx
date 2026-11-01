@@ -19,6 +19,7 @@ export { MetricDetails } from "./metric-tooltip-content";
 import { areaY } from "@tanstack/charts/area";
 import { barY } from "@tanstack/charts/bar";
 import { focusGroupX, focusNearestX } from "@tanstack/charts/focus";
+import { crosshair } from "@tanstack/charts/crosshair";
 import { usePlotTooltip } from "./plot-tooltip";
 import { useChartCursor } from "./chart-cursor";
 import { useAnnotationEvents } from "./annotation-events";
@@ -39,6 +40,7 @@ import { portal } from "@tanstack/charts/tooltip/portal";
 import type { QueryResult, Widget, WidgetOptions, Threshold } from "./schema";
 import styles from "./charts.module.css";
 import hatchStyles from "./plot-hatch.module.css";
+import { useChartEntrance } from "./chart-entrance";
 import { PlotHatchSvg, plotHatchFill } from "./plot-hatch";
 import configStyles from "./chart-styles.module.css";
 import eventStyles from "./plugins/rich-metrics.module.css";
@@ -135,6 +137,20 @@ const CURVES = {
   step: d3Curve(curveStepAfter),
   monotone: d3Curve(curveMonotoneX),
 };
+/** An area's fill: the series colour at `opacity` on its top edge, fading to transparent at the baseline. TanStack scopes the id to the chart. */
+function areaGradient(index: number, color: string, opacity: number) {
+  return {
+    id: `area-gradient-${index}`,
+    x1: 0,
+    y1: 0,
+    x2: 0,
+    y2: 1,
+    stops: [
+      { offset: 0, color, opacity },
+      { offset: 1, color, opacity: 0 },
+    ],
+  };
+}
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
   { value: 0, color: "#b64a3a", label: "Unhealthy" },
   { value: 1, color: "#53876a", label: "Healthy" },
@@ -314,6 +330,7 @@ function TimeSeriesChart({
   const cursor = useChartCursor();
   const eventData = useAnnotationEvents();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
+  const entering = useChartEntrance({ disabled: embedded, anchor: ref });
   const { rangeEnd } = useDashboardWindow();
   const truncated = useTooltipWidgetData()?.result.truncated;
   const associateDescription = useCallback(
@@ -435,14 +452,15 @@ function TimeSeriesChart({
           ...data.flatMap((entry, index) => [
           ...(options.display === "area"
             ? [
-                // Fills paint behind observations; only the line owns hit testing.
+                // Fills paint behind observations; only the line owns hit testing. The gradient carries the opacity, so the
+                // path itself is opaque: TanStack's default fill-opacity would multiply into the gradient's top stop.
                 decorative(
                   areaY(entry.plotPoints, {
                     id: `area-${index}`,
                     x: "timestamp",
                     y: "value",
-                    fill: entry.color,
-                    fillOpacity: options.fillOpacity ?? 0.06,
+                    fill: `url(#area-gradient-${index})`,
+                    fillOpacity: 1,
                     curve: CURVES[options.curve ?? "linear"],
                   }),
                 ),
@@ -469,6 +487,8 @@ function TimeSeriesChart({
             points: true,
           }))] : []),
           ]),
+          // The focus guide: a dashed rule at the focused x. It reads focus state only, so it adds no scale input.
+          ...(embedded ? [] : [crosshair({ x: { stroke: "var(--gamma-chart-axis, var(--gamma-muted, #52636f))", strokeOpacity: .7, strokeWidth: 1, strokeDasharray: "3 3" }, y: false })]),
         ],
         scales: {
           x: {
@@ -532,7 +552,10 @@ function TimeSeriesChart({
               left: axisLeft,
             },
         clip: true,
-        theme: configuredTheme(options),
+        // One gradient per series, drawn only when the chart is an area.
+        gradients: options.display === "area" ? data.map((entry, index) => areaGradient(index, entry.color, options.fillOpacity ?? 0.28)) : undefined,
+        // The primary-point ring: a 4px disc in the surface colour with a 2px stroke in the series colour. No glow or blur.
+        theme: { ...configuredTheme(options), focusRing: { radius: 4, strokeWidth: 2, fill: "var(--widget-background, var(--gamma-bg))" } },
         // Built-in strategy identity preserves TanStack's segment hit testing.
         focus: embedded
           ? false
@@ -579,6 +602,7 @@ function TimeSeriesChart({
       <div
         className={styles.plot}
         ref={ref}
+        data-chart-entering={entering || undefined}
         onPointerMoveCapture={
           tooltipEnabled ? plotTooltip.onInteract : undefined
         }
@@ -742,6 +766,7 @@ function barNiceCount(showAxis: boolean, axisTicks: number, height: number) {
 function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
   const { ref, width, height } = usePlotSize();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
+  const entering = useChartEntrance({ disabled: embedded, anchor: ref });
   const hatch = useId();
   const emptyNoticeId = `${hatch}-empty`;
   const ticks = responsiveChartTicks(width, height);
@@ -969,6 +994,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
       <div
         className={styles.plot}
         ref={ref}
+        data-chart-entering={entering || undefined}
         onPointerMoveCapture={
           tooltipEnabled ? plotTooltip.onInteract : undefined
         }

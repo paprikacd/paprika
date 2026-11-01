@@ -27,6 +27,8 @@ import { DistributionWindowHistogram, type WindowHistogramBucket } from "./distr
 import { buildDistribution, buildMetricPlot, directionalConfigSchema, distributionConfigSchema, stackedConfigSchema, MetricDataError, type DistributionCell, type DistributionConfig, type DistributionData, type DistributionRow, type MetricCell, type MetricSeries } from "./rich-metrics-data";
 import styles from "./rich-metrics.module.css";
 import tooltipStyles from "../chart-styles.module.css";
+import { useChartEntrance } from "../chart-entrance";
+import chartEntrance from "../chart-entrance.module.css";
 
 const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 // The 24-step heat ramp, lowest density first. Fallbacks are the light-theme values.
@@ -274,6 +276,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const [anchor, setAnchor] = useState<SVGSVGElement | null>(null), [panel, setPanel] = useState<HTMLDivElement | null>(null);
   const sharedCursor = useChartCursor();
   const { showAxis, descriptionId, embedded: embeddedChart } = useWidgetPresentation();
+  const entering = useChartEntrance({ disabled: props.embedded || embeddedChart, anchor: ref });
   const unit = config.bucketUnit || widget.unit, densityUnit = config.densityUnit ?? "observations/s";
   const tickLabels = fullData.rows.map(row => cellLabel(row.lower, row.upper, unit));
   const gutter = useAxisGutter(tickLabels, ref, width);
@@ -352,7 +355,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   };
   if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
   return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
-    <div className={styles.plot} ref={ref}>
+    <div className={styles.plot} ref={ref} data-chart-entering={entering || undefined}>
       <svg ref={setAnchor} className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
         onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
         onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value); else if (inspection.active && !inspection.active.pinned && inspection.active.owner === "pointer") inspection.dismiss(); }}
@@ -363,9 +366,9 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         {gaps.map((gap, index) => <rect key={index} x={gap.left} y={top} width={Math.max(0, gap.right - gap.left)} height={plotHeight} fill={plotHatchFill(id)} pointerEvents="none" aria-hidden="true" data-heatmap-gap />)}
         {data.rows.map((row, rowIndex) => <g key={row.upper}>
           {showAxis && axisRows.has(rowIndex) && <text data-value-axis x={left - 8} y={top + (data.rows.length - rowIndex - .5) * cellHeight} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[rowIndex]}</text>}
-          {row.cells.map((cell, column) => <rect key={cell.timestamp} x={columns[column].left} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={columns[column].width} height={Math.max(.1, cellHeight - 1)} fill={cellFill(cell)} data-bucket-value={cell.value ?? "unknown"} data-bucket-state={cell.state} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}>{(embeddedChart || props.embedded) && <title>{cellTitle(row, cell)}</title>}</rect>)}
+          <g className={chartEntrance.revealMarks}>{row.cells.map((cell, column) => <rect key={cell.timestamp} x={columns[column].left} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={columns[column].width} height={Math.max(.1, cellHeight - 1)} fill={cellFill(cell)} data-bucket-value={cell.value ?? "unknown"} data-bucket-state={cell.state} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}>{(embeddedChart || props.embedded) && <title>{cellTitle(row, cell)}</title>}</rect>)}</g>
         </g>)}
-        {quantile.d !== "" && <>
+        <g className={chartEntrance.revealMarks}>{quantile.d !== "" && <>
           <path d={quantile.d} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4.6} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-halo />
           {/* With an overflow run the whole line is dashed, then the finite runs are drawn solid over it, so an overflow run and its joins are dashed. */}
           <path d={quantile.d} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} strokeDasharray={overflowRun ? "4 3" : undefined} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" aria-hidden="true" data-quantile-line data-quantile-overflow={overflowRun || undefined} />
@@ -374,7 +377,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         {quantile.above.map((x, index) => <g key={index} pointerEvents="none" aria-hidden="true">
           <path d={`M${x - 4},${top + 6}L${x},${top + 2}L${x + 4},${top + 6}`} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} strokeLinejoin="round" strokeLinecap="round" />
           <path d={`M${x - 4},${top + 6}L${x},${top + 2}L${x + 4},${top + 6}`} fill="none" stroke="var(--gamma-ink)" strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" data-quantile-above />
-        </g>)}
+        </g>)}</g>
         {selected && <g pointerEvents="none" aria-hidden="true">
           <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} />
           <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} data-selected-bucket />
@@ -450,6 +453,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const sharedCursor = useChartCursor();
   const eventData = useAnnotationEvents();
   const { showAxis, descriptionId, embedded: embeddedChart } = useWidgetPresentation();
+  const entering = useChartEntrance({ disabled: props.embedded || embeddedChart, anchor: ref });
   const displayTimes = data.timestamps.length ? data.timestamps : previousPlot?.timestamps ?? [];
   const currentDrawable = data.tracks.some(track => track.cells.some(cell => cell.upper !== null));
   const previousDrawable = previousPlot?.tracks.some(track => track.cells.some(cell => cell.upper !== null)) ?? false;
@@ -584,7 +588,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   </figure> : undefined;
   return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>
-    <div className={styles.plot} ref={ref}>
+    <div className={styles.plot} ref={ref} data-chart-entering={entering || undefined}>
       {emptyZoom ? <div role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <svg ref={setAnchor} className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${directional ? "Outbound traffic below zero" : "Stacked observations"}.${inspection.enabled && data.timestamps.length ? " Arrow keys inspect values; Enter pins." : ""}`} tabIndex={inspection.enabled && data.timestamps.length ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={data.timestamps.length ? keys : undefined}
         onFocus={() => { if (data.timestamps.length) inspection.focus(observation(0, data.timestamps.length - 1)); }}
         onPointerMove={event => { if (!data.timestamps.length) return; const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
@@ -597,9 +601,9 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         {/* Individual marks are visual only. The focusable chart exposes one
             accessible summary and keyboard navigation into exact observations;
             exposing hundreds of SVG titles as images makes that path unusable. */}
-        <g clipPath={`url(#${id}-clip)`} aria-hidden="true" data-metric-marks>{previousPlot?.tracks.map((track, index) => <g key={`prior-${index}`} data-prior-series={prior[index].index} pointerEvents="none" aria-hidden="true">
+        <g clipPath={`url(#${id}-clip)`} aria-hidden="true" data-metric-marks>{previousPlot?.tracks.map((track, index) => <g key={`prior-${index}`} data-prior-series={prior[index].index} className={chartEntrance.revealMarks} pointerEvents="none" aria-hidden="true">
           {segments(track.cells).map((segment, part) => <path key={part} data-prior-path d={`M${segment.map(cell => `${number(x(cell.timestamp))},${number(y(cell.upper!))}`).join("L")}`} fill="none" stroke={color(prior[index].index)} strokeWidth={widget.options?.lineWidth ?? 1.6} strokeDasharray="5 4" strokeOpacity={.8} />)}
-        </g>)}{data.tracks.map((track, index) => <g key={index} data-series={track.name}>
+        </g>)}{data.tracks.map((track, index) => <g key={index} data-series={track.name} className={chartEntrance.revealMarks}>
           {bars ? track.cells.map((cell, column) => {
             const bar = barAt(column);
             if (cell.upper === null || cell.lower === null) {
@@ -613,12 +617,12 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
             const forward = segment.map(cell => `${number(x(cell.timestamp))},${number(y(cell.upper!))}`), back = segment.toReversed().map(cell => `${number(x(cell.timestamp))},${number(y(cell.lower!))}`);
             return <g key={part}><path d={`M${forward.join("L")}L${back.join("L")}Z`} fill={color(index)} fillOpacity={directional ? .16 : .48} /><path d={`M${forward.join("L")}`} fill="none" stroke={color(index)} strokeWidth={widget.options?.lineWidth ?? 1.6} strokeLinejoin="round" />{segment.length === 1 && <circle cx={x(segment[0].timestamp)} cy={y(segment[0].upper!)} r={2.5} fill={color(index)} />}</g>;
           })}
-        </g>)}{bars && data.columns.map((column, index) => {
+        </g>)}{bars && <g className={chartEntrance.fadeMarks}>{data.columns.map((column, index) => {
           // One cap per incomplete column, however many series are missing. A single missing series sets its colour.
           if (column.overflow || !column.missing.length) return null;
           const bar = barAt(index), names = column.missing.map(track => data.tracks[track].name).join(", ");
           return <rect key={index} x={bar.x} y={capTop(index)} width={bar.width} height={capHeight} fill={plotHatchFill(id)} stroke={column.missing.length === 1 ? color(column.missing[0]) : "var(--gamma-chart-hatch)"} strokeWidth={1} strokeDasharray="2 2" data-missing-series={names} data-missing-count={column.missing.length} aria-hidden="true"><title>{`${names}: no value at ${stamp(column.timestamp)}`}</title></rect>;
-        })}</g>
+        })}</g>}</g>
         {annotations.map((event, index) => <g key={`${event.timestamp}-${index}`} aria-hidden="true">
           {event.at >= minTime && <><line data-annotation-timestamp={event.timestamp} x1={x(event.at)} x2={x(event.at)} y1={top} y2={height - bottom} className={styles.annotationLine} data-severity={event.severity ?? "unclassified"} pointerEvents="none" />
           <circle cx={x(event.at)} cy={top + 4} r={3} className={styles.annotationMarker} data-severity={event.severity ?? "unclassified"} pointerEvents="none" /></>}

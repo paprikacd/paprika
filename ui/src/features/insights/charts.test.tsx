@@ -685,9 +685,9 @@ describe("widget visualizations", () => {
     expect(screen.getByText("Response time")).toBeInTheDocument();
     expect(screen.getByText("100.00 ms")).toBeInTheDocument();
     expect(screen.queryByText("api")).not.toBeInTheDocument();
-    expect(
-      container.querySelector('path[fill-opacity="0.3"]'),
-    ).toBeInTheDocument();
+    // fillOpacity now sets the top stop of the area's gradient, which fades to transparent at the baseline.
+    const fill = container.querySelector("g.ts-chart__area path")!.getAttribute("fill")!;
+    expect(document.getElementById(fill.replace(/^url\(#(.+)\)$/, "$1"))!.querySelector("stop")).toHaveAttribute("stop-opacity", "0.3");
     expect(
       container.querySelector('path[stroke-width="3"]'),
     ).toBeInTheDocument();

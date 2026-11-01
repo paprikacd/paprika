@@ -65,6 +65,8 @@
   --gamma-duration-fast: 130ms;
   --gamma-duration-base: 200ms;
   --gamma-duration-slow: 360ms;
+  /* One-time chart draw-in; chart-entrance.ts keeps CHART_REVEAL_MS equal to this. */
+  --gamma-duration-reveal: 600ms;
   --gamma-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
   --gamma-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   /* Keep Gamma's token contract, with smooth deceleration in Paprika. */
@@ -211,7 +213,15 @@
     --gamma-duration-fast: 0ms;
     --gamma-duration-base: 0ms;
     --gamma-duration-slow: 0ms;
+    --gamma-duration-reveal: 0ms;
   }
+}
+/* An explicit reduced-motion scope (data-motion="reduced") zeroes every duration, as the OS setting does. */
+.scope[data-motion="reduced"] {
+  --gamma-duration-fast: 0ms;
+  --gamma-duration-base: 0ms;
+  --gamma-duration-slow: 0ms;
+  --gamma-duration-reveal: 0ms;
 }
 
 .scope,
