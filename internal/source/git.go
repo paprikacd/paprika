@@ -61,7 +61,26 @@ type GitSource struct {
 	// is the clock. 0 always fetches (previous behaviour). Pinned commit
 	// SHAs are immutable and always skip the remote once mirrored.
 	FetchTTL time.Duration
+	// Backend selects the fetch implementation; empty is the process default
+	// (DefaultGitBackend).
+	Backend GitBackend
 }
+
+// GitBackend names a git fetch implementation.
+type GitBackend string
+
+// Git fetch implementations.
+const (
+	// GitBackendAuto picks the git CLI when a usable git binary is installed,
+	// else go-git.
+	GitBackendAuto GitBackend = "auto"
+	// GitBackendCLI is the git CLI: a blobless partial clone that downloads
+	// only the blobs under Path.
+	GitBackendCLI GitBackend = "cli"
+	// GitBackendGoGit is the in-process go-git mirror, which downloads every
+	// blob of the fetched tree.
+	GitBackendGoGit GitBackend = "go-git"
+)
 
 var (
 	repoLocks  = make(map[string]*sync.Mutex)
@@ -101,11 +120,20 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	if g.RepoURL == "" {
 		return nil, errors.New("repoURL is required")
 	}
+	if err := g.checkRepoURL(); err != nil {
+		return nil, err
+	}
+	if g.backend() == GitBackendCLI {
+		return g.resolveCLI(ctx)
+	}
 	key := RepoCacheKey(g.RepoURL, g.credentialID())
 	mirrorDir := filepath.Join(g.WorkDir, "git-mirrors", key)
 	worktreeDir := filepath.Join(g.WorkDir, "git-clones", key)
 
-	lock := repoLock(key)
+	// Keyed by the mirror's directory, not the repository: two work dirs (the
+	// controller's release and application renderers) hold two mirrors that
+	// never contend.
+	lock := repoLock(mirrorDir)
 	lock.Lock()
 	defer lock.Unlock()
 	// A request can wait here behind a detached fetch for up to
@@ -810,11 +838,8 @@ func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, work
 		return err
 	}
 
-	// #nosec G304 -- marker path is derived from our own WorkDir.
-	if existing, readErr := os.ReadFile(marker); readErr == nil && string(existing) == stamp {
-		if info, statErr := os.Stat(dest); statErr == nil && info.IsDir() {
-			return nil
-		}
+	if checkoutCurrent(marker, stamp, dest) {
+		return nil
 	}
 
 	// Only the requested scope is replaced — other subtrees in worktreeDir
@@ -829,11 +854,25 @@ func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, work
 	if err := g.materializeTree(repo, tree, dest); err != nil {
 		return err
 	}
+	if err := verifySymlinks(dest); err != nil {
+		return err
+	}
 
 	if err := os.WriteFile(marker, []byte(stamp), 0o600); err != nil {
 		return fmt.Errorf("checkout tree: write revision marker: %w", err)
 	}
 	return nil
+}
+
+// checkoutCurrent reports whether dest holds the checkout marker records.
+func checkoutCurrent(marker, stamp, dest string) bool {
+	// #nosec G304 -- marker path is derived from our own WorkDir.
+	existing, err := os.ReadFile(marker)
+	if err != nil || string(existing) != stamp {
+		return false
+	}
+	info, err := os.Stat(dest)
+	return err == nil && info.IsDir()
 }
 
 // checkoutMarkerFormat prefixes the hash in a revision marker. A marker
@@ -913,12 +952,12 @@ const maxCheckoutTreeDepth = 1024
 // validated as the walker validated them, by FindEntry for a directory and
 // TreeEntryFile for a file.
 func (g *GitSource) materializeTree(repo *git.Repository, tree *object.Tree, dest string) error {
-	return g.materializeDir(repo, tree, dest, "", 0)
+	return g.materializeDir(repo, tree, newCheckoutGuard(dest), "", 0)
 }
 
 // materializeDir writes tree, found at dir and depth below the checkout's
-// root, under dest.
-func (g *GitSource) materializeDir(repo *git.Repository, tree *object.Tree, dest, dir string, depth int) error {
+// root, under guard's root.
+func (g *GitSource) materializeDir(repo *git.Repository, tree *object.Tree, guard *checkoutGuard, dir string, depth int) error {
 	if depth > maxCheckoutTreeDepth {
 		return fmt.Errorf("checkout tree: %s: %w", dir, object.ErrMaxTreeDepth)
 	}
@@ -926,7 +965,7 @@ func (g *GitSource) materializeDir(repo *git.Repository, tree *object.Tree, dest
 		entry := &tree.Entries[i]
 		name := path.Join(dir, entry.Name)
 		if entry.Mode != filemode.Dir {
-			if err := g.materializeEntry(tree, name, entry, dest); err != nil {
+			if err := g.materializeEntry(tree, name, entry, guard); err != nil {
 				return err
 			}
 			continue
@@ -938,7 +977,7 @@ func (g *GitSource) materializeDir(repo *git.Repository, tree *object.Tree, dest
 		if err != nil {
 			return err
 		}
-		if err := g.materializeDir(repo, subtree, dest, name, depth+1); err != nil {
+		if err := g.materializeDir(repo, subtree, guard, name, depth+1); err != nil {
 			return err
 		}
 	}
@@ -946,11 +985,16 @@ func (g *GitSource) materializeDir(repo *git.Repository, tree *object.Tree, dest
 }
 
 // materializeEntry writes one entry of tree, found at name, under dest.
-func (g *GitSource) materializeEntry(tree *object.Tree, name string, entry *object.TreeEntry, dest string) error {
-	target := filepath.Join(dest, name)
+func (g *GitSource) materializeEntry(tree *object.Tree, name string, entry *object.TreeEntry, guard *checkoutGuard) error {
+	if err := guard.parentsOK(name); err != nil {
+		return err
+	}
+	target := filepath.Join(guard.root, name)
 	mode := entry.Mode
 	switch {
-	case mode.IsRegular():
+	// IsRegular is false for an executable (100755): those were skipped as
+	// if they were submodules, and a chart's scripts never reached a render.
+	case mode.IsRegular() || mode == filemode.Executable:
 		file, fileErr := tree.TreeEntryFile(entry)
 		if fileErr != nil {
 			return fmt.Errorf("checkout tree: read blob %s: %w", name, fileErr)
@@ -961,25 +1005,34 @@ func (g *GitSource) materializeEntry(tree *object.Tree, name string, entry *obje
 		}
 		return writeBlob(target, &file.Blob, os.FileMode(perm))
 	case mode == filemode.Symlink:
-		file, fileErr := tree.TreeEntryFile(entry)
-		if fileErr != nil {
-			return fmt.Errorf("checkout tree: read symlink %s: %w", name, fileErr)
-		}
-		targetContent, readErr := blobReaderString(&file.Blob)
-		if readErr != nil {
-			return readErr
-		}
-		if mkErr := os.MkdirAll(filepath.Dir(target), 0o750); mkErr != nil {
-			return fmt.Errorf("checkout tree: create dir for %s: %w", name, mkErr)
-		}
-		if linkErr := os.Symlink(targetContent, target); linkErr != nil {
-			return fmt.Errorf("checkout tree: create symlink %s: %w", name, linkErr)
-		}
-		return nil
+		return materializeSymlink(tree, name, entry, target)
 	default:
 		// Submodules, empty entries: nothing to materialize.
 		return nil
 	}
+}
+
+// materializeSymlink writes the symlink entry of tree, found at name, at
+// target.
+func materializeSymlink(tree *object.Tree, name string, entry *object.TreeEntry, target string) error {
+	file, fileErr := tree.TreeEntryFile(entry)
+	if fileErr != nil {
+		return fmt.Errorf("checkout tree: read symlink %s: %w", name, fileErr)
+	}
+	targetContent, readErr := blobReaderString(&file.Blob)
+	if readErr != nil {
+		return readErr
+	}
+	if err := checkSymlinkTarget(name, targetContent); err != nil {
+		return err
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(target), 0o750); mkErr != nil {
+		return fmt.Errorf("checkout tree: create dir for %s: %w", name, mkErr)
+	}
+	if linkErr := os.Symlink(targetContent, target); linkErr != nil {
+		return fmt.Errorf("checkout tree: create symlink %s: %w", name, linkErr)
+	}
+	return nil
 }
 
 func writeBlob(path string, blob *object.Blob, perm os.FileMode) error {
@@ -991,10 +1044,9 @@ func writeBlob(path string, blob *object.Blob, perm os.FileMode) error {
 		return fmt.Errorf("checkout tree: read blob: %w", err)
 	}
 	defer reader.Close() //nolint:errcheck // safe to ignore close error
-	// #nosec G304 -- path is under our controlled worktree dir.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	f, err := createFile(path, perm)
 	if err != nil {
-		return fmt.Errorf("checkout tree: open %s: %w", path, err)
+		return err
 	}
 	if _, err := io.Copy(f, reader); err != nil {
 		_ = f.Close() //nolint:errcheck // cleanup after failed write

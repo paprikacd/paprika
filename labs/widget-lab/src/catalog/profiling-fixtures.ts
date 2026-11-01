@@ -1,0 +1,14 @@
+import type { CatalogFeature, CatalogPreset } from './chart-fixtures';
+import { buildProfileFixture, profilePanel, queryPlanPanel, samplePanel } from '../lenses/profiling/profile-fixtures';
+export type ProfilingCatalogId='profile-flamegraph'|'sampled-flamechart'|'query-plan';
+export const profilingChartCatalog:readonly (Omit<CatalogFeature,'id'> & {id:ProfilingCatalogId})[]=[
+ {id:'profile-flamegraph',label:'Profile flamegraph',group:'Query Atlas',lensHref:'#query-atlas',question:'Which stack ancestry owns the sampled CPU or allocation cost?',contract:'Validated inclusive costs conserve self + immediate child cost. Width is aggregate cost, not time. Units and sample rate remain explicit; recursive inclusive symbols are not double counted.',inspect:'Search symbols, pin a frame, inspect self / parent / profile share, and double-click or press Z to focus its branch. Reset retains the original profile denominator.',presets:['ready','empty','error'],owner:'profile-flamegraph · ProfileFlamegraph / Pyroscope adapter'},
+ {id:'sampled-flamechart',label:'Sampled time flamechart',group:'Query Atlas',lensHref:'#query-atlas',question:'What work appeared in each elapsed sampling interval?',contract:'Explicit weighted samples supply time order. Only contiguous equal ancestry is merged. Gaps remain empty; thread populations never overlap in one lane.',inspect:'Drag to zoom or use exact elapsed seconds, Undo and Reset. Pin a span and focus its exact interval. Aggregated imports cannot manufacture time samples.',presets:['ready','gaps','empty','error'],owner:'sampled-flamechart · SampledFlamechart / Speedscope adapter'},
+ {id:'query-plan',label:'Query plan tree',group:'Query Atlas',lensHref:'#query-atlas',question:'Where do observed execution time and row estimates diverge?',contract:'One rooted plan preserves supplied ancestry, inclusive elapsed time, loop counts and row estimates. Inclusive node times overlap; their sum is not query duration.',inspect:'Select a plan node for exact relation, elapsed time, actual and estimated rows. Configure estimate visibility in the shared editor.',presets:['ready','empty','error'],owner:'query-plan · QueryPlan / parseQueryPlan'},
+];
+export const isProfilingCatalogId=(id:string):id is ProfilingCatalogId=>profilingChartCatalog.some(item=>item.id===id);
+export function makeProfilingCatalogFixture(id:ProfilingCatalogId,preset:CatalogPreset='ready'){
+ const feature=profilingChartCatalog.find(item=>item.id===id)!;if(!feature.presets.includes(preset))throw new Error(`Unsupported ${preset} fixture for ${id}.`);
+ const fixture=buildProfileFixture('go-cpu'),source=id==='profile-flamegraph'?profilePanel(fixture.profile):id==='query-plan'?queryPlanPanel():samplePanel(preset==='gaps'?fixture.samples!.filter(sample=>sample.start<9000||sample.start>14000):fixture.samples!);
+ const output=structuredClone(source);output.widget.id=`catalog-${id}`;if(preset==='empty')output.result.records!.rows=[];return output;
+}

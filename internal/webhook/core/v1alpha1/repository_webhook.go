@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
+	"github.com/benebsworth/paprika/internal/source"
 )
 
 var repositorylog = logf.Log.WithName("repository-resource")
@@ -147,6 +148,8 @@ func validateGitURL(repo *corev1alpha1.Repository, specPath *field.Path) field.E
 		allErrs = append(allErrs, field.Invalid(
 			urlPath, repo.Spec.URL,
 			"git repository URL must not use oci:// scheme (use type=oci instead)"))
+	} else if err := source.ValidateGitRepoURL(repo.Spec.URL); err != nil && repo.Spec.URL != "" {
+		allErrs = append(allErrs, field.Invalid(urlPath, repo.Spec.URL, err.Error()))
 	}
 	if repo.Spec.GitHubApp != nil && (repo.Spec.GitHubApp.AppID == "" || repo.Spec.GitHubApp.InstallationID == "") {
 		allErrs = append(allErrs, field.Invalid(

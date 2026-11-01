@@ -101,6 +101,9 @@ spec:
             fieldRef:
               fieldPath: metadata.name
         {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- /* The controller's local fallback renderer resolves git sources with
+        the same code as the repo server. */}}
+        {{- include "paprika.repoServerGitEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
         {{- if eq .Values.deploymentMode "monolith" }}
         {{- include "paprika.oidcSecretEnv" . | nindent 8 }}

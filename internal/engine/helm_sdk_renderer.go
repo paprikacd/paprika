@@ -75,7 +75,17 @@ func NewHelmSDKRendererWithClient(workDir string, c client.Client) *HelmSDKRende
 }
 
 // ResolveSource resolves a template source (git, S3, kustomize, etc.) and returns the local path.
+// Its callers use the hash and revision; nothing here reads LocalPath after it
+// returns, so the source cache's lease on it is released at once.
 func (r *HelmSDKRenderer) ResolveSource(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {
+	result, err := r.resolveSourceLeased(ctx, tmpl)
+	result.Release()
+	return result, err
+}
+
+// resolveSourceLeased resolves a template source and keeps the source
+// cache's lease on its files; the caller releases it once it has read them.
+func (r *HelmSDKRenderer) resolveSourceLeased(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {
 	switch tmpl.Spec.Type {
 	case sourceTypeGit:
 		return r.resolveGitSource(ctx, tmpl)
@@ -84,7 +94,8 @@ func (r *HelmSDKRenderer) ResolveSource(ctx context.Context, tmpl *paprika.Templ
 	case sourceTypeOCI:
 		return r.resolveOCISource(ctx, tmpl)
 	case sourceTypeKustomize:
-		path, err := r.resolveKustomizePath(ctx, tmpl)
+		path, release, err := r.resolveKustomizePath(ctx, tmpl)
+		release()
 		if err != nil {
 			return nil, err
 		}
@@ -241,12 +252,14 @@ func (r *HelmSDKRenderer) render(ctx context.Context, tmpl *paprika.Template, pa
 }
 
 func (r *HelmSDKRenderer) renderHelm(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
-	chartPath, err := r.resolveChartPath(ctx, tmpl)
+	chartPath, release, err := r.resolveChartPath(ctx, tmpl)
 	if err != nil {
 		return nil, fmt.Errorf("resolve chart path: %w", err)
 	}
 
+	// The loader reads every file of the chart; the render needs none after.
 	c, err := loader.Load(chartPath)
+	release()
 	if err != nil {
 		return nil, fmt.Errorf("load chart from %s: %w", chartPath, err)
 	}
@@ -289,23 +302,26 @@ func (r *HelmSDKRenderer) renderHelm(ctx context.Context, tmpl *paprika.Template
 	return buf.Bytes(), nil
 }
 
-func (r *HelmSDKRenderer) resolveChartPath(ctx context.Context, tmpl *paprika.Template) (string, error) {
+// resolveChartPath returns the chart's directory and a release to call once
+// the chart has been read: until then the source cache cannot evict it.
+func (r *HelmSDKRenderer) resolveChartPath(ctx context.Context, tmpl *paprika.Template) (chartPath string, release func(), err error) {
 	if tmpl.Spec.Type == sourceTypeHelm {
 		chart := tmpl.Spec.Chart
 		if chart.Path != "" {
-			return chart.Path, nil
+			return chart.Path, func() {}, nil
 		}
-		return r.downloadChart(ctx, chart)
+		path, dlErr := r.downloadChart(ctx, chart)
+		return path, func() {}, dlErr
 	}
 
-	result, err := r.ResolveSource(ctx, tmpl)
+	result, err := r.resolveSourceLeased(ctx, tmpl)
 	if err != nil {
-		return "", fmt.Errorf("resolve source: %w", err)
+		return "", func() {}, fmt.Errorf("resolve source: %w", err)
 	}
 	if result == nil {
-		return "", fmt.Errorf("source resolution returned nil for type=%s", tmpl.Spec.Type)
+		return "", func() {}, fmt.Errorf("source resolution returned nil for type=%s", tmpl.Spec.Type)
 	}
-	return result.LocalPath, nil
+	return result.LocalPath, result.Release, nil
 }
 
 func (r *HelmSDKRenderer) downloadChart(ctx context.Context, chartRef paprika.ChartRef) (string, error) {

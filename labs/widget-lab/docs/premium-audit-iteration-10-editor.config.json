@@ -1,0 +1,16 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src/editor"],
+  "locale": "en",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Scrollbar"],
+  "ownership": {
+    "Select/Listbox": "authored"
+  },
+  "requiredCommands": ["unit", "typecheck", "build"],
+  "commands": {
+    "unit": "npm test",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build"
+  }
+}

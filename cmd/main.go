@@ -243,6 +243,7 @@ type cliConfig struct {
 	PipelineMaxConcurrentReconciles int           `mapstructure:"pipeline-max-concurrent-reconciles"`
 	AppTransientRequeue             time.Duration `mapstructure:"application-transient-requeue"`
 	AppSourceResolveTTL             time.Duration `mapstructure:"application-source-resolve-ttl"`
+	AppRepoServerTimeout            time.Duration `mapstructure:"application-repo-server-timeout"`
 	CacheResyncPeriod               time.Duration `mapstructure:"cache-resync-period"`
 	ReconcileGlobalRate             float64       `mapstructure:"reconcile-global-rate"`
 	ReconcileGlobalBurst            int           `mapstructure:"reconcile-global-burst"`
@@ -495,6 +496,11 @@ func registerControllerTuningFlags(fs *pflag.FlagSet) {
 		"How long a source resolve (git fetch) result is reused by the steady-state "+
 			"application poll. 0 resolves the source on every poll. Sync triggers "+
 			"always bypass the cache.")
+	fs.Duration("application-repo-server-timeout", time.Minute,
+		"Upper bound on each repo-server call (source resolve, render) the Application "+
+			"controller makes. A call that times out is retried on a later reconcile and is "+
+			"never repeated with the local renderer: the repo server finishes its fetch "+
+			"after the client gives up. Release rendering keeps PAPRIKA_REPO_SERVER_TIMEOUT.")
 	fs.Duration("cache-resync-period", time.Hour,
 		"Full resync period for the manager's informer cache.")
 	fs.Float64("reconcile-global-rate", 100,
@@ -517,6 +523,7 @@ type controllerTuning struct {
 	pipelineMaxConcurrent int
 	appTransientRequeue   time.Duration
 	appSourceResolveTTL   time.Duration
+	appRepoServerTimeout  time.Duration
 }
 
 // validateControllerTuning rejects values that would wedge or thrash the
@@ -535,14 +542,16 @@ func validateControllerTuning(cfg *cliConfig) error {
 		}
 	}
 	durations := map[string][2]time.Duration{
-		"application-transient-requeue":  {time.Second, 24 * time.Hour},
-		"application-source-resolve-ttl": {0, 24 * time.Hour},
-		"cache-resync-period":            {time.Minute, 1<<63 - 1},
+		"application-transient-requeue":   {time.Second, 24 * time.Hour},
+		"application-source-resolve-ttl":  {0, 24 * time.Hour},
+		"application-repo-server-timeout": {time.Second, time.Hour},
+		"cache-resync-period":             {time.Minute, 1<<63 - 1},
 	}
 	values := map[string]time.Duration{
-		"application-transient-requeue":  cfg.AppTransientRequeue,
-		"application-source-resolve-ttl": cfg.AppSourceResolveTTL,
-		"cache-resync-period":            cfg.CacheResyncPeriod,
+		"application-transient-requeue":   cfg.AppTransientRequeue,
+		"application-source-resolve-ttl":  cfg.AppSourceResolveTTL,
+		"application-repo-server-timeout": cfg.AppRepoServerTimeout,
+		"cache-resync-period":             cfg.CacheResyncPeriod,
 	}
 	for flag, bounds := range durations {
 		if v := values[flag]; v < bounds[0] || v > bounds[1] {
@@ -577,6 +586,7 @@ func (cfg *cliConfig) tuning() controllerTuning {
 		pipelineMaxConcurrent: cfg.PipelineMaxConcurrentReconciles,
 		appTransientRequeue:   cfg.AppTransientRequeue,
 		appSourceResolveTTL:   cfg.AppSourceResolveTTL,
+		appRepoServerTimeout:  cfg.AppRepoServerTimeout,
 	}
 }
 

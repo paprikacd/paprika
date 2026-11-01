@@ -1,0 +1,16 @@
+.clinical-lens { container-type:inline-size; container-name:clinical-lens; }
+.clinical-lens-grid { display:grid; grid-template-columns:minmax(0,1.64fr) minmax(0,1fr); grid-template-areas:"survival forest" "response participant" "followup participant" "completeness completeness"; gap:10px; align-items:start; }
+.clinical-lens-survival { grid-area:survival; }
+.clinical-lens-forest { grid-area:forest; align-self:stretch; }
+.clinical-lens-response { grid-area:response; }
+.clinical-lens-completeness { grid-area:completeness; }
+.clinical-lens-followup { grid-area:followup; }
+.clinical-lens-participant { grid-area:participant; align-self:stretch; }
+.clinical-lens .domain-controls input { width:70px; }
+.clinical-lens .domain-controls select[aria-label="Trial population"] { max-width:195px; }
+.clinical-selection-footer { display:flex; flex-wrap:wrap; align-items:center; gap:10px 22px; border:1px solid var(--gamma-border); border-radius:5px; padding:10px 12px; margin-top:10px; background:var(--gamma-surface); color:var(--gamma-muted); font-size:12px; }
+.clinical-selection-footer > span { display:inline-flex; align-items:center; gap:5px; }
+.clinical-selection-footer strong,.clinical-selection-footer b { color:var(--gamma-ink); font-weight:500; }
+.clinical-selection-footer i { display:inline-block; width:7px; height:7px; background:var(--gamma-chart-1); border-radius:50%; }
+.clinical-lens-footer { padding:10px 1px 0; color:var(--gamma-muted); font-size:12px; }
+@container clinical-lens (max-width:900px) { .clinical-lens-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:"survival" "forest" "followup" "response" "participant" "completeness"; } }

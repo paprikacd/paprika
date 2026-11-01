@@ -1,0 +1,438 @@
+{
+  "method": "Chromium same-origin iframe browser viewports; actual innerWidth and responsive media/container layout, not scaled artboards",
+  "edge": [
+    {
+      "content": 305,
+      "density": "mobile",
+      "flag": 22,
+      "location": "Selected location · conceptSan Francisco3,120connectionsLatitude37.8°Longitude-122.4°ClassificationMedium risk×",
+      "mapHit": 28,
+      "mapMark": 8.4,
+      "metricOverflow": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "page": 305,
+      "panelOverflow": [],
+      "plot": {
+        "viewBox": "0 0 263 266",
+        "width": 263
+      },
+      "transform": "none",
+      "viewport": 320,
+      "zoom": "1.500"
+    },
+    {
+      "content": 375,
+      "density": "mobile",
+      "flag": 22,
+      "location": "Selected location · conceptSan Francisco3,120connectionsLatitude37.8°Longitude-122.4°ClassificationMedium risk×",
+      "mapHit": 28,
+      "mapMark": 8.4,
+      "metricOverflow": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "page": 375,
+      "panelOverflow": [],
+      "plot": {
+        "viewBox": "0 0 333 266",
+        "width": 333
+      },
+      "transform": "none",
+      "viewport": 390,
+      "zoom": "1.500"
+    },
+    {
+      "content": 753,
+      "density": "tablet",
+      "flag": 28,
+      "location": "Selected location · conceptSan Francisco3,120connectionsLatitude37.8°Longitude-122.4°ClassificationMedium risk×",
+      "mapHit": 28,
+      "mapMark": 8.4,
+      "metricOverflow": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "page": 753,
+      "panelOverflow": [],
+      "plot": {
+        "viewBox": "0 0 699 266",
+        "width": 699
+      },
+      "transform": "none",
+      "viewport": 768,
+      "zoom": "1.500"
+    },
+    {
+      "content": 1009,
+      "density": "tablet",
+      "flag": 28,
+      "location": "Selected location · conceptSan Francisco3,120connectionsLatitude37.8°Longitude-122.4°ClassificationMedium risk×",
+      "mapHit": 28,
+      "mapMark": 8.4,
+      "metricOverflow": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "page": 1009,
+      "panelOverflow": [],
+      "plot": {
+        "viewBox": "0 0 955 294",
+        "width": 955
+      },
+      "transform": "none",
+      "viewport": 1024,
+      "zoom": "1.500"
+    },
+    {
+      "content": 1265,
+      "density": "desktop",
+      "flag": 28,
+      "location": "Selected location · conceptSan Francisco3,120connectionsLatitude37.8°Longitude-122.4°ClassificationMedium risk×",
+      "mapHit": 28,
+      "mapMark": 8.4,
+      "metricOverflow": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "page": 1265,
+      "panelOverflow": [],
+      "plot": {
+        "viewBox": "0 0 649 266",
+        "width": 649.41
+      },
+      "transform": "none",
+      "viewport": 1280,
+      "zoom": "1.500"
+    },
+    {
+      "content": 1577,
+      "density": "desktop",
+      "flag": 28,
+      "location": "Selected location · conceptSan Francisco3,120connectionsLatitude37.8°Longitude-122.4°ClassificationMedium risk×",
+      "mapHit": 28,
+      "mapMark": 8.4,
+      "metricOverflow": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "page": 1577,
+      "panelOverflow": [],
+      "plot": {
+        "viewBox": "0 0 831 266",
+        "width": 831.41
+      },
+      "transform": "none",
+      "viewport": 1592,
+      "zoom": "1.500"
+    },
+    {
+      "content": 1905,
+      "density": "desktop",
+      "flag": 28,
+      "location": "Selected location · conceptSan Francisco3,120connectionsLatitude37.8°Longitude-122.4°ClassificationMedium risk×",
+      "mapHit": 28,
+      "mapMark": 8.4,
+      "metricOverflow": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "page": 1905,
+      "panelOverflow": [],
+      "plot": {
+        "viewBox": "0 0 1023 313",
+        "width": 1022.75
+      },
+      "transform": "none",
+      "viewport": 1920,
+      "zoom": "1.500"
+    }
+  ],
+  "reliability": [
+    {
+      "budgetTrack": 20,
+      "content": 305,
+      "density": "mobile",
+      "marker": 12.2,
+      "metricOverflow": [
+        false,
+        false,
+        false
+      ],
+      "page": 305,
+      "panelOverflow": [],
+      "plot": {
+        "height": 266,
+        "viewBox": "0 0 263 266",
+        "width": 263
+      },
+      "selection": "payment-api · May 16 04:14 to May 16 12:42 UTC · risk",
+      "ticks": [
+        "May 01",
+        "May 16",
+        "May 31"
+      ],
+      "timelineCells": 510,
+      "timelineWidth": 259,
+      "transform": "none",
+      "viewport": 320
+    },
+    {
+      "budgetTrack": 20,
+      "content": 375,
+      "density": "mobile",
+      "marker": 12.2,
+      "metricOverflow": [
+        false,
+        false,
+        false
+      ],
+      "page": 375,
+      "panelOverflow": [],
+      "plot": {
+        "height": 266,
+        "viewBox": "0 0 333 266",
+        "width": 333
+      },
+      "selection": "payment-api · May 16 04:14 to May 16 12:42 UTC · risk",
+      "ticks": [
+        "May 01",
+        "May 16",
+        "May 31"
+      ],
+      "timelineCells": 510,
+      "timelineWidth": 329,
+      "transform": "none",
+      "viewport": 390
+    },
+    {
+      "budgetTrack": 20,
+      "content": 753,
+      "density": "tablet",
+      "marker": 12.2,
+      "metricOverflow": [
+        false,
+        false,
+        false
+      ],
+      "page": 753,
+      "panelOverflow": [],
+      "plot": {
+        "height": 266,
+        "viewBox": "0 0 699 266",
+        "width": 699
+      },
+      "selection": "payment-api · May 16 04:14 to May 16 12:42 UTC · risk",
+      "ticks": [
+        "May 01",
+        "May 07",
+        "May 13",
+        "May 19",
+        "May 25",
+        "May 31"
+      ],
+      "timelineCells": 510,
+      "timelineWidth": 695,
+      "transform": "none",
+      "viewport": 768
+    },
+    {
+      "budgetTrack": 20,
+      "content": 1009,
+      "density": "tablet",
+      "marker": 12.2,
+      "metricOverflow": [
+        false,
+        false,
+        false
+      ],
+      "page": 1009,
+      "panelOverflow": [],
+      "plot": {
+        "height": 295,
+        "viewBox": "0 0 955 295",
+        "width": 955
+      },
+      "selection": "payment-api · May 16 04:14 to May 16 12:42 UTC · risk",
+      "ticks": [
+        "May 01",
+        "May 04",
+        "May 07",
+        "May 10",
+        "May 13",
+        "May 16",
+        "May 19",
+        "May 22",
+        "May 25",
+        "May 28",
+        "May 31"
+      ],
+      "timelineCells": 510,
+      "timelineWidth": 951,
+      "transform": "none",
+      "viewport": 1024
+    },
+    {
+      "budgetTrack": 20,
+      "content": 1265,
+      "density": "desktop",
+      "marker": 12.21,
+      "metricOverflow": [
+        false,
+        false,
+        false
+      ],
+      "page": 1265,
+      "panelOverflow": [],
+      "plot": {
+        "height": 266.15625,
+        "viewBox": "0 0 649 266",
+        "width": 649.41
+      },
+      "selection": "payment-api · May 16 04:14 to May 16 12:42 UTC · risk",
+      "ticks": [
+        "May 01",
+        "May 07",
+        "May 13",
+        "May 19",
+        "May 25",
+        "May 31"
+      ],
+      "timelineCells": 510,
+      "timelineWidth": 645.41,
+      "transform": "none",
+      "viewport": 1280
+    },
+    {
+      "budgetTrack": 20,
+      "content": 1577,
+      "density": "desktop",
+      "marker": 12.21,
+      "metricOverflow": [
+        false,
+        false,
+        false
+      ],
+      "page": 1577,
+      "panelOverflow": [],
+      "plot": {
+        "height": 266.125,
+        "viewBox": "0 0 831 266",
+        "width": 831.41
+      },
+      "selection": "payment-api · May 16 04:14 to May 16 12:42 UTC · risk",
+      "ticks": [
+        "May 01",
+        "May 04",
+        "May 07",
+        "May 10",
+        "May 13",
+        "May 16",
+        "May 19",
+        "May 22",
+        "May 25",
+        "May 28",
+        "May 31"
+      ],
+      "timelineCells": 510,
+      "timelineWidth": 827.41,
+      "transform": "none",
+      "viewport": 1592
+    },
+    {
+      "budgetTrack": 20,
+      "content": 1905,
+      "density": "desktop",
+      "marker": 12.2,
+      "metricOverflow": [
+        false,
+        false,
+        false
+      ],
+      "page": 1905,
+      "panelOverflow": [],
+      "plot": {
+        "height": 312.921875,
+        "viewBox": "0 0 1023 313",
+        "width": 1022.75
+      },
+      "selection": "payment-api · May 16 04:14 to May 16 12:42 UTC · risk",
+      "ticks": [
+        "May 01",
+        "May 04",
+        "May 07",
+        "May 10",
+        "May 13",
+        "May 16",
+        "May 19",
+        "May 22",
+        "May 25",
+        "May 28",
+        "May 31"
+      ],
+      "timelineCells": 510,
+      "timelineWidth": 1018.75,
+      "transform": "none",
+      "viewport": 1920
+    }
+  ],
+  "shortViewport": {
+    "contentWidth": 305,
+    "menu": {
+      "bottom": 584,
+      "height": 518,
+      "left": 12,
+      "right": 293,
+      "top": 66,
+      "width": 281,
+      "x": 12,
+      "y": 66
+    },
+    "menuOverflow": "auto",
+    "pageWidth": 305,
+    "viewport": {
+      "height": 600,
+      "width": 320
+    }
+  },
+  "literalEdge": {
+    "appHeight": 988,
+    "appWidth": 1592,
+    "layout": "literal",
+    "mapResponsive": "false",
+    "viewBox": "0 0 946 253"
+  },
+  "literalReliability": {
+    "appWidth": 1592,
+    "appHeight": 988,
+    "viewBox": "0 0 933 235",
+    "layout": "literal",
+    "responsiveTimelinePicker": false
+  },
+  "flagsAt390": {
+    "width": 22,
+    "height": 14,
+    "aspect": "11:7"
+  },
+  "defaultTimelineInspection": "uptime-api · May 01 00:00 to May 01 08:28 UTC · healthy",
+  "limits": [
+    "No physical-device touch test",
+    "No screen-reader test",
+    "No browser text-zoom test"
+  ]
+}

@@ -99,6 +99,42 @@ var (
 	SourceResolveTotal = mustCounter(meter, "paprika.source.resolve.total",
 		"Number of source resolution operations")
 
+	// GitFetchDuration times each git network operation of the CLI backend
+	// (op=ls-remote|fetch-commit|fetch-blobs, result=ok|error).
+	GitFetchDuration = mustFloatHistogram(meter, "paprika.git.fetch.duration", "s",
+		"Duration of git network operations (ls-remote, commit fetch, blob fetch)",
+		metric.WithExplicitBucketBoundaries(defBuckets...))
+
+	// GitFetchReceived counts the pack bytes git network operations stored
+	// in the mirror (op=fetch-commit|fetch-blobs).
+	GitFetchReceived = mustUnitCounter(meter, "paprika.git.fetch.received", "By",
+		"Pack bytes received by git fetches")
+
+	// GitFetchesInFlight is the number of git network operations running now.
+	GitFetchesInFlight = mustUpDownCounter(meter, "paprika.git.fetch.inflight", "1",
+		"Git network operations in flight")
+
+	// GitFetchesWaiting is the number of git network operations waiting for
+	// one of the process-wide slots (PAPRIKA_GIT_MAX_CONCURRENT_FETCHES).
+	GitFetchesWaiting = mustUpDownCounter(meter, "paprika.git.fetch.waiting", "1",
+		"Git network operations waiting for a concurrency slot")
+
+	// GitCacheLookups counts git cache lookups by layer
+	// (revision|commit|checkout) and result (hit|miss|shared). A shared
+	// result joined an operation another request had already started.
+	GitCacheLookups = mustCounter(meter, "paprika.git.cache.lookups",
+		"Git cache lookups by layer and result")
+
+	// GitCacheSize is the git cache's size on disk after its last scan, per
+	// work dir (dir): the manager's fallback renderer has two.
+	GitCacheSize = mustSyncGauge(meter, "paprika.git.cache.size", "By",
+		"Bytes on disk in the git cache")
+
+	// GitCacheEvictions counts entries the git cache's LRU eviction removed
+	// (kind=mirror|checkout|orphan).
+	GitCacheEvictions = mustCounter(meter, "paprika.git.cache.evictions",
+		"Git cache entries evicted")
+
 	SourceResolveErrors = mustCounter(meter, "paprika.source.resolve.errors",
 		"Number of source resolution errors")
 )
@@ -173,6 +209,22 @@ func mustCounter(m metric.Meter, name, desc string) metric.Int64Counter {
 		panic(err)
 	}
 	return c
+}
+
+func mustUnitCounter(m metric.Meter, name, unit, desc string) metric.Int64Counter {
+	c, err := m.Int64Counter(name, metric.WithDescription(desc), metric.WithUnit(unit))
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func mustSyncGauge(m metric.Meter, name, unit, desc string) metric.Int64Gauge {
+	g, err := m.Int64Gauge(name, metric.WithDescription(desc), metric.WithUnit(unit))
+	if err != nil {
+		panic(err)
+	}
+	return g
 }
 
 func mustFloatHistogram(m metric.Meter, name, unit, desc string, opts ...metric.Float64HistogramOption) metric.Float64Histogram {

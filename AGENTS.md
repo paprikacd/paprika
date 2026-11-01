@@ -118,31 +118,70 @@ helm upgrade paprika-e2e charts/chart/ \
   discovery API with caching, pluralization fallback. The resolver is
   `CachedGVRResolver` in `internal/engine/gvr_resolver.go`.
 - Release renders pin the resolved commit SHA into the template spec
-  (`stampTemplateSourceIdentity`) for reproducibility. The repo-server git
-  mirror is depth-1 shallow on an `emptyDir` — pod restarts wipe it, and a
-  rebuilt shallow mirror can't resolve below-boundary pinned commits without
-  the exact-commit fetch recovery in `internal/source/git.go`
-  (`fetchPinnedCommit` + `refs/paprika-pinned/`). Never force-push over
+  (`stampTemplateSourceIdentity`) for reproducibility. Never force-push over
   commits a release has pinned; upstream-unreachable SHAs permanently fail
-  that release's renders. Only the first clone is shallow: fetches into an
-  existing mirror run at depth 0 (`incrementalDepth`), and what that leaves
-  out below the boundary is re-fetched at depth 1 by `repairDanglingRefs` (a
-  ref on a missing commit) and `refetchTip` (a tip missing a tree or blob).
-- Git resolve is pure go-git — no `git` binary and no second worktree repo:
-  the mirror fetches the minimal refspec for the revision (`+HEAD:` for
-  default, `+refs/heads/<rev>` for branches, `+<sha>:refs/paprika-pinned/`
-  for pinned commits with an all-heads fallback when the server lacks
-  allowAnySHA1InWant), and `checkoutTree` materializes files straight from
-  mirror objects into `git-clones/` (subtree-scoped when `path` is set —
-  sparse for monorepos — plus a sibling `.rev` marker that skips
-  re-materialization on re-resolve). Knobs on `source.git`:
-  `shallow` (default true), `depth`, `fetchAllRefs`, `fetchTtl` (e.g. "30s" —
-  warm mirrors skip the remote inside the TTL; a `.lastfetch` sibling file
-  is the clock, go-git writes no FETCH_HEAD). Pinned SHA resolves skip the
-  remote entirely once the object is mirrored — commits are immutable.
-  Mirror corruption discovered during object reads triggers the protected
-  rebuild (see `isRecoverableGitCacheError` — errors naming the remote URL
-  never reset).
+  that release's renders ("the remote has no such commit").
+- Git resolve has two backends (`internal/source`, `GitSource.backend`,
+  `PAPRIKA_GIT_BACKEND=auto|cli|go-git`, chart `repoServer.git.backend`).
+  `auto` uses the git CLI (`gitcli*.go`) when git >= 2.44 is installed (the
+  cluster image built from `Dockerfile` ships the pinned 2.54 series; the
+  release image `Dockerfile.goreleaser` deliberately ships none, see
+  `hack/test-cli-release-contract.sh`) and go-git (`git.go`) otherwise. Only
+  `http(s)://` repositories resolve: `source.ValidateGitRepoURL` is enforced
+  by the Application, Template and Repository webhooks and again on every
+  resolve, because a `file://` URL or local path would render another
+  repository cached on the repo server (tests opt in with
+  `allowLocalGitRepos`).
+  - CLI: one bare blobless partial clone per repository and credential at
+    `<workdir>/git-cache/mirrors/<key>.git`. A branch/tag/default resolves
+    with `ls-remote` (protocol v2, one round trip, shared by concurrent
+    requests; `fetchTtl` bounds how old an answer may be, and 0, as a sync
+    trigger sends, reuses no answer from before the request); the commit is
+    fetched by SHA at
+    depth 1 with `--filter=blob:none` (commit + trees, about 1 MB for
+    brandbrain's 22,795-file tip), then only the blobs under `path` that the
+    mirror lacks, in one `fetch --stdin`. Checkouts are immutable and
+    content-addressed (`git-cache/checkouts/<key>/<tree>-<pathhash>/<path>`,
+    complete once a `.done` marker holds the dir hash), so nothing a render
+    is reading is rewritten; a resolve leases its checkout until the caller
+    calls `ResolveResult.Release()` (the engine does after loading the chart
+    or building the kustomization), and eviction skips leased checkouts.
+    Every fetched object is fsck-checked; checkouts refuse symlinks that
+    resolve outside the source path and entries beneath a symlink, in both
+    backends. A server that refuses objects by ID (protocol v0 without
+    `allowAnySHA1InWant`) gets the ref, or for a pinned SHA every branch,
+    refetched unfiltered. Fetches of one commit and checkouts of one tree
+    are single-flight and run detached from the request (bounded by
+    `PAPRIKA_GIT_FETCH_TIMEOUT`, default 10m; the git process group is
+    killed at it, and its orphans are reaped in-process because `/manager`
+    is PID 1 with no init); writes to one mirror are serialized and hold one of
+    `PAPRIKA_GIT_MAX_CONCURRENT_FETCHES` (default 4) process-wide slots, so
+    a slow repository never blocks another. `PAPRIKA_GIT_CACHE_MAX_BYTES`
+    bounds the cache with LRU eviction (entries used within
+    `PAPRIKA_GIT_CACHE_MIN_AGE` are kept). A mirror that cannot be read is
+    removed and rebuilt once (`localGitError`). Credentials reach git only
+    through an env-backed credential helper scoped to the repository host.
+    `shallow` and `fetchAllRefs` do not apply; `depth` > 1 does.
+  - go-git (fallback, distroless images, SSH URLs): a depth-1 mirror in
+    `git-mirrors/` that downloads every blob of the fetched tree (8.9 GB and
+    13 minutes for brandbrain's tip, 2026-10-29) and, cold, a pinned SHA's
+    whole history. Only the first clone is shallow: fetches into an existing
+    mirror run at depth 0 (`incrementalDepth`), and what that leaves out is
+    re-fetched at depth 1 by `repairDanglingRefs` and `refetchTip`; a pinned
+    commit below the boundary goes through `fetchPinnedCommit`.
+    `checkoutTree` materializes the `path` subtree into `git-clones/` in
+    place. `fetchTtl` uses a `.lastfetch` clock. Corruption during object
+    reads triggers the protected rebuild (`isRecoverableGitCacheError`).
+  - Rollout: go-git now checks out executable files, so a deploy of this code
+    changes the source hash once for apps with a 100755 file in their path.
+    Take that on `repoServer.git.backend: go-git` first (omega pins it in
+    `deploy/omega-values.yaml`), then flip to `auto` in a separate upgrade:
+    the CLI's hashes match go-git's.
+  - Metrics: `paprika_git_fetch_duration_seconds{op,result}`,
+    `paprika_git_fetch_received_bytes_total{op}`,
+    `paprika_git_fetch_inflight`, `paprika_git_fetch_waiting`,
+    `paprika_git_cache_lookups_total{layer,result}`,
+    `paprika_git_cache_size_bytes{dir}`, `paprika_git_cache_evictions_total{kind}`.
 - All Kubernetes clients share `negotiateProtobuf` (cmd/protobuf.go), which
   composes `kube.WithProtobufResponses` + `kube.WithRetryTransport`: GET/
   HEAD/OPTIONS retry up to 3 attempts on connection resets / mid-response

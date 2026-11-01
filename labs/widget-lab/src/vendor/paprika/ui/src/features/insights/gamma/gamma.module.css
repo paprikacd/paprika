@@ -1,0 +1,438 @@
+/* Adapted from Gamma library.css, scoped to Paprika Insights. */
+.switch-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: min(430px, 100%);
+  padding: 18px 20px;
+  border-radius: var(--gamma-radius-control);
+  background: var(--gamma-surface-2);
+  cursor: pointer;
+  transition: background var(--gamma-duration-fast) var(--gamma-ease-standard);
+}
+.switch-row:hover {
+  background: var(--gamma-surface);
+}
+.switch-row > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+.switch-row strong {
+  font-size: 15px;
+}
+.switch-row small {
+  color: var(--gamma-ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.switch-row input {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  width: 42px;
+  height: 24px;
+  margin: 0;
+  z-index: 1;
+}
+.switch-track {
+  box-sizing: border-box;
+  height: 24px;
+  width: 42px;
+  flex: none;
+  border-radius: var(--gamma-radius-pill);
+  background: color-mix(
+    in srgb,
+    var(--gamma-muted) 40%,
+    var(--gamma-surface-2)
+  );
+  padding: 3px;
+  transition: background var(--gamma-duration-base) var(--gamma-ease-standard);
+}
+.switch-track span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--gamma-radius-pill);
+  background: var(--gamma-bg);
+  transition:
+    transform var(--gamma-duration-base) var(--gamma-ease-spring),
+    width var(--gamma-duration-fast) var(--gamma-ease-standard);
+}
+.switch-row input:checked + .switch-track {
+  background: var(--gamma-accent);
+}
+.switch-row input:checked + .switch-track span {
+  transform: translateX(18px);
+}
+.switch-row:active .switch-track span {
+  width: 22px;
+}
+.switch-row:active input:checked + .switch-track span {
+  transform: translateX(14px);
+}
+.switch-row input:focus-visible + .switch-track {
+  outline: 2px solid var(--gamma-accent);
+  outline-offset: 2px;
+}
+
+.sample-tabs {
+  width: min(455px, 100%);
+  border: var(--gamma-hairline) solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  background: var(--gamma-bg);
+  padding: 10px;
+}
+.sample-tabs [role="tablist"] {
+  display: flex;
+  gap: 2px;
+  background: var(--gamma-surface-2);
+  padding: 3px;
+  border-radius: var(--gamma-radius-control);
+}
+.sample-tabs [role="tab"] {
+  border: 0;
+  background: none;
+  color: color-mix(in srgb, var(--gamma-muted) 58%, var(--gamma-ink));
+  padding: 7px 15px;
+  border-radius: var(--gamma-radius-small);
+  flex: 1;
+  font-weight: 600;
+  transition:
+    background var(--gamma-duration-fast) var(--gamma-ease-standard),
+    color var(--gamma-duration-fast) var(--gamma-ease-standard);
+}
+.sample-tabs [role="tab"][aria-selected="true"] {
+  background: var(--gamma-bg);
+  color: var(--gamma-ink);
+}
+.sample-tabs [role="tabpanel"] {
+  padding: 22px 12px 15px;
+}
+.sample-tabs h3 {
+  margin: 0 0 4px;
+}
+.sample-tabs p {
+  color: var(--gamma-ink);
+  margin: 0;
+}
+
+.search-combobox {
+  width: 100%;
+  min-width: 0;
+  font-family: var(--gamma-font-ui);
+  color: var(--gamma-ink);
+}
+.search-combobox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 5px 7px 5px 10px;
+  border: var(--gamma-hairline) solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  background: var(--gamma-bg);
+  box-shadow: var(--gamma-shadow-low);
+  transition:
+    border-color var(--gamma-duration-fast) var(--gamma-ease-standard),
+    box-shadow var(--gamma-duration-fast) var(--gamma-ease-standard);
+}
+.search-combobox-field:focus-within {
+  border-color: var(--gamma-accent);
+  box-shadow: var(--gamma-focus-ring);
+}
+.search-combobox-search {
+  flex-shrink: 0;
+  color: var(--gamma-muted);
+}
+.search-combobox input[role="combobox"] {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: var(--gamma-ink);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.search-combobox input[role="combobox"]::placeholder {
+  color: var(--gamma-muted);
+  opacity: 1;
+}
+.search-combobox-action {
+  display: inline-flex;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--gamma-radius-small);
+  background: transparent;
+  color: var(--gamma-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.search-combobox-action:hover:not(:disabled) {
+  background: var(--gamma-surface-2);
+  color: var(--gamma-ink);
+}
+.search-combobox-toggle {
+  border-inline-start: var(--gamma-hairline) solid var(--gamma-border);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+.search-combobox[data-disabled] {
+  opacity: 0.5;
+}
+.search-combobox[data-disabled] input,
+.search-combobox-action:disabled {
+  cursor: not-allowed;
+}
+.search-combobox-action:focus-visible,
+.search-combobox-status button:focus-visible {
+  outline: none;
+  box-shadow: var(--gamma-focus-ring);
+}
+.search-combobox-panel {
+  z-index: 10000;
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--gamma-hairline) solid var(--gamma-border);
+  border-radius: var(--gamma-radius-panel);
+  background: var(--gamma-surface);
+  box-shadow: var(--gamma-shadow-high);
+  color: var(--gamma-ink);
+  font-family: var(--gamma-font-ui);
+}
+.search-combobox-panel {
+  animation: search-combobox-arrive var(--gamma-duration-fast)
+    var(--gamma-ease-emphasized);
+}
+.search-combobox-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.search-combobox-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--gamma-radius-control);
+  color: var(--gamma-ink);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.search-combobox-option[data-active]:not([aria-disabled="true"]) {
+  background: var(--gamma-surface-2);
+}
+.search-combobox-option[aria-selected="true"] {
+  background: var(--gamma-accent-soft);
+}
+.search-combobox-option[aria-selected="true"][data-active] {
+  background: color-mix(in srgb, var(--gamma-accent) 14%, var(--gamma-surface));
+}
+.search-combobox-option[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.search-combobox-option-copy {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+.search-combobox-option-copy small {
+  overflow: hidden;
+  color: var(--gamma-muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-combobox-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  color: var(--gamma-accent-text);
+}
+.search-combobox-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 18px 10px;
+  color: var(--gamma-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+.search-combobox-status[role="alert"] {
+  flex-direction: column;
+  color: var(--gamma-danger);
+}
+.search-combobox-status button {
+  border: var(--gamma-hairline) solid var(--gamma-border);
+  border-radius: var(--gamma-radius-button);
+  padding: 6px 10px;
+  background: var(--gamma-surface);
+  color: var(--gamma-ink);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.search-combobox-status button small {
+  color: var(--gamma-muted);
+  font-size: 10px;
+}
+.search-combobox-spinner {
+  animation: search-combobox-spin 1s linear infinite;
+}
+
+.sample-tabs {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.sample-tabs [role="tabpanel"] {
+  padding: 18px 0 0;
+}
+.sample-tabs [role="tab"] {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 8px;
+}
+.sample-tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--gamma-accent);
+  outline-offset: 2px;
+}
+.switch-row {
+  width: 100%;
+  gap: 12px;
+  padding: 9px 0;
+  background: transparent;
+}
+.switch-row:hover {
+  background: transparent;
+}
+.switch-row strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.switch-row small {
+  font-size: 11px;
+  color: var(--gamma-muted);
+}
+.search-combobox-panel[hidden] {
+  display: none;
+}
+.search-combobox-option-copy {
+  overflow-wrap: anywhere;
+}
+@keyframes search-combobox-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes search-combobox-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sample-tabs [role="tab"],
+  .switch-row,
+  .switch-track,
+  .switch-track span,
+  .search-combobox-field {
+    transition: none;
+  }
+  .search-combobox-spinner {
+    animation: none;
+  }
+}
+
+.sample-tabs [role="tablist"] {
+  flex-wrap: wrap;
+  min-width: 0;
+  border: 1px solid var(--gamma-border);
+  gap: 4px;
+  padding: 4px;
+}
+.sample-tabs [role="tab"] {
+  flex: 1 1 70px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  min-height: 32px;
+  color: var(--gamma-muted);
+}
+.sample-tabs [role="tab"][aria-selected="true"] {
+  box-shadow: var(--gamma-shadow-low);
+  color: var(--gamma-ink);
+}
+.search-combobox input[role="combobox"]:focus {
+  box-shadow: none;
+}
+.search-combobox-panel {
+  background: var(--gamma-bg);
+}
+.search-combobox-field:hover {
+  border-color: color-mix(in srgb, var(--gamma-muted) 40%, var(--gamma-border));
+}
+.search-combobox-field:focus-within {
+  border-color: var(--gamma-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-combobox-panel {
+    animation: none;
+  }
+}
+
+@media (pointer: coarse), (max-width: 700px) {
+  .switch-row,
+  .sample-tabs [role="tab"],
+  .search-combobox-option,
+  .search-combobox-action {
+    min-height: 44px;
+  }
+  .search-combobox-field {
+    padding: 0 0 0 12px;
+    gap: 4px;
+  }
+  .search-combobox-action {
+    width: 44px;
+    flex-basis: 44px;
+  }
+  .search-combobox input[role="combobox"] {
+    min-height: 44px;
+  }
+}

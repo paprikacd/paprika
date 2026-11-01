@@ -1,0 +1,48 @@
+.clinical-chart { min-width:0; width:100%; color:var(--gamma-ink); font-size:12px; font-variant-numeric:tabular-nums; }
+.clinical-chart svg { display:block; overflow:visible; }
+.clinical-chart svg text:not([fill]) { fill:var(--gamma-muted); font-size:12px; font-family:inherit; }
+.clinical-chart svg .clinical-strong { fill:var(--gamma-ink); font-weight:600; }
+.clinical-grid { stroke:var(--gamma-border); stroke-width:.7; }
+.clinical-axis { stroke:var(--gamma-muted); stroke-width:.8; }
+.clinical-selected-rule { stroke:var(--gamma-ink); stroke-width:1; stroke-dasharray:4 4; opacity:.8; }
+.clinical-muted { color:var(--gamma-muted); }
+.clinical-warning { color:var(--gamma-warning); }
+.clinical-chart [data-clinical-mark][role=button] { cursor:pointer; outline:none; }
+.clinical-chart [data-clinical-mark]:focus-visible { outline:2px solid var(--gamma-accent); outline-offset:2px; }
+.clinical-chart [data-clinical-mark]:focus-visible > rect:first-child { stroke:var(--gamma-accent); stroke-width:2; }
+.clinical-chart-controls,.clinical-pagination { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; font-size:12px; margin-bottom:7px; color:var(--gamma-muted); }
+.clinical-chart-controls label { display:flex; align-items:center; gap:8px; }
+.clinical-chart-controls input { width:72px; padding:4px 6px; border:1px solid var(--gamma-border); border-radius:4px; background:var(--gamma-surface); color:var(--gamma-ink); font:inherit; }
+.clinical-chart-controls button,.clinical-pagination button { min-height:26px; font-size:12px; padding:3px 8px; }
+.clinical-pagination { margin:6px 0; }
+.clinical-pagination span { margin-inline-end:auto; }
+.clinical-pagination button:disabled { cursor:default; opacity:.4; }
+.clinical-km-readout { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; padding:8px 9px; margin-top:5px; background:var(--gamma-surface); border:1px solid var(--gamma-border); border-radius:4px; }
+.clinical-km-readout > strong { font-size:12px; font-weight:500; color:var(--gamma-muted); }
+.clinical-km-readout > span { display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:5px; }
+.clinical-km-readout i { display:inline-block; align-self:center; width:7px; height:7px; border-radius:50%; }
+.clinical-km-readout b { font-size:14px; font-weight:600; }
+.clinical-km-readout small { font-size:12px; color:var(--gamma-muted); }
+.clinical-note { margin:5px 3px; color:var(--gamma-muted); font-size:12px; line-height:1.45; }
+.clinical-participant-summary { display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; padding:7px 3px 11px; }
+.clinical-participant-summary > strong { grid-column:1/-1; font-size:17px; font-weight:600; }
+.clinical-participant-summary > span { display:flex; flex-direction:column; gap:4px; color:var(--gamma-muted); font-size:12px; }
+.clinical-participant-summary b { font-weight:500; color:var(--gamma-ink); font-size:13px; }
+.clinical-visit-table { margin-top:14px; }
+.clinical-visit-table caption { caption-side:top; text-align:left; padding:6px 8px 8px; font-size:13px; font-weight:600; }
+.clinical-visit-table th,.clinical-visit-table td { padding:9px 8px; }
+.clinical-followup-summary { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px; padding:1px 3px 10px; color:var(--gamma-muted); font-size:12px; }
+.clinical-followup-summary strong { color:var(--gamma-ink); font-weight:600; font-size:19px; }
+.clinical-followup-controls { justify-content:flex-start; margin:7px 0; }
+.clinical-followup-controls label { min-width:0; flex-wrap:wrap; }
+.clinical-followup-controls select { max-width:100%; font:inherit; }
+.domain-legend .clinical-followup-marker { width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid var(--gamma-chart-1); border-radius:0; }
+.clinical-followup-arms { margin-top:10px; }
+.clinical-followup-arms caption { text-align:left; color:var(--gamma-muted); font-size:12px; padding:0 9px 5px; }
+.clinical-followup-arms th:not(:first-child) { text-align:right; }
+@container (max-width:450px) {
+  .clinical-km-readout { gap:7px; }
+  .clinical-km-readout > span { flex-basis:100%; }
+  .clinical-participant-summary { gap:8px; }
+  .clinical-visit-table td { white-space:normal; }
+}

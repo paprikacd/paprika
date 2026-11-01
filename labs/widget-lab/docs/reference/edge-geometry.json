@@ -1,0 +1,80 @@
+{
+  ".edge-support-geography": {
+    "height": 220,
+    "width": 468,
+    "x": 98,
+    "y": 560
+  },
+  ".edge-support-outcomes": {
+    "height": 220,
+    "width": 469,
+    "x": 576,
+    "y": 560
+  },
+  ".edge-support-risk": {
+    "height": 220,
+    "width": 508,
+    "x": 1055,
+    "y": 560
+  },
+  ".ref-edge-destinations": {
+    "height": 332,
+    "width": 508,
+    "x": 1055,
+    "y": 218
+  },
+  ".ref-edge-events": {
+    "height": 170,
+    "width": 1465,
+    "x": 98,
+    "y": 789
+  },
+  ".ref-edge-metric-0": {
+    "height": 87,
+    "width": 364,
+    "x": 98,
+    "y": 120
+  },
+  ".ref-edge-metric-1": {
+    "height": 87,
+    "width": 355,
+    "x": 470,
+    "y": 120
+  },
+  ".ref-edge-metric-2": {
+    "height": 87,
+    "width": 354,
+    "x": 833,
+    "y": 120
+  },
+  ".ref-edge-metric-3": {
+    "height": 87,
+    "width": 369,
+    "x": 1194,
+    "y": 120
+  },
+  ".ref-edge-traffic": {
+    "height": 332,
+    "width": 948,
+    "x": 98,
+    "y": 218
+  },
+  ".ref-inspector": {
+    "height": 251,
+    "width": 242,
+    "x": 717,
+    "y": 269
+  },
+  ".ref-outer-frame": {
+    "height": 904,
+    "width": 1488,
+    "x": 87,
+    "y": 65
+  },
+  ".ref-rail": {
+    "height": 988,
+    "width": 79,
+    "x": 0,
+    "y": 0
+  }
+}

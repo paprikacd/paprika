@@ -1,0 +1,1608 @@
+diff --git a/src/vendor/paprika/ui/src/features/insights/chart-presentation.ts b/src/vendor/paprika/ui/src/features/insights/chart-presentation.ts
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/chart-presentation.ts
+@@ -0,0 +1,46 @@
++import type { ChartLinearGradient } from '@tanstack/charts';
++
++/** A zero-anchored area wash. Negative series fade toward zero, too. */
++export function signedAreaGradient(id: string, color: string, values: readonly (number | null)[], opacity = .2): ChartLinearGradient {
++  const finite = values.filter((value): value is number => value !== null && Number.isFinite(value));
++  const low = Math.min(0, ...finite), high = Math.max(0, ...finite);
++  const zero = high === low ? 1 : high / (high - low);
++  const faint = Math.min(.025, opacity);
++  return { id, type: 'linear', x1: 0, y1: 0, x2: 0, y2: 1,
++    stops: zero === 1 ? [{ offset: 0, color, opacity }, { offset: 1, color, opacity: faint }]
++      : zero === 0 ? [{ offset: 0, color, opacity: faint }, { offset: 1, color, opacity }]
++        : [{ offset: 0, color, opacity }, { offset: zero, color, opacity: faint }, { offset: 1, color, opacity }],
++  };
++}
++
++const calendarDay = new Intl.DateTimeFormat('en', { timeZone: 'UTC', month: 'short', day: 'numeric' });
++const calendarTime = new Intl.DateTimeFormat('en', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
++/** Temporal factories require Date channels; exact tooltip datums stay numeric. */
++export function timeAxisValue(timestamp: number, calendar: boolean): number | Date {
++  return calendar ? new Date(timestamp) : timestamp;
++}
++export function calendarTick(value: number | Date, span: number) {
++  const date = new Date(Number(value));
++  if (!Number.isFinite(date.getTime())) return '—';
++  // Zooming to a few days introduces sub-day ticks; date-only labels would
++  // repeat even though the observations are twelve or six hours apart.
++  if (span > 86_400_000 && span <= 345_600_000) return `${calendarDay.format(date)} ${calendarTime.format(date)}`;
++  return (span > 345_600_000 ? calendarDay : calendarTime).format(date);
++}
++
++/** Shared plot bounds align timestamp positions across different chart families. */
++export function temporalPosition(timestamp: number, start: number, end: number, left: number, right: number) {
++  return end > start ? left + (timestamp - start) / (end - start) * (right - left) : (left + right) / 2;
++}
++
++/** Exact shared insets when space permits; shrink them before the plot can invert. */
++export function horizontalPlotBounds(width: number, requestedLeft: number, requestedRight: number) {
++  const available = Number.isFinite(width) ? Math.max(0, width) : 0;
++  const inset = (value: number) => Number.isFinite(value) ? Math.max(0, value) : 0;
++  // Preserve the established left-gutter limit, including room for the right
++  // axis. Extremely narrow containers still retain a nonnegative plot width.
++  const insetBudget = Math.max(0, available - Math.min(1, available));
++  const left = Math.min(inset(requestedLeft), Math.max(8, available - 80), insetBudget);
++  const right = Math.min(inset(requestedRight), insetBudget - left);
++  return { left, right, plotWidth: available - left - right };
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx b/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx
+--- a/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx
++++ b/src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx
+@@ -11,11 +11,16 @@
+   type ReactNode,
+ } from "react";
+ import { createPortal } from "react-dom";
++import { ruleY } from "@tanstack/charts/rule";
++import { scaleTime } from "d3-scale";
++import { signedAreaGradient, calendarTick, horizontalPlotBounds, temporalPosition, timeAxisValue } from "./chart-presentation";
+ import { areaY } from "@tanstack/charts/area";
+ import { barY } from "@tanstack/charts/bar";
+ import { focusGroupX, focusNearestX } from "@tanstack/charts/focus";
+ import { usePlotTooltip } from "./plot-tooltip";
+ import { useChartCursor } from "./chart-cursor";
++import { minimumTimeWindow, observationsInWindow, timeWindowExtent } from "./time-window";
++import { TimeBrushOverlay, TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from "./time-window-controls";
+ import { lineY } from "@tanstack/charts/line";
+ import { decorative } from "@tanstack/charts/mark/decorative";
+ import { Chart } from "@tanstack/charts/react";
+@@ -216,6 +221,7 @@
+   series: Series[];
+ }) {
+   const { ref, width, height } = usePlotSize();
++  const paintId = useId().replace(/:/g, "");
+   const cursor = useChartCursor();
+   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
+   const associateDescription = useCallback(
+@@ -228,14 +234,39 @@
+   const options = widget.options ?? EMPTY_OPTIONS;
+   const tooltipEnabled =
+     !embedded && options.showTooltip !== false;
+-  const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
++  const extent = useMemo(() => timeWindowExtent(series), [series]);
++  const minimumSpan = useMemo(() => extent ? minimumTimeWindow(series, extent) : 1, [series, extent]);
++  const windowState = useChartTimeWindow(extent, series, minimumSpan);
++  const windowKey = `${windowState.window.start}:${windowState.window.end}`;
++  const tooltipDismiss = useRef<() => void>(() => {});
++  const { left: plotLeft, right: plotRight, plotWidth } = horizontalPlotBounds(width,
++    !showAxis ? 8 : options.plotInsetLeft ?? (options.yAxisLabel ? 74 : 54),
++    !showAxis ? 8 : options.plotInsetRight ?? 12);
++  const plotTop = !showAxis ? 8 : widget.unit.length > 6 || options.axisUnit === "caption" ? 20 : height < 130 ? 4 : 10;
++  const plotBottom = !showAxis ? 8 : options.xAxisLabel ? 47 : 29;
++  const brush = useTimeWindowBrush({
++    enabled: !embedded && windowState.enabled, revision: series, window: windowState.window,
++    point: (clientX, clientY) => {
++      const box = ref.current?.getBoundingClientRect();
++      if (!box?.width || !box.height) return null;
++      const rawX = (clientX - box.left) * width / box.width, y = (clientY - box.top) * height / box.height;
++      const x = Math.max(plotLeft, Math.min(width - plotRight, rawX));
++      return { x, y, inPlot: rawX >= plotLeft && rawX <= width - plotRight && y >= plotTop && y <= height - plotBottom,
++        timestamp: windowState.window.start + (x - plotLeft) / Math.max(1, plotWidth) * (windowState.window.end - windowState.window.start) };
++    },
++    commit: windowState.commit, onStart: () => tooltipDismiss.current(),
++  });
++  const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled && !brush.preview, windowKey, windowState.window);
++  tooltipDismiss.current = plotTooltip.dismiss;
++  const visibleSeries = useMemo(() => windowState.zoomed ? series.map(entry => ({ ...entry, points: observationsInWindow(entry.points, windowState.window) })) : series,
++    [series, windowState.zoomed, windowState.window.start, windowState.window.end]);
+   const domain = useMemo(
+     () => resolveChartDomain(series.slice(0, MAX_SERIES), options),
+     [series, options],
+   );
+   const data = useMemo(
+     () =>
+-      series.slice(0, MAX_SERIES).map((entry, index) => ({
++      visibleSeries.slice(0, MAX_SERIES).map((entry, index) => ({
+         name: seriesName(entry, index),
+         latest: latestPoint(entry),
+         color:
+@@ -248,37 +279,29 @@
+           seriesIndex: index,
+         })),
+       })),
+-    [series, widget.color],
++    [visibleSeries, widget.color],
+   );
+-  const timeSpan = useMemo(() => {
+-    const bounds = data.flatMap((entry) =>
+-      entry.points.length
+-        ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp]
+-        : [],
+-    );
+-    return bounds.length ? Math.max(...bounds) - Math.min(...bounds) : 0;
+-  }, [data]);
+-  const cursorBounds = data.flatMap(entry => entry.points.length ? [entry.points[0].timestamp, entry.points.at(-1)!.timestamp] : []);
+-  const cursorStart = Math.min(...cursorBounds), cursorEnd = Math.max(...cursorBounds);
+-  const cursorLeft = !showAxis ? 8 : options.yAxisLabel ? 74 : 54;
++  const timeSpan = windowState.window.end - windowState.window.start;
++  const cursorStart = windowState.window.start, cursorEnd = windowState.window.end;
+   const cursorX = cursor && !embedded && cursor.timestamp >= cursorStart && cursor.timestamp <= cursorEnd && cursorEnd > cursorStart
+-    ? cursorLeft + (cursor.timestamp - cursorStart) / (cursorEnd - cursorStart) * Math.max(0, width - cursorLeft - 12)
++    ? temporalPosition(cursor.timestamp, cursorStart, cursorEnd, plotLeft, plotLeft + plotWidth)
+     : undefined;
+ 
+   const definition = useMemo(
+     () =>
+       defineChart({
+-        marks: data.flatMap((entry, index) => [
++        gradients: options.fillStyle === "gradient" ? data.map((entry, index) => signedAreaGradient(`${paintId}-${index}`, entry.color, entry.points.map(point => point.value), options.fillOpacity ?? .2)) : undefined,
++        marks: [...data.flatMap((entry, index) => [
+           ...(options.display === "area"
+             ? [
+                 // Fills paint behind observations; only the line owns hit testing.
+                 decorative(
+                   areaY(entry.points, {
+                     id: `area-${index}`,
+-                    x: "timestamp",
++                    x: (point) => timeAxisValue(point.timestamp, options.timeAxis === "calendar"),
+                     y: "value",
+-                    fill: entry.color,
+-                    fillOpacity: options.fillOpacity ?? 0.06,
++                    fill: options.fillStyle === "gradient" ? `url(#${paintId}-${index})` : entry.color,
++                    fillOpacity: options.fillStyle === "gradient" ? 1 : options.fillOpacity ?? 0.06,
+                     curve: CURVES[options.curve ?? "linear"],
+                   }),
+                 ),
+@@ -286,7 +309,7 @@
+             : []),
+           lineY(entry.points, {
+             id: `line-${index}`,
+-            x: "timestamp",
++            x: (point) => timeAxisValue(point.timestamp, options.timeAxis === "calendar"),
+             y: "value",
+             // Shared timestamps still need distinct groups for nearest-line focus.
+             z: "seriesIndex",
+@@ -302,9 +325,13 @@
+             ),
+           }),
+         ]),
++          ...(options.showZeroLine ? [decorative(ruleY([0], { id: 'zero-reference', stroke: 'var(--gamma-chart-axis)', strokeOpacity: .65, strokeWidth: 1 }))] : []),
++          ...(options.referenceLines ?? []).map((reference, index) => decorative(ruleY([reference.value], { id: `reference-${index}`, stroke: reference.color ?? 'var(--gamma-warning)', strokeWidth: 1.2, strokeDasharray: reference.style === 'solid' ? undefined : '5 4' }))),
++        ],
+         scales: {
+           x: {
+-            scale: scaleLinear,
++            scale: options.timeAxis === "calendar" ? scaleTime().domain([new Date(cursorStart), new Date(cursorEnd)]) : scaleLinear().domain([cursorStart, cursorEnd]),
++            grid: options.gridX && options.showGrid !== false ? { stroke: "var(--gamma-chart-grid)", strokeOpacity: 1, strokeWidth: 1 } : false,
+             axis: !showAxis
+               ? false
+               : {
+@@ -316,7 +343,7 @@
+                     count: ticks.x,
+                     line: false,
+                     padding: 10,
+-                    format: (value: number) => formatTimeTick(value, timeSpan),
++                    format: (value: number | Date) => options.timeAxis === "calendar" ? calendarTick(value, timeSpan) : formatTimeTick(Number(value), timeSpan),
+                   },
+                   tickLabels: {
+                     opacity: 1,
+@@ -333,6 +360,7 @@
+                 ? false
+                 : {
+                     stroke: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
++                    strokeOpacity: 1, strokeWidth: 1,
+                   },
+             axis: !showAxis
+               ? false
+@@ -342,10 +370,10 @@
+                     : undefined,
+                   line: false,
+                   ticks: {
+-                    count: ticks.y,
++                    count: options.gridX && height >= 160 ? 6 : ticks.y,
+                     line: false,
+                     format: (value: number) =>
+-                      formatMetric(value, widget.unit.length > 6 ? "" : widget.unit, true, options.decimals),
++                      formatMetric(value, widget.unit.length > 6 || options.axisUnit === "caption" ? "" : widget.unit, true),
+                   },
+                   tickLabels: {
+                     opacity: 1,
+@@ -355,14 +383,7 @@
+                 },
+           },
+         },
+-        margin: !showAxis
+-          ? { top: 8, right: 8, bottom: 8, left: 8 }
+-          : {
+-              top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 10,
+-              right: 12,
+-              bottom: options.xAxisLabel ? 47 : 29,
+-              left: options.yAxisLabel ? 74 : 54,
+-            },
++        margin: { top: plotTop, right: plotRight, bottom: plotBottom, left: plotLeft },
+         clip: true,
+         theme: configuredTheme(options),
+         // Built-in strategy identity preserves TanStack's segment hit testing.
+@@ -371,6 +392,7 @@
+           : tooltipEnabled
+             ? focusNearestX
+             : focusGroupX,
++        focusRing: { radius: 4, fill: "var(--gamma-bg)", strokeWidth: 2 },
+         svgAnimation: false,
+         tooltip:
+           options.showTooltip === false
+@@ -388,13 +410,20 @@
+       }),
+     [
+       data,
++      paintId,
+       widget.unit,
+       options,
+       domain,
+       ticks.x,
+       ticks.y,
+       height,
++      plotLeft,
++      plotRight,
++      plotTop,
++      plotBottom,
+       timeSpan,
++      cursorStart,
++      cursorEnd,
+       showAxis,
+       embedded,
+       tooltipEnabled,
+@@ -403,21 +432,20 @@
+   );
+ 
+   return (
+-    <div className={styles.chart}>
++    <div className={styles.chart} data-chart-window-start={windowState.window.start} data-chart-window-end={windowState.window.end}>
++      {!embedded && extent && <TimeWindowControls state={windowState}/>}
+       <div
+         className={styles.plot}
+         ref={ref}
+-        onPointerMoveCapture={
+-          tooltipEnabled ? plotTooltip.onInteract : undefined
+-        }
+-        onPointerDownCapture={
+-          tooltipEnabled ? plotTooltip.onInteract : undefined
+-        }
++        {...brush.handlers}
++        style={{ touchAction: 'pan-y', userSelect: 'none' }}
++        onPointerMoveCapture={event => { brush.handlers.onPointerMoveCapture(event); if (tooltipEnabled && !brush.active) plotTooltip.onInteract(); }}
++        onPointerDownCapture={event => { brush.handlers.onPointerDownCapture(event); if (tooltipEnabled) plotTooltip.onInteract(); }}
+         onKeyDownCapture={tooltipEnabled ? plotTooltip.onInteract : undefined}
+         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
+         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
+       >
+-        {showAxis && widget.unit.length > 6 && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
++        {showAxis && (widget.unit.length > 6 || options.axisUnit === "caption") && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+         <Chart
+           definition={definition}
+           height={height}
+@@ -428,11 +456,12 @@
+           onRender={embedded ? associateDescription : plotTooltip.onRender}
+           onFocusChange={tooltipEnabled ? plotTooltip.onFocusChange : undefined}
+           onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
+-          ariaDescription={`${data.length} time series.${embedded ? "" : " Use arrow keys to explore individual values."}`}
++          ariaDescription={`${data.length} time series.${embedded ? "" : " Use arrow keys to explore individual values. Drag horizontally to select a time window; edit exact UTC bounds with Time window, or use Undo and Reset zoom."}`}
+         />
+-        {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
++        <TimeBrushOverlay preview={brush.preview} top={plotTop} height={Math.max(0, height - plotTop - plotBottom)} width={width}/>
++        {cursorX !== undefined && !brush.preview && <span aria-hidden="true" className={styles.sharedCursor}
+           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
+-          style={{ left: cursorX, top: widget.unit.length > 6 ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
++          style={{ left: cursorX, top: widget.unit.length > 6 || options.axisUnit === "caption" ? 20 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
+       </div>
+       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
+       {options.showLegend !== false && (
+@@ -467,9 +496,10 @@
+               </span>
+             </span>
+           ))}
++          {(options.referenceLines ?? []).map((reference, index) => <span className={styles.legendItem} role="listitem" key={`reference-${index}`}><span className={styles.swatch} aria-hidden="true" style={{ background: reference.color ?? 'var(--gamma-warning)' }} /><span className={styles.legendName}>{reference.label}</span></span>)}
+         </div>
+       )}
+-      {!embedded && <ChartDataInspector widget={widget} series={series} />}
++      {!embedded && <ChartDataInspector widget={widget} series={visibleSeries} />}
+       </div>}
+       {plotTooltip.panel}
+       {series.length > MAX_SERIES && (
+@@ -1326,6 +1356,7 @@
+   anchor,
+   anchorRect,
+   preferSide = false,
++  compact = false,
+   onDismiss,
+   onEnter,
+   onLeave,
+@@ -1335,6 +1366,7 @@
+   anchor: Element;
+   anchorRect?: () => DOMRect;
+   preferSide?: boolean;
++  compact?: boolean;
+   onDismiss: () => void;
+   onEnter: () => void;
+   onLeave: () => void;
+@@ -1472,6 +1504,7 @@
+       id={id}
+       role="tooltip"
+       className={configStyles.heatmapTooltip}
++      data-inspector-density={compact ? "compact" : undefined}
+       style={{
+         left: position?.left ?? 0,
+         top: position?.top ?? 0,
+diff --git a/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css b/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css
+--- a/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css
++++ b/src/vendor/paprika/ui/src/features/insights/chart-styles.module.css
+@@ -131,6 +131,80 @@
+   gap: 3px;
+   padding: 11px 14px 0;
+ }
++.heatmapTooltip[data-inspector-density="compact"] {
++  width: min(292px, calc(100vw - 24px));
++  border-color: color-mix(in srgb, var(--gamma-chart-axis) 40%, var(--gamma-border));
++  background: var(--gamma-bg);
++  animation: inspectorReveal var(--gamma-motion-duration, 140ms) ease-out both;
++}
++.compactHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px 0 12px; }
++.compactHeader strong { font-size: 12px; font-weight: 550; }
++.compactHeader button { width: 26px; height: 26px; min-height: 26px; font-size: 18px; }
++.compactTime { display: block; margin: 1px 12px 7px; color: var(--gamma-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
++.compactValues { margin: 0 12px 7px; display: grid; gap: 5px; font-size: 12px; }
++.compactValues > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
++.compactValues dt { display: flex; align-items: center; gap: 7px; color: var(--gamma-muted); }
++.compactValues i { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
++.compactValues dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 500; }
++.compactValues [data-selected-series] dt { color: var(--gamma-ink); }
++.compactTags { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 12px 8px; }
++.compactTags span { font-size: 12px; color: var(--gamma-muted); background: var(--gamma-surface); border-radius: 3px; padding: 1px 5px; }
++.compactMetadata { border-top: 1px solid var(--gamma-border); padding: 6px 12px; font-size: 12px; color: var(--gamma-muted); }
++.compactMetadata summary { cursor: pointer; width: fit-content; }
++.compactMetadata dl { display: grid; gap: 4px; margin: 8px 0 3px; }
++.compactMetadata dl > div { display: grid; grid-template-columns: 65px 1fr; gap: 8px; }
++.compactMetadata dd { color: var(--gamma-ink); margin: 0; }
++.richInspector { min-width: 0; font: 12px/1.45 var(--font-sans, system-ui), sans-serif; color: var(--gamma-ink); }
++.richInspectorHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 9px 0 12px; }
++.richInspectorHeader > div { display: grid; gap: 2px; min-width: 0; }
++.richInspectorHeader > div > span { color: var(--gamma-muted); font-size: 10px; }
++.richInspectorHeader strong { font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
++.richInspectorHeader > button { flex-shrink: 0; width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
++.richInspectorTime { display: flex; align-items: center; gap: 7px; padding: 8px 12px; font-size: 11px; color: var(--gamma-muted); font-variant-numeric: tabular-nums; }
++.richInspectorTime > svg { flex-shrink: 0; }
++.richInspectorTime time { display: flex; flex-wrap: wrap; gap: 3px 7px; }
++.richInspectorTime strong { color: var(--gamma-ink); font-weight: 500; }
++.richInspectorTime > span { margin-left: auto; font-size: 10px; }
++.richInspectorTags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 7px; }
++.richInspectorTags:empty { display: none; }
++.richInspectorTags span { padding: 1px 5px; border: 1px solid var(--gamma-border); border-radius: 3px; background: var(--gamma-surface); color: var(--gamma-muted); font-size: 10px; overflow-wrap: anywhere; }
++.richInspectorRows { display: grid; gap: 0; padding: 0 12px; }
++.richInspectorRow { padding: 8px 0; border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border)); min-width: 0; }
++.richInspectorValue { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
++.richInspectorValue > span { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--gamma-muted); overflow-wrap: anywhere; }
++.richInspectorValue i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
++.richInspectorValue strong { font-weight: 550; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
++.richInspectorRow[data-selected-series] .richInspectorValue > span { color: var(--gamma-ink); }
++.richInspectorRow[data-observation-state="missing"] .richInspectorValue strong,
++.richInspectorRow[data-observation-state="absent"] .richInspectorValue strong { color: var(--gamma-muted); font-size: 11px; font-weight: 400; }
++.richInspectorHistory { display: block; width: 100%; height: 40px; margin: 3px 0 2px; overflow: visible; }
++.richInspectorStats { display: flex; flex-wrap: wrap; gap: 3px 10px; justify-content: space-between; font-size: 10px; color: var(--gamma-muted); font-variant-numeric: tabular-nums; }
++.richInspectorStats b { color: var(--gamma-ink); font-weight: 400; }
++.richInspectorMissing { display: block; color: var(--gamma-warning, var(--gamma-muted)); margin-top: 3px; font-size: 10px; }
++.richInspectorWindow { display: grid; gap: 2px; padding: 7px 12px; margin: 0; border-top: 1px solid var(--gamma-border); font-size: 10px; color: var(--gamma-muted); font-variant-numeric: tabular-nums; }
++.richInspectorWindow > span { font-size: 11px; color: var(--gamma-ink); }
++.richInspectorWindow small { font-size: 10px; line-height: 1.4; margin-top: 3px; }
++.richInspectorNote { color: var(--gamma-muted); padding: 0 12px; margin: 5px 0 8px; font-size: 11px; }
++.richInspectorDetails { border-top: 1px solid var(--gamma-border); padding: 7px 12px; font-size: 11px; }
++.richInspectorDetails > summary { cursor: pointer; min-height: 24px; align-content: center; color: var(--gamma-chart-1); }
++.richInspectorDetails > p { color: var(--gamma-muted); font-size: 10px; overflow-wrap: anywhere; margin: 5px 0 7px; }
++.richInspectorDetails table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
++.richInspectorDetails caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
++.richInspectorDetails :is(th, td) { border-bottom: 1px solid var(--gamma-border); padding: 4px 0; overflow-wrap: anywhere; font-weight: 400; }
++.richInspectorDetails th { text-align: left; padding-right: 9px; color: var(--gamma-muted); }
++.richInspectorDetails td { text-align: right; font-variant-numeric: tabular-nums; }
++.richInspectorDetails dl { display: grid; gap: 4px; margin: 10px 0 3px; }
++.richInspectorDetails dl > div { display: grid; grid-template-columns: minmax(70px, .7fr) minmax(0, 1fr); gap: 8px; }
++.richInspectorDetails dt { color: var(--gamma-muted); }
++.richInspectorDetails dd { margin: 0; overflow-wrap: anywhere; }
++.richInspectorFooter { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 6px 9px; border-top: 1px solid var(--gamma-border); }
++.richInspectorFooter button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; font-size: 11px; }
++.richInspectorFooter > span { font-size: 10px; color: var(--gamma-muted); }
++@media (pointer: coarse) { .richInspectorHeader > button, .richInspectorFooter button, .richInspectorDetails > summary { min-height: 44px; }.richInspectorHeader > button { min-width: 44px; } }
++.heatmapTooltip[data-inspector-density="compact"] .tooltipFooter { padding: 6px 12px; }
++.heatmapTooltip[data-inspector-density="compact"] .tooltipFooter[data-pinned] { color: var(--gamma-chart-1); }
++@keyframes inspectorReveal { from { opacity: .4; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
++@media (prefers-reduced-motion: reduce) { .heatmapTooltip[data-inspector-density="compact"] { animation: none; } }
+ .tooltipEyebrow {
+   color: var(--gamma-muted, #626e65);
+   font-size: 11px;
+@@ -559,3 +633,5 @@
+   > button[data-gamma-button][data-variant="quiet"] {
+   color: var(--widget-text, var(--gamma-muted));
+ }
++
++.heatmapTooltip[data-inspector-density="compact"] .tooltipFooter small { font-size: 12px; }
+diff --git a/src/vendor/paprika/ui/src/features/insights/charts.module.css b/src/vendor/paprika/ui/src/features/insights/charts.module.css
+--- a/src/vendor/paprika/ui/src/features/insights/charts.module.css
++++ b/src/vendor/paprika/ui/src/features/insights/charts.module.css
+@@ -1,10 +1,35 @@
+ .visualization {
++  position: relative;
+   height: 100%;
+   min-height: 0;
+   width: 100%;
+   color: var(--widget-text, var(--gamma-ink, #27332e));
+   min-width: 0;
+   container: insight-widget / size;
++}
++.loadingFrame {
++  width: 100%;
++  height: 100%;
++  min-height: 180px;
++}
++.renderingSurface {
++  width: 100%;
++  height: 100%;
++  min-height: 0;
++  min-width: 0;
++}
++.refreshNotice {
++  position: absolute;
++  top: 6px;
++  right: 6px;
++  z-index: 3;
++  padding: 4px 8px;
++  border: 1px solid var(--gamma-border);
++  border-radius: var(--gamma-radius-control);
++  background: var(--gamma-bg);
++  color: var(--gamma-muted);
++  font-size: 12px;
++  pointer-events: none;
+ }
+ .chart {
+   display: flex;
+diff --git a/src/vendor/paprika/ui/src/features/insights/charts.tsx b/src/vendor/paprika/ui/src/features/insights/charts.tsx
+--- a/src/vendor/paprika/ui/src/features/insights/charts.tsx
++++ b/src/vendor/paprika/ui/src/features/insights/charts.tsx
+@@ -25,6 +25,7 @@
+ import { widgetTextColor } from "./appearance";
+ import { useEmbeddedWidget } from "./widget-presentation";
+ import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
++import { useWidgetLoadingPresentation } from "./widget-loading";
+ export {
+   downsamplePoints,
+   formatMetric,
+@@ -107,6 +108,7 @@
+ }: WidgetVisualizationProps) {
+   // Registered plugins may arrive after a host loads an optional bundle.
+   useWidgetDefinitions();
++  const renderLoading = useWidgetLoadingPresentation();
+   const definition = getWidgetDefinition(widget);
+   const resetKey = useMemo(
+     () => ({ widget, result, definition }),
+@@ -129,7 +131,11 @@
+       </div>
+     );
+   if (loading && !result)
+-    return (
++    return renderLoading ? (
++      <div className={styles.loadingFrame}>
++        {renderLoading({ widget, phase: "initial" })}
++      </div>
++    ) : (
+       <div className={styles.state} role="status" aria-label="Loading widget">
+         <span className={styles.loading} />
+         <span>Querying data source…</span>
+@@ -137,7 +143,7 @@
+     );
+   const series = result?.series ?? [];
+   const textColor = widgetTextColor(widget.options);
+-  if (
++  const empty = (
+     !result ||
+     (widget.type !== "plugin" &&
+       (widgetKind(widget) === "traces"
+@@ -145,8 +151,7 @@
+         : widget.type === "heatmap" || widget.type === "table"
+           ? !series.length
+           : !series.some((entry) => latestPoint(entry))))
+-  )
+-    return <EmptyState />;
++  );
+   return (
+     <div
+       className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
+@@ -158,26 +163,34 @@
+           "--widget-background": widget.options?.background,
+         } as CSSProperties
+       }
+-      aria-busy={!!loading}
+     >
+-      {result?.truncated && (
+-        <p className={styles.limitNotice} role="status">
+-          Provider result limit reached. Narrow the query to see more.
+-        </p>
+-      )}
+-      <RendererBoundary
+-        key={`${definition.id}:${widget.id}`}
+-        resetKey={resetKey}
+-      >
+-        <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
+-          <RegisteredRenderer
+-            widget={widget}
+-            result={result}
+-            definition={definition}
+-            onContextChange={onContextChange}
+-          />
+-        </TooltipWidgetDataProvider>
+-      </RendererBoundary>
++      <div className={styles.renderingSurface} aria-busy={!!loading}>
++        {empty || !result ? <EmptyState /> : (
++          <>
++            {result.truncated && (
++              <p className={styles.limitNotice} role="status">
++                Provider result limit reached. Narrow the query to see more.
++              </p>
++            )}
++            <RendererBoundary
++              key={`${definition.id}:${widget.id}`}
++              resetKey={resetKey}
++            >
++              <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
++                <RegisteredRenderer
++                  widget={widget}
++                  result={result}
++                  definition={definition}
++                  onContextChange={onContextChange}
++                />
++              </TooltipWidgetDataProvider>
++            </RendererBoundary>
++          </>
++        )}
++      </div>
++      {/* Keep the status outside the busy region so its announcement is not deferred. */}
++      {loading && (renderLoading?.({ widget, phase: "refresh" }) ??
++        <span className={styles.refreshNotice} role="status">Refreshing data…</span>)}
+     </div>
+   );
+ });
+diff --git a/src/vendor/paprika/ui/src/features/insights/observation-inspector-data.ts b/src/vendor/paprika/ui/src/features/insights/observation-inspector-data.ts
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/observation-inspector-data.ts
+@@ -0,0 +1,109 @@
++import { boundHistoryPoints, seriesName, type Point, type Series } from './chart-data';
++import { validTimestamp } from './widget-context';
++
++export interface InspectionWindow { start: number; end: number }
++export type ExactObservation =
++  | { kind: 'observed'; value: number }
++  | { kind: 'missing' | 'absent' | 'ambiguous'; value: null };
++
++export interface InspectorSeries {
++  key: string;
++  name: string;
++  labels: Series['labels'];
++  sourceIndex: number;
++  exact: ExactObservation;
++  exactSamples: Point[];
++  points: Point[];
++  sampleCount: number;
++  finiteCount: number;
++  missingCount: number;
++  min: number | null;
++  max: number | null;
++  reduced: boolean;
++  invalidTimestampCount: number;
++}
++
++interface PreparedInspectorSeries extends Omit<InspectorSeries, 'exact' | 'exactSamples'> {
++  sourcePoints: Point[];
++}
++
++/** Identity follows source labels, independent of the displayed row order. */
++export function inspectionSeriesKey(series: Series) {
++  return JSON.stringify([series.name ?? '', Object.entries(series.labels ?? {}).sort(([a], [b]) => a.localeCompare(b))]);
++}
++
++/** Prepare histories once per result/window, outside the pointer inspection path. */
++export function prepareObservationInspector(
++  series: readonly Series[],
++  window?: InspectionWindow,
++  maximumSeries = 12,
++  maximumPoints = 96,
++  selectedSeriesIndex = 0,
++) {
++  const windowValid = window && validTimestamp(window.start) && validTimestamp(window.end) && window.start <= window.end;
++  const limit = Number.isFinite(maximumSeries) ? Math.max(1, Math.floor(maximumSeries)) : 12;
++  const pointLimit = Number.isFinite(maximumPoints) ? Math.max(8, Math.floor(maximumPoints)) : 96;
++  const indexes = Array.from({ length: Math.min(series.length, limit) }, (_, index) => index);
++  // Keep the actual selected series visible even in a high-cardinality result.
++  if (Number.isInteger(selectedSeriesIndex) && selectedSeriesIndex >= limit && selectedSeriesIndex < series.length) indexes[indexes.length - 1] = selectedSeriesIndex;
++  const occurrences = new Map<string, number>();
++  const keys = series.map(entry => {
++    const identity = inspectionSeriesKey(entry), occurrence = occurrences.get(identity) ?? 0;
++    occurrences.set(identity, occurrence + 1);
++    return `${identity}:${occurrence}`;
++  });
++  let start: number | null = windowValid ? window.start : null;
++  let end: number | null = windowValid ? window.end : null;
++  const rows: PreparedInspectorSeries[] = indexes.map(sourceIndex => {
++    const entry = series[sourceIndex], points: Point[] = [];
++    let invalidTimestampCount = 0, finiteCount = 0, min: number | null = null, max: number | null = null;
++    for (const point of entry.points) {
++      if (!validTimestamp(point.timestamp)) { invalidTimestampCount++; continue; }
++      if (windowValid && (point.timestamp < window.start || point.timestamp > window.end)) continue;
++      const value = typeof point.value === 'number' && Number.isFinite(point.value) ? point.value : null;
++      points.push({ timestamp: point.timestamp, value });
++      if (!windowValid) {
++        start = start === null ? point.timestamp : Math.min(start, point.timestamp);
++        end = end === null ? point.timestamp : Math.max(end, point.timestamp);
++      }
++      if (value !== null) {
++        finiteCount++;
++        min = min === null ? value : Math.min(min, value);
++        max = max === null ? value : Math.max(max, value);
++      }
++    }
++    points.sort((a, b) => a.timestamp - b.timestamp);
++    const bounded = boundHistoryPoints(points, pointLimit);
++    return {
++      key: keys[sourceIndex], name: seriesName(entry, sourceIndex), labels: entry.labels,
++      sourceIndex, sourcePoints: points, points: bounded, sampleCount: points.length,
++      finiteCount, missingCount: points.length - finiteCount, min, max,
++      reduced: bounded.length < points.length, invalidTimestampCount,
++    };
++  });
++  return { rows, start, end, windowed: !!windowValid, omittedSeries: Math.max(0, series.length - rows.length) };
++}
++
++/** Exact binary lookup: a nearby scrape is never presented as the selected time. */
++export function inspectPreparedObservation(prepared: ReturnType<typeof prepareObservationInspector>, timestamp: number) {
++  const rows: InspectorSeries[] = prepared.rows.map(({ sourcePoints, ...row }) => {
++    let lower = 0, upper = sourcePoints.length;
++    while (lower < upper) {
++      const middle = Math.floor((lower + upper) / 2);
++      if (sourcePoints[middle].timestamp < timestamp) lower = middle + 1;
++      else upper = middle;
++    }
++    const exactSamples: Point[] = [];
++    for (let index = lower; index < sourcePoints.length && sourcePoints[index].timestamp === timestamp; index++) exactSamples.push(sourcePoints[index]);
++    const exact: ExactObservation = exactSamples.length === 0 ? { kind: 'absent', value: null }
++      : exactSamples.length > 1 ? { kind: 'ambiguous', value: null }
++      : exactSamples[0].value === null ? { kind: 'missing', value: null }
++      : { kind: 'observed', value: exactSamples[0].value };
++    return { ...row, exact, exactSamples };
++  });
++  return { ...prepared, rows };
++}
++
++export function buildObservationInspector(series: readonly Series[], timestamp: number, window?: InspectionWindow, maximumSeries = 12, maximumPoints = 96, selectedSeriesIndex = 0) {
++  return inspectPreparedObservation(prepareObservationInspector(series, window, maximumSeries, maximumPoints, selectedSeriesIndex), timestamp);
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/observation-inspector.tsx b/src/vendor/paprika/ui/src/features/insights/observation-inspector.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/observation-inspector.tsx
+@@ -0,0 +1,74 @@
++import { useId, useMemo, type ReactNode } from 'react';
++import { Clock3, Pin, X } from 'lucide-react';
++import { line, area } from 'd3-shape';
++import { GammaButton } from './gamma/button';
++import { exactMetric, formatMetricDetails, type Point, type Series } from './chart-data';
++import { inspectPreparedObservation, prepareObservationInspector, type InspectionWindow, type InspectorSeries } from './observation-inspector-data';
++import styles from './chart-styles.module.css';
++
++const utcDate = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: '2-digit', timeZone: 'UTC' });
++const utcTime = new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hourCycle: 'h23', timeZone: 'UTC' });
++const utcBound = (timestamp: number) => `${utcDate.format(timestamp)} ${utcTime.format(timestamp)}`;
++
++function exactLabel(row: InspectorSeries, unit: string, decimals?: number) {
++  return row.exact.kind === 'observed' ? formatMetricDetails(row.exact.value, unit, decimals)
++    : row.exact.kind === 'absent' ? 'No sample at this time'
++    : row.exact.kind === 'ambiguous' ? 'Multiple observations'
++    : 'Missing observation';
++}
++
++function InspectorHistory({ row, start, end, timestamp, color }: { row: InspectorSeries; start: number; end: number; timestamp: number; color: string }) {
++  const uid = useId();
++  // Every history has the same elapsed-time axis. Area extends to actual zero.
++  const min = Math.min(0, row.min ?? 0), max = Math.max(0, row.max ?? 0);
++  const magnitude = Math.max(1, Math.abs(min), Math.abs(max));
++  const low = min / magnitude, high = max / magnitude, span = high - low || 1;
++  const zero = high === low ? 1 : high / span;
++  const stops = zero === 1 ? [[0, .24], [1, .025]] : zero === 0 ? [[0, .025], [1, .24]] : [[0, .24], [zero, .025], [1, .24]];
++  const x = (time: number) => start === end ? 140 : 2 + (time - start) / (end - start) * 276;
++  const y = (value: number) => 35 - (value / magnitude - low) / span * 30;
++  const path = line<Point>().defined(point => point.value !== null).x(point => x(point.timestamp)).y(point => y(point.value!))(row.points);
++  const fill = area<Point>().defined(point => point.value !== null).x(point => x(point.timestamp)).y0(y(0)).y1(point => y(point.value!))(row.points);
++  const selected = row.exact.kind === 'observed' ? row.exact.value : null;
++  const isolated = row.points.filter((point, index, points) => point.value !== null && (!index || points[index - 1].value === null) && (index === points.length - 1 || points[index + 1].value === null));
++  return <svg viewBox="0 0 280 40" preserveAspectRatio="none" className={styles.richInspectorHistory} aria-hidden="true" style={{ color }}>
++    <defs><linearGradient id={uid} x1="0" x2="0" y1="0" y2="1">{stops.map(([offset, opacity]) => <stop key={offset} offset={offset} stopColor="currentColor" stopOpacity={opacity}/>)}</linearGradient></defs>
++    <path d={fill ?? undefined} fill={`url(#${uid})`}/>
++    <line x1="2" x2="278" y1={y(0)} y2={y(0)} stroke="currentColor" strokeOpacity=".12"/>
++    <path d={path ?? undefined} fill="none" stroke="currentColor" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
++    {isolated.map((point, index) => <path key={`${point.timestamp}:${index}`} d={`M${x(point.timestamp)},${y(point.value!)}h0`} stroke="currentColor" strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>)}
++    {timestamp >= start && timestamp <= end && <line x1={x(timestamp)} x2={x(timestamp)} y1="2" y2="38" stroke="var(--gamma-muted)" strokeDasharray="2 3" strokeOpacity=".65"/>}
++    {selected !== null && timestamp >= start && timestamp <= end && <path d={`M${x(timestamp)},${y(selected)}h0`} stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>}
++  </svg>;
++}
++
++/** Dense, exact inspection content shared by the existing popup and plugin owners. */
++export function RichObservationInspector({ title, series, selectedSeriesIndex, timestamp, unit, decimals, pinned, onPin, onClose, window, colors, note, children }: {
++  title: string; series: Series[]; selectedSeriesIndex: number; timestamp: number; unit: string; decimals?: number;
++  pinned: boolean; onPin: () => void; onClose: () => void; window?: InspectionWindow; colors: string[]; note?: string; children?: ReactNode;
++}) {
++  const prepared = useMemo(() => prepareObservationInspector(series, window, 12, 96, selectedSeriesIndex), [series, window?.start, window?.end, selectedSeriesIndex]);
++  const model = useMemo(() => inspectPreparedObservation(prepared, timestamp), [prepared, timestamp]);
++  const selected = model.rows.find(row => row.sourceIndex === selectedSeriesIndex) ?? model.rows[0];
++  return <div className={styles.richInspector} data-rich-observation="" data-inspection-start={model.start ?? undefined} data-inspection-end={model.end ?? undefined}>
++    <header className={styles.richInspectorHeader}><div><span>{pinned ? 'Pinned observation' : 'Observation'}</span><strong>{title}</strong></div><GammaButton variant="ghost" size="sm" iconOnly aria-label="Close observation" onClick={onClose}><X size={14}/></GammaButton></header>
++    <div className={styles.richInspectorTime}><Clock3 size={13}/><time dateTime={new Date(timestamp).toISOString()}>{utcDate.format(timestamp)} <strong>{utcTime.format(timestamp)}</strong></time><span>UTC</span></div>
++    {selected && <div className={styles.richInspectorTags}>{Object.entries(selected.labels).filter(([key]) => ['service', 'gateway', 'region', 'interval', 'slo', 'direction'].includes(key)).map(([key, value]) => <span key={key} title={`${key}: ${value}`}>{value}</span>)}</div>}
++    <div className={styles.richInspectorRows}>{model.rows.map(row => {
++      const color = colors[row.sourceIndex % colors.length] ?? 'var(--gamma-chart-1)';
++      return <section key={row.key} className={styles.richInspectorRow} data-selected-series={row.sourceIndex === selectedSeriesIndex || undefined} data-observation-state={row.exact.kind}>
++        <div className={styles.richInspectorValue}><span><i style={{ background: color }}/>{row.name}</span><strong title={row.exact.kind === 'observed' ? exactMetric(row.exact.value, unit) : undefined}>{exactLabel(row, unit, decimals)}</strong></div>
++        {model.start !== null && model.end !== null && <InspectorHistory row={row} start={model.start} end={model.end} timestamp={timestamp} color={color}/>}
++        <div className={styles.richInspectorStats}><span>Min <b>{row.min === null ? '—' : formatMetricDetails(row.min, unit, decimals)}</b></span><span>Max <b>{row.max === null ? '—' : formatMetricDetails(row.max, unit, decimals)}</b></span><span title="Finite samples / all returned samples in this history window">{row.finiteCount}/{row.sampleCount} observed</span></div>
++        {row.missingCount > 0 && <span className={styles.richInspectorMissing}>{row.missingCount} missing sample{row.missingCount === 1 ? '' : 's'}</span>}
++        {row.invalidTimestampCount > 0 && <span className={styles.richInspectorMissing}>{row.invalidTimestampCount} source sample{row.invalidTimestampCount === 1 ? '' : 's'} excluded: invalid timestamp</span>}
++      </section>;
++    })}</div>
++    <p className={styles.richInspectorWindow}><span>{model.windowed ? 'Chart window history' : 'Source history'}</span>{model.start !== null && model.end !== null ? <>{utcBound(model.start)} – {utcBound(model.end)} UTC</> : 'No timestamped observations'}{model.rows.some(row => row.reduced) && <small>Histories visually reduced; statistics use all returned samples in this window.</small>}</p>
++    {note && <p className={styles.richInspectorNote}>{note}</p>}
++    {model.omittedSeries > 0 && <p className={styles.richInspectorNote}>{model.omittedSeries} additional series omitted from this inspector.</p>}
++    {children}
++    <details className={styles.richInspectorDetails}><summary>Exact observations &amp; labels</summary><p>{new Date(timestamp).toISOString()} · raw values before display rounding</p><table><caption>Exact observations at the selected timestamp</caption><thead><tr><th scope="col">Series</th><th scope="col">Value</th></tr></thead><tbody>{model.rows.map(row => <tr key={row.key}><th scope="row">{row.name}</th><td>{row.exact.kind === 'observed' ? exactMetric(row.exact.value, unit) : row.exact.kind === 'ambiguous' ? row.exactSamples.map(point => point.value === null ? 'Missing' : exactMetric(point.value, unit)).join('; ') : exactLabel(row, unit)}</td></tr>)}</tbody></table>{selected && <dl>{Object.entries(selected.labels).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>}</details>
++    <footer className={styles.richInspectorFooter}><GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13}/>{pinned ? 'Unpin observation' : 'Pin observation'}</GammaButton><span>Esc to close</span></footer>
++  </div>;
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx b/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx
+--- a/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx
++++ b/src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx
+@@ -16,7 +16,9 @@
+ } from "@tanstack/charts";
+ import { MetricDetails, ObservationTooltip } from "./chart-renderers";
+ import { TooltipSubWidget } from "./tooltip-widgets";
+-import type { Point, Series } from "./chart-data";
++import { type Point, type Series } from "./chart-data";
++import { RichObservationInspector } from "./observation-inspector";
++import type { InspectionWindow } from "./observation-inspector-data";
+ import type { Widget } from "./schema";
+ import styles from "./chart-styles.module.css";
+ import { useChartCursorPublisher } from "./chart-cursor";
+@@ -31,6 +33,7 @@
+   height: number;
+   points: readonly PlotPoint[];
+   clear: () => void;
++  pin: (point: PlotPoint, pinned: boolean) => void;
+ }
+ interface ActivePoint {
+   point: PlotPoint;
+@@ -44,25 +47,33 @@
+   widget: Widget,
+   series: Series[],
+   enabled: boolean,
++  inspectionRevision?: unknown,
++  inspectionWindow?: InspectionWindow,
+ ) {
+   const id = useId();
+   const cursor = useChartCursorPublisher();
+   const revision = useMemo(
+-    () => ({ series, view: widget.options?.tooltipView, unit: widget.unit }),
+-    [series, widget.options?.tooltipView, widget.unit],
++    () => ({ series, view: widget.options?.tooltipView, unit: widget.unit, inspectionRevision, start: inspectionWindow?.start, end: inspectionWindow?.end }),
++    [series, widget.options?.tooltipView, widget.unit, inspectionRevision, inspectionWindow?.start, inspectionWindow?.end],
+   );
+   const scene = useRef<PlotScene | null>(null);
+   const armedRevision = useRef<unknown>(null);
++  const restoringFocus = useRef(false);
+   const [active, setActive] = useState<ActivePoint | null>(null);
+   const interaction = useRef({ panel: false, focused: false });
+   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+   const clearHide = useCallback(() => clearTimeout(timer.current), []);
+   const dismiss = useCallback(() => {
+     clearHide();
++    const restoreFocus = document.getElementById(id)?.contains(document.activeElement);
+     interaction.current.panel = false;
++    armedRevision.current = null;
++    restoringFocus.current = true;
+     setActive(null);
+     scene.current?.clear();
+-  }, [clearHide]);
++    if (restoreFocus) scene.current?.svg.focus({ preventScroll: true });
++    restoringFocus.current = false;
++  }, [clearHide, id]);
+   const scheduleHide = useCallback(() => {
+     clearHide();
+     timer.current = setTimeout(() => {
+@@ -72,6 +83,9 @@
+   }, [clearHide]);
+   useEffect(() => {
+     // A pinned observation belongs to its exact result/configuration, never a refresh.
++    armedRevision.current = null;
++    interaction.current.panel = false;
++    setActive(null);
+     scene.current?.clear();
+     return clearHide;
+   }, [revision, enabled, clearHide]);
+@@ -85,6 +99,10 @@
+         height: context.scene.height,
+         points: context.scene.points,
+         clear: () => context.interaction.setControlledFocus(null),
++        pin: (point, pinned) => {
++          const target = context.scene.points.find(candidate => candidate.key === point.key);
++          if (target) context.interaction.setControlledFocus(target, { pinned, source: "programmatic" });
++        },
+       };
+     },
+     [],
+@@ -185,6 +203,7 @@
+       }
+     : undefined;
+   return {
++    dismiss,
+     extension,
+     onRender,
+     onFocusChange,
+@@ -193,6 +212,7 @@
+       armedRevision.current = revision;
+     },
+     onFocus: () => {
++      if (restoringFocus.current) return;
+       armedRevision.current = revision;
+       interaction.current.focused = true;
+       clearHide();
+@@ -208,6 +228,7 @@
+           anchor={current.anchor}
+           anchorRect={anchorRect}
+           preferSide
++          compact={widget.options?.inspectorDensity === "compact"}
+           onDismiss={dismiss}
+           onEnter={() => {
+             interaction.current.panel = true;
+@@ -225,7 +246,26 @@
+             data-observation-timestamp={String(point.timestamp)}
+             data-observation-series={entry.name}
+           >
+-            <MetricDetails
++            {widget.type === "timeseries" ? <RichObservationInspector
++              title={widget.title}
++              series={series}
++              selectedSeriesIndex={current.point.datum.seriesIndex}
++              timestamp={point.timestamp}
++              unit={widget.unit}
++              decimals={widget.options?.decimals}
++              pinned={current.pinned}
++              window={inspectionWindow}
++              colors={series.map((_, index) => index === 0 && widget.color ? widget.color : `var(--gamma-chart-${index % 8 + 1})`)}
++              onClose={dismiss}
++              onPin={() => { scene.current?.pin(current.point, !current.pinned); setActive({ ...current, pinned: !current.pinned }); }}
++            >{widget.options?.tooltipView && <TooltipSubWidget
++              view={widget.options.tooltipView}
++              series={entry}
++              seriesIndex={current.point.datum.seriesIndex}
++              point={point}
++              unit={widget.unit}
++              color={current.point.color || widget.color}
++            />}</RichObservationInspector> : <MetricDetails
+               series={entry}
+               index={current.point.datum.seriesIndex}
+               point={point}
+@@ -236,8 +276,8 @@
+                   ? "Latest valid sample"
+                   : "Selected observation"
+               }
+-            />
+-            {widget.options?.tooltipView && <TooltipSubWidget
++            />}
++            {widget.type !== "timeseries" && widget.options?.tooltipView && <TooltipSubWidget
+               view={widget.options.tooltipView}
+               series={entry}
+               seriesIndex={current.point.datum.seriesIndex}
+@@ -245,14 +285,14 @@
+               unit={widget.unit}
+               color={current.point.color || widget.color}
+             />}
+-            <div className={styles.tooltipFooter}>
+-              <small>Page Up/Down to scroll · Esc to close</small>
++            {widget.type !== "timeseries" && <div className={styles.tooltipFooter} data-pinned={current.pinned || undefined}>
++              {widget.options?.inspectorDensity !== "compact" && <small>Page Up/Down to scroll · Esc to close</small>}
+               <small>
+                 {current.pinned
+-                  ? "Pinned · select again to close"
+-                  : "Click, tap or press Enter to keep open"}
++                  ? "Pinned · Esc to close"
++                  : "Click or Enter to pin · Esc to close"}
+               </small>
+-            </div>
++            </div>}
+           </div>
+         </ObservationTooltip>
+       ) : null,
+diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/operational-records.tsx b/src/vendor/paprika/ui/src/features/insights/plugins/operational-records.tsx
+--- a/src/vendor/paprika/ui/src/features/insights/plugins/operational-records.tsx
++++ b/src/vendor/paprika/ui/src/features/insights/plugins/operational-records.tsx
+@@ -12,6 +12,7 @@
+ } from "./operational-records-data"
+ import styles from "./operational-records.module.css"
+ import { worldLandPath } from "./world-land"
++import { ZoomableConnectionMap } from "../../../../../../../catalog/ConnectionMap"
+ 
+ const metric = (value: number | null, unit: string, decimals?: number) => value === null ? "No observed value" : formatMetric(value, unit === "percent" ? "%" : unit, false, decimals)
+ 
+@@ -63,7 +64,10 @@
+   </>
+ }
+ 
+-export function ConnectionMap(props: WidgetRendererProps) {
++export { ZoomableConnectionMap as ConnectionMap } from "../../../../../../../catalog/ConnectionMap"
++
++/** Retained upstream implementation for provenance; the registry uses the shared local viewport. */
++function OriginalConnectionMap(props: WidgetRendererProps) {
+   const {widget, result} = props
+   const config = useMemo(() => connectionMapConfig.parse(widget.config ?? {}), [widget.config])
+   const data = useMemo(() => result.records ? buildConnectionMap(result.records, config) : undefined, [result.records, config])
+@@ -174,10 +178,10 @@
+ /** Bundled renderers only. Persisted configuration maps scalar columns; it cannot load code. */
+ export function registerOperationalRecordPlugins() {
+   const entries: Omit<WidgetPlugin, "dataKind">[] = [
+-    {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with exact record inspection",render:ConnectionMap,parseConfig:(config:unknown)=>connectionMapConfig.parse(config??{}),
++    {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with zoom, pan and exact record inspection (local viewport extension)",render:ZoomableConnectionMap,parseConfig:(config:unknown)=>connectionMapConfig.parse(config??{}),
+       defaultConfig:{latitude:"latitude",longitude:"longitude",label:"label",showLocations:true},
+       styleControls:["unit","decimals","legend","tooltips"],
+-      configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field; marker size represents its absolute value."},{key:"status",label:"Status field",kind:"text" as const},{key:"showLocations",label:"Show location list",kind:"boolean" as const,help:"Hide the list to give the map more room. Points still expose exact observations."},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},
++      configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field shown in exact inspection. Marker size stays fixed while color shows the supplied classification."},{key:"status",label:"Risk classification field",kind:"text" as const,help:"Supply low, medium or high risk. Other status values remain unknown; no geographic risk is inferred."},{key:"showLocations",label:"Show location list",kind:"boolean" as const,help:"Hide the list to give the map more room. Points still expose exact observations."},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},
+     {id:"pipeline-topology",label:"Pipeline topology",description:"Follow recorded directed connections, including cycles and missing values",render:PipelineTopology,parseConfig:(config:unknown)=>pipelineTopologyConfig.parse(config??{}),
+       defaultConfig:{source:"source",target:"target"},
+       styleControls:["unit","decimals","tooltips"],
+diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data.ts b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data.ts
+--- a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data.ts
++++ b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data.ts
+@@ -156,6 +156,8 @@
+   upper: number;
+   labels: Record<string, string>;
+   cells: { timestamp: number; value: number | null }[];
++  /** Derived non-cumulative observations before display sampling, for exact inspection. */
++  sourceCells: { timestamp: number; value: number | null }[];
+ }
+ export interface DistributionData {
+   rows: DistributionRow[];
+@@ -213,7 +215,7 @@
+     i => Math.max(0, ...rows.map(row => row.cells[i].value ?? 0)));
+   const max = rows.reduce((maximum, row) => row.cells.reduce((value, cell) => Math.max(value, cell.value ?? 0), maximum), 0);
+   return {
+-    rows: rows.map(row => ({ ...row, cells: indices.map(i => row.cells[i]) })), timestamps: indices.map(i => allTimes[i]), max,
++    rows: rows.map(row => ({ ...row, sourceCells: row.cells, cells: indices.map(i => row.cells[i]) })), timestamps: indices.map(i => allTimes[i]), max,
+     invalidCells, omittedBuckets: bounds.length - rows.length, sampled: indices.length < allTimes.length, groups: histograms.length,
+   };
+ }
+diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css
+--- a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css
++++ b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css
+@@ -55,14 +55,8 @@
+ .unknownKey::before { content: ""; width: 10px; height: 8px; border: 1px dashed var(--gamma-muted); background: var(--gamma-surface); }
+ .notices { flex-shrink: 0; display: flex; gap: 4px 12px; flex-wrap: wrap; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
+ .notices:not(:empty) { padding: 4px 3px 0; }
+-.inspector { position: absolute; z-index: 5; right: 9px; top: 8px; width: min(260px, calc(100% - 18px)); max-height: calc(100% - 16px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; background: var(--widget-background, var(--gamma-bg)); color: var(--widget-text, var(--gamma-ink)); border: 1px solid var(--gamma-border); border-radius: 6px; padding: 12px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
++.inspector { position: absolute; z-index: 5; right: 9px; top: 8px; width: min(330px, calc(100% - 18px)); max-height: calc(100% - 16px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; background: var(--widget-background, var(--gamma-bg)); color: var(--widget-text, var(--gamma-ink)); border: 1px solid var(--gamma-border); border-radius: 6px; padding: 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+ .inspector:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
+-.inspectorActions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; color: var(--gamma-muted); font-size: 11px; }
+-.inspectorActions button { flex-shrink: 0; }
+-.history { height: 48px; position: relative; margin: 8px 0; }
+-.history > svg { position: static; width: 100%; height: 48px; opacity: .85; mask-image: none; }
+-.note { margin: 7px 0 0; font-size: 11px; line-height: 1.4; color: var(--gamma-muted); }
+-@media (pointer: coarse) { .inspectorActions button { min-height: 44px; min-width: 44px; } }
+ 
+ .heatmapFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 4px 3px 0; flex: 0 0 auto; }
+ .heatmapFooter .densityLegend { padding: 0; font-size: 10px; gap: 7px; }
+diff --git a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx
+--- a/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx
++++ b/src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx
+@@ -1,11 +1,10 @@
+ "use client";
+ 
+ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
+-import { Pin, X } from "lucide-react";
+-import { EmptyState, MetricDetails, formatMetric } from "../chart-renderers";
++import { EmptyState, formatMetric } from "../chart-renderers";
+ import { formatTimeTick } from "../chart-data";
+-import { GammaButton } from "../gamma/button";
+-import { StatSparkline } from "../stat-sparkline";
++import { calendarTick, horizontalPlotBounds, temporalPosition } from "../chart-presentation";
++import { RichObservationInspector } from "../observation-inspector";
+ import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
+ import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation";
+ import { useChartCursor, useChartCursorPublisher } from "../chart-cursor";
+@@ -110,19 +109,24 @@
+     }
+   };
+   const focus = (observation: Observation) => { if (enabled && !active && !restoringFocus.current) show(observation); };
+-  return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave: () => { if (!active?.pinned) setState(undefined); } };
+-}
+-
+-function Inspector({ observation, pinned, decimals, onPin, onClose, id }: { observation: Observation; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string }) {
++  const togglePin = () => {
++    if (!active) return;
++    setState({ ...active, pinned: !active.pinned });
++    if (!active.pinned) onContextChange?.({ series: active.observation.name, labels: active.observation.series.labels, value: active.observation.value });
++  };
++  return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, togglePin,
++    leave: () => { if (!active?.pinned && !root.current?.contains(document.activeElement)) setState(undefined); },
++    blur: (target: EventTarget | null) => { if (!active?.pinned && !(target instanceof Node && root.current?.contains(target))) setState(undefined); },
++  };
++}
++
++function Inspector({ observation, title, series, colors, pinned, decimals, onPin, onClose, id }: { observation: Observation; title: string; series?: MetricSeries[]; colors?: string[]; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string }) {
++  const displayedSeries = useMemo(() => series ?? [observation.series], [series, observation.series]);
+   return <section id={id} className={styles.inspector} aria-label="Observation details" data-rich-metric-inspector tabIndex={pinned ? 0 : undefined}
+     onKeyDown={event => {
+       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+     }}>
+-    <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={onClose}><X size={14} /></GammaButton></div>
+-    <MetricDetails series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" />
+-    {observation.note && <p className={styles.note}>{observation.note}</p>}
+-    <div className={styles.history}><StatSparkline series={observation.series} name={observation.name} color={observation.color} unit={observation.unit} /></div>
+-    <GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />{pinned ? "Unpin observation" : "Pin observation"}</GammaButton>
++    <RichObservationInspector title={title} series={displayedSeries} selectedSeriesIndex={series ? observation.row : 0} timestamp={observation.timestamp} unit={observation.unit} decimals={decimals} colors={colors ?? [observation.color]} note={observation.note} pinned={pinned} onPin={onPin} onClose={onClose}/>
+   </section>;
+ }
+ 
+@@ -181,9 +185,11 @@
+   const sharedCursor = useChartCursor();
+   const { showAxis, descriptionId } = useWidgetPresentation();
+   const unit = config.bucketUnit || widget.unit, densityUnit = config.densityUnit ?? "observations/s";
++  const inspectorSeries = useMemo(() => data.rows.map(bucket => ({ name: cellLabel(bucket.lower, bucket.upper, unit), labels: bucket.labels, points: bucket.sourceCells })), [data, unit]);
+   const tickLabels = data.rows.map(row => cellLabel(row.lower, row.upper, unit));
+   const gutter = useAxisGutter(tickLabels, ref, width);
+-  const left = showAxis ? gutter : 4, top = 4, bottom = showAxis ? 24 : 4, plotWidth = Math.max(1, width - left - 10), plotHeight = Math.max(1, height - top - bottom);
++  const { left, plotWidth } = horizontalPlotBounds(width, showAxis ? widget.options?.plotInsetLeft ?? gutter : 4, widget.options?.plotInsetRight ?? 10);
++  const top = 4, bottom = showAxis ? 24 : 4, plotHeight = Math.max(1, height - top - bottom);
+   const cellWidth = plotWidth / Math.max(1, data.timestamps.length), cellHeight = plotHeight / Math.max(1, data.rows.length);
+   // Keep every bucket cell inspectable while thinning labels to the actual
+   // available height. Short panels must not stack text over adjacent rows.
+@@ -192,11 +198,11 @@
+   const axisStride = Math.max(1, Math.ceil(16 / cellHeight));
+   const axisRows = new Set(data.rows.map((_, index) => index).filter(index => index % axisStride === 0));
+   const timeStart = data.timestamps[0] ?? 0, timeSpan = (data.timestamps.at(-1) ?? timeStart) - timeStart;
+-  const columnX = (timestamp: number) => left + cellWidth / 2 + (timeSpan ? (timestamp - timeStart) / timeSpan : .5) * Math.max(0, plotWidth - cellWidth);
++  const columnX = (timestamp: number) => temporalPosition(timestamp, timeStart, timeStart + timeSpan, left, left + plotWidth);
+   const cursorTime = inspection.enabled && sharedCursor && sharedCursor.timestamp >= timeStart && sharedCursor.timestamp <= timeStart + timeSpan ? sharedCursor.timestamp : undefined;
+   const observation = (row: number, column: number): Observation => {
+     const bucket = data.rows[row], cell = bucket.cells[column], name = cellLabel(bucket.lower, bucket.upper, unit);
+-    return { row, column, ...cell, name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note: "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit." };
++    return { row, column, ...cell, name, unit: densityUnit, color: palette[0], series: inspectorSeries[row], note: "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit." };
+   };
+   const locate = (event: PointerEvent<SVGSVGElement>) => {
+     const point = coordinates(event, width, height);
+@@ -216,25 +222,27 @@
+     inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned);
+   };
+   if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
+-  return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
++  return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={event => inspection.blur(event.relatedTarget)}>
+     <div className={styles.plot} ref={ref}>
+       <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
+         onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
+         onPointerMove={event => { const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
+         onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
++        <defs><clipPath id={`${id}-plot`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>
+         {data.rows.map((row, rowIndex) => <g key={row.upper}>
+           {showAxis && axisRows.has(rowIndex) && <text data-value-axis x={left - 8} y={top + (data.rows.length - rowIndex - .5) * cellHeight} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[rowIndex]}</text>}
+-          {row.cells.map((cell, column) => {
++          <g clipPath={`url(#${id}-plot)`}>{row.cells.map((cell, column) => {
+             const fill = cell.value === null ? "var(--gamma-surface)" : densityPalette[Math.min(5, Math.floor((data.max ? cell.value / data.max : 0) * 5))];
+             const active = inspection.active?.observation.row === rowIndex && inspection.active.observation.column === column;
+             const interval = Math.min(cellWidth, column ? columnX(cell.timestamp) - columnX(row.cells[column - 1].timestamp) : cellWidth, column < row.cells.length - 1 ? columnX(row.cells[column + 1].timestamp) - columnX(cell.timestamp) : cellWidth);
+-            return <rect key={cell.timestamp} x={columnX(cell.timestamp) - interval / 2 + .5} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={Math.max(.1, interval - 1)} height={Math.max(.1, cellHeight - 1)} fill={fill} stroke={active ? "var(--gamma-ink)" : cell.value === null ? "var(--gamma-border)" : "none"} strokeWidth={active ? 2 : .5} strokeDasharray={cell.value === null ? "2 2" : undefined} data-bucket-value={cell.value ?? "unknown"} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}><title>{cellLabel(row.lower, row.upper, unit)} · {stamp(cell.timestamp)} · {cell.value === null ? "No observations" : formatMetric(cell.value, densityUnit, false, widget.options?.decimals)}</title></rect>;
+-          })}
++            const markWidth = Math.max(.1, interval - 1);
++            return <rect key={cell.timestamp} x={columnX(cell.timestamp) - markWidth / 2} y={top + (data.rows.length - 1 - rowIndex) * cellHeight + .5} width={markWidth} height={Math.max(.1, cellHeight - 1)} fill={fill} stroke={active ? "var(--gamma-ink)" : cell.value === null ? "var(--gamma-border)" : "none"} strokeWidth={active ? 2 : .5} strokeDasharray={cell.value === null ? "2 2" : undefined} data-bucket-value={cell.value ?? "unknown"} data-bucket-upper={row.upper} data-timestamp={cell.timestamp}><title>{cellLabel(row.lower, row.upper, unit)} · {stamp(cell.timestamp)} · {cell.value === null ? "No observations" : formatMetric(cell.value, densityUnit, false, widget.options?.decimals)}</title></rect>;
++          })}</g>
+         </g>)}
+-        {cursorTime !== undefined && <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
+-        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], timeSpan)}</text>)}
++        {cursorTime !== undefined && <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} clipPath={`url(#${id}-plot)`} className={styles.crosshair} data-shared-cursor={cursorTime} />}
++        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{widget.options?.timeAxis === 'calendar' ? calendarTick(data.timestamps[index], timeSpan) : formatTimeTick(data.timestamps[index], timeSpan)}</text>)}
+       </svg>
+-      {inspection.active && inspection.detailsEnabled && <Inspector id={id} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
++      {inspection.active && inspection.detailsEnabled && <Inspector id={id} title={widget.title} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} />}
+     </div>
+     <div className={styles.heatmapFooter}>
+     {widget.options?.showLegend !== false && <div className={styles.densityLegend} aria-label={`Color encodes bucket ${densityUnit}`}><span>0</span><div>{densityPalette.map(color => <i key={color} style={{ background: color }} />)}</div><span>{formatMetric(data.max, densityUnit, false, widget.options?.decimals)}</span><span className={styles.unknownKey}>Missing</span></div>}
+@@ -258,6 +266,7 @@
+   const config = useMemo(() => directional ? directionalConfigSchema.parse(widget.config ?? {}) : stackedConfigSchema.parse(widget.config ?? {}), [directional, widget.config]);
+   const signature = JSON.stringify([widget.id, config, widget.unit, widget.options, directional]);
+   const data = useMemo(() => buildMetricPlot(result.series ?? [], config, directional), [result, config, directional]);
++  const inspectorSeries = useMemo(() => data.tracks.map(track => track.series), [data]);
+   const { root: inspectionRoot, ...inspection } = useInspection(props, signature), { ref, width, height } = useSize(), id = useId();
+   const sharedCursor = useChartCursor();
+   const { showAxis, descriptionId } = useWidgetPresentation();
+@@ -273,7 +282,7 @@
+   const color = (index: number) => index === 0 && widget.color ? widget.color : palette[index % palette.length];
+   const observation = (row: number, column: number): Observation => {
+     const track = data.tracks[row], cell = track.cells[column];
+-    return { row, column, value: cell.value, timestamp: cell.timestamp, series: track.series, name: track.name, unit: widget.unit, color: color(row), note: directional ? "Outbound is drawn below zero; this is the original nonnegative observation." : cell.upper === null && cell.value !== null ? "Recorded value; the stack is unavailable because another series is missing at this timestamp." : "Original observation, not the cumulative stacked height." };
++    return { row, column, value: cell.value, timestamp: cell.timestamp, series: track.series, name: track.name, unit: widget.unit, color: color(row), note: directional ? "Original source values. Outbound is mirrored only for display; negative traffic values are invalid and excluded from the main plot." : cell.upper === null && cell.value !== null ? "Recorded value; the stack is unavailable because another series is missing at this timestamp." : "Original observation, not the cumulative stacked height." };
+   };
+   const locate = (event: PointerEvent<SVGSVGElement>) => {
+     const point = coordinates(event, width, height);
+@@ -302,7 +311,7 @@
+   const tableLegend = config.legendDisplay === "table";
+   const legendRevision = JSON.stringify([widget.unit, widget.options?.decimals, config.legendDisplay, data.tracks.map(track => [track.name, track.cells.at(-1)?.value, track.statistics])]);
+   const formatSummary = (value: number | null) => value === null ? "No data" : formatMetric(value, widget.unit, false, widget.options?.decimals);
+-  return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave}>
++  return <div className={`${styles.chart} ${styles.metricShell}`} ref={inspectionRoot} onPointerLeave={inspection.leave} onBlurCapture={event => inspection.blur(event.relatedTarget)}>
+     <div className={styles.metricContent} data-legend-position={widget.options?.showLegend === false ? "bottom" : config.legendPosition ?? "bottom"} data-legend-display={config.legendDisplay ?? "compact"}>
+     <div className={styles.plot} ref={ref}>
+       <svg className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${directional ? "Outbound traffic below zero" : "Stacked observations"}.${inspection.enabled ? " Arrow keys inspect values; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
+@@ -324,9 +333,9 @@
+           })}
+         </g>)}</g>
+         {cursorTime !== undefined && <line x1={x(cursorTime)} x2={x(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
+-        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={x(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], span)}</text>)}
++        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={x(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{widget.options?.timeAxis === 'calendar' ? calendarTick(data.timestamps[index], span) : formatTimeTick(data.timestamps[index], span)}</text>)}
+       </svg>
+-      {inspection.active && inspection.detailsEnabled && <Inspector id={id} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
++      {inspection.active && inspection.detailsEnabled && <Inspector id={id} title={widget.title} series={inspectorSeries} colors={data.tracks.map((_, index) => color(index))} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={inspection.togglePin} />}
+     </div>
+     {widget.options?.showLegend !== false && <SeriesLegend table={tableLegend} revision={legendRevision}>{tableLegend ? <table className={styles.legendTable}>
+       <caption>Raw returned observations. Current is the latest sample, including missing values. Mean is the arithmetic mean of finite samples; max is the largest finite sample. Statistics use all returned samples before display sampling.</caption>
+diff --git a/src/vendor/paprika/ui/src/features/insights/schema.ts b/src/vendor/paprika/ui/src/features/insights/schema.ts
+--- a/src/vendor/paprika/ui/src/features/insights/schema.ts
++++ b/src/vendor/paprika/ui/src/features/insights/schema.ts
+@@ -290,7 +290,7 @@
+ ])
+ export const tooltipViewSchema = z.strictObject({
+   type: z.enum(widgetTypes),
+-  height: z.union([z.literal(120), z.literal(160), z.literal(200), z.literal(320)]).optional(),
++  height: z.union([z.literal(80), z.literal(120), z.literal(160), z.literal(200), z.literal(320)]).optional(),
+   showGrid: z.boolean().optional(),
+   showAxis: z.boolean().optional(),
+   showLegend: z.boolean().optional(),
+@@ -327,6 +327,18 @@
+     showTooltip: z.boolean().optional(),
+     tooltipView: tooltipViewSchema.optional(),
+     showGrid: z.boolean().optional(),
++    gridX: z.boolean().optional(),
++    timeAxis: z.enum(["linear", "calendar"]).optional(),
++    axisUnit: z.enum(["ticks", "caption"]).optional(),
++    plotInsetLeft: z.number().int().min(8).max(240).optional(),
++    plotInsetRight: z.number().int().min(8).max(120).optional(),
++    fillStyle: z.enum(["solid", "gradient"]).optional(),
++    inspectorDensity: z.enum(["comfortable", "compact"]).optional(),
++    showZeroLine: z.boolean().optional(),
++    referenceLines: z.array(z.strictObject({
++      value: z.number(), label: z.string().trim().min(1).max(80),
++      color: hexColor.optional(), style: z.enum(["solid", "dashed"]).optional(),
++    })).max(8).optional(),
+     decimals: z.number().int().min(0).max(8).optional(),
+     min: z.number().optional(),
+     max: z.number().optional(),
+diff --git a/src/vendor/paprika/ui/src/features/insights/time-window-controls.tsx b/src/vendor/paprika/ui/src/features/insights/time-window-controls.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/time-window-controls.tsx
+@@ -0,0 +1,152 @@
++import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent } from 'react';
++import { formatWindowDuration, normalizeTimeWindow, sameTimeWindow, type ChartTimeWindow } from './time-window';
++import styles from './time-window.module.css';
++
++export function useChartTimeWindow(extent: ChartTimeWindow | null, revision: unknown, minimumSpan: number) {
++  const fallback = extent ?? { start: 0, end: 1 };
++  const [state, setState] = useState<{ revision: unknown; window: ChartTimeWindow; history: ChartTimeWindow[] }>({ revision, window: fallback, history: [] });
++  const current = state.revision === revision && extent ? state.window : fallback;
++  useEffect(() => { setState({ revision, window: fallback, history: [] }); }, [revision, extent?.start, extent?.end]);
++  const commit = useCallback((candidate: ChartTimeWindow) => {
++    if (!extent) return false;
++    const accepted = normalizeTimeWindow(candidate, extent, minimumSpan);
++    if (!accepted || sameTimeWindow(accepted, current)) return false;
++    setState(previous => ({ revision, window: accepted, history: [...(previous.revision === revision ? previous.history : []), current].slice(-12) }));
++    return true;
++  }, [extent?.start, extent?.end, minimumSpan, current.start, current.end, revision]);
++  const reset = () => { if (extent) setState({ revision, window: extent, history: [] }); };
++  const undo = () => setState(previous => previous.revision !== revision || !previous.history.length ? previous : { revision, window: previous.history.at(-1)!, history: previous.history.slice(0, -1) });
++  return { window: current, full: fallback, commit, reset, undo, zoomed: !!extent && !sameTimeWindow(current, extent), canUndo: state.revision === revision && state.history.length > 0, minimumSpan, enabled: !!extent && extent.end - extent.start > minimumSpan };
++}
++
++interface BrushPoint { x: number; y: number; timestamp: number; inPlot: boolean }
++export interface TimeBrushPreview { start: number; end: number; x1: number; x2: number }
++
++/** One pointer owner arbitrates brushing with existing hover/pin behavior. */
++export function useTimeWindowBrush(options: {
++  enabled: boolean; revision: unknown; window: ChartTimeWindow;
++  point: (clientX: number, clientY: number) => BrushPoint | null;
++  commit: (window: ChartTimeWindow) => boolean; onStart: () => void;
++}) {
++  const latest = useRef(options); latest.current = options;
++  const drag = useRef<{ id: number; owner: Element; start: BrushPoint; clientX: number; clientY: number; active: boolean } | null>(null);
++  const suppressClick = useRef(false), previewRef = useRef<TimeBrushPreview | null>(null), frame = useRef<number | null>(null);
++  const [preview, setPreview] = useState<TimeBrushPreview | null>(null);
++  const paint = (next: TimeBrushPreview) => {
++    previewRef.current = next;
++    if (frame.current === null) frame.current = requestAnimationFrame(() => { frame.current = null; setPreview(previewRef.current); });
++  };
++  const finish = useCallback((clear = true) => {
++    const current = drag.current; drag.current = null;
++    if (current?.active) suppressClick.current = true;
++    if (current?.owner.hasPointerCapture(current.id)) current.owner.releasePointerCapture(current.id);
++    if (frame.current !== null) { cancelAnimationFrame(frame.current); frame.current = null; }
++    previewRef.current = null;
++    if (clear) setPreview(null);
++  }, []);
++  useEffect(() => {
++    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && drag.current) { event.preventDefault(); event.stopPropagation(); finish(); } };
++    const blur = () => finish();
++    document.addEventListener('keydown', escape, true); window.addEventListener('blur', blur);
++    return () => { document.removeEventListener('keydown', escape, true); window.removeEventListener('blur', blur); finish(false); };
++  }, [finish]);
++  useEffect(() => { finish(); }, [options.revision, options.window.start, options.window.end, finish]);
++  useEffect(() => { if (!options.enabled) finish(); }, [options.enabled, finish]);
++  return {
++    preview,
++    get active() { return !!drag.current?.active; },
++    handlers: {
++      onPointerDownCapture: (event: PointerEvent<Element>) => {
++        if (!latest.current.enabled || event.button !== 0 || !event.isPrimary || (event.target as Element).closest('button,input,select,summary,a,[role=slider]')) return;
++        const point = latest.current.point(event.clientX, event.clientY);
++        if (!point?.inPlot) return;
++        suppressClick.current = false;
++        // Keep a newly opened inspection portal from stealing the gesture before
++        // it crosses the drag threshold. The SVG retains native chart click
++        // bubbling; capturing the outer wrapper would bypass that click owner.
++        const owner = (event.target as Element).closest('svg') ?? event.currentTarget;
++        drag.current = { id: event.pointerId, owner, start: point, clientX: event.clientX, clientY: event.clientY, active: false };
++        owner.setPointerCapture(event.pointerId);
++      },
++      onPointerMoveCapture: (event: PointerEvent<Element>) => {
++        const current = drag.current;
++        if (!current || current.id !== event.pointerId) return;
++        if (!latest.current.enabled || (event.buttons & 1) === 0) { finish(); return; }
++        const point = latest.current.point(event.clientX, event.clientY);
++        if (!point) return;
++        if (!current.active) {
++          const dx = Math.abs(event.clientX - current.clientX), dy = Math.abs(event.clientY - current.clientY);
++          if (event.pointerType === 'touch' && dy > dx && dy > 6) { finish(); return; }
++          if (dx < 6) return;
++          current.active = true; latest.current.onStart();
++        }
++        event.preventDefault(); event.stopPropagation();
++        paint({ start: current.start.timestamp, end: point.timestamp, x1: current.start.x, x2: point.x });
++      },
++      onPointerUpCapture: (event: PointerEvent<Element>) => {
++        const current = drag.current;
++        if (!current || current.id !== event.pointerId) return;
++        if (!latest.current.enabled) { finish(); return; }
++        if (current.active) {
++          event.preventDefault(); event.stopPropagation();
++          const point = latest.current.point(event.clientX, event.clientY);
++          if (point) latest.current.commit({ start: current.start.timestamp, end: point.timestamp });
++        }
++        finish();
++      },
++      onPointerLeave: () => { if (drag.current && !drag.current.active) finish(); },
++      onPointerCancelCapture: () => finish(),
++      onLostPointerCapture: (event: PointerEvent<Element>) => { if (drag.current?.id === event.pointerId) finish(); },
++      // Native HTML/text dragging otherwise cancels a repeated pointer brush.
++      onDragStartCapture: (event: DragEvent<Element>) => event.preventDefault(),
++      onMouseMoveCapture: (event: MouseEvent<Element>) => { if (drag.current?.active) event.stopPropagation(); },
++      onClickCapture: (event: MouseEvent<Element>) => { if (suppressClick.current) { suppressClick.current = false; event.preventDefault(); event.stopPropagation(); } },
++    },
++  };
++}
++
++function inputTime(value: number) { return new Date(value).toISOString().slice(0, 23); }
++function parseInput(value: string) { return Date.parse(`${value}Z`); }
++function shortTime(value: number, long: boolean) { const iso = new Date(value).toISOString(); return long ? `${iso.slice(5, 10)} ${iso.slice(11, 16)}` : iso.slice(11, 19); }
++
++export function TimeWindowControls({ state, compact = false, description = 'Only this plot changes. Dashboard time, summaries and source observations stay unchanged.' }: { state: ReturnType<typeof useChartTimeWindow>; compact?: boolean; description?: string }) {
++  const details = useRef<HTMLDetailsElement>(null);
++  const [start, setStart] = useState(inputTime(state.window.start)), [end, setEnd] = useState(inputTime(state.window.end)), [error, setError] = useState('');
++  useEffect(() => { setStart(inputTime(state.window.start)); setEnd(inputTime(state.window.end)); setError(''); }, [state.window.start, state.window.end]);
++  const long = state.full.end - state.full.start > 86400000;
++  const close = () => { if (details.current) { details.current.open = false; details.current.querySelector('summary')?.focus(); } };
++  return <div className={`paprika-time-window ${styles.controls} ${compact ? styles.compact : ''}`} data-time-window-start={state.window.start} data-time-window-end={state.window.end} data-time-window-zoomed={state.zoomed}>
++    <span className={styles.hint}>{state.zoomed ? 'Chart window' : 'Drag across the plot to zoom'}</span>
++    {state.zoomed && <span className={styles.bounds}>{shortTime(state.window.start, long)} – {shortTime(state.window.end, long)} UTC</span>}
++    {state.canUndo && <button type="button" onClick={state.undo}>Undo zoom</button>}
++    {state.zoomed && <button type="button" onClick={state.reset}>Reset zoom</button>}
++    <details ref={details} className={styles.editor} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
++      <summary aria-label="Edit chart time window">{compact && !state.zoomed ? 'Zoom' : 'Time window'}</summary>
++      <form className={styles.form} onSubmit={event => {
++        event.preventDefault();
++        // Native controls are the submission authority, including autofill and
++        // date-picker changes that may precede React's next draft-state render.
++        const submitted = new FormData(event.currentTarget);
++        const requested = { start: parseInput(String(submitted.get('start') ?? '')), end: parseInput(String(submitted.get('end') ?? '')) };
++        if (requested.end <= requested.start) { setError('End must be after start.'); return; }
++        if (requested.start < state.full.start || requested.end > state.full.end) { setError('Choose a window within the available source data.'); return; }
++        if (!normalizeTimeWindow(requested, state.full, state.minimumSpan)) { setError(`Select at least ${formatWindowDuration(state.minimumSpan)}.`); return; }
++        state.commit(requested); close();
++      }}>
++        <strong>Chart time window</strong>
++        <p>{description}</p>
++        <label>Start (UTC)<input name="start" aria-label="Chart window start UTC" type="datetime-local" step="0.001" value={start} min={inputTime(state.full.start)} max={inputTime(state.full.end)} onChange={event => setStart(event.target.value)}/></label>
++        <label>End (UTC)<input name="end" aria-label="Chart window end UTC" type="datetime-local" step="0.001" value={end} min={inputTime(state.full.start)} max={inputTime(state.full.end)} onChange={event => setEnd(event.target.value)}/></label>
++        <span>Minimum {formatWindowDuration(state.minimumSpan)} · displayed {formatWindowDuration(state.window.end - state.window.start)}</span>
++        {error && <p role="alert" className={styles.error}>{error}</p>}
++        <footer><button type="button" onClick={() => { state.reset(); close(); }}>Full range</button><button type="submit">Apply window</button></footer>
++      </form>
++    </details>
++  </div>;
++}
++
++export function TimeBrushOverlay({ preview, top, height, width }: { preview: TimeBrushPreview | null; top: number; height: number; width: number }) {
++  if (!preview) return null;
++  const left = Math.min(preview.x1, preview.x2), brushWidth = Math.abs(preview.x2 - preview.x1);
++  return <div className={styles.overlay} style={{ left, top, width: brushWidth, height }} data-time-brush-selection aria-hidden="true"><span style={{ left: Math.max(0, Math.min(brushWidth / 2, width - left - 110)) }}>{formatWindowDuration(Math.abs(preview.end - preview.start))}</span></div>;
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/time-window.module.css b/src/vendor/paprika/ui/src/features/insights/time-window.module.css
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/time-window.module.css
+@@ -0,0 +1,20 @@
++.controls { display:flex; align-items:center; flex-wrap:wrap; gap:5px 10px; flex:none; min-height:28px; padding:2px 0 7px; color:var(--gamma-muted,#a8c3d1); font:11px/1.3 Barlow,sans-serif; position:relative; z-index:25; }
++.hint { margin-right:auto; }
++.bounds { color:var(--gamma-ink,#dceafa); font-variant-numeric:tabular-nums; }
++.controls button,.editor summary { min-height:26px; padding:4px 8px; border:1px solid var(--gamma-border,#224351); border-radius:4px; background:var(--gamma-bg,#061923); color:var(--gamma-ink,#dceafa); font:inherit; cursor:pointer; }
++.controls button:hover,.editor summary:hover { background:var(--gamma-surface-2,#12313d); }
++.controls button:focus-visible,.editor summary:focus-visible,.form input:focus-visible { outline:2px solid var(--gamma-accent,#00b9e8); outline-offset:2px; }
++.editor { position:relative; }
++.editor summary { list-style:none; display:flex; align-items:center; }
++.editor summary::-webkit-details-marker { display:none; }
++.form { position:absolute; right:0; top:calc(100% + 5px); width:330px; max-width:calc(100vw - 30px); padding:12px; display:flex; flex-direction:column; gap:10px; border:1px solid var(--gamma-border,#28546a); border-radius:6px; background:var(--gamma-bg,#061923); color:var(--gamma-ink,#dceafa); box-shadow:0 8px 24px #0005; font-size:12px; z-index:50; }
++.form strong { font-size:14px; font-weight:500; }.form p { margin:0; color:var(--gamma-muted,#a8c3d1); line-height:1.5; }.form label { display:flex; flex-direction:column; gap:4px; }.form input { min-width:0; width:100%; padding:7px; border:1px solid var(--gamma-border,#224351); border-radius:3px; background:var(--gamma-page,#071319); color:var(--gamma-ink,#dceafa); font:12px Barlow,sans-serif; color-scheme:dark; }.form footer { display:flex; justify-content:space-between; gap:10px; }.form .error { color:var(--gamma-danger,#fb4e43); }
++:global([data-insights-theme=light]) .form input { color-scheme:light; }
++.compact { position:absolute; right:8px; top:0; min-height:24px; padding:0; max-width:calc(100% - 65px); }
++.compact .hint { display:none; }.compact .bounds { font-size:11px; background:var(--gamma-bg,#061923); padding:3px 5px; border-radius:3px; }
++.overlay { position:absolute; z-index:4; pointer-events:none; background:color-mix(in srgb,var(--gamma-chart-1,#04d8ed) 18%,transparent); border-inline:1px solid var(--gamma-chart-1,#04d8ed); box-sizing:border-box; }
++.overlay::before,.overlay::after { content:''; position:absolute; top:50%; width:3px; height:20px; margin-top:-10px; background:var(--gamma-chart-1,#04d8ed); }.overlay::before { left:-2px; }.overlay::after { right:-2px; }
++.overlay>span { position:absolute; top:4px; padding:4px 7px; color:var(--gamma-ink,#dceafa); background:var(--gamma-bg,#061923); border:1px solid var(--gamma-border,#224351); border-radius:3px; font:12px Barlow,sans-serif; white-space:nowrap; }
++:global(.ref-app[data-layout=reflow]) .compact { position:relative; inset:auto; max-width:none; padding:4px 0 8px; }
++:global(.ref-app[data-layout=reflow]) .compact .hint { display:inline; }
++@media(max-width:520px) { .bounds { width:100%; order:2; }.form { width:300px; }.hint { font-size:11px; } }
+diff --git a/src/vendor/paprika/ui/src/features/insights/time-window.ts b/src/vendor/paprika/ui/src/features/insights/time-window.ts
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/time-window.ts
+@@ -0,0 +1,66 @@
++/** A chart window is a local view over immutable observations, not a query range. */
++export interface ChartTimeWindow { start: number; end: number }
++export interface TimedObservation { timestamp: number; value: number | null }
++
++export function timeWindowExtent(series: readonly { points: readonly TimedObservation[] }[]): ChartTimeWindow | null {
++  let start = Infinity, end = -Infinity;
++  for (const entry of series) for (const point of entry.points) {
++    if (!Number.isFinite(point.timestamp)) continue;
++    start = Math.min(start, point.timestamp); end = Math.max(end, point.timestamp);
++  }
++  return Number.isFinite(start) && end > start ? { start, end } : null;
++}
++
++/** Two source intervals, with a finite precision floor for exceptionally dense data. */
++export function minimumTimeWindow(series: readonly { points: readonly TimedObservation[] }[], extent: ChartTimeWindow) {
++  let cadence = Infinity;
++  for (const entry of series) {
++    const timestamps = [...new Set(entry.points.map(point => point.timestamp).filter(Number.isFinite))].sort((a, b) => a - b);
++    for (let i = 1; i < timestamps.length; i++) cadence = Math.min(cadence, timestamps[i] - timestamps[i - 1]);
++  }
++  const span = extent.end - extent.start;
++  return Math.min(span, Math.max(1, span / 10000, Number.isFinite(cadence) ? cadence * 2 : span));
++}
++
++export function normalizeTimeWindow(candidate: ChartTimeWindow, extent: ChartTimeWindow, minimumSpan = 1): ChartTimeWindow | null {
++  if (![candidate.start, candidate.end, extent.start, extent.end, minimumSpan].every(Number.isFinite) || extent.end <= extent.start || minimumSpan <= 0) return null;
++  const start = Math.max(extent.start, Math.min(extent.end, Math.round(Math.min(candidate.start, candidate.end))));
++  const end = Math.max(extent.start, Math.min(extent.end, Math.round(Math.max(candidate.start, candidate.end))));
++  return end - start >= minimumSpan ? { start, end } : null;
++}
++
++export function sameTimeWindow(a: ChartTimeWindow, b: ChartTimeWindow) { return a.start === b.start && a.end === b.end; }
++
++export function timeWindowFromPixels(start: number, end: number, left: number, width: number, domain: ChartTimeWindow, minimumSpan = 1) {
++  if (![start, end, left, width].every(Number.isFinite) || width <= 0) return null;
++  const timeAt = (pixel: number) => domain.start + Math.max(0, Math.min(1, (pixel - left) / width)) * (domain.end - domain.start);
++  return normalizeTimeWindow({ start: timeAt(start), end: timeAt(end) }, domain, minimumSpan);
++}
++
++/** Preserve exact source values and null gaps; optional neighbours only paint clipped edges. */
++export function observationsInWindow<T extends TimedObservation>(points: readonly T[], window: ChartTimeWindow, includeNeighbours = false): T[] {
++  const sorted = points.filter(point => Number.isFinite(point.timestamp)).slice().sort((a, b) => a.timestamp - b.timestamp);
++  const inside = sorted.filter(point => point.timestamp >= window.start && point.timestamp <= window.end);
++  if (!includeNeighbours) return inside;
++  const before = sorted.findLast(point => point.timestamp < window.start);
++  const after = sorted.find(point => point.timestamp > window.end);
++  return [...(before ? [before] : []), ...inside, ...(after ? [after] : [])];
++}
++
++export function nearestTimeIndex(points: readonly TimedObservation[], timestamp: number, window?: ChartTimeWindow): number | null {
++  let nearest: number | null = null, distance = Infinity;
++  points.forEach((point, index) => {
++    if (!Number.isFinite(point.timestamp) || (window && (point.timestamp < window.start || point.timestamp > window.end))) return;
++    const next = Math.abs(point.timestamp - timestamp);
++    if (next < distance) { nearest = index; distance = next; }
++  });
++  return nearest;
++}
++
++export function formatWindowDuration(milliseconds: number) {
++  const seconds = milliseconds / 1000;
++  if (seconds < 60) return `${Number(seconds.toFixed(2))}s`;
++  if (seconds < 3600) return `${Number((seconds / 60).toFixed(1))}m`;
++  if (seconds < 86400) return `${Number((seconds / 3600).toFixed(1))}h`;
++  return `${Number((seconds / 86400).toFixed(1))}d`;
++}
+diff --git a/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css b/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css
+--- a/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css
++++ b/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css
+@@ -59,6 +59,8 @@
+   color: var(--gamma-muted, #626e65);
+   overflow-wrap: anywhere;
+ }
++.historyRange { color: var(--gamma-muted); font-size: 10px; margin-top: 4px; }
++.historyRange summary { cursor: pointer; width: fit-content; }
+ .range {
+   display: flex;
+   flex-wrap: wrap;
+@@ -139,3 +141,11 @@
+   white-space: nowrap;
+   border: 0;
+ }
++
++.widget[data-tooltip-density="compact"] { padding: 7px 12px; }
++.widget[data-tooltip-density="compact"] .heading,
++.widget[data-tooltip-density="compact"] .summary,
++.widget[data-tooltip-density="compact"] .note,
++.widget[data-tooltip-density="compact"] .historyRange { font-size: 12px; }
++.widget[data-tooltip-density="compact"] .heading { margin-bottom: 2px; }
++.widget[data-tooltip-density="compact"] .summary { margin-top: 4px; }
+diff --git a/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.tsx b/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.tsx
+--- a/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.tsx
++++ b/src/vendor/paprika/ui/src/features/insights/tooltip-widgets.tsx
+@@ -49,7 +49,7 @@
+   readonly points: readonly Readonly<Point>[];
+   readonly unit: string;
+   readonly color: string;
+-  readonly height: 120 | 160 | 200 | 320;
++  readonly height: 80 | 120 | 160 | 200 | 320;
+   readonly view: Readonly<Omit<TooltipView, "source">>;
+   readonly result: QueryResult;
+   readonly queried: boolean;
+@@ -166,7 +166,7 @@
+       ),
+     unit: view.unit ?? unit,
+     color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) || chartTokenColor.test(color) ? color : DEFAULT_TOOLTIP_COLOR),
+-    height: [120, 160, 200, 320].includes(view.height ?? 160)
++    height: [80, 120, 160, 200, 320].includes(view.height ?? 160)
+       ? (view.height ?? 160)
+       : 160,
+     showGrid: view.showGrid !== false,
+@@ -356,13 +356,14 @@
+     <section
+       className={styles.widget}
+       data-tooltip-widget={view.type}
++      data-tooltip-density={view.height === 80 ? "compact" : undefined}
+       aria-label={
+         view.title ??
+         `${context.name} ${context.seriesOnly ? "history" : "details"}`
+       }
+       aria-busy={query.loading}
+     >
+-      {view.title && <strong className={styles.title}>{view.title}</strong>}
++      {view.title && view.height !== 80 && <strong className={styles.title}>{view.title}</strong>}
+       {query.loading ? (
+         <p className={styles.empty} role="status">
+           Loading tooltip data…
+@@ -637,7 +638,7 @@
+   return (
+     <>
+       <div className={styles.heading}>
+-        <span>Signal history</span>
++        <span>{height === 80 ? `${name} · history` : "Signal history"}</span>
+         <span>
+           {summary.sampleCount}{" "}
+           {summary.sampleCount === 1 ? "sample" : "samples"}
+@@ -683,6 +684,11 @@
+           <span>{name}</span>
+         </div>
+       )}
++      {height === 80 ? <details className={styles.historyRange}>
++        <summary>{missing} History details</summary>
++        <p className={styles.note}>{summary.sampleCount > points.length ? `${points.length} plotted samples; reduction preserves gaps and extrema.` : 'All observations are plotted.'}</p>
++        {summary.start !== undefined && summary.end !== undefined && <p className={styles.range}><time dateTime={new Date(summary.start).toISOString()}>{new Date(summary.start).toISOString()}</time><span>—</span><time dateTime={new Date(summary.end).toISOString()}>{new Date(summary.end).toISOString()}</time></p>}
++      </details> : <>
+       <p className={styles.note}>
+         {missing}
+         {summary.sampleCount > points.length
+@@ -690,7 +696,7 @@
+           : ""}
+       </p>
+       {summary.start !== undefined && summary.end !== undefined && (
+-        <p className={styles.range}>
++        <details className={styles.historyRange} open><summary>History interval</summary><p className={styles.range}>
+           <time dateTime={new Date(summary.start).toISOString()}>
+             {new Date(summary.start).toISOString()}
+           </time>
+@@ -698,8 +704,9 @@
+           <time dateTime={new Date(summary.end).toISOString()}>
+             {new Date(summary.end).toISOString()}
+           </time>
+-        </p>
++        </p></details>
+       )}
++      </>}
+     </>
+   );
+ }
+diff --git a/src/vendor/paprika/ui/src/features/insights/widget-loading.tsx b/src/vendor/paprika/ui/src/features/insights/widget-loading.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/vendor/paprika/ui/src/features/insights/widget-loading.tsx
+@@ -0,0 +1,21 @@
++"use client";
++
++import { createContext, useContext, type ReactNode } from "react";
++import type { Widget } from "./schema";
++
++export type WidgetLoadingPresentation = (state: {
++  widget: Widget;
++  phase: "initial" | "refresh";
++}) => ReactNode;
++
++const LoadingContext = createContext<WidgetLoadingPresentation | null>(null);
++
++/** Host-owned presentation only: loading never becomes a query result or schema field. */
++export function WidgetLoadingProvider({ render, children }: {
++  render: WidgetLoadingPresentation;
++  children: ReactNode;
++}) {
++  return <LoadingContext.Provider value={render}>{children}</LoadingContext.Provider>;
++}
++
++export const useWidgetLoadingPresentation = () => useContext(LoadingContext);
+diff --git a/src/vendor/paprika/ui/src/features/insights/widget-registry.tsx b/src/vendor/paprika/ui/src/features/insights/widget-registry.tsx
+--- a/src/vendor/paprika/ui/src/features/insights/widget-registry.tsx
++++ b/src/vendor/paprika/ui/src/features/insights/widget-registry.tsx
+@@ -33,6 +33,10 @@
+   /** Only expose controls the renderer actually implements. */
+   styleControls?: readonly ("unit" | "decimals" | "color" | "legend" | "grid" | "tooltips")[];
+   parseConfig?: (config: Widget["config"]) => Widget["config"];
++  /** Validate actual loaded data before accepting an editable configuration. */
++  validateInput?: (result: QueryResult, config: Widget["config"]) => void;
++  /** Maintained beside the renderer rather than a second list of chart IDs. */
++  layout?: { mode: "intrinsic" | "fill"; minWidth?: number; minHeight?: number };
+ }
+ export interface WidgetConfigField {
+   key: string;
+@@ -44,6 +48,15 @@
+   max?: number;
+   step?: number;
+   options?: readonly { value: string; label: string }[];
++  /** A semantic column role. Metadata is supplied by trusted renderer code, never inferred from a label. */
++  binding?: {
++    types: readonly ("string" | "number" | "boolean" | "timestamp")[];
++    unit?: string;
++    acceptedUnits?: readonly string[];
++    role?: string;
++    /** Allows an explicit empty-string mapping. The config parser must accept it without restoring a default. */
++    optional?: boolean;
++  };
+ }
+ export type WidgetPlugin = Omit<WidgetDefinition, "type">;
+ 

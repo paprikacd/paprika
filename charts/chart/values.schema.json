@@ -76,6 +76,7 @@
           "properties": {
             "transientRequeue": {"$ref": "#/$defs/goDuration"},
             "sourceResolveTTL": {"$ref": "#/$defs/goDuration"},
+            "repoServerTimeout": {"$ref": "#/$defs/goDuration"},
             "cacheResyncPeriod": {"$ref": "#/$defs/goDuration"},
             "maxConcurrentReconciles": {
               "type": "object",
