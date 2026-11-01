@@ -6,7 +6,7 @@
 .performance-chart-key,.performance-subheading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 14px; color:var(--gamma-muted); font-size:12px; margin:2px 0 8px; }
 .performance-chart-key .domain-legend { margin:0; }
 .performance-chart-key>span { display:inline-flex; align-items:center; gap:7px; }
-.performance-density-ramp { display:inline-block; width:78px; height:7px; border:1px solid var(--gamma-border); background:linear-gradient(90deg,var(--gamma-surface-2),var(--gamma-chart-6),var(--gamma-chart-1)); }
+.performance-density-ramp { display:inline-block; width:78px; height:7px; border:1px solid var(--gamma-border); background:linear-gradient(90deg,var(--gamma-density-0),var(--gamma-density-6),var(--gamma-density-12),var(--gamma-density-18),var(--gamma-density-23)); }
 .performance-subheading { justify-content:flex-start; border-top:1px solid var(--gamma-border); padding-top:9px; margin-top:8px; }
 .performance-subheading strong { color:var(--gamma-ink); font-weight:500; margin-right:auto; }
 .performance-subheading span { display:inline-flex; align-items:center; gap:6px; }

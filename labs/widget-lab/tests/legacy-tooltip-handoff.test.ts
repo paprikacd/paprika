@@ -48,7 +48,7 @@ describe('legacy chart tooltip handoff contracts', () => {
     for (const [Component, panel] of [[RouteMap, fixtures.map], [ETAWindows, fixtures.eta]] as const) {
       const markup = renderToStaticMarkup(createElement(Component, { ...panel, widget: { ...panel.widget, config: { ...panel.widget.config, selectedId: id } } }));
       expect(markup).toContain(id);
-      expect(markup).toContain('stroke="#ff7956"');
+      expect(markup).toContain('stroke="var(--gamma-accent)"');
       expect(markup).not.toContain('aria-pressed="true"');
       expect(markup).not.toContain('data-test-tooltip');
     }
@@ -59,7 +59,7 @@ describe('legacy chart tooltip handoff contracts', () => {
     const fixtures = coastalFixtures(), id = buoyRows(fixtures.map.result.records).find(row => row.kind === 'buoy')!.id;
     const map = renderToStaticMarkup(createElement(CoastalVectorMap, { ...fixtures.map, widget: { ...fixtures.map.widget, config: { ...fixtures.map.widget.config, selectedId: id } } }));
     expect(map).toContain(`data-spatial-id="${id}"`);
-    expect(map).toContain('stroke="#ff7956"');
+    expect(map).toContain('stroke="var(--gamma-accent)"');
     expect(map).not.toContain('data-test-tooltip');
     const rose = renderToStaticMarkup(createElement(DirectionalRose, fixtures.rose));
     expect(rose.match(/aria-pressed="false"/g)).toHaveLength(64);

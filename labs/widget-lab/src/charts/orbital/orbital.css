@@ -58,7 +58,7 @@
 .orbital-profile-sample-controls > label { display:flex; flex:1; min-width:120px; align-items:center; gap:7px; color:var(--gamma-muted); }
 .orbital-profile-sample-controls input { min-width:65px; width:100%; accent-color:var(--gamma-chart-1); }
 .orbital-profile-sample-controls output { min-width:94px; color:var(--gamma-ink); text-align:right; }
-.orbital-profile-unknown-swatch { border:1px dashed var(--gamma-muted); border-radius:1px!important; }
+.orbital-legend i.orbital-hatch-key { border-radius:2px; }
 @container (max-width:410px) { .orbital-profile-summary { gap:8px; }.orbital-profile-summary dd { font-size:16px; }.orbital-profile-sample-controls output { width:100%; text-align:center; } }
 @container (max-width:610px) { .orbital-map-layout { grid-template-columns:minmax(0,1fr); }.orbital-map-evidence .domain-detail-values { grid-template-columns:repeat(2,minmax(0,1fr)); }.orbital-map-evidence .domain-detail-values > div { display:block; }.orbital-map-evidence .domain-detail-values dd { margin-top:3px; }.orbital-evidence-hint { min-height:0; } }
 @media (prefers-reduced-motion:reduce) { .orbital-chart * { scroll-behavior:auto; } }

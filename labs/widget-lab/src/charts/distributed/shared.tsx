@@ -35,3 +35,10 @@ export function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
   const matrix = svg.getScreenCTM();
   return matrix ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()) : { x: 0, y: 0 };
 }
+/** The 24-step density ramp step for a value against the family maximum. Zero, unknown and non-positive values take no step, so the caller draws the empty fill. */
+export function densityStep(value: number | null, max: number): number | null {
+  if (value === null || value <= 0 || max <= 0) return null;
+  return Math.min(23, Math.max(0, Math.round(Math.min(1, value / max) * 23)));
+}
+/** Gamma's 24-step density ramp as a left-to-right gradient (legend keys). */
+export const DENSITY_GRADIENT = `linear-gradient(90deg,${Array.from({ length: 24 }, (_, i) => `var(--gamma-density-${i})`).join(',')})`;

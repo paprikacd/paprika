@@ -6,12 +6,15 @@ import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlo
 import { performanceTrace, performanceTraceConfig, type PerformanceSpan } from './model';
 import { performanceNumber as fmt } from './PerformanceDensity';
 import './performance.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
-export const performanceSpanColor = (id: string) => ({ queue: C.amber, database: C.orange, serialize: C.cyan, payment: C.violet, inventory: C.blue, pricing: C.blue }[id] ?? C.blue);
+export const performanceSpanColor = (id: string) => ({ queue: 'var(--gamma-chart-3)', database: 'var(--gamma-chart-4)', serialize: 'var(--gamma-chart-1)', payment: 'var(--gamma-chart-2)', inventory: 'var(--gamma-chart-6)', pricing: 'var(--gamma-chart-6)' }[id] ?? 'var(--gamma-chart-6)');
 export function PerformanceTraceWaterfall({ widget, result, embedded, onContextChange }: WidgetRendererProps) {
   const config = performanceTraceConfig.parse(widget.config ?? {});
   const data = useMemo(() => result.records ? performanceTrace(result.records) : null, [result.records]);
   const host = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), width = usePlotWidth(host, 950), uid = useId().replaceAll(':', '');
+  const entering = useChartEntrance({ disabled: embedded, anchor: host });
   const spans = data?.spans ?? [], enabled = !embedded && widget.options?.showTooltip !== false;
   const inspection = useInspection(spans, result, enabled, config.selectedSpan), selected = inspection.item ?? spans.find(span => span.id === config.selectedSpan);
   const duration = data?.duration ?? 0, extent = spans.length ? { start: 0, end: duration } : null;
@@ -23,7 +26,7 @@ export function PerformanceTraceWaterfall({ widget, result, embedded, onContextC
   const point = (clientX: number, clientY: number) => { const transform = svg.current?.getScreenCTM(); if (!transform) return null; const p = new DOMPoint(clientX, clientY).matrixTransform(transform.inverse()); return { x: p.x, y: p.y, timestamp: x.invert(Math.max(left, Math.min(right, p.x))), inPlot: p.x >= left && p.x <= right && p.y >= top && p.y <= height - 14 }; };
   const brush = useTimeWindowBrush({ enabled: !embedded && view.enabled, revision: result, window: view.window, point, commit: view.commit, onStart: inspection.dismiss });
   const pick = (span: PerformanceSpan, target: SVGElement) => { if (!enabled) return; inspection.select(span.id, target); onContextChange?.({ series: span.operation, value: span.duration, labels: { action: 'span', spanId: span.id, traceId: span.traceId, functionName: span.functionName ?? '', service: span.service } }); };
-  return <div ref={host} className="performance-chart performance-trace" onKeyDown={inspection.onKeyDown}>
+  return <div ref={host} className="performance-chart performance-trace" data-chart-entering={entering || undefined} onKeyDown={inspection.onKeyDown}>
     {!spans.length ? <div className="domain-empty">No request trace spans.</div> : <>
       <div className="performance-chart-key"><div className="domain-legend"><span><i style={{ background: C.cyan }}/>Selected span</span><span><i style={{ background: C.blue }}/>Related span</span><span><i style={{ background: C.muted }}/>Nested work</span></div><strong>{fmt(duration)} ms elapsed</strong></div>
       {!embedded && <div className="performance-toolbar"><button disabled={!selected} onClick={() => { if (selected) view.commit({ start: selected.start, end: selected.end }); }}>Focus selected span</button><button disabled={!view.canUndo} onClick={view.undo}>Undo zoom</button><button disabled={!view.zoomed} onClick={view.reset}>Fit trace</button><span>Drag within timeline to zoom</span></div>}
@@ -37,10 +40,10 @@ export function PerformanceTraceWaterfall({ widget, result, embedded, onContextC
             <rect className="performance-trace-hit" x="0" y={y - 4} width={width} height={config.rowHeight} fill={active ? 'color-mix(in srgb, var(--gamma-chart-1) 6%, transparent)' : 'transparent'}/>
             <line x1="0" x2={width} y1={y + config.rowHeight - 5} y2={y + config.rowHeight - 5} stroke="var(--gamma-chart-grid)"/>
             <g clipPath={`url(#${uid}-labels)`}><text x={span.depth * 12 + 4} y={y + 12} fill={active ? C.cyan : 'var(--gamma-ink)'}>{span.depth ? '↳ ' : '› '}{span.operation}{config.showService && width > 760 ? ` (${span.service})` : ''}</text></g>
-            <g clipPath={`url(#${uid}-trace)`}>
+            <g clipPath={`url(#${uid}-trace)`}><g className={chartEntrance.revealMarks}>
               {parent && <path d={`M${x(parent.start)},${y - config.rowHeight + 14}V${y + 7}H${x(span.start)}`} fill="none" stroke={C.muted} strokeWidth=".8" opacity=".55"/>}
               <rect className="performance-span-mark" x={x(span.start)} y={y} width={Math.max(1, x(span.end) - x(span.start))} height={config.rowHeight - 11} rx="1" fill={base} fillOpacity={span.phase || !span.parentId ? .86 : .48} stroke={active ? C.cyan : 'none'} strokeWidth="3"/>
-              {active && <rect x={x(span.start) + 1.5} y={y + 1.5} width={Math.max(0, x(span.end) - x(span.start) - 3)} height={config.rowHeight - 14} fill="none" stroke="var(--gamma-ink)" strokeWidth="1"/>}
+              {active && <rect x={x(span.start) + 1.5} y={y + 1.5} width={Math.max(0, x(span.end) - x(span.start) - 3)} height={config.rowHeight - 14} fill="none" stroke="var(--gamma-ink)" strokeWidth="1"/>}</g>
               {width > 500 && <text x={Math.min(right - 5, x(span.end) + 6)} y={y + 12} textAnchor={x(span.end) + 57 > right ? 'end' : 'start'} fill={active ? C.cyan : C.muted}>{fmt(span.duration)} ms</text>}
             </g>
           </g>;

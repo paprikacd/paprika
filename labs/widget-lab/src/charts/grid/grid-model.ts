@@ -60,4 +60,4 @@ export function forecastRecords(frame: RecordFrame) {
   return { points, omitted };
 }
 
-export function gridFlowColor(value: number, capacity: number) { return value / capacity >= 1 ? '#ff665c' : value / capacity >= .8 ? '#ffc35a' : '#21d1e7'; }
+export function gridFlowColor(value: number, capacity: number) { return value / capacity >= 1 ? 'var(--gamma-danger)' : value / capacity >= .8 ? 'var(--gamma-warning)' : 'var(--gamma-chart-1)'; }

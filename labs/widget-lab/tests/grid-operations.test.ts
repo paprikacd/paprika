@@ -42,7 +42,7 @@ describe('Geographic network adapter',()=>{
   it('rejects duplicate IDs, skips invalid coordinates and uses capacity thresholds',()=>{
     const frame=gridNetwork('peak').records!;expect(()=>networkRecords({...frame,rows:[...frame.rows,frame.rows[0]]})).toThrow(/unique/);
     const invalid=frame.rows[0].slice();invalid[3]=200;const parsed=networkRecords({...frame,rows:[invalid,...frame.rows.slice(1)]});expect(parsed.omitted).toBeGreaterThan(0);expect(parsed.nodes.some(n=>n.id===invalid[1])).toBe(false);
-    expect(gridFlowColor(79,100)).toBe('#21d1e7');expect(gridFlowColor(80,100)).toBe('#ffc35a');expect(gridFlowColor(100,100)).toBe('#ff665c');
+    expect(gridFlowColor(79,100)).toBe('var(--gamma-chart-1)');expect(gridFlowColor(80,100)).toBe('var(--gamma-warning)');expect(gridFlowColor(100,100)).toBe('var(--gamma-danger)');
   });
 });
 

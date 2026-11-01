@@ -6,6 +6,10 @@ import { nearestAt, orbitalDuration, orbitalUtc } from './model';
 import { passProfileConfig, passProfilePoints, profilePasses, profileSignalPath, qualifyProfile, type PassProfilePoint } from './pass-profile-model';
 import './orbital.css';
 import { usePassSelection } from './usePassSelection';
+import { PlotHatchDefs, plotHatchFill } from '@insights/plot-hatch';
+import hatchStyles from '@insights/plot-hatch.module.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 const value = (n: number | null, decimals = 1) => n === null ? 'Unknown' : n.toLocaleString('en-US', { maximumFractionDigits: decimals });
 
@@ -17,6 +21,7 @@ export function OrbitalPassProfile(props: WidgetRendererProps) {
   const selection = usePassSelection(props, cfg.selectedPass ?? passes[0]?.id, cfg.selectedTimestamp), selectedId = selection.selected;
   const inspectionEnabled = !embedded && widget.options?.showTooltip !== false;
   const svg = useRef<SVGSVGElement>(null), container = useRef<HTMLDivElement>(null), width = usePlotWidth(container, 720), uid = useId().replaceAll(':', '');
+  const entering = useChartEntrance({ disabled: embedded, anchor: container });
   const active = passes.find(pass => pass.id === selectedId);
   const inspection = useInspection(points, result, inspectionEnabled, selectedId, point => point.passId);
   const current = active && inspection.item?.passId === active.id ? inspection.item : undefined;
@@ -55,7 +60,7 @@ export function OrbitalPassProfile(props: WidgetRendererProps) {
   };
   const currentIndex = marker ? active.samples.findIndex(sample => sample.id === marker.id) : -1;
   const sampleStatus = !current ? '' : current.margin === null ? 'Unknown · margin unavailable' : current.elevation >= cfg.minimumElevation && current.margin >= cfg.minimumMargin ? current.throughput === null ? 'Meets thresholds · rate unknown' : 'Meets planning thresholds' : 'Outside planning thresholds';
-  return <div className="orbital-chart orbital-profile" ref={container} data-orbital-pass-profile onKeyDown={event => { if (event.key === 'Escape' && (current || inspection.hover || inspection.pinned)) { event.preventDefault(); event.stopPropagation(); clearSample(); } }}>
+  return <div className="orbital-chart orbital-profile" ref={container} data-chart-entering={entering || undefined} data-orbital-pass-profile onKeyDown={event => { if (event.key === 'Escape' && (current || inspection.hover || inspection.pinned)) { event.preventDefault(); event.stopPropagation(); clearSample(); } }}>
     <div className="orbital-plot-context"><strong>{active.satellite} / {active.station}</strong><span>{orbitalUtc(active.start, true)}–{orbitalUtc(active.end, true)} UTC</span></div>
     <dl className="orbital-profile-summary">
       <div><dt>Qualifying duration</dt><dd>{qualified.totalQualifiedMs === null ? 'Unknown total' : orbitalDuration(qualified.totalQualifiedMs)}</dd>{qualified.totalQualifiedMs === null && <small>{orbitalDuration(qualified.qualifiedMs)} known contribution</small>}</div>
@@ -70,19 +75,19 @@ export function OrbitalPassProfile(props: WidgetRendererProps) {
         if (inspection.pinned) selectSample(active.samples[index], event.currentTarget); else inspection.setHover(active.samples[index].id);
       } else if ((event.key === 'Enter' || event.key === ' ') && current) { event.preventDefault(); event.stopPropagation(); selectSample(current, event.currentTarget); }
     }} onBlur={() => inspection.setHover(null)}>
-      <defs><pattern id={`${uid}-missing`} patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(35)"><line x1="0" x2="0" y1="0" y2="7" stroke={C.muted} strokeWidth="1"/></pattern></defs>
+      <PlotHatchDefs id={uid}/>
       {lanes.map((lane, index) => {
         const top = firstTop + index * (laneHeight + laneGap), y = (n: number) => top + laneHeight - (n - lane.min) / (lane.max - lane.min) * laneHeight;
         return <g key={lane.field}>
           <text x={left} y={top - 11} className="orbital-profile-lane-label">{lane.label} · {lane.unit}</text>
           {cfg.showThresholds && lane.threshold !== null && <text x={width - right} y={top - 11} textAnchor="end" className="orbital-axis">≥ {value(lane.threshold)} {lane.unit}</text>}
-          {cfg.showEligibleWindows && qualified.windows.map(window => <rect key={window.start} x={x(window.start)} y={top} width={x(window.end) - x(window.start)} height={laneHeight} fill={C.mint} fillOpacity=".085"/>)}
-          {qualified.unknown.map(interval => <rect key={interval.start} x={x(interval.start)} y={top} width={x(interval.end) - x(interval.start)} height={laneHeight} fill={`url(#${uid}-missing)`} opacity=".35"/>)}
+          <g className={chartEntrance.revealMarks}>{cfg.showEligibleWindows && qualified.windows.map(window => <rect key={window.start} x={x(window.start)} y={top} width={x(window.end) - x(window.start)} height={laneHeight} fill={C.mint} fillOpacity=".085"/>)}
+          {qualified.unknown.map(interval => <rect key={interval.start} x={x(interval.start)} y={top} width={x(interval.end) - x(interval.start)} height={laneHeight} fill={plotHatchFill(uid)}/>)}</g>
           {ticks.map(t => <line key={t} x1={x(t)} x2={x(t)} y1={top} y2={top + laneHeight} className="orbital-grid"/>)}
           {lane.ticks.map(tick => <g key={tick}><line x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} className="orbital-grid"/><text x={left - 8} y={y(tick) + 4} textAnchor="end" className="orbital-axis">{value(tick)}</text></g>)}
           {cfg.showThresholds && lane.threshold !== null && <line x1={left} x2={width - right} y1={y(lane.threshold)} y2={y(lane.threshold)} stroke={C.amber} strokeDasharray="4 4" strokeOpacity=".8"/>}
-          <path d={profileSignalPath(active.samples, lane.field, cfg.maxGapSeconds * 1000, x, y)} fill="none" stroke={lane.color} strokeWidth="1.8"/>
-          {cfg.showSampleMarkers && active.samples.filter(sample => sample[lane.field] !== null).map(sample => <circle key={sample.id} cx={x(sample.timestamp)} cy={y(sample[lane.field]!)} r="2" fill={lane.color}/>)}
+          <g className={chartEntrance.revealMarks}><path d={profileSignalPath(active.samples, lane.field, cfg.maxGapSeconds * 1000, x, y)} fill="none" stroke={lane.color} strokeWidth="1.8"/>
+          {cfg.showSampleMarkers && active.samples.filter(sample => sample[lane.field] !== null).map(sample => <circle key={sample.id} cx={x(sample.timestamp)} cy={y(sample[lane.field]!)} r="2" fill={lane.color}/>)}</g>
           {marker && <g pointerEvents="none"><line x1={x(marker.timestamp)} x2={x(marker.timestamp)} y1={top} y2={top + laneHeight} stroke="var(--gamma-ink)" strokeOpacity=".75" strokeDasharray="2 3"/>{marker[lane.field] !== null && <circle cx={x(marker.timestamp)} cy={y(marker[lane.field]!)} r="4" fill="var(--gamma-surface)" stroke={lane.color} strokeWidth="2"/>}</g>}
         </g>;
       })}
@@ -90,7 +95,7 @@ export function OrbitalPassProfile(props: WidgetRendererProps) {
     </svg>
     {!embedded && inspectionEnabled && <div className="orbital-profile-sample-controls"><button aria-label="Previous profile observation" disabled={currentIndex === 0} onClick={event => selectSample(active.samples[Math.max(0, currentIndex - 1)], event.currentTarget)}><ChevronLeft size={16}/></button><label>Observation<input type="range" min="0" max={active.samples.length - 1} step="1" value={Math.max(0, currentIndex)} aria-label="Contact profile observation" onChange={event => selectSample(active.samples[Number(event.target.value)], event.currentTarget)}/></label><button aria-label="Next profile observation" disabled={currentIndex === active.samples.length - 1} onClick={event => selectSample(active.samples[Math.min(active.samples.length - 1, currentIndex + 1)], event.currentTarget)}><ChevronRight size={16}/></button><output>{marker ? `${orbitalUtc(marker.timestamp, true)} UTC` : 'Choose a sample'}</output></div>}
     {picker}
-    {widget.options?.showLegend !== false && <div className="orbital-legend">{cfg.showEligibleWindows && <span><i style={{ background: C.mint, borderRadius: 1 }}/>Qualifying interval</span>}<span><i className="orbital-profile-unknown-swatch"/>Unresolved signal interval</span><span>Linear between samples · gaps &gt; {cfg.maxGapSeconds}s stay unknown</span></div>}
+    {widget.options?.showLegend !== false && <div className="orbital-legend">{cfg.showEligibleWindows && <span><i style={{ background: C.mint, borderRadius: 1 }}/>Qualifying interval</span>}<span><i className={`${hatchStyles.hatch} ${hatchStyles.swatch} orbital-hatch-key`}/>Unresolved signal interval</span><span>Linear between samples · gaps &gt; {cfg.maxGapSeconds}s stay unknown</span></div>}
     {inspectionEnabled && current && <DomainInspector title={`${current.satellite} · ${orbitalUtc(current.timestamp, true)} UTC`} onClose={clearSample} pinned={!!inspection.pinned}><DetailValues items={[
       ['Elevation', `${value(current.elevation, 2)}°`], ['Link margin', current.margin === null ? 'Unknown' : `${value(current.margin, 2)} dB`], ['Throughput', current.throughput === null ? 'Unknown' : `${value(current.throughput, 2)} Mbps`], ['Planning eligibility', sampleStatus],
       ['Thresholds', `Elevation ≥ ${cfg.minimumElevation}° · margin ≥ ${cfg.minimumMargin} dB`], ['Source observation', current.id],

@@ -67,8 +67,5 @@ export function liquiditySegments(frame: RecordFrame, config: z.infer<typeof liq
   return { groups, categories, total: groups.some(group => group.total === null) ? null : groups.reduce((sum, group) => sum + group.total!, 0) };
 }
 
-export function correlationColor(value: number | null) {
-  if (value === null) return '#354a56';
-  const neutral = [16, 43, 56], endpoint = value < 0 ? [171, 78, 97] : [0, 178, 218], amount = Math.abs(value);
-  return `rgb(${neutral.map((c, i) => Math.round(c + (endpoint[i] - c) * amount)).join(',')})`;
-}
+/** Signed correlation: hue carries the sign (cyan positive, danger negative), opacity carries |r| over the empty fill, so zero reads as nothing drawn; missing is a separate token. */
+export function correlationColor(value: number | null) { if (value === null) return 'var(--gamma-surface-2)'; const magnitude = Math.min(1, Math.abs(value)); return `color-mix(in srgb, ${value >= 0 ? 'var(--gamma-chart-1)' : 'var(--gamma-danger)'} ${Math.round(magnitude * 100)}%, var(--gamma-chart-empty))`; }

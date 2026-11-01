@@ -7,6 +7,8 @@ import type { GeoDecorationPoint, GeoGeometry, GeoLocation, GeoSeverity } from '
 import { constrainGeoView, GEO_MAX_ZOOM, geoScreenUnits, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt } from './geo-viewport';
 import type { GeoPoint, GeoViewport } from './geo-viewport';
 import './GeoMap.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 export type GeoMapProps = {
   label: string;
@@ -35,8 +37,8 @@ export type GeoMapProps = {
   onSelect?: (location: GeoLocation | null) => void;
 };
 
-const COLORS: Record<GeoSeverity, string> = { low: 'var(--paprika-map-low, #04d8ed)', medium: 'var(--paprika-map-medium, #ffbd30)', high: 'var(--paprika-map-high, #fb4e43)', unknown: 'var(--paprika-map-unknown, #7898aa)' };
-const RADII: Record<GeoSeverity, number> = { low: 1.9, medium: 4.2, high: 2.3, unknown: 2.5 };
+const COLORS: Record<GeoSeverity, string> = { low: 'var(--gamma-chart-1)', medium: 'var(--gamma-warning)', high: 'var(--gamma-danger)', unknown: 'var(--gamma-muted)' };
+const RADII: Record<GeoSeverity, number> = { low: 2.4, medium: 3.4, high: 4.4, unknown: 2.5 };
 const identity = (point: GeoLocation) => JSON.stringify([point.id, point.label, point.longitude, point.latitude, point.value, point.severity]);
 const number = (value: number | null) => value === null ? 'No value' : value.toLocaleString('en-US', { maximumFractionDigits: 20 });
 
@@ -83,6 +85,7 @@ export function GeoMap({ label, locations, geometry, valueLabel = 'connections',
   const classification = (severity: GeoSeverity) => classificationLabels?.[severity] ?? (severity === 'unknown' ? 'Unclassified' : `${severity[0].toUpperCase()}${severity.slice(1)} risk`);
   const uid = `geo-${useId().replaceAll(':', '')}`;
   const svgRef = useRef<SVGSVGElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null), entering = useChartEntrance({ anchor: mapRef });
   const markerRefs = useRef(new Map<string, SVGGElement>());
   const pointers = useRef(new Map<number, GeoPoint>());
   const moved = useRef(false);
@@ -259,20 +262,20 @@ export function GeoMap({ label, locations, geometry, valueLabel = 'connections',
     <dl><div><dt>Latitude</dt><dd>{selected.latitude}°</dd></div><div><dt>Longitude</dt><dd>{selected.longitude}°</dd></div><div><dt>Classification</dt><dd><i style={{ background: COLORS[selected.severity] }} aria-hidden="true"/>{classification(selected.severity)}</dd></div></dl>
     <button type="button" aria-label="Close selected location" onClick={() => clearSelection()}>×</button>
   </section> : null;
-  return <div className="paprika-geo-map" style={{ '--geo-target-size': `${Math.max(responsive ? 30 : 26, 24 / controlScale)}px` } as CSSProperties} data-geo-responsive={responsive || undefined} data-geo-zoom={view.k.toFixed(3)} data-geo-x={view.x.toFixed(3)} data-geo-y={view.y.toFixed(3)} data-geo-locations={visible.length} data-geo-touch-navigation={interactive && touchNavigation ? 'on' : 'off'}>
+  return <div ref={mapRef} className="paprika-geo-map" data-chart-entering={entering || undefined} style={{ '--geo-target-size': `${Math.max(responsive ? 30 : 26, 24 / controlScale)}px` } as CSSProperties} data-geo-responsive={responsive || undefined} data-geo-zoom={view.k.toFixed(3)} data-geo-x={view.x.toFixed(3)} data-geo-y={view.y.toFixed(3)} data-geo-locations={visible.length} data-geo-touch-navigation={interactive && touchNavigation ? 'on' : 'off'}>
     <p id={`${uid}-help`} className="paprika-geo-sr">{geometry.description}. {interactive ? <>Drag with a mouse to pan. Scroll over the map to zoom around the pointer. At the zoom limits, outward scrolling returns to the page. Ctrl or Command plus scroll remains browser zoom. Use plus and minus to zoom, arrows to pan, and Home to reset while the map has focus. {touchNavigation ? 'Touch navigation is on: drag or pinch to move and zoom the map. Turn off Touch navigation or reset to restore page touch gestures.' : 'Touch navigation is off: page scrolling and browser pinch remain available. Enable Touch navigation to drag or pinch the map.'}{canInspect && ' Location arrows move between observations; Enter selects. Escape closes details. The Locations menu offers the same observations.'}</> : 'Static location view.'}</p>
     <div className="paprika-geo-stage"><svg ref={svgRef} viewBox={`0 0 ${geometry.width} ${geometry.height}`} role="group" aria-label={label} aria-describedby={`${uid}-help`} tabIndex={interactive ? 0 : undefined} className={`paprika-geo-svg${interactive ? ' is-interactive' : ''}${interactive && dragging ? ' is-dragging' : ''}${interactive && touchNavigation ? ' is-touch-navigation' : ''}`} onKeyDown={interactive ? keyDown : undefined} onPointerDown={interactive ? pointerDown : undefined} onPointerMove={interactive ? pointerMove : undefined} onPointerUp={interactive ? pointerEnd : undefined} onPointerCancel={interactive ? pointerEnd : undefined} onLostPointerCapture={interactive ? pointerEnd : undefined} onClickCapture={interactive ? event => { if (moved.current) { event.preventDefault(); event.stopPropagation(); moved.current = false; } } : undefined}>
       <defs>
-        <radialGradient id={`${uid}-ocean`}><stop stopColor="var(--paprika-map-ocean-start, #09202b)"/><stop offset="1" stopColor="var(--paprika-map-ocean-end, #03121c)"/></radialGradient>
-        <linearGradient id={`${uid}-land`} x1="0" y1="0" x2="0" y2="1"><stop stopColor="var(--paprika-map-land-start, #19333e)"/><stop offset="1" stopColor="var(--paprika-map-land-end, #102832)"/></linearGradient>
-        {Object.entries(COLORS).map(([severity, color]) => <radialGradient key={severity} id={`${uid}-${severity}`}><stop stopColor={concept && severity === 'medium' ? 'var(--paprika-map-medium-highlight, #fff7a3)' : color} stopOpacity=".95"/><stop offset=".25" stopColor={color} stopOpacity=".65"/><stop offset="1" stopColor={color} stopOpacity="0"/></radialGradient>)}
+        
+        
+        
         <clipPath id={`${uid}-clip`}><rect width={geometry.width} height={geometry.height} rx="7"/></clipPath>
       </defs>
       <g clipPath={`url(#${uid}-clip)`}>
-        <rect width={geometry.width} height={geometry.height} fill={`url(#${uid}-ocean)`}/>
-        <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`} fill={`url(#${uid}-land)`} stroke="var(--paprika-map-land-border, #061a25)" strokeWidth=".45" aria-hidden="true">{geometry.countries.map(country => <path key={country.name} d={country.path} vectorEffect="non-scaling-stroke"/>)}</g>
+        <rect className="paprika-geo-ocean" width={geometry.width} height={geometry.height}/>
+        <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`} className="paprika-geo-land" stroke="var(--gamma-border)" strokeWidth=".45" aria-hidden="true">{geometry.countries.map(country => <path key={country.name} d={country.path} vectorEffect="non-scaling-stroke"/>)}</g>
         <g aria-hidden="true" pointerEvents="none">{decoration.map((point, index) => { const position = geoToScreen(point, view); return <circle key={index} cx={position.x} cy={position.y} r={symbol(point.radius)} fill={point.color} opacity={point.opacity * (activeSeverity && point.severity && activeSeverity !== point.severity ? .1 : 1)}/>; })}</g>
-        {projected.map(point => {
+        <g className={chartEntrance.revealMarks}>{projected.map(point => {
           const position = geoToScreen(point, view), shown = !activeSeverity || point.severity === activeSeverity;
           const inView = position.x >= 0 && position.x <= geometry.width && position.y >= 0 && position.y <= geometry.height;
           return <g key={point.id} ref={element => { if (element) markerRefs.current.set(point.id, element); else markerRefs.current.delete(point.id); }} transform={`translate(${position.x} ${position.y})`} role={canInspect ? "button" : "img"} tabIndex={canInspect ? shown && inView && point.id === focusableId ? 0 : -1 : undefined} aria-hidden={!shown || !inView || undefined} aria-label={`${point.label}: ${number(point.value)} ${valueLabel}, ${classification(point.severity)}${concept ? ', concept' : ''}`} aria-pressed={canInspect ? point.id === selectedId : undefined} data-geo-location={point.id} className={`paprika-geo-marker${canInspect ? ' is-inspectable' : ''}`} opacity={shown ? 1 : .09} style={{ pointerEvents: canInspect && shown && inView ? 'auto' : 'none' }} onClick={canInspect ? () => inspect(point) : undefined} onFocus={canInspect ? () => { setFocusId(point.id); } : undefined} onKeyDown={canInspect ? event => {
@@ -285,13 +288,13 @@ export function GeoMap({ label, locations, geometry, valueLabel = 'connections',
             }
           } : undefined}>
             {canInspect && <title>{`${point.label} · ${number(point.value)} ${valueLabel} · ${point.latitude}°, ${point.longitude}°`}</title>}
-            <circle className="paprika-geo-halo" r={symbol(concept ? point.value !== null && Math.abs(point.value) > 1500 ? 10 : 5.5 : 7)} fill={`url(#${uid}-${point.severity})`} opacity={concept ? point.severity === 'high' ? .4 : .72 : .55} pointerEvents="none"/>
+            
             <circle className="paprika-geo-hit" r={responsive ? symbol(14) : Math.max(14, 12 / cssScale)} fill="transparent" vectorEffect={responsive?'non-scaling-stroke':undefined}/>
-            <circle className="paprika-geo-mark" r={symbol(concept ? RADII[point.severity] : 3)} fill={point.value === null ? 'var(--paprika-map-ocean-end, #03121c)' : COLORS[point.severity]} stroke={point.value === null ? COLORS[point.severity] : 'none'} vectorEffect={responsive?'non-scaling-stroke':undefined} pointerEvents="none"/>
-            {concept && point.severity === 'medium' && <circle cx={-symbol(.6)} cy={-symbol(1)} r={symbol(1.8)} fill="var(--paprika-map-medium-highlight, #fff8b3)" pointerEvents="none"/>}
-            {point.id === selectedId && <circle className="paprika-geo-selection" r={symbol(7)} fill="none" stroke="var(--paprika-map-selection, #d5faff)" strokeWidth="1.2" vectorEffect={responsive?'non-scaling-stroke':undefined} pointerEvents="none"/>}
+            <circle className="paprika-geo-mark" r={symbol(concept ? RADII[point.severity] : 3)} fill={point.value === null ? 'var(--gamma-bg)' : COLORS[point.severity]} stroke={point.value === null ? COLORS[point.severity] : 'none'} vectorEffect={responsive?'non-scaling-stroke':undefined} pointerEvents="none"/>
+            
+            {point.id === selectedId && <circle className="paprika-geo-selection" r={symbol(7)} fill="none" stroke="var(--gamma-ink)" strokeWidth="1.2" vectorEffect={responsive?'non-scaling-stroke':undefined} pointerEvents="none"/>}
           </g>;
-        })}
+        })}</g>
       </g>
     </svg>
     {interactive && <div className="paprika-geo-zoom" role="group" aria-label="Map zoom controls">

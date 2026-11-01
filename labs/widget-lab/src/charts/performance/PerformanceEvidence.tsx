@@ -5,12 +5,15 @@ import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlo
 import { pairedEvidenceConfig, pairedPerformance, performanceObservations } from './model';
 import { performanceNumber as fmt } from './PerformanceDensity';
 import './performance.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 export function PerformancePairedEvidence({ widget, result, embedded, onContextChange }: WidgetRendererProps) {
   const config = pairedEvidenceConfig.parse(widget.config ?? {}), data = useMemo(() => result.records ? pairedPerformance(performanceObservations(result.records)) : [], [result.records]);
   const host = useRef<HTMLDivElement>(null), width = usePlotWidth(host, 500), enabled = !embedded && widget.options?.showTooltip !== false;
+  const entering = useChartEntrance({ disabled: embedded, anchor: host });
   const inspection = useInspection(data, result, enabled), active = inspection.item;
-  return <div ref={host} className="performance-chart performance-evidence" onKeyDown={inspection.onKeyDown}>
+  return <div ref={host} className="performance-chart performance-evidence" data-chart-entering={entering || undefined} onKeyDown={inspection.onKeyDown}>
     {!data.length ? <div className="domain-empty">No matched build observations.</div> : <>
       <div className="domain-legend"><span><i style={{ background: C.blue }}/>Baseline v2.8.1</span><span><i style={{ background: C.violet }}/>Candidate v2.8.2</span><span>Mean{config.showIntervals ? ' ± 95% interval' : ''}</span></div>
       {data.map(metric => {
@@ -18,14 +21,14 @@ export function PerformancePairedEvidence({ widget, result, embedded, onContextC
         const x = scaleLinear().domain([min, max * 1.12]).nice(4).range([12, width - 20]);
         const interval = (item: NonNullable<typeof metric.before>) => item.lower === null ? 'Interval unavailable · n < 2' : `${fmt(item.lower)}–${fmt(item.upper)}`;
         return <section key={metric.id} className="performance-evidence-row" data-selected={active?.id === metric.id}>
-          <div className="performance-evidence-title"><strong>{metric.label} <small>({metric.unit})</small></strong>{config.showRelativeChange && <b style={{ color: (metric.relativeChange ?? 0) > 0 ? C.orange : C.mint }}>{metric.relativeChange === null ? 'Unknown' : `${metric.relativeChange > 0 ? '+' : ''}${fmt(metric.relativeChange, 0)}%`}</b>}</div>
+          <div className="performance-evidence-title"><strong>{metric.label} <small>({metric.unit})</small></strong>{config.showRelativeChange && <b style={{ color: (metric.relativeChange ?? 0) > 0 ? 'var(--gamma-danger)' : 'var(--gamma-success)' }}>{metric.relativeChange === null ? 'Unknown' : `${metric.relativeChange > 0 ? '+' : ''}${fmt(metric.relativeChange, 0)}%`}</b>}</div>
           <div className="performance-evidence-values"><span>n={metric.count} complete pairs{metric.missing ? ` · ${metric.missing} missing` : ''}</span><span style={{ color: C.blue }}>{fmt(metric.before?.mean)} <span aria-hidden="true">→</span> <b style={{ color: C.violet }}>{fmt(metric.after?.mean)}</b></span></div>
           {!metric.before || !metric.after ? <p className="domain-note">No complete paired observations for this metric.</p> : <svg viewBox={`0 0 ${width} 67`} role={enabled ? 'button' : 'img'} tabIndex={enabled ? 0 : undefined} aria-label={`${metric.label}, baseline ${fmt(metric.before.mean)}, candidate ${fmt(metric.after.mean)} ${metric.unit}, ${metric.count} complete pairs`} aria-pressed={enabled ? inspection.pinned === metric.id : undefined} onPointerEnter={() => inspection.setHover(metric.id)} onPointerLeave={() => inspection.setHover(null)} onFocus={() => inspection.setHover(metric.id)} onBlur={() => inspection.setHover(null)} onClick={event => { if (enabled) inspection.select(metric.id, event.currentTarget); }} onKeyDown={event => { if (enabled && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); inspection.select(metric.id, event.currentTarget); } }}>
             {x.ticks(width < 350 ? 3 : 5).map(value => <g key={value}><line x1={x(value)} x2={x(value)} y1="3" y2="44" stroke="var(--gamma-chart-grid)"/><text x={x(value)} y="61" textAnchor="middle" fill={C.muted}>{fmt(value, 0)}</text></g>)}
-            {([['before', C.blue, 15], ['after', C.violet, 35]] as const).map(([build, color, y]) => {
+            <g className={chartEntrance.revealMarks}>{([['before', C.blue, 15], ['after', C.violet, 35]] as const).map(([build, color, y]) => {
               const item = metric[build]!;
               return <g key={build}><title>{build}: mean {fmt(item.mean)}, 95% interval {interval(item)} {metric.unit}</title>{config.showIntervals && item.lower !== null && item.upper !== null && <><line x1={x(item.lower)} x2={x(item.upper)} y1={y} y2={y} stroke={color} strokeWidth="2"/><path d={`M${x(item.lower)},${y - 4}V${y + 4}M${x(item.upper)},${y - 4}V${y + 4}`} stroke={color}/></>}{active?.id === metric.id && <circle cx={x(item.mean)} cy={y} r="7" fill="none" stroke={color} strokeOpacity=".65" pointerEvents="none"/>}<circle cx={x(item.mean)} cy={y} r="4" fill={color} stroke="var(--gamma-bg)" strokeWidth="1.2"/></g>;
-            })}
+            })}</g>
           </svg>}
         </section>;
       })}

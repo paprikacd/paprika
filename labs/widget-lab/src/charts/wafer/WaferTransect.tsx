@@ -6,6 +6,8 @@ import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlo
 import { BIN_LABEL, waferFocusId, waferTransect, waferTransectConfig, waferTransectRows, waferTransectSegments, type WaferDie } from './model';
 import { dieLabel, signed, WAFER_COLORS } from './WaferMap';
 import './wafer.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 const exact = (value: number | null) => value === null ? 'Unavailable' : value.toLocaleString('en-US', { maximumSignificantDigits: 7, notation: value !== 0 && (Math.abs(value) < .0001 || Math.abs(value) >= 1e8) ? 'scientific' : 'standard' });
 
@@ -22,6 +24,7 @@ export function WaferTransect(props: WidgetRendererProps) {
   const enabled = !props.embedded && props.widget.options?.showTooltip !== false;
   const inspect = useInspection(section.points, revision, enabled, cfg.selectedDieId);
   const host = useRef<HTMLDivElement>(null), width = usePlotWidth(host, 620), marks = useRef(new Map<string, SVGGElement>());
+  const entering = useChartEntrance({ anchor: host });
   const clip = `wafer-section-${useId().replaceAll(':', '')}`, left = 52, right = width - 14, top = 30, bottom = 216, emptyLane = 244, height = 294;
   const x = scaleLinear().domain([-section.radiusMm, section.radiusMm]).range([left, right]);
   const values = section.points.flatMap(die => die.leakageNA === null ? [] : [die.leakageNA]);
@@ -49,7 +52,7 @@ export function WaferTransect(props: WidgetRendererProps) {
   };
 
   if (!dies.length) return <div className="domain-empty">No wafer measurements. Choose a wafer result with physical die positions.</div>;
-  return <div ref={host} className="wafer-chart wafer-transect" onKeyDown={inspect.onKeyDown}>
+  return <div ref={host} className="wafer-chart wafer-transect" data-chart-entering={entering || undefined} onKeyDown={inspect.onKeyDown}>
     <div className="wafer-transect-context"><strong>{cfg.axis === 'row' ? 'Row' : 'Column'} {signed(section.index)}<span>{fixedAxis} = {exact(section.fixedMm)} mm</span></strong><span>{cfg.followSelection && selected ? 'Follows selected die' : 'Configured section'} · {section.observed}/{section.eligible} eligible measurements</span></div>
     <svg width={width} height={height} role="group" aria-label={`${props.widget.title}. ${cfg.axis} ${section.index}; leakage in nanoamps along physical ${fieldAxis} coordinates. Arrow keys explore dies; Enter pins evidence.`}>
       <defs><clipPath id={clip}><rect x={left - 5} y={top - 6} width={right - left + 10} height={bottom - top + 12}/></clipPath></defs>
@@ -73,8 +76,8 @@ export function WaferTransect(props: WidgetRendererProps) {
             if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(die, event.currentTarget); }
           }}>
           <circle cx={xx} cy={yy} r="12" fill="transparent"/>
-          {die.leakageNA !== null ? <circle cx={xx} cy={yy} r={active ? 5 : 3.6} fill={WAFER_COLORS[die.bin]} stroke={active ? C.orange : 'var(--gamma-bg)'} strokeWidth={active ? 2 : 1}/>
-            : <><rect x={xx - 4} y={yy - 4} width="8" height="8" fill="var(--gamma-bg)" stroke={active ? C.orange : die.bin === 'excluded' ? C.muted : WAFER_COLORS[die.bin]} strokeWidth={active ? 2 : 1}/>{die.bin !== 'excluded' && <path d={`M${xx - 3} ${yy + 3}L${xx + 3} ${yy - 3}`} stroke={active ? C.orange : WAFER_COLORS[die.bin]} strokeWidth="1.2"/>}</>}
+          {die.leakageNA !== null ? <g className={chartEntrance.revealMarks}><circle cx={xx} cy={yy} r={active ? 5 : 3.6} fill={WAFER_COLORS[die.bin]} stroke={active ? C.orange : 'var(--gamma-bg)'} strokeWidth={active ? 2 : 1}/></g>
+            : <><g className={chartEntrance.revealMarks}><rect x={xx - 4} y={yy - 4} width="8" height="8" fill="var(--gamma-bg)" stroke={active ? C.orange : die.bin === 'excluded' ? C.muted : WAFER_COLORS[die.bin]} strokeWidth={active ? 2 : 1}/></g>{die.bin !== 'excluded' && <path d={`M${xx - 3} ${yy + 3}L${xx + 3} ${yy - 3}`} stroke={active ? C.orange : WAFER_COLORS[die.bin]} strokeWidth="1.2"/>}</>}
         </g>;
       })}
       {!section.observed && <text x={(left + right) / 2} y={(top + bottom) / 2} textAnchor="middle" className="wafer-chart-label">No measured leakage in this section</text>}

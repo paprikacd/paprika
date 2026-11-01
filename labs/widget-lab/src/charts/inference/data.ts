@@ -29,14 +29,15 @@ export function buildRackMatrix(frame: RecordFrame, config: z.infer<typeof rackM
   }
   return { cells, racks: [...new Set(cells.map(c => c.rack))].sort(), slots: [...new Set(cells.map(c => c.slot))].sort(), omitted: omitted + Math.max(0, frame.rows.length - 1024) };
 }
-export const inferenceColors = ['#12cce4', '#a66bef', '#45d396', '#ffb747', '#e573c8', '#6cb8f0'];
+export const inferenceColors = ['var(--gamma-chart-1)', 'var(--gamma-chart-2)', 'var(--gamma-chart-5)', 'var(--gamma-chart-3)', 'var(--gamma-chart-4)', 'var(--gamma-chart-6)'];
 export function semanticColor(name: string) {
   const names = ['llama-3-70b', 'mixtral-8x22b', 'phi-3-mini', 'gemma-7b', 'qwen-72b', 'claude-3-haiku'];
   const known = names.indexOf(name); if (known >= 0) return inferenceColors[known];
   let hash = 0; for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
   return inferenceColors[hash % inferenceColors.length];
 }
-export function utilizationColor(value: number | null) { return value === null ? '#263e49' : value > 90 ? '#f06866' : value > 75 ? '#f9a94b' : value > 50 ? '#ddb95a' : value > 25 ? '#38b99c' : '#1889a4'; }
+/** Utilisation below 75 percent is an intensity on the density ramp (zero is the empty fill); 75 to 90 is warning and above 90 is danger. */
+export function utilizationColor(value: number | null) { return value === null ? 'var(--gamma-chart-empty)' : value > 90 ? 'var(--gamma-danger)' : value > 75 ? 'var(--gamma-warning)' : value <= 0 ? 'var(--gamma-chart-empty)' : `var(--gamma-density-${Math.min(23, Math.round(value / 75 * 23))})`; }
 export type FlowEdge = { id: string; source: string; target: string; value: number; stage: 0 | 1; group: string };
 export function buildRequestFlow(frame: RecordFrame, config: z.infer<typeof requestFlowConfig>) {
   const a = columnIndex(frame, config.source), b = columnIndex(frame, config.stage), c = columnIndex(frame, config.target), v = columnIndex(frame, config.value, true);
