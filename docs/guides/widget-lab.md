@@ -17,7 +17,7 @@ npm run dev
 Open the local URL printed by Vite. `#edge` opens Edge Watch, `#reliability` opens Reliability Room, and `#charts` opens the reusable chart catalogue. The visible dashboard selector exposes the other studies.
 
 ```sh
-npm test
+npm test -- --maxWorkers=2   # default Vitest concurrency caused fixture timeouts here
 npm run typecheck
 npm run build
 ```
@@ -63,5 +63,7 @@ After committing the separate Widget Lab source, run from the Paprika repository
 python3 hack/sync-widget-lab.py --source /absolute/path/to/paprika-widget-lab
 python3 hack/sync-widget-lab.py --source /absolute/path/to/paprika-widget-lab --check
 ```
+
+Current status: this manifest is stale relative to later in-repo edits. It records only the initial import from `29b22f4c`. Edited files such as `src/App.tsx` no longer match their recorded hashes, and files added since then, such as `src/components/lab/WidgetLoading.tsx`, are not listed. The separate checkout that produced `29b22f4c` is not in this repository, so the manifest cannot be regenerated here, and `--check` cannot pass against the current manifest. Use Git history and `docs/regenerate-paprika-provenance.py --check` for current-file integrity.
 
 The exporter copies Git-tracked files, retains executable modes, records content hashes and refuses to overwrite independent edits in the exported copy. A dirty source is rejected by default. `--allow-dirty` is available for an explicitly uncommitted preparation checkpoint; the final branch should record `source_dirty: false`.

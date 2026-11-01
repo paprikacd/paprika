@@ -41,12 +41,12 @@ The modified copied files are `chart-renderers.tsx`, `chart-styles.module.css`, 
 Regenerate both the patch and per-file provenance after any final owner edit. The helper reads the upstream Git objects without changing that repository and writes only the lab's documentation/manifest:
 
 ```sh
-python docs/regenerate-paprika-provenance.py --upstream /workspace/scratch/ffa6c3757aaa/paprika-source
-python docs/regenerate-paprika-provenance.py --upstream /workspace/scratch/ffa6c3757aaa/paprika-source --check
+python docs/regenerate-paprika-provenance.py --upstream /absolute/path/to/paprika
+python docs/regenerate-paprika-provenance.py --upstream /absolute/path/to/paprika --check
 git apply --check --reverse docs/paprika-reference-renderer.patch
 ```
 
-For another checkout, replace the `--upstream` path with a local clone containing the recorded base commit. `--check` fails if the patch, manifest or copied-owner hashes are stale. The reverse apply check confirms the saved delta matches the patched working tree without changing files. These are provenance checks, not browser or visual validation.
+For another checkout, replace the `--upstream` path with the root of a local Paprika clone that contains the recorded base commit. `--check` fails if the patch, manifest or copied-owner hashes are stale. The reverse apply check confirms the saved delta matches the patched working tree without changing files. These are provenance checks, not browser or visual validation.
 
 ## Canonical entry points
 
