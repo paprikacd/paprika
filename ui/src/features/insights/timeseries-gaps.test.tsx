@@ -428,7 +428,10 @@ describe("time-series styling tokens", () => {
   });
 
   it("falls back to the light theme's border and chart grid values in the renderer's gridlines", () => {
-    const source = readFileSync("src/features/insights/chart-renderers.tsx", "utf8");
+    // The renderer is split across these modules, so read them together.
+    const source = ["chart-renderers.tsx", "chart-renderer-shared.ts", "time-series-chart.tsx", "bar-chart.tsx"]
+      .map((file) => readFileSync(`src/features/insights/${file}`, "utf8"))
+      .join("\n");
     const theme = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
     const lightToken = (name: string) => theme.match(new RegExp(`${name}: (#[0-9a-fA-F]{6});`))?.[1].toLowerCase();
     // The theme's grid fallback ends in the light border; the two gridline strokes end in the light chart grid.
