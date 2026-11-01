@@ -1,6 +1,7 @@
 import {
   dashboardSchema,
   savedQuerySchema,
+  storedDashboardSchema,
   type Dashboard,
   type Provider,
   type QueryRequest,
@@ -308,11 +309,12 @@ export function createInsightsClient(
         await request(`/providers/${encodeURIComponent(id)}/metadata?${params}`, { signal })
       )
     },
+    // Reads keep a stored zone as saved (storedDashboardSchema), so one dashboard's zone never fails the whole list.
     list: (signal) => cachedRead("/dashboards", body => {
-      return ((body.dashboards ?? []) as unknown[]).map((item: unknown) => dashboardSchema.parse(item))
+      return ((body.dashboards ?? []) as unknown[]).map((item: unknown) => storedDashboardSchema.parse(item))
     }, signal),
     get: (id, signal) => cachedRead(`/dashboards/${encodeURIComponent(id)}`, (body, etag) => ({
-      dashboard: dashboardSchema.parse(body), etag,
+      dashboard: storedDashboardSchema.parse(body), etag,
     }), signal),
     save: async (dashboard, etag) => {
       const response = await request(`/dashboards/${encodeURIComponent(dashboard.id)}`, {

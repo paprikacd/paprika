@@ -175,13 +175,17 @@ func TestAuthoringSchemaRequiresAuthenticationAndKnownKind(t *testing.T) {
 }
 
 func TestDashboardTimeZoneValidation(t *testing.T) {
-	for _, zone := range []string{"UTC", "Europe/London", "America/New_York", "Etc/GMT+5"} {
+	// Canonical names and the links and Etc/GMT+-N names that both runtimes already accepted.
+	for _, zone := range []string{"UTC", "GMT", "Zulu", "Etc/UTC", "Etc/GMT+5", "Europe/London", "America/New_York", "Asia/Calcutta", "US/Pacific"} {
 		document, err := json.Marshal(zone)
 		require.NoError(t, err)
 		require.NoError(t, validateDashboard("demo", extendedDashboard("", `"timeZone":`+string(document))), zone)
 	}
-	// Letter case is part of an IANA name: the browser's check refuses the same spellings.
-	for _, zone := range []string{"", "Local", "Not/AZone", " UTC", "../etc/passwd", strings.Repeat("A", 65), "europe/london", "utc"} {
+	// Matching is exact and case-sensitive, and the UI's list (time-zones.generated.ts) refuses the same spellings.
+	for _, zone := range []string{
+		"", "Local", "localtime", "Factory", "posixrules", "+05:30", "-08:00", "Not/AZone", " UTC", "../etc/passwd", strings.Repeat("A", 65),
+		"europe/london", "EUROPE/LONDON", "utc", "gmt", "etc/utc", "zulu", "us/pacific", "asia/kolkata",
+	} {
 		document, err := json.Marshal(zone)
 		require.NoError(t, err)
 		require.Error(t, validateDashboard("demo", extendedDashboard("", `"timeZone":`+string(document))), "zone %q must be refused", zone)

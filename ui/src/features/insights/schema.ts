@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { seriesColorRulesSchema } from "./series-colors"
+import { timeZones } from "./time-zones.generated"
 import { parseDocument, stringify } from "yaml"
 
 export const MAX_WIDGETS = 48
@@ -480,31 +481,43 @@ export const widgetSchema = z
     }
   })
 
-// Canonical IANA spellings by lowercase name. Intl accepts a zone in any letter case, but the server matches exact names.
-const canonicalTimeZones = new Map<string, string>(
-  typeof Intl.supportedValuesOf === "function"
-    ? Intl.supportedValuesOf("timeZone").map((name) => [name.toLowerCase(), name] as const)
-    : [],
-)
+// The canonical IANA names, generated from the Go toolchain's tz database (hack/gen-time-zones). The server holds the same list.
+const canonicalTimeZoneNames: ReadonlySet<string> = new Set<string>(timeZones)
 
-/** An IANA zone name the runtime can format, spelled as the server spells it. "Local" is refused because it names whichever zone the host happens to use. */
+/** Whether the server accepts `zone` as a dashboard time zone. Matching is exact and case-sensitive. */
+export function isCanonicalTimeZone(zone: string): boolean {
+  return canonicalTimeZoneNames.has(zone)
+}
+
+const formattableTimeZones = new Map<string, boolean>()
+/**
+ * A canonical zone this runtime can format. An older browser's ICU data can lack a newer name, so rendering falls back to
+ * the viewer's zone for it instead of throwing. Saving still follows the canonical list alone.
+ */
 export function isValidTimeZone(zone: string): boolean {
-  if (!zone || zone.length > 64 || zone !== zone.trim() || zone === "Local") return false
-  const canonical = canonicalTimeZones.get(zone.toLowerCase())
-  if (canonical !== undefined && canonical !== zone) return false
-  // UTC has no listed canonical entry, so its capitals are enforced here.
-  if (zone.toLowerCase() === "utc" && zone !== "UTC") return false
-  try {
-    return Boolean(new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone)
-  } catch {
-    return false
+  if (!isCanonicalTimeZone(zone)) return false
+  let formattable = formattableTimeZones.get(zone)
+  if (formattable === undefined) {
+    try {
+      formattable = Boolean(new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone)
+    } catch {
+      formattable = false
+    }
+    formattableTimeZones.set(zone, formattable)
   }
+  return formattable
 }
 export const timeZoneSchema = z
   .string()
   .min(1)
   .max(64)
-  .refine(isValidTimeZone, "Use an IANA time zone name, such as Europe/London or UTC")
+  .refine(isCanonicalTimeZone, "Use an IANA time zone name, such as Europe/London or UTC")
+  .describe("IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). Omitted, labels use the viewer's browser zone.")
+/**
+ * How a stored dashboard reads its zone: any bounded string is kept as saved, so one dashboard's stale or unknown zone
+ * never fails a list and rendering falls back to the viewer's zone. A value that is not a bounded string is dropped.
+ */
+const storedTimeZoneSchema = z.string().max(64).optional().catch(undefined)
 
 export const dashboardSchema = z
   .strictObject({
@@ -562,6 +575,12 @@ export const dashboardSchema = z
       ids.add(widget.id)
     })
   })
+
+/**
+ * A dashboard as the server stores it, for reads. It keeps the same contract as dashboardSchema except for the zone, which is
+ * kept as saved. Writes and imports still pass dashboardSchema, so a zone that is not canonical cannot be saved.
+ */
+export const storedDashboardSchema = dashboardSchema.safeExtend({ timeZone: storedTimeZoneSchema })
 
 export type Dashboard = z.infer<typeof dashboardSchema>
 export type Widget = z.infer<typeof widgetSchema>

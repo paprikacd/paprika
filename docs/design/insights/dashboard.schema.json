@@ -49,7 +49,8 @@
     "timeZone": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 64
+      "maxLength": 64,
+      "description": "IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). Omitted, labels use the viewer's browser zone."
     },
     "variables": {
       "maxItems": 20,
@@ -1237,5 +1238,5 @@
   },
   "title": "Paprika Insights dashboard",
   "description": "Version 1 of the portable Paprika Insights dashboard document.",
-  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, IANA timeZone names the runtime can format (Local is refused), safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names."
+  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, timeZone names from the canonical IANA list (exact and case-sensitive, so offsets, Local, Factory and posixrules are refused), safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names."
 }

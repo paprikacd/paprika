@@ -50,15 +50,15 @@ func validateDashboardFolder(raw json.RawMessage) error {
 	return nil
 }
 
-// validateDashboardTimeZone mirrors the UI's check: the name must load as an IANA zone, and "Local" is refused because it
-// names whichever zone the host happens to use.
+// validateDashboardTimeZone accepts exactly the names in canonicalTimeZones, which the UI's timeZones list holds too.
+// Matching is exact and case-sensitive. Offsets, Local, Factory and posixrules are refused, and so is any other spelling.
 func validateDashboardTimeZone(raw json.RawMessage) error {
 	var zone string
 	const invalid = "timeZone must be an IANA time zone name such as Europe/London or UTC"
-	if json.Unmarshal(raw, &zone) != nil || zone == "" || stringUnits(zone) > 64 || zone != trimJS(zone) || zone == "Local" {
+	if json.Unmarshal(raw, &zone) != nil {
 		return errors.New(invalid)
 	}
-	if _, err := time.LoadLocation(zone); err != nil {
+	if _, ok := canonicalTimeZones[zone]; !ok {
 		return errors.New(invalid)
 	}
 	return nil
