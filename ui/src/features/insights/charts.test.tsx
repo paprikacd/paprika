@@ -30,6 +30,7 @@ import {
   EmptyState,
 } from "./chart-renderers";
 import {
+  bandLabelWidth,
   isolatedPlotPoints,
   plotTimeDomain,
   sampleCadence,
@@ -237,6 +238,61 @@ describe("bounded chart data", () => {
       expect(downsamplePoints(points, maximum).length).toBeLessThanOrEqual(
         maximum,
       );
+  });
+
+  it("keeps an isolated observation that bucket extremes would drop, so a band split keeps its dot", () => {
+    // Review repro: 2000 samples at 1 s. Samples 900..999 are missing except 950 s, whose value sits between the extremes.
+    // The plot samples the gap-broken series, so the missing run is one synthetic break on each side of 950 s.
+    const points = Array.from({ length: 2000 }, (_, index) => index + 1)
+      .filter((second) => !(second >= 900 && second < 1000) || second === 950)
+      .map((second) => ({ timestamp: second * 1000, value: second === 950 ? 5 : (second % 7) + (second % 3) }));
+    const plotted = downsamplePoints(withGapBreaks(points, sampleCadence(points)));
+    expect(plotted.length).toBeLessThanOrEqual(480);
+    expect(plotted).toContainEqual({ timestamp: 950_000, value: 5 });
+    expect(plotted[0]).toEqual(points[0]);
+    expect(plotted.at(-1)).toEqual(points.at(-1));
+    expect(
+      plotted.every(
+        (point, index) => index === 0 || point.timestamp > plotted[index - 1].timestamp,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the budget when every observation is isolated, spreads the kept dots across the range, and keeps both ends", () => {
+    const points = Array.from({ length: 2000 }, (_, index) => ({
+      timestamp: index * 1000,
+      value: index % 2 === 0 ? index % 9 : null,
+    }));
+    const sampled = downsamplePoints(points);
+    expect(sampled.length).toBeLessThanOrEqual(480);
+    expect(sampled[0]).toEqual(points[0]);
+    expect(sampled.at(-1)).toEqual(points.at(-1));
+    const dots = sampled
+      .filter((point) => point.value !== null)
+      .map((point) => point.timestamp);
+    expect(dots[0]).toBe(0);
+    expect(dots.at(-1)).toBeGreaterThan(1_900_000);
+  });
+
+  it("never exceeds the maximum, whatever mix of gaps, isolated observations and spikes it is given", () => {
+    // A fixed linear congruential generator keeps the mixes reproducible from run to run.
+    let seed = 7;
+    const random = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+    for (let trial = 0; trial < 12; trial++) {
+      const points = Array.from({ length: 700 }, (_, index) => ({
+        timestamp: index * 1000,
+        value: random() < 0.4 ? null : Math.round(random() * 100),
+      }));
+      for (const maximum of [3, 5, 31, 100, 480]) {
+        const sampled = downsamplePoints(points, maximum);
+        expect(sampled.length).toBeLessThanOrEqual(maximum);
+        expect(sampled[0]).toEqual(points[0]);
+        expect(sampled.at(-1)).toEqual(points.at(-1));
+      }
+    }
   });
 
   it("formats non-finite values honestly and maintains small decimals", () => {
@@ -1212,5 +1268,11 @@ describe("time-series gap helpers", () => {
     expect(dots.map((point) => [point.timestamp, point.value]).filter(([, value]) => value !== null)).toEqual([[10000, 8]]);
     // A pair of neighbours, and a run, draw their own segments, so none of their points needs a dot.
     expect(isolatedPlotPoints(samples([[1, 1], [2, 2], [3, 3]])).every((point) => point.value === null)).toBe(true);
+  });
+
+  it("estimates a band label from its characters at 12px, plus padding", () => {
+    expect(bandLabelWidth("No samples")).toBeCloseTo(74, 5);
+    expect(bandLabelWidth("No samples since 11:48")).toBeCloseTo(153.2, 5);
+    expect(bandLabelWidth("")).toBeCloseTo(8, 5);
   });
 });

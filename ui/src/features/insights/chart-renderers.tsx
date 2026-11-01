@@ -46,6 +46,7 @@ import contextStyles from "./widget-context.module.css";
 import type { DrilldownContext } from "./drilldown";
 import { readableTextColor, widgetTextColor } from "./appearance";
 import {
+  bandLabelWidth,
   downsamplePoints,
   latestPoint,
   seriesName,
@@ -123,7 +124,7 @@ const themedPortal: typeof portal = {
 const chartTheme = {
   foreground: "var(--gamma-ink, #223139)",
   muted: "var(--gamma-chart-axis, var(--gamma-muted, #52636f))",
-  grid: "var(--gamma-chart-grid, var(--gamma-border, #e4ebed))",
+  grid: "var(--gamma-chart-grid, var(--gamma-border, #d9e2e5))",
   background: "transparent",
   palette: PALETTE,
 };
@@ -389,6 +390,7 @@ function TimeSeriesChart({
   const intervalCount = visibleBands.length + (staleTail ? 1 : 0);
   const gapsHidden = !embedded && !!truncated && dataStart !== undefined;
   const tailBox = staleTail ? bandBox(staleTail.from, staleTail.to) : undefined;
+  const tailLabel = staleTail ? `No samples since ${timeFormat.format(new Date(staleTail.from))}` : "";
 
   const definition = useMemo(
     () =>
@@ -463,7 +465,7 @@ function TimeSeriesChart({
               options.showGrid === false
                 ? false
                 : {
-                    stroke: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
+                    stroke: "var(--gamma-chart-grid, var(--gamma-border, #e4ebed))",
                   },
             axis: !showAxis
               ? false
@@ -557,12 +559,13 @@ function TimeSeriesChart({
           const box = bandBox(band.from, band.to);
           return (
             <span key={`${band.from}-${band.to}`} role="img" aria-label={`No samples from ${fullDateTimeFormat.format(new Date(band.from))} to ${fullDateTimeFormat.format(new Date(band.to))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-no-sample-band data-from={band.from} data-to={band.to} style={{ ...box, top: eventTop, bottom: eventBottom }}>
-              {box.width >= 56 && <span aria-hidden="true" className={styles.noSampleLabel}>No samples</span>}
+              {/* A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times. */}
+              {box.width >= bandLabelWidth("No samples") && <span aria-hidden="true" className={styles.noSampleLabel}>No samples</span>}
             </span>
           );
         })}
         {staleTail && tailBox && <span role="img" aria-label={`No samples after ${fullDateTimeFormat.format(new Date(staleTail.from))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-stale-tail data-from={staleTail.from} data-to={staleTail.to} style={{ ...tailBox, top: eventTop, bottom: eventBottom }}>
-          {tailBox.width >= 56 && <span aria-hidden="true" className={styles.noSampleLabel}>No samples since {timeFormat.format(new Date(staleTail.from))}</span>}
+          {tailBox.width >= bandLabelWidth(tailLabel) && <span aria-hidden="true" className={styles.noSampleLabel}>{tailLabel}</span>}
         </span>}
         {emptyZoom ? <div className={styles.state} role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <Chart
           definition={definition}
@@ -595,9 +598,16 @@ function TimeSeriesChart({
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {emptyCurrent && previousData.length > 0 && <span role="status" className={styles.notice}>No current observations in this window; the dashed lines show the preceding period.</span>}
       {gapsHidden && <span className={styles.notice}>Gaps not shown: the provider result was truncated</span>}
-      {intervalCount > 0 && <details className={styles.gapDetails} data-gap-intervals>
+      {intervalCount > 0 && <details className={styles.gapDetails} data-gap-intervals onKeyDown={(event) => {
+        // Escape closes an open list and returns focus to its summary, so the keyboard user keeps their place.
+        if (event.key !== "Escape" || !event.currentTarget.open) return;
+        event.stopPropagation();
+        event.currentTarget.open = false;
+        event.currentTarget.querySelector("summary")?.focus();
+      }}>
         <summary>No samples in {intervalCount} {intervalCount === 1 ? "interval" : "intervals"}</summary>
-        <ul tabIndex={0} aria-label="No-sample intervals">
+        {/* The open list floats above the footer (see charts.module.css), so opening it never changes the plot's height. */}
+        <ul tabIndex={0} aria-label="No-sample intervals" data-gap-list>
           {visibleBands.map((band) => <li key={`${band.from}-${band.to}`}>{dateTimeFormat.format(new Date(band.from))}–{dateTimeFormat.format(new Date(band.to))}</li>)}
           {staleTail && <li>{dateTimeFormat.format(new Date(staleTail.from))}–{dateTimeFormat.format(new Date(staleTail.to))}, after the latest sample</li>}
         </ul>
@@ -827,7 +837,7 @@ function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
               options.showGrid === false
                 ? false
                 : {
-                    stroke: "var(--gamma-chart-grid, var(--gamma-border, #dfe4db))",
+                    stroke: "var(--gamma-chart-grid, var(--gamma-border, #e4ebed))",
                   },
             axis: !showAxis
               ? false

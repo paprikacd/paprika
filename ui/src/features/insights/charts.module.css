@@ -83,6 +83,8 @@
   gap: 12px;
   flex-shrink: 0;
   min-width: 0;
+  /* The containing block for the open interval list, which floats above the footer. */
+  position: relative;
   border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border));
   padding-top: 4px;
 }
@@ -102,6 +104,13 @@
 @container insight-widget (max-width: 360px) {
   .chartFooter:has([data-window-lens]) { flex-wrap: wrap; gap: 2px 6px; }
   .chartFooter:has([data-window-lens]) > .legend { flex-basis: 100%; }
+}
+/* Narrow widths: each notice and the interval disclosure take a full row and wrap normally, above the action buttons.
+   Left in a shared row, they shrink to one word per line. */
+@container insight-widget (max-width: 480px) {
+  .chartFooter { flex-wrap: wrap; }
+  .chartFooter > .notice,
+  .chartFooter > .gapDetails { flex: 1 1 100%; margin-left: 0; }
 }
 .legendItem {
   display: flex;
@@ -147,12 +156,28 @@
   color: var(--widget-text, var(--gamma-muted, #52636f));
   margin-left: auto;
 }
-/* The interval list keeps every no-sample time reachable from the keyboard and by touch. It scrolls inside a capped
-   height, so a long list never squeezes the plot. */
+/* The interval list keeps every no-sample time reachable from the keyboard and by touch. It is an absolutely positioned
+   panel above the footer, so opening it leaves the footer's height, and therefore the plot's, unchanged. It scrolls
+   inside a capped height. Escape closes it (see the disclosure's onKeyDown in chart-renderers.tsx). */
 .gapDetails { margin-left: auto; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted, #52636f)); }
 .gapDetails > summary { cursor: pointer; }
 .gapDetails > summary:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
-.gapDetails > ul { margin: 2px 0 0; padding-left: 16px; max-height: 96px; overflow: auto; }
+.gapDetails > ul {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  box-sizing: border-box;
+  width: min(100%, 360px);
+  max-height: 96px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 8px 6px 22px;
+  border: 1px solid var(--gamma-border, #d9e2e5);
+  border-radius: 4px;
+  background: var(--gamma-surface, #f5f7f7);
+  box-shadow: var(--gamma-shadow-mid);
+}
 .gapDetails > ul:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
 .limitNotice {
   flex: none;

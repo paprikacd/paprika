@@ -86,6 +86,7 @@ export function formatMetric(
 /**
  * Min/max buckets preserve short incidents that stride sampling would miss.
  * Endpoint preservation keeps the visible time range stable during resizing.
+ * An isolated observation (no observed neighbour) is kept too, because its dot is the only thing that draws it.
  * Input arrays are never mutated. Non-finite values become gaps, so a missing
  * scrape is never painted as a continuous successful measurement.
  */
@@ -112,18 +113,35 @@ export function downsamplePoints(
   // scrape. Keeping only the first null in each min/max bucket can reconnect a
   // later outage in that same bucket and falsely imply uninterrupted data.
   const budget = hasGaps ? Math.max(2, Math.floor((limit + 1) / 2)) : limit;
-  const selected = new Set([0, points.length - 1]);
-  if (budget === 3) {
-    let extreme = 1;
-    for (let index = 2; index < points.length - 1; index++)
-      if (
-        Math.abs(points[index].value ?? 0) >
-        Math.abs(points[extreme].value ?? 0)
-      )
+  const last = points.length - 1;
+  const selected = new Set([0, last]);
+  // An isolated observation has no observed neighbour, so no segment draws it and only its dot can. Keep each one
+  // before any bucket extreme, within the budget. Past the budget, an evenly spaced subset keeps the dots spread out.
+  const observedAt = (index: number) =>
+    index >= 0 && index <= last && points[index].value !== null;
+  const isolated: number[] = [];
+  for (let index = 0; index <= last; index++)
+    if (points[index].value !== null && !observedAt(index - 1) && !observedAt(index + 1))
+      isolated.push(index);
+  const room = Math.max(0, budget - selected.size);
+  if (isolated.length <= room) isolated.forEach((index) => selected.add(index));
+  else
+    for (let slot = 0; slot < room; slot++)
+      selected.add(isolated[Math.floor((slot * isolated.length) / room)]);
+  // What is left feeds the extremes: one slot takes the largest interior magnitude, and each pair of slots takes the
+  // minimum and maximum of one bucket.
+  const remaining = budget - selected.size;
+  if (remaining === 1) {
+    let extreme = -1;
+    for (let index = 1; index < last; index++) {
+      const value = points[index].value;
+      if (value === null || selected.has(index)) continue;
+      if (extreme < 0 || Math.abs(value) > Math.abs(points[extreme].value!))
         extreme = index;
-    selected.add(extreme);
+    }
+    if (extreme >= 0) selected.add(extreme);
   } else {
-    const buckets = Math.floor((budget - 2) / 2);
+    const buckets = Math.floor(remaining / 2);
     for (let bucket = 0; bucket < buckets; bucket++) {
       const start = 1 + Math.floor((bucket * (points.length - 2)) / buckets);
       const end =
@@ -363,4 +381,13 @@ export function plotTimeDomain(start: number, end: number): [number, number] {
   if (end > start) return [start, end];
   const offset = Math.abs(start) * 0.05 || 1;
   return [start - offset, end + offset];
+}
+
+/**
+ * Estimated rendered width of a 12px band label: about 6.6px per character plus 8px of padding. A label is drawn only
+ * when its band is at least this wide, so the plot edge never clips it. The band's aria-label and the interval list
+ * still carry the same times.
+ */
+export function bandLabelWidth(text: string): number {
+  return text.length * 6.6 + 8;
 }
