@@ -20,6 +20,7 @@ import { useWidgetQuery } from "./query";
 import { TooltipQueryProvider } from "./tooltip-query";
 import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
+import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
 import type { ObservationWindow } from "./time-window";
 import { TraceFetcherProvider } from "./trace-waterfall";
 import { AnnotationEventsProvider, useRecordedEvents } from "./annotation-events";
@@ -438,6 +439,7 @@ export function DashboardCanvas({
               </div>
             ));
   return (
+    <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
     <TooltipQueryProvider
       fetcher={tooltipFetcher}
       providers={providers}
@@ -482,5 +484,6 @@ export function DashboardCanvas({
         </ChartCursorProvider>
       </div>
     </TooltipQueryProvider>
+    </DashboardTimeZoneProvider>
   );
 }

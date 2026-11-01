@@ -135,10 +135,19 @@ export function responsiveChartTicks(width: number, height: number) {
   };
 }
 
+/**
+ * Whether a unit is captioned above the plot rather than repeated in the tick labels. `auto` captions units longer than
+ * three characters; `caption` and `ticks` override that. A chart with no unit has no caption.
+ */
+export function axisUnitIsCaption(unit: string, mode: WidgetOptions["axisUnit"] = "auto"): boolean {
+  if (!unit) return false;
+  return mode === "caption" || (mode !== "ticks" && unit.length > 3);
+}
+
 /** Reserve enough space for formatted numeric ticks, including custom precision.
  * Keep longer units above the plot so they don't repeat on every tick. */
-export function chartYAxisLayout(values: number[], unit: string, decimals?: number, axisLabel?: string) {
-  const separateUnit = unit.length > 3;
+export function chartYAxisLayout(values: number[], unit: string, decimals?: number, axisLabel?: string, axisUnit?: WidgetOptions["axisUnit"]) {
+  const separateUnit = axisUnitIsCaption(unit, axisUnit);
   let min = 0, max = 0;
   for (const value of values) if (Number.isFinite(value)) {
     min = Math.min(min, value);

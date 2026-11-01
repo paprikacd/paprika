@@ -338,6 +338,21 @@ export function withGapBreaks(points: readonly Point[], cadence: number | null):
   return result;
 }
 
+/** Maximal runs of consecutive observed points, in order. A missing value or a gap break ends a run. */
+export function observedRuns(points: readonly Point[]): Point[][] {
+  const runs: Point[][] = [];
+  let run: Point[] = [];
+  for (const point of points) {
+    if (observed(point)) run.push(point);
+    else {
+      if (run.length) runs.push(run);
+      run = [];
+    }
+  }
+  if (run.length) runs.push(run);
+  return runs;
+}
+
 /**
  * The plotted points that no line segment reaches: an observed point with no observed plotted neighbour. Each needs
  * its own dot. Every other point keeps its time but loses its value, so a points-only line draws one dot per isolated

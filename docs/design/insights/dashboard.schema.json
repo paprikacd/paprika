@@ -918,6 +918,62 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "gridX": {
+                "type": "boolean"
+              },
+              "timeAxis": {
+                "type": "string",
+                "enum": [
+                  "linear",
+                  "calendar"
+                ]
+              },
+              "axisUnit": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "ticks",
+                  "caption"
+                ]
+              },
+              "referenceLines": {
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "number"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "showZeroLine": {
+                "type": "boolean"
+              },
+              "plotInsetLeft": {
+                "type": "number",
+                "minimum": 8,
+                "maximum": 240
+              },
+              "plotInsetRight": {
+                "type": "number",
+                "minimum": 8,
+                "maximum": 120
               }
             },
             "allOf": [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarDateTime, calendarTick, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from "./chart-presentation";
+import { calendarDateTime, calendarTick, calendarTickLabel, calendarTicks, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from "./chart-presentation";
 
 const DAY = 86_400_000;
 // 2026-01-02T23:30:00Z: late evening in UTC, already the next morning in Tokyo.
@@ -91,5 +91,73 @@ describe("plot geometry", () => {
     }
     expect(horizontalPlotBounds(0, 40, 20)).toEqual({ left: 0, right: 0, plotWidth: 0 });
     expect(horizontalPlotBounds(Number.NaN, 40, 20).plotWidth).toBe(0);
+  });
+});
+
+describe("zone-aware calendar ticks", () => {
+  const at = (iso: string) => Date.parse(iso);
+  const labels = (ticks: ReturnType<typeof calendarTicks>, zone: string) => ticks.map((tick) => calendarTickLabel(tick, zone));
+
+  it("skips the hour that a spring-forward night does not have in New York, and places the ticks by true instant", () => {
+    const ticks = calendarTicks(at("2026-03-08T05:00:00Z"), at("2026-03-08T10:00:00Z"), 6, "America/New_York");
+    // 01:00 EST is 06:00Z; the clock then reads 03:00 EDT at 07:00Z. Nothing reads 02:00 that day.
+    expect(ticks.map((tick) => tick.value)).toEqual([5, 6, 7, 8, 9, 10].map((hour) => Date.UTC(2026, 2, 8, hour)));
+    expect(labels(ticks, "America/New_York")).toEqual(["Mar 8", "01:00", "03:00", "04:00", "05:00", "06:00"]);
+    expect(ticks.every((tick) => tick.grain === "hour")).toBe(true);
+  });
+
+  it("skips the missing half-hours of the spring-forward jump in Melbourne, and keeps every tick one step apart in elapsed time", () => {
+    // Melbourne moves from 02:00 AEST to 03:00 AEDT at 16:00Z on 3 October 2026.
+    const ticks = calendarTicks(at("2026-10-03T14:00:00Z"), at("2026-10-03T17:00:00Z"), 6, "Australia/Melbourne");
+    const gaps = ticks.slice(1).map((tick, index) => tick.value - ticks[index].value);
+    expect(gaps.every((gap) => gap === 30 * 60_000)).toBe(true);
+    const shown = labels(ticks, "Australia/Melbourne");
+    expect(shown).toContain("01:30");
+    expect(shown).toContain("03:00");
+    expect(shown.some((label) => label.startsWith("02:"))).toBe(false);
+  });
+
+  it("places a day that is 23 hours long at its true width, with midnight labels in Melbourne", () => {
+    const ticks = calendarTicks(at("2026-10-02T14:00:00Z"), at("2026-10-06T00:00:00Z"), 4, "Australia/Melbourne");
+    expect(ticks.every((tick) => tick.grain === "day")).toBe(true);
+    expect(labels(ticks, "Australia/Melbourne")).toEqual(["Oct 3", "Oct 4", "Oct 5", "Oct 6"]);
+    const gaps = ticks.slice(1).map((tick, index) => (tick.value - ticks[index].value) / 3_600_000);
+    // Only 4 October, the day the clocks move forward, is 23 hours long.
+    expect(gaps).toEqual([24, 23, 24]);
+  });
+
+  it("aligns weeks to Monday in the zone", () => {
+    const ticks = calendarTicks(at("2026-11-01T00:00:00Z"), at("2026-12-01T00:00:00Z"), 5, "UTC");
+    expect(ticks.every((tick) => tick.grain === "week")).toBe(true);
+    expect(labels(ticks, "UTC")).toEqual(["Nov 2", "Nov 9", "Nov 16", "Nov 23", "Nov 30"]);
+  });
+
+  it("aligns months to the first of the month, and names January with its year", () => {
+    const ticks = calendarTicks(at("2026-01-01T00:00:00Z"), at("2027-01-01T00:00:00Z"), 4, "UTC");
+    expect(ticks.every((tick) => tick.grain === "month")).toBe(true);
+    expect(labels(ticks, "UTC")).toEqual(["Jan 2026", "Apr", "Jul", "Oct", "Jan 2027"]);
+  });
+
+  it("reads each midnight in the dashboard zone rather than in UTC", () => {
+    // Tokyo midnight on 3 October is 15:00Z on 2 October.
+    const ticks = calendarTicks(at("2026-10-02T12:00:00Z"), at("2026-10-04T12:00:00Z"), 3, "Asia/Tokyo");
+    expect(ticks.map((tick) => tick.value)).toContain(at("2026-10-02T15:00:00Z"));
+    expect(labels(ticks, "Asia/Tokyo")).toContain("Oct 3");
+  });
+
+  it("keeps a day tick on a local midnight that does not exist, at the first instant of that day", () => {
+    // Santiago springs forward from 00:00 to 01:00 on 6 September 2026, so midnight never happens that day.
+    const ticks = calendarTicks(at("2026-09-05T12:00:00Z"), at("2026-09-07T12:00:00Z"), 3, "America/Santiago");
+    expect(ticks.map((tick) => tick.value)).toContain(at("2026-09-06T04:00:00Z"));
+    expect(labels(ticks, "America/Santiago")).toContain("Sep 6");
+  });
+
+  it("returns nothing for an empty or invalid span, and formats an unusable zone as UTC", () => {
+    expect(calendarTicks(5, 5, 4, "UTC")).toEqual([]);
+    expect(calendarTicks(Number.NaN, 10, 4, "UTC")).toEqual([]);
+    expect(calendarTicks(at("2026-11-01T00:00:00Z"), at("2026-11-01T06:00:00Z"), 6, "Not/AZone").map((tick) => tick.value)).toEqual(
+      calendarTicks(at("2026-11-01T00:00:00Z"), at("2026-11-01T06:00:00Z"), 6, "UTC").map((tick) => tick.value),
+    );
+    expect(calendarTickLabel({ value: Number.NaN, grain: "hour" }, "UTC")).toBe("—");
   });
 });

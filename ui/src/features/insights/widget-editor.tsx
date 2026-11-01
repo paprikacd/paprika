@@ -20,6 +20,7 @@ import {
   type Dashboard,
   type Provider,
   type Widget,
+  type QueryResult,
   type WidgetOptions,
 } from "./schema";
 import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
@@ -72,6 +73,75 @@ function tooltipPresentation(options?: WidgetOptions): Partial<WidgetOptions> {
   };
 }
 
+/** Widgets whose observation inspector reads tooltipPlacement, tooltipOffset, tooltipMaxWidth and tooltipMaxHeight. */
+const RICH_INSPECTOR_PLUGINS = ["distribution-heatmap", "stacked-timeseries", "directional-traffic"];
+function rendersInspectorPlacement(widget: Widget): boolean {
+  return widget.type === "timeseries" || widget.type === "bar" || (widget.type === "plugin" && RICH_INSPECTOR_PLUGINS.includes(widget.pluginId ?? ""));
+}
+
+/** Labelled horizontal rules on a time series. Each value joins the y range, so no rule is clipped. */
+function ReferenceLinesEditor({ options, onChange }: {
+  options: WidgetOptions;
+  onChange: (options: Partial<WidgetOptions>) => void;
+}) {
+  const lines = options.referenceLines ?? [];
+  const replace = (index: number, patch: Partial<NonNullable<WidgetOptions["referenceLines"]>[number]>) =>
+    onChange({ referenceLines: lines.map((line, position) => (position === index ? { ...line, ...patch } : line)) });
+  return <fieldset className={styles.thresholds}>
+    <legend>Reference lines</legend>
+    <p className={styles.hint}>Up to eight horizontal rules with an optional label. Explicit axis bounds can still hide a rule outside them.</p>
+    {lines.map((line, index) => <div className={styles.threshold} key={index}>
+      <label className={styles.field}>Value
+        <GammaInput type="number" step="any" aria-label={`Reference line ${index + 1} value`} value={line.value}
+          onChange={(event) => { if (event.target.value !== "" && Number.isFinite(Number(event.target.value))) replace(index, { value: Number(event.target.value) }); }} />
+      </label>
+      <label className={styles.field}>Label
+        <GammaInput aria-label={`Reference line ${index + 1} label`} value={line.label ?? ""} maxLength={80} placeholder="Value only"
+          onChange={(event) => replace(index, { label: event.target.value || undefined })} />
+      </label>
+      <label className={styles.field}>Colour
+        <GammaInput type="color" aria-label={`Reference line ${index + 1} colour`} value={line.color ?? "#c08a2b"}
+          onChange={(event) => replace(index, { color: event.target.value })} />
+      </label>
+      <GammaButton type="button" variant="quiet" size="sm" aria-label={`Remove reference line ${index + 1}`}
+        onClick={() => onChange({ referenceLines: lines.filter((_, position) => position !== index) })}>
+        <Trash2 size={14} aria-hidden="true" /> Remove
+      </GammaButton>
+    </div>)}
+    <GammaButton type="button" variant="secondary" disabled={lines.length >= 8}
+      onClick={() => onChange({ referenceLines: [...lines, { value: 0 }] })}>
+      <Plus size={14} aria-hidden="true" /> Add reference line
+    </GammaButton>
+  </fieldset>;
+}
+
+/** Where the observation inspector opens, and how large it may grow. Unset values keep the renderer's defaults. */
+function TooltipPlacementEditor({ options, onChange }: {
+  options: WidgetOptions;
+  onChange: (options: Partial<WidgetOptions>) => void;
+}) {
+  const bounded = (label: string, field: "tooltipOffset" | "tooltipMaxWidth" | "tooltipMaxHeight", min: number, max: number) => (
+    <label className={styles.field}>{label}
+      <GammaInput type="number" min={min} max={max} step={1} aria-label={label} value={options[field] ?? ""} placeholder="Default"
+        onChange={(event) => onChange({ [field]: event.target.value === "" ? undefined : Number(event.target.value) })} />
+    </label>
+  );
+  return <fieldset className={styles.thresholds}>
+    <legend>Inspector placement</legend>
+    <p className={styles.hint}>Where the reading opens beside its point. The viewport still limits it, and values outside these ranges are refused.</p>
+    <div className={styles.row}>
+      <label className={styles.field}>Preferred side
+        <GammaSelect aria-label="Inspector side" value={options.tooltipPlacement ?? "auto"}
+          onValueChange={(value) => onChange({ tooltipPlacement: value === "auto" ? undefined : value as WidgetOptions["tooltipPlacement"] })}
+          options={[{ value: "auto", label: "Automatic" }, { value: "top", label: "Above" }, { value: "right", label: "Right" }, { value: "bottom", label: "Below" }, { value: "left", label: "Left" }]} />
+      </label>
+      {bounded("Gap (px)", "tooltipOffset", 0, 40)}
+      {bounded("Maximum width (px)", "tooltipMaxWidth", 220, 640)}
+      {bounded("Maximum height (px)", "tooltipMaxHeight", 160, 800)}
+    </div>
+  </fieldset>;
+}
+
 function TooltipPresentationEditor({ options, onChange }: {
   options: WidgetOptions;
   onChange: (options: Partial<WidgetOptions>) => void;
@@ -110,7 +180,7 @@ function StyleEditor({
     onChange({ ...widget, options: { ...options, ...patch } });
   const numeric = (
     label: string,
-    field: "min" | "max" | "decimals" | "lineWidth" | "fillOpacity" | "staleAfterSeconds",
+    field: "min" | "max" | "decimals" | "lineWidth" | "fillOpacity" | "staleAfterSeconds" | "plotInsetLeft" | "plotInsetRight" | "tooltipOffset" | "tooltipMaxWidth" | "tooltipMaxHeight",
     min?: number,
     max?: number,
     step: number | "any" = 1,
@@ -300,6 +370,36 @@ function StyleEditor({
             {options.display === "area" &&
               numeric("Fill opacity", "fillOpacity", 0, 1, 0.05)}
           </div>
+          <div className={styles.row}>
+            <label className={styles.field}>
+              Time axis
+              <GammaSelect
+                aria-label="Time axis"
+                value={options.timeAxis ?? "linear"}
+                onValueChange={(value) => update({ timeAxis: value as WidgetOptions["timeAxis"] })}
+                options={[
+                  { value: "linear", label: "Elapsed time" },
+                  { value: "calendar", label: "Calendar" },
+                ]}
+              />
+            </label>
+            {numeric("Left inset (px)", "plotInsetLeft", 8, 240)}
+            {numeric("Right inset (px)", "plotInsetRight", 8, 120)}
+          </div>
+          <p className={styles.hint}>
+            Calendar ticks fall on local days, weeks and months in the dashboard time zone, and each is placed at its true time, so a daylight-saving change shows as a jump in the labels. Matching insets line charts up on one time axis.
+          </p>
+          <GammaSwitch
+            label="Vertical gridlines"
+            checked={options.gridX === true}
+            onChange={(gridX) => update({ gridX })}
+          />
+          <GammaSwitch
+            label="Show zero line"
+            checked={options.showZeroLine === true}
+            onChange={(showZeroLine) => update({ showZeroLine })}
+          />
+          <ReferenceLinesEditor options={options} onChange={update} />
         </>
       )}
       {chart && (
@@ -327,6 +427,21 @@ function StyleEditor({
               <div className={styles.row}>
                 {numeric("Y minimum", "min")}
                 {numeric("Y maximum", "max")}
+              </div>
+              <div className={styles.row}>
+                <label className={styles.field}>
+                  Y-axis unit
+                  <GammaSelect
+                    aria-label="Y-axis unit"
+                    value={options.axisUnit ?? "auto"}
+                    onValueChange={(value) => update({ axisUnit: value as WidgetOptions["axisUnit"] })}
+                    options={[
+                      { value: "auto", label: "Automatic" },
+                      { value: "ticks", label: "In tick labels" },
+                      { value: "caption", label: "Caption above the plot" },
+                    ]}
+                  />
+                </label>
               </div>
               <GammaSwitch
                 label="Show grid"
@@ -412,6 +527,9 @@ function StyleEditor({
       )}
       {hasStyleControl("tooltips") && !supportsTooltipView(widget.type, widget.pluginId) && options.showTooltip !== false && (
         <TooltipPresentationEditor options={options} onChange={update} />
+      )}
+      {rendersInspectorPlacement(widget) && options.showTooltip !== false && (
+        <TooltipPlacementEditor options={options} onChange={update} />
       )}
       {(["heatmap", "stat", "bar", "timeseries"].includes(widget.type) || gauge || ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") || (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds")) && (
         <fieldset className={styles.thresholds}>
@@ -557,6 +675,7 @@ export function WidgetEditor({
   queryFetcher,
   dashboards = [],
   queryFields,
+  result,
 }: {
   widget: Widget;
   providers: Provider[];
@@ -571,6 +690,8 @@ export function WidgetEditor({
   queryFetcher?: QueryFetcher;
   dashboards?: Dashboard[];
   queryFields?: import("./query-connections").QueryFields;
+  /** The widget's loaded result, when the host has one. Plugin configuration checks use it. */
+  result?: QueryResult;
 }) {
   const definitions = useWidgetDefinitions();
   const library = useSavedQueryLibrary();
@@ -1065,7 +1186,7 @@ export function WidgetEditor({
                   </>
                 )}
                 {draft.type === "plugin" && (
-                  <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} queryFields={queryFields} />
+                  <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} queryFields={queryFields} result={result} />
                 )}
                 {supportsAnnotationSource(draft.type, draft.pluginId) && <AnnotationSourceEditor widget={draft} onChange={setDraft} />}
               </div>

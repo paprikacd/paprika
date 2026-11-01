@@ -217,6 +217,12 @@ export const thresholdSchema = z.strictObject({
   color: hexColor,
   label: z.string().max(80).optional(),
 })
+/** A labelled horizontal rule on a time series. Its value joins the y domain, so it is never clipped. */
+export const referenceLineSchema = z.strictObject({
+  value: z.number(),
+  label: z.string().min(1).max(80).optional(),
+  color: hexColor.optional(),
+})
 
 // Inspect raw keys before Zod normalizes JSON records (which drops __proto__).
 export const pluginConfigSchema = z
@@ -353,6 +359,14 @@ export const widgetOptionsSchema = z
     background: hexColor.optional(),
     textColor: hexColor.optional(),
     thresholds: z.array(thresholdSchema).max(12).optional(),
+    // Time-series rendering. gridX and showZeroLine are off by default; timeAxis and axisUnit default to linear and auto.
+    gridX: z.boolean().optional(),
+    timeAxis: z.enum(["linear", "calendar"]).optional(),
+    axisUnit: z.enum(["auto", "ticks", "caption"]).optional(),
+    referenceLines: z.array(referenceLineSchema).max(8).optional(),
+    showZeroLine: z.boolean().optional(),
+    plotInsetLeft: z.number().min(8).max(240).optional(),
+    plotInsetRight: z.number().min(8).max(120).optional(),
   })
   .superRefine((options, context) => {
     if (options.showStatBar && (options.min === undefined || options.max === undefined))

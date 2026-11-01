@@ -318,7 +318,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
       : cell.state === "invalid" ? "Invalid source counts: cumulative counts decrease or are negative here. The cell is not drawn as density and its time is left out of the p95."
       : "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit.";
-    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note };
+    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
   };
   // The p95 line sits on each drawable window's bucket row. Non-ok windows, source gaps and hidden buckets break it.
   // An overflow window has no finite estimate, so `quantile` is the whole line and `finite` is its solid part.

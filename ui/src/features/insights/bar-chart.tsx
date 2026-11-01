@@ -125,7 +125,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
         : undefined),
     [domain, noDataRows.length, values, showAxis, ticks.y, height],
   );
-  const { left: axisLeft, separateUnit } = chartYAxisLayout(values.concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel);
+  const { left: axisLeft, separateUnit } = chartYAxisLayout(values.concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel, options.axisUnit);
   const definition = useMemo(
     () =>
       defineChart({

@@ -185,7 +185,7 @@ func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors"})
+	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func validateWidgetOptions(raw json.RawMessage) error {
 			return err
 		}
 	}
-	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetTooltipPlacement, validateWidgetFlags, validateWidgetAppearance, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
+	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetTooltipPlacement, validateWidgetFlags, validateWidgetAppearance, validateWidgetRenderingOptions, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
 		if err := check(options); err != nil {
 			return err
 		}
@@ -404,7 +404,7 @@ func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error
 }
 
 func validateWidgetFlags(options map[string]json.RawMessage) error {
-	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar"} {
+	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar", "gridX", "showZeroLine"} {
 		if value, ok := options[field]; ok {
 			var flag bool
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &flag) != nil {
@@ -456,6 +456,65 @@ func validateWidgetTooltipPlacement(options map[string]json.RawMessage) error {
 	return nil
 }
 
+// validateWidgetRenderingOptions checks the time-series rendering options against the ranges the UI schema publishes.
+// An unset key keeps the renderer's default, and a value outside its range is refused rather than clamped.
+func validateWidgetRenderingOptions(options map[string]json.RawMessage) error {
+	if err := validateWidgetEnum(options, "timeAxis", []string{"linear", "calendar"}, "timeAxis must be linear or calendar"); err != nil {
+		return err
+	}
+	if err := validateWidgetEnum(options, "axisUnit", []string{"auto", "ticks", "caption"}, "axisUnit must be auto, ticks, or caption"); err != nil {
+		return err
+	}
+	return validateWidgetReferenceLines(options)
+}
+
+func validateWidgetReferenceLines(options map[string]json.RawMessage) error {
+	value, ok := options["referenceLines"]
+	if !ok {
+		return nil
+	}
+	var lines []json.RawMessage
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &lines) != nil || lines == nil || len(lines) > 8 {
+		return errors.New("reference lines must be an array of at most 8 entries")
+	}
+	for _, raw := range lines {
+		if err := validateWidgetReferenceLine(raw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWidgetReferenceLine(raw json.RawMessage) error {
+	fields, err := requireObjectShape(raw, []string{"value"}, []string{"label", "color"})
+	if err != nil {
+		return err
+	}
+	for name, field := range fields {
+		if bytes.Equal(bytes.TrimSpace(field), []byte("null")) {
+			return fmt.Errorf("reference line %s must not be null", name)
+		}
+	}
+	var line struct {
+		Value float64 `json:"value"`
+		Label string  `json:"label"`
+		Color string  `json:"color"`
+	}
+	if json.Unmarshal(raw, &line) != nil || !finite(line.Value) {
+		return errors.New("reference lines require a finite value")
+	}
+	if label, ok := fields["label"]; ok {
+		var text string
+		if json.Unmarshal(label, &text) != nil || stringUnits(text) < 1 || stringUnits(text) > 80 {
+			return errors.New("reference line labels must be 1 to 80 characters")
+		}
+	}
+	if _, ok := fields["color"]; ok && !validWidgetColor.MatchString(line.Color) {
+		return errors.New("reference line colors must be six-digit hex colors")
+	}
+	return nil
+}
+
 func validateWidgetEnum(options map[string]json.RawMessage, field string, allowed []string, message string) error {
 	value, ok := options[field]
 	if !ok {
@@ -493,7 +552,7 @@ func validateWidgetNumbers(options map[string]json.RawMessage) error {
 
 func parseWidgetNumbers(options map[string]json.RawMessage) (map[string]float64, error) {
 	numbers := map[string]float64{}
-	for _, field := range []string{"decimals", "tooltipDecimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity"} {
+	for _, field := range []string{"decimals", "tooltipDecimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "plotInsetLeft", "plotInsetRight"} {
 		value, ok := options[field]
 		if !ok {
 			continue
@@ -621,6 +680,12 @@ func validateWidgetNumberBounds(numbers map[string]float64) error {
 	}
 	if n, ok := numbers["fillOpacity"]; ok && !validNumberRange(n, 0, 1) {
 		return errors.New("fill opacity must be from 0 to 1")
+	}
+	if n, ok := numbers["plotInsetLeft"]; ok && !validNumberRange(n, 8, 240) {
+		return errors.New("left plot inset must be from 8 to 240 pixels")
+	}
+	if n, ok := numbers["plotInsetRight"]; ok && !validNumberRange(n, 8, 120) {
+		return errors.New("right plot inset must be from 8 to 120 pixels")
 	}
 	if minimum, ok := numbers["min"]; ok {
 		if maximum, present := numbers["max"]; present && minimum >= maximum {

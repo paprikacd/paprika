@@ -12,6 +12,7 @@ import { Chart } from "@tanstack/charts/react";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { defineChart } from "@tanstack/charts/scene";
 import { tooltip } from "@tanstack/charts/tooltip";
+import type { ChartLinearGradient } from "@tanstack/charts";
 import { curveMonotoneX, curveStepAfter } from "d3-shape";
 import { useAnnotationEvents } from "./annotation-events";
 import { useChartCursor } from "./chart-cursor";
@@ -26,6 +27,7 @@ import {
   fullDateTimeFormat,
   isolatedPlotPoints,
   latestPoint,
+  observedRuns,
   plotTimeDomain,
   sampleCadence,
   seriesCoverage,
@@ -35,6 +37,7 @@ import {
   withGapBreaks,
 } from "./chart-data";
 import { useChartEntrance } from "./chart-entrance";
+import { calendarTickLabel, calendarTicks, DEFAULT_AREA_OPACITY, horizontalPlotBounds, signedAreaGradient, temporalPosition } from "./chart-presentation";
 import {
   EMPTY_OPTIONS,
   MAX_SERIES,
@@ -49,6 +52,8 @@ import {
   type Series,
 } from "./chart-renderer-shared";
 import styles from "./charts.module.css";
+import chartStyles from "./time-series-chart.module.css";
+import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { useDashboardWindow } from "./dashboard-window";
 import type { DrilldownContext } from "./drilldown";
 import hatchStyles from "./plot-hatch.module.css";
@@ -57,7 +62,8 @@ import eventStyles from "./plugins/rich-metrics.module.css";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
 import { resolveSeriesColor } from "./series-colors";
 import { compactSeriesLabels } from "./series-display";
-import { alignPriorPeriod, seriesInWindow, type ObservationWindow } from "./time-window";
+import { alignPriorPeriod, formatWindowDuration, minimumTimeWindow, normalizeTimeWindow, sameTimeWindow, seriesInWindow, timeWindowExtent, type ObservationWindow } from "./time-window";
+import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./chart-window-controls";
 import { TimeWindowLens } from "./time-window-lens";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { validTimestamp } from "./widget-context";
@@ -69,27 +75,19 @@ const CURVES = {
   monotone: d3Curve(curveMonotoneX),
 };
 
-/** An area's fill: the series colour at `opacity` on its top edge, fading to transparent at the baseline. TanStack scopes the id to the chart. */
-function areaGradient(index: number, color: string, opacity: number) {
-  return {
-    id: `area-gradient-${index}`,
-    x1: 0,
-    y1: 0,
-    x2: 0,
-    y2: 1,
-    stops: [
-      { offset: 0, color, opacity },
-      { offset: 1, color, opacity: 0 },
-    ],
-  };
-}
-
-/** Threshold guides participate in autoscaling, but explicit axis bounds win. */
+/**
+ * Guides participate in autoscaling, but explicit axis bounds win: thresholds, reference lines and the zero line all
+ * join the domain, so none of them is clipped.
+ */
 export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions): [number, number] | undefined {
-  const thresholds = options.thresholds?.filter(threshold => Number.isFinite(threshold.value)) ?? [];
-  if (!thresholds.length) return resolveChartDomain(series, options);
+  const guides = [
+    ...(options.thresholds ?? []).map(threshold => threshold.value),
+    ...(options.referenceLines ?? []).map(reference => reference.value),
+    ...(options.showZeroLine ? [0] : []),
+  ].filter(value => Number.isFinite(value));
+  if (!guides.length) return resolveChartDomain(series, options);
   let observedMin = Infinity, observedMax = -Infinity;
-  for (const threshold of thresholds) { observedMin = Math.min(observedMin, threshold.value); observedMax = Math.max(observedMax, threshold.value); }
+  for (const value of guides) { observedMin = Math.min(observedMin, value); observedMax = Math.max(observedMax, value); }
   for (const entry of series) for (const point of entry.points) if (validTimestamp(point.timestamp) && typeof point.value === "number" && Number.isFinite(point.value)) { observedMin = Math.min(observedMin, point.value); observedMax = Math.max(observedMax, point.value); }
   const padding = Math.max((observedMax - observedMin) * .05, observedMin === observedMax ? Math.max(1, Math.abs(observedMin) * .1) : 0);
   let min = options.min ?? observedMin - padding, max = options.max ?? observedMax + padding;
@@ -125,6 +123,19 @@ function measureBandLabel(text: string, family: string): number | undefined {
   return context.measureText(text).width;
 }
 
+/** The vertical gridlines' stroke: the chart grid token, with the light theme's value as its fallback. */
+const GRIDLINE_STROKE = "var(--gamma-chart-grid, var(--gamma-border, #e4ebed))";
+
+/** The brush's placeholder window when a chart has no time extent. The brush is disabled then, so this only keeps its staleness check defined. */
+const NO_WINDOW: ObservationWindow = { start: 0, end: 0 };
+
+/** The drag preview: the span under the pointer, labelled with its duration. */
+function TimeBrushOverlay({ preview, top, bottom }: { preview: TimeBrushPreview | null; top: number; bottom: number }) {
+  if (!preview) return null;
+  const left = Math.min(preview.x1, preview.x2), selected = Math.abs(preview.x2 - preview.x1);
+  return <div className={chartStyles.brush} style={{ left, width: selected, top, bottom }} data-time-brush-selection aria-hidden="true"><span>{formatWindowDuration(Math.abs(preview.end - preview.start))}</span></div>;
+}
+
 export function TimeSeriesChart({
   widget,
   series,
@@ -142,6 +153,9 @@ export function TimeSeriesChart({
   }, [ref]);
   const measureLabel = labelFamily ? (text: string) => measureBandLabel(text, labelFamily) : undefined;
   const [selection, setSelection] = useState<{ source: Series[]; window: ObservationWindow; previous?: QueryResult }>();
+  // The full extent a drag or the Compare dialog may select from, and the narrowest window either may commit.
+  const extent = useMemo(() => timeWindowExtent(series), [series]);
+  const minimumSpan = useMemo(() => extent ? minimumTimeWindow(series, extent) : 1, [series, extent]);
   // Query/variable changes must never reuse a range selected from another result.
   const zoom = selection?.source === series ? selection.window : undefined;
   const visibleSeries = useMemo(() => zoom ? seriesInWindow(series, zoom) : series, [series, zoom]);
@@ -151,6 +165,7 @@ export function TimeSeriesChart({
   const emptyZoom = emptyCurrent && !prior.length;
   const cursor = useChartCursor();
   const eventData = useAnnotationEvents();
+  const timeZone = useDashboardTimeZone();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
   const entering = useChartEntrance({ disabled: embedded, anchor: ref });
   const { rangeEnd } = useDashboardWindow();
@@ -192,6 +207,17 @@ export function TimeSeriesChart({
       }),
     [visibleSeries, widget.color, options.seriesColors],
   );
+  // One fill per observed run, so a gap never moves another run's zero line. Runs with the same stops share a gradient.
+  const areaFills = useMemo(() => {
+    const gradients = new Map<string, ChartLinearGradient>();
+    const fills = options.display !== "area" ? [] : data.flatMap((entry, index) => observedRuns(entry.plotPoints).map((points, part) => {
+      const gradient = signedAreaGradient("", entry.color, points.map(point => point.value), options.fillOpacity ?? DEFAULT_AREA_OPACITY);
+      const key = JSON.stringify(gradient.stops);
+      if (!gradients.has(key)) gradients.set(key, { ...gradient, id: `area-gradient-${gradients.size}` });
+      return { series: index, id: `area-${index}-${part}`, gradientId: gradients.get(key)!.id, points };
+    }));
+    return { fills, gradients: [...gradients.values()] };
+  }, [data, options.display, options.fillOpacity]);
   // Coverage comes from every series in the result, not only the plotted ones, so "No samples" is true for the whole
   // result. It is measured on the unsampled points, so downsampling can neither hide nor invent a gap.
   const coverage = useMemo(
@@ -230,11 +256,13 @@ export function TimeSeriesChart({
     () => (dataStart !== undefined && timeEnd !== undefined ? plotTimeDomain(dataStart, timeEnd) : undefined),
     [dataStart, timeEnd],
   );
-  const { left: axisLeft, separateUnit } = chartYAxisLayout([...data, ...previousData].flatMap(entry => entry.points.map(point => point.value ?? 0)).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel);
-  const cursorLeft = !showAxis ? 8 : axisLeft;
-  // The TanStack plot area: the right margin is 12, or 8 without axes.
-  const plotWidth = Math.max(0, width - cursorLeft - (showAxis ? 12 : 8));
-  const xAt = (time: number) => timeDomain ? cursorLeft + (time - timeDomain[0]) / (timeDomain[1] - timeDomain[0]) * plotWidth : 0;
+  // Calendar ticks sit on the dashboard zone's own boundaries and are placed by true instant. Only the calendar axis reads them.
+  const calendarTickList = useMemo(() => options.timeAxis === "calendar" && timeDomain ? calendarTicks(timeDomain[0], timeDomain[1], ticks.x, timeZone) : undefined, [options.timeAxis, timeDomain, ticks.x, timeZone]);
+  const calendarLabels = useMemo(() => new Map((calendarTickList ?? []).map(tick => [tick.value, calendarTickLabel(tick, timeZone)] as const)), [calendarTickList, timeZone]);
+  const { left: axisLeft, separateUnit } = chartYAxisLayout([...data, ...previousData].flatMap(entry => entry.points.map(point => point.value ?? 0)).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel, options.axisUnit);
+  // Plot insets: the TanStack margins and every overlay (cursor, bands, events, brush) map time through these bounds.
+  const { left: plotLeft, right: plotRight, plotWidth } = horizontalPlotBounds(width, !showAxis ? 8 : options.plotInsetLeft ?? axisLeft, !showAxis ? 8 : options.plotInsetRight ?? 12);
+  const xAt = (time: number) => timeDomain ? temporalPosition(time, timeDomain[0], timeDomain[1], plotLeft, plotLeft + plotWidth) : 0;
   const bandBox = (from: number, to: number) => ({ left: xAt(from), width: Math.max(1.5, xAt(to) - xAt(from)) });
   const cursorX = cursor && !embedded && timeDomain && timeSpan > 0 && cursor.timestamp >= timeDomain[0] && cursor.timestamp <= timeDomain[1]
     ? xAt(cursor.timestamp) : undefined;
@@ -247,6 +275,27 @@ export function TimeSeriesChart({
   const visibleEvents = eventsInView.slice(0, 20);
   const eventTop = !showAxis ? 8 : separateUnit ? 18 : height < 130 ? 4 : 10;
   const eventBottom = !showAxis ? 8 : options.xAxisLabel ? 47 : 29;
+  // Drag across the plot to select a time window. The pointer maps onto the displayed domain, so a drag selects what the plot shows.
+  const brush = useTimeWindowBrush({
+    enabled: !embedded && !!extent,
+    revision: series,
+    window: zoom ?? extent ?? NO_WINDOW,
+    point: (clientX: number, clientY: number): BrushPoint | null => {
+      const box = ref.current?.getBoundingClientRect();
+      if (!box?.width || !box.height || !timeDomain) return null;
+      const rawX = (clientX - box.left) * width / box.width, y = (clientY - box.top) * height / box.height;
+      const x = Math.max(plotLeft, Math.min(plotLeft + plotWidth, rawX));
+      return { x, y, inPlot: rawX >= plotLeft && rawX <= plotLeft + plotWidth && y >= eventTop && y <= height - eventBottom, timestamp: timeDomain[0] + (x - plotLeft) / Math.max(1, plotWidth) * (timeDomain[1] - timeDomain[0]) };
+    },
+    commit: (candidate) => {
+      if (!extent) return false;
+      const accepted = normalizeTimeWindow(candidate, extent, minimumSpan);
+      if (!accepted || (zoom && sameTimeWindow(accepted, zoom))) return false;
+      setSelection({ source: series, window: accepted });
+      return true;
+    },
+    onStart: () => {},
+  });
   // No-sample bands: time that no series in the result observes. A truncated result may simply lack samples, so it
   // draws no bands and no tail. The stale tail owns everything after the latest observation.
   const bands = useMemo(() => {
@@ -272,22 +321,15 @@ export function TimeSeriesChart({
         marks: [
           ...previousData.map((entry, index) => decorative(lineY(entry.plotPoints, { id: `previous-${index}`, x: "timestamp", y: "value", stroke: entry.color, strokeWidth: options.lineWidth ?? 1.8, strokeDasharray: "5 4", strokeOpacity: .7, curve: CURVES[options.curve ?? "linear"] }))),
           ...data.flatMap((entry, index) => [
-          ...(options.display === "area"
-            ? [
-                // Fills paint behind observations; only the line owns hit testing. The gradient carries the opacity, so the
-                // path itself is opaque: TanStack's default fill-opacity would multiply into the gradient's top stop.
-                decorative(
-                  areaY(entry.plotPoints, {
-                    id: `area-${index}`,
-                    x: "timestamp",
-                    y: "value",
-                    fill: `url(#area-gradient-${index})`,
-                    fillOpacity: 1,
-                    curve: CURVES[options.curve ?? "linear"],
-                  }),
-                ),
-              ]
-            : []),
+          // Fills paint behind observations, one per observed run with the zero-anchored gradient of its own range. Only the line owns hit testing.
+          ...(areaFills.fills.filter(fill => fill.series === index).map(fill => decorative(areaY(fill.points, {
+            id: fill.id,
+            x: "timestamp",
+            y: "value",
+            fill: `url(#${fill.gradientId})`,
+            fillOpacity: 1,
+            curve: CURVES[options.curve ?? "linear"],
+          })))),
           lineY(entry.plotPoints, {
             id: `line-${index}`,
             x: "timestamp",
@@ -315,6 +357,8 @@ export function TimeSeriesChart({
         scales: {
           x: {
             scale: timeDomain ? scaleLinear().domain(timeDomain) : scaleLinear,
+            // Vertical gridlines at the x ticks. Off by default, and showGrid false turns off every gridline.
+            grid: options.gridX && options.showGrid !== false ? { stroke: GRIDLINE_STROKE } : undefined,
             axis: !showAxis
               ? false
               : {
@@ -322,12 +366,9 @@ export function TimeSeriesChart({
                     ? { text: options.xAxisLabel, opacity: 1 }
                     : undefined,
                   line: false,
-                  ticks: {
-                    count: ticks.x,
-                    line: false,
-                    padding: 10,
-                    format: (value: number) => formatTimeTick(value, timeSpan),
-                  },
+                  ticks: calendarTickList
+                    ? { values: calendarTickList.map(tick => tick.value), line: false, padding: 10, format: (value: number) => calendarLabels.get(value) ?? "—" }
+                    : { count: ticks.x, line: false, padding: 10, format: (value: number) => formatTimeTick(value, timeSpan) },
                   tickLabels: {
                     opacity: 1,
                     fontSize: 11,
@@ -365,17 +406,10 @@ export function TimeSeriesChart({
                 },
           },
         },
-        margin: !showAxis
-          ? { top: 8, right: 8, bottom: 8, left: 8 }
-          : {
-              top: separateUnit ? 18 : height < 130 ? 4 : 10,
-              right: 12,
-              bottom: options.xAxisLabel ? 47 : 29,
-              left: axisLeft,
-            },
+        margin: { top: !showAxis ? 8 : separateUnit ? 18 : height < 130 ? 4 : 10, right: plotRight, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29, left: plotLeft },
         clip: true,
-        // One gradient per series, drawn only when the chart is an area.
-        gradients: options.display === "area" ? data.map((entry, index) => areaGradient(index, entry.color, options.fillOpacity ?? 0.28)) : undefined,
+        // The zero-anchored gradients, one per distinct run, drawn only when the chart is an area.
+        gradients: options.display === "area" ? areaFills.gradients : undefined,
         // The primary-point ring: a 4px disc in the surface colour with a 2px stroke in the series colour. No glow or blur.
         theme: { ...configuredTheme(options), focusRing: { radius: 4, strokeWidth: 2, fill: "var(--widget-background, var(--gamma-bg))" } },
         // Built-in strategy identity preserves TanStack's segment hit testing.
@@ -403,7 +437,6 @@ export function TimeSeriesChart({
       data,
       previousData,
       widget.unit,
-      axisLeft,
       separateUnit,
       options,
       domain,
@@ -416,21 +449,24 @@ export function TimeSeriesChart({
       embedded,
       tooltipEnabled,
       plotTooltip.extension,
+      plotLeft,
+      plotRight,
+      areaFills,
+      calendarTickList,
+      calendarLabels,
     ],
   );
 
   return (
-    <div className={styles.chart} data-prior-overlay={previousData.length || undefined}>
+    <div className={styles.chart} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
       <div
         className={styles.plot}
         ref={ref}
+        {...brush.handlers}
         data-chart-entering={entering || undefined}
-        onPointerMoveCapture={
-          tooltipEnabled ? plotTooltip.onInteract : undefined
-        }
-        onPointerDownCapture={
-          tooltipEnabled ? plotTooltip.onInteract : undefined
-        }
+        style={{ touchAction: "pan-y", userSelect: "none" }}
+        onPointerMoveCapture={(event) => { brush.handlers.onPointerMoveCapture(event); if (tooltipEnabled && !brush.active) plotTooltip.onInteract(); }}
+        onPointerDownCapture={(event) => { brush.handlers.onPointerDownCapture(event); if (tooltipEnabled) plotTooltip.onInteract(); }}
         onKeyDownCapture={tooltipEnabled ? plotTooltip.onInteract : undefined}
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
@@ -459,8 +495,9 @@ export function TimeSeriesChart({
           onRender={embedded ? associateDescription : plotTooltip.onRender}
           onFocusChange={tooltipEnabled ? plotTooltip.onFocusChange : undefined}
           onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
-          ariaDescription={`${data.length} time series.${embedded ? "" : " Use arrow keys to explore individual values."}`}
+          ariaDescription={`${data.length} time series.${embedded ? "" : " Use arrow keys to explore individual values. Drag horizontally to select a time window, or use Compare window."}`}
         />}
+        <TimeBrushOverlay preview={brush.preview} top={eventTop} bottom={eventBottom} />
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
           style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
@@ -468,8 +505,13 @@ export function TimeSeriesChart({
           const top = eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
           // The label sits above its line at the left end, where the newest data on the right is never covered.
           // It moves below the line when there is less than 16px above it inside the plot.
-          return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: cursorLeft, right: !showAxis ? 8 : 12, top, borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
+          return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
         })}
+        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.referenceLines ?? []).filter(reference => reference.value >= domain[0] && reference.value <= domain[1]).map((reference, index) => {
+          const top = eventTop + (domain[1] - reference.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
+          return <span key={`reference-${index}`} role="img" aria-label={`${reference.label ?? "Reference"}: ${formatMetric(reference.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-reference-value={reference.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: reference.color ?? "var(--gamma-warning)" }}><span aria-hidden="true">{reference.label ?? formatMetric(reference.value, widget.unit, false, options.decimals)}</span></span>;
+        })}
+        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && options.showZeroLine && domain[0] <= 0 && domain[1] >= 0 && <span aria-hidden="true" className={chartStyles.zeroLine} data-zero-line="" style={{ left: plotLeft, right: plotRight, top: eventTop + (domain[1] / (domain[1] - domain[0])) * Math.max(0, height - eventTop - eventBottom) }} />}
         {eventEnd > eventStart && visibleEvents.map((event, index) => {
           const at = Date.parse(event.timestamp), finish = event.endTimestamp ? Date.parse(event.endTimestamp) : at;
           const position = xAt;
