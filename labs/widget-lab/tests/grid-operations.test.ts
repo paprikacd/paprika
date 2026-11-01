@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ForecastBands } from '../src/charts/grid/ForecastBands';
 import { BATTERY_CAPACITY_MWH, GRID_AS_OF, GRID_DAY_START, GRID_LOCATIONS, GRID_STEP, buildGridOperations, gridDay, gridForecast, gridNetwork } from '../src/lenses/grid-operations-data';
 import { forecastBandConfig, forecastRecords, gridFlowColor, gridNetworkConfig, networkRecords } from '../src/charts/grid/grid-model';
-import type { RecordFrame } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '../src/renderer-extensions/schema';
 
 describe('Grid Operations source accounting',()=>{
   it.each(['peak','balanced'] as const)('reconciles every %s power observation and exclusive generation source',scenario=>{

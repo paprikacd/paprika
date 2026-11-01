@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '../../renderer-extensions/schema';
 
 export type ProfileUnit = 'samples' | 'bytes' | 'objects' | 'nanoseconds' | 'milliseconds';
 export interface ProfileFrame { id: string; parentId: string | null; label: string; depth: number; start: number; total: number; self: number }

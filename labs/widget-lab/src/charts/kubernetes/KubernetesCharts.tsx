@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3-scale';
 import { area, line } from 'd3-shape';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { fleetRows, resourceBarsConfig, resourceSummary, resourceTimepoints, resourceTrendConfig, throttleConfig, throttleRows, type FleetTimepoint } from './model';
 import { fleetNumber, fleetTime } from './PlacementChart';

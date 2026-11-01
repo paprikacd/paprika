@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '../../renderer-extensions/schema';
 
 export const mapConfig = z.strictObject({ showLabels:z.boolean().default(true), showVectors:z.boolean().default(true), selectedId:z.string().max(100).optional() });
 export const intervalConfig = z.strictObject({ showValues:z.boolean().default(true), selectedId:z.string().max(100).optional() });

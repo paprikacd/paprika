@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { parseRecordFrame } from '@insights/record-data';
 import { chamberBoxes, chamberRows, dieAngle, filterDies, processSteps, quantile, summarizeWafer, waferChamberConfig, waferLineageConfig, waferLosses, waferMapConfig, waferRows, waferSignature, waferSignatureConfig, waferYieldConfig } from '../src/charts/wafer/model';
 import { chamberResult, waferFixtures, waferLot, waferResult } from '../src/lenses/wafer/fixtures';
 

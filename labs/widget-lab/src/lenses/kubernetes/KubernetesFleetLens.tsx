@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowLeft, ChevronRight, Box, Server, Layers } from 'lucide-react';
 import type { EditLensWidget } from '../LensStudio';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import { CHART_COLORS as C, DetailValues, DomainChartPanel, DomainHeader, MetricStrip } from '../../components/lab/DomainPrimitives';
 import { Sparkline } from '../../components/lab/StudyPrimitives';
 import { registerLabCharts } from '../../charts/register-lab-charts';

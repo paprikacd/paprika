@@ -1,5 +1,7 @@
 # Chart catalogue source provenance
 
+> **WP-B1a note:** `src/vendor/paprika/` no longer exists. Production files are imported through `@insights/*`, and the lab's holding copies live in `src/renderer-extensions/` (see [its README](../src/renderer-extensions/README.md)). Paths in this document name the pre-WP-B1a copy.
+
 The iteration 05 coverage view uses the existing Paprika widget/result contracts and trusted registry. It imports missing owners from the already-inspected Paprika source snapshot `bb52aed8ded8beb08534f6b190a3e7f37c1b19d8`. The original license and attribution remain in `src/vendor/paprika/`.
 
 ## Newly copied dependency closure

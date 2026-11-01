@@ -1,4 +1,4 @@
-import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../renderer-extensions/schema';
 import { summarizePasses, skyPoints, wrapLongitude } from '../../charts/orbital/model';
 
 export type OrbitalPanel = { widget: Widget; result: QueryResult; caption: string };

@@ -1,8 +1,8 @@
 import { useEffect,useMemo,useRef,useState } from 'react';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
 import { dwellRows,intervalConfig,iqConfig,iqRows,polarPoint,rmsEvm,roseConfig,roseRows,roseSector,shipments } from './model';
 import { date,Dot,Legend,num,SpatialInspector,utc,usePlotWidth } from './shared';
 import './spatial.css';

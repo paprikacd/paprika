@@ -5,7 +5,7 @@ import { energyChartCatalog, isEnergyCatalogId, makeEnergyCatalogFixture, type E
 import { clinicalChartCatalog, isClinicalCatalogId, makeClinicalCatalogFixture, type ClinicalCatalogId } from '../charts/clinical/catalog';
 import { waferChartCatalog, isWaferCatalogId, makeWaferCatalogFixture, type WaferCatalogId } from '../charts/wafer/catalog';
 import { orbitalChartCatalog, isOrbitalCatalogId, makeOrbitalCatalogFixture, type OrbitalCatalogId } from '../charts/orbital/catalog';
-import type { QueryResult, RecordFrame, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
 import { buildEdgeTelemetry } from '../data/edge-telemetry';
 import { buildTelemetry } from '../data/telemetry';
 import { makeChartResults } from '../data/chart-adapter';

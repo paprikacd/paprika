@@ -1,11 +1,11 @@
 import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { Activity, ArrowUpRight, Check, ChevronLeft, ChevronRight, Clock3, Info, RefreshCw, ShieldCheck, Target, TriangleAlert, X } from 'lucide-react';
-import { ChartCursorProvider, useChartCursor } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import { GammaButton } from '../vendor/paprika/ui/src/features/insights/gamma/button';
-import { GammaSelect } from '../vendor/paprika/ui/src/features/insights/gamma/select';
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import { ChartCursorProvider, useChartCursor } from '@insights/chart-cursor';
+import { WidgetVisualization } from '../renderer-extensions/charts';
+import { GammaButton } from '@insights/gamma/button';
+import { GammaSelect } from '@insights/gamma/select';
+import type { QueryResult, Widget } from '../renderer-extensions/schema';
 import { MetricCard, Panel, StatusBadge, EmptyNotice } from '../components/lab/StudyPrimitives';
 import { useDemoReplay } from '../components/lab/motion';
 import { HOUR_MS, RELIABILITY_SERVICES, buildReliability, incidentCalendar, reliabilityBurnSeries, reliabilityIncidents, reliabilityTimeline, summarizeReliability, type BurnPoint, type IncidentCalendarDay, type ReliabilityScenario, type ReliabilityScope, type ReliabilityServiceId, type ReliabilityWindow, type StateInterval } from '../data/reliability';

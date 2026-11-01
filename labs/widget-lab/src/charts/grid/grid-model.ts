@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '../../renderer-extensions/schema';
 
 export const gridNetworkConfig = z.strictObject({ showLabels: z.boolean().default(true), showFlows: z.boolean().default(true), maxNodes: z.number().int().min(1).max(100).default(40) });
 export const forecastBandConfig = z.strictObject({ show68: z.boolean().default(true), show95: z.boolean().default(true), showGrid: z.boolean().default(true), showCapacity: z.boolean().default(true) });

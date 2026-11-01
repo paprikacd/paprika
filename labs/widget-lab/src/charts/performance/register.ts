@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { PerformanceLatencyDensity } from './PerformanceDensity';
 import { PerformanceTraceWaterfall } from './PerformanceTrace';
 import { PerformanceDifferentialFlamegraph } from './PerformanceProfile';

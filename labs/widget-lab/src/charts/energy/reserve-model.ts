@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../../vendor/paprika/ui/src/features/insights/record-data';
+import type { RecordFrame } from '../../renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
 
 const field = (name: string) => z.string().trim().min(1).max(80).default(name);
 const optionalField = (name: string) => z.string().trim().max(80).default(name);

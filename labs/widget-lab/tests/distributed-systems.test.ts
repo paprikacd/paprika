@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { widgetSchema, type RecordFrame } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import { parseRecordFrame } from '@insights/record-data';
+import { widgetSchema, type RecordFrame } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
 import { applyBacklog, caughtUpToCommit, commitLag, majorityRequired, ownerAt, ownershipCounts, ownershipGeometry, ownershipPaths, ownershipTransfers, peerCells, peerLatencyConfig, quorumSummary, quorumTopologyConfig, replicaSamples, replicaSnapshots, replicationTracksConfig, shardMovementConfig, steppedPath, type ReplicaSnapshot } from '../src/charts/distributed/model';
 import { distributedChartCatalog, isDistributedCatalogId, makeDistributedCatalogFixture } from '../src/charts/distributed/catalog';
 import { registerDistributedCharts } from '../src/charts/distributed/register';

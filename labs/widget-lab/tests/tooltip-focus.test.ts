@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { isRestoringTooltipFocus, restoreTooltipFocus, withTooltipDismissReason } from '../src/vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { isRestoringTooltipFocus, restoreTooltipFocus, withTooltipDismissReason } from '../src/renderer-extensions/tooltip-focus';
 
 describe('reason-aware observation dismissal', () => {
   it('restores focus for explicit dismissal and retains the outside click target', () => {

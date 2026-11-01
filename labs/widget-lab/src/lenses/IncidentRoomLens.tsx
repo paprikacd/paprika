@@ -4,13 +4,13 @@ import { Activity, ArrowUpRight, Clock3, FileText, Plus, ShieldAlert, X } from '
 import { Panel, Sparkline } from '../components/lab/StudyPrimitives';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { registerIncidentCharts } from '../charts/incident/register';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import { WidgetVisualization } from '../renderer-extensions/charts';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import type { QueryResult, Widget } from '../renderer-extensions/schema';
 import type { EditLensWidget } from './LensStudio';
 import { GeoMap } from '../charts/geo/GeoMap';
 import type { GeoGeometry, GeoLocation } from '../charts/geo/geo-data';
-import { worldLandPath } from '../vendor/paprika/ui/src/features/insights/plugins/world-land';
+import { worldLandPath } from '@insights/plugins/world-land';
 import { INCIDENT_END, INCIDENT_EVIDENCE, INCIDENT_REGIONS, INCIDENT_SERVICES, INCIDENT_START, incidentDependencyPanel, incidentTelemetryPanel, incidentTracePanel, type IncidentService } from './incident-room-data';
 import './IncidentRoomLens.css';
 

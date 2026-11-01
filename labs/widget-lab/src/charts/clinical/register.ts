@@ -1,5 +1,5 @@
-import type { WidgetConfigField } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetConfigField } from '../../renderer-extensions/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { HazardForest, ParticipantSwimmer, ResponseWaterfall, SurvivalKM, VisitCompleteness } from './ClinicalCharts';
 import { FollowupDistribution } from './FollowupDistribution';
 import { completenessConfig, followupConfig, followupFromRecords, forestConfig, hazardEstimates, responseConfig, responseObservations, survivalConfig, survivalObservations, swimmerConfig, swimmerObservations, visitParticipants } from './model';

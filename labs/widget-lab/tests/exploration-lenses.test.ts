@@ -5,8 +5,8 @@ import { criticalPath, dailyResourceLoad, feasibleCandidates, materialCandidates
 import { registerExplorationCharts } from '../src/charts/exploration/register';
 import { MATERIAL_CANDIDATES, materialFrame, SCHEDULE_TASKS, scheduleFrame, THREAT_EVENTS, THREAT_GAP, threatFrame } from '../src/lenses/exploration/data';
 import { explorationChartCatalog, makeExplorationCatalogFixture } from '../src/catalog/exploration-fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { widgetSchema } from '../src/renderer-extensions/schema';
 import { ThreatHuntLens } from '../src/lenses/exploration/ThreatHuntLens';
 
 const task=(id:string,start:number,end:number,predecessors:string[]=[],resource=id):ScheduleTask=>({id,label:id,group:'Test',resource,start,end,baselineStart:start,baselineEnd:end,predecessors,progress:0});

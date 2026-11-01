@@ -1,5 +1,5 @@
-import type { QueryResult, RecordFrame, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
-import type { WidgetConfigField, WidgetDefinition } from '../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
+import type { WidgetConfigField, WidgetDefinition } from '../renderer-extensions/widget-registry';
 
 export type DiscoveredField = RecordFrame['columns'][number] & {
   observations: number;

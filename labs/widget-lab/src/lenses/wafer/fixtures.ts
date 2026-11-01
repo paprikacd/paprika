@@ -1,5 +1,5 @@
-import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../../vendor/paprika/ui/src/features/insights/record-data';
+import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
 import { chamberBoxes, waferRows, type DieBin, type WaferDie } from '../../charts/wafer/model';
 
 export const WAFER_IDS = ['W-11', 'W-12', 'W-13', 'W-14', 'W-15', 'W-16', 'W-17'] as const;

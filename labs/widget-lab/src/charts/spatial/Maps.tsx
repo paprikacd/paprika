@@ -1,10 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as RPointer } from 'react';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
-import { worldLandPath } from '../../vendor/paprika/ui/src/features/insights/plugins/world-land';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { worldLandPath } from '@insights/plugins/world-land';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
 import { constrainGeoView,geoToScreen,geoWheelView,INITIAL_GEO_VIEW,panGeoBy,pinchGeo,zoomGeoAt,type GeoPoint,type GeoViewport } from '../geo/geo-viewport';
 import { buoyRows,fitEquirectangular,mapConfig,shipments,vectorBearing } from './model';
 import { num,SpatialInspector,utc,usePlotWidth,Legend,Dot } from './shared';

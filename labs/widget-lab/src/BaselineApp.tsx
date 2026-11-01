@@ -1,12 +1,12 @@
 import { DashboardEditControls, useDashboardPanels } from './components/lab/DashboardWorkbench';
 import { useMemo, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, ChevronRight, FlaskConical, GitCommitHorizontal, Info, Maximize2, Minimize2, Moon, RefreshCw, Sun, TableProperties, X, TriangleAlert } from 'lucide-react';
-import { ChartCursorProvider } from './vendor/paprika/ui/src/features/insights/chart-cursor';
-import { WidgetVisualization } from './vendor/paprika/ui/src/features/insights/charts';
-import { GammaButton } from './vendor/paprika/ui/src/features/insights/gamma/button';
-import { GammaSelect } from './vendor/paprika/ui/src/features/insights/gamma/select';
-import gammaTheme from './vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
-import { registerRichMetricPlugins } from './vendor/paprika/ui/src/features/insights/plugins/rich-metrics';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import { WidgetVisualization } from './renderer-extensions/charts';
+import { GammaButton } from '@insights/gamma/button';
+import { GammaSelect } from '@insights/gamma/select';
+import gammaTheme from '@insights/gamma/gamma-theme.module.css';
+import { registerRichMetricPlugins } from './renderer-extensions/plugins/rich-metrics';
 import { aggregateTimeline, buildTelemetry, REGIONS, selectTelemetry, summarize, type RegionId, type Scenario } from './data/telemetry';
 import { makeChartResults, LATENCY_WIDGET, TRAFFIC_WIDGET, ERROR_WIDGET, DISTRIBUTION_WIDGET } from './data/chart-adapter';
 import { RegionalLatency } from './components/RegionalLatency';

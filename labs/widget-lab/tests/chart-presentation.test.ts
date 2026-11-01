@@ -8,9 +8,9 @@ import { decorative } from '@tanstack/charts/mark/decorative';
 import { createChartScene, defineChart } from '@tanstack/charts/scene';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { scaleTime } from 'd3-scale';
-import { calendarTick, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from '../src/vendor/paprika/ui/src/features/insights/chart-presentation';
-import { widgetOptionsSchema, widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { DistributionHeatmap } from '../src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics';
+import { calendarTick, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from '../src/renderer-extensions/chart-presentation';
+import { widgetOptionsSchema, widgetSchema } from '../src/renderer-extensions/schema';
+import { DistributionHeatmap } from '../src/renderer-extensions/plugins/rich-metrics';
 
 describe('reference presentation owner extensions', () => {
   it('keeps mixed-family time labels in UTC and maps the same timestamp to the same plot position', () => {

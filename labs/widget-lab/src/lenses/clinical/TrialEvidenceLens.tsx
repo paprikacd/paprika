@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DomainChartPanel, DomainHeader, MetricStrip } from '../../components/lab/DomainPrimitives';
 import { registerClinicalCharts } from '../../charts/clinical/register';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../LensStudio';
 import { buildTrialEvidence, CLINICAL_POPULATIONS, type ClinicalPopulation } from './fixtures';
 import './clinical-lens.css';

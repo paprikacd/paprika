@@ -5,8 +5,8 @@ import { TooltipSettings } from '../src/editor/WidgetEditor';
 import { createEditorDraft, editorStyleControls, revalidateEditorDraft, reviseEditorDraft, travelEditorDraft, updateWidgetOption, validateEditorWidget, visualizationCandidate } from '../src/editor/editor-model';
 import { makeCatalogFixture, type CatalogId } from '../src/catalog/chart-fixtures';
 import { registerConceptCharts } from '../src/charts/register-concept-charts';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetKind, widgetOptionsSchema, type WidgetOptions } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { widgetKind, widgetOptionsSchema, type WidgetOptions } from '../src/renderer-extensions/schema';
 
 registerConceptCharts();
 
@@ -108,7 +108,8 @@ describe('shared tooltip configuration', () => {
       expect(validateEditorWidget(next, widgetKind(widget), result).errors, id).toEqual([]);
       expect(JSON.stringify(result), id).toBe(snapshot);
     }
-    expect(editorStyleControls(makeCatalogFixture('record-table').widget)).not.toContain('tooltips');
+    // Production's record table exposes tooltips; the lab renders it through production's plugin (WP-B1a).
+    expect(editorStyleControls(makeCatalogFixture('record-table').widget)).toContain('tooltips');
   });
 
   it('renders labelled tooltip controls, retains disabled values, and exposes no competing fixed-position mode', () => {

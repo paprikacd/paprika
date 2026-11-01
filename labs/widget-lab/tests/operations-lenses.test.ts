@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildInfrastructureLens, buildWebsiteLens, OPERATIONS_AS_OF } from '../src/lenses/operations-data';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetKind, widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { buildConnectionMap, connectionMapConfig } from '../src/vendor/paprika/ui/src/features/insights/plugins/operational-records-data';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { widgetKind, widgetSchema } from '../src/renderer-extensions/schema';
+import { buildConnectionMap, connectionMapConfig } from '@insights/plugins/operational-records-data';
 
 registerLabCharts();
 describe('operations lens data contracts', () => {

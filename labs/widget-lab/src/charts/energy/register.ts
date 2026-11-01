@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { PowerFlow, ContingencyMatrix, DispatchMerit, FlexibilityDispatch } from './EnergyCharts';
 import { contingencyCells, contingencyConfig, flexibilityConfig, flexibilityPoints, meritConfig, powerFlowConfig, powerNodes } from './model';
 import { ReserveEnvelope } from './ReserveEnvelope';

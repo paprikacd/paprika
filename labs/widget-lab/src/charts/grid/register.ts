@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { GridNetworkMap } from './GridNetworkMap';
 import { ForecastBands } from './ForecastBands';
 import { forecastBandConfig, gridNetworkConfig, forecastRecords } from './grid-model';

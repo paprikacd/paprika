@@ -1,4 +1,4 @@
-import { getWidgetDefinition } from '../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition } from '../renderer-extensions/widget-registry';
 /** Legacy fallback; new compound renderers declare layout beside their definition. */
 const intrinsicIds=new Set([
  'profile-flamegraph','sampled-flamechart','query-plan',

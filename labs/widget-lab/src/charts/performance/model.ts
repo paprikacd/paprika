@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../../vendor/paprika/ui/src/features/insights/record-data';
+import type { RecordFrame } from '../../renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
 import { buildTraceSpans, type TraceSpan } from '../incident/incident-model';
 import { validateProfile, type Profile, type ProfileFrame } from '../profiling/profile-model';
 

@@ -3,8 +3,8 @@ import { discoverRecordFields, bindingMismatch, validateFieldBindings } from '..
 import { createEditorDraft, editorVisualizations, reviseEditorDraft, validateEditorWidget } from '../src/editor/editor-model';
 import { registerEnergyCharts } from '../src/charts/energy/register';
 import { buildGridBalance } from '../src/lenses/energy/fixtures';
-import { getWidgetDefinition, getWidgetPlugins, registerWidgetPlugin, type WidgetConfigField, type WidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import type { QueryResult, Widget } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { getWidgetDefinition, getWidgetPlugins, registerWidgetPlugin, type WidgetConfigField, type WidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import type { QueryResult, Widget } from '../src/renderer-extensions/schema';
 
 const role: WidgetConfigField = { key: 'valueField', label: 'Delivered power', kind: 'text', binding: { types: ['number'], unit: 'MW', role: 'Measured power.' } };
 const definition: WidgetDefinition = { id: 'binding-test', type: 'plugin', label: 'Binding test', description: 'Independent binding example', dataKind: 'records', render: () => null, configFields: [role] };

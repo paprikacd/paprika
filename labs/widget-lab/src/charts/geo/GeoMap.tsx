@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { ChartTooltip } from '../../components/lab/ChartTooltip';
-import { restoreTooltipFocus, type TooltipDismissReason } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { restoreTooltipFocus, type TooltipDismissReason } from '../../renderer-extensions/tooltip-focus';
 import { normalizeGeoLocations } from './geo-data';
 import type { GeoDecorationPoint, GeoGeometry, GeoLocation, GeoSeverity } from './geo-data';
 import { constrainGeoView, GEO_MAX_ZOOM, geoScreenUnits, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt } from './geo-viewport';

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Clock3, Satellite } from 'lucide-react';
 import { DomainChartPanel, DomainHeader, MetricStrip } from '../../components/lab/DomainPrimitives';
 import { Panel } from '../../components/lab/StudyPrimitives';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../LensStudio';
 import { registerOrbitalCharts } from '../../charts/orbital/register';
 import { orbitalDuration, orbitalUtc } from '../../charts/orbital/model';

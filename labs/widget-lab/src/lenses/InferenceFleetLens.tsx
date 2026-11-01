@@ -4,12 +4,12 @@ import { Activity, ArrowRightLeft, Clock3, Cpu, Database, RotateCcw } from 'luci
 import { registerInferenceCharts } from '../charts/inference/register';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { Panel } from '../components/lab/StudyPrimitives';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import { horizontalPlotBounds } from '../vendor/paprika/ui/src/features/insights/chart-presentation';
-import { formatWindowDuration, minimumTimeWindow, timeWindowExtent, type ChartTimeWindow } from '../vendor/paprika/ui/src/features/insights/time-window';
-import { TimeBrushOverlay, TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../vendor/paprika/ui/src/features/insights/time-window-controls';
-import type { Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import { WidgetVisualization } from '../renderer-extensions/charts';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import { horizontalPlotBounds } from '../renderer-extensions/chart-presentation';
+import { formatWindowDuration, minimumTimeWindow, timeWindowExtent, type ChartTimeWindow } from '../renderer-extensions/time-window';
+import { TimeBrushOverlay, TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../renderer-extensions/time-window-controls';
+import type { Widget } from '../renderer-extensions/schema';
 import type { EditLensWidget } from './LensStudio';
 import { buildInferenceFleet, inferenceObservationWindow, inferenceResultInWindow, INFERENCE_MODELS, INFERENCE_REGIONS, type InferencePanel, type InferenceScope } from './inference-fleet-data';
 import './InferenceFleetLens.css';

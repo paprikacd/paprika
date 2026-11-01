@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin, type WidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin, type WidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { fleetRows, placementConfig, resourceBarsConfig, resourceSummary, resourceTimepoints, resourceTrendConfig, throttleConfig, throttleRows } from './model';
 import { KubernetesPlacement } from './PlacementChart';
 import { KubernetesResourceBars, KubernetesResourceTrend, KubernetesThrottleMatrix } from './KubernetesCharts';

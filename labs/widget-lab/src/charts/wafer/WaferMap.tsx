@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Minus, Plus, RotateCcw } from 'lucide-react';
 import { scaleLinear } from 'd3-scale';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt, type GeoPoint, type GeoViewport } from '../geo/geo-viewport';
 import { BIN_LABEL, DIE_BINS, filterDies, summarizeWafer, waferFocusId, waferKeyboardTarget, waferMapConfig, waferRows, type WaferDie } from './model';

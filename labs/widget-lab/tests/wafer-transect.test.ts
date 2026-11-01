@@ -6,7 +6,7 @@ import { WaferTransect } from '../src/charts/wafer/WaferTransect';
 import { makeWaferCatalogFixture } from '../src/charts/wafer/catalog';
 import { registerWaferCharts } from '../src/charts/wafer/register';
 import { waferResult } from '../src/lenses/wafer/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
 
 const config = waferTransectConfig.parse({ followSelection: false });
 const source = waferResult(), dies = waferRows(source.records);

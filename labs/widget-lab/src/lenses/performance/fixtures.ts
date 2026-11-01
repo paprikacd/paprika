@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '../../renderer-extensions/schema';
 import { profileFromStacks, type WeightedStack } from '../../charts/profiling/profile-model';
 import { differentialProfile, empiricalQuantile, pairedPerformance, performanceObservations, performanceTrace, type Build } from '../../charts/performance/model';
 

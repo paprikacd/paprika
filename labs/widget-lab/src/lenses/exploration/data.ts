@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '../../renderer-extensions/schema';
 import type { MaterialCandidate, ScheduleTask, ThreatEvent } from '../../charts/exploration/model';
 
 export interface ExplorationPanel { widget: Widget; result: QueryResult }

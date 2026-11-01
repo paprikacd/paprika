@@ -1,14 +1,14 @@
 import { createElement } from 'react';
 import { renderToReadableStream, renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { QueryResult, Widget } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '../src/renderer-extensions/schema';
 import { DashboardWorkbench, useDashboardPanels, widgetPanelMenu } from '../src/components/lab/DashboardWorkbench';
 import { lensRoutes } from '../src/lenses/lens-routes';
 import { App } from '../src/App';
 
 // Exercise the actual route/panel tree. Geometry has separate renderer tests;
 // recording host identity makes missing/duplicate editing surfaces observable.
-vi.mock('../src/vendor/paprika/ui/src/features/insights/charts', () => ({
+vi.mock('../src/renderer-extensions/charts', () => ({
   WidgetVisualization: ({ widget }: { widget: Widget }) => createElement('div', { 'data-rendered-widget': widget.id }),
 }));
 

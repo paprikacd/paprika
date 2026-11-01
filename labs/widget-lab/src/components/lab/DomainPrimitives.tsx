@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { Panel } from './StudyPrimitives';
-import { WidgetVisualization } from '../../vendor/paprika/ui/src/features/insights/charts';
-import type { QueryResult, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import { WidgetVisualization } from '../../renderer-extensions/charts';
+import type { QueryResult, Widget } from '../../renderer-extensions/schema';
+import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../../lenses/LensStudio';
 import { useLabMotion } from './motion';
 import './DomainPrimitives.css';

@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
 
 export const OPERATIONS_AS_OF = Date.UTC(2026, 9, 30, 10);
 export type OperationsKind = 'website' | 'infrastructure';

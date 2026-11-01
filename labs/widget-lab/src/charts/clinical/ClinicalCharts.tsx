@@ -2,8 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type M
 import { scaleLinear, scaleLog } from 'd3-scale';
 import { area, curveStepAfter, line } from 'd3-shape';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { DrilldownContext } from '@insights/drilldown';
 import {
   CLINICAL_VISITS, VISIT_LABELS, completenessConfig, forestConfig, hazardEstimates,
   kaplanMeier, responseConfig, responseObservations, survivalAt, survivalConfig,

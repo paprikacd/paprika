@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../LensStudio';
 import { DomainChartPanel, DomainHeader, MetricStrip } from '../../components/lab/DomainPrimitives';
 import { registerLabCharts } from '../../charts/register-lab-charts';

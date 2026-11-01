@@ -1,8 +1,8 @@
 import { useId, useMemo, useRef } from 'react';
 import { scaleLinear, scaleUtc } from 'd3-scale';
 import { Server, UserRound, SquareTerminal, Globe, Database } from 'lucide-react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
 import { neighbourhood, relationConfig, relationMatrix, threatEvents, type Relation } from './model';
 import { DetailValues, graphColor, Inspector, localPoint, PALETTE, SvgEmpty, useInspection, usePlotWidth, utc } from './shared';
 import './exploration.css';

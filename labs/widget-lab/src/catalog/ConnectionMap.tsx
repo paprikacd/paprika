@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { GeoMap } from '../charts/geo/GeoMap';
 import type { GeoGeometry, GeoLocation, GeoSeverity } from '../charts/geo/geo-data';
-import { EmptyState, ObservationDetails, formatMetric } from '../vendor/paprika/ui/src/features/insights/chart-renderers';
-import type { WidgetRendererProps } from '../vendor/paprika/ui/src/features/insights/widget-registry';
-import { buildConnectionMap, connectionMapConfig } from '../vendor/paprika/ui/src/features/insights/plugins/operational-records-data';
-import { worldLandPath } from '../vendor/paprika/ui/src/features/insights/plugins/world-land';
-import styles from '../vendor/paprika/ui/src/features/insights/plugins/operational-records.module.css';
+import { EmptyState, ObservationDetails, formatMetric } from '../renderer-extensions/chart-renderers';
+import type { WidgetRendererProps } from '../renderer-extensions/widget-registry';
+import { buildConnectionMap, connectionMapConfig } from '@insights/plugins/operational-records-data';
+import { worldLandPath } from '@insights/plugins/world-land';
+import styles from '@insights/plugins/operational-records.module.css';
 
 const geometry: GeoGeometry = {
   width: 720, height: 360, description: 'WGS84 equirectangular projection',

@@ -1,4 +1,4 @@
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
 import { ChartTooltip } from '../../components/lab/ChartTooltip';
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
@@ -6,10 +6,10 @@ import { area, line } from 'd3-shape';
 import { scaleLinear, scaleUtc } from 'd3-scale';
 import { ChevronDown, ChevronRight, Crosshair, Search, X } from 'lucide-react';
 import { Sparkline } from '../../components/lab/StudyPrimitives';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { useChartCursorPublisher } from '../../vendor/paprika/ui/src/features/insights/chart-cursor';
-import { minimumTimeWindow, nearestTimeIndex, timeWindowExtent } from '../../vendor/paprika/ui/src/features/insights/time-window';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import { useChartCursorPublisher } from '@insights/chart-cursor';
+import { minimumTimeWindow, nearestTimeIndex, timeWindowExtent } from '../../renderer-extensions/time-window';
+import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
 import { alignedTelemetryConfig, buildDependencyGraph, buildTraceSpans, dependencyConfig, telemetryAt, traceWaterfallConfig, visibleTraceSpans } from './incident-model';
 import './IncidentCharts.css';
 

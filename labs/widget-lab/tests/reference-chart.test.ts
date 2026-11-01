@@ -2,9 +2,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { makeReferenceResult, referenceChartConfig } from '../src/reference/ReferenceCharts';
-import { getWidgetDefinition, getWidgetPlugins } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import type { QueryResult } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { getWidgetDefinition, getWidgetPlugins } from '../src/renderer-extensions/widget-registry';
+import { widgetSchema } from '../src/renderer-extensions/schema';
+import type { QueryResult } from '../src/renderer-extensions/schema';
 
 const cases = [
   { kind: 'edge', index: 202, values: [912.36, -312.18], unit: 'Mb/s', start: Date.UTC(2024, 4, 29, 13, 10), end: Date.UTC(2024, 4, 29, 13, 45), selected: Date.UTC(2024, 4, 29, 13, 32, 8), step: 10_000 },

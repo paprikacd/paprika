@@ -1,11 +1,11 @@
 import { ChartTooltip } from '../../components/lab/ChartTooltip';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { scaleLinear } from 'd3-scale';
 import { X } from 'lucide-react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
 import { correlationCells, correlationColor, correlationConfig, liquidityConfig, liquiditySegments, waterfallConfig, waterfallSteps } from './market-chart-data';
 import './MarketCharts.css';
 

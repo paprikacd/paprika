@@ -2,9 +2,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LabWidgetLoadingProvider } from '../src/components/lab/WidgetLoading';
-import { WidgetVisualization, type WidgetVisualizationProps } from '../src/vendor/paprika/ui/src/features/insights/charts';
-import { registerWidgetPlugin, type WidgetRendererProps } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import type { QueryResult, Widget } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { WidgetVisualization, type WidgetVisualizationProps } from '../src/renderer-extensions/charts';
+import { registerWidgetPlugin, type WidgetRendererProps } from '../src/renderer-extensions/widget-registry';
+import type { QueryResult, Widget } from '../src/renderer-extensions/schema';
 
 const renderer = vi.fn(({ result }: WidgetRendererProps) => createElement('output',
   { 'aria-label': 'Observed latency' }, result.series?.[0]?.points[0]?.value));

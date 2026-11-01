@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { EditLensWidget } from '../LensStudio';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import { registerExplorationCharts } from '../../charts/exploration/register';
 import { criticalPath, HOUR, proposeSchedule, SCHEDULE_START, scheduleIssues, type ScheduleTask } from '../../charts/exploration/model';
 import { scheduleDate } from '../../charts/exploration/ScheduleCharts';

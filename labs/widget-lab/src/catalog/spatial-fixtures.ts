@@ -1,5 +1,5 @@
 import type { CatalogFeature, CatalogPreset } from './chart-fixtures';
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '../renderer-extensions/schema';
 import { coastalFixtures, logisticsFixtures, spectrumFixtures } from '../lenses/spatial/fixtures';
 
 export type SpatialCatalogId = 'route-map'|'eta-windows'|'dwell-boxplot'|'spectrum-analyzer'|'iq-constellation'|'coastal-vector-map'|'directional-rose'|'depth-curtain';

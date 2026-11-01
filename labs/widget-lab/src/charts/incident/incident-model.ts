@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '../../renderer-extensions/schema';
 
 export const alignedTelemetryConfig = z.strictObject({
   showFill: z.boolean().default(true),

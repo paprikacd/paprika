@@ -1,4 +1,4 @@
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '../renderer-extensions/schema';
 import { aggregateTimeline, type TelemetryDataset } from './telemetry';
 
 const base = { providerId: 'synthetic-fixture', query: 'deterministic_evaluation_fixture', layout: { x: 0, y: 0, w: 6, h: 4 } };

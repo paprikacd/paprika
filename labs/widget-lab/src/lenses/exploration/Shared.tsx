@@ -1,9 +1,9 @@
 import { useDashboardPanels } from '../../components/lab/DashboardWorkbench';
 import { type ReactNode } from 'react';
 import { Panel } from '../../components/lab/StudyPrimitives';
-import { WidgetVisualization } from '../../vendor/paprika/ui/src/features/insights/charts';
-import type { Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import { WidgetVisualization } from '../../renderer-extensions/charts';
+import type { Widget } from '../../renderer-extensions/schema';
+import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../LensStudio';
 import type { ExplorationPanel } from './data';
 import './lenses.css';

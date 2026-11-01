@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import type { Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { WidgetLoadingProvider, type WidgetLoadingPresentation } from '../../vendor/paprika/ui/src/features/insights/widget-loading';
+import type { Widget } from '../../renderer-extensions/schema';
+import { WidgetLoadingProvider, type WidgetLoadingPresentation } from '../../renderer-extensions/widget-loading';
 import { ChartLoading, ChartRefreshing, type ChartLoadingVariant } from './ChartLoading';
 
 /** A visual hint only. The registry and normalized result retain all data ownership. */

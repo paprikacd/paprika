@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { OrbitalContactTimeline, OrbitalGroundTrack, OrbitalLinkBudget, OrbitalSkyplot } from './OrbitalCharts';
 import { budgetTerms, contactTimelineConfig, groundPoints, groundTrackConfig, linkBudgetConfig, skyPoints, skyplotConfig, summarizePasses } from './model';
 import { OrbitalPassProfile } from './OrbitalPassProfile';

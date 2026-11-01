@@ -1,4 +1,4 @@
-import theme from '../../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
+import theme from '@insights/gamma/gamma-theme.module.css';
 import { ChartLoading, type ChartLoadingVariant } from './ChartLoading';
 import { labMotionStyle, useLabMotion } from './motion';
 

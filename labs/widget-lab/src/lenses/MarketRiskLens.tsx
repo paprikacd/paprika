@@ -1,10 +1,10 @@
 import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Clock3, X } from 'lucide-react';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import type { Widget } from '../vendor/paprika/ui/src/features/insights/schema';
-import type { DrilldownContext } from '../vendor/paprika/ui/src/features/insights/drilldown';
+import { WidgetVisualization } from '../renderer-extensions/charts';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import type { Widget } from '../renderer-extensions/schema';
+import type { DrilldownContext } from '@insights/drilldown';
 import { Panel, Sparkline } from '../components/lab/StudyPrimitives';
 import { registerMarketCharts } from '../charts/market-risk/register';
 import { registerLabCharts } from '../charts/register-lab-charts';

@@ -1,13 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChartTooltip } from '../../components/lab/ChartTooltip';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
 import { scaleLog } from 'd3-scale';
 import { Pin, X } from 'lucide-react';
 import { Sparkline } from '../../components/lab/StudyPrimitives';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { useEmbeddedWidget } from '../../vendor/paprika/ui/src/features/insights/widget-presentation';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import { useEmbeddedWidget } from '@insights/widget-presentation';
 import { buildLogScatter, buildRackMatrix, buildRequestFlow, inferenceColors, logScatterConfig, rackMatrixConfig, requestFlowConfig, semanticColor, utilizationColor, type RackCell } from './data';
 import './inference-charts.css';
 

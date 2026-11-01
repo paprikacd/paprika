@@ -1,6 +1,6 @@
 import { ZodError, type ZodIssue } from 'zod';
-import { widgetKind, widgetSchema, type DataKind, type QueryResult, type Widget, type WidgetOptions } from '../vendor/paprika/ui/src/features/insights/schema';
-import { getWidgetDefinition, type WidgetDefinition } from '../vendor/paprika/ui/src/features/insights/widget-registry';
+import { widgetKind, widgetSchema, type DataKind, type QueryResult, type Widget, type WidgetOptions } from '../renderer-extensions/schema';
+import { getWidgetDefinition, type WidgetDefinition } from '../renderer-extensions/widget-registry';
 import { validateFieldBindings } from './field-bindings';
 
 export type DraftValidation = { widget: Widget; errors: [] } | { widget: null; errors: string[] };

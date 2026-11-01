@@ -5,9 +5,9 @@ import { waferChartCatalog, makeWaferCatalogFixture } from '../src/charts/wafer/
 import { registerWaferCharts } from '../src/charts/wafer/register';
 import { waferFocusId, waferKeyboardTarget, waferRows } from '../src/charts/wafer/model';
 import { waferFixtures, waferResult } from '../src/lenses/wafer/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { widgetSchema } from '../src/renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
 
 describe('wafer authoring and registered owners', () => {
   registerWaferCharts();

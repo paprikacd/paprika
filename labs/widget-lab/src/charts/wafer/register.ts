@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin, type WidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin, type WidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { chamberRows, waferChamberConfig, waferLineageConfig, waferMapConfig, waferRows, waferSignatureConfig, waferTransect, waferTransectConfig, waferTransectRows, waferYieldConfig } from './model';
 import { WaferDieMap } from './WaferMap';
 import { WaferChamberDistribution, WaferProcessLineage, WaferSignature, WaferYieldWaterfall } from './WaferCharts';

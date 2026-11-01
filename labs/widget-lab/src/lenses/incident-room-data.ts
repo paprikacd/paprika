@@ -1,4 +1,4 @@
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '../renderer-extensions/schema';
 import { alignedTelemetryConfig, traceWaterfallConfig, dependencyConfig } from '../charts/incident/incident-model';
 
 export const INCIDENT_START = Date.UTC(2026, 9, 31, 9, 30);

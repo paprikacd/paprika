@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../../vendor/paprika/ui/src/features/insights/record-data';
+import type { RecordFrame } from '../../renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
 
 const field = z.string().min(1).max(80);
 const identityFields = { id: field.default('id'), arm: field.default('arm') };

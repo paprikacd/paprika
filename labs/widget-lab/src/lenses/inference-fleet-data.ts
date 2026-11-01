@@ -1,6 +1,6 @@
-import type { QueryResult, RecordColumn, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordColumn, Widget } from '../renderer-extensions/schema';
 import { rackMatrixConfig, requestFlowConfig, logScatterConfig } from '../charts/inference/data';
-import { normalizeTimeWindow, observationsInWindow, type ChartTimeWindow } from '../vendor/paprika/ui/src/features/insights/time-window';
+import { normalizeTimeWindow, observationsInWindow, type ChartTimeWindow } from '../renderer-extensions/time-window';
 
 export const INFERENCE_AS_OF = Date.UTC(2026, 9, 31, 16);
 export const INFERENCE_SAMPLE_INTERVAL = 5 * 60_000;

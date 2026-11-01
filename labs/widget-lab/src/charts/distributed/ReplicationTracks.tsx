@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, type PointerEvent } from 'react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
 import { CHART_COLORS as C, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { commitLag, distributedUtc, formatIndex, nearestSample, replicaGroups, replicaSamples, replicaSnapshots, replicationTracksConfig, steppedPath, type ReplicaSample } from './model';
 import { DistributedEmpty, ReplicaDrillAction, ReplicaValues, Swatch, replicaColor, svgPoint, useReplicaSelection } from './shared';

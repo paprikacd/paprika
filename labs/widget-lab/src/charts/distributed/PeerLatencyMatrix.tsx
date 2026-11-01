@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection } from '../../components/lab/DomainPrimitives';
 import { distributedUtc, peerCells, peerLatencyConfig } from './model';
 import { DistributedEmpty, ReplicaDrillAction, Swatch, useReplicaSelection } from './shared';

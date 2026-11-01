@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
 
 export const GRID_DAY_START = Date.UTC(2026, 9, 31);
 export const GRID_AS_OF = GRID_DAY_START + 16 * 3600000;

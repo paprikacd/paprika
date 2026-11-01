@@ -1,5 +1,7 @@
 # Framework and rendering stack
 
+> **WP-B1a note:** `src/vendor/paprika/` no longer exists. Production files are imported through `@insights/*`, and the lab's holding copies live in `src/renderer-extensions/` (see [its README](../src/renderer-extensions/README.md)). Paths in this document name the pre-WP-B1a copy.
+
 This inventory describes the running Paprika Widget Lab. The lab preserves Paprika's copied widget host, registry, query-result adapters, theme and cursor owners; local changes are recorded in the provenance patch. It does not establish that these changes are integrated into the production Paprika repository.
 
 ## Installed foundations

@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { worldLandPath } from '../../vendor/paprika/ui/src/features/insights/plugins/world-land';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import { worldLandPath } from '@insights/plugins/world-land';
+import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, zoomGeoAt, type GeoPoint, type GeoViewport } from '../geo/geo-viewport';
 import { fitEquirectangular } from '../spatial/model';

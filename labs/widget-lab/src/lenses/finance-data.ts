@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { QueryResult, RecordFrame, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
 
 export const FINANCE_AS_OF = Date.UTC(2026, 9, 30, 20);
 export type FinanceWindow = 30 | 90 | 180;

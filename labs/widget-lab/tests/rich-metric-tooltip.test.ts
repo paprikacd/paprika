@@ -1,14 +1,14 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DirectionalTraffic, DistributionHeatmap, RichMetricInspector, StackedTimeseries } from '../src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics';
-import type { ObservationTooltipProps } from '../src/vendor/paprika/ui/src/features/insights/observation-tooltip';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { DirectionalTraffic, DistributionHeatmap, RichMetricInspector, StackedTimeseries } from '../src/renderer-extensions/plugins/rich-metrics';
+import type { ObservationTooltipProps } from '../src/renderer-extensions/observation-tooltip';
+import { widgetSchema } from '../src/renderer-extensions/schema';
 
 // The portal has no DOM during SSR. Expose the actual owner's contract while
 // retaining the rich inspector's real source histories and exact-value content.
 const captured = vi.hoisted(() => ({ owners: [] as ObservationTooltipProps[] }));
-vi.mock('../src/vendor/paprika/ui/src/features/insights/observation-tooltip', async () => {
+vi.mock('../src/renderer-extensions/observation-tooltip', async () => {
   const { createElement } = await import('react');
   return { ObservationTooltip: (props: ObservationTooltipProps & { children: ReactNode }) => {
     captured.owners.push(props);

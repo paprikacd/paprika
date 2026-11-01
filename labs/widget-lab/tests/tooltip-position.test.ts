@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { limitTooltipSize, positionObservationTooltip, tooltipViewportBounds, type TooltipPlacement } from '../src/vendor/paprika/ui/src/features/insights/tooltip-position';
-import { createTooltipInteractionStore } from '../src/vendor/paprika/ui/src/features/insights/tooltip-interaction';
+import { limitTooltipSize, positionObservationTooltip, tooltipViewportBounds, type TooltipPlacement } from '../src/renderer-extensions/tooltip-position';
+import { createTooltipInteractionStore } from '../src/renderer-extensions/tooltip-interaction';
 
 describe('shared observation tooltip positioning', () => {
   const viewport = { width: 1000, height: 700 };

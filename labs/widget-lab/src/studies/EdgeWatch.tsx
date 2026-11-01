@@ -3,11 +3,11 @@ import { useMemo, useState, type KeyboardEvent } from 'react';
 import { ArrowDown, ArrowUp, Clock3, Network, RefreshCw, ShieldBan, Table2, MousePointer2, Pin, Info } from 'lucide-react';
 import { MetricCard, Panel, Sparkline, StatusBadge } from '../components/lab/StudyPrimitives';
 import { useDemoReplay } from '../components/lab/motion';
-import { GammaButton } from '../vendor/paprika/ui/src/features/insights/gamma/button';
-import { GammaSelect } from '../vendor/paprika/ui/src/features/insights/gamma/select';
-import { ChartCursorProvider, useChartCursor, useChartCursorPublisher } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import type { Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import { GammaButton } from '@insights/gamma/button';
+import { GammaSelect } from '@insights/gamma/select';
+import { ChartCursorProvider, useChartCursor, useChartCursorPublisher } from '@insights/chart-cursor';
+import { WidgetVisualization } from '../renderer-extensions/charts';
+import type { Widget } from '../renderer-extensions/schema';
 import { buildEdgeTelemetry, makeEdgeChartResult, type EdgeDataset, type EdgeGateway, type EdgeMinutes, type EdgeResolution, type EdgeTrafficPoint, type EdgeRule, type EdgeScenario } from '../data/edge-telemetry';
 import styles from './EdgeWatch.module.css';
 

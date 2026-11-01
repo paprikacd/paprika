@@ -4,12 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
 import { chartCatalog, makeCatalogFixture } from '../src/catalog/chart-fixtures';
 import { geographicIdentity, mapSeverity } from '../src/catalog/ConnectionMap';
-import { getWidgetDefinition, getWidgetPlugins } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetKind, widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { buildMetricPlot, buildDistribution, directionalConfigSchema, distributionConfigSchema } from '../src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data';
-import { buildConnectionMap, connectionMapConfig, buildIncidentCalendar, incidentCalendarConfig } from '../src/vendor/paprika/ui/src/features/insights/plugins/operational-records-data';
-import { tableBarGeometry } from '../src/vendor/paprika/ui/src/features/insights/plugins/record-table-cells';
+import { getWidgetDefinition, getWidgetPlugins } from '../src/renderer-extensions/widget-registry';
+import { widgetKind, widgetSchema } from '../src/renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
+import { buildMetricPlot, buildDistribution, directionalConfigSchema, distributionConfigSchema } from '../src/renderer-extensions/plugins/rich-metrics-data';
+import { buildConnectionMap, connectionMapConfig, buildIncidentCalendar, incidentCalendarConfig } from '@insights/plugins/operational-records-data';
+import { tableBarGeometry } from '@insights/plugins/record-table-cells';
 import { buildEdgeTelemetry } from '../src/data/edge-telemetry';
 import { buildReliability, summarizeReliability, RELIABILITY_SERVICES } from '../src/data/reliability';
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '../../renderer-extensions/schema';
 
 const field = z.string().min(1).max(80);
 export const rackMatrixConfig = z.strictObject({ id: field.default('id'), rack: field.default('rack'), slot: field.default('slot'), value: field.default('utilization'), showLabels: z.boolean().default(true), showDetails: z.boolean().default(true), initialSelection: z.string().max(80).default('') });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { minimumTimeWindow, nearestTimeIndex, normalizeTimeWindow, observationsInWindow, sameTimeWindow, timeWindowExtent, timeWindowFromPixels } from '../src/vendor/paprika/ui/src/features/insights/time-window';
+import { minimumTimeWindow, nearestTimeIndex, normalizeTimeWindow, observationsInWindow, sameTimeWindow, timeWindowExtent, timeWindowFromPixels } from '../src/renderer-extensions/time-window';
 import { makeReferenceResult } from '../src/reference/ReferenceCharts';
-import { calendarTick } from '../src/vendor/paprika/ui/src/features/insights/chart-presentation';
+import { calendarTick } from '../src/renderer-extensions/chart-presentation';
 
 describe('chart time window contract', () => {
   it('uses finite timestamps across series, including legitimate zero and null observations', () => {

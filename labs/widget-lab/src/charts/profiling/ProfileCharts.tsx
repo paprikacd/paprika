@@ -1,11 +1,11 @@
 import { ChartTooltip } from '../../components/lab/ChartTooltip';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { ArrowLeft, CornerDownRight, Search, X, ZoomIn } from 'lucide-react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
 import { flamechartConfig, flamechartSpans, flamegraphConfig, formatProfileValue, profileFromRecords, samplesFromRecords, type ProfileFrame } from './profile-model';
 import './profile-charts.css';
 

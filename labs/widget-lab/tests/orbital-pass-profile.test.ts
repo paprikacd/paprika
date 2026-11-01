@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { OrbitalPassProfile } from '../src/charts/orbital/OrbitalPassProfile';
 import { passProfileConfig, passProfilePoints, profilePasses, profileSignalPath, qualifyProfile, type PassProfilePoint } from '../src/charts/orbital/pass-profile-model';
 import { orbitalFixtures } from '../src/lenses/orbital/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
 import { registerOrbitalCharts } from '../src/charts/orbital/register';
 import { validateEditorWidget } from '../src/editor/editor-model';
 

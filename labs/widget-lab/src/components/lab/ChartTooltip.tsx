@@ -1,6 +1,6 @@
 import { cloneElement, useId, type CSSProperties, type ReactElement } from 'react';
-import { ObservationTooltip } from '../../vendor/paprika/ui/src/features/insights/observation-tooltip';
-import type { TooltipDismissReason } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { ObservationTooltip } from '../../renderer-extensions/observation-tooltip';
+import type { TooltipDismissReason } from '../../renderer-extensions/tooltip-focus';
 import './ChartTooltip.css';
 
 type InspectorBody = {

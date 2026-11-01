@@ -5,10 +5,10 @@ import { ReserveEnvelope } from '../src/charts/energy/ReserveEnvelope';
 import { reserveEnvelopeConfig, reserveEnvelopePoints, reserveExtent } from '../src/charts/energy/reserve-model';
 import { registerEnergyCharts } from '../src/charts/energy/register';
 import { buildGridBalance, GRID_TIME, makeEnergyCatalogFixture, type GridScenario } from '../src/lenses/energy/fixtures';
-import type { RecordFrame } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import type { RecordFrame } from '../src/renderer-extensions/schema';
+import { widgetSchema } from '../src/renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
 
 function frame(rows: RecordFrame['rows']): RecordFrame {
   return {

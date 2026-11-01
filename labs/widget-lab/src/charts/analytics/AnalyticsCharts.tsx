@@ -4,10 +4,10 @@ import { area, line } from 'd3-shape';
 import { X } from 'lucide-react';
 import { ChartTooltip } from '../../components/lab/ChartTooltip';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { DrilldownContext } from '@insights/drilldown';
 import { cohortCells, cohortConfig, countConfig, countRows, controlConfig, controlSamples, density, distributionConfig, histogram, intervalConfig, intervalRows, sampleGroups, stageFlow, flowConfig } from './data';
 import './analytics-charts.css';
 

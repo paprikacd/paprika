@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { ChevronDown, LayoutGrid } from 'lucide-react';
-import theme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
+import theme from '@insights/gamma/gamma-theme.module.css';
 import { PaprikaMark } from '../reference/ReferenceShared';
 import { lensRoutes } from '../lenses/lens-routes';
 import './DashboardNavigation.css';

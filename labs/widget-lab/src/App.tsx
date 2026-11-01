@@ -1,11 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, BookOpen, ChevronRight, FlaskConical, LayoutDashboard, Maximize2, Minimize2, Moon, Network, Pause, Play, ShieldCheck, Sun } from 'lucide-react';
-import { GammaButton } from './vendor/paprika/ui/src/features/insights/gamma/button';
+import { GammaButton } from '@insights/gamma/button';
 import { labMotionStyle, MotionProvider, useLabMotion } from './components/lab/motion';
 import { StudyLoading } from './components/lab/StudyLoading';
 import { LabWidgetLoadingProvider } from './components/lab/WidgetLoading';
 import { DashboardNavigation } from './components/DashboardNavigation';
-import gammaTheme from './vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
+import gammaTheme from '@insights/gamma/gamma-theme.module.css';
 import './observatory.css';
 import { isLensRoute } from './lenses/lens-routes';
 import { DashboardWorkbench, DashboardEditControls } from './components/lab/DashboardWorkbench';

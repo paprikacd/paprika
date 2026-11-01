@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '../../renderer-extensions/schema';
 
 const identity = z.string().min(1).max(160);
 export const relationConfig = z.strictObject({ selectedSource: identity.optional(), selectedTarget: identity.optional(), showDetails: z.boolean().default(true), showValues: z.boolean().default(false), showLabels: z.boolean().default(true), maxNodes: z.number().int().min(4).max(18).default(10), coverageGaps:z.array(z.strictObject({start:z.number().finite(),end:z.number().finite()}).refine(value=>value.end>value.start,'Coverage intervals must increase.')).max(40).default([]) });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildTelemetry, aggregateTimeline, HISTOGRAM_BOUNDS_MS, selectTelemetry } from '../src/data/telemetry';
 import { makeChartResults, LATENCY_WIDGET, TRAFFIC_WIDGET, ERROR_WIDGET, DISTRIBUTION_WIDGET } from '../src/data/chart-adapter';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { widgetSchema } from '../src/renderer-extensions/schema';
 
 describe('Paprika widget adapters', () => {
   it('uses valid production widget configurations', () => {

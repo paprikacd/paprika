@@ -1,8 +1,8 @@
 import { DashboardEditControls } from '../components/lab/DashboardWorkbench';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { Bell, ChartNoAxesColumnIncreasing, Database, FileText, LayoutGrid, Search, Settings, X } from 'lucide-react';
-import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import gammaTheme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import gammaTheme from '@insights/gamma/gamma-theme.module.css';
 import { labMotionStyle, useLabMotion } from '../components/lab/motion';
 import { PaprikaMark, NetworkMark } from './ReferenceShared';
 import { ReferenceEdge } from './ReferenceEdge';

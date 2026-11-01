@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { registerKubernetesCharts } from '../src/charts/kubernetes/register';
 import { kubernetesChartCatalog, makeKubernetesCatalogFixture } from '../src/charts/kubernetes/catalog';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { widgetSchema } from '../src/renderer-extensions/schema';
+import { parseRecordFrame } from '@insights/record-data';
 
 describe('Kubernetes canonical registered renderers', () => {
   registerKubernetesCharts();

@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, Braces, FlaskConical, Moon, Sun } from 'lucide-react';
 import { registerConceptCharts } from '../charts/register-concept-charts';
-import { ChartCursorProvider, useChartCursor } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import { getWidgetDefinition } from '../vendor/paprika/ui/src/features/insights/widget-registry';
-import type { DrilldownContext } from '../vendor/paprika/ui/src/features/insights/drilldown';
-import { useInsightsTheme } from '../vendor/paprika/ui/src/features/insights/insights-theme';
-import themeStyles from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
+import { ChartCursorProvider, useChartCursor } from '@insights/chart-cursor';
+import { WidgetVisualization } from '../renderer-extensions/charts';
+import { getWidgetDefinition } from '../renderer-extensions/widget-registry';
+import type { DrilldownContext } from '@insights/drilldown';
+import { useInsightsTheme } from '@insights/insights-theme';
+import themeStyles from '@insights/gamma/gamma-theme.module.css';
 import { allChartCatalog as chartCatalog, makeCatalogFixture, type CatalogId, type CatalogPreset } from './chart-fixtures';
 import { DashboardEditControls, useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import './ChartCatalog.css';

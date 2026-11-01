@@ -1,10 +1,10 @@
 import { useEffect,useId,useMemo,useRef,useState } from 'react';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../vendor/paprika/ui/src/features/insights/tooltip-interaction';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
 import { line } from 'd3-shape';
-import { useChartCursor, useChartCursorPublisher } from '../../vendor/paprika/ui/src/features/insights/chart-cursor';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { useChartCursor, useChartCursorPublisher } from '@insights/chart-cursor';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
 import { bandBounds,curtainConfig,fieldAxes,fieldCells,fieldColor,nearestValue,spectrumConfig,type FieldCell } from './model';
 import { Dot,Legend,num,SpatialInspector,utc,usePlotWidth } from './shared';
 import './spatial.css';

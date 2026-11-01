@@ -1,5 +1,5 @@
 import type { CatalogFeature, CatalogPreset } from './chart-fixtures';
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '../renderer-extensions/schema';
 import { buildExperiments, buildFactory, buildJourney } from '../lenses/analytics/analytics-data';
 export type AnalyticsCatalogId = 'cohort-matrix' | 'conversion-funnel' | 'stage-flow' | 'statistical-control' | 'sample-histogram' | 'sample-violin' | 'sample-ridgeline' | 'interval-estimates' | 'pareto-bars';
 const standard=['ready','gaps','empty','error'] as const, complete=['ready','empty','error'] as const;

@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTooltipDismissController } from '../src/components/lab/useTooltipDismiss';
-import { createTooltipInteractionStore } from '../src/vendor/paprika/ui/src/features/insights/tooltip-interaction';
+import { createTooltipInteractionStore } from '../src/renderer-extensions/tooltip-interaction';
 import { RouteMap, CoastalVectorMap } from '../src/charts/spatial/Maps';
 import { ETAWindows, DirectionalRose } from '../src/charts/spatial/DistributionCharts';
 import { RackMatrix } from '../src/charts/inference/InferenceCharts';

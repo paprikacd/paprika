@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { ProfileFlamegraph, SampledFlamechart } from './ProfileCharts';
 import { QueryPlan } from './QueryPlan';
 import { flamegraphConfig, flamechartConfig, queryPlanConfig } from './profile-model';

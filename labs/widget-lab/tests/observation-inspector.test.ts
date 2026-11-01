@@ -1,10 +1,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { buildObservationInspector, inspectPreparedObservation, inspectionSeriesKey, prepareObservationInspector } from '../src/vendor/paprika/ui/src/features/insights/observation-inspector-data';
-import { RichObservationInspector } from '../src/vendor/paprika/ui/src/features/insights/observation-inspector';
-import { buildDistribution } from '../src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data';
-import type { Point, Series } from '../src/vendor/paprika/ui/src/features/insights/chart-data';
+import { buildObservationInspector, inspectPreparedObservation, inspectionSeriesKey, prepareObservationInspector } from '../src/renderer-extensions/observation-inspector-data';
+import { RichObservationInspector } from '../src/renderer-extensions/observation-inspector';
+import { buildDistribution } from '../src/renderer-extensions/plugins/rich-metrics-data';
+import type { Point, Series } from '@insights/chart-data';
 
 const stamp = Date.UTC(2026, 9, 30, 13, 32, 8, 123);
 const point = (offset: number, value: number | null): Point => ({ timestamp: stamp + offset, value });

@@ -4,9 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { alignedTelemetryConfig, buildDependencyGraph, buildTraceSpans, dependencyConfig, telemetryAt, traceWaterfallConfig, visibleTraceSpans } from '../src/charts/incident/incident-model';
 import { TraceWaterfall, ServiceDependency } from '../src/charts/incident/IncidentCharts';
 import { registerIncidentCharts } from '../src/charts/incident/register';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
 import { INCIDENT_END, INCIDENT_START, incidentDependencyPanel, incidentSamples, incidentTelemetryPanel, incidentTracePanel, summarizeIncident } from '../src/lenses/incident-room-data';
-import { normalizeTimeWindow, observationsInWindow } from '../src/vendor/paprika/ui/src/features/insights/time-window';
+import { normalizeTimeWindow, observationsInWindow } from '../src/renderer-extensions/time-window';
 
 describe('Incident Room shared telemetry and trace semantics',()=>{
   it('pools errors from real request denominators and preserves missing tail buckets',()=>{

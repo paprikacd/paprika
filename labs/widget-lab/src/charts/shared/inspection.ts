@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { resolveInspectionState } from './inspection-state';
 import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
+import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
 
 /** One inspection lifecycle for compound charts. Selection never mutates source data. */
 export function useInspection<T extends { id: string }>(items: T[], revision: unknown, enabled = true, externalSelection?: string, selectionKey: (item: T) => string = item => item.id) {

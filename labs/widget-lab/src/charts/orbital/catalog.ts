@@ -1,6 +1,6 @@
 import type { CatalogFeature, CatalogPreset } from '../../catalog/chart-fixtures';
 import { orbitalFixtures } from '../../lenses/orbital/fixtures';
-import type { QueryResult, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '../../renderer-extensions/schema';
 
 export type OrbitalCatalogId = 'orbital-ground-track' | 'orbital-skyplot' | 'orbital-contact-timeline' | 'orbital-link-budget' | 'orbital-pass-profile';
 export const orbitalChartCatalog: readonly (Omit<CatalogFeature, 'id'> & { id: OrbitalCatalogId })[] = [

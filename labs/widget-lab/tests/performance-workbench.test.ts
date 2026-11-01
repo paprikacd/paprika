@@ -6,9 +6,9 @@ import { performanceChartCatalog, makePerformanceCatalogFixture } from '../src/c
 import { registerPerformanceCharts } from '../src/charts/performance/register';
 import { PerformanceDifferentialFlamegraph } from '../src/charts/performance/PerformanceProfile';
 import { buildPerformanceWorkbench, PERFORMANCE_ROUTES, performanceProfileFixture, performanceRequestFixture } from '../src/lenses/performance/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { parseRecordFrame } from '@insights/record-data';
+import { widgetSchema } from '../src/renderer-extensions/schema';
 
 describe('performance request populations and distributions', () => {
   it('keeps seeded workload variation deterministic and paired while preserving exact trace examples', () => {

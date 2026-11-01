@@ -1,4 +1,4 @@
-import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../renderer-extensions/schema';
 import { commitLag, ownershipPaths, peerCells, quorumSummary, replicaSamples, replicaSnapshots, type ReplicaRole, type ReplicaSample } from '../../charts/distributed/model';
 
 export type DistributedScenario = 'degraded' | 'partition' | 'gaps';

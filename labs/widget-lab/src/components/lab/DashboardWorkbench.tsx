@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Braces, Check, Database, Pencil, RotateCcw } from 'lucide-react';
 import { WidgetEditor, type WidgetEditorTab } from '../../editor/WidgetEditor';
-import type { QueryResult, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { GammaActionMenu, type GammaActionMenuItem } from '../../vendor/paprika/ui/src/features/insights/gamma/action-menu';
-import { GammaButton } from '../../vendor/paprika/ui/src/features/insights/gamma/button';
+import type { QueryResult, Widget } from '../../renderer-extensions/schema';
+import { GammaActionMenu, type GammaActionMenuItem } from '@insights/gamma/action-menu';
+import { GammaButton } from '@insights/gamma/button';
 import { mergeDomainWidget } from './domain-widget';
 import './DashboardWorkbench.css';
 

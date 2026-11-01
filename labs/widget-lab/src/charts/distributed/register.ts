@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
 import { DistributedQuorumTopology } from './QuorumTopology';
 import { DistributedPeerLatency } from './PeerLatencyMatrix';
 import { DistributedReplicationTracks } from './ReplicationTracks';

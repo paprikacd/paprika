@@ -2,7 +2,7 @@ import { lazy, Suspense, useState } from 'react';
 import { ArrowLeft, FlaskConical } from 'lucide-react';
 import { DashboardEditControls, type EditDashboardWidget } from '../components/lab/DashboardWorkbench';
 import { registerLabCharts } from '../charts/register-lab-charts';
-import theme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
+import theme from '@insights/gamma/gamma-theme.module.css';
 import './LensStudio.css';
 import type { LensId } from './lens-routes';
 import { labMotionStyle, useLabMotion } from '../components/lab/motion';

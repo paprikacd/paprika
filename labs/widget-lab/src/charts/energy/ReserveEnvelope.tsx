@@ -2,7 +2,7 @@ import { useId, useMemo, useRef, type KeyboardEvent } from 'react';
 import { scaleLinear } from 'd3-scale';
 import { area, line } from 'd3-shape';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
 import { reserveEnvelopeConfig, reserveEnvelopePoints, reserveExtent, type ReservePoint } from './reserve-model';
 import './energy.css';
 

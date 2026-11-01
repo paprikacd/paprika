@@ -1,5 +1,7 @@
 # Chart capability coverage
 
+> **WP-B1a note:** `src/vendor/paprika/` no longer exists. Production files are imported through `@insights/*`, and the lab's holding copies live in `src/renderer-extensions/` (see [its README](../src/renderer-extensions/README.md)). Paths in this document name the pre-WP-B1a copy.
+
 ## Current additions — iteration 10
 
 Four registered families extend the existing domain lenses through `Widget` / `QueryResult.records`, strict configuration parsers and semantic input validators. Each has an independent catalogue example and registry-owned intrinsic layout. They add evidence within existing investigations rather than introducing another dashboard document model.

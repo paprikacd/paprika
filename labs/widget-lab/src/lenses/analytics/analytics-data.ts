@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '../../renderer-extensions/schema';
 import { cohortConfig, controlConfig, countConfig, distributionConfig, flowConfig, intervalConfig, sampleGroups, quantile } from '../../charts/analytics/data';
 export type AnalyticsPanel = { widget: Widget; result: QueryResult };
 const day = 86400000;
