@@ -48,7 +48,8 @@ try {
           assert.ok(!(a.x < b.right - 1 && a.right > b.x + 1 && a.y < b.bottom - 1 && a.bottom > b.y + 1), `${a.id} overlaps ${b.id}`)
         for (const id of ["ingress", "egress", "blocked", "connections"]) {
           const stat = page.locator(`[data-widget-id="${id}"]`)
-          const value = stat.getByRole("button", { name: /^Inspect value/ })
+          // The reading is plain text now; the history sparkline is the stat's only inspector.
+          const value = stat.locator("[data-metric-value]").first()
           await value.waitFor()
           assert.ok(await value.evaluate(el => { const b = el.getBoundingClientRect(), tile = el.closest('[data-widget-id]').getBoundingClientRect(); return b.height > 0 && b.bottom <= tile.bottom + 1 }), `${id} value must fit its tile`)
         }

@@ -139,7 +139,7 @@ function fleetAtlas(): RepositoryExample {
   b.stat("nodes", "Ready nodes", b.scalar("nodes", "Ready node count", 7, 0, 4 / 7), 0, "", { decimals: 0, showSparkline: false })
   b.stat("cpu", "CPU used", cpu, 1, "%")
   b.stat("memory", "Memory used", b.scalar("memory", "Cluster memory utilization", 62.18, 4, 0.8), 2, "%")
-  b.stat("pressure", "Nodes under pressure", b.scalar("pressure", "Nodes under disk pressure", 1, 0, 0), 3, "", { decimals: 0, showSparkline: false })
+  b.stat("pressure", "Nodes under pressure", b.scalar("pressure", "Nodes under disk pressure", 1, 0, 0), 3, "", { decimals: 0 })
   const nodes = b.metrics("node-cpu", "CPU utilization by node", b.scoped([78.42, 42.11, 31.24, 28.01, 18.27, 12.61, 25.33].map((base, index) => ({ name: `node-0${index + 1}`, labels: { node: `node-0${index + 1}` }, base, variation: 3 + index }))).filter(series => series.labels.cluster === "omega" || Number(series.labels.node.slice(-2)) <= 4))
   b.add("node-cpu", "CPU utilization by node", nodes, "timeseries", [0, 3, 8, 6], "%", { min: 0, max: 100 })
   const resources = b.records("resources", "Node resource inventory", [text("node", "Node"), number("cpu", "CPU", "%"), number("memory", "Memory", "%"), number("disk", "Disk", "%"), text("status", "Status")], (_choice, index) => Array.from({ length: index ? 4 : 7 }, (_, n) => [`node-0${n + 1}`, 78 - n * 9 - index * 12, 83 - n * 8, 71 - n * 7, n === 0 && !index ? "Near limit" : "Healthy"]))

@@ -11,6 +11,17 @@ export function statHistoryObservations(points: readonly Point[]): Point[] {
   return [...byTime.values()].sort((a, b) => a.timestamp - b.timestamp);
 }
 
+/**
+ * The history drawing is a 240 x 64 viewBox stretched over its element, so a
+ * drawn point maps linearly onto the element's box. The returned 6px square is
+ * centred on that point: the anchor of the sample's inspector.
+ */
+export function statPlotRectangle(bounds: Pick<DOMRect, "left" | "top" | "width" | "height">, x: number, y: number) {
+  const centreX = bounds.left + (x / 240) * bounds.width;
+  const centreY = bounds.top + (y / 64) * bounds.height;
+  return { left: centreX - 3, top: centreY - 3, width: 6, height: 6 };
+}
+
 /** Ties prefer the later observation, matching latest-value duplicate semantics. */
 export function nearestStatHistoryIndex(points: readonly Point[], timestamp: number): number {
   if (!points.length) return -1;

@@ -64,7 +64,7 @@ try {
       // a chart retains keyboard focus. Only the new transient preview remains.
       const stat = page.locator('[data-widget-id="pressure"]')
       await stat.scrollIntoViewIfNeeded()
-      await stat.getByRole("button", { name: "Inspect value for Nodes under pressure" }).hover()
+      await stat.getByRole("img", { name: "History for Nodes under pressure" }).hover()
       await page.waitForFunction(() => document.querySelectorAll('[role="tooltip"]').length === 1 &&
         [...document.querySelectorAll('[role="tooltip"]')].some(node => node.textContent.includes("Nodes under disk pressure")))
       await page.getByRole("tooltip").waitFor()

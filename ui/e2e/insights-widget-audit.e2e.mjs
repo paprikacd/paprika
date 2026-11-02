@@ -513,7 +513,8 @@ async function isolationAudit() {
 
 async function detailAudit(width, touch = false) {
   const { page, context } = await openFixture("long", width, false, touch ? { isMobile: true, hasTouch: true } : {})
-  for (const kind of ["stat", "table", "traces", "heatmap", "gauge"]) await check(`${kind}: full ${touch ? "touch" : "pointer and keyboard"} detail is exact, unclipped and dismissible at ${width}px`, async () => {
+  // A single value's reading is plain text; its inspector is the history sparkline, covered by stat-headline-interaction.test.tsx.
+  for (const kind of ["table", "traces", "heatmap", "gauge"]) await check(`${kind}: full ${touch ? "touch" : "pointer and keyboard"} detail is exact, unclipped and dismissible at ${width}px`, async () => {
     const tile = page.locator(`[data-widget-id="${kind}"]`)
     const trigger = kind === "heatmap" ? tile.getByRole("group").getByRole("button").first()
       : tile.getByRole("button", { name: kind === "table" ? /^Inspect series / : kind === "traces" ? /^Inspect trace / : /^Inspect value for / }).first()

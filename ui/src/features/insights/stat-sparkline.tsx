@@ -4,9 +4,10 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { Widget } from "./schema";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
+import { isRestoringTooltipFocus } from "./tooltip-focus";
 import { TooltipHint } from "./tooltip-content";
 import { MetricDetails } from "./metric-tooltip-content";
-import { nearestStatHistoryIndex, statHistoryObservations } from "./stat-history-interaction";
+import { nearestStatHistoryIndex, statHistoryObservations, statPlotRectangle } from "./stat-history-interaction";
 import { area, line } from "d3-shape";
 import {
   boundHistoryPoints,
@@ -27,6 +28,7 @@ export function StatSparkline({
   color,
   widget,
   latestLabel = "Displayed latest valid sample",
+  onSelect,
 }: {
   series: Series;
   name: string;
@@ -34,6 +36,8 @@ export function StatSparkline({
   color?: string;
   widget?: Widget;
   latestLabel?: string;
+  /** Called when the user focuses or activates the history, so the widget's drilldown context follows the series. */
+  onSelect?: () => void;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -147,6 +151,12 @@ export function StatSparkline({
       latestValid,
     };
   }, [series]);
+  // Keyboard and pinned inspection rest on the selected sample's drawn point, not the whole plot.
+  const sampleRect = useCallback(() => {
+    if (!anchor || !selected) return new DOMRect();
+    const box = statPlotRectangle(anchor.getBoundingClientRect(), history.x(selected), selected.value === null ? 32 : history.y(selected));
+    return new DOMRect(box.left, box.top, box.width, box.height);
+  }, [anchor, history, selected]);
   if (!history.latestValid) return null;
   const summary = [
     `History of the displayed series, from ${new Date(history.start).toISOString()} to ${new Date(history.end).toISOString()}.`,
@@ -179,6 +189,7 @@ export function StatSparkline({
       onPointerDown={enabled ? event => {
         if (event.pointerType === "touch") { touchStart.current = { x: event.clientX, y: event.clientY, moved: false }; return; }
         const index = indexAt(event.clientX, event.currentTarget);
+        onSelect?.();
         if (current?.pinned && current.index === index) dismiss();
         else select(index, true);
       } : undefined}
@@ -188,6 +199,7 @@ export function StatSparkline({
         touchStart.current = null;
         if (!start || start.moved || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
         const index = indexAt(event.clientX, event.currentTarget);
+        onSelect?.();
         if (current?.pinned && current.index === index) dismiss();
         else select(index, true);
       } : undefined}
@@ -196,7 +208,10 @@ export function StatSparkline({
       onFocus={enabled ? () => {
         focused.current = true;
         clearHide();
+        // Focus returned by a dismissal must neither reopen nor reselect the history.
+        if (isRestoringTooltipFocus()) return;
         setSelection(previous => previous?.revision === revision ? previous : { revision, index: observations.length - 1, pinned: false });
+        onSelect?.();
       } : undefined}
       onBlur={enabled ? () => { focused.current = false; scheduleHide(); } : undefined}
       onKeyDown={enabled ? event => {
@@ -204,7 +219,7 @@ export function StatSparkline({
         if (event.key === "Escape") { event.preventDefault(); dismiss(); }
         else if (["ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "].includes(event.key)) {
           event.preventDefault();
-          if (event.key === "Enter" || event.key === " ") select(index, !current?.pinned);
+          if (event.key === "Enter" || event.key === " ") { onSelect?.(); select(index, !current?.pinned); }
           else select(event.key === "Home" ? 0 : event.key === "End" ? observations.length - 1 : Math.max(0, Math.min(observations.length - 1, index + (event.key === "ArrowLeft" ? -1 : 1))), current?.pinned);
         }
       } : undefined}
@@ -266,10 +281,14 @@ export function StatSparkline({
       ))}
       {selected && <g data-stat-cursor="" aria-hidden="true">
         <line x1={history.x(selected)} x2={history.x(selected)} y1="0" y2="64" stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-        {selected.value !== null && <path d={`M${history.x(selected)},${history.y(selected)}h0`} stroke="currentColor" strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+        {/* A ring at the sample: a currentColor band around a core in the card colour, both at fixed screen size. */}
+        {selected.value !== null && <>
+          <path d={`M${history.x(selected)},${history.y(selected)}h0`} stroke="currentColor" strokeWidth="9" strokeLinecap="round" vectorEffect="non-scaling-stroke" data-stat-ring="" />
+          <path d={`M${history.x(selected)},${history.y(selected)}h0`} strokeWidth="5" strokeLinecap="round" vectorEffect="non-scaling-stroke" style={{ stroke: "var(--gamma-bg, #ffffff)" }} data-stat-ring-core="" />
+        </>}
       </g>}
     </svg>
-    {selected && current && anchor && <ObservationTooltip id={tooltipId} anchor={anchor} anchorOwnsHistoryKeys pinned={current.pinned} onDismiss={dismiss} onEnter={clearHide} onLeave={scheduleHide}>
+    {selected && current && anchor && <ObservationTooltip id={tooltipId} anchor={anchor} anchorRect={sampleRect} preferSide anchorOwnsHistoryKeys pinned={current.pinned} onDismiss={dismiss} onEnter={clearHide} onLeave={scheduleHide}>
       <MetricDetails widget={widget} series={series} index={0} point={selected} unit={unit} description="Recorded sample" />
       <TooltipHint>{current.pinned ? "Pinned · Enter or tap to release" : "Move to inspect · Enter or tap to pin"}<span>Arrow keys navigate · Esc closes</span></TooltipHint>
     </ObservationTooltip>}

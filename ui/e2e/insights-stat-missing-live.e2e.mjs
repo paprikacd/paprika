@@ -54,8 +54,10 @@ try {
       await status.waitFor()
       assert.equal(Number(await tile.locator("[data-metric-value]").first().getAttribute("data-metric-value")), latestValid.value)
       if (process.env.STAT_MISSING_SCREENSHOTS) await tile.screenshot({ path: `${process.env.STAT_MISSING_SCREENSHOTS}/stat-missing-${theme.toLowerCase()}-${width}.png`, animations: "disabled" })
-      await tile.getByRole("button", { name: "Inspect value for Observed source freshness" }).focus()
-      await page.getByRole("tooltip").getByText("Latest valid sample", { exact: true }).waitFor()
+      // The reading is plain text; focusing the history opens its recorded sample, here the missing tail.
+      await tile.getByRole("img", { name: "History for Observed source freshness" }).focus()
+      await page.getByRole("tooltip").getByText("Recorded sample", { exact: true }).waitFor()
+      await page.getByRole("tooltip").getByText("No data", { exact: true }).waitFor()
       assert.deepEqual(errors, [])
       const current = await api(`/api/insights/dashboards/${id}`)
       assert.equal(current.headers.get("x-paprika-document-etag") ?? current.headers.get("etag"), etag)

@@ -13,7 +13,7 @@ const source = await (await api("/api/insights/saved-queries/local-ab-edge-watch
 const geo = await (await api("/api/insights/saved-queries/local-edge-geo-events")).json()
 const query = source.query.replace("{{gateway}}", '"omega"'), id = `tooltip-position-${Date.now()}`
 const path = `/api/insights/dashboards/${id}`
-const widget = (type, y) => ({ id: type, title: `${type} placement`, type, providerId: source.providerId, query, unit: "Mb/s", layout: { x: 0, y, w: 12, h: 4 } })
+const widget = (type, y) => ({ id: type, title: `${type} placement`, type, providerId: source.providerId, query, unit: "Mb/s", layout: { x: 0, y, w: 12, h: 4 }, ...(type === "stat" ? { options: { showSparkline: true } } : {}) })
 const document = { schemaVersion: 1, id, title: "Tooltip positioning validation", timeRange: "30m", refreshInterval: 0, variables: [], widgets: [widget("stat", 0), widget("table", 4), widget("heatmap", 8), { id: "map", title: "Map placement", type: "plugin", pluginId: "connection-map", dataKind: "records", providerId: geo.providerId, query: geo.query.replace("{{gateway}}", '"omega"'), unit: "", config: { latitude: "latitude", longitude: "longitude", label: "label", value: "requests", display: "markers", showLocations: false, maxPoints: 1 }, layout: { x: 0, y: 12, w: 12, h: 4 } }] }
 const created = await api(path, { method: "PUT", headers: { "content-type": "application/json", "If-None-Match": "*" }, body: JSON.stringify(document) })
 const etag = created.headers.get("x-paprika-document-etag") ?? created.headers.get("etag")
@@ -33,7 +33,7 @@ try {
       for (const type of ["stat", "table", "heatmap", "map"]) {
         const tile = page.locator(`[data-widget-id="${type}"]`)
         await tile.scrollIntoViewIfNeeded()
-        const trigger = type === "stat" ? tile.getByRole("button", { name: /Inspect value for/ }) : type === "table" ? tile.getByRole("button", { name: /Inspect series/ }).first() : type === "heatmap" ? tile.getByRole("group", { name: /heatmap/ }).getByRole("button").first() : tile.locator("[data-map-plane] button").first()
+        const trigger = type === "stat" ? tile.getByRole("img", { name: /^History for/ }) : type === "table" ? tile.getByRole("button", { name: /Inspect series/ }).first() : type === "heatmap" ? tile.getByRole("group", { name: /heatmap/ }).getByRole("button").first() : tile.locator("[data-map-plane] button").first()
         await trigger.waitFor()
         await trigger.hover()
         const tooltip = page.getByRole("tooltip"); await tooltip.waitFor()

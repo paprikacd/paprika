@@ -948,7 +948,7 @@ describe("accessible observation inspection", () => {
       const changed = vi.fn();
       render(
         <WidgetVisualization
-          widget={{ ...widget, type, options: { decimals: 2 } }}
+          widget={{ ...widget, type, options: type === "stat" ? { decimals: 2, showSparkline: true } : { decimals: 2 } }}
           result={{
             series: [
               {
@@ -961,9 +961,11 @@ describe("accessible observation inspection", () => {
           onContextChange={changed}
         />,
       );
-      const trigger = screen.getByRole("button", {
-        name: type === "stat" ? /Inspect value for/ : /Inspect series/,
-      });
+      // A single value is inspected through its history; a table through its series buttons.
+      const trigger =
+        type === "stat"
+          ? screen.getByRole("img", { name: "History for API latency" })
+          : screen.getByRole("button", { name: /Inspect series/ });
       fireEvent.focus(trigger);
       expect(changed).toHaveBeenLastCalledWith({
         series: "long-api-service",
@@ -982,10 +984,18 @@ describe("accessible observation inspection", () => {
       );
       fireEvent.keyDown(trigger, { key: "Escape" });
       expect(screen.queryByRole("tooltip")).toBeNull();
-      fireEvent.click(trigger);
-      expect(trigger).toHaveAttribute("aria-pressed", "true");
-      fireEvent.click(trigger);
-      expect(screen.queryByRole("tooltip")).toBeNull();
+      if (type === "stat") {
+        // The history pins with Enter and closes with Escape; the reading itself is not a control.
+        fireEvent.keyDown(trigger, { key: "Enter" });
+        expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
+        fireEvent.keyDown(trigger, { key: "Escape" });
+        expect(screen.queryByRole("tooltip")).toBeNull();
+      } else {
+        fireEvent.click(trigger);
+        expect(trigger).toHaveAttribute("aria-pressed", "true");
+        fireEvent.click(trigger);
+        expect(screen.queryByRole("tooltip")).toBeNull();
+      }
     },
   );
 

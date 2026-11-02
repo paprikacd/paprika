@@ -352,7 +352,9 @@ it("keeps a one-track background stat's saved geometry, precise value, unit and 
   const { container, rerender } = render(<WidgetVisualization widget={compact} result={{ series: [series] }} />);
   expect(container.querySelector("[data-stat-summary]")).toHaveAttribute("data-sparkline-placement", "background");
   expect(container.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
-  expect(screen.getByRole("button", { name: "Inspect value for Requests" })).toBeEnabled();
+  // The reading is plain text; the history is the one keyboard-focusable inspector.
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByRole("img", { name: "History for Requests" })).toHaveAttribute("tabindex", "0");
   expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
   expect(screen.getByRole("img")).toHaveAccessibleDescription(/1970-01-01T00:00:04.000Z/);
   rerender(<WidgetVisualization widget={compact} result={{ series: [{ ...series, points: [{ timestamp: 5000, value: null }] }] }} />);

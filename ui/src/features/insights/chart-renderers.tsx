@@ -124,40 +124,20 @@ function Stat({
         data-sparkline-placement={widget.options?.sparklinePlacement ?? "background"}
       >
         <div className={sparklineStyles.value} data-stat-reading="">
-          <ObservationDetails
-            label={`Inspect value for ${widget.title}`}
-            pointerPreview={!widget.options?.showSparkline}
-            enabled={widget.options?.showTooltip !== false}
-            revision={first.entry}
-            onSelect={
-              onContextChange
-                ? () => onContextChange(metricContext(first.entry, first.index))
-                : undefined
-            }
-            details={
-              <MetricDetails widget={widget}
-                series={first.entry}
-                index={first.index}
-                point={first.point}
-                unit={widget.unit}
-                decimals={widget.options?.decimals}
-              />
-            }
+          {/* Plain text: the reading is never a trigger, highlight or details owner. The sparkline inspects recorded samples. */}
+          <span
+            className={styles.statValue}
+            data-metric-value={String(first.point.value)}
+            style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdForValue(first.point.value, widget.options?.thresholds)?.color : color }}
           >
-            <span
-              className={styles.statValue}
-              data-metric-value={String(first.point.value)}
-              style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdForValue(first.point.value, widget.options?.thresholds)?.color : color }}
-            >
-              {formatMetric(
-                first.point.value,
-                "",
-                false,
-                widget.options?.decimals,
-              )}
-              <span className={styles.statUnit}>{widget.unit}</span>
-            </span>
-          </ObservationDetails>
+            {formatMetric(
+              first.point.value,
+              "",
+              false,
+              widget.options?.decimals,
+            )}
+            <span className={styles.statUnit}>{widget.unit}</span>
+          </span>
           <div className={styles.statMeta}>
             {entries.length > 1 ? `${first.name} · ` : ""}Latest valid sample ·{" "}
             {timeFormat.format(new Date(first.point.timestamp))}
@@ -169,6 +149,11 @@ function Stat({
             name={first.name}
             unit={widget.unit}
             color={color ?? PALETTE[0]}
+            onSelect={
+              onContextChange
+                ? () => onContextChange(metricContext(first.entry, first.index))
+                : undefined
+            }
           />
         )}
       </div>
@@ -180,27 +165,7 @@ function Stat({
       </div>}
       {entries.slice(1, 4).map((entry) => (
         <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
-          <ObservationDetails
-            label={`Inspect series ${entry.name}`}
-            enabled={widget.options?.showTooltip !== false}
-            revision={entry.entry}
-            onSelect={
-              onContextChange
-                ? () => onContextChange(metricContext(entry.entry, entry.index))
-                : undefined
-            }
-            details={
-              <MetricDetails widget={widget}
-                series={entry.entry}
-                index={entry.index}
-                point={entry.point}
-                unit={widget.unit}
-                decimals={widget.options?.decimals}
-              />
-            }
-          >
-            <span>{entry.name}</span>
-          </ObservationDetails>
+          <span>{entry.name}</span>
           <strong>
             {formatMetric(
               entry.point!.value,

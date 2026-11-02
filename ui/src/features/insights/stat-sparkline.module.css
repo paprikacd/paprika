@@ -13,9 +13,15 @@
   z-index: 1;
   max-width: 100%;
   padding: 8px var(--stat-reading-inset, 0px) 12px;
+  /* Captions and empty space pass the pointer through, so the history beneath the card stays reachable. */
+  pointer-events: none;
 }
 .withSparkline [data-metric-value] {
+  /* The value's box is its text, not the full column, so the history beside it stays reachable. */
+  align-self: flex-start;
   white-space: nowrap;
+  /* The value is plain text with no handler, but it still covers the history beneath it: hovering it inspects nothing. */
+  pointer-events: auto;
 }
 .withSparkline .plot {
   position: absolute;
@@ -75,7 +81,6 @@
 @container insight-widget (max-height: 40px) {
   .withSparkline.withSparkline { flex: 1 1 0; min-height: 0; }
   .withSparkline.withSparkline .value { min-height: 0; padding-block: 0; }
-  .withSparkline.withSparkline.withSparkline .value :global(button[data-gamma-button]) { min-height: 26px; padding-block: 0; margin-block: 0; }
   .withSparkline[data-sparkline-placement="side"] .plot { height: min(100%, 28px); }
 }
 
@@ -106,7 +111,9 @@
 
 /* Static decorative sparklines stay inert; interactive history is one hit area,
    not hundreds of per-sample DOM targets. Keep normal page scrolling on touch. */
-.plot[data-stat-interactive] { pointer-events: auto; cursor: crosshair; touch-action: pan-y; }
+/* The selected ring may sit on the plot's edge at the latest sample, so let it draw whole. */
+.plot[data-stat-interactive] { pointer-events: auto; cursor: crosshair; touch-action: pan-y; overflow: visible; }
+.plot[data-stat-interactive]:focus { outline: none; }
 .plot[data-stat-interactive]:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
 .plot[data-stat-selected-time] { mask-image: none; }
 
