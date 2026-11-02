@@ -88,6 +88,7 @@ import type { CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
 import { DocumentEditor } from "./document-editor"
 import { WidgetEditor } from "./widget-editor"
+import { layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
 import { TimeRangeControl, dashboardRange } from "./time-range"
@@ -1771,27 +1772,11 @@ export default function InsightsApp({
                     })
                     selectWidget(copy.id)
                   }}
+                  moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id, canvasMode)}
                   onMove={(dx, dy) => {
-                    const layout = dashboard.widgets.map((widget) => ({
-                      i: widget.id,
-                      ...widget.layout,
-                      ...(widget.id === currentWidget.id
-                        ? {
-                            x: Math.max(
-                              0,
-                              Math.min(
-                                12 - widget.layout.w,
-                                widget.layout.x + dx,
-                              ),
-                            ),
-                            y: Math.max(
-                              0,
-                              Math.min(1000, widget.layout.y + dy),
-                            ),
-                          }
-                        : {}),
-                    }))
-                    layoutUpdate(verticalCompactor.compact(layout, 12))
+                    const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
+                    const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
+                    if ("layout" in edit) layoutUpdate(edit.layout)
                   }}
                 />
               )}

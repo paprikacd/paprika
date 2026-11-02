@@ -3,14 +3,17 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
 } from "react";
 import ReactGridLayout, {
   useContainerWidth,
   verticalCompactor,
+  type Compactor,
   type Layout,
 } from "react-grid-layout";
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
@@ -42,6 +45,16 @@ import {
 import { dashboardRange } from "./time-range";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, type CanvasMode } from "./responsive-layout";
+import {
+  dragSettle,
+  gridPlacement,
+  LAYOUT_KEYSHORTCUTS,
+  layoutMoveForKey,
+  layoutResizeForKey,
+  moveLayout,
+  resizeLayout,
+  type LayoutEdit,
+} from "./layout-edit";
 import styles from "./insights.module.css";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -109,6 +122,7 @@ const Tile = memo(function Tile({
   onQueryFields,
   onQueryResult,
   onTimeRange,
+  onNudge,
   memory,
   memoryKey,
 }: {
@@ -129,6 +143,8 @@ const Tile = memo(function Tile({
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
   onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
   onTimeRange?: (window: ObservationWindow) => void;
+  /** Alt+Arrow moves and Alt+Shift+Arrow resizes the widget from the keyboard. Present only on the editable wide canvas. */
+  onNudge?: (id: string, key: string, resize: boolean) => void;
   memory: Map<string, WidgetMemory>;
   memoryKey: string;
 }) {
@@ -254,9 +270,22 @@ const Tile = memo(function Tile({
     },
     [contextScope, data, widget, onSelection, selectionEnabled],
   );
+  // Capture runs before the focused control's own arrow handling (a sparkline or a selector), so Alt+Arrow
+  // edits the layout whichever control in the tile has focus. Plain arrows and text fields keep their keys.
+  const layoutKey = (event: KeyboardEvent<HTMLElement>) => {
+    if (!onNudge || !event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+    if (!(event.shiftKey ? layoutResizeForKey(event.key) : layoutMoveForKey(event.key))) return;
+    if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onNudge(widget.id, event.key, event.shiftKey);
+  };
   return (
     <article
       ref={element}
+      tabIndex={onNudge ? 0 : undefined}
+      aria-keyshortcuts={onNudge ? LAYOUT_KEYSHORTCUTS : undefined}
+      onKeyDownCapture={onNudge ? layoutKey : undefined}
       className={`${styles.tile} ${selected ? styles.selectedTile : ""}`}
       data-intrinsic-stat={naturalHeight || undefined}
       data-widget-id={widget.id}
@@ -280,7 +309,7 @@ const Tile = memo(function Tile({
         {draggable && (
           <span
             className={`insights-drag-handle ${styles.dragHandle}`}
-            title="Drag to move widget"
+            title="Drag to move widget. Alt+Arrow keys move it; Alt+Shift+Arrow keys resize it."
             aria-hidden="true"
           >
             <Grip size={14} />
@@ -445,6 +474,44 @@ export function DashboardCanvas({
     () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact) : canvasLayout(dashboard.widgets, mode, width),
     [dashboard.widgets, mode, width, dense, editing, referenceCompact],
   );
+  // React-grid-layout settles a drag through this compactor, both for the live preview and on drop. The saved
+  // positions are read after commit, so a drag always settles against the layout that was on screen when it began.
+  const settledBase = useRef(layout);
+  useLayoutEffect(() => { settledBase.current = layout; }, [layout]);
+  const draggedId = useRef<string | undefined>(undefined);
+  const compactor = useMemo<Compactor>(() => ({
+    type: "vertical",
+    allowOverlap: false,
+    compact: (items, cols) => draggedId.current === undefined
+      ? verticalCompactor.compact(items, cols)
+      : dragSettle(settledBase.current, items, draggedId.current),
+  }), []);
+  // Keyboard edits are document edits like drags: each one goes through onLayout, so it is one undo step.
+  const [announcement, setAnnouncement] = useState("");
+  const nudge = useCallback((id: string, key: string, resize: boolean) => {
+    const widget = dashboard.widgets.find((item) => item.id === id);
+    const resizing = resize ? layoutResizeForKey(key) : undefined;
+    const direction = resize ? undefined : layoutMoveForKey(key);
+    if (!widget || (!resizing && !direction)) return;
+    const edit: LayoutEdit | undefined = resizing
+      ? resizeLayout(layout, id, resizing[0], resizing[1])
+      : direction ? moveLayout(layout, id, direction) : undefined;
+    if (!edit) return;
+    if ("blocked" in edit) {
+      setAnnouncement(`${widget.title}: ${edit.blocked}.`);
+      return;
+    }
+    onLayout(edit.layout);
+    const placed = edit.layout.find((item) => item.i === id)!;
+    if (resizing) {
+      const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+      setAnnouncement(`Resized ${widget.title} to ${count(placed.w, "column")} by ${count(placed.h, "row")}.`);
+      return;
+    }
+    const partner = edit.partner ? dashboard.widgets.find((item) => item.id === edit.partner)?.title : undefined;
+    const beside = partner ? `, ${direction === "down" ? "below" : "above"} ${partner}` : "";
+    setAnnouncement(`Moved ${widget.title} ${direction}${beside}: ${gridPlacement(placed)}.`);
+  }, [dashboard.widgets, layout, onLayout]);
   const orderedWidgets = useMemo(() => {
     const byId = new Map(
       dashboard.widgets.map((widget) => [widget.id, widget]),
@@ -482,6 +549,7 @@ export function DashboardCanvas({
                   onQueryFields={onQueryFields}
                   onQueryResult={onQueryResult}
                   onTimeRange={onTimeRange}
+                  onNudge={draggable ? nudge : undefined}
                   memory={memory}
                   memoryKey={`${dashboard.id}:${widget.id}`}
                 />
@@ -503,6 +571,7 @@ export function DashboardCanvas({
         data-layout-mode={mode}
         data-density={dense && !editing && mode === "wide" ? "compact" : "standard"}
       >
+        {draggable && <div className={styles.srOnly} aria-live="polite">{announcement}</div>}
         <ChartCursorProvider key={dashboard.id}>
         {mounted && (stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout
@@ -519,8 +588,12 @@ export function DashboardCanvas({
               handle: ".insights-drag-handle",
             }}
             resizeConfig={{ enabled: draggable, handles: ["se"] }}
-            compactor={verticalCompactor}
+            compactor={compactor}
+            onDragStart={(_layout, item) => {
+              draggedId.current = item?.i;
+            }}
             onDragStop={(next) => {
+              draggedId.current = undefined;
               if (draggable) onLayout(next);
             }}
             onResizeStop={(next) => {

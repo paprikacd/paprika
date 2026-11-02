@@ -53,6 +53,7 @@ import {
   SavedQueryBindingEditor,
 } from "./saved-query-controls";
 import { validateLinkedTooltip } from "./saved-query-editor";
+import type { LayoutMove } from "./layout-edit";
 
 export const widgetLabels = {
   timeseries: "Time series",
@@ -670,6 +671,7 @@ export function WidgetEditor({
   onDuplicate,
   onDelete,
   onMove,
+  moveBlocked,
   client,
   range,
   queryFetcher,
@@ -685,6 +687,8 @@ export function WidgetEditor({
   onDuplicate: () => void;
   onDelete: () => void;
   onMove: (dx: number, dy: number) => void;
+  /** Why a Layout-tab move is unavailable. Its button stays visible, disabled, with this reason as its title. */
+  moveBlocked?: Partial<Record<LayoutMove, string>>;
   client?: InsightsClient;
   range?: { start: number; end: number };
   queryFetcher?: QueryFetcher;
@@ -1354,6 +1358,7 @@ export function WidgetEditor({
                     [ArrowRight, 1, 0, "right"],
                   ].map(([Icon, x, y, label]) => {
                     const I = Icon as typeof ArrowLeft;
+                    const blocked = moveBlocked?.[label as LayoutMove];
                     return (
                       <GammaButton
                         variant="quiet"
@@ -1361,6 +1366,8 @@ export function WidgetEditor({
                         iconOnly
                         key={String(label)}
                         aria-label={`Move widget ${label}`}
+                        disabled={!!blocked}
+                        title={blocked}
                         onClick={() => onMove(Number(x), Number(y))}
                       >
                         <I size={15} />

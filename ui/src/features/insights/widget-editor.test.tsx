@@ -469,6 +469,18 @@ describe("widget inspector", () => {
     );
   });
 
+  it("disables a Layout move that cannot change the grid and says why", () => {
+    const callbacks = props();
+    render(<WidgetEditor {...callbacks} moveBlocked={{ down: "Nothing below this widget in its columns" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
+    const down = screen.getByRole("button", { name: "Move widget down" });
+    expect(down).toBeDisabled();
+    expect(down).toHaveAttribute("title", "Nothing below this widget in its columns");
+    expect(screen.getByRole("button", { name: "Move widget up" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Move widget up" }));
+    expect(callbacks.onMove).toHaveBeenCalledWith(0, -1);
+  });
+
   it("protects a resized widget from stale dimensions after external Undo", () => {
     const callbacks = props();
     const { rerender } = render(<WidgetEditor {...callbacks} />);

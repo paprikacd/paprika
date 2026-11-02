@@ -119,6 +119,14 @@ try {
     const before = await readDocument()
     const canvas = await page.getByTestId("dashboard-canvas").boundingBox()
     assert.ok(canvas && canvas.width > 640, "Desktop drag requires a wide canvas")
+    // Alt+ArrowDown on the focused tile swaps it below the widget it shares columns with; Undo restores the saved grid.
+    await page.locator('article[data-widget-id="requests"]').focus()
+    await page.keyboard.press("Alt+ArrowDown")
+    const reordered = await readDocument()
+    assert.ok(widget(reordered, "requests").layout.y >= widget(reordered, "traffic").layout.y + widget(reordered, "traffic").layout.h, "Alt+ArrowDown must leave the widget below the one it swapped with")
+    assert.match(await page.locator('[data-testid="dashboard-canvas"] [aria-live="polite"]').textContent(), /^Moved .+ down, below Traffic over time: row \d+, columns \d+ to \d+\.$/)
+    await page.getByRole("button", { name: "Undo", exact: true }).click()
+    assert.deepEqual(widget(await readDocument(), "requests").layout, widget(before, "requests").layout)
     const column = (canvas.width + 16) / 12
     await pointerDrag(page.locator('[data-widget-id="requests"] .insights-drag-handle'), column * 4, 0)
     const moved = await readDocument()
