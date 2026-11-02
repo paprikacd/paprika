@@ -21,7 +21,9 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: [{ find: /^@insights\//, replacement: `${insightsDir}/` }],
-    dedupe: ['react', 'react-dom', '@tanstack/charts', 'd3-hierarchy', 'd3-scale', 'd3-shape', 'lucide-react', 'yaml', 'zod'],
+    // react-grid-layout and react-resizable (its CSS) are imported by production's canvas.tsx, which sits under ui/
+    // where this lab's node_modules is not on the resolution path. They resolve from the lab root only through here.
+    dedupe: ['react', 'react-dom', '@tanstack/charts', 'd3-hierarchy', 'd3-scale', 'd3-shape', 'lucide-react', 'react-grid-layout', 'react-resizable', 'yaml', 'zod'],
   },
   server: {
     host: process.env.WIDGET_LAB_HOST || '127.0.0.1',
