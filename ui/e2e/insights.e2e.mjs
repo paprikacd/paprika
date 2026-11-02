@@ -59,6 +59,10 @@ function widget(document, id) {
   return value
 }
 
+function savedLayouts(document) {
+  return Object.fromEntries(document.widgets.map((item) => [item.id, item.layout]))
+}
+
 function toOpenUI(document) {
   const names = { timeseries: "TimeSeries", bar: "BarChart", stat: "Stat", table: "MetricsTable", traces: "Traces", heatmap: "Heatmap" }
   const args = (values) => values.map((value) => JSON.stringify(value ?? null)).join(", ")
@@ -127,6 +131,16 @@ try {
     assert.match(await page.locator('[data-testid="dashboard-canvas"] [aria-live="polite"]').textContent(), /^Moved .+ down, below Traffic over time: row \d+, columns \d+ to \d+\.$/)
     await page.getByRole("button", { name: "Undo", exact: true }).click()
     assert.deepEqual(widget(await readDocument(), "requests").layout, widget(before, "requests").layout)
+    // Vertical drag, from the saved grid restored above. Rows are 74px apart (a 58px row plus its 16px gap). Dragging
+    // requests down 5 rows carries it past traffic's midpoint, so it settles below traffic. Dragging it back up past
+    // that midpoint restores the whole saved grid.
+    const grip = page.locator('[data-widget-id="requests"] .insights-drag-handle')
+    const row = 74
+    await pointerDrag(grip, 0, row * 5)
+    const lowered = await readDocument()
+    assert.ok(widget(lowered, "requests").layout.y >= widget(lowered, "traffic").layout.y + widget(lowered, "traffic").layout.h, "Dragging requests down past traffic's midpoint must leave it below traffic")
+    await pointerDrag(grip, 0, -row * 3)
+    assert.deepEqual(savedLayouts(await readDocument()), savedLayouts(before), "Dragging back past traffic's midpoint must restore the saved grid")
     const column = (canvas.width + 16) / 12
     await pointerDrag(page.locator('[data-widget-id="requests"] .insights-drag-handle'), column * 4, 0)
     const moved = await readDocument()
@@ -143,7 +157,7 @@ try {
     await page.getByRole("button", { name: "Redo", exact: true }).click()
     const redone = await readDocument()
     assert.deepEqual(widget(redone, "requests").layout, afterResize)
-    return { before: widget(before, "requests").layout, moved: beforeResize, resized: afterResize, undoRedo: true }
+    return { before: widget(before, "requests").layout, lowered: widget(lowered, "requests").layout, moved: beforeResize, resized: afterResize, undoRedo: true }
   })
 
   await check("JSON and YAML editing apply atomically and reject invalid source", async () => {

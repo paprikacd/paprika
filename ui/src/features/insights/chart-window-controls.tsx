@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { Series } from "./chart-data";
-import { calendarDateTime } from "./chart-presentation";
+import { calendarDateTime, calendarRange } from "./chart-presentation";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { TimeWindowLens } from "./time-window-lens";
 import {
@@ -313,7 +313,7 @@ export function ChartWindowControls({ state, selection, compare, label = "Chart 
       ? <SelectionTrack state={state} selection={selection} timeZone={timeZone} />
       : <p className={styles.note}>Not enough distinct times to zoom into.</p>}
     <p className={styles.summary} data-chart-window-summary="">
-      {state.zoomed ? "Chart window" : "Full range"}: {calendarDateTime(start, timeZone)} – {calendarDateTime(end, timeZone)} · {formatWindowDuration(end - start)}
+      {state.zoomed ? "Chart window" : "Full range"}: {calendarRange(start, end, timeZone)} · {formatWindowDuration(end - start)}
       {selection.pending && <span className={styles.pending}> · Pending selection</span>}
     </p>
     <div className={styles.actions}>

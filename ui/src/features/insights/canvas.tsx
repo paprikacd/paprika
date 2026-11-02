@@ -509,7 +509,10 @@ export function DashboardCanvas({
       return;
     }
     const partner = edit.partner ? dashboard.widgets.find((item) => item.id === edit.partner)?.title : undefined;
-    const beside = partner ? `, ${direction === "down" ? "below" : "above"} ${partner}` : "";
+    // The partner is one of the passed widgets, so the rest are the others that moved with it.
+    const others = (edit.passed?.length ?? 1) - 1;
+    const more = others > 0 ? ` and ${others} other ${others === 1 ? "widget" : "widgets"}` : "";
+    const beside = partner ? `, ${direction === "down" ? "below" : "above"} ${partner}${more}` : "";
     setAnnouncement(`Moved ${widget.title} ${direction}${beside}: ${gridPlacement(placed)}.`);
   }, [dashboard.widgets, layout, onLayout]);
   const orderedWidgets = useMemo(() => {

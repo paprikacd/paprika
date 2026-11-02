@@ -75,6 +75,46 @@ it("Alt+ArrowDown on a focused widget swaps it with the widget below and announc
   expect(liveText()).toBe("Moved Requests down, below Errors: row 5, columns 1 to 6.");
 });
 
+function widgetAt(id: string, title: string, layout: { x: number; y: number; w: number; h: number }): Dashboard["widgets"][number] {
+  return { ...exampleDashboard.widgets[0], id, title, layout };
+}
+
+it("announces the other widgets a move carries past, in the singular for one", () => {
+  const { onLayout } = renderCanvas(structuredClone({
+    ...exampleDashboard,
+    widgets: [
+      widgetAt("requests", "Requests", { x: 0, y: 0, w: 12, h: 4 }),
+      widgetAt("errors", "Errors", { x: 0, y: 4, w: 3, h: 2 }),
+      widgetAt("latency", "Latency", { x: 3, y: 4, w: 9, h: 6 }),
+    ],
+  }));
+  fireEvent.keyDown(screen.getByRole("article", { name: "Requests" }), { key: "ArrowDown", altKey: true });
+  expect(positions(onLayout.mock.calls[0][0])).toEqual({ requests: [0, 6, 12, 4], errors: [0, 0, 3, 2], latency: [3, 0, 9, 6] });
+  expect(liveText()).toBe("Moved Requests down, below Errors and 1 other widget: row 7, columns 1 to 12.");
+});
+
+it("announces every stat a full-width widget moves past, in the plural for several", () => {
+  const { onLayout } = renderCanvas(structuredClone({
+    ...exampleDashboard,
+    widgets: [
+      widgetAt("requests", "Requests", { x: 0, y: 0, w: 12, h: 4 }),
+      widgetAt("stat-one", "Stat one", { x: 0, y: 4, w: 3, h: 2 }),
+      widgetAt("stat-two", "Stat two", { x: 3, y: 4, w: 3, h: 2 }),
+      widgetAt("stat-three", "Stat three", { x: 6, y: 4, w: 3, h: 2 }),
+      widgetAt("stat-four", "Stat four", { x: 9, y: 4, w: 3, h: 2 }),
+    ],
+  }));
+  fireEvent.keyDown(screen.getByRole("article", { name: "Requests" }), { key: "ArrowDown", altKey: true });
+  expect(positions(onLayout.mock.calls[0][0])).toEqual({
+    requests: [0, 2, 12, 4],
+    "stat-one": [0, 0, 3, 2],
+    "stat-two": [3, 0, 3, 2],
+    "stat-three": [6, 0, 3, 2],
+    "stat-four": [9, 0, 3, 2],
+  });
+  expect(liveText()).toBe("Moved Requests down, below Stat one and 3 other widgets: row 3, columns 1 to 12.");
+});
+
 it("leaves plain arrow keys to the page and never edits the layout with them", () => {
   const { onLayout } = renderCanvas(stackedDashboard());
   const requests = screen.getByRole("article", { name: "Requests" });

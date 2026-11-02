@@ -77,6 +77,71 @@ export function calendarDateTime(timestamp: number, timeZone: string): string {
   return formatsFor(timeZone).full.format(date);
 }
 
+/** How finely a range shows a clock. `none` is the date alone, and the order runs from coarsest to finest. */
+type RangePrecision = "none" | "minute" | "second" | "millisecond";
+const RANGE_PRECISIONS: readonly RangePrecision[] = ["none", "minute", "second", "millisecond"];
+const rangeFormats = new Map<string, Intl.DateTimeFormat>();
+const rangeZoneNames = new Map<string, Intl.DateTimeFormat>();
+
+/** The precision a span asks for: dates from two days, minutes from an hour, seconds from a minute, else milliseconds. */
+function spanPrecision(span: number): RangePrecision {
+  if (span >= 2 * DAY_MS) return "none";
+  if (span >= HOUR_MS) return "minute";
+  if (span >= MINUTE_MS) return "second";
+  return "millisecond";
+}
+
+/** The finest unit an instant carries on the zone's clock. Exact midnight carries none, so it reads as a date. */
+function carriedPrecision(instant: number, timeZone: string): RangePrecision {
+  if (((instant % 1000) + 1000) % 1000 !== 0) return "millisecond";
+  const timeOfDay = ((wallClock(instant, timeZone) % DAY_MS) + DAY_MS) % DAY_MS;
+  if (timeOfDay % MINUTE_MS !== 0) return "second";
+  return timeOfDay !== 0 ? "minute" : "none";
+}
+
+function rangeFormat(timeZone: string, precision: RangePrecision): Intl.DateTimeFormat {
+  const key = `${timeZone}|${precision}`;
+  let format = rangeFormats.get(key);
+  if (!format) {
+    const options: Intl.DateTimeFormatOptions = { timeZone, year: "numeric", month: "short", day: "2-digit" };
+    if (precision !== "none") {
+      options.hour = "2-digit";
+      options.minute = "2-digit";
+      options.hourCycle = "h23";
+    }
+    if (precision === "second" || precision === "millisecond") options.second = "2-digit";
+    if (precision === "millisecond") options.fractionalSecondDigits = 3;
+    format = new Intl.DateTimeFormat("en", options);
+    rangeFormats.set(key, format);
+  }
+  return format;
+}
+
+/** The zone's short name at an instant, such as "UTC" or "GMT+9". */
+function rangeZoneName(instant: number, timeZone: string): string {
+  let format = rangeZoneNames.get(timeZone);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en", { timeZone, timeZoneName: "short" });
+    rangeZoneNames.set(timeZone, format);
+  }
+  return format.formatToParts(new Date(instant)).find((part) => part.type === "timeZoneName")?.value ?? timeZone;
+}
+
+/**
+ * Both bounds of a window in the dashboard's zone, each with the zone's name. The span picks the precision: dates from two
+ * days, then minutes, seconds and milliseconds. A bound never loses a finer unit it carries, so a bound at 13:37:35.001
+ * keeps its milliseconds whatever the span, and a span of two days or more adds the clock when a bound is off midnight.
+ */
+export function calendarRange(start: number, end: number, timeZone: string): string {
+  const zone = isFormattableTimeZone(timeZone) ? timeZone : "UTC";
+  const valid = (instant: number) => Number.isFinite(new Date(instant).getTime());
+  let rank = valid(start) && valid(end) ? RANGE_PRECISIONS.indexOf(spanPrecision(Math.abs(end - start))) : 0;
+  for (const instant of [start, end]) if (valid(instant)) rank = Math.max(rank, RANGE_PRECISIONS.indexOf(carriedPrecision(instant, zone)));
+  const precision = RANGE_PRECISIONS[rank];
+  const bound = (instant: number) => (valid(instant) ? `${rangeFormat(zone, precision).format(new Date(instant))} ${rangeZoneName(instant, zone)}` : "—");
+  return `${bound(start)} – ${bound(end)}`;
+}
+
 export type CalendarGrain = "minute" | "hour" | "day" | "week" | "month" | "year";
 export interface CalendarTick { value: number; grain: CalendarGrain }
 

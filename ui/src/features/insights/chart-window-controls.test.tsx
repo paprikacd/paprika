@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { calendarRange } from "./chart-presentation";
 import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
 import {
   ChartWindowControls,
@@ -483,5 +484,104 @@ describe("window controls", () => {
         unregister();
       }
     });
+  });
+});
+
+describe("range label precision", () => {
+  const start = Date.UTC(2024, 4, 1);
+  const summary = (container: HTMLElement) => container.querySelector("[data-chart-window-summary]")?.textContent;
+  function Label({ bounds, timeZone = "UTC" }: { bounds: ChartTimeWindow; timeZone?: string }) {
+    const state: ChartWindowState = useChartTimeWindow(bounds, "r1", 100);
+    const selection = useChartWindowSelection(state);
+    return <DashboardTimeZoneProvider timeZone={timeZone}>
+      <ChartWindowControls state={state} selection={selection} />
+    </DashboardTimeZoneProvider>;
+  }
+
+  it("keeps milliseconds for a span under a minute, where they are the span's own precision", () => {
+    const { container } = render(<Label bounds={{ start, end: start + 45_500 }} />);
+    expect(summary(container)).toBe("Full range: May 01, 2024, 00:00:00.000 UTC – May 01, 2024, 00:00:45.500 UTC · 45.5s");
+  });
+
+  it("drops milliseconds for a span of a minute or more, and keeps seconds under an hour", () => {
+    const { container } = render(<Label bounds={{ start, end: start + 330_000 }} />);
+    expect(summary(container)).toBe("Full range: May 01, 2024, 00:00:00 UTC – May 01, 2024, 00:05:30 UTC · 5.5m");
+  });
+
+  it("shows dates alone for a span of two days or more, while both bounds fall on midnight", () => {
+    const { container } = render(<Label bounds={{ start, end: start + 30 * 86_400_000 }} />);
+    expect(summary(container)).toBe("Full range: May 01, 2024 UTC – May 31, 2024 UTC · 30d");
+  });
+
+  it("switches precision exactly at one minute and at one hour", () => {
+    const minute = render(<Label bounds={{ start, end: start + 60_000 }} />);
+    expect(summary(minute.container)).toBe("Full range: May 01, 2024, 00:00:00 UTC – May 01, 2024, 00:01:00 UTC · 1m");
+    minute.unmount();
+    const under = render(<Label bounds={{ start, end: start + 3_540_000 }} />);
+    expect(summary(under.container)).toBe("Full range: May 01, 2024, 00:00:00 UTC – May 01, 2024, 00:59:00 UTC · 59m");
+    under.unmount();
+    const hour = render(<Label bounds={{ start, end: start + 3_600_000 }} />);
+    expect(summary(hour.container)).toBe("Full range: May 01, 2024, 00:00 UTC – May 01, 2024, 01:00 UTC · 1h");
+  });
+
+  it("keeps the dashboard zone's name at every precision", () => {
+    const { container } = render(<Label bounds={{ start, end: start + 30 * 86_400_000 }} timeZone="Asia/Tokyo" />);
+    expect(summary(container)).toBe("Full range: May 01, 2024, 09:00 GMT+9 – May 31, 2024, 09:00 GMT+9 · 30d");
+  });
+
+  it("switches to dates at exactly two days, and keeps the clock below that", () => {
+    const two = render(<Label bounds={{ start, end: start + 2 * 86_400_000 }} />);
+    expect(summary(two.container)).toBe("Full range: May 01, 2024 UTC – May 03, 2024 UTC · 2d");
+    two.unmount();
+    const one = render(<Label bounds={{ start, end: start + 86_400_000 }} />);
+    expect(summary(one.container)).toBe("Full range: May 01, 2024, 00:00 UTC – May 02, 2024, 00:00 UTC · 1d");
+  });
+
+  it("adds the clock to a span of two days or more when either bound is off midnight", () => {
+    const { container } = render(<Label bounds={{ start, end: start + 30 * 86_400_000 + 13 * 3_600_000 }} />);
+    expect(summary(container)).toBe("Full range: May 01, 2024, 00:00 UTC – May 31, 2024, 13:00 UTC · 30.5d");
+  });
+
+  it("keeps a bound's milliseconds at every span, since a bound never loses precision it carries", () => {
+    const carried = Date.UTC(2024, 4, 1, 13, 37, 35, 1);
+    const month = render(<Label bounds={{ start: carried, end: carried + 30 * 86_400_000 }} />);
+    expect(summary(month.container)).toBe("Full range: May 01, 2024, 13:37:35.001 UTC – May 31, 2024, 13:37:35.001 UTC · 30d");
+    month.unmount();
+    const hour = render(<Label bounds={{ start: carried, end: carried + 3_600_000 }} />);
+    expect(summary(hour.container)).toBe("Full range: May 01, 2024, 13:37:35.001 UTC – May 01, 2024, 14:37:35.001 UTC · 1h");
+  });
+
+  it("keeps a bound's seconds across a span of an hour or more", () => {
+    const { container } = render(<Label bounds={{ start: Date.UTC(2024, 4, 1, 13, 37, 35), end: Date.UTC(2024, 4, 2, 13, 37, 35) }} />);
+    expect(summary(container)).toBe("Full range: May 01, 2024, 13:37:35 UTC – May 02, 2024, 13:37:35 UTC · 1d");
+  });
+
+  it("reads midnight in the dashboard's own zone, so a Tokyo window of whole days shows dates alone", () => {
+    const tokyoMidnight = Date.UTC(2024, 3, 30, 15);
+    const { container } = render(<Label bounds={{ start: tokyoMidnight, end: tokyoMidnight + 30 * 86_400_000 }} timeZone="Asia/Tokyo" />);
+    expect(summary(container)).toBe("Full range: May 01, 2024 GMT+9 – May 31, 2024 GMT+9 · 30d");
+  });
+});
+
+describe("calendarRange", () => {
+  const start = Date.UTC(2024, 4, 1);
+  const day = 86_400_000;
+
+  it("gives each span tier its precision, and the zone's name after each bound", () => {
+    expect(calendarRange(start, start + 45_500, "UTC")).toBe("May 01, 2024, 00:00:00.000 UTC – May 01, 2024, 00:00:45.500 UTC");
+    expect(calendarRange(start, start + 330_000, "UTC")).toBe("May 01, 2024, 00:00:00 UTC – May 01, 2024, 00:05:30 UTC");
+    expect(calendarRange(start, start + 3_600_000, "UTC")).toBe("May 01, 2024, 00:00 UTC – May 01, 2024, 01:00 UTC");
+    expect(calendarRange(start, start + 30 * day, "UTC")).toBe("May 01, 2024 UTC – May 31, 2024 UTC");
+  });
+
+  it("keeps a bound's own finer units, whatever the span", () => {
+    const carried = Date.UTC(2024, 4, 1, 13, 37, 35, 1);
+    expect(calendarRange(carried, carried + 30 * day, "UTC")).toBe("May 01, 2024, 13:37:35.001 UTC – May 31, 2024, 13:37:35.001 UTC");
+    expect(calendarRange(carried, carried + 3_600_000, "UTC")).toBe("May 01, 2024, 13:37:35.001 UTC – May 01, 2024, 14:37:35.001 UTC");
+    expect(calendarRange(Date.UTC(2024, 4, 1, 13, 37), start + 30 * day, "UTC")).toBe("May 01, 2024, 13:37 UTC – May 31, 2024, 00:00 UTC");
+  });
+
+  it("shows an invalid bound as a dash, and still labels the valid one", () => {
+    expect(calendarRange(Number.NaN, start, "UTC")).toBe("— – May 01, 2024 UTC");
   });
 });

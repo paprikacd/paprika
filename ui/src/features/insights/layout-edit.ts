@@ -7,8 +7,11 @@ export const GRID_COLUMNS = 12
 
 export type LayoutMove = "left" | "right" | "up" | "down"
 
-/** The settled layout, or why the widget cannot move or resize that way. `partner` is the widget it swapped with. */
-export type LayoutEdit = { layout: Layout; partner?: string } | { blocked: string }
+/**
+ * The settled layout, or why the widget cannot move or resize that way. `partner` is the widget it moved past, and
+ * `passed` is every widget that moved with it (the partner included), in reading order.
+ */
+export type LayoutEdit = { layout: Layout; partner?: string; passed?: string[] } | { blocked: string }
 
 interface Box { x: number; y: number; w: number; h: number }
 
@@ -124,8 +127,24 @@ function neighbour(layout: Layout, subject: LayoutItem, move: "up" | "down"): La
 }
 
 /**
- * Moves a widget one column left or right, or swaps it with the nearest widget above or below that shares its
- * columns. Blocked moves name the reason, so a control can show it instead of doing nothing.
+ * The widgets an up or down move passes: the partner, plus each other widget in the subject's columns that lies on
+ * the same side and in the same band. Moving down, that band is every widget starting above the partner's bottom
+ * edge. Moving up, it is every widget still reaching below the partner's top edge. The band moves as one, so a row
+ * of widgets never splits.
+ */
+function passedBand(layout: Layout, subject: LayoutItem, partner: LayoutItem, move: "up" | "down"): string[] {
+  const side = move === "down" ? 1 : -1
+  return layout
+    .filter((item) => item.i === partner.i || (item.i !== subject.i && sharesColumns(item, subject) && Math.sign(readingOrder(item, subject)) === side
+      && (move === "down" ? item.y < partner.y + partner.h : item.y + item.h > partner.y)))
+    .sort(readingOrder)
+    .map((item) => item.i)
+}
+
+/**
+ * Moves a widget one column left or right, or moves it past the nearest widget above or below that shares its
+ * columns, along with the band that widget belongs to (see `passedBand`). Blocked moves name the reason, so a
+ * control can show it instead of doing nothing.
  */
 export function moveLayout(layout: Layout, id: string, move: LayoutMove): LayoutEdit {
   const subject = layout.find((item) => item.i === id)
@@ -133,7 +152,8 @@ export function moveLayout(layout: Layout, id: string, move: LayoutMove): Layout
   if (move === "up" || move === "down") {
     const partner = neighbour(layout, subject, move)
     if (!partner) return { blocked: move === "down" ? "Nothing below this widget in its columns" : "Nothing above this widget in its columns" }
-    return { layout: arrange(layout, id, subject, new Set([partner.i])), partner: partner.i }
+    const passed = passedBand(layout, subject, partner, move)
+    return { layout: arrange(layout, id, subject, new Set(passed)), partner: partner.i, passed }
   }
   const x = subject.x + (move === "left" ? -1 : 1)
   if (x < 0) return { blocked: "Already at the left edge of the canvas" }

@@ -19,6 +19,13 @@ const settled = (edit: LayoutEdit): Layout => {
 };
 const overlaps = (a: Layout[number], b: Layout[number]) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+// The first pair of widgets that overlap, as ids, or undefined. One assertion per layout keeps the property test fast.
+const firstOverlap = (layout: Layout) => {
+  for (let p = 0; p < layout.length; p++) {
+    for (let q = p + 1; q < layout.length; q++) if (overlaps(layout[p], layout[q])) return [layout[p].i, layout[q].i];
+  }
+  return undefined;
+};
 
 // Two widgets stacked in the left columns, a tall one on the right.
 const stacked = [item("a", 0, 0, 6, 4), item("b", 0, 4, 6, 4), item("c", 6, 0, 6, 8)];
@@ -62,6 +69,47 @@ describe("moving a widget within its column flow", () => {
       left: "Already at the left edge of the canvas",
       up: "Nothing above this widget in its columns",
     });
+  });
+});
+
+describe("moving past a band of widgets", () => {
+  const noOverlaps = (layout: Layout) => layout.every((a, index) => layout.slice(index + 1).every((b) => !overlaps(a, b)));
+  // A full-width widget above a row of four stats, with a chart below the row.
+  const row = [
+    item("a", 0, 0, 12, 4),
+    item("s1", 0, 4, 3, 2), item("s2", 3, 4, 3, 2), item("s3", 6, 4, 3, 2), item("s4", 9, 4, 3, 2),
+    item("b", 0, 6, 12, 4),
+  ];
+
+  it("moves the whole row past a full-width widget, so the stats never split and leave no hole", () => {
+    const edit = moveLayout(row, "a", "down");
+    expect(edit).toMatchObject({ partner: "s1", passed: ["s1", "s2", "s3", "s4"] });
+    const next = settled(edit);
+    expect(boxes(next)).toEqual({ a: [0, 2, 12, 4], s1: [0, 0, 3, 2], s2: [3, 0, 3, 2], s3: [6, 0, 3, 2], s4: [9, 0, 3, 2], b: [0, 6, 12, 4] });
+    expect(noOverlaps(next)).toBe(true);
+    for (const top of [0, 1]) {
+      expect(next.filter((entry) => entry.y <= top && top < entry.y + entry.h).reduce((columns, entry) => columns + entry.w, 0)).toBe(12);
+    }
+  });
+
+  it("moves the row back to its original layout when the widget moves up again", () => {
+    const swapped = settled(moveLayout(row, "a", "down"));
+    const edit = moveLayout(swapped, "a", "up");
+    expect(edit).toMatchObject({ partner: "s4", passed: ["s1", "s2", "s3", "s4"] });
+    expect(boxes(settled(edit))).toEqual(boxes(row));
+  });
+
+  it("moves widgets of different heights in the band together", () => {
+    const mixed = [item("a", 0, 0, 12, 4), item("s", 0, 4, 3, 2), item("t", 3, 4, 9, 6)];
+    const edit = moveLayout(mixed, "a", "down");
+    expect(edit).toMatchObject({ partner: "s", passed: ["s", "t"] });
+    const next = settled(edit);
+    expect(boxes(next)).toEqual({ a: [0, 6, 12, 4], s: [0, 0, 3, 2], t: [3, 0, 9, 6] });
+    expect(noOverlaps(next)).toBe(true);
+  });
+
+  it("passes only the partner when nothing else shares its band", () => {
+    expect(moveLayout(stacked, "a", "down")).toMatchObject({ partner: "b", passed: ["b"] });
   });
 });
 
@@ -131,10 +179,11 @@ describe("settled layouts", () => {
     };
   }
 
-  it("keeps every edit overlap-free, size-preserving and stable under the vertical compactor", () => {
+  it("keeps every move, resize and drag overlap-free and stable under the vertical compactor, and resizes change only their widget", () => {
     const next = random(20261102);
     const between = (min: number, max: number) => min + Math.floor(next() * (max - min + 1));
     let changedMoves = 0;
+    let changedResizes = 0;
     let changedDrags = 0;
     for (let trial = 0; trial < 150; trial++) {
       const count = between(2, 9);
@@ -150,20 +199,37 @@ describe("settled layouts", () => {
           const after = edit.layout.find((entry) => entry.i === subject.i)!;
           expect(after.w).toBe(subject.w);
           expect(after.h).toBe(subject.h);
-          for (const a of edit.layout) for (const b of edit.layout) if (a !== b) expect(overlaps(a, b)).toBe(false);
+          expect(firstOverlap(edit.layout)).toBeUndefined();
           expect(boxes(verticalCompactor.compact(edit.layout, 12))).toEqual(boxes(edit.layout));
           if (JSON.stringify(boxes(edit.layout)) !== JSON.stringify(boxes(layout))) changedMoves++;
+        }
+        // Each one-step resize in turn, then one random step that may be larger.
+        for (const [dw, dh] of [[1, 0], [-1, 0], [0, 1], [0, -1], [between(-2, 2), between(-2, 2)]] as const) {
+          const edit = resizeLayout(layout, subject.i, dw, dh);
+          if (!("layout" in edit)) continue;
+          const after = edit.layout.find((entry) => entry.i === subject.i)!;
+          expect(after.w).toBe(subject.w + dw);
+          expect(after.h).toBe(subject.h + dh);
+          for (const entry of layout) {
+            if (entry.i === subject.i) continue;
+            const kept = edit.layout.find((other) => other.i === entry.i)!;
+            expect([kept.w, kept.h]).toEqual([entry.w, entry.h]);
+          }
+          expect(firstOverlap(edit.layout)).toBeUndefined();
+          expect(boxes(verticalCompactor.compact(edit.layout, 12))).toEqual(boxes(edit.layout));
+          if (JSON.stringify(boxes(edit.layout)) !== JSON.stringify(boxes(layout))) changedResizes++;
         }
         const target = { x: between(0, 11), y: between(0, 12), w: subject.w, h: subject.h };
         if (target.x + target.w > 12) continue;
         const dragged = dragLayout(layout, subject.i, target);
-        for (const a of dragged) for (const b of dragged) if (a !== b) expect(overlaps(a, b)).toBe(false);
+        expect(firstOverlap(dragged)).toBeUndefined();
         expect(boxes(verticalCompactor.compact(dragged, 12))).toEqual(boxes(dragged));
         if (JSON.stringify(boxes(dragged)) !== JSON.stringify(boxes(layout))) changedDrags++;
       }
     }
-    // The property is only meaningful if many edits really reorder or move widgets.
+    // The property is only meaningful if many edits really reorder, move or resize widgets.
     expect(changedMoves).toBeGreaterThan(150);
+    expect(changedResizes).toBeGreaterThan(150);
     expect(changedDrags).toBeGreaterThan(150);
   });
 });
