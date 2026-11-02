@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { allocationColor, allocationRecords, allocationTreemapConfig, financeHistory, financePanels, FINANCE_AS_OF, FINANCE_HOLDINGS, summarizeHoldings } from '../src/lenses/finance-data';
 import { AllocationTreemap } from '../src/lenses/FinanceLens';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
-import { widgetSchema } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 
 describe('finance lens accounting and allocation', () => {

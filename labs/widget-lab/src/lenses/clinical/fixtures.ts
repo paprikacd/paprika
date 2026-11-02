@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../../renderer-extensions/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 import { CLINICAL_VISITS, kaplanMeier, survivalObservations, type VisitState } from '../../charts/clinical/model';
 
 export type ClinicalPopulation = 'all' | 'younger' | 'older' | 'marker-high' | 'marker-low' | 'prior';

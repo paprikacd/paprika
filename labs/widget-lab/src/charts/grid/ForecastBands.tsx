@@ -1,14 +1,15 @@
-import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
-import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { ChartTooltip } from '../../components/lab/ChartTooltip';
+import { restoreTooltipFocus } from '@insights/tooltip-focus';
+import { useTooltipDismiss } from '../../renderer-extensions/use-tooltip-dismiss';
+import { ChartTooltip } from '../../renderer-extensions/chart-tooltip';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { area, line } from 'd3-shape';
 import { scaleLinear } from 'd3-scale';
 import { X } from 'lucide-react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
-import { nearestTimeIndex } from '../../renderer-extensions/time-window';
-import { temporalPosition } from '../../renderer-extensions/chart-presentation';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
+import { nearestTimeIndex } from '@insights/time-window';
+import { temporalPosition } from '@insights/chart-presentation';
 import { validTimestamp } from '@insights/widget-context';
 import { useLabMotion } from '../../components/lab/motion';
 import { forecastBandConfig, forecastRecords, type ForecastPoint } from './grid-model';
@@ -78,7 +79,7 @@ export function ForecastBands({widget,result,embedded,onContextChange}:WidgetRen
       </svg>
       {inspectable&&active&&<ChartTooltip pinned={pinned} onClose={dismiss} onLeave={hoverDismiss.schedule}><section className="grid-forecast-inspector" aria-label="Forecast observation details" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();dismiss();}}}><header><strong>{new Date(active.timestamp).toISOString().slice(0,10)} · {clock(active.timestamp)} UTC</strong><button aria-label="Close forecast inspection" onClick={dismiss}><X size={12}/></button></header><dl>{active.observed!==null?<div><dt>Observed value</dt><dd>{value(active.observed)} {unit}</dd></div>:active.median===null?<div><dt>Observed value</dt><dd>No telemetry</dd></div>:<><div><dt>Forecast median</dt><dd>{value(active.median)} {unit}</dd></div><div><dt>68% interval</dt><dd>{value(active.low68)}–{value(active.high68)} {unit}</dd></div><div><dt>95% interval</dt><dd>{value(active.low95)}–{value(active.high95)} {unit}</dd></div></>}{active.capacity!=null&&<><div><dt>Available supply</dt><dd>{value(active.capacity)} {unit}</dd></div><div><dt>Reserve vs selected</dt><dd>{value((active.observed??active.median)===null?null:active.capacity-(active.observed??active.median)!)} {unit}</dd></div></>}</dl><footer><span>{pinned?'Pinned observation':'Exact observation'}</span><button onClick={()=>{hoverDismiss.cancel();setPinned(v=>!v);}}>{pinned?'Unpin':'Pin'}</button></footer></section></ChartTooltip>}
     </div>
-    {!embedded&&extent&&extent.end>extent.start&&<TimeWindowControls state={window} compact/>}
+    {!embedded&&extent&&extent.end>extent.start&&<LabWindowControls state={window}/>}
     {data.omitted>0&&<p className="grid-chart-note">{data.omitted} records with invalid time omitted.</p>}
   </div>;
 }

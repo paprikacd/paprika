@@ -1,8 +1,8 @@
 import { Check, CircleAlert, Columns3 } from 'lucide-react';
 import { useId } from 'react';
 import { GammaSelect } from '@insights/gamma/select';
-import type { QueryResult, Widget } from '../renderer-extensions/schema';
-import type { WidgetConfigField, WidgetDefinition } from '../renderer-extensions/widget-registry';
+import type { QueryResult, Widget } from '@insights/schema';
+import type { WidgetConfigField, WidgetDefinition } from '@insights/widget-registry';
 import { bindingMismatch, formatFieldSample, validateFieldBindings, type DiscoveredField } from './field-bindings';
 
 export function FieldMapping({ field, definition, config, result, columns, onChange }: {

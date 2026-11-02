@@ -1,7 +1,7 @@
 import { useId, useMemo, useRef, type PointerEvent } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { nearestAt, orbitalDuration, orbitalUtc } from './model';
 import { passProfileConfig, passProfilePoints, profilePasses, profileSignalPath, qualifyProfile, type PassProfilePoint } from './pass-profile-model';
 import './orbital.css';

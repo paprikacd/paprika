@@ -1,9 +1,9 @@
 import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Clock3, X } from 'lucide-react';
-import { WidgetVisualization } from '../renderer-extensions/charts';
+import { WidgetVisualization } from '@insights/charts';
 import { ChartCursorProvider } from '@insights/chart-cursor';
-import type { Widget } from '../renderer-extensions/schema';
+import type { Widget } from '@insights/schema';
 import type { DrilldownContext } from '@insights/drilldown';
 import { Panel, Sparkline } from '../components/lab/StudyPrimitives';
 import { registerMarketCharts } from '../charts/market-risk/register';

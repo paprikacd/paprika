@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../renderer-extensions/schema';
+import type { RecordFrame } from '@insights/schema';
 
 const field = z.string().min(1).max(80);
 export const waterfallConfig = z.strictObject({ label: field.default('label'), value: field.default('value'), showLabels: z.boolean().default(true), showTotal: z.boolean().default(true) });

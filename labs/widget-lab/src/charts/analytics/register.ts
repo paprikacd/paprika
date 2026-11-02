@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { CohortMatrix, ConversionFunnel, IntervalEstimates, ParetoBars, SampleDistribution, StageFlow, StatisticalControl } from './AnalyticsCharts';
 import { cohortConfig, controlConfig, countConfig, distributionConfig, flowConfig, intervalConfig } from './data';
 export function registerAnalyticsCharts() {

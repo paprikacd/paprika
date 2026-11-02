@@ -1,10 +1,10 @@
-import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
-import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { ChartTooltip } from '../../components/lab/ChartTooltip';
+import { restoreTooltipFocus } from '@insights/tooltip-focus';
+import { useTooltipDismiss } from '../../renderer-extensions/use-tooltip-dismiss';
+import { ChartTooltip } from '../../renderer-extensions/chart-tooltip';
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { LocateFixed, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { area, line } from 'd3-shape';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { worldLandPath } from '@insights/plugins/world-land';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt, type GeoPoint, type GeoViewport } from '../geo/geo-viewport';
 import { useLabMotion } from '../../components/lab/motion';

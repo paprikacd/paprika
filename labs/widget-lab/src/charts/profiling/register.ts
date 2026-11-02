@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { ProfileFlamegraph, SampledFlamechart } from './ProfileCharts';
 import { QueryPlan } from './QueryPlan';
 import { flamegraphConfig, flamechartConfig, queryPlanConfig } from './profile-model';

@@ -1,9 +1,9 @@
 import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Activity, BatteryCharging, CircleHelp, Clock3, MapPinned, RadioTower, Zap } from 'lucide-react';
-import { WidgetVisualization } from '../renderer-extensions/charts';
+import { WidgetVisualization } from '@insights/charts';
 import { ChartCursorProvider } from '@insights/chart-cursor';
-import type { Widget } from '../renderer-extensions/schema';
+import type { Widget } from '@insights/schema';
 import type { DrilldownContext } from '@insights/drilldown';
 import { MetricCard, Panel } from '../components/lab/StudyPrimitives';
 import { registerLabCharts } from '../charts/register-lab-charts';

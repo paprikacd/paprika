@@ -15,8 +15,8 @@ import {
   speedscopeFile,
 } from '../src/lenses/profiling/profile-fixtures';
 import { makeProfilingCatalogFixture, profilingChartCatalog } from '../src/catalog/profiling-fixtures';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
-import { widgetSchema } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
 
 // Both parents own self cost, so depth two contains a nonzero delta between leaves.
 function accountingProfile(): Profile {

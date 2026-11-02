@@ -1,10 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as RPointer } from 'react';
-import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { isObservationTooltipTarget } from '../../renderer-extensions/tooltip-interaction';
-import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
+import { useTooltipDismiss } from '../../renderer-extensions/use-tooltip-dismiss';
+import { isInspectorTarget } from '../../renderer-extensions/chart-tooltip';
+import { restoreTooltipFocus } from '@insights/tooltip-focus';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { worldLandPath } from '@insights/plugins/world-land';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { constrainGeoView,geoToScreen,geoWheelView,INITIAL_GEO_VIEW,panGeoBy,pinchGeo,zoomGeoAt,type GeoPoint,type GeoViewport } from '../geo/geo-viewport';
 import { buoyRows,fitEquirectangular,mapConfig,shipments,vectorBearing } from './model';
 import { num,SpatialInspector,utc,usePlotWidth,Legend,Dot } from './shared';
@@ -30,7 +30,7 @@ function SpatialMap({widget,result,embedded,onContextChange,mode}:{mode:'routes'
  const route=routes.find(r=>r.id===activeId),buoy=coast.find(r=>r.id===activeId);
  const context=(id:string|null)=>onContextChange?.({series:id??'',labels:{id:id??'',...(mode==='routes'?{shipment:id??''}:{buoy:id??''})}});
  const choose=(id:string|null)=>{if(!inspect)return;dismiss.cancel();setSelected(id);setHover(null);context(id);};
- const close=()=>{dismiss.cancel();choose(null);if(isObservationTooltipTarget(svg.current?.ownerDocument.activeElement??null))restoreTooltipFocus(svg.current);};
+ const close=()=>{dismiss.cancel();choose(null);if(isInspectorTarget(svg.current?.ownerDocument.activeElement??null))restoreTooltipFocus(svg.current);};
  const update=(v:GeoViewport)=>{camera.current=constrainGeoView(v,extent);setView(camera.current);};
  useEffect(()=>{setSelected(previous=>previous===cfg.selectedId?previous:null);setHover(null);},[cfg.selectedId]);
  useEffect(()=>{if(revision.current!==result){revision.current=result;setSelected(null);setHover(null);onContextChange?.({labels:{id:'',shipment:'',buoy:''}});}},[result,onContextChange]);
@@ -43,7 +43,7 @@ function SpatialMap({widget,result,embedded,onContextChange,mode}:{mode:'routes'
  const cancel=(id:number)=>{pointers.current.delete(id);pinch.current=null;drag.current=null;};
  const up=(e:RPointer<SVGSVGElement>)=>{const d=drag.current;cancel(e.pointerId);if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);if(d&&!moved.current&&d.id)choose(d.id);};
  const zoom=(factor:number)=>update(zoomGeoAt(camera.current,factor,{x:width/2,y:height/2},extent));
- const marker=(id:string,label:string,lon:number,lat:number,color='var(--gamma-chart-1)')=>{const p=project(lon,lat),active=id===activeId;return <g key={id} data-spatial-id={id} role={inspect?'button':'img'} tabIndex={inspect?0:undefined} aria-label={`Inspect ${mode==='routes'?`${id} · `:''}${label}`} aria-pressed={inspect?selected===id:undefined} onFocus={()=>show(id)} onBlur={e=>{if(isObservationTooltipTarget(e.relatedTarget))dismiss.cancel();else dismiss.schedule();}} onPointerEnter={()=>show(id)} onPointerLeave={dismiss.schedule} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();choose(id);}}}><circle cx={p.x} cy={p.y} r={14} fill="transparent"/><circle cx={p.x} cy={p.y} r={active?9:5} fill="var(--gamma-surface)" stroke={active?'var(--gamma-accent)':color} strokeWidth={active?2:1.4}/><circle cx={p.x} cy={p.y} r={active?4:2.4} fill={color}/>{cfg.showLabels&&mode==='coastal'&&<text x={p.x+11} y={p.y+4} fontSize="12" fill="var(--gamma-ink)" paintOrder="stroke" stroke="var(--gamma-surface)" strokeWidth="3">{label}</text>}</g>;};
+ const marker=(id:string,label:string,lon:number,lat:number,color='var(--gamma-chart-1)')=>{const p=project(lon,lat),active=id===activeId;return <g key={id} data-spatial-id={id} role={inspect?'button':'img'} tabIndex={inspect?0:undefined} aria-label={`Inspect ${mode==='routes'?`${id} · `:''}${label}`} aria-pressed={inspect?selected===id:undefined} onFocus={()=>show(id)} onBlur={e=>{if(isInspectorTarget(e.relatedTarget))dismiss.cancel();else dismiss.schedule();}} onPointerEnter={()=>show(id)} onPointerLeave={dismiss.schedule} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();choose(id);}}}><circle cx={p.x} cy={p.y} r={14} fill="transparent"/><circle cx={p.x} cy={p.y} r={active?9:5} fill="var(--gamma-surface)" stroke={active?'var(--gamma-accent)':color} strokeWidth={active?2:1.4}/><circle cx={p.x} cy={p.y} r={active?4:2.4} fill={color}/>{cfg.showLabels&&mode==='coastal'&&<text x={p.x+11} y={p.y+4} fontSize="12" fill="var(--gamma-ink)" paintOrder="stroke" stroke="var(--gamma-surface)" strokeWidth="3">{label}</text>}</g>;};
  const coastOutline=(points:[number,number][])=>'M'+points.map(([x,y])=>{const p=projection.project(x,y);return`${p.x},${p.y}`;}).join('L')+'Z';
  if(mode==='routes'?!routes.length:!coast.length)return <div className="spatial-empty">No geographic observations</div>;
  return <div className="spatial-chart" ref={ref} data-chart-entering={entering||undefined} data-spatial-map={mode} data-map-zoom={view.k}>

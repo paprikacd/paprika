@@ -1,8 +1,9 @@
 import { useId, useMemo, useRef } from 'react';
 import { scaleLinear } from 'd3-scale';
 import { line } from 'd3-shape';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { contingencyCells, contingencyConfig, flexibilityConfig, flexibilityPoints, meritConfig, meritOrder, powerFlowConfig, powerNodes, type FlexPoint, type PowerNode } from './model';
 import './energy.css';
@@ -102,7 +103,7 @@ export function FlexibilityDispatch({ widget, result, embedded, onContextChange 
       </g></g>
       {config.showEnergy&&<><text x="46" y="188" fill="var(--gamma-muted)">State of charge (%)</text>{[0,50,100].map(v=><text key={v} x="38" y={energyY(v)+4} textAnchor="end" fill="var(--gamma-muted)">{v}</text>)}<text x={width/2} y="281" textAnchor="middle" fill="var(--gamma-muted)">UTC · ideal storage, 5-minute power intervals</text></>}
     </svg>
-    {!embedded&&<TimeWindowControls state={view} compact/>}
+    {!embedded&&<LabWindowControls state={view}/>}
     {active&&<DomainInspector title={`${clock(active.timestamp)} UTC · ${active.predicted?'Predicted':'Observed fixture'}`} pinned={!!inspect.pinned} onClose={inspect.dismiss}><DetailValues items={[["Power",active.power===null?'No observation':`${fmt(active.power)} MW`],['Stored energy',`${fmt(active.energy)} MWh`],['State of charge',active.energy===null?'Unknown':`${fmt(active.energy/active.capacity*100)}%`]]}/></DomainInspector>}
   </>}</div>;
 }

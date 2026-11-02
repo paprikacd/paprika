@@ -1,9 +1,10 @@
+import { issueText } from './input-issues.helper';
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parseRecordFrame } from '@insights/record-data';
-import { widgetSchema, type RecordFrame } from '../src/renderer-extensions/schema';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { widgetSchema, type RecordFrame } from '@insights/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
 import { applyBacklog, caughtUpToCommit, commitLag, majorityRequired, ownerAt, ownershipCounts, ownershipGeometry, ownershipPaths, ownershipTransfers, peerCells, peerLatencyConfig, quorumSummary, quorumTopologyConfig, replicaSamples, replicaSnapshots, replicationTracksConfig, shardMovementConfig, steppedPath, type ReplicaSnapshot } from '../src/charts/distributed/model';
 import { distributedChartCatalog, isDistributedCatalogId, makeDistributedCatalogFixture } from '../src/charts/distributed/catalog';
 import { registerDistributedCharts } from '../src/charts/distributed/register';
@@ -130,9 +131,9 @@ describe('canonical distributed chart integration', () => {
     registerDistributedCharts(); registerDistributedCharts();
     for (const feature of distributedChartCatalog) {
       expect(isDistributedCatalogId(feature.id)).toBe(true); const panel = makeDistributedCatalogFixture(feature.id), definition = getWidgetDefinition(panel.widget)!;
-      expect(definition.layout?.mode).toBe('intrinsic'); expect(definition.configFields?.length).toBeGreaterThan(0);
+      expect(definition.sizing?.mode).toBe('intrinsic'); expect(definition.configFields?.length).toBeGreaterThan(0);
       definition.validateInput?.(panel.result, panel.widget.config);
-      const wrong = structuredClone(panel.result); wrong.records!.columns[0].key = 'missing-id'; expect(() => definition.validateInput?.(wrong, panel.widget.config)).toThrow(/Missing distributed field/);
+      const wrong = structuredClone(panel.result); wrong.records!.columns[0].key = 'missing-id'; expect(issueText(definition.validateInput?.(wrong, panel.widget.config))).toMatch(/Missing distributed field/);
     }
     for (const schema of [quorumTopologyConfig, peerLatencyConfig, replicationTracksConfig, shardMovementConfig]) expect(() => schema.parse({ unsupported: true })).toThrow();
     expect(() => peerLatencyConfig.parse({ warnAboveMs: 0 })).toThrow();

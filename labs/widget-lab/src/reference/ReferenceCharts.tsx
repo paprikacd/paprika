@@ -3,20 +3,21 @@ import { ArrowRight, Bookmark, Clock3, X } from 'lucide-react';
 import { area, line } from 'd3-shape';
 import { scaleLinear, scaleUtc } from 'd3-scale';
 import { z } from 'zod';
-import { WidgetVisualization } from '../renderer-extensions/charts';
-import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from '../renderer-extensions/widget-registry';
+import { WidgetVisualization } from '@insights/charts';
+import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from '@insights/widget-registry';
 import { useChartCursorPublisher } from '@insights/chart-cursor';
-import type { QueryResult, Widget } from '../renderer-extensions/schema';
+import type { QueryResult, Widget } from '@insights/schema';
 import { Dot, MiniTrace, RefPanel } from './ReferenceShared';
 import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
-import { ChartTooltip } from '../components/lab/ChartTooltip';
-import { restoreTooltipFocus } from '../renderer-extensions/tooltip-focus';
-import { useTooltipDismiss } from '../components/lab/useTooltipDismiss';
+import { ChartTooltip } from '../renderer-extensions/chart-tooltip';
+import { restoreTooltipFocus } from '@insights/tooltip-focus';
+import { useTooltipDismiss } from '../renderer-extensions/use-tooltip-dismiss';
 import { edgeIngressProfile, edgeEgressProfile, burnOneHourProfile, burnSixHourProfile } from './reference-profiles';
 import './ReferenceCharts.css';
 import {edgeHistoryIngress,edgeHistoryEgress} from './reference-mini-profiles';
-import { formatWindowDuration, minimumTimeWindow, nearestTimeIndex, observationsInWindow, timeWindowExtent } from '../renderer-extensions/time-window';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../renderer-extensions/time-window-controls';
+import { formatWindowDuration, minimumTimeWindow, nearestTimeIndex, observationsInWindow, timeWindowExtent } from '@insights/time-window';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../renderer-extensions/lab-window-controls';
 import { referenceBandLabel, referenceChartLayout, referenceTickAnchor } from './reference-chart-layout';
 import { referenceSource, selectedObservationIndex, selectionAfterResultChange, type ReferenceSelection } from './reference-selection';
 
@@ -142,7 +143,7 @@ function ReferenceChartRenderer({widget,result,onContextChange,embedded}:WidgetR
   if(n===0)return <div className={`ref-chart ref-chart-${kind} ref-chart-empty`} role="status">No reference observations</div>;
   const legendValues=names.map((_,index)=>selectedIndex===null?(windowState.zoomed?observationsInWindow(series[index]?.points??[],windowState.window).at(-1)?.value??null:series[index]?.points[Math.min(initialIndex[kind],n-1)]?.value??null):values[index]);
   return <div ref={wrapperRef} className={`ref-chart ref-chart-${kind}`} data-responsive={layout.reflow} data-window-active={windowState.zoomed} data-time-axis={temporal?'elapsed':'reference-calibration'}>
-    {!embedded&&extent&&<TimeWindowControls state={windowState} compact/>}
+    {!embedded&&extent&&<LabWindowControls state={windowState}/>}
     <svg ref={svgRef} className="ref-chart-svg" width={width} height={svgHeight} viewBox={`0 0 ${width} ${svgHeight}`} role="img" aria-label={edge?'Network traffic chart':'Availability burn rate chart'} aria-description="Synthetic reference reconstruction. Arrow keys inspect, Enter pins, Escape closes. Drag horizontally to change this chart window; Time window provides exact UTC bounds, Undo and Reset. Dashboard values remain unchanged." tabIndex={inspectable?0:-1} {...brush.handlers} style={{touchAction: 'pan-y',userSelect:'none'}} onPointerMove={event=>{if(!brush.active)observe(event);}} onPointerLeave={()=>{brush.handlers.onPointerLeave();if(!pinned&&!brush.active)dismissal.schedule();}} onFocus={()=>{if(inspectable&&!pinned&&!returningFocus.current){dismissal.cancel();setSelection(current=>current??centerSelection());}}} onBlur={()=>{if(!pinned)dismissal.schedule();}} onClick={event=>observe(event,true)} onKeyDown={keyboard}>
       <defs>
         <clipPath id={`plot-${id}`}><rect x={plot.left} y={plot.top} width={plot.width} height={plot.height}/></clipPath>
@@ -182,6 +183,6 @@ export function ReferenceTimeseries({kind,service='uptime-api',gateway='edge-01'
   const source=useMemo<Widget>(()=>({id:`reference-${kind}`,title,type:'plugin',pluginId:'reference-timeseries',dataKind:'metrics',providerId:'reference-fixture',query:`reference.${kind}`,unit:kind==='edge'?'Mb/s':'x',layout:{x:0,y:0,w:8,h:4},config:{kind,service,gateway,phase}}),[kind,service,gateway,phase,title]);
   const panels=useDashboardPanels(), selection={kind,service,gateway,phase};
   const widget=panels.current(source,selection), actions=panels.actions({widget:source,result},selection);
-  const chart=<WidgetVisualization widget={widget} result={result}/>;
+  const chart=<WidgetVisualization naturalHeight widget={widget} result={result}/>;
   return panel?<RefPanel title={widget.title} info={panel.info} className={panel.className} action={<div className="dashboard-reference-actions">{panel.actions}{actions}</div>}>{chart}</RefPanel>:<>{actions}{chart}</>;
 }

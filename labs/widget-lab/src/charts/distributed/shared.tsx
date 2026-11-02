@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowUpRight } from 'lucide-react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues } from '../../components/lab/DomainPrimitives';
 import { applyBacklog, commitLag, distributedUtc, formatIndex, replicaState, type ReplicaSample, type ReplicaSnapshot } from './model';
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import type { RecordFrame } from '../../renderer-extensions/schema';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { RecordFrame } from '@insights/schema';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { queryPlanConfig } from './profile-model';
 import { usePlotWidth } from './ProfileCharts';
 

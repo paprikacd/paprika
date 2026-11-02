@@ -36,15 +36,15 @@ The build writes `labs/widget-lab/dist/`, which is ignored by Git. All displayed
 | Domain widgets and authoring verification | [Iteration 10 report](../../labs/widget-lab/docs/iteration-10-authoring-and-domain-widgets.md) |
 | Responsive Edge Watch and Reliability Room, viewport evidence and 575-test verification | [Iteration 11 report](../../labs/widget-lab/docs/iteration-11-responsive-reference-dashboards.md), [browser measurements](../../labs/widget-lab/docs/qa/iteration-11-browser-evidence.json) |
 | Design and interaction contracts | [`DESIGN.md`](../../labs/widget-lab/DESIGN.md), [`UX-CONTRACT.md`](../../labs/widget-lab/UX-CONTRACT.md) |
-| Attribution and renderer delta | [`attribution/`](../../labs/widget-lab/attribution/) (upstream license and Gamma attribution at `bb52aed8`), [holding copies and their production counterparts](../../labs/widget-lab/src/renderer-extensions/README.md) |
+| Attribution and renderer ownership | [`attribution/`](../../labs/widget-lab/attribution/) (upstream license and Gamma attribution at `bb52aed8`), [lab-only wrappers and the production gap each covers](../../labs/widget-lab/src/renderer-extensions/README.md) |
 
 The export includes source assets and historical screenshots so the design decisions and verification reports remain reviewable. Site-specific hosting metadata, installed dependencies and build output are excluded. [`labs/widget-lab-export.json`](../../labs/widget-lab-export.json) records the source commit and the SHA-256, byte length and Git mode of every exported file.
 
 ## Canonical integration boundary
 
-The evaluation app renders through Paprika's `WidgetVisualization`, `Widget` / `QueryResult` contracts, shared timestamp cursor and trusted widget registry. It imports production's `ui/src/features/insights` directly through `@insights/*`. The files that the lab patch changes are held in `labs/widget-lab/src/renderer-extensions/`, copies of upstream commit `bb52aed8ded8beb08534f6b190a3e7f37c1b19d8` plus the patch. The upstream license and component provenance files are kept in `labs/widget-lab/attribution/`.
+The evaluation app renders through Paprika's `WidgetVisualization`, `Widget` / `QueryResult` contracts, shared timestamp cursor and trusted widget registry. It imports production's `ui/src/features/insights` directly through `@insights/*`, with no copy of that renderer: every built-in and plugin chart family, the time-series and bar renderers, the tooltip owner and the widget registry come from production. The lab adds only the wrappers listed in `labs/widget-lab/src/renderer-extensions/README.md`, each with the production gap it covers. The upstream license and component provenance files are kept in `labs/widget-lab/attribution/`.
 
-The holding copies contain documented local extensions, including presentation options, observation inspection, time-window controls and typed source-binding metadata. Their divergence from production is listed file by file in the holding-copy README. They cannot be copied blindly into `ui/`: the local operational-map owner imports the lab's shared map wrapper, and new chart families also depend on local adapters and authoring controls.
+The lab's remaining extensions are wrappers over production APIs, and one renderer production does not bundle: the zoomable connection map. Promoting one of them means adding the missing option or owner to `ui/`, then removing the wrapper. The zoomable map needs a product decision first, because production's connection map has no zoom or pan. Exact UTC start and end entry for lab window controls needs a series adapter for production's Compare window, which the lab does not yet supply.
 
 To promote these capabilities into the production console:
 
@@ -57,7 +57,7 @@ The branch does not change a deployed cluster or merge into `master`. The self-c
 
 ## Refresh the export
 
-The initial `labs/widget-lab-export.json` is an import snapshot of source commit `29b22f4c919e7f821f18d64b96baa71b0966ca42`. Further extensions to this PR are maintained directly in `labs/widget-lab` and tracked by Git. That snapshot remains historical provenance; it is not a current-file integrity manifest after downstream edits. The exporter intentionally refuses to overwrite those independent edits. The Paprika renderer is no longer copied wholesale: the lab imports production, and the holding copies are listed in `labs/widget-lab/src/renderer-extensions/README.md`. The former per-file manifest and regenerated patch were retired with the vendored tree; they remain in git history at commit `af11b6c3`.
+The initial `labs/widget-lab-export.json` is an import snapshot of source commit `29b22f4c919e7f821f18d64b96baa71b0966ca42`. Further extensions to this PR are maintained directly in `labs/widget-lab` and tracked by Git. That snapshot remains historical provenance; it is not a current-file integrity manifest after downstream edits. The exporter intentionally refuses to overwrite those independent edits. The Paprika renderer is no longer copied: the lab imports production, and the wrappers that remain are listed in `labs/widget-lab/src/renderer-extensions/README.md`. The former per-file manifest and regenerated patch were retired with the vendored tree; they remain in git history at commit `af11b6c3`.
 
 After committing the separate Widget Lab source, run from the Paprika repository root:
 
@@ -66,6 +66,6 @@ python3 hack/sync-widget-lab.py --source /absolute/path/to/paprika-widget-lab
 python3 hack/sync-widget-lab.py --source /absolute/path/to/paprika-widget-lab --check
 ```
 
-Current status: this manifest is stale relative to later in-repo edits. It records only the initial import from `29b22f4c`. Edited files such as `src/App.tsx` no longer match their recorded hashes, and files added since then, such as `src/components/lab/WidgetLoading.tsx`, are not listed. The separate checkout that produced `29b22f4c` is not in this repository, so the manifest cannot be regenerated here, and `--check` cannot pass against the current manifest. Use Git history at `af11b6c3` for the retired per-file manifest, and the holding-copy README for the current divergence record.
+Current status: this manifest is stale relative to later in-repo edits. It records only the initial import from `29b22f4c`. Edited files such as `src/App.tsx` no longer match their recorded hashes, and files added since then, such as `src/components/lab/WidgetLoading.tsx`, are not listed. The separate checkout that produced `29b22f4c` is not in this repository, so the manifest cannot be regenerated here, and `--check` cannot pass against the current manifest. Use Git history at `af11b6c3` for the retired per-file manifest, and the renderer-extensions README for the current wrappers.
 
 The exporter copies Git-tracked files, retains executable modes, records content hashes and refuses to overwrite independent edits in the exported copy. A dirty source is rejected by default. `--allow-dirty` is available for an explicitly uncommitted preparation checkpoint; the final branch should record `source_dirty: false`.

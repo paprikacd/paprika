@@ -1,8 +1,6 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createTooltipDismissController } from '../src/components/lab/useTooltipDismiss';
-import { createTooltipInteractionStore } from '../src/renderer-extensions/tooltip-interaction';
 import { RouteMap, CoastalVectorMap } from '../src/charts/spatial/Maps';
 import { ETAWindows, DirectionalRose } from '../src/charts/spatial/DistributionCharts';
 import { RackMatrix } from '../src/charts/inference/InferenceCharts';
@@ -11,37 +9,14 @@ import { buildInferenceFleet } from '../src/lenses/inference-fleet-data';
 import { buoyRows, shipments } from '../src/charts/spatial/model';
 
 // Keep actual family selection/rendering, while exposing its popup decision to SSR.
-vi.mock('../src/components/lab/ChartTooltip', async () => {
+vi.mock('../src/renderer-extensions/chart-tooltip', async () => {
   const { createElement } = await import('react');
   return { ChartTooltip: ({ pinned, children }: { pinned: boolean; children: ReactNode }) => createElement('section', { 'data-test-tooltip': pinned ? 'pinned' : 'transient' }, children) };
 });
 
 afterEach(() => vi.useRealTimers());
 
-describe('legacy chart tooltip handoff contracts', () => {
-  it('keeps popup focus alive after pointer departure and dismisses only after both leave', () => {
-    vi.useFakeTimers();
-    const store = createTooltipInteractionStore(), dismiss = vi.fn();
-    const owner = Symbol('panel'); store.claimPanel(owner, false, () => {});
-    const controller = createTooltipDismissController(() => ({ pinned: false, enabled: true, engaged: store.isPanelEngaged() }), dismiss);
-    const unsubscribe = store.subscribe(controller.engagementChanged);
-    controller.schedule();
-    vi.advanceTimersByTime(90);
-    store.setPanelHovered(owner, true);
-    store.setPanelFocused(owner, true);
-    store.setPanelHovered(owner, false);
-    // Pointer movement notifications must not erase keyboard engagement.
-    store.pointer(40, 50, null);
-    vi.advanceTimersByTime(500);
-    expect(dismiss).not.toHaveBeenCalled();
-    store.setPanelFocused(owner, false);
-    vi.advanceTimersByTime(179);
-    expect(dismiss).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(dismiss).toHaveBeenCalledTimes(1);
-    unsubscribe(); controller.dispose();
-  });
-
+describe('family tooltip contracts', () => {
   it('preserves controlled route and arrival highlights without opening or pinning a popup', () => {
     const fixtures = logisticsFixtures(), id = shipments(fixtures.map.result.records)[0].id;
     const snapshot = JSON.stringify(fixtures);

@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../../renderer-extensions/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 import { profileFromStacks, type WeightedStack } from '../../charts/profiling/profile-model';
 import { differentialProfile, empiricalQuantile, pairedPerformance, performanceObservations, performanceTrace, type Build } from '../../charts/performance/model';
 

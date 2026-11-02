@@ -5,8 +5,8 @@ import { MARKET_AS_OF, MARKET_POSITIONS, marketSummary, marketHistory, marketCon
 import { correlationCells, correlationConfig, correlationColor, liquidityConfig, liquiditySegments, waterfallConfig, waterfallSteps } from '../src/charts/market-risk/market-chart-data';
 import { CorrelationMatrix, ContributionWaterfall, LiquidityLadder } from '../src/charts/market-risk/MarketCharts';
 import { registerMarketCharts } from '../src/charts/market-risk/register';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
-import { widgetSchema, type RecordFrame } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema, type RecordFrame } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 
 describe('Market Risk accounting and analytical evidence', () => {

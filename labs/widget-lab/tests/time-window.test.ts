@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { minimumTimeWindow, nearestTimeIndex, normalizeTimeWindow, observationsInWindow, sameTimeWindow, timeWindowExtent, timeWindowFromPixels } from '../src/renderer-extensions/time-window';
+import { minimumTimeWindow, nearestTimeIndex, normalizeTimeWindow, observationsInWindow, sameTimeWindow, timeWindowExtent, timeWindowFromPixels } from '@insights/time-window';
 import { makeReferenceResult } from '../src/reference/ReferenceCharts';
-import { calendarTick } from '../src/renderer-extensions/chart-presentation';
+import { calendarTick } from '@insights/chart-presentation';
 
 describe('chart time window contract', () => {
   it('uses finite timestamps across series, including legitimate zero and null observations', () => {
@@ -68,10 +68,10 @@ describe('chart time window contract', () => {
 
   it('distinguishes UTC sub-day calendar ticks after zoom while keeping full-month labels concise', () => {
     const midnight=Date.UTC(2026,9,13), noon=midnight+12*3600000;
-    expect(calendarTick(midnight,3*86400000)).toBe('Oct 13 00:00');
-    expect(calendarTick(noon,3*86400000)).toBe('Oct 13 12:00');
-    expect(calendarTick(midnight,30*86400000)).toBe('Oct 13');
-    expect(calendarTick(noon,3600000)).toBe('12:00');
+    expect(calendarTick(midnight,3*86400000,'UTC')).toBe('Oct 13 00:00');
+    expect(calendarTick(noon,3*86400000,'UTC')).toBe('Oct 13 12:00');
+    expect(calendarTick(midnight,30*86400000,'UTC')).toBe('Oct 13');
+    expect(calendarTick(noon,3600000,'UTC')).toBe('12:00');
   });
 
   for (const kind of ['edge','reliability'] as const) {

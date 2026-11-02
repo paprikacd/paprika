@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3-scale';
 import { area, line } from 'd3-shape';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { fleetRows, resourceBarsConfig, resourceSummary, resourceTimepoints, resourceTrendConfig, throttleConfig, throttleRows, type FleetTimepoint } from './model';
 import { fleetNumber, fleetTime } from './PlacementChart';
@@ -123,7 +124,7 @@ export function KubernetesResourceTrend({ widget, result, embedded, onContextCha
       {brush.preview && <rect pointerEvents="none" x={Math.min(brush.preview.x1, brush.preview.x2)} y="22" width={Math.abs(brush.preview.x2 - brush.preview.x1)} height={strip * count - 35} fill={C.cyan} fillOpacity=".14" stroke={C.cyan}/>}
     </svg></div>
     {widget.options?.showLegend !== false && <div className="domain-legend"><span>Solid: observed usage{cfg.showNetwork ? ' / ingress' : ''}</span>{cfg.showRequested && <span>Dashed: request</span>}{cfg.showNetwork && <span>Violet network: egress</span>}<span>{data.at(-1)!.observed}/{data.at(-1)!.expected} containers observed</span></div>}
-    {!embedded && view.enabled && <TimeWindowControls state={view} compact description="Zoom changes this chart window. Snapshot requests, placement and other panels retain their original scope."/>}
+    {!embedded && view.enabled && <LabWindowControls state={view} description="Zoom changes this chart window. Snapshot requests, placement and other panels retain their original scope."/>}
     {observation && <DomainInspector title={`${observation.scopeLabel} · ${fleetTime(observation.timestamp)} UTC`} pinned={!!inspect.pinned} onClose={clear}><DetailValues items={[
       ['Timestamp', new Date(observation.timestamp).toISOString()], ['CPU observed / requested', `${fleetNumber(observation.cpuUsed, 4)} / ${fleetNumber(observation.cpuRequested, 4)} cores`], ['Memory observed / requested', `${fleetNumber(observation.memoryUsed, 4)} / ${fleetNumber(observation.memoryRequested, 4)} GiB`], ['Network ingress / egress', `${fleetNumber(observation.networkRx, 4)} / ${fleetNumber(observation.networkTx, 4)} Mb/s`], ['Coverage', `${observation.observed} / ${observation.expected} containers · missing values excluded from observed sums`],
     ]}/></DomainInspector>}

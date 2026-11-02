@@ -2,10 +2,10 @@ import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { Activity, ArrowUpRight, Check, ChevronLeft, ChevronRight, Clock3, Info, RefreshCw, ShieldCheck, Target, TriangleAlert, X } from 'lucide-react';
 import { ChartCursorProvider, useChartCursor } from '@insights/chart-cursor';
-import { WidgetVisualization } from '../renderer-extensions/charts';
+import { WidgetVisualization } from '@insights/charts';
 import { GammaButton } from '@insights/gamma/button';
 import { GammaSelect } from '@insights/gamma/select';
-import type { QueryResult, Widget } from '../renderer-extensions/schema';
+import type { QueryResult, Widget } from '@insights/schema';
 import { MetricCard, Panel, StatusBadge, EmptyNotice } from '../components/lab/StudyPrimitives';
 import { useDemoReplay } from '../components/lab/motion';
 import { HOUR_MS, RELIABILITY_SERVICES, buildReliability, incidentCalendar, reliabilityBurnSeries, reliabilityIncidents, reliabilityTimeline, summarizeReliability, type BurnPoint, type IncidentCalendarDay, type ReliabilityScenario, type ReliabilityScope, type ReliabilityServiceId, type ReliabilityWindow, type StateInterval } from '../data/reliability';
@@ -27,8 +27,8 @@ const BURN_WIDGET: Widget = {
   id: 'reliability-burn', title: 'Availability burn rate', type: 'timeseries', unit: '×',
   providerId: 'synthetic-fixture', query: 'request_based_availability_burn', layout: { x: 0, y: 0, w: 8, h: 4 },
   options: { display: 'area', curve: 'linear', min: 0, showGrid: true, gridX: true, showLegend: true, showTooltip: true, decimals: 2, lineWidth: 1.6,
-    timeAxis: 'calendar', fillStyle: 'gradient', fillOpacity: 0.16, axisUnit: 'caption', inspectorDensity: 'compact',
-    referenceLines: [{ value: 1, label: 'Budget pace 1×', style: 'dashed' }],
+    timeAxis: 'calendar', fillOpacity: 0.16, axisUnit: 'caption', tooltipMaxWidth: 292,
+    referenceLines: [{ value: 1, label: 'Budget pace 1×' }],
     tooltipView: { type: 'timeseries', source: { type: 'series' }, height: 80, showGrid: false, showAxis: false, showLegend: false, decimals: 2 } },
 };
 

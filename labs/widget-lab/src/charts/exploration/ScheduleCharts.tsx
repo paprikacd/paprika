@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3-scale';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { criticalPath, dailyResourceLoad, HOUR, SCHEDULE_START, scheduleConfig, scheduleTasks, topologicalTasks, type ScheduleTask } from './model';
 import { DetailValues, Inspector, localPoint, SvgEmpty, useInspection, usePlotWidth } from './shared';
 import './exploration.css';

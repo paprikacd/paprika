@@ -1,15 +1,16 @@
-import { restoreTooltipFocus } from '../../renderer-extensions/tooltip-focus';
-import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { ChartTooltip } from '../../components/lab/ChartTooltip';
+import { restoreTooltipFocus } from '@insights/tooltip-focus';
+import { useTooltipDismiss } from '../../renderer-extensions/use-tooltip-dismiss';
+import { ChartTooltip } from '../../renderer-extensions/chart-tooltip';
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { area, line } from 'd3-shape';
 import { scaleLinear, scaleUtc } from 'd3-scale';
 import { ChevronDown, ChevronRight, Crosshair, Search, X } from 'lucide-react';
 import { Sparkline } from '../../components/lab/StudyPrimitives';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { useChartCursorPublisher } from '@insights/chart-cursor';
-import { minimumTimeWindow, nearestTimeIndex, timeWindowExtent } from '../../renderer-extensions/time-window';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import { minimumTimeWindow, nearestTimeIndex, timeWindowExtent } from '@insights/time-window';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { alignedTelemetryConfig, buildDependencyGraph, buildTraceSpans, dependencyConfig, telemetryAt, traceWaterfallConfig, visibleTraceSpans } from './incident-model';
 import './IncidentCharts.css';
 import { PlotHatchDefs, plotHatchFill } from '@insights/plot-hatch';
@@ -58,7 +59,7 @@ export function AlignedTelemetry({widget,result,embedded,onContextChange}:Widget
   const exact=selected===null?[]:telemetryAt(series,selected);
   if(!series.length)return <div className="incident-empty">No telemetry in this result.</div>;
   return <div ref={wrapper} className="aligned-telemetry" data-chart-entering={entering || undefined} data-shared-window-start={windowState.window.start} data-shared-window-end={windowState.window.end} onPointerLeave={()=>{if(!brush.active)hoverDismiss.schedule();}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))hoverDismiss.schedule();}} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
-    {!embedded&&<TimeWindowControls state={windowState} compact/>}
+    {!embedded&&<LabWindowControls state={windowState}/>}
     <svg ref={svg} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={widget.title} aria-description="Separate units share the same UTC time axis. Drag any lane to zoom all lanes; Time window offers exact input, Undo and Reset. Arrow keys inspect, Enter pins, Escape closes." tabIndex={embedded?-1:0} {...brush.handlers} onPointerMove={event=>pointer(event)} onClick={event=>pointer(event,true)} onKeyDown={event=>{
       if(!interactive)return;
       if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();const current=selected===null?0:Math.max(0,eligible.indexOf(selected));const index=event.key==='Home'?0:event.key==='End'?eligible.length-1:Math.max(0,Math.min(eligible.length-1,current+(event.key==='ArrowRight'?1:-1)));if(eligible[index]!==undefined)inspect(eligible[index]);}

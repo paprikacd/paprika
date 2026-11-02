@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { createEditorDraft, editorDataTable, editorVisualizations, reviseEditorDraft, travelEditorDraft, validateEditorWidget, visualizationCandidate } from '../src/editor/editor-model';
 import { makeCatalogFixture } from '../src/catalog/chart-fixtures';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
-import { getWidgetDefinition, getWidgetPlugins, registerWidgetPlugin, widgetDefinitions } from '../src/renderer-extensions/widget-registry';
-import type { QueryResult } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition, getWidgetPlugins, registerWidgetPlugin, widgetDefinitions } from '@insights/widget-registry';
+import type { QueryResult } from '@insights/schema';
 import '../src/lenses/FinanceLens';
 import { financePanels } from '../src/lenses/finance-data';
 

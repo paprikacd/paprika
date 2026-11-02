@@ -1,4 +1,4 @@
-import {getWidgetDefinition,registerWidgetPlugin} from '../../renderer-extensions/widget-registry';
+import {getWidgetDefinition,registerWidgetPlugin} from '@insights/widget-registry';
 import {mapConfig,intervalConfig,spectrumConfig,iqConfig,roseConfig,curtainConfig} from './model';
 import {RouteMap,CoastalVectorMap} from './Maps';
 import {ETAWindows,DwellBoxplot,DirectionalRose,IQConstellation} from './DistributionCharts';

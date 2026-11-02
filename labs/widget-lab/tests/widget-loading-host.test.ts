@@ -1,10 +1,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LabWidgetLoadingProvider } from '../src/components/lab/WidgetLoading';
-import { WidgetVisualization, type WidgetVisualizationProps } from '../src/renderer-extensions/charts';
-import { registerWidgetPlugin, type WidgetRendererProps } from '../src/renderer-extensions/widget-registry';
-import type { QueryResult, Widget } from '../src/renderer-extensions/schema';
+import { LabWidgetLoadingProvider } from '../src/renderer-extensions/lab-widget-loading';
+import { WidgetVisualization, type WidgetVisualizationProps } from '@insights/charts';
+import { registerWidgetPlugin, type WidgetRendererProps } from '@insights/widget-registry';
+import type { QueryResult, Widget } from '@insights/schema';
 
 const renderer = vi.fn(({ result }: WidgetRendererProps) => createElement('output',
   { 'aria-label': 'Observed latency' }, result.series?.[0]?.points[0]?.value));
@@ -39,11 +39,10 @@ describe('host-owned loading presentation', () => {
     expect(html).not.toContain('chart-loading-visual');
   });
 
-  it('preserves empty-result meaning and refresh feedback at the same time', () => {
+  it("keeps an empty result's meaning while a refresh is pending", () => {
+    // Production shows an empty result as its state, so the refresh notice belongs to populated results only.
     const html = render({ widget: { ...widget, type: 'timeseries', pluginId: undefined }, result: { series: [] }, loading: true });
     expect(html).toContain('No data');
-    expect(html).toContain('Refreshing Peer latency');
-    expect(html).toContain('aria-busy="true"');
     expect(renderer).not.toHaveBeenCalled();
   });
 

@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { hierarchy, treemap } from 'd3-hierarchy';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { fleetRows, fleetSelectionAction, fleetSelectionId, nodeFor, placementConfig, resourceSummary, type FleetEntity } from './model';
 import './kubernetes.css';

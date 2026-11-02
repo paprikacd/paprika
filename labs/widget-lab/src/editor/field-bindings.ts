@@ -1,5 +1,5 @@
-import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
-import type { WidgetConfigField, WidgetDefinition } from '../renderer-extensions/widget-registry';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
+import type { WidgetConfigField, WidgetDefinition } from '@insights/widget-registry';
 
 export type DiscoveredField = RecordFrame['columns'][number] & {
   observations: number;

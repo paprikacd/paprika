@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import type { Widget } from '../../renderer-extensions/schema';
-import { WidgetLoadingProvider, type WidgetLoadingPresentation } from '../../renderer-extensions/widget-loading';
-import { ChartLoading, ChartRefreshing, type ChartLoadingVariant } from './ChartLoading';
+import { WidgetLoadingProvider, type WidgetLoadingPresentation } from '@insights/widget-loading';
+import type { Widget } from '@insights/schema';
+import { ChartLoading, ChartRefreshing, type ChartLoadingVariant } from '../components/lab/ChartLoading';
 
 /** A visual hint only. The registry and normalized result retain all data ownership. */
 export function chartLoadingVariant(widget: Widget): ChartLoadingVariant {
@@ -13,6 +13,7 @@ export function chartLoadingVariant(widget: Widget): ChartLoadingVariant {
   return 'line';
 }
 
+/** The lab's skeleton for production's loading slot. Production keeps the phase rules; this supplies only the look. */
 const renderLoading: WidgetLoadingPresentation = ({ widget, phase }) => phase === 'initial'
   ? <ChartLoading variant={chartLoadingVariant(widget)} label={`Loading ${widget.title}`} height="fill"/>
   : <ChartRefreshing label={`Refreshing ${widget.title}`}/>;

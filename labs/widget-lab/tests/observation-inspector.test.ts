@@ -1,9 +1,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { buildObservationInspector, inspectPreparedObservation, inspectionSeriesKey, prepareObservationInspector } from '../src/renderer-extensions/observation-inspector-data';
-import { RichObservationInspector } from '../src/renderer-extensions/observation-inspector';
-import { buildDistribution } from '../src/renderer-extensions/plugins/rich-metrics-data';
+import { buildObservationInspector, inspectPreparedObservation, inspectionSeriesKey, prepareObservationInspector } from '@insights/observation-inspector-data';
+import { ObservationInspector } from '@insights/observation-inspector';
+import { DashboardTimeZoneProvider } from '@insights/dashboard-time-zone';
+import { buildDistribution } from '@insights/plugins/rich-metrics-data';
 import type { Point, Series } from '@insights/chart-data';
 
 const stamp = Date.UTC(2026, 9, 30, 13, 32, 8, 123);
@@ -118,11 +119,11 @@ describe('exact observation inspection', () => {
   });
 
   it('renders explicit UTC precision, raw data access and functional pin/close labels', () => {
-    const markup = renderToStaticMarkup(createElement(RichObservationInspector, {
+    const markup = renderToStaticMarkup(createElement(DashboardTimeZoneProvider, { timeZone: 'UTC', children: createElement(ObservationInspector, {
       title: 'Gateway traffic', series: [series('Ingress', [point(0, 1.23456789)], { gateway: 'edge-01', region: 'eu' }), series('Egress', [point(0, null)])],
       selectedSeriesIndex: 0, timestamp: stamp, unit: 'Mb/s', decimals: 2, pinned: false,
       colors: ['#00ccdd', '#aa88ff'], onPin: () => {}, onClose: () => {},
-    }));
+    }) }));
     expect(markup).toMatch(/datetime="2026-10-30T13:32:08\.123Z"/i);
     expect(markup).toContain('13:32:08.123');
     expect(markup).toContain('UTC');
@@ -137,11 +138,11 @@ describe('exact observation inspection', () => {
   });
 
   it('keeps signed history geometry finite and fades its area at true zero', () => {
-    const markup = renderToStaticMarkup(createElement(RichObservationInspector, {
+    const markup = renderToStaticMarkup(createElement(DashboardTimeZoneProvider, { timeZone: 'UTC', children: createElement(ObservationInspector, {
       title: 'Signed source', series: [series('Signed', [point(0, -1e308), point(1000, 1e308)])],
       selectedSeriesIndex: 0, timestamp: stamp, unit: '', pinned: false,
       colors: ['#00ccdd'], onPin: () => {}, onClose: () => {},
-    }));
+    }) }));
     expect(markup).not.toMatch(/NaN|Infinity/);
     expect(markup).toContain('offset="0.5"');
     expect(markup).toContain('y1="20" y2="20"');

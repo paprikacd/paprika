@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../renderer-extensions/schema';
+import type { RecordFrame } from '@insights/schema';
 
 const selected = { selectedPass: z.string().max(80).optional(), selectedTimestamp: z.number().finite().optional(), showPassPicker: z.boolean().default(true) };
 export const groundTrackConfig = z.strictObject({ ...selected, showLabels: z.boolean().default(true), showEclipse: z.boolean().default(true), showGraticule: z.boolean().default(true) });

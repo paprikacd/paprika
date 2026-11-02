@@ -1,3 +1,4 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -6,9 +7,9 @@ import { performanceChartCatalog, makePerformanceCatalogFixture } from '../src/c
 import { registerPerformanceCharts } from '../src/charts/performance/register';
 import { PerformanceDifferentialFlamegraph } from '../src/charts/performance/PerformanceProfile';
 import { buildPerformanceWorkbench, PERFORMANCE_ROUTES, performanceProfileFixture, performanceRequestFixture } from '../src/lenses/performance/fixtures';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { getWidgetDefinition } from '@insights/widget-registry';
 import { parseRecordFrame } from '@insights/record-data';
-import { widgetSchema } from '../src/renderer-extensions/schema';
+import { widgetSchema } from '@insights/schema';
 
 describe('performance request populations and distributions', () => {
   it('keeps seeded workload variation deterministic and paired while preserving exact trace examples', () => {
@@ -189,8 +190,8 @@ describe('performance registered authoring and passive previews', () => {
       const fixture = makePerformanceCatalogFixture(feature.id, preset), owner = getWidgetDefinition('plugin', feature.id)!;
       expect(() => widgetSchema.parse(fixture.widget)).not.toThrow();
       expect(() => parseRecordFrame(fixture.result.records)).not.toThrow();
-      expect(owner.layout?.mode).toBe('intrinsic');
-      expect(() => owner.validateInput?.(fixture.result, owner.parseConfig?.(fixture.widget.config))).not.toThrow();
+      expect(owner.sizing?.mode).toBe('intrinsic');
+      expect(owner.validateInput?.(fixture.result, owner.parseConfig?.(fixture.widget.config)) ?? []).toEqual([]);
       expect(fixture.result.records!.rows.length).toBeLessThanOrEqual(1000);
       expect(fixture.result.records!.columns.length).toBeLessThanOrEqual(64);
     }

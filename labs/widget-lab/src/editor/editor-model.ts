@@ -1,6 +1,6 @@
 import { ZodError, type ZodIssue } from 'zod';
-import { widgetKind, widgetSchema, type DataKind, type QueryResult, type Widget, type WidgetOptions } from '../renderer-extensions/schema';
-import { getWidgetDefinition, type WidgetDefinition } from '../renderer-extensions/widget-registry';
+import { widgetKind, widgetSchema, type DataKind, type QueryResult, type Widget, type WidgetOptions } from '@insights/schema';
+import { getWidgetDefinition, widgetInputIssues, type WidgetDefinition } from '@insights/widget-registry';
 import { validateFieldBindings } from './field-bindings';
 
 export type DraftValidation = { widget: Widget; errors: [] } | { widget: null; errors: string[] };
@@ -23,7 +23,7 @@ export function updateWidgetOption<K extends keyof WidgetOptions>(widget: Widget
   return { ...widget, options };
 }
 
-const sharedTooltipKeys = ['showTooltip', 'inspectorDensity', 'tooltipPlacement', 'tooltipOffset', 'tooltipMaxWidth', 'tooltipMaxHeight'] as const;
+const sharedTooltipKeys = ['showTooltip', 'tooltipPlacement', 'tooltipOffset', 'tooltipMaxWidth', 'tooltipMaxHeight'] as const;
 
 function sharedTooltipOptions(options?: WidgetOptions): WidgetOptions {
   return Object.fromEntries(sharedTooltipKeys.flatMap(key => options?.[key] === undefined ? [] : [[key, options[key]]])) as WidgetOptions;
@@ -61,7 +61,11 @@ export function validateEditorWidget(candidate: unknown, sourceKind: DataKind, r
       const diagnostics = validateFieldBindings(definition, config ?? widget.config, result);
       if (diagnostics.length) return { widget: null, errors: diagnostics.map(issue => issue.message) };
     }
-    if (result) definition.validateInput?.(result, config ?? widget.config);
+    if (result) {
+      // The loaded result is checked the way the host checks it: each issue is shown, and a throw becomes one issue.
+      const issues = widgetInputIssues(definition, result, config ?? widget.config);
+      if (issues.length) return { widget: null, errors: issues.map(issue => issue.message) };
+    }
     return { widget: config === undefined ? widget : { ...widget, config }, errors: [] };
   } catch (error) {
     if (error instanceof ZodError) return { widget: null, errors: validationMessages(error.issues, 'Configuration') };

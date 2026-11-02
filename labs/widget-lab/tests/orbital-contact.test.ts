@@ -1,9 +1,10 @@
+import { issueText } from './input-issues.helper';
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parseRecordFrame } from '@insights/record-data';
-import { widgetSchema } from '../src/renderer-extensions/schema';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { widgetSchema } from '@insights/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
 import { budgetSteps, budgetTerms, budgetTotal, contactTimelineConfig, groundPoints, groundTrackConfig, groupByPass, isObstructed, linkBudgetConfig, nearestAt, skyPoints, skyPosition, skyplotConfig, splitDateline, summarizePasses, wrapLongitude, type SkyPoint } from '../src/charts/orbital/model';
 import { isOrbitalCatalogId, makeOrbitalCatalogFixture, orbitalChartCatalog } from '../src/charts/orbital/catalog';
 import { registerOrbitalCharts } from '../src/charts/orbital/register';
@@ -78,7 +79,7 @@ describe('predicted contact accounting and missingness', () => {
 describe('orbital registration and canonical integration', () => {
   it('registers all strict, data-aware, intrinsic families exactly once', () => {
     registerOrbitalCharts();registerOrbitalCharts();
-    for(const feature of orbitalChartCatalog){expect(isOrbitalCatalogId(feature.id)).toBe(true);const source=makeOrbitalCatalogFixture(feature.id),definition=getWidgetDefinition(source.widget)!;expect(definition).toBeTruthy();expect(definition.layout?.mode).toBe('intrinsic');expect(definition.configFields?.length).toBeGreaterThan(0);expect(()=>definition.validateInput?.(source.result,source.widget.config)).not.toThrow();const broken=structuredClone(source.result);broken.records!.columns[0].key='missing-id';expect(()=>definition.validateInput?.(broken,source.widget.config)).toThrow(/Missing orbital field/);}
+    for(const feature of orbitalChartCatalog){expect(isOrbitalCatalogId(feature.id)).toBe(true);const source=makeOrbitalCatalogFixture(feature.id),definition=getWidgetDefinition(source.widget)!;expect(definition).toBeTruthy();expect(definition.sizing?.mode).toBe('intrinsic');expect(definition.configFields?.length).toBeGreaterThan(0);expect(definition.validateInput?.(source.result,source.widget.config) ?? []).toEqual([]);const broken=structuredClone(source.result);broken.records!.columns[0].key='missing-id';expect(issueText(definition.validateInput?.(broken,source.widget.config))).toMatch(/Missing orbital field/);}
     for(const config of [groundTrackConfig,skyplotConfig,contactTimelineConfig,linkBudgetConfig])expect(()=>config.parse({unsupported:true})).toThrow();
   });
   it('passes all fixture states through the canonical transport and static embedded renderer', () => {

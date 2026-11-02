@@ -1,5 +1,5 @@
 import type { CatalogFeature, CatalogPreset } from '../../catalog/chart-fixtures';
-import type { QueryResult, Widget } from '../../renderer-extensions/schema';
+import type { QueryResult, Widget } from '@insights/schema';
 import { buildTrialEvidence } from '../../lenses/clinical/fixtures';
 export type ClinicalCatalogId = 'survival-km' | 'hazard-forest' | 'response-waterfall' | 'visit-completeness' | 'participant-swimmer' | 'followup-distribution';
 const standard = ['ready', 'gaps', 'empty', 'error'] as const, complete = ['ready', 'empty', 'error'] as const;

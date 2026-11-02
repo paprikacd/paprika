@@ -3,7 +3,7 @@ import { mergeDomainWidget } from '../src/components/lab/domain-widget';
 import { buildGridBalance } from '../src/lenses/energy/fixtures';
 import { registerEnergyCharts } from '../src/charts/energy/register';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { getWidgetDefinition } from '@insights/widget-registry';
 import { validateEditorWidget, visualizationCandidate } from '../src/editor/editor-model';
 
 registerEnergyCharts(); registerLabCharts();

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../renderer-extensions/schema';
+import type { RecordFrame } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 
 const field = (name: string) => z.string().trim().min(1).max(80).default(name);

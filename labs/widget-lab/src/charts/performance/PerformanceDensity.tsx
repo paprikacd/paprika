@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { scaleLinear, scaleLog } from 'd3-scale';
 import { area, line } from 'd3-shape';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { describeQuantile, latencyDensity, performanceDensityConfig, performanceObservations, stepDensityCell } from './model';
 import './performance.css';
@@ -83,7 +84,7 @@ export function PerformanceLatencyDensity({ widget, result, embedded, onContextC
           {brush.preview && <rect x={Math.min(brush.preview.x1, brush.preview.x2)} y="17" width={Math.abs(brush.preview.x2 - brush.preview.x1)} height="154" fill={C.cyan} fillOpacity=".12" stroke={C.cyan} pointerEvents="none"/>}
         </g></g>
       </svg>
-      {!embedded && <TimeWindowControls state={view} compact/>}
+      {!embedded && <LabWindowControls state={view}/>}
       <div className="performance-subheading"><strong>Build distributions</strong><span><i style={{ background: C.cyan }}/> Baseline · n={totals.before}</span><span><i style={{ background: C.violet }}/> Candidate · n={totals.after}</span></div>
       <svg viewBox={`0 0 ${width} 108`} role="img" aria-label="Baseline and candidate latency distribution, percent of observed requests per logarithmic bin">
         {distributionY.ticks(3).map(value => <g key={value}><line x1="44" x2={width - 12} y1={distributionY(value)} y2={distributionY(value)} stroke="var(--gamma-chart-grid)"/><text x="37" y={distributionY(value) + 4} textAnchor="end" fill={C.muted}>{performanceNumber(value, 0)}%</text></g>)}

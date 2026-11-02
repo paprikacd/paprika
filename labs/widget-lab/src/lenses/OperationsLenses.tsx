@@ -2,9 +2,9 @@ import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type CSSProperties } from 'react';
 import { Activity, CircleCheck, CircleHelp, Clock3, Globe2, Server, ShieldCheck, X } from 'lucide-react';
 import { registerLabCharts } from '../charts/register-lab-charts';
-import { WidgetVisualization } from '../renderer-extensions/charts';
+import { WidgetVisualization } from '@insights/charts';
 import { ChartCursorProvider } from '@insights/chart-cursor';
-import type { QueryResult, Widget } from '../renderer-extensions/schema';
+import type { QueryResult, Widget } from '@insights/schema';
 import { buildInfrastructureLens, buildWebsiteLens, OPERATIONS_AS_OF, type OperationsKind, type OperationsPanel } from './operations-data';
 import './OperationsLenses.css';
 

@@ -1,6 +1,5 @@
-/* The shared floating frame owns spacing and dimensions across every chart family. */
-.lab-chart-tooltip [data-observation-tooltip-content] { padding: 12px; }
-.lab-chart-tooltip[data-inspector-density="compact"] [data-observation-tooltip-content] { padding: 9px; }
+/* The lab's family content inside production's observation panel. The panel owns position, size and scrolling. */
+.lab-chart-tooltip > div { padding: 12px; }
 .lab-chart-tooltip [data-tooltip-content] {
   overflow-wrap: anywhere;
   color: var(--gamma-ink);

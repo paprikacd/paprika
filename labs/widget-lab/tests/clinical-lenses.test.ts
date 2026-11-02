@@ -1,3 +1,4 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -9,8 +10,8 @@ import {
 import { buildTrialEvidence, clinicalFrame, clinicalParticipants, CLINICAL_POPULATIONS, inClinicalPopulation } from '../src/lenses/clinical/fixtures';
 import { clinicalChartCatalog, makeClinicalCatalogFixture } from '../src/charts/clinical/catalog';
 import { registerClinicalCharts } from '../src/charts/clinical/register';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
-import { widgetSchema } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 
 const hand: SurvivalObservation[] = [
@@ -203,8 +204,8 @@ describe('clinical authoring and canonical host preflight', () => {
       expect(() => widgetSchema.parse(fixture.widget)).not.toThrow();
       expect(() => parseRecordFrame(fixture.result.records)).not.toThrow();
       expect(() => definition.parseConfig!(fixture.widget.config)).not.toThrow();
-      expect(() => definition.validateInput!(fixture.result, fixture.widget.config)).not.toThrow();
-      expect(definition.layout?.mode).toBe('intrinsic');
+      expect(definition.validateInput!(fixture.result, fixture.widget.config)).toEqual([]);
+      expect(definition.sizing?.mode).toBe('intrinsic');
       if (preset === 'empty') expect(fixture.result.records!.rows).toHaveLength(0);
     }
   });
@@ -212,10 +213,10 @@ describe('clinical authoring and canonical host preflight', () => {
     const fixture = makeClinicalCatalogFixture('survival-km'), definition = getWidgetDefinition('plugin', 'survival-km')!;
     const config = survivalConfig.parse({ duration: 'missing_duration' });
     expect(() => definition.parseConfig!(config)).not.toThrow();
-    expect(() => definition.validateInput!(fixture.result, config)).toThrow(/Missing clinical field/);
+    expect(issueText(definition.validateInput!(fixture.result, config))).toMatch(/Missing clinical field/);
     fixture.result.records!.columns.find(column => column.key === 'duration')!.type = 'string';
     fixture.result.records!.rows.forEach(row => { row[2] = String(row[2]); });
-    expect(() => definition.validateInput!(fixture.result, {})).toThrow(/must have type number/);
+    expect(issueText(definition.validateInput!(fixture.result, {}))).toMatch(/must have type number/);
   });
   it('rejects invented options and incompatible visit mappings', () => {
     expect(() => survivalConfig.parse({ intervalType: 'invented' })).toThrow();
@@ -226,9 +227,9 @@ describe('clinical authoring and canonical host preflight', () => {
   });
   it('validates follow-up data before accepting renamed or over-dense configurations', () => {
     const fixture = makeClinicalCatalogFixture('followup-distribution'), definition = getWidgetDefinition('plugin', 'followup-distribution')!;
-    expect(() => definition.validateInput!(fixture.result, { duration: 'missing' })).toThrow(/Missing clinical field/);
-    expect(() => definition.validateInput!(fixture.result, { binWidthMonths: .25 })).toThrow(/at most 64 bins/);
-    expect(() => definition.validateInput!(fixture.result, { binWidthMonths: .5 })).not.toThrow();
+    expect(issueText(definition.validateInput!(fixture.result, { duration: 'missing' }))).toMatch(/Missing clinical field/);
+    expect(issueText(definition.validateInput!(fixture.result, { binWidthMonths: .25 }))).toMatch(/at most 64 bins/);
+    expect(definition.validateInput!(fixture.result, { binWidthMonths: .5 })).toEqual([]);
     expect(definition.configFields?.find(field => field.key === 'duration')?.binding).toMatchObject({ types: ['number'], unit: 'months', acceptedUnits: ['months', 'month'] });
   });
   it('renders follow-up variants without changing the source cohort or embedded interactivity', () => {

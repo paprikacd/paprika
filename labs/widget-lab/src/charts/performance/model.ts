@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../renderer-extensions/schema';
+import type { RecordFrame } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 import { buildTraceSpans, type TraceSpan } from '../incident/incident-model';
 import { validateProfile, type Profile, type ProfileFrame } from '../profiling/profile-model';

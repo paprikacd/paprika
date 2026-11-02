@@ -6,8 +6,8 @@ import { useDemoReplay } from '../components/lab/motion';
 import { GammaButton } from '@insights/gamma/button';
 import { GammaSelect } from '@insights/gamma/select';
 import { ChartCursorProvider, useChartCursor, useChartCursorPublisher } from '@insights/chart-cursor';
-import { WidgetVisualization } from '../renderer-extensions/charts';
-import type { Widget } from '../renderer-extensions/schema';
+import { WidgetVisualization } from '@insights/charts';
+import type { Widget } from '@insights/schema';
 import { buildEdgeTelemetry, makeEdgeChartResult, type EdgeDataset, type EdgeGateway, type EdgeMinutes, type EdgeResolution, type EdgeTrafficPoint, type EdgeRule, type EdgeScenario } from '../data/edge-telemetry';
 import styles from './EdgeWatch.module.css';
 
@@ -79,7 +79,7 @@ export function EdgeWatch({ theme, narrow }: { theme: 'dark' | 'light'; narrow: 
   const results = useMemo(() => makeEdgeChartResult(data, resolution), [data, resolution]);
   const sourceWidget: Widget = useMemo(() => {
     const maximum = Math.max(200, Math.ceil(Math.max(...trafficPoints.map(point => point.ingressMbps ?? 0), ...trafficPoints.map(point => point.egressMbps ?? 0)) / 200) * 200);
-    return { id: 'edge-traffic', title: 'Traffic flow', type: 'timeseries', providerId: 'synthetic-fixture', query: 'edge_traffic_fixture', unit: 'Mb/s', layout: { x: 0, y: 0, w: 8, h: 4 }, options: { display: 'area', curve: 'linear', showGrid: true, showLegend: true, showTooltip: true, decimals: 2, lineWidth: 1.6, fillOpacity: 0.28, fillStyle: 'gradient', gridX: true, timeAxis: 'calendar', axisUnit: 'caption', showZeroLine: true, inspectorDensity: 'compact', min: -maximum, max: maximum, tooltipView: { type: 'timeseries', source: { type: 'series' }, title: 'Selected series history', height: 80, showGrid: false, showAxis: false, showLegend: false, decimals: 2 } } };
+    return { id: 'edge-traffic', title: 'Traffic flow', type: 'timeseries', providerId: 'synthetic-fixture', query: 'edge_traffic_fixture', unit: 'Mb/s', layout: { x: 0, y: 0, w: 8, h: 4 }, options: { display: 'area', curve: 'linear', showGrid: true, showLegend: true, showTooltip: true, decimals: 2, lineWidth: 1.6, fillOpacity: 0.28, gridX: true, timeAxis: 'calendar', axisUnit: 'caption', showZeroLine: true, tooltipMaxWidth: 292, min: -maximum, max: maximum, tooltipView: { type: 'timeseries', source: { type: 'series' }, title: 'Selected series history', height: 80, showGrid: false, showAxis: false, showLegend: false, decimals: 2 } } };
   }, [trafficPoints]);
   const panels = useDashboardPanels(), widget = panels.current(sourceWidget);
   const filteredEvents = data.events.filter(event => rule === 'all' || event.rule === rule);

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../renderer-extensions/schema';
+import type { RecordFrame } from '@insights/schema';
 import { recordObjects } from '../analytics/data';
 
 export const DIE_BINS = ['pass', 'leakage', 'timing', 'open', 'untested', 'excluded'] as const;

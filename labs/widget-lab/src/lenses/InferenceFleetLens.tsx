@@ -4,12 +4,14 @@ import { Activity, ArrowRightLeft, Clock3, Cpu, Database, RotateCcw } from 'luci
 import { registerInferenceCharts } from '../charts/inference/register';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { Panel } from '../components/lab/StudyPrimitives';
-import { WidgetVisualization } from '../renderer-extensions/charts';
+import { WidgetVisualization } from '@insights/charts';
 import { ChartCursorProvider } from '@insights/chart-cursor';
-import { horizontalPlotBounds } from '../renderer-extensions/chart-presentation';
-import { formatWindowDuration, minimumTimeWindow, timeWindowExtent, type ChartTimeWindow } from '../renderer-extensions/time-window';
-import { TimeBrushOverlay, TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../renderer-extensions/time-window-controls';
-import type { Widget } from '../renderer-extensions/schema';
+import { horizontalPlotBounds } from '@insights/chart-presentation';
+import { formatWindowDuration, minimumTimeWindow, timeWindowExtent, type ChartTimeWindow } from '@insights/time-window';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../renderer-extensions/lab-window-controls';
+import { TimeBrushOverlay } from '../renderer-extensions/time-brush-overlay';
+import type { Widget } from '@insights/schema';
 import type { EditLensWidget } from './LensStudio';
 import { buildInferenceFleet, inferenceObservationWindow, inferenceResultInWindow, INFERENCE_MODELS, INFERENCE_REGIONS, type InferencePanel, type InferenceScope } from './inference-fleet-data';
 import './InferenceFleetLens.css';
@@ -67,7 +69,7 @@ function InferenceTimePlot({ panel, kind, window, revision, enabled, commit, onB
       event.stopPropagation();
     }}>
     <WidgetVisualization widget={presentedWidget} result={panel.result}/>
-    {geometry && <TimeBrushOverlay preview={preview} top={geometry.offsetY + geometry.top * geometry.scaleY} height={Math.max(0, (geometry.height - geometry.top - geometry.bottom) * geometry.scaleY)} width={geometry.width * geometry.scaleX}/>}
+    {geometry && <TimeBrushOverlay preview={preview} top={geometry.offsetY + geometry.top * geometry.scaleY} height={Math.max(0, (geometry.height - geometry.top - geometry.bottom) * geometry.scaleY)}/>}
   </div>;
 }
 
@@ -93,7 +95,7 @@ function InferenceLatencyPair({ histogram, queue, times, edit }: { histogram: In
   return <Panel title={histogram.widget.title} subtitle="Pooled compatible cumulative TTFT histogram buckets, differenced once into disjoint rates. Bucket boundaries are approximately logarithmically spaced; color shows requests/s per bucket, not density per millisecond. The histogram and queue share their exact timestamp domain and a reversible view window. Snapshot KPIs retain the selected region and model." actions={edit(visibleHistogram)} className="inference-latency-panel">
     <div className="inference-paired-window" data-inference-paired-start={windowState.window.start} data-inference-paired-end={windowState.window.end}>
       <div className="inference-paired-caption"><span>Linked latency + queue</span><span>{rangeLabel}</span></div>
-      <TimeWindowControls state={{ ...windowState, commit }} description="Changes the latency histogram and queue together. Bounds snap outwards to five-minute source observations; no values are interpolated. Undo restores the previous accepted pair window. Reset restores the loaded range and clears its history. Dashboard scope, summaries and source observations stay unchanged."/>
+      <LabWindowControls state={{ ...windowState, commit }} description="Changes the latency histogram and queue together. Bounds snap outwards to five-minute source observations; no values are interpolated. Undo restores the previous accepted pair window. Reset restores the loaded range and clears its history. Dashboard scope, summaries and source observations stay unchanged."/>
     </div>
     <InferenceTimePlot panel={visibleHistogram} kind="histogram" window={windowState.window} revision={sourceRevision} enabled={windowState.enabled} commit={commit} onBrushStart={onBrushStart}/>
     <div className="inference-queue-heading"><h3>{queue.widget.title}</h3><span>{formatWindowDuration(windowState.window.end - windowState.window.start)} view · five-minute samples</span>{edit(visibleQueue)}</div>

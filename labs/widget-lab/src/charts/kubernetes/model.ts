@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../renderer-extensions/schema';
+import type { RecordFrame } from '@insights/schema';
 import type { DrilldownContext } from '@insights/drilldown';
 import { recordObjects } from '../analytics/data';
 

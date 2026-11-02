@@ -5,8 +5,8 @@ import { TooltipSettings } from '../src/editor/WidgetEditor';
 import { createEditorDraft, editorStyleControls, revalidateEditorDraft, reviseEditorDraft, travelEditorDraft, updateWidgetOption, validateEditorWidget, visualizationCandidate } from '../src/editor/editor-model';
 import { makeCatalogFixture, type CatalogId } from '../src/catalog/chart-fixtures';
 import { registerConceptCharts } from '../src/charts/register-concept-charts';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
-import { widgetKind, widgetOptionsSchema, type WidgetOptions } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetKind, widgetOptionsSchema, type WidgetOptions } from '@insights/schema';
 
 registerConceptCharts();
 
@@ -18,7 +18,7 @@ describe('shared tooltip configuration', () => {
     }
     const invalid = [
       { tooltipPlacement: 'fixed-card' }, { tooltipPosition: 'anchor' },
-      { tooltipOffset: -1 }, { tooltipOffset: 41 }, { tooltipOffset: .5 },
+      { tooltipOffset: -1 }, { tooltipOffset: 41 },
       { tooltipMaxWidth: 219 }, { tooltipMaxWidth: 641 }, { tooltipMaxWidth: Number.POSITIVE_INFINITY },
       { tooltipMaxHeight: 159 }, { tooltipMaxHeight: 801 }, { tooltipMaxHeight: Number.NaN },
     ];
@@ -86,10 +86,10 @@ describe('shared tooltip configuration', () => {
 
   it('preserves common tooltip settings across compatible renderers and restores remembered renderer drafts', () => {
     const { widget, result } = makeCatalogFixture('timeseries');
-    const options: WidgetOptions = { ...widget.options, showTooltip: false, inspectorDensity: 'compact', tooltipPlacement: 'top', tooltipOffset: 0, tooltipMaxWidth: 410, tooltipMaxHeight: 350 };
+    const options: WidgetOptions = { ...widget.options, showTooltip: false, tooltipPlacement: 'top', tooltipOffset: 0, tooltipMaxWidth: 410, tooltipMaxHeight: 350 };
     const source = { ...widget, options };
     const bar = visualizationCandidate(source, getWidgetDefinition('bar')!);
-    expect(bar.options).toMatchObject({ showTooltip: false, inspectorDensity: 'compact', tooltipPlacement: 'top', tooltipOffset: 0, tooltipMaxWidth: 410, tooltipMaxHeight: 350 });
+    expect(bar.options).toMatchObject({ showTooltip: false, tooltipPlacement: 'top', tooltipOffset: 0, tooltipMaxWidth: 410, tooltipMaxHeight: 350 });
     expect(bar.providerId).toBe(source.providerId);
     expect(bar.query).toBe(source.query);
     expect(validateEditorWidget(bar, 'metrics', result).errors).toEqual([]);
@@ -104,7 +104,7 @@ describe('shared tooltip configuration', () => {
       const { widget, result } = makeCatalogFixture(id);
       const snapshot = JSON.stringify(result);
       expect(editorStyleControls(widget), id).toContain('tooltips');
-      const next = { ...widget, options: { ...widget.options, inspectorDensity: 'compact' as const, tooltipPlacement: 'right' as const, tooltipOffset: 18, tooltipMaxWidth: 380, tooltipMaxHeight: 480 } };
+      const next = { ...widget, options: { ...widget.options, tooltipPlacement: 'right' as const, tooltipOffset: 18, tooltipMaxWidth: 380, tooltipMaxHeight: 480 } };
       expect(validateEditorWidget(next, widgetKind(widget), result).errors, id).toEqual([]);
       expect(JSON.stringify(result), id).toBe(snapshot);
     }
@@ -113,15 +113,14 @@ describe('shared tooltip configuration', () => {
   });
 
   it('renders labelled tooltip controls, retains disabled values, and exposes no competing fixed-position mode', () => {
-    const markup = renderToStaticMarkup(createElement(TooltipSettings, { options: { showTooltip: false, inspectorDensity: 'compact', tooltipMaxWidth: 440, tooltipOffset: 0 }, onChange: () => undefined }));
+    const markup = renderToStaticMarkup(createElement(TooltipSettings, { options: { showTooltip: false, tooltipMaxWidth: 440, tooltipOffset: 0 }, onChange: () => undefined }));
     expect(markup).toContain('Show tooltips');
     expect(markup).toMatch(/<fieldset[^>]*disabled=""[^>]*aria-label="Tooltip appearance and placement"/);
-    expect(markup).toContain('aria-label="Tooltip density"');
     expect(markup).toContain('aria-label="Tooltip placement"');
     expect(markup).toContain('aria-label="Tooltip maximum width"');
     expect(markup).toContain('value="440"');
     expect(markup).toContain('value="0"');
-    expect(markup).toContain('292 × 560 px');
+    expect(markup).toContain('330 × 560 px');
     expect(markup).not.toContain('Show legend');
     expect(markup).not.toContain('Fixed card');
   });

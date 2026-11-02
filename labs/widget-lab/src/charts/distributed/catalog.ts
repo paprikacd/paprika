@@ -1,5 +1,5 @@
 import type { CatalogFeature, CatalogPreset } from '../../catalog/chart-fixtures';
-import type { QueryResult, Widget } from '../../renderer-extensions/schema';
+import type { QueryResult, Widget } from '@insights/schema';
 import { distributedFixtures } from '../../lenses/distributed/fixtures';
 
 export type DistributedCatalogId = 'distributed-quorum-topology' | 'distributed-peer-latency' | 'distributed-replication-tracks' | 'distributed-shard-movement';

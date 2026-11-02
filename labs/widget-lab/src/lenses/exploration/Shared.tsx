@@ -1,8 +1,8 @@
 import { useDashboardPanels } from '../../components/lab/DashboardWorkbench';
 import { type ReactNode } from 'react';
 import { Panel } from '../../components/lab/StudyPrimitives';
-import { WidgetVisualization } from '../../renderer-extensions/charts';
-import type { Widget } from '../../renderer-extensions/schema';
+import { WidgetVisualization } from '@insights/charts';
+import type { Widget } from '@insights/schema';
 import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../LensStudio';
 import type { ExplorationPanel } from './data';
@@ -15,5 +15,5 @@ export function ExplorationWidgetPanel({panel,onEdit,onContextChange,linkedConfi
  const current = panels.current(panel.widget);
  const localConfig = Object.fromEntries(Object.entries(current.config ?? {}).filter(([key]) => !['selectedSource', 'selectedTarget', 'selectedId', 'activeIds'].includes(key)));
  const widget = linkedConfig && current.type === panel.widget.type && current.pluginId === panel.widget.pluginId ? { ...current, config: { ...localConfig, ...linkedConfig } } : current;
- return <Panel title={widget.title} className={className} subtitle={subtitle} actions={panels.actionsFor(widget, panel.result)}><div className="xp-widget"><WidgetVisualization widget={widget} result={panel.result} onContextChange={onContextChange}/></div>{children}</Panel>;
+ return <Panel title={widget.title} className={className} subtitle={subtitle} actions={panels.actionsFor(widget, panel.result)}><div className="xp-widget"><WidgetVisualization naturalHeight widget={widget} result={panel.result} onContextChange={onContextChange}/></div>{children}</Panel>;
 }

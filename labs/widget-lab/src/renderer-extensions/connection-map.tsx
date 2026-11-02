@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { GeoMap } from '../charts/geo/GeoMap';
 import type { GeoGeometry, GeoLocation, GeoSeverity } from '../charts/geo/geo-data';
-import { EmptyState, ObservationDetails, formatMetric } from '../renderer-extensions/chart-renderers';
-import type { WidgetRendererProps } from '../renderer-extensions/widget-registry';
+import { EmptyState, ObservationDetails, formatMetric } from '@insights/chart-renderers';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { buildConnectionMap, connectionMapConfig } from '@insights/plugins/operational-records-data';
 import { worldLandPath } from '@insights/plugins/world-land';
 import styles from '@insights/plugins/operational-records.module.css';

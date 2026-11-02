@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { widgetSchema } from '../src/renderer-extensions/schema';
+import { widgetSchema } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 import { bandBounds, buoyRows, curtainConfig, dwellRows, fieldAxes, fieldCells, fieldDensityLevel, fitEquirectangular, intervalConfig, iqConfig, iqRows, mapConfig, nearestValue, polarPoint, rmsEvm, roseConfig, roseRows, roseSector, shipments, spectrumConfig } from '../src/charts/spatial/model';
 import { coastalFixtures, logisticsFixtures, recordResult, spectrumFixtures } from '../src/lenses/spatial/fixtures';
 import { isSpatialCatalogId, makeSpatialCatalogFixture, spatialChartCatalog } from '../src/catalog/spatial-fixtures';
 import { registerSpatialCharts } from '../src/charts/spatial/register';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
+import { getWidgetDefinition } from '@insights/widget-registry';
 import { vectorBearing } from '../src/charts/spatial/model';
 
 describe('logistics population and arrival interval contracts',()=>{

@@ -1,4 +1,4 @@
-import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../renderer-extensions/schema';
+import type { QueryResult, RecordColumn, RecordFrame, Widget } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 import { FLEET_KEYS, TREND_KEYS, fleetRows, fleetScope, resourceSummary, type FleetEntity } from '../../charts/kubernetes/model';
 

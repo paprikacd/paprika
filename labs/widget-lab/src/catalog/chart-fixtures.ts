@@ -5,7 +5,7 @@ import { energyChartCatalog, isEnergyCatalogId, makeEnergyCatalogFixture, type E
 import { clinicalChartCatalog, isClinicalCatalogId, makeClinicalCatalogFixture, type ClinicalCatalogId } from '../charts/clinical/catalog';
 import { waferChartCatalog, isWaferCatalogId, makeWaferCatalogFixture, type WaferCatalogId } from '../charts/wafer/catalog';
 import { orbitalChartCatalog, isOrbitalCatalogId, makeOrbitalCatalogFixture, type OrbitalCatalogId } from '../charts/orbital/catalog';
-import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 import { buildEdgeTelemetry } from '../data/edge-telemetry';
 import { buildTelemetry } from '../data/telemetry';
 import { makeChartResults } from '../data/chart-adapter';
@@ -71,7 +71,7 @@ export function makeCatalogFixture(id: CatalogId, preset: CatalogPreset = 'ready
     result = { series: [{ name: 'Ingress', labels: { gateway: 'all', fixture: 'synthetic', interval: '1 minute' }, points: edge.points.map(row => point(row.timestampMs, row.ingressMbps)) }] };
   } else if (id === 'timeseries') {
     const burns = reliabilityBurnSeries(reliability, 'uptime-api');
-    widget = { ...widget, type: 'timeseries', pluginId: undefined, dataKind: undefined, title: 'Availability burn rate', unit: '×', options: { ...options, display: 'area', min: 0, lineWidth: 1.35, fillStyle: 'gradient', fillOpacity: .2, timeAxis: 'calendar', gridX: true, axisUnit: 'caption', inspectorDensity: 'compact', referenceLines: [{ value: 1, label: 'Budget pace 1×', style: 'dashed' }] } };
+    widget = { ...widget, type: 'timeseries', pluginId: undefined, dataKind: undefined, title: 'Availability burn rate', unit: '×', options: { ...options, display: 'area', min: 0, lineWidth: 1.35, fillOpacity: .2, timeAxis: 'calendar', gridX: true, axisUnit: 'caption', tooltipMaxWidth: 292, referenceLines: [{ value: 1, label: 'Budget pace 1×' }] } };
     result = { series: ['1h burn rate', '6h burn rate'].map((name, index) => ({ name, labels: { service: 'uptime-api', fixture: 'synthetic', interval: '1 hour' }, points: burns.map(row => point(row.timestampMs, index ? row.sixHour : row.oneHour)) })) };
   } else if (id === 'directional-traffic') {
     widget = { ...widget, unit: 'Mb/s', config: { directionLabel: 'direction', outboundValue: 'outbound', maxSeries: 2, maxPoints: 120, legendDisplay: 'table', legendPosition: 'bottom' } };

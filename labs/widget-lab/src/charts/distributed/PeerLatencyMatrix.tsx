@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection } from '../../components/lab/DomainPrimitives';
 import { distributedUtc, peerCells, peerLatencyConfig } from './model';
 import { DENSITY_GRADIENT, densityStep, DistributedEmpty, ReplicaDrillAction, Swatch, useReplicaSelection } from './shared';

@@ -1,8 +1,9 @@
 import { useId, useMemo, useRef } from 'react';
 import { scaleLinear, scaleUtc } from 'd3-scale';
 import { Server, UserRound, SquareTerminal, Globe, Database } from 'lucide-react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { neighbourhood, relationConfig, relationMatrix, threatEvents, type Relation } from './model';
 import { DetailValues, graphColor, Inspector, localPoint, SvgEmpty, useInspection, usePlotWidth, utc } from './shared';
 import './exploration.css';
@@ -68,7 +69,7 @@ export function EventSwimlanes({widget,result,embedded,onContextChange}:WidgetRe
  const select=(id:string,target?:SVGElement)=>{if(!interactive)return;const event=events.find(e=>e.id===id);if(!event)return;inspection.select(id,target);onContextChange?.({series:event.id,value:event.count,labels:{source:event.source,target:event.target,eventId:event.id,kind:'event'}});};
  if(!events.length)return <SvgEmpty/>;
  return <div ref={root} className="xp-chart" data-chart-entering={entering || undefined} onKeyDown={e=>{if(e.key==='Escape'&&(inspection.hover||inspection.pinned)){e.preventDefault();e.stopPropagation();inspection.dismiss();}}}>
- {!embedded&&<TimeWindowControls state={windowState} compact description="Only the evidence timeline changes. Relationship counts retain the full source window."/>}
+ {!embedded&&<LabWindowControls state={windowState} description="Only the evidence timeline changes. Relationship counts retain the full source window."/>}
  <div className="xp-scroll" tabIndex={width>640?0:undefined} aria-label="Evidence event lanes"><svg ref={svg} width={width} height={height} role="group" aria-label={widget.title} {...brush.handlers} onMouseLeave={()=>inspection.setHover(null)} onClick={e=>{if(e.target!==e.currentTarget||!interactive)return;const p=localPoint(e.currentTarget,e.clientX,e.clientY),lane=entities[Math.floor((p.y-top)/row)];const nearest=visible.filter(v=>v.source===lane||v.target===lane).sort((a,b)=>Math.abs(x(a.timestamp)-p.x)-Math.abs(x(b.timestamp)-p.x))[0];if(nearest&&Math.abs(x(nearest.timestamp)-p.x)<12)select(nearest.id);}} style={{touchAction:'pan-y'}}>
  <PlotHatchDefs id={uid}/>
  {ticks.map(t=><g key={+t}><line x1={x(+t)} x2={x(+t)} y1={top} y2={height-28} className="xp-grid"/><text x={x(+t)} y={height-7} textAnchor="middle" className="xp-muted">{utc(+t).slice(0,5)}</text></g>)}

@@ -5,7 +5,7 @@ describe('direct lens authoring entry', () => {
     // No top-level app/fixture imports: otherwise an unrelated registration can
     // conceal the cold-entry failure this test is intended to catch.
     vi.resetModules();
-    const registry = await import('../src/renderer-extensions/widget-registry');
+    const registry = await import('@insights/widget-registry');
     expect(registry.getWidgetPlugins()).toHaveLength(0);
 
     await import('../src/lenses/LensStudio');

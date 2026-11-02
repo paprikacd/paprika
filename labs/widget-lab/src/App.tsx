@@ -4,7 +4,7 @@ import { GammaButton } from '@insights/gamma/button';
 import { MotionProvider, useLabMotion } from './components/lab/motion';
 import { useGammaScope } from './components/lab/appearance';
 import { StudyLoading } from './components/lab/StudyLoading';
-import { LabWidgetLoadingProvider } from './components/lab/WidgetLoading';
+import { LabWidgetLoadingProvider } from './renderer-extensions/lab-widget-loading';
 import { DashboardNavigation } from './components/DashboardNavigation';
 import gammaTheme from '@insights/gamma/gamma-theme.module.css';
 import './observatory.css';

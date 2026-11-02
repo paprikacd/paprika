@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { worldLandPath } from '@insights/plugins/world-land';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, zoomGeoAt, type GeoPoint, type GeoViewport } from '../geo/geo-viewport';
 import { fitEquirectangular } from '../spatial/model';
@@ -214,7 +215,7 @@ export function OrbitalContactTimeline(props: WidgetRendererProps) {
         {brush.preview && <rect pointerEvents="none" x={Math.min(brush.preview.x1, brush.preview.x2)} y={top} width={Math.abs(brush.preview.x2 - brush.preview.x1)} height={height - top - 20} fill={C.cyan} fillOpacity=".15" stroke={C.cyan}/>} 
       </svg>
     </div>
-    {!embedded && <div className="orbital-timeline-tools"><TimeWindowControls state={windowState} compact description="Zoom changes only contact and signal plot bounds. Selected pass, predicted totals and other panels retain their source scope."/>{selected && <button onClick={() => windowState.commit({ start: Math.max(windowState.full.start, selected.start - 60000), end: Math.min(windowState.full.end, selected.end + 60000) })}>Focus selected pass</button>}</div>}
+    {!embedded && <div className="orbital-timeline-tools"><LabWindowControls state={windowState} description="Zoom changes only contact and signal plot bounds. Selected pass, predicted totals and other panels retain their source scope."/>{selected && <button onClick={() => windowState.commit({ start: Math.max(windowState.full.start, selected.start - 60000), end: Math.min(windowState.full.end, selected.end + 60000) })}>Focus selected pass</button>}</div>}
     {!embedded && inspect && cfg.showPassPicker && <PassPicker passes={passes} selected={selection.selected} onSelect={(id, target) => { const p = passes.find(pass => pass.id === id); if (p) choose(p, target); else { selection.choose(''); clear(); } }} label="Select contact interval"/>}
     {widget.options?.showLegend !== false && <div className="orbital-legend">{[...new Set(passes.map(p => p.station))].map(station => <Swatch key={station} color={stationColor(station)}>{station}</Swatch>)}<span>Signals exist only during predicted contacts</span>{cfg.showUncertainty && <span>Band: supplied margin uncertainty ±1σ</span>}</div>}
     {inspect && inspected && <DomainInspector title={`${inspected.satellite} / ${inspected.station} · predicted contact`} onClose={clear} pinned={!!inspection.pinned}><DetailValues items={[

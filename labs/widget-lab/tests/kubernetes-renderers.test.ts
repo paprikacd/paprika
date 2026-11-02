@@ -1,10 +1,11 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { registerKubernetesCharts } from '../src/charts/kubernetes/register';
 import { kubernetesChartCatalog, makeKubernetesCatalogFixture } from '../src/charts/kubernetes/catalog';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
-import { widgetSchema } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 
 describe('Kubernetes canonical registered renderers', () => {
@@ -13,8 +14,8 @@ describe('Kubernetes canonical registered renderers', () => {
     for (const feature of kubernetesChartCatalog) for (const preset of feature.presets) {
       const fixture = makeKubernetesCatalogFixture(feature.id, preset), def = getWidgetDefinition('plugin', feature.id)!;
       expect(() => widgetSchema.parse(fixture.widget)).not.toThrow(); expect(() => parseRecordFrame(fixture.result.records)).not.toThrow();
-      expect(() => def.parseConfig!(fixture.widget.config)).not.toThrow(); expect(() => def.validateInput!(fixture.result, fixture.widget.config)).not.toThrow();
-      expect(def.layout?.mode).toBe('intrinsic'); expect(fixture.result.records!.rows.length).toBeLessThanOrEqual(1000);
+      expect(() => def.parseConfig!(fixture.widget.config)).not.toThrow(); expect(def.validateInput!(fixture.result, fixture.widget.config)).toEqual([]);
+      expect(def.sizing?.mode).toBe('intrinsic'); expect(fixture.result.records!.rows.length).toBeLessThanOrEqual(1000);
       if (preset === 'empty') expect(fixture.result.records!.rows).toHaveLength(0);
     }
   });
@@ -26,12 +27,12 @@ describe('Kubernetes canonical registered renderers', () => {
       if (preset !== 'empty') expect(html).toContain('<svg');
     }
   });
-  it('exposes non-drag node selection, matrix paging and native time-window controls', () => {
+  it('exposes non-drag node selection, matrix paging and keyboard window handles', () => {
     const render = (id: typeof kubernetesChartCatalog[number]['id']) => renderToStaticMarkup(createElement(getWidgetDefinition('plugin', id)!.render, makeKubernetesCatalogFixture(id)));
     expect(render('kubernetes-placement')).toContain('aria-label="Inspect Kubernetes node"');
     expect(render('kubernetes-throttle-matrix')).toContain('Previous nodes');
     expect(render('kubernetes-throttle-matrix')).toContain('Next nodes');
-    const trend = render('kubernetes-resource-trend'); expect(trend).toContain('Chart window start UTC'); expect(trend).toContain('Chart window end UTC'); expect(trend).toContain('Drag across the plot to zoom');
+    const trend = render('kubernetes-resource-trend'); expect(trend).toContain('aria-label="Window start"'); expect(trend).toContain('aria-label="Window end"'); expect(trend).toContain('data-chart-window-controls'); expect(trend).toContain('Drag to zoom');
   });
   it('makes gap snapshots visually unavailable rather than painting zero usage', () => {
     const fixture = makeKubernetesCatalogFixture('kubernetes-resource-bars', 'gaps'), html = renderToStaticMarkup(createElement(getWidgetDefinition('plugin', 'kubernetes-resource-bars')!.render, { ...fixture, embedded: true }));
@@ -41,7 +42,7 @@ describe('Kubernetes canonical registered renderers', () => {
     const fixture = makeKubernetesCatalogFixture('kubernetes-resource-trend');
     fixture.result.records!.rows = [fixture.result.records!.rows.at(-1)!];
     const def = getWidgetDefinition('plugin', 'kubernetes-resource-trend')!;
-    expect(() => def.validateInput!(fixture.result, fixture.widget.config)).not.toThrow();
+    expect(def.validateInput!(fixture.result, fixture.widget.config)).toEqual([]);
     const html = renderToStaticMarkup(createElement(def.render, fixture));
     expect(html).toContain('12:00 UTC · Workload CPU:');
     expect(html).toContain('12:00 UTC · Memory:');

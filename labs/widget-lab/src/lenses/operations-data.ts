@@ -1,11 +1,11 @@
-import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 
 export const OPERATIONS_AS_OF = Date.UTC(2026, 9, 30, 10);
 export type OperationsKind = 'website' | 'infrastructure';
 export type OperationsPanel = { widget: Widget; result: QueryResult; caption: string; accent?: string };
 const round = (value: number, places = 2) => Number(value.toFixed(places));
 const wave = (index: number, phase = 0) => Math.sin(index * .37 + phase) * .58 + Math.sin(index * 1.71 + phase) * .24 + Math.cos(index * .083 + phase) * .18;
-const options: Widget['options'] = { showLegend: true, showTooltip: true, showGrid: true, gridX: true, curve: 'linear', lineWidth: 1.25, decimals: 1, display: 'area', fillStyle: 'gradient', fillOpacity: .18, min: 0, inspectorDensity: 'compact' };
+const options: Widget['options'] = { showLegend: true, showTooltip: true, showGrid: true, gridX: true, curve: 'linear', lineWidth: 1.25, decimals: 1, display: 'area', fillOpacity: .18, min: 0, tooltipMaxWidth: 292 };
 function widget(id: string, title: string, unit: string, patch: Partial<Widget> = {}): Widget {
   return { id, title, unit, type: 'timeseries', providerId: 'operations-fixture', query: `synthetic.${id}`, layout: { x: 0, y: 0, w: 6, h: 4 }, options: { ...options }, ...patch };
 }

@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3-scale';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
-import { useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { performanceTrace, performanceTraceConfig, type PerformanceSpan } from './model';
 import { performanceNumber as fmt } from './PerformanceDensity';

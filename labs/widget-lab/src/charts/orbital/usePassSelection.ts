@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 
 /** Linked pass/time is dashboard scope. Local inspection owns tooltip visibility. */
 export function usePassSelection(props: WidgetRendererProps, configured?: string, configuredTimestamp?: number) {

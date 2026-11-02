@@ -1,4 +1,4 @@
-import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../renderer-extensions/schema';
+import type { QueryResult, RecordColumn, RecordFrame, Widget } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 import { chamberBoxes, waferRows, type DieBin, type WaferDie } from '../../charts/wafer/model';
 

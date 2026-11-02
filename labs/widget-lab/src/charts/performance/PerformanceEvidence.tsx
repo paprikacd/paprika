@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { scaleLinear } from 'd3-scale';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { pairedEvidenceConfig, pairedPerformance, performanceObservations } from './model';
 import { performanceNumber as fmt } from './PerformanceDensity';

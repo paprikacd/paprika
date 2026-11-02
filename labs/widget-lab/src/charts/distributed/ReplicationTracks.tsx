@@ -1,6 +1,7 @@
 import { useId, useMemo, useRef, type PointerEvent } from 'react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../renderer-extensions/time-window-controls';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { CHART_COLORS as C, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { commitLag, distributedUtc, formatIndex, nearestSample, replicaGroups, replicaSamples, replicaSnapshots, replicationTracksConfig, steppedPath, type ReplicaSample } from './model';
 import { DistributedEmpty, ReplicaDrillAction, ReplicaValues, Swatch, replicaColor, svgPoint, useReplicaSelection } from './shared';
@@ -95,7 +96,7 @@ export function DistributedReplicationTracks(props: WidgetRendererProps) {
         </svg>
       </div>
     </div>
-    {!embedded && <TimeWindowControls state={windowState} compact description="This is a local plot window. The snapshot columns and shard quorum retain their full source scope."/>}
+    {!embedded && <LabWindowControls state={windowState} description="This is a local plot window. The snapshot columns and shard quorum retain their full source scope."/>}
     {!embedded && inspect && selectedGroup && <label className="ds-observation-slider">Exact observation<input type="range" min="0" max={selectedGroup.samples.length - 1} step="1" aria-label="Replication observation" value={Math.max(0, selectedGroup.samples.findIndex(p => p.id === displayed?.id))} onChange={event => choose(selectedGroup.samples[Number(event.target.value)], event.currentTarget)}/><span>{displayed ? distributedUtc(displayed.timestamp, true) : '—'} UTC</span></label>}
     {widget.options?.showLegend !== false && <div className="domain-legend">{cfg.showReceived && <Swatch color={C.cyan}>Received</Swatch>}<Swatch color={C.violet}>Applied</Swatch>{cfg.showCommitted && <span>┄ Leader commit</span>}<Swatch color={C.red}>Observed term change</Swatch><span><i className={`${hatchStyles.hatch} ${hatchStyles.swatch}`}/>Hatching: no current observation</span></div>}
     {inspect && current && <DomainInspector title={`${current.replicaId} · ${distributedUtc(current.timestamp, true)} UTC`} onClose={inspection.dismiss} pinned={!!inspection.pinned}>

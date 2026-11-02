@@ -1,11 +1,12 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { registerConceptCharts } from '../src/charts/register-concept-charts';
 import { allChartCatalog, chartCatalog, makeCatalogFixture } from '../src/catalog/chart-fixtures';
 import { conceptChartCatalog, makeConceptCatalogFixture, type ConceptCatalogId } from '../src/catalog/concept-fixtures';
-import { getWidgetDefinition, getWidgetPlugins } from '../src/renderer-extensions/widget-registry';
-import { widgetKind, widgetSchema } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition, getWidgetPlugins } from '@insights/widget-registry';
+import { widgetKind, widgetSchema } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 import { correlationCells, correlationConfig, liquidityConfig, liquiditySegments, waterfallConfig, waterfallSteps } from '../src/charts/market-risk/market-chart-data';
 import { buildLogScatter, buildRackMatrix, logScatterConfig, rackMatrixConfig } from '../src/charts/inference/data';
@@ -30,7 +31,7 @@ describe('complex chart catalogue on a clean entry', () => {
       const definition = getWidgetDefinition(widget)!; expect(definition.dataKind).toBe(widgetKind(widget));
       const config = definition.parseConfig!(widget.config);
       if (result.records) expect(parseRecordFrame(result.records)).toEqual(result.records);
-      expect(() => definition.validateInput?.(result, config)).not.toThrow();
+      expect(definition.validateInput?.(result, config) ?? []).toEqual([]);
       const markup = renderToStaticMarkup(createElement(definition.render, { widget: { ...widget, config }, result, embedded: true }));
       expect(markup).not.toContain('NaN'); expect(markup).not.toContain('Widget could not render'); expect(markup).not.toContain('Widget plugin unavailable');
       if (preset === 'empty') expect(result.records?.rows.length ?? result.series?.length).toBe(0);

@@ -3,8 +3,8 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Anchor, Antenna, ArrowUpRight, Clock3, Radio, Ship, Waves } from 'lucide-react';
 import { Panel } from '../../components/lab/StudyPrimitives';
 import { ChartCursorProvider } from '@insights/chart-cursor';
-import { WidgetVisualization } from '../../renderer-extensions/charts';
-import type { Widget } from '../../renderer-extensions/schema';
+import { WidgetVisualization } from '@insights/charts';
+import type { Widget } from '@insights/schema';
 import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../LensStudio';
 import { registerSpatialCharts } from '../../charts/spatial/register';
@@ -27,7 +27,7 @@ function ChartPanel({ panel, onEdit, selection, context, fixedHeight, className 
   panel: SpatialPanel; onEdit?: EditLensWidget; selection?: Widget['config']; context?: (c: DrilldownContext) => void; fixedHeight?: number; className?: string;
 }) {
   const panels = useDashboardPanels(onEdit), widget = panels.current(panel.widget, selection);
-  return <Panel title={widget.title} subtitle={panel.caption} className={'spatial-lens-panel '+className} actions={panels.actions(panel, selection)}><div className={fixedHeight?'spatial-lens-widget fixed':'spatial-lens-widget'} style={fixedHeight?{height:fixedHeight}:undefined}><WidgetVisualization widget={widget} result={panel.result} onContextChange={context}/></div></Panel>;
+  return <Panel title={widget.title} subtitle={panel.caption} className={'spatial-lens-panel '+className} actions={panels.actions(panel, selection)}><div className={fixedHeight?'spatial-lens-widget fixed':'spatial-lens-widget'} style={fixedHeight?{height:fixedHeight}:undefined}><WidgetVisualization naturalHeight widget={widget} result={panel.result} onContextChange={context}/></div></Panel>;
 }
 
 export function LogisticsLens({ onEdit }: { onEdit?: EditLensWidget }) {

@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../renderer-extensions/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { ContributionWaterfall, CorrelationMatrix, LiquidityLadder } from './MarketCharts';
 import { correlationConfig, liquidityConfig, waterfallConfig } from './market-chart-data';
 

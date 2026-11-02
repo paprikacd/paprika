@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { QueryResult, RecordFrame, Widget } from '../renderer-extensions/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 
 export const FINANCE_AS_OF = Date.UTC(2026, 9, 30, 20);
 export type FinanceWindow = 30 | 90 | 180;
@@ -115,7 +115,7 @@ export function financePanels(days: FinanceWindow = 30) {
   } };
   const allocation: { widget: Widget; result: QueryResult } = { widget: { ...baseWidget('finance-allocation', 'Portfolio allocation'), pluginId: 'allocation-treemap', unit: 'USD', config: allocationTreemapConfig.parse({}), options: { showTooltip: true, decimals: 2 } }, result: allocationResult };
   const performance: { widget: Widget; result: QueryResult } = {
-    widget: { ...baseWidget('finance-performance', 'Cumulative return'), type: 'timeseries', dataKind: undefined, pluginId: undefined, unit: '%', query: 'synthetic.portfolio.daily_return', color: '#00d5b1', options: { display: 'area', timeAxis: 'calendar', gridX: true, showGrid: true, showLegend: true, showTooltip: true, fillStyle: 'gradient', fillOpacity: .14, lineWidth: 1.5, curve: 'linear', decimals: 2, inspectorDensity: 'compact', showZeroLine: true } },
+    widget: { ...baseWidget('finance-performance', 'Cumulative return'), type: 'timeseries', dataKind: undefined, pluginId: undefined, unit: '%', query: 'synthetic.portfolio.daily_return', color: '#00d5b1', options: { display: 'area', timeAxis: 'calendar', gridX: true, showGrid: true, showLegend: true, showTooltip: true, fillOpacity: .14, lineWidth: 1.5, curve: 'linear', decimals: 2, tooltipMaxWidth: 292, showZeroLine: true } },
     result: { series: [{ name: 'Portfolio', labels: { portfolio: 'Core allocation', fixture: 'synthetic', basis: 'Period start = 0%' }, points: history.map(point => ({ timestamp: point.timestamp, value: point.portfolio })) }, { name: 'Reference basket', labels: { fixture: 'synthetic', basis: 'Period start = 0%' }, points: history.map(point => ({ timestamp: point.timestamp, value: point.benchmark })) }] },
   };
   const holdings: { widget: Widget; result: QueryResult } = {

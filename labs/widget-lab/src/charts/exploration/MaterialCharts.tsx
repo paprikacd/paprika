@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3-scale';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { feasibleCandidates, materialCandidates, materialConfig, paretoFrontier, ternaryPoint, ternaryRectangle, type MaterialCandidate } from './model';
 import { DetailValues, Inspector, linePath, localPoint, SvgEmpty, useInspection, usePlotWidth } from './shared';
 import './exploration.css';

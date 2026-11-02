@@ -1,6 +1,6 @@
 # Chart capability coverage
 
-> **WP-B1a note:** `src/vendor/paprika/` no longer exists. Production files are imported through `@insights/*`, and the lab's holding copies live in `src/renderer-extensions/` (see [its README](../src/renderer-extensions/README.md)). Paths in this document name the pre-WP-B1a copy.
+> **WP-B1b note:** no holding copies remain. Production files are imported through `@insights/*`, and the lab's own wrappers over production are listed in `src/renderer-extensions/README.md`.
 
 ## Current additions — iteration 10
 

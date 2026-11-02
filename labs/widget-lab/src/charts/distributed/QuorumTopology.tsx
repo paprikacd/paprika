@@ -1,5 +1,5 @@
 import { useId, useMemo, useRef } from 'react';
-import type { WidgetRendererProps } from '../../renderer-extensions/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { commitLag, distributedUtc, formatIndex, quorumSummary, quorumTopologyConfig, replicaSamples, replicaSnapshots, replicaState } from './model';
 import { DistributedEmpty, ReplicaDrillAction, ReplicaValues, Swatch, replicaColor, useReplicaSelection } from './shared';

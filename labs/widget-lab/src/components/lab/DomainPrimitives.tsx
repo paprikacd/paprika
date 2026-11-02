@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { Panel } from './StudyPrimitives';
-import { WidgetVisualization } from '../../renderer-extensions/charts';
-import type { QueryResult, Widget } from '../../renderer-extensions/schema';
+import { WidgetVisualization } from '@insights/charts';
+import type { QueryResult, Widget } from '@insights/schema';
 import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../../lenses/LensStudio';
 import { useLabMotion } from './motion';
@@ -49,7 +49,7 @@ export function DomainChartPanel({ panel, onEdit, className = '', height, captio
   const panels = useDashboardPanels(onEdit);
   const widget = panels.current(panel.widget, selection);
   return <Panel title={widget.title} className={`domain-panel ${reduced ? 'domain-motion-reduced' : 'domain-motion-auto'} ${className}`} subtitle={caption ?? panel.caption} actions={panels.actions(panel, selection)}>
-    <div className="domain-chart-host" style={height ? { minHeight: height } : undefined}><WidgetVisualization widget={widget} result={panel.result} onContextChange={onContextChange}/></div>
+    <div className="domain-chart-host" style={height ? { minHeight: height } : undefined}><WidgetVisualization naturalHeight widget={widget} result={panel.result} onContextChange={onContextChange}/></div>
   </Panel>;
 }
 

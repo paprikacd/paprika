@@ -5,8 +5,8 @@ import { cohortCells, cohortConfig, controlConfig, controlSamples, countRows, de
 import { buildCohorts, buildExperiments, buildFactory, buildJourney } from '../src/lenses/analytics/analytics-data';
 import { analyticsChartCatalog, makeAnalyticsCatalogFixture } from '../src/catalog/analytics-fixtures';
 import { registerAnalyticsCharts } from '../src/charts/analytics/register';
-import { getWidgetDefinition } from '../src/renderer-extensions/widget-registry';
-import { widgetSchema } from '../src/renderer-extensions/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
 import { parseRecordFrame } from '@insights/record-data';
 
 describe('cohort population contracts',()=>{

@@ -7,7 +7,7 @@ import type { GeoGeometry, GeoLocation } from '../src/charts/geo/geo-data';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt } from '../src/charts/geo/geo-viewport';
 
 // SSR exposes only the choice of the shared popup; the map's selection/content remain real.
-vi.mock('../src/components/lab/ChartTooltip', async () => {
+vi.mock('../src/renderer-extensions/chart-tooltip', async () => {
   const { createElement } = await import('react');
   return { ChartTooltip: ({ pinned, children }: { pinned: boolean; children: ReactNode }) => createElement('div', { 'data-test-map-tooltip': pinned ? 'pinned' : 'transient' }, children) };
 });
