@@ -1,0 +1,98 @@
+{
+  "format": "paprika-chart-review",
+  "version": 1,
+  "time": {
+    "synchronization": "timestamp",
+    "timezone": "UTC"
+  },
+  "panels": [
+    {
+      "id": "service-throughput",
+      "question": "Which services changed request throughput during the selected release window?",
+      "metric": {
+        "kind": "counter",
+        "statistic": "rate",
+        "unit": "requests/s",
+        "display_unit": "requests/s",
+        "scale": 1,
+        "aggregation": "sum",
+        "rate_order": "before_aggregation",
+        "precision": { "decimals": 1, "supported_decimals": 1 }
+      },
+      "chart": { "type": "line", "scale": "linear" },
+      "data": {
+        "missing": "gap",
+        "summary_source": "before_visual_decimation",
+        "series_identity": "stable_id",
+        "series_key": "labels.service"
+      },
+      "interaction": {
+        "interactive": true,
+        "keyboard": "Focus the plot, then use arrow keys to inspect samples; Escape dismisses details.",
+        "touch": "Tap to pin an observation; tap a visible reset control to clear it.",
+        "drag_actions": ["zoom time window"],
+        "non_drag": "Set start and end using time inputs or use the zoom buttons."
+      }
+    },
+    {
+      "id": "service-p95-latency",
+      "question": "Did the service-wide p95 request duration increase after the release?",
+      "metric": {
+        "kind": "histogram",
+        "statistic": "percentile",
+        "unit": "seconds",
+        "display_unit": "milliseconds",
+        "scale": 1000,
+        "aggregation": "distribution_then_quantile",
+        "percentile": 0.95,
+        "precision": { "decimals": 0, "supported_decimals": 0 }
+      },
+      "chart": { "type": "line", "scale": "linear", "domain": [150, 650] },
+      "data": {
+        "missing": "gap",
+        "summary_source": "before_visual_decimation",
+        "series_identity": "stable_id",
+        "series_key": "labels.service"
+      },
+      "interaction": {
+        "interactive": true,
+        "keyboard": "Arrow keys inspect timestamps; Enter opens the selected trace exemplars when available.",
+        "touch": "Tap a timestamp to inspect the percentile estimate and available exemplars.",
+        "drag_actions": []
+      }
+    },
+    {
+      "id": "service-error-ratio",
+      "question": "Which services have the highest fraction of failed requests in the selected window?",
+      "metric": {
+        "kind": "ratio",
+        "statistic": "ratio",
+        "unit": "ratio",
+        "display_unit": "percent",
+        "scale": 100,
+        "aggregation": "ratio_of_sums",
+        "denominator": { "missing": "unknown", "zero": "unknown" },
+        "precision": { "decimals": 2, "supported_decimals": 2 }
+      },
+      "chart": { "type": "bar", "scale": "linear", "domain": [0, 100], "baseline": 0 },
+      "data": {
+        "missing": "explicit_state",
+        "summary_source": "before_visual_decimation",
+        "series_identity": "stable_id",
+        "series_key": "labels.service"
+      },
+      "interaction": {
+        "interactive": true,
+        "keyboard": "Tab through service controls; Enter opens the service with the same time and filters.",
+        "touch": "Tap a service to inspect its failure and request counts before opening details.",
+        "drag_actions": []
+      }
+    }
+  ],
+  "contrast_pairs": [
+    { "name": "Axis labels on panel surface", "role": "normal_text", "foreground": "#B8C5D6", "background": "#111827" },
+    { "name": "Primary data line on panel surface", "role": "essential_graphics", "foreground": "#60A5FA", "background": "#111827" },
+    { "name": "Large summary value", "role": "large_text", "foreground": "#F3F4F6", "background": "#111827", "font_size_px": 28, "bold": true }
+  ],
+  "evidence": []
+}

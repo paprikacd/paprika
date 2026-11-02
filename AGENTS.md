@@ -5,6 +5,15 @@
 Operate and improve Paprika on the VKE cluster. Fix bugs, add features,
 deploy changes safely, and keep the shared `paprika-e2e` namespace healthy.
 
+## Dashboard Design
+
+For Insights dashboards, charts, maps, tooltips, responsive layouts, and panel
+editing, read the repository's
+[Paprika Dashboard Design skill](.agents/skills/paprika-dashboard-design/SKILL.md)
+before designing or implementing changes. Its bundled references, visual
+fixtures, review templates, and contract checker guide the work alongside the
+current `DESIGN.md` and applicable directory instructions.
+
 ## Constraints & Preferences
 
 - OTel SDK with Prometheus exporter for metrics (not direct Prometheus client
