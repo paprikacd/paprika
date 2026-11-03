@@ -292,6 +292,16 @@ export function useDashboardLayoutEditing(
         let lastPointer: PointerEvent | null = null;
         const ghost = document.createElement('div');
         ghost.className = 'dashboard-layout-drag-ghost';
+        // The ghost lives at document.body to escape panel overflow. Copy its
+        // resolved Gamma tokens so scoped light/dark themes survive the portal.
+        const theme = getComputedStyle(panel.node);
+        for (const token of [
+          '--gamma-bg', '--gamma-surface', '--gamma-surface-2',
+          '--gamma-ink', '--gamma-muted', '--gamma-border', '--gamma-chart-1',
+        ]) {
+          const value = theme.getPropertyValue(token).trim();
+          if (value) ghost.style.setProperty(token, value);
+        }
         ghost.setAttribute('aria-hidden', 'true');
         ghost.innerHTML = '<span class="dashboard-layout-ghost-symbol">⠿</span><span class="dashboard-layout-ghost-text"></span><span class="dashboard-layout-ghost-meta">SMART GRID · SNAP</span>';
         ghost.querySelector<HTMLElement>('.dashboard-layout-ghost-text')!.textContent = titleFor(panel.node);

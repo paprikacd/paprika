@@ -41,7 +41,12 @@ export function DashboardWorkbench({ children }: { children: ReactNode }) {
   const close = useCallback(() => setEditing(null), []);
   const dismiss = useCallback((id: string) => setEditing(previous => previous?.id === id ? null : previous), []);
   useDashboardLayoutEditing(editMode, layoutEdits, setLayoutEdits);
-  const layoutEditCount = Object.keys(layoutEdits).length;
+  // Moving one tile reorders many siblings; count it as one layout operation
+  // instead of reporting ten edited widgets for a single drag.
+  const layoutEditCount = new Set(Object.entries(layoutEdits).flatMap(([id, edit]) => [
+    ...(edit.order !== undefined ? ['group:' + id.split('::')[0]] : []),
+    ...(edit.columns !== undefined || edit.minHeight !== undefined ? ['panel:' + id] : []),
+  ])).size;
   const value = useMemo(() => ({ overrides, layoutEditCount, apply, reset, resetAll, editMode, setEditMode, editing, open, close, dismiss }), [overrides, layoutEditCount, apply, reset, resetAll, editMode, editing, open, close, dismiss]);
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }
