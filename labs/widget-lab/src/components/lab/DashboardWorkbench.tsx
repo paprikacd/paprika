@@ -102,7 +102,8 @@ export function DashboardEditControls() {
   const count = Object.keys(workbench.overrides).length + workbench.layoutEditCount;
   return <div className="dashboard-edit-controls" data-dashboard-workbench="true">
     <GammaButton size="sm" variant={workbench.editMode ? 'secondary' : 'ghost'} aria-pressed={workbench.editMode} onClick={() => workbench.setEditMode(!workbench.editMode)} title="Show move and resize handles and panel configuration. Changes last until you leave this dashboard.">{workbench.editMode ? <Check size={13}/> : <Pencil size={13}/>}{workbench.editMode ? 'Done editing' : 'Edit dashboard'}</GammaButton>
-    {workbench.editMode && <span className="dashboard-layout-help">Drag ⠿ Move · resize ◢ · arrows for precision</span>}
+    <span className="dashboard-layout-live" data-dashboard-layout-live role="status" aria-live="polite"/>
+    {workbench.editMode && <span className="dashboard-layout-help">Drag to swap & snap · resize to grid · auto-pack</span>}
     {(count > 0 || workbench.editMode) && <span className="dashboard-session-edits" role="status">{count ? `${count} session edit${count === 1 ? '' : 's'}` : 'Session edits'}</span>}
     <GammaActionMenu label="Dashboard actions" items={[{ id: 'reset', label: 'Reset session edits', description: 'Restore the default presentation of every panel.', icon: <RotateCcw size={14}/>, disabled: count === 0, onSelect: workbench.resetAll }]}/>
   </div>;
