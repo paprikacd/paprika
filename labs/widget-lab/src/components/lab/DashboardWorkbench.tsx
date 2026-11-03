@@ -5,6 +5,8 @@ import type { QueryResult, Widget } from '@insights/schema';
 import { GammaActionMenu, type GammaActionMenuItem } from '@insights/gamma/action-menu';
 import { GammaButton } from '@insights/gamma/button';
 import { mergeDomainWidget } from './domain-widget';
+import { useDashboardLayoutEditing, type DashboardLayoutEdits } from './dashboard-layout';
+import './dashboard-layout.css';
 import './DashboardWorkbench.css';
 
 export type EditDashboardWidget = (widget: Widget, result: QueryResult, apply: (next: Widget) => void, initialTab?: WidgetEditorTab) => void;
@@ -12,6 +14,7 @@ type PanelSource = { widget: Widget; result: QueryResult };
 type EditSession = { id: string; key: number; tab: WidgetEditorTab };
 type Workbench = {
   overrides: Record<string, Widget>;
+  layoutEditCount: number;
   apply: (widget: Widget) => void;
   reset: (id: string) => void;
   resetAll: () => void;
@@ -27,16 +30,19 @@ const WorkbenchContext = createContext<Workbench | null>(null);
 /** One route-local owner for applied Widget overrides and the active editor. */
 export function DashboardWorkbench({ children }: { children: ReactNode }) {
   const [overrides, setOverrides] = useState<Record<string, Widget>>({});
+  const [layoutEdits, setLayoutEdits] = useState<DashboardLayoutEdits>({});
   const [editMode, setEditMode] = useState(false);
   const [editing, setEditing] = useState<EditSession | null>(null);
   const session = useRef(0);
   const apply = useCallback((widget: Widget) => setOverrides(previous => ({ ...previous, [widget.id]: widget })), []);
   const reset = useCallback((id: string) => setOverrides(previous => { const next = { ...previous }; delete next[id]; return next; }), []);
-  const resetAll = useCallback(() => { setOverrides({}); setEditing(null); }, []);
+  const resetAll = useCallback(() => { setOverrides({}); setLayoutEdits({}); setEditing(null); }, []);
   const open = useCallback((id: string, tab: WidgetEditorTab) => setEditing({ id, tab, key: ++session.current }), []);
   const close = useCallback(() => setEditing(null), []);
   const dismiss = useCallback((id: string) => setEditing(previous => previous?.id === id ? null : previous), []);
-  const value = useMemo(() => ({ overrides, apply, reset, resetAll, editMode, setEditMode, editing, open, close, dismiss }), [overrides, apply, reset, resetAll, editMode, editing, open, close, dismiss]);
+  useDashboardLayoutEditing(editMode, layoutEdits, setLayoutEdits);
+  const layoutEditCount = Object.keys(layoutEdits).length;
+  const value = useMemo(() => ({ overrides, layoutEditCount, apply, reset, resetAll, editMode, setEditMode, editing, open, close, dismiss }), [overrides, layoutEditCount, apply, reset, resetAll, editMode, editing, open, close, dismiss]);
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }
 
@@ -93,9 +99,10 @@ export function WidgetPanelActions({ widget, result, onApply, onReset, modified 
 export function DashboardEditControls() {
   const workbench = useContext(WorkbenchContext);
   if (!workbench) return null;
-  const count = Object.keys(workbench.overrides).length;
+  const count = Object.keys(workbench.overrides).length + workbench.layoutEditCount;
   return <div className="dashboard-edit-controls" data-dashboard-workbench="true">
-    <GammaButton size="sm" variant={workbench.editMode ? 'secondary' : 'ghost'} aria-pressed={workbench.editMode} onClick={() => workbench.setEditMode(!workbench.editMode)} title="Reveal panel editing controls. Applied changes last until you leave this dashboard.">{workbench.editMode ? <Check size={13}/> : <Pencil size={13}/>}{workbench.editMode ? 'Done editing' : 'Edit dashboard'}</GammaButton>
+    <GammaButton size="sm" variant={workbench.editMode ? 'secondary' : 'ghost'} aria-pressed={workbench.editMode} onClick={() => workbench.setEditMode(!workbench.editMode)} title="Show move and resize handles and panel configuration. Changes last until you leave this dashboard.">{workbench.editMode ? <Check size={13}/> : <Pencil size={13}/>}{workbench.editMode ? 'Done editing' : 'Edit dashboard'}</GammaButton>
+    {workbench.editMode && <span className="dashboard-layout-help">Drag ⠿ Move · resize ◢ · arrows for precision</span>}
     {(count > 0 || workbench.editMode) && <span className="dashboard-session-edits" role="status">{count ? `${count} session edit${count === 1 ? '' : 's'}` : 'Session edits'}</span>}
     <GammaActionMenu label="Dashboard actions" items={[{ id: 'reset', label: 'Reset session edits', description: 'Restore the default presentation of every panel.', icon: <RotateCcw size={14}/>, disabled: count === 0, onSelect: workbench.resetAll }]}/>
   </div>;
