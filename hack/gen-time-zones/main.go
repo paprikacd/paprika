@@ -95,7 +95,7 @@ func writeOutputs(outputs map[string][]byte, check bool) error {
 			continue
 		}
 		if err := os.WriteFile(path, content, 0o644); err != nil { //nolint:gosec // G306: the generated sources are committed and read by the build, like their neighbours.
-			return err
+			return fmt.Errorf("write generated source %s: %w", path, err)
 		}
 	}
 	return nil
