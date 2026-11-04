@@ -1,5 +1,14 @@
 # Paprika Widget Lab
 
+## Public showcase and product boundary
+
+The entire chart catalogue and all dashboard lenses are published as the **public chart showcase** under the [Paprika landing page](https://paprikacd.github.io/paprika/#charts), with a standalone view at [Charts](https://paprikacd.github.io/paprika/charts/#charts). The gallery is built from this exact Vite application by `hack/build-landing-with-charts.sh` and the GitHub Pages workflow; it does not copy chart implementation into marketing components.
+
+The authenticated `ui/src/app/dashboard/insights` app remains the **dashboard builder**, with live providers, editing and saved state. Importable starter templates remain available within that builder. No gallery-only route or synthetic showcase asset is added to the authenticated application's bundle.
+
+Local public build: after dependencies are installed, run `bash hack/build-landing-with-charts.sh /tmp/paprika-public-pages`, then serve that directory with an HTTP server to verify the nested `/charts/` routes and relative Vite assets. All public charts use labelled synthetic fixtures and do not connect to a production backend.
+
+
 Dashboard studies built with the **Paprika Dashboard Design** skill and Paprika's chart host, trusted widget registry and shared cursor. The lab now includes **85 working chart examples and 26 dashboard lenses**, with typed field mapping, guided configuration and exact inspection. **Iteration 11 makes Edge Watch and Reliability Room fluid at every available width**: panels reflow, charts measure their content, and map points, flags, controls and labels keep usable sizes. The original **1592 × 988** artboards remain available explicitly through source-size and comparison modes.
 
 The latest shared tooltip and dashboard authoring changes are in the [tooltip and authoring report](docs/iteration-12-tooltip-and-dashboard-authoring.md). Earlier responsive implementation and browser evidence are in the [responsive dashboard report](docs/iteration-11-responsive-reference-dashboards.md). The preceding [domain-widget and configuration report](docs/iteration-10-authoring-and-domain-widgets.md) covers the four new registered families and source-aware editor.

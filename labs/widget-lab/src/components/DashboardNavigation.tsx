@@ -21,7 +21,8 @@ export function DashboardNavigation({ route }: { route: string }) {
   const activeGroup = active?.group === 'Domain studies' ? 'Domain studies' : active?.group === 'Core' ? 'Core' : 'SRE investigations';
   const shortcuts = destinations.filter(item => item.group === activeGroup).slice(0, 4);
   return <header className={`${theme.scope} dashboard-navigation`} {...scope}>
-    <a className="dashboard-navigation-brand" href="#edge" aria-label="Paprika Widget Lab home"><PaprikaMark/><span>paprika <span>/ widget lab</span></span></a>
+    <a className="dashboard-navigation-brand" href="#charts" aria-label="Paprika chart showcase home"><PaprikaMark/><span>paprika <span>/ chart showcase</span></span></a>
+    {typeof location !== 'undefined' && location.pathname?.includes('/charts/') && <a className="dashboard-navigation-site-link" href="../" target="_top" aria-label="Return to the Paprika product landing page">Product overview ↗</a>}
     <label className="dashboard-navigation-picker"><span>{lensRoutes.length + references.length} lenses</span><select aria-label="Choose dashboard lens" value={active ? current : '#edge'} onChange={event => { location.hash = event.target.value; }}>{groups.map(group => <optgroup key={group} label={group}>{destinations.filter(item => item.group === group).map(item => <option key={item.id} value={`#${item.id}`}>{item.label}</option>)}</optgroup>)}</select></label>
     <nav className="dashboard-navigation-shortcuts" aria-label="Related dashboard lenses">{shortcuts.map(item => <a key={item.id} href={`#${item.id}`} aria-current={current === `#${item.id}` ? 'page' : undefined}>{item.label}</a>)}</nav>
     <LabAppearanceControl className="dashboard-navigation-appearance" />

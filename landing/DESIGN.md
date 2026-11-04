@@ -20,7 +20,7 @@ The source of truth for tokens, type scales, and breakpoints is [`site.css`](sit
 
 Use recognizable software entities: Git revision cards, Application configuration, container Jobs, rendered manifests, Release records and Kubernetes resource stacks. Depth and light should help separate these entities. A decorative machine must not carry product meaning that is only recoverable from its caption.
 
-The page tells four distinct stories, each with one primary figure:
+The delivery sections tell four distinct stories, each with one primary figure. The separate Charts chapter below is a public, interactive showcase rather than another delivery diagram:
 
 | Story | Diagram | Meaning |
 | --- | --- | --- |
@@ -69,3 +69,11 @@ Use steel focus plates and restrained amber attention cues, a changing screensho
 Check claims against the current [feature list](../docs/features.md), [getting-started guide](../docs/getting-started.md), [Pipeline guide](../docs/guides/pipelines.md), and [promotion guide](../docs/guides/environment-promotion.md). A Pipeline is optional for a Release. Staged promotion is a configured link between separate Applications.
 
 Run `bash hack/test-landing-install.sh` from the repository root after editing install copy or markup. Review desktop and 390px layouts, keyboard navigation, horizontal console capture scrolling, reduced motion, no-JavaScript content, tab interactions, and all four diagram stories before publishing. The static page is deployed from `landing/` by `.github/workflows/gh-pages.yml` after a merge to `master`.
+
+## Public chart showcase
+
+The **Charts** landing chapter is the public home for the full interactive chart catalogue and 26 synthetic dashboard lenses. The source remains in `labs/widget-lab`, importing the canonical Insights chart renderers; the GitHub Pages workflow builds it and publishes the generated assets beneath `/paprika/charts/`. Do not clone chart implementations into marketing HTML or import the standalone showcase into the authenticated Next.js console.
+
+The landing chapter uses the existing technical-instrument palette, Barlow typography, thin navy/steel rules and visible focus treatment. Keep one lazy-loaded frame, a compact row of deep-linked representative studies, a direct full-screen link, and factual prose describing the synthetic fixture data. The complete chart/navigation experience belongs to the nested gallery. At narrow widths its own scrolling is expected; the full-screen link is the accessible escape hatch.
+
+**Product separation:** The authenticated Insights app is for connecting providers, building, saving and operating dashboards. Existing importable starter templates remain a builder function, not a marketing demo destination. Site links to the chart gallery must resolve on the GitHub Pages origin, not assume the authenticated console is hosted on the same domain.

@@ -16,6 +16,7 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 - [Contribute code, tests, documentation, or examples](CONTRIBUTING.md)
 - [Report security issues privately](SECURITY.md) and read the [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Visit the project landing page](https://paprikacd.github.io/paprika/)
+- [Explore the public interactive chart gallery](https://paprikacd.github.io/paprika/charts/#charts) (synthetic fixtures; built from Paprika Insights renderers)
 
 ## Features
 
