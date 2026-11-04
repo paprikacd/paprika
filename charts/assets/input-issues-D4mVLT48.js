@@ -1,0 +1,1 @@
+const n=e=>e.slice(0,240);function i(e){const s=e?.issues?.[0];if(s&&typeof s.message=="string"){const t=s.path?.[0];return{...typeof t=="string"?{field:t}:{},message:n(s.message)}}return{message:n(e instanceof Error&&e.message?e.message:"The loaded result cannot be drawn with this configuration.")}}function a(e){try{return e(),[]}catch(s){return[i(s)]}}export{a as c};
