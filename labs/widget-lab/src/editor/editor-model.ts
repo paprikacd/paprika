@@ -98,6 +98,30 @@ export function travelEditorDraft(state: EditorDraftState, direction: 'undo' | '
     future: direction === 'undo' ? [...state.future, state.draft] : state.future.slice(0, -1) };
 }
 
+/** A generic records table is always reachable through the read-only Data tab.
+ * It is not a safe cross-renderer dashboard conversion for a large, wide result:
+ * such a result cannot be presented as a readable panel without fundamentally
+ * changing the data query or consuming the entire dashboard. Its original
+ * specialised renderer remains available and editable.
+ */
+export const MAX_CONVERTED_RECORD_COLUMNS = 12;
+export const MAX_CONVERTED_RECORD_ROWS = 200;
+
+export function isSafeVisualizationTransition(
+  widget: Widget,
+  result: QueryResult,
+  target: WidgetDefinition,
+): boolean {
+  const current = getWidgetDefinition(widget)?.id;
+  if (current === target.id) return true;
+  if (widgetKind(widget) !== target.dataKind) return false;
+  if (target.id === 'record-table') {
+    const records = result.records;
+    if (!records || records.columns.length > MAX_CONVERTED_RECORD_COLUMNS || (records.rows.length > MAX_CONVERTED_RECORD_ROWS && records.columns.length > 10)) return false;
+  }
+  return true;
+}
+
 /** Only offer conversions with a complete, valid mapping for the existing result. */
 export function visualizationCandidate(widget: Widget, definition: WidgetDefinition, remembered?: Widget): Widget {
   if (getWidgetDefinition(widget)?.id === definition.id) return widget;
@@ -116,6 +140,7 @@ export function editorVisualizations(widget: Widget, result: QueryResult, defini
   return definitions.filter(definition => {
     if (definition.id === current) return true;
     if (definition.dataKind !== kind || definition.id === 'reference-timeseries') return false;
+    if (!isSafeVisualizationTransition(widget, result, definition)) return false;
     // Record alternatives need a real adapter for this result. Matching primitive
     // column types alone never proves semantic compatibility.
     if (kind === 'records' && definition.id !== 'record-table' && !definition.validateInput) return false;

@@ -13,9 +13,10 @@ import { GammaSwitch } from '@insights/gamma/switch';
 import { inheritGammaTheme } from '@insights/gamma/inherit-theme';
 import { lockBodyScroll } from '@insights/gamma/scroll-lock';
 import themeStyles from '@insights/gamma/gamma-theme.module.css';
-import { createEditorDraft, editorDataTable, editorStyleControls, editorVisualizations, revalidateEditorDraft, reviseEditorDraft, travelEditorDraft, updateWidgetOption, validateEditorWidget, visualizationCandidate, type EditorStyleControl } from './editor-model';
+import { createEditorDraft, editorDataTable, editorStyleControls, editorVisualizations, isSafeVisualizationTransition, revalidateEditorDraft, reviseEditorDraft, travelEditorDraft, updateWidgetOption, validateEditorWidget, visualizationCandidate, type EditorStyleControl } from './editor-model';
 import { discoverRecordFields } from './field-bindings';
 import { FieldMapping, SourceSchema } from './FieldMapping';
+import { WidgetPreviewBoundary } from './WidgetPreviewBoundary';
 import { AppearanceSettings, AdvancedAxisSettings, LabelSettings, PresentationPresets, SeriesColourSettings, StatSettings, ThresholdSettings, TooltipContentControls } from './RichWidgetOptions';
 import './WidgetEditor.css';
 
@@ -65,6 +66,12 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
   const definitions = useWidgetDefinitions(), kind = widgetKind(widget);
   const state = useMemo(() => revalidateEditorDraft(draftState, kind, result), [draftState, kind, result]);
   const previewMatchesResult = useMemo(() => state.errors.length === 0 || !!validateEditorWidget(state.preview, kind, result).widget, [state, kind, result]);
+  const previewKey = useMemo(() => JSON.stringify([
+    state.preview.type, state.preview.pluginId, state.preview.options, state.preview.config,
+    result.records?.rows.length, result.records?.columns.length, result.series?.length,
+  ]), [state.preview, result]);
+  const [failedPreviewKey, setFailedPreviewKey] = useState<string | null>(null);
+  const previewFailed = failedPreviewKey === previewKey;
   const definition = getWidgetDefinition(state.draft);
   const choices = useMemo(() => { const available=editorVisualizations(state.draft,result,definitions); const original=getWidgetDefinition(widget); return original&&!available.some(item=>item.id===original.id)?[original,...available]:available; }, [state.draft, result, definitions, widget]);
   const data = useMemo(() => editorDataTable(result), [result]);
@@ -74,7 +81,7 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
   const filteredRows = useMemo(() => data.rows.filter(row => !dataSearch || row.some(value => String(value ?? 'missing').toLowerCase().includes(dataSearch.toLowerCase()))), [data.rows, dataSearch]);
   const pages = Math.max(1, Math.ceil(filteredRows.length / 20)), safePage = Math.min(page, pages - 1);
   const dirty = JSON.stringify(state.draft) !== JSON.stringify(widget);
-  const valid = state.errors.length === 0 && !sourceDirty;
+  const valid = state.errors.length === 0 && !sourceDirty && !previewFailed;
   const controls = editorStyleControls(state.draft, definition);
   const supports = (control: EditorStyleControl) => controls.includes(control);
   const timeSeries = state.draft.type === 'timeseries';
@@ -85,11 +92,30 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
     const next = { ...state.draft.config }; if (value === undefined) delete next[key]; else next[key] = value;
     revise({ ...state.draft, config: next });
   };
+  const [conversionIssue, setConversionIssue] = useState('');
   const switchVisualization = (value: string) => {
-    const next = choices.find(choice => choice.id === value);
-    if (!next) return;
+    const target = choices.find(choice => choice.id === value);
+    // A stale combo selection or a changed fixture must never bypass capability validation.
+    if (!target || !isSafeVisualizationTransition(state.draft, result, target)) {
+      setConversionIssue('This visualization cannot safely display the loaded result. The current chart has been kept; use the Data tab to inspect all observations.');
+      return;
+    }
+    let candidate: Widget;
+    try {
+      candidate = visualizationCandidate(state.draft, target, rendererDrafts.current.get(target.id));
+    } catch {
+      setConversionIssue('The target configuration could not be created. The existing chart is unchanged.');
+      return;
+    }
+    const checked = validateEditorWidget(candidate, kind, result);
+    if (!checked.widget) {
+      setConversionIssue('The target chart is not compatible with this result: ' + checked.errors.slice(0, 2).join(' '));
+      return;
+    }
+    // Only archive the current renderer after the replacement has passed every guard.
     if (definition) rendererDrafts.current.set(definition.id, structuredClone(state.draft));
-    revise(visualizationCandidate(state.draft, next, rendererDrafts.current.get(next.id)));
+    setConversionIssue('');
+    revise(checked.widget);
   };
 
   useLayoutEffect(() => anchor.current && root.current ? inheritGammaTheme(anchor.current, root.current) : undefined, []);
@@ -129,7 +155,9 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
         <section className={`we-preview ${previewWidth==='narrow'?'is-narrow':''}`} aria-label="Live chart preview" style={{ background:state.preview.options?.background, color:state.preview.options?.textColor }}>
           <header><h2>{state.preview.title}</h2><span>{state.preview.unit}</span></header>
           {state.preview.description&&<p className="we-preview-description">{state.preview.description}</p>}
-          <div className="we-chart" data-editor-family={getWidgetDefinition(state.preview)?.id} data-editor-expanded={!tableView&&hasIntrinsicChartLayout(state.preview)}>{tableView?table:previewMatchesResult?<ChartCursorProvider><WidgetVisualization naturalHeight widget={state.preview} result={result}/></ChartCursorProvider>:<p className="we-empty">The current result does not match the preview configuration. Review field bindings or switch to Table to inspect the loaded data.</p>}</div>
+          <div className="we-chart" data-editor-family={getWidgetDefinition(state.preview)?.id} data-editor-expanded={!tableView&&hasIntrinsicChartLayout(state.preview)}>{tableView?table:previewMatchesResult?<ChartCursorProvider><WidgetPreviewBoundary key={previewKey} onFailure={() => setFailedPreviewKey(previewKey)}>
+            <WidgetVisualization naturalHeight={hasIntrinsicChartLayout(state.preview) || state.preview.type === 'stat'} widget={state.preview} result={result}/>
+          </WidgetPreviewBoundary></ChartCursorProvider>:<p className="we-empty">The current result does not match the preview configuration. Review field bindings or switch to Table to inspect the loaded data.</p>}</div>
         </section>
         {state.errors.length>0&&<div className="we-errors" role="alert"><strong>{previewMatchesResult?'Preview keeps the last valid configuration.':'Configuration needs attention before preview or Apply.'}</strong>{state.errors.map((error,index)=><p key={index}>{error}</p>)}</div>}
         <section className="we-data-workspace" aria-label="Panel data and query">
@@ -152,7 +180,7 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
         <div className="we-options-search"><Search size={15}/><GammaInput ref={optionSearch} aria-label="Search chart options" placeholder="Search options…" value={search} onChange={event=>setSearch(event.target.value)} size="sm"/>{search&&<GammaButton size="sm" variant="quiet" iconOnly aria-label="Clear option search" onClick={()=>{optionSearch.current?.focus();setSearch('');}}><X size={14}/></GammaButton>}</div>
         {sourceDirty&&<p className="we-code-pending">Validate or revert the JSON draft to continue with guided options.</p>}
         <fieldset disabled={sourceDirty} className="we-options-fields">
-          <OptionGroup title="Visualization" keywords="type chart renderer line bar table treemap map stat" search={search}><GammaSelect aria-label="Visualization type" searchable value={definition?.id??''} options={choices.map(choice=>({value:choice.id,label:choice.label,description:choice.description,icon:<ChartNoAxesCombined size={16}/>}))} onValueChange={switchVisualization}/><p className="we-option-description">{definition?.description}</p>{choices.length>1&&<p className="we-compatible-note">{choices.length} compatible visualizations · settings retained while switching</p>}</OptionGroup>
+          <OptionGroup title="Visualization" keywords="type chart renderer line bar table treemap map stat" search={search}><GammaSelect aria-label="Visualization type" searchable disabled={choices.length <= 1} value={definition?.id??''} options={choices.map(choice=>({value:choice.id,label:choice.label,description:choice.description,icon:<ChartNoAxesCombined size={16}/>}))} onValueChange={switchVisualization}/><p className="we-option-description">{definition?.description}</p><p className="we-option-description">Only data-compatible visualizations that fit a dashboard preview are offered. For wide record sources, use Data to inspect all columns without replacing the chart.</p>{conversionIssue&&<p className="we-switch-issue" role="alert">{conversionIssue}</p>}{choices.length<=1&&<p className="we-compatible-note">No safe alternative visualization is available for this result. The current renderer remains editable.</p>}{choices.length>1&&<p className="we-compatible-note">{choices.length} compatible visualizations · settings retained while switching</p>}</OptionGroup>
           <OptionGroup title="Presentation presets" keywords="appearance style curated presentation focus investigate briefing look feel theme template" search={search}><PresentationPresets widget={state.draft} onApply={revise}/></OptionGroup>
           <OptionGroup title="Panel options" keywords="title name description" search={search}><Field label="Title"><GammaInput aria-label="Panel title" value={state.draft.title} maxLength={120} onChange={event=>revise({...state.draft,title:event.target.value})} size="sm"/></Field><Field label="Description"><GammaTextarea aria-label="Panel description" value={state.draft.description??''} maxLength={500} rows={2} placeholder="What does this panel explain?" onChange={event=>revise({...state.draft,description:event.target.value})}/></Field></OptionGroup>
           <OptionGroup title="Panel appearance" keywords="background text color theme palette surface" search={search}><AppearanceSettings widget={state.draft} onOption={option}/></OptionGroup>
