@@ -126,20 +126,7 @@ func run() error {
 	}))
 	// The browser suite exercises the real consent pages with a deterministic,
 	// authenticated pending-request response; no MCP credential is minted.
-	mux.Handle("/observe/consent", observabilitygateway.ConsentHandler("/observe"))
-	for _, prefix := range []string{"/observe", "/mcp"} {
-		scope := "paprika:read"
-		if prefix == "/observe" {
-			scope = "paprika:observe"
-		}
-		mux.HandleFunc(prefix+"/authorize/pending", f.protect(authenticator, func(w http.ResponseWriter, _ *http.Request) {
-			respond(w, map[string]string{
-				"client_id": "fixture-client", "redirect_uri": app.URL + "/__session_fixture/client-callback",
-				"code_challenge": "fixture-challenge", "code_challenge_method": "S256",
-				"state": "fixture-state", "scope": scope,
-			})
-		}))
-	}
+	registerConsentFixtures(mux, f, authenticator, app.URL)
 	mux.HandleFunc("/events", http.NotFound)
 	frontend, err := frontendHandler(*uiURL, *uiDir)
 	if err != nil {
@@ -152,6 +139,23 @@ func run() error {
 	fmt.Println("Console session fixture ready (loopback only)")
 	<-ctx.Done()
 	return nil
+}
+
+func registerConsentFixtures(mux *http.ServeMux, f *fixture, authenticator *auth.OIDCAuthenticator, appURL string) {
+	mux.Handle("/observe/consent", observabilitygateway.ConsentHandler("/observe"))
+	for _, prefix := range []string{"/observe", "/mcp"} {
+		scope := "paprika:read"
+		if prefix == "/observe" {
+			scope = "paprika:observe"
+		}
+		mux.HandleFunc(prefix+"/authorize/pending", f.protect(authenticator, func(w http.ResponseWriter, _ *http.Request) {
+			respond(w, map[string]string{
+				"client_id": "fixture-client", "redirect_uri": appURL + "/__session_fixture/client-callback",
+				"code_challenge": "fixture-challenge", "code_challenge_method": "S256",
+				"state": "fixture-state", "scope": scope,
+			})
+		}))
+	}
 }
 
 func (f *fixture) writeReady(filename, appURL string) error {
