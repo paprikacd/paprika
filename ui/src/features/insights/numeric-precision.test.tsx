@@ -35,8 +35,9 @@ describe("configured numeric precision", () => {
   for (const type of ["stat", "table", "heatmap"] as const)
     it.each([0, 2, 4])(`uses %i places in ${type} tooltip details while retaining raw observation bindings`, (decimals) => {
       const selected = vi.fn();
-      render(<WidgetVisualization widget={{ ...widget, type, options: { decimals } }} result={{ series: [series] }} onContextChange={selected} />);
-      const trigger = screen.getByRole("button", { name: type === "stat" ? /Inspect value for/ : type === "table" ? /Inspect series/ : /^api:/ });
+      render(<WidgetVisualization widget={{ ...widget, type, options: type === "stat" ? { decimals, showSparkline: true } : { decimals } }} result={{ series: [series] }} onContextChange={selected} />);
+      // A single value has no inspector of its own: its history sparkline carries the observation tooltip.
+      const trigger = type === "stat" ? screen.getByRole("img", { name: "History for Signal" }) : screen.getByRole("button", { name: type === "table" ? /Inspect series/ : /^api:/ });
       fireEvent.focus(trigger);
       const reading = screen.getByRole("tooltip").querySelector("[data-metric-value]");
       expect(reading).toHaveTextContent(`${(12.345678).toFixed(decimals)} ms`);

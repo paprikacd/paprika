@@ -17,15 +17,29 @@ import {
 import type { QueryResult, Widget } from "./schema";
 import { contrastRatio } from "./appearance";
 import chartStyles from "./charts.module.css";
+import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
 import {
   contrastText,
   balancedHeatmapColumns,
   heatmapTooltipSizeLimit,
   placeHeatmapTooltip,
   responsiveChartTicks,
+  chartYAxisLayout,
   formatTimeTick,
   latestPoint,
+  EmptyState,
 } from "./chart-renderers";
+import {
+  bandLabelWidth,
+  fittingBandLabel,
+  isolatedPlotPoints,
+  plotTimeDomain,
+  sampleCadence,
+  seriesCoverage,
+  seriesGaps,
+  uncoveredIntervals,
+  withGapBreaks,
+} from "./chart-data";
 
 afterEach(() => {
   cleanup();
@@ -56,6 +70,73 @@ const result: QueryResult = {
 };
 
 describe("bounded chart data", () => {
+  it("reserves room for high precision axis ticks and states longer units once", () => {
+    const short = chartYAxisLayout([0, 23], "req/s", 2);
+    expect(short.separateUnit).toBe(true);
+    expect(short.left).toBeGreaterThanOrEqual(54);
+    expect(chartYAxisLayout([-1234.56789], "%", 8).left).toBeGreaterThan(short.left);
+    expect(chartYAxisLayout([1], "ms", 2, "Latency").left).toBeGreaterThan(chartYAxisLayout([1], "ms", 2).left);
+  });
+  it("remeasures the plot immediately when the footer changes its size", () => {
+    const observers: Array<{ callback: ResizeObserverCallback; element?: Element }> = [];
+    class TestResizeObserver {
+      entry: { callback: ResizeObserverCallback; element?: Element };
+      constructor(callback: ResizeObserverCallback) {
+        this.entry = { callback };
+        observers.push(this.entry);
+      }
+      observe(element: Element) { this.entry.element = element; }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+    try {
+      const { container } = render(<WidgetVisualization widget={widget} result={result} />);
+      const plot = container.querySelector(`.${chartStyles.plot}`)!;
+      const observer = observers.find(entry => entry.element === plot)!;
+      expect(observer).toBeDefined();
+      const bounds = vi.spyOn(plot, "getBoundingClientRect");
+      act(() => observer.callback([], {} as ResizeObserver));
+      expect(bounds).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("explains when a selected zoom window contains no finite observations", () => {
+    const sparse: QueryResult = { series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: null }, { timestamp: 4000, value: 4 }] }] };
+    render(<WidgetVisualization widget={widget} result={sparse} />);
+    fireEvent.click(screen.getByRole("button", { name: /Compare window for API latency/ }));
+    fireEvent.change(screen.getByRole("slider", { name: "Window start" }), { target: { value: "1" } });
+    fireEvent.change(screen.getByRole("slider", { name: "Window end" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zoom chart to window" }));
+    expect(screen.getByRole("status")).toHaveTextContent("No recorded observations in this window");
+    fireEvent.click(screen.getByRole("button", { name: "Reset chart zoom" }));
+    expect(screen.queryByText(/No recorded observations in this window/)).not.toBeInTheDocument();
+  });
+  it("reserves a separate renderer area when a result is truncated", () => {
+    const { container } = render(<WidgetVisualization widget={widget} result={{ ...result, truncated: true }} />);
+    const notice = screen.getByText("Provider response may be incomplete. Narrow the query or check the data source.");
+    const content = container.querySelector(`.${chartStyles.visualizationContent}`);
+    expect(notice.parentElement).toHaveClass(chartStyles.visualization);
+    expect(content?.parentElement).toBe(notice.parentElement);
+    expect(content).toContainElement(screen.getByRole("list", { name: "Latest values by series" }));
+  });
+  it("distinguishes an incomplete empty response from a complete empty result and preserves zero", () => {
+    const { rerender } = render(<WidgetVisualization widget={widget} result={{ series: [], truncated: true }} />);
+    expect(screen.getByText("No observations returned")).toBeInTheDocument();
+    expect(screen.getByText(/provider response may be incomplete/i)).toBeInTheDocument();
+    expect(screen.queryByText("No data in this time range")).not.toBeInTheDocument();
+    rerender(<WidgetVisualization widget={widget} result={{ series: [] }} />);
+    expect(screen.getByText("No data in this time range")).toBeInTheDocument();
+    rerender(<WidgetVisualization widget={{ ...widget, type: "stat" }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 0 }] }], truncated: true }} />);
+    expect(screen.getByText("Provider response may be incomplete. Narrow the query or check the data source.")).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+  it("reports an incomplete empty records frame inside a registered renderer", () => {
+    render(<TooltipWidgetDataProvider kind="records" result={{ records: { columns: [], rows: [], truncated: true } }}><EmptyState /></TooltipWidgetDataProvider>);
+    expect(screen.getByText("No observations returned")).toBeInTheDocument();
+    expect(screen.getByText(/incomplete response/)).toBeInTheDocument();
+  });
   it.each(["timeseries", "bar"] as const)("states long units once beside %s axes while retaining exact inspection units", (type) => {
     const { container } = render(<WidgetVisualization widget={{ ...widget, type, unit: "connections" }} result={result} />);
     expect(container.querySelector("[data-chart-axis-unit]")).toHaveTextContent("connections");
@@ -158,6 +239,61 @@ describe("bounded chart data", () => {
       expect(downsamplePoints(points, maximum).length).toBeLessThanOrEqual(
         maximum,
       );
+  });
+
+  it("keeps an isolated observation that bucket extremes would drop, so a band split keeps its dot", () => {
+    // Review repro: 2000 samples at 1 s. Samples 900..999 are missing except 950 s, whose value sits between the extremes.
+    // The plot samples the gap-broken series, so the missing run is one synthetic break on each side of 950 s.
+    const points = Array.from({ length: 2000 }, (_, index) => index + 1)
+      .filter((second) => !(second >= 900 && second < 1000) || second === 950)
+      .map((second) => ({ timestamp: second * 1000, value: second === 950 ? 5 : (second % 7) + (second % 3) }));
+    const plotted = downsamplePoints(withGapBreaks(points, sampleCadence(points)));
+    expect(plotted.length).toBeLessThanOrEqual(480);
+    expect(plotted).toContainEqual({ timestamp: 950_000, value: 5 });
+    expect(plotted[0]).toEqual(points[0]);
+    expect(plotted.at(-1)).toEqual(points.at(-1));
+    expect(
+      plotted.every(
+        (point, index) => index === 0 || point.timestamp > plotted[index - 1].timestamp,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the budget when every observation is isolated, spreads the kept dots across the range, and keeps both ends", () => {
+    const points = Array.from({ length: 2000 }, (_, index) => ({
+      timestamp: index * 1000,
+      value: index % 2 === 0 ? index % 9 : null,
+    }));
+    const sampled = downsamplePoints(points);
+    expect(sampled.length).toBeLessThanOrEqual(480);
+    expect(sampled[0]).toEqual(points[0]);
+    expect(sampled.at(-1)).toEqual(points.at(-1));
+    const dots = sampled
+      .filter((point) => point.value !== null)
+      .map((point) => point.timestamp);
+    expect(dots[0]).toBe(0);
+    expect(dots.at(-1)).toBeGreaterThan(1_900_000);
+  });
+
+  it("never exceeds the maximum, whatever mix of gaps, isolated observations and spikes it is given", () => {
+    // A fixed linear congruential generator keeps the mixes reproducible from run to run.
+    let seed = 7;
+    const random = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+    for (let trial = 0; trial < 12; trial++) {
+      const points = Array.from({ length: 700 }, (_, index) => ({
+        timestamp: index * 1000,
+        value: random() < 0.4 ? null : Math.round(random() * 100),
+      }));
+      for (const maximum of [3, 5, 31, 100, 480]) {
+        const sampled = downsamplePoints(points, maximum);
+        expect(sampled.length).toBeLessThanOrEqual(maximum);
+        expect(sampled[0]).toEqual(points[0]);
+        expect(sampled.at(-1)).toEqual(points.at(-1));
+      }
+    }
   });
 
   it("formats non-finite values honestly and maintains small decimals", () => {
@@ -549,9 +685,9 @@ describe("widget visualizations", () => {
     expect(screen.getByText("Response time")).toBeInTheDocument();
     expect(screen.getByText("100.00 ms")).toBeInTheDocument();
     expect(screen.queryByText("api")).not.toBeInTheDocument();
-    expect(
-      container.querySelector('path[fill-opacity="0.3"]'),
-    ).toBeInTheDocument();
+    // fillOpacity now sets the top stop of the area's gradient, which fades to transparent at the baseline.
+    const fill = container.querySelector("g.ts-chart__area path")!.getAttribute("fill")!;
+    expect(document.getElementById(fill.replace(/^url\(#(.+)\)$/, "$1"))!.querySelector("stop")).toHaveAttribute("stop-opacity", "0.3");
     expect(
       container.querySelector('path[stroke-width="3"]'),
     ).toBeInTheDocument();
@@ -812,7 +948,7 @@ describe("accessible observation inspection", () => {
       const changed = vi.fn();
       render(
         <WidgetVisualization
-          widget={{ ...widget, type, options: { decimals: 2 } }}
+          widget={{ ...widget, type, options: type === "stat" ? { decimals: 2, showSparkline: true } : { decimals: 2 } }}
           result={{
             series: [
               {
@@ -825,9 +961,11 @@ describe("accessible observation inspection", () => {
           onContextChange={changed}
         />,
       );
-      const trigger = screen.getByRole("button", {
-        name: type === "stat" ? /Inspect value for/ : /Inspect series/,
-      });
+      // A single value is inspected through its history; a table through its series buttons.
+      const trigger =
+        type === "stat"
+          ? screen.getByRole("img", { name: "History for API latency" })
+          : screen.getByRole("button", { name: /Inspect series/ });
       fireEvent.focus(trigger);
       expect(changed).toHaveBeenLastCalledWith({
         series: "long-api-service",
@@ -846,10 +984,18 @@ describe("accessible observation inspection", () => {
       );
       fireEvent.keyDown(trigger, { key: "Escape" });
       expect(screen.queryByRole("tooltip")).toBeNull();
-      fireEvent.click(trigger);
-      expect(trigger).toHaveAttribute("aria-pressed", "true");
-      fireEvent.click(trigger);
-      expect(screen.queryByRole("tooltip")).toBeNull();
+      if (type === "stat") {
+        // The history pins with Enter and closes with Escape; the reading itself is not a control.
+        fireEvent.keyDown(trigger, { key: "Enter" });
+        expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
+        fireEvent.keyDown(trigger, { key: "Escape" });
+        expect(screen.queryByRole("tooltip")).toBeNull();
+      } else {
+        fireEvent.click(trigger);
+        expect(trigger).toHaveAttribute("aria-pressed", "true");
+        fireEvent.click(trigger);
+        expect(screen.queryByRole("tooltip")).toBeNull();
+      }
     },
   );
 
@@ -1049,3 +1195,108 @@ it.each(["timeseries", "bar"] as const)(
     for (const title of titles) expect(title).toHaveAttribute("opacity", "1");
   },
 );
+
+describe("time-series gap helpers", () => {
+  // [seconds, value] samples; a null value is an explicit missing sample.
+  const samples = (pairs: [number, number | null][]) =>
+    pairs.map(([seconds, value]) => ({ timestamp: seconds * 1000, value }));
+
+  it("takes the lower median of positive steps between observed samples, and none below three", () => {
+    expect(sampleCadence(samples([[0, 1], [1, 1]]))).toBeNull();
+    expect(sampleCadence(samples([[0, 1], [1, 1], [2, 1]]))).toBe(1000);
+    // Steps of 1, 2, 3 and 4 s: the lower median is 2 s.
+    expect(sampleCadence(samples([[0, 1], [1, 1], [3, 1], [6, 1], [10, 1]]))).toBe(2000);
+    // An explicit null is not an observed sample, so the steps are 3, 3 and 4 s.
+    expect(sampleCadence(samples([[0, 1], [1, null], [3, 1], [6, 1], [10, 1]]))).toBe(3000);
+  });
+
+  it("reports explicit null runs as gaps even without a cadence, and steps beyond 1.5 cadence", () => {
+    expect(seriesGaps(samples([[0, 1], [1, null], [2, 1]]), null)).toEqual([{ from: 0, to: 2000 }]);
+    const steady = samples([[1, 1], [2, 1], [3, 1], [7, 1], [8, 1]]);
+    expect(seriesGaps(steady, 1000)).toEqual([{ from: 3000, to: 7000 }]);
+    expect(seriesCoverage(steady, 1000)).toEqual([
+      { from: 1000, to: 2000 },
+      { from: 2000, to: 3000 },
+      { from: 7000, to: 8000 },
+    ]);
+    // Exactly 1.5 cadence is not a gap.
+    expect(seriesGaps(samples([[0, 1], [1.5, 1]]), 1000)).toEqual([]);
+  });
+
+  it("adds a null break at the midpoint of inferred gaps only, never where an explicit null already breaks the line", () => {
+    const steady = samples([[1, 1], [2, 1], [3, 1], [7, 1], [8, 1]]);
+    expect(withGapBreaks(steady, 1000).map((point) => [point.timestamp, point.value])).toEqual([
+      [1000, 1],
+      [2000, 1],
+      [3000, 1],
+      [5000, null],
+      [7000, 1],
+      [8000, 1],
+    ]);
+    const explicit = samples([[1, 1], [2, 1], [3, null], [7, 1], [8, 1]]);
+    expect(withGapBreaks(explicit, 1000)).toEqual(explicit);
+  });
+
+  it("finds only the time that no series covers, and nothing in a zero-width domain", () => {
+    const sparse = seriesCoverage(samples([[1, 1], [2, 1], [3, 1], [7, 1], [8, 1]]), 1000);
+    const dense = seriesCoverage(samples([[1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1], [8, 1]]), 1000);
+    expect(uncoveredIntervals([sparse], [1000, 8000])).toEqual([{ from: 3000, to: 7000 }]);
+    expect(uncoveredIntervals([sparse, dense], [1000, 8000])).toEqual([]);
+    expect(uncoveredIntervals([[]], [1000, 4000])).toEqual([{ from: 1000, to: 4000 }]);
+    expect(uncoveredIntervals([sparse], [8000, 8000])).toEqual([]);
+  });
+
+  it("pads a single instant the way TanStack pads a single value, and keeps a real span unchanged", () => {
+    expect(plotTimeDomain(1000, 5000)).toEqual([1000, 5000]);
+    expect(plotTimeDomain(0, 0)).toEqual([-1, 1]);
+    const [start, end] = plotTimeDomain(1_000_000, 1_000_000);
+    expect(start).toBeLessThan(1_000_000);
+    expect(end).toBeGreaterThan(1_000_000);
+  });
+
+  it("covers an isolated observation with a zero-width instant, so the holes either side of it stay apart", () => {
+    // Review repro: samples at 1, 2, 3, 10, 20, 21 and 22 s. The sample at 10 s has no covered neighbour.
+    const isolated = samples([[1, 5], [2, 6], [3, 7], [10, 8], [20, 9], [21, 9], [22, 9]]);
+    const coverage = seriesCoverage(isolated, sampleCadence(isolated));
+    expect(coverage).toContainEqual({ from: 10000, to: 10000 });
+    expect(uncoveredIntervals([coverage], [1000, 22000])).toEqual([
+      { from: 3000, to: 10000 },
+      { from: 10000, to: 20000 },
+    ]);
+    // A lone observation covers only its own instant.
+    expect(uncoveredIntervals([seriesCoverage(samples([[5, 1]]), null)], [1000, 9000])).toEqual([
+      { from: 1000, to: 5000 },
+      { from: 5000, to: 9000 },
+    ]);
+    // An instant outside the domain covers nothing inside it.
+    expect(uncoveredIntervals([[{ from: 30000, to: 30000 }]], [1000, 9000])).toEqual([{ from: 1000, to: 9000 }]);
+  });
+
+  it("gives a dot only to an observation that no plotted neighbour reaches, and keeps every plotted time", () => {
+    const plotted = withGapBreaks(samples([[1, 5], [2, 6], [3, 7], [10, 8], [20, 9], [21, 9]]), 1000);
+    const dots = isolatedPlotPoints(plotted);
+    expect(dots).toHaveLength(plotted.length);
+    expect(dots.map((point) => [point.timestamp, point.value]).filter(([, value]) => value !== null)).toEqual([[10000, 8]]);
+    // A pair of neighbours, and a run, draw their own segments, so none of their points needs a dot.
+    expect(isolatedPlotPoints(samples([[1, 1], [2, 2], [3, 3]])).every((point) => point.value === null)).toBe(true);
+  });
+
+  it("estimates a band label at 5.8px per character plus 8px of padding, unless a measure answers for the text", () => {
+    expect(bandLabelWidth("No samples")).toBeCloseTo(66, 5);
+    expect(bandLabelWidth("No samples since 11:48")).toBeCloseTo(135.6, 5);
+    expect(bandLabelWidth("")).toBeCloseTo(8, 5);
+    expect(bandLabelWidth("No samples", () => 60)).toBe(68);
+    expect(bandLabelWidth("No samples", () => undefined)).toBeCloseTo(66, 5);
+  });
+
+  it("picks the first label that fits a band, so the full label wins whenever both fit", () => {
+    const labels = ["No samples since 11:48", "No samples"];
+    expect(fittingBandLabel(labels, 136)).toBe(labels[0]);
+    expect(fittingBandLabel(labels, 135)).toBe(labels[1]);
+    expect(fittingBandLabel(labels, 65)).toBeUndefined();
+    // At 6px per character the full label is 140px and the short one 68px.
+    const sixPerCharacter = (text: string) => text.length * 6;
+    expect(fittingBandLabel(labels, 137, sixPerCharacter)).toBe(labels[1]);
+    expect(fittingBandLabel(labels, 140, sixPerCharacter)).toBe(labels[0]);
+  });
+});

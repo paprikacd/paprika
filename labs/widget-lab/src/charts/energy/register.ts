@@ -1,0 +1,48 @@
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
+import { PowerFlow, ContingencyMatrix, DispatchMerit, FlexibilityDispatch } from './EnergyCharts';
+import { contingencyCells, contingencyConfig, flexibilityConfig, flexibilityPoints, meritConfig, powerFlowConfig, powerNodes } from './model';
+import { ReserveEnvelope } from './ReserveEnvelope';
+import { reserveEnvelopeConfig, reserveEnvelopePoints } from './reserve-model';
+import { checkedInput } from '../../renderer-extensions/input-issues';
+
+export function registerEnergyCharts() {
+  if (!getWidgetDefinition('plugin','power-flow')) registerWidgetPlugin({ id:'power-flow',label:'Conserved power flow',description:'Snapshot sources and loads with a conserved bus and explicit power/energy units',dataKind:'records',render:PowerFlow,defaultConfig:powerFlowConfig.parse({}),parseConfig:c=>powerFlowConfig.parse(c??{}),validateInput: (r,c) => {
+      if (!r.records) return [{ message: 'Power flow requires source and load records.' }];
+      const records = r.records;
+      return checkedInput(() => { powerNodes(records,c); });
+    },sizing: { mode:'intrinsic',minWidth:300},styleControls:['tooltips'],configFields:[{key:'valueField',label:'Power field',kind:'text',binding:{types:['number'],unit:'MW',role:'Nonnegative dispatched or received power; source and load totals must reconcile'}},{key:'labelField',label:'Asset label field',kind:'text',binding:{types:['string'],role:'Readable source or load label'}},{key:'showValues',label:'Show exact power labels',kind:'boolean'}] });
+  if (!getWidgetDefinition('plugin','contingency-matrix')) registerWidgetPlugin({id:'contingency-matrix',label:'Contingency loading matrix',description:'Simulated asset loading by scenario, with explicit missing simulation cells',dataKind:'records',render:ContingencyMatrix,defaultConfig:contingencyConfig.parse({}),parseConfig:c=>contingencyConfig.parse(c??{}),validateInput: r => {
+      const records = r.records;
+      return records ? checkedInput(() => { contingencyCells(records); }) : [];
+    },sizing: { mode:'intrinsic',minWidth:300},styleControls:['tooltips'],configFields:[{key:'showValues',label:'Show exact cell values',kind:'boolean'},{key:'warning',label:'Elevated loading threshold (%)',kind:'number',min:1,max:150,step:1}]});
+  if (!getWidgetDefinition('plugin','dispatch-flexibility')) registerWidgetPlugin({id:'dispatch-flexibility',label:'Storage dispatch and energy',description:'Signed dispatch MW with a separate state-of-charge track and local time zoom',dataKind:'records',render:FlexibilityDispatch,defaultConfig:flexibilityConfig.parse({}),parseConfig:c=>flexibilityConfig.parse(c??{}),validateInput: r => {
+      const records = r.records;
+      return records ? checkedInput(() => { flexibilityPoints(records); }) : [];
+    },sizing: { mode:'intrinsic',minWidth:300},styleControls:['tooltips'],configFields:[{key:'showEnergy',label:'Show stored-energy track',kind:'boolean'}]});
+  if (!getWidgetDefinition('plugin','dispatch-merit')) registerWidgetPlugin({id:'dispatch-merit',label:'Dispatch merit-order curve',description:'Available supply sorted by marginal price with a required-supply rule',dataKind:'records',render:DispatchMerit,defaultConfig:meritConfig.parse({}),parseConfig:c=>meritConfig.parse(c??{}),validateInput: r => {
+      const records = r.records;
+      return records ? checkedInput(() => { powerNodes(records); }) : [];
+    },sizing: { mode:'intrinsic',minWidth:280},styleControls:['tooltips'],configFields:[{key:'showLabels',label:'Show source labels',kind:'boolean'}]});
+  if (!getWidgetDefinition('plugin', 'reserve-envelope')) registerWidgetPlugin({
+    id: 'reserve-envelope', label: 'Available reserve envelope', description: 'Available capacity minus observed and forecast required supply, with demand intervals inverted into exact reserve bounds.', dataKind: 'records', render: ReserveEnvelope,
+    defaultConfig: reserveEnvelopeConfig.parse({}), parseConfig: config => reserveEnvelopeConfig.parse(config ?? {}),
+    validateInput: (result, config) => {
+      if (!result.records) return [{ message: 'Reserve envelopes require forecast and capacity records.' }];
+      const records = result.records;
+      return checkedInput(() => { reserveEnvelopePoints(records, config ?? {}); });
+    },
+    sizing: { mode: 'intrinsic', minWidth: 280, minHeight: 340 }, styleControls: ['grid', 'legend', 'tooltips'],
+    configFields: [
+      { key: 'timeField', label: 'Observation time field', kind: 'text', binding: { types: ['number'], unit: 'ms', role: 'Unique epoch millisecond timestamp; shared by demand and capacity' } },
+      { key: 'capacityField', label: 'Available capacity field', kind: 'text', binding: { types: ['number'], unit: 'MW', role: 'Available supply at the same timestamp, or null when unknown' } },
+      { key: 'observedField', label: 'Observed required supply field', kind: 'text', binding: { types: ['number'], unit: 'MW', role: 'Measured demand including losses; null outside observed coverage' } },
+      { key: 'medianField', label: 'Forecast median supply field', kind: 'text', binding: { types: ['number'], unit: 'MW', role: 'Supplied forecast median, including losses' } },
+      { key: 'low95Field', label: 'Demand 95% lower bound', kind: 'text', binding: { types: ['number'], unit: 'MW', role: 'Lower demand bound becomes the upper reserve bound' } },
+      { key: 'high95Field', label: 'Demand 95% upper bound', kind: 'text', binding: { types: ['number'], unit: 'MW', role: 'Upper demand bound becomes the lower reserve bound' } },
+      { key: 'low68Field', label: 'Demand 68% lower bound', kind: 'text', binding: { types: ['number'], unit: 'MW', optional: true, role: 'Optional paired lower demand bound; clear both 68% mappings when unavailable' } },
+      { key: 'high68Field', label: 'Demand 68% upper bound', kind: 'text', binding: { types: ['number'], unit: 'MW', optional: true, role: 'Optional paired upper demand bound; clear both 68% mappings when unavailable' } },
+      { key: 'threshold', label: 'Reserve reference threshold (MW)', kind: 'number', min: -1_000_000, max: 1_000_000, step: 1, help: 'A visual reference in MW; changing it leaves the source demand and capacity unchanged.' },
+      { key: 'show68', label: 'Show 68% reserve interval', kind: 'boolean' }, { key: 'show95', label: 'Show 95% reserve interval', kind: 'boolean' }, { key: 'showControls', label: 'Show exact time inspection control', kind: 'boolean' },
+    ],
+  });
+}

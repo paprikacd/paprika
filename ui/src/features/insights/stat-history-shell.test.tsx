@@ -1,0 +1,22 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
+import { StatSparkline } from "./stat-sparkline";
+import type { Widget } from "./schema";
+afterEach(cleanup);
+it("keeps Home and End owned by history with the real shared tooltip mounted", () => {
+  const widget: Widget = { id:"history",title:"Rate",type:"stat",providerId:"p",query:"rate",unit:"req/s",layout:{x:0,y:0,w:3,h:1},options:{showSparkline:true} };
+  render(<StatSparkline widget={widget} name="raw" unit="req/s" series={{name:"raw",labels:{},points:[{timestamp:1000,value:1},{timestamp:2000,value:2},{timestamp:3000,value:3}]}} />);
+  const svg=screen.getByRole("img",{name:"History for Rate"});
+  fireEvent.focus(svg);
+  expect(svg).toHaveAttribute("data-stat-selected-time","3000");
+  fireEvent.keyDown(svg,{key:"Home"});
+  expect(svg).toHaveAttribute("data-stat-selected-time","1000");
+  fireEvent.keyDown(svg,{key:"ArrowRight"});
+  expect(svg).toHaveAttribute("data-stat-selected-time","2000");
+  fireEvent.keyDown(svg,{key:"End"});
+  expect(svg).toHaveAttribute("data-stat-selected-time","3000");
+  fireEvent.keyDown(svg,{key:"Enter"});
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
+  fireEvent.keyDown(svg,{key:"Escape"});
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+});

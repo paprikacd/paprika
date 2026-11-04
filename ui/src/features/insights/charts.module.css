@@ -1,11 +1,21 @@
 .visualization {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   width: 100%;
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   min-width: 0;
   container: insight-widget / size;
 }
+.visualizationContent {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+.traceExpand { display: block; margin-top: 4px; padding: 0; color: var(--gamma-accent, #53876a); background: transparent; border: 0; font: inherit; font-size: 10px; cursor: pointer; text-align: left; }
+.traceExpand:focus-visible { outline: 2px solid var(--gamma-accent, #53876a); outline-offset: 2px; }
 .chart {
   display: flex;
   flex-direction: column;
@@ -18,7 +28,33 @@
   min-height: 48px;
   min-width: 0;
   position: relative;
+  /* A late legend or annotation can shrink the plot before the SVG is
+     remeasured. Keep the old drawing out of the footer during that frame. */
+  overflow: clip;
+  /* Own stacking context: no-sample bands sit at z-index -1, beneath the TanStack SVG. */
+  isolation: isolate;
 }
+.eventLine { position: absolute; width: 0; border-left: 1.5px dashed var(--gamma-muted, #52636f); opacity: .8; pointer-events: none; }
+.thresholdGuide { position: absolute; border-top: 1.25px dashed; pointer-events: none; z-index: 1; color: var(--widget-text, var(--gamma-ink, #223139)); --threshold-halo: var(--widget-background, var(--gamma-bg, #ffffff)); }
+/* The label sits at the left end of its line. A 1px halo in the widget background keeps it legible over data, with no box. */
+.thresholdGuide > span { position: absolute; left: 4px; bottom: 3px; font-size: 12px; font-weight: 500; line-height: 1.3; white-space: nowrap; text-shadow: 1px 0 0 var(--threshold-halo), -1px 0 0 var(--threshold-halo), 0 1px 0 var(--threshold-halo), 0 -1px 0 var(--threshold-halo); }
+.thresholdGuide[data-label-placement="below"] > span { bottom: auto; top: 3px; }
+/* Hatched time with no samples. Gridlines, lines and dots paint over it; the band itself never takes pointer input. */
+.noSampleBand { position: absolute; z-index: -1; pointer-events: none; }
+/* Only the family is inherited: the label is measured in 400 12px of the plot's family (chart-renderers.tsx), so its weight,
+   style and letter spacing are pinned here to the same values. */
+.noSampleLabel { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: var(--widget-background, var(--gamma-bg, #ffffff)); color: var(--widget-text, var(--gamma-muted, #52636f)); font-size: 12px; font-style: normal; font-weight: 400; letter-spacing: 0; line-height: 1.3; white-space: nowrap; }
+.eventRange { position: absolute; background: var(--gamma-muted, #52636f); opacity: .16; pointer-events: none; }
+.eventRange[data-severity="info"] { background: var(--gamma-chart-1, #2867b9); }
+.eventRange[data-severity="warning"] { background: var(--gamma-chart-4, #977017); }
+.eventRange[data-severity="critical"] { background: var(--gamma-danger, #b4473d); }
+.eventLine::before { content: ""; position: absolute; left: -3px; top: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--gamma-muted, #52636f); }
+.eventLine[data-severity="info"] { border-color: var(--gamma-chart-1, #2867b9); }
+.eventLine[data-severity="info"]::before { background: var(--gamma-chart-1, #2867b9); }
+.eventLine[data-severity="warning"] { border-color: var(--gamma-chart-4, #977017); }
+.eventLine[data-severity="warning"]::before { background: var(--gamma-chart-4, #977017); }
+.eventLine[data-severity="critical"] { border-color: var(--gamma-danger, #b4473d); }
+.eventLine[data-severity="critical"]::before { background: var(--gamma-danger, #b4473d); }
 .sharedCursor {
   position: absolute;
   width: 0;
@@ -41,7 +77,7 @@
   border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border));
   font-size: 11px;
   line-height: 1.35;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .chartFooter {
   display: flex;
@@ -49,12 +85,58 @@
   gap: 12px;
   flex-shrink: 0;
   min-width: 0;
+  /* The containing block for the open interval list, which floats above the footer. */
+  position: relative;
   border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border));
   padding-top: 4px;
 }
 .chartFooter > .legend { flex: 1; border-top: 0; padding: 2px 0; gap: 4px 16px; }
 .chartFooter .legendItem { flex-basis: 140px; max-width: none; }
+/* A category key retains every plotted identity even when narrow axis labels
+   are thinned. The capped region remains keyboard scrollable for large sets. */
+.chartFooter > .barLegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); align-items: start; gap: 3px 12px; max-height: 98px; }
+.barLegend .legendItem { max-width: none; width: 100%; gap: 5px; }
+.barLegend .swatch { width: 8px; height: 8px; border-radius: 1px; }
+.barLegend:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+/* The hatched key matches the 8px colour keys; "No data" is quieter than a latest value. */
+.barLegend .noDataKey { width: 8px; height: 8px; border-radius: 1px; }
+.barLegend .noDataValue { color: var(--widget-text, var(--gamma-muted, #52636f)); font-weight: 400; }
+
 .chartFooter > :only-child { margin-left: auto; }
+@container insight-widget (max-width: 360px) {
+  .chartFooter:has([data-window-lens]) { flex-wrap: wrap; gap: 2px 6px; }
+  .chartFooter:has([data-window-lens]) > .legend { flex-basis: 100%; }
+}
+/* Narrow widths: each notice and the interval disclosure take a full row and wrap normally, above the action buttons.
+   Left in a shared row, they shrink to one word per line. */
+@container insight-widget (max-width: 480px) {
+  .chartFooter { flex-wrap: wrap; }
+  .chartFooter > .notice,
+  .chartFooter > .gapDetails { flex: 1 1 100%; margin-left: 0; }
+}
+/* Short desktop tiles use a single-row, keyboard-scrollable legend. A
+   wrapped legend can consume more than half a small timeseries plot. Keep
+   source names and readings available through labelled, horizontally
+   navigable items, rather than shrinking the recorded data area. */
+@container insight-widget (min-width: 400px) and (max-height: 240px) {
+  .chartFooter > .legend[data-series-count] {
+    flex-wrap: nowrap;
+    gap: 8px;
+    max-height: 32px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 3px 2px 1px;
+  }
+  .chartFooter > .legend[data-series-count] .legendItem {
+    flex: 1 0 110px;
+    max-width: none;
+    gap: 4px;
+  }
+  .chartFooter > .legend[data-series-count] .legendValue {
+    white-space: nowrap;
+    font-size: 10px;
+  }
+}
 .legendItem {
   display: flex;
   align-items: center;
@@ -70,16 +152,23 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .legendValue {
-  flex-shrink: 0;
-  max-width: 50%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--widget-text, var(--gamma-ink));
   font-weight: 500;
 }
+.chartFooter:has(.priorLegend) { flex-wrap: wrap; gap: 4px 12px; }
+.chartFooter:has(.priorLegend) > .legend { flex-basis: 100%; }
+.priorLegend { display: flex; flex: 1 1 100%; min-width: 0; max-height: 64px; overflow: auto; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted)); }
+.priorLegend > span { display: inline-flex; min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; align-items: center; gap: 5px; }
+.priorLegend i { width: 15px; border-top: 2px dashed; flex: none; }
+.priorLegend time { font-variant-numeric: tabular-nums; }
 .swatch {
   display: inline-block;
   height: 2px;
@@ -89,10 +178,34 @@
 }
 .notice {
   font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   margin-left: auto;
 }
+/* The interval list keeps every no-sample time reachable from the keyboard and by touch. It is an absolutely positioned
+   panel above the footer, so opening it leaves the footer's height, and therefore the plot's, unchanged. It scrolls
+   inside a capped height. Escape closes it (see the disclosure's onKeyDown in chart-renderers.tsx). */
+.gapDetails { margin-left: auto; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted, #52636f)); }
+.gapDetails > summary { cursor: pointer; }
+.gapDetails > summary:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+.gapDetails > ul {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  box-sizing: border-box;
+  width: min(100%, 360px);
+  max-height: 96px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 8px 6px 22px;
+  border: 1px solid var(--gamma-border, #d9e2e5);
+  border-radius: 4px;
+  background: var(--gamma-surface, #f5f7f7);
+  box-shadow: var(--gamma-shadow-mid);
+}
+.gapDetails > ul:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
 .limitNotice {
+  flex: none;
   font-size: 11px;
   line-height: 1.4;
   color: var(--gamma-warning, #886827);
@@ -102,7 +215,7 @@
   border: 1px solid var(--gamma-border, #dfe4db) !important;
   box-shadow: var(--gamma-shadow-mid, 0 8px 28px rgb(39 51 46 / 8%)) !important;
   background: var(--widget-background, var(--gamma-bg, #ffffff)) !important;
-  color: var(--widget-text, var(--gamma-ink, #27332e)) !important;
+  color: var(--widget-text, var(--gamma-ink, #223139)) !important;
   border-radius: var(--gamma-radius-control, 9px) !important;
   font:
     12px/1.6 var(--font-sans),
@@ -126,10 +239,10 @@
   padding: 18px;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .state strong {
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   font-weight: 500;
 }
 .state p {
@@ -189,12 +302,12 @@
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.15;
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   overflow-wrap: anywhere;
 }
 .statUnit {
   font-size: 14px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   margin-left: 7px;
   letter-spacing: 0;
   font-weight: 450;
@@ -202,10 +315,22 @@
 .statMeta {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.staleObservation {
+  color: var(--gamma-warning, #886827);
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 4px 16px;
+}
+.missingObservation {
+  color: var(--gamma-warning, #886827);
+  font-size: 11px;
+  line-height: 1.3;
+  padding-inline: var(--stat-reading-inset, 0px);
 }
 .statExtra {
   display: flex;
@@ -214,7 +339,7 @@
   justify-content: space-between;
   gap: 16px;
   font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .statExtra span {
   overflow: hidden;
@@ -222,7 +347,7 @@
   white-space: nowrap;
 }
 .statExtra strong {
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   font-weight: 500;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -254,7 +379,22 @@
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--gamma-muted, #626e65) transparent;
+  scrollbar-color: var(--gamma-muted, #52636f) transparent;
+}
+.traceListContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.traceListContainer > .tableWrap { flex: 1 1 0; }
+.traceScrollHint {
+  flex: none;
+  margin: 0;
+  padding: 5px 8px;
+  color: var(--widget-text, var(--gamma-muted, #52636f));
+  font-size: 11px;
+  line-height: 1.4;
 }
 .table {
   border-collapse: collapse;
@@ -267,7 +407,7 @@
   position: sticky;
   top: 0;
   background: var(--widget-background, var(--gamma-bg, #ffffff));
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
@@ -278,11 +418,11 @@
 .table td {
   padding: 8px;
   border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border, #dfe4db));
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   vertical-align: middle;
 }
 .table td:first-child {
-  color: var(--widget-text, var(--gamma-ink, #27332e));
+  color: var(--widget-text, var(--gamma-ink, #223139));
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -296,7 +436,7 @@
 .operation {
   display: block;
   font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -313,7 +453,7 @@
   left: 0;
   bottom: -4px;
   height: 2px;
-  background: var(--gamma-muted, #626e65);
+  background: var(--gamma-muted, #52636f);
   border-radius: 2px;
 }
 .traceSuccess {
@@ -327,7 +467,7 @@
   white-space: nowrap;
 }
 .statusNeutral {
-  color: var(--widget-text, var(--gamma-muted, #626e65));
+  color: var(--widget-text, var(--gamma-muted, #52636f));
 }
 .statusSuccess {
   color: var(--widget-text, var(--gamma-success, #327959));
@@ -377,6 +517,12 @@
     padding-inline: 5px;
   }
 }
+@container insight-widget (max-width: 90px) {
+  .stat { gap: 4px; padding-inline: 0; }
+  .statValue { font-size: clamp(13px, 26cqw, 20px); letter-spacing: 0; }
+  .statUnit { font-size: 10px; margin-left: 2px; }
+  .statMeta { font-size: 10px; line-height: 1.25; }
+}
 @media (prefers-reduced-motion: reduce) {
   .loading::after {
     animation: none;
@@ -404,3 +550,120 @@
   color: var(--widget-text, var(--gamma-chart-axis, var(--gamma-muted)));
   pointer-events: none;
 }
+
+.stat:has([data-sparkline-placement="side"]) .statValue {
+  font-size: clamp(18px, 8cqw, 24px);
+  letter-spacing: -0.01em;
+}
+/* Timestamp remains available to assistive technology and in value details. */
+.stat:has([data-sparkline-placement="side"]) .statMeta {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@container insight-widget (max-height: 40px) {
+  .stat.stat { gap: 0; overflow: auto; }
+  .stat.stat .statValue { font-size: clamp(16px, 8cqw, 21px); line-height: 1.1; }
+  .stat.stat .statMeta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+
+.stat[data-stat-bar-enabled="true"] { gap: 6px; }
+.stat[data-stat-bar-enabled="true"] > [data-stat-summary] { flex: 1 1 0; min-height: 0; }
+.stat[data-stat-bar-enabled="true"] .statMeta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.statBar {
+  height: 7px;
+  min-width: 0;
+  margin: 0 var(--stat-reading-inset, 0px);
+  border-radius: 3px;
+  background: var(--gamma-surface-2, #eaf0f1);
+  overflow: hidden;
+}
+.statBarFill { display: block; height: 100%; border-radius: inherit; }
+@container insight-widget (max-height: 40px) {
+  .stat[data-stat-bar-enabled="true"] { display: grid; grid-template-columns: minmax(0, auto) minmax(32px, 1fr); align-items: center; gap: 8px; }
+  .stat[data-stat-bar-enabled="true"] > [data-stat-summary] { min-width: 0; }
+  .statBar { margin: 0 8px 0 0; }
+}
+
+/* Inline-size containment preserves intrinsic height for narrow summary cards. */
+.visualization.intrinsicStat { height: auto; container-type: inline-size; }
+.intrinsicStat .visualizationContent { flex: none; }
+.intrinsicStat .stat { height: auto; gap: 4px; padding: 0 4px; overflow: visible; }
+.intrinsicStat [data-stat-reading] { gap: 2px; }
+.intrinsicStat .statValue { font-size: 28px; line-height: 1.1; }
+.intrinsicStat .statUnit { font-size: 12px; }
+.intrinsicStat .stat .statMeta {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.intrinsicStat .stat[data-stat-sparkline-enabled="true"] { padding: 0; }
+.intrinsicStat .stat .statValue { font-size: 28px; white-space: normal; }
+
+/* Empty/error/loading content must start inside a one-track card. The normal
+   100px minimum otherwise centers the actual message below its clipped body. */
+@container insight-widget (max-height: 40px) {
+  .state {
+    min-height: 0;
+    padding: 0 4px;
+    gap: 2px;
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+  .state > * { flex-shrink: 0; }
+}
+
+/* Initial-load placeholders are decorative: aria-hidden, never focusable, and stopped by reduced motion or a hidden page. */
+.loadingFrame { position: relative; }
+.loadingPlaceholder {
+  position: absolute;
+  inset: 14px 14px 40px;
+  pointer-events: none;
+  color: var(--gamma-chart-axis, #a3b1b8);
+  opacity: .55;
+}
+.loadingPlaceholder[data-loading-motion="auto"] { animation: loadingPulse 1.6s ease-in-out infinite; }
+.loadingPlaceholder[data-loading-motion="paused"] { animation: none; }
+@keyframes loadingPulse {
+  0%, 100% { opacity: .35; }
+  50% { opacity: .75; }
+}
+:is([data-motion="reduced"]) .loadingPlaceholder[data-loading-motion="auto"] { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .loadingPlaceholder[data-loading-motion="auto"] { animation: none; }
+}
+.loadingPlaceholder svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.loadingPlaceholder i { display: block; border-radius: 3px; background: currentColor; opacity: .4; }
+.loadingLine path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.loadingLine .loadingArea { fill: currentColor; fill-opacity: .14; stroke: none; }
+.loadingTopology path { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.loadingTopology rect { fill: var(--widget-background, var(--gamma-bg, #ffffff)); stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.loadingTable { display: grid; align-content: start; gap: 10px; height: 100%; }
+.loadingTable > div { display: grid; grid-template-columns: 1.6fr 1fr 1fr .8fr; gap: 10px; }
+.loadingTable i { height: 10px; }
+.loadingMatrix { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 4px; height: 100%; }
+.loadingBars { display: flex; align-items: flex-end; gap: 8px; height: 100%; }
+.loadingBars i { flex: 1 1 0; height: var(--placeholder-height); min-height: 4px; }
+.loadingStatus {
+  position: absolute;
+  inset: auto 14px 10px;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 8px;
+  z-index: 1;
+}
+.refreshHost { position: relative; }
+.refreshNotice { position: absolute; top: 6px; right: 8px; z-index: 2; pointer-events: none; }

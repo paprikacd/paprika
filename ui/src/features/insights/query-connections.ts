@@ -6,6 +6,8 @@ export interface QueryFields {
   seriesCount: number;
   labels: { name: string; samples: string[]; present: number }[];
   partial: boolean;
+  /** Column keys and types only; never copy record values into the editor. */
+  recordColumns?: { name: string; type: string }[];
 }
 export interface QueryFieldSnapshot {
   widgetId: string;
@@ -20,7 +22,7 @@ export function queryConnectionKey(widget: Widget, range: { start: number; end: 
 export function queryFields(result: QueryResult): QueryFields {
   const series = (result.series ?? []).slice(0, 1000);
   const labels = new Map<string, { name: string; samples: string[]; present: number }>();
-  let partial = !!result.truncated || (result.series?.length ?? 0) > series.length;
+  let partial = !!(result.truncated || result.records?.truncated) || (result.series?.length ?? 0) > series.length;
   for (const entry of series) for (const [name, value] of Object.entries(entry.labels)) {
     if (name === "__name__" || !name || name.length > 128) continue;
     let label = labels.get(name);
@@ -31,7 +33,10 @@ export function queryFields(result: QueryResult): QueryFields {
     label.present++;
     if (label.samples.length < 3 && !label.samples.includes(value)) label.samples.push(value);
   }
-  return { seriesCount: series.length, labels: [...labels.values()].sort((a, b) => a.name.localeCompare(b.name)), partial };
+  const columns = result.records?.columns;
+  if (columns && columns.length > 64) partial = true;
+  return { seriesCount: series.length, labels: [...labels.values()].sort((a, b) => a.name.localeCompare(b.name)), partial,
+    ...(columns ? { recordColumns: columns.slice(0, 64).map(column => ({ name: column.key, type: column.type })) } : {}) };
 }
 export interface ConnectionContext {
   variables?: Dashboard["variables"];

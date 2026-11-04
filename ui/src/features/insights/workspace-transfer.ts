@@ -54,6 +54,8 @@ function references(dashboards: readonly Dashboard[]) {
           reference: widget.queryRef,
           kind: widgetKind(widget),
         });
+      if (widget.annotationSource)
+        result.push({ dashboard, reference: widget.annotationSource.queryRef, kind: "records" });
       const view = widget.options?.tooltipView;
       if (view?.source?.type === "saved")
         result.push({
@@ -314,6 +316,7 @@ export function remapBundleQueryReferences(
                 },
               }
             : {}),
+          ...(widget.annotationSource ? { annotationSource: { ...widget.annotationSource, queryRef: { ...widget.annotationSource.queryRef, id: mappedId(widget.annotationSource.queryRef.id) } } } : {}),
           ...(view?.source?.type === "saved"
             ? {
                 options: {

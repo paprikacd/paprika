@@ -8,6 +8,7 @@ import { registerWidgetPlugin } from "./widget-registry";
 import { contextKey, metricContext } from "./widget-context";
 import type { DrilldownContext } from "./drilldown";
 import { SavedQueryLibraryProvider } from "./saved-query-context";
+import { registerRecordWidgetPlugins } from "./plugins/records";
 
 const query = vi.hoisted(() => ({
   data: {} as QueryResult,
@@ -54,12 +55,16 @@ function Canvas({
   current = widget,
   dashboardId = "overview",
   active = true,
+  referenceCompact = false,
   onDrilldown = vi.fn(),
+  onSelection,
 }: {
   current?: Widget;
   dashboardId?: string;
   active?: boolean;
+  referenceCompact?: boolean;
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
+  onSelection?: (widget: Widget, context: DrilldownContext) => void;
 }) {
   const dashboard: Dashboard = {
     schemaVersion: 1,
@@ -73,6 +78,7 @@ function Canvas({
     <DashboardCanvas
       dashboard={dashboard}
       active={active}
+      referenceCompact={referenceCompact}
       providers={[
         {
           id: "prom",
@@ -87,6 +93,7 @@ function Canvas({
       onSelect={vi.fn()}
       onLayout={vi.fn()}
       onDrilldown={onDrilldown}
+      onSelection={onSelection}
     />
   );
 }
@@ -103,6 +110,41 @@ afterEach(() => {
 });
 
 describe("signal-specific dashboard drilldowns", () => {
+  it.each([false, true])("uses a deliberately selected historical sample for links and drops it on refresh (multiple series: %s)", (multiple) => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const historicalLink: Drilldown = { ...link, bindings: [{ variable: "reading", source: "value" }] };
+    const current: Widget = { ...widget, type: "timeseries", drilldowns: [historicalLink] };
+    const measured = { name: "api", labels: { service: "api" }, points: [{ timestamp: 1000, value: 7 }, { timestamp: 2000, value: 20 }] };
+    query.data = { series: [measured, ...(multiple ? [{ ...series("worker", 15), points: [{ timestamp: 3000, value: 15 }] }] : [])] };
+    const drilldown = vi.fn();
+    const view = render(<Canvas current={current} onDrilldown={drilldown} />);
+    const chart = screen.getByRole("img", { name: "Requests" });
+    act(() => chart.focus());
+    fireEvent.keyDown(chart, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Use sample for dashboard links" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Links use selected sample at");
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Service dashboard/ }));
+    expect(drilldown).toHaveBeenLastCalledWith(historicalLink, { series: "api", labels: { service: "api" }, value: 7, timestamp: 1000 });
+    query.data = { series: [{ ...measured, points: [{ timestamp: 3000, value: 31 }] }, ...(multiple ? [series("worker", 18)] : [])] };
+    view.rerender(<Canvas current={current} onDrilldown={drilldown} />);
+    expect(screen.queryByText("Links use selected sample at", { exact: false })).not.toBeInTheDocument();
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Service dashboard/ }));
+    expect(drilldown).toHaveBeenLastCalledWith(historicalLink, { series: "api", labels: { service: "api" }, value: 31 });
+  });
+  it("emits an explicit record selection without requiring a drilldown", () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    registerRecordWidgetPlugins();
+    query.data = { records: { columns: [{ key: "symbol", type: "string" }, { key: "value", type: "number" }], rows: [["BHP", 12], ["RIO", 6]] } };
+    const selected = vi.fn();
+    const current: Widget = { ...widget, type: "plugin", pluginId: "record-table", dataKind: "records", drilldowns: undefined, selectionBindings: [{ variable: "company", source: "label", value: "symbol" }] };
+    render(<Canvas current={current} onSelection={selected} />);
+    fireEvent.mouseOver(screen.getByText("RIO"));
+    expect(selected).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Select row 2" }));
+    expect(selected).toHaveBeenCalledWith(current, { labels: { symbol: "RIO", value: "6" } });
+  });
   it("waits for the saved-query library without flashing an error, then exposes genuine failures", () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     const saved = { ...widget, queryRef: { id: "saved-requests" } };
@@ -624,4 +666,31 @@ it("adapts custom-dark widget headings and descriptions while retaining explicit
   expect(screen.getByRole("heading", { name: "Requests" })).toHaveStyle({
     color: "#ffcc88",
   });
+});
+
+
+it("keeps risk provenance in reachable details only in the compact reference view", () => {
+  const risk: Widget = {
+    ...widget, type: "plugin", pluginId: "record-table", dataKind: "records",
+    title: "Risk by source · snapshot", description: "Seed-time source risk snapshot. Trends show up to the latest 240 observations in the selected range.",
+    config: { cellStyles: [
+      { column: "trend", display: "sparkline" },
+      { column: "risk", display: "bar-segments", min: 0, max: 100 },
+      { column: "status", display: "status-badge" },
+    ] },
+  };
+  const { rerender } = render(<Canvas current={risk} referenceCompact />);
+  const summary = screen.getByText("Details");
+  expect(summary).toHaveAttribute("aria-label", "Details for Risk by source · snapshot");
+  const details = summary.closest("details")!;
+  expect(details).not.toHaveAttribute("open");
+  fireEvent.click(summary);
+  expect(details).toHaveAttribute("open");
+  expect(within(details).getByText(risk.description!)).toBeVisible();
+  rerender(<Canvas current={risk} />);
+  expect(screen.queryByText("Details")).not.toBeInTheDocument();
+  expect(screen.getByText(risk.description!)).toBeVisible();
+  rerender(<Canvas current={{ ...risk, config: { cellStyles: [{ column: "trend", display: "sparkline" }] } }} referenceCompact />);
+  expect(screen.queryByText("Details")).not.toBeInTheDocument();
+  expect(screen.getByText(risk.description!)).toBeVisible();
 });

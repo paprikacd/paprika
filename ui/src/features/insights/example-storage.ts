@@ -1,4 +1,4 @@
-import { dashboardSchema, type Dashboard } from "./schema"
+import { dashboardSchema, storedDashboardSchema, type Dashboard } from "./schema"
 import { exampleDashboard } from "./example"
 import { documentFingerprint } from "./fingerprint"
 import type { InsightsClient } from "./client"
@@ -14,12 +14,13 @@ export function readExampleWorkspace(storage: Pick<Storage, "getItem">): Example
     const source = storage.getItem(EXAMPLE_STORAGE_KEY)
     if (source) {
       const parsed = JSON.parse(source)
-      // Accept the single-document format written by the first preview.
+      // Accept the single-document format written by the first preview. A stored zone is read as saved, as the server list reads it,
+      // so one example's stale zone never hides the others.
       if (parsed.schemaVersion === 1) {
-        const dashboard = dashboardSchema.parse(parsed)
+        const dashboard = storedDashboardSchema.parse(parsed)
         return { dashboards: [dashboard], activeId: dashboard.id }
       }
-      const dashboards = dashboardSchema.array().max(100).parse(parsed.dashboards)
+      const dashboards = storedDashboardSchema.array().max(100).parse(parsed.dashboards)
       if (!dashboards.length && parsed.activeId === "") return { dashboards, activeId: "" }
       if (dashboards.length && dashboards.some((item) => item.id === parsed.activeId))
         return { dashboards, activeId: parsed.activeId }
@@ -48,12 +49,17 @@ export function saveExampleWorkspace(
   return documents
 }
 
+/**
+ * Documents the workspace already holds pass through as stored, so an unrelated delete never fails on another example's
+ * stale zone. A document an edit changes is checked by its own path: save and import write strictly, and copy and move
+ * write a result whose stale zone is unset (see writableDashboard).
+ */
 export function writeExampleWorkspace(
   storage: Pick<Storage, "setItem">,
   dashboards: Dashboard[],
   activeId: string,
 ) {
-  const documents = dashboardSchema.array().max(100).parse(dashboards)
+  const documents = storedDashboardSchema.array().max(100).parse(dashboards)
   const selected = documents.some((item) => item.id === activeId)
     ? activeId
     : (documents[0]?.id ?? "")

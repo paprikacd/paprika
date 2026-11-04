@@ -83,6 +83,27 @@ func TestSQLReadOnlyShapeAndTypedBindings(t *testing.T) {
 	require.Equal(t, "SELECT 1 AS value", health.SQL)
 }
 
+func TestSQLRangeParametersResolveAsPreparedTimestampValues(t *testing.T) {
+	statement := `SELECT $1::text AS service, $2::timestamptz AS start, $3::timestamptz AS finish`
+	query, err := parseQuery(`{"sql":"` + statement + `","parameters":["api",{"range":"start"},{"range":"end"}]}`)
+	require.NoError(t, err)
+	start := time.Date(2025, 2, 1, 9, 0, 0, 123000000, time.FixedZone("east", 3600))
+	end := start.Add(time.Hour)
+	require.NoError(t, resolveRangeParameters(query.Parameters, connector.TimeRange{Start: start, End: end}))
+	require.Equal(t, statement, query.SQL)
+	require.Equal(t, []any{"api", start.UTC(), end.UTC()}, query.Parameters)
+
+	for _, bounds := range []connector.TimeRange{{}, {Start: end, End: start}, {Start: start}} {
+		query, err := parseQuery(`{"sql":"SELECT $1::timestamptz","parameters":[{"range":"end"}]}`)
+		require.NoError(t, err)
+		require.Error(t, resolveRangeParameters(query.Parameters, bounds))
+	}
+	for _, token := range []string{`{"range":"other"}`, `{"range":null}`, `{"range":[]}`, `{"range":"start","extra":"x"}`, `{"range":"start","range":"end"}`} {
+		_, err := parseQuery(`{"sql":"SELECT $1","parameters":[` + token + `]}`)
+		require.Error(t, err, token)
+	}
+}
+
 func TestSQLRejectsWriteAndAlternateStatementShapes(t *testing.T) {
 	for _, source := range []string{
 		"DELETE FROM x", "SELECT 1; DELETE FROM x", "SELECT 1; SELECT 2", "SELECT 1;;",
@@ -165,4 +186,14 @@ func TestConnectionQueueHonorsCancellation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, connector.StateError, result.State)
 	require.Less(t, time.Since(started), time.Second)
+}
+
+func TestParameterNormalizationRetainsOrderAndExactDecimal(t *testing.T) {
+	parameters := []any{json.Number("9007199254740993.125"), nil, true, map[string]any{"range": "start"}, "value"}
+	require.NoError(t, validateParameters(parameters))
+	require.Equal(t, []any{"9007199254740993.125", nil, true, rangeParameter("start"), "value"}, parameters)
+	invalid := []any{json.Number("1.25"), map[string]any{"range": "start", "extra": true}, json.Number("2.5")}
+	require.EqualError(t, validateParameters(invalid), `SQL range parameters must be exactly {"range":"start"} or {"range":"end"}`)
+	require.Equal(t, "1.25", invalid[0])
+	require.Equal(t, json.Number("2.5"), invalid[2], "validation stops at the first invalid parameter")
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -32,6 +32,7 @@ import {
   validateSavedQueryTemplate,
 } from "./saved-queries";
 import { QueryBuilder } from "./query-builder";
+import { summarizeExplorerResult } from "./explorer-result-summary";
 import { assertProviderQueryTemplate } from "./provider-query-template";
 import { WidgetVisualization } from "./charts";
 import { dashboardRange, TimeRangeControl } from "./time-range";
@@ -199,7 +200,8 @@ export function Explorer({
   const [error, setError] = useState("");
   const [saveRecovery, setSaveRecovery] = useState(false);
   const [notice, setNotice] = useState("");
-  const [runError, setRunError] = useState("");
+  const [runError, setRunError] = useState<{ key: string; message: string }>();
+  const [runNotice, setRunNotice] = useState("");
   const [executed, setExecuted] = useState<{
     key: string;
     query: SavedQuery;
@@ -258,12 +260,18 @@ export function Explorer({
     time.customTimeRange,
   ]);
   const stale = !!executed && executed.key !== executionKey;
+  // Errors describe the exact inputs that were run. Editing a test value or
+  // time range must not leave a previous request's failure on the new draft.
+  const activeRunError = runError?.key === executionKey ? runError.message : "";
+  const resultSummary = useMemo(() => executed ? summarizeExplorerResult(executed.query.kind, executed.result) : undefined, [executed]);
   const previewFields = recordPreviewFields(view);
   const previewColumns = executed?.result.records?.columns ?? [];
   const previewMapping = recordMappings[view] ?? {};
   const previewReady = previewFields.every(field => previewColumns.some(column => column.key === previewMapping[field.key] && (!field.numeric || column.type === "number")));
   const previewConfig = Object.fromEntries(previewFields.map(field => [field.key, field.key === "y" && view.startsWith("records-") ? [previewMapping[field.key]] : previewMapping[field.key]]));
   function cancel() {
+    setRunNotice("");
+    setRunError(undefined);
     controller.current?.abort();
     controller.current = null;
     setRunning(false);
@@ -271,7 +279,7 @@ export function Explorer({
   function change(next: Draft) {
     cancel();
     setDraft(next);
-    setRunError("");
+    setRunError(undefined);
     setError("");
     setSaveRecovery(false);
     setNotice("");
@@ -311,7 +319,7 @@ export function Explorer({
     setError("");
     setSaveRecovery(false);
     setNotice("");
-    setRunError("");
+    setRunError(undefined);
     setExecuted(undefined);
   }
   async function select(id: string) {
@@ -450,7 +458,7 @@ export function Explorer({
   async function run() {
     if (!active || !queryValid) return;
     cancel();
-    setRunError("");
+    setRunError(undefined);
     let request: AbortController | undefined;
     try {
       // Names are required to save, but an ad-hoc query can run before naming it.
@@ -496,7 +504,7 @@ export function Explorer({
         setExecuted({ key: executionKey, query: resolved, result, ...range });
     } catch (error) {
       if (alive.current && !request?.signal.aborted)
-        setRunError(message(error));
+        setRunError({ key: executionKey, message: message(error) });
     } finally {
       if (alive.current && (!request || controller.current === request))
         setRunning(false);
@@ -632,7 +640,10 @@ export function Explorer({
                   {running ? "Running query…" : "Run query"}
                 </GammaButton>
                 {running && (
-                  <GammaButton onClick={cancel}>
+                  <GammaButton onClick={() => {
+                    cancel();
+                    setRunNotice(executed ? "Query cancelled. Showing the previous successful result below." : "Query cancelled.");
+                  }}>
                     <Square size={13} />
                     Cancel query
                   </GammaButton>
@@ -730,19 +741,26 @@ export function Explorer({
                 ))}
               </div>
             )}
-            {runError && (
+            {runNotice && <p role="status" className={styles.resultMeta}>{runNotice}</p>}
+            {activeRunError && (
               <p role="alert" className={styles.error}>
-                {runError}
+                {activeRunError}{executed && !stale && " Showing the previous successful result below."}
               </p>
             )}
             {stale && (
               <p role="status" className={styles.stale}>
-                Inputs changed. Showing the previous result; run the query to
-                update it.
+                {activeRunError
+                  ? "Latest run failed. Showing the previous result for different inputs."
+                  : "Inputs changed. Showing the previous result; run the query to update it."}
               </p>
             )}
             {executed ? (
               <>
+                {running && <p className={styles.resultMeta}>Running query… Showing the previous successful result until it completes.</p>}
+                {resultSummary && <div className={styles.resultSummary} role="status" aria-label="Result summary">
+                  <span>{resultSummary.detail} returned</span>
+                  {resultSummary.partial && <span>Partial provider response · data may be incomplete.</span>}
+                </div>}
                 {executed.query.kind === "records" && !!previewFields.length && <div className={styles.testValues} aria-label="Record preview columns">
                   {previewFields.map(field => <label className={styles.field} key={field.key}>
                     <span>{field.label}</span>
@@ -769,10 +787,12 @@ export function Explorer({
             ) : (
               <div className={styles.empty}>
                 <span className={styles.emptyIcon}><Activity size={23} aria-hidden="true" /></span>
-                <h3>{running ? "Running query…" : "Ready when you are"}</h3>
+                <h3>{running ? "Running query…" : activeRunError ? "Query failed" : "Ready when you are"}</h3>
                 <p>
                   {running
                     ? "You can cancel this request while it runs."
+                    : activeRunError
+                    ? "Check the query and test values, then run it again."
                     : "Write a query, then select Run query to see results."}
                 </p>
               </div>

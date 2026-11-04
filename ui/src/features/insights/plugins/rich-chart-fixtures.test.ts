@@ -5,6 +5,7 @@ import { resolveSavedQueryReference } from "../saved-queries"
 import { dashboardSchema, savedQuerySchema, widgetKind, type QueryResult, type Widget } from "../schema"
 import { parseDashboardBundle, serializeDashboardBundle } from "../workspace-transfer"
 import { chartFixtureCollections as artboardExamples, chartFixtures as artboardFixtures } from "../../../../e2e/fixtures/rich-chart-data"
+import { bucketQuantile } from "./distribution-quantile"
 
 const engine = createExampleCatalogQuery(artboardFixtures)
 const range = { start: 1_792_500_000, end: 1_792_503_600, step: 60 }
@@ -97,10 +98,57 @@ describe("test-only rich chart fixture coverage", () => {
     for (let point = 0; point < result.series![0].points.length; point++) {
       let lower = 0
       for (const bucket of result.series!) {
-        const value = bucket.points[point].value!
+        const value = bucket.points[point].value
+        if (value === null) continue // a missing bucket has no rate to order; the observed buckets stay cumulative
         expect(value).toBeGreaterThanOrEqual(lower)
         lower = value
       }
+    }
+  })
+
+  it("gives the latency heatmap a finite p95 in most windows and overflow only at the tail", async () => {
+    const service = artboardExamples[0]
+    const heatmap = service.sample.dashboards[0].widgets.find(widget => widget.id === "latency-distribution")!
+    const buckets = (await query(service.id, heatmap, "uptime-api")).series!
+    const bounds = buckets.map(bucket => bucket.labels.le === "+Inf" ? Infinity : Number(bucket.labels.le))
+    const estimates = buckets[0].points.flatMap((_, point) => {
+      const cumulative = buckets.map(bucket => bucket.points[point].value)
+      if (cumulative.some(value => value === null)) return [] // a missing window has no p95 to compare
+      return [bucketQuantile(bounds, cumulative.map((value, index) => value! - (index ? cumulative[index - 1]! : 0)), 0.95)!]
+    })
+    const overflow = estimates.filter(estimate => estimate.overflow).length
+    expect(overflow, "the last windows push p95 into the open bucket").toBeGreaterThanOrEqual(1)
+    expect(overflow).toBeLessThanOrEqual(2)
+    expect(estimates.filter(estimate => estimate.estimate !== null).length / estimates.length, "most complete windows have a finite p95").toBeGreaterThan(0.9)
+  })
+
+  it("keeps the missing, stale and no-sample states the artboards show", async () => {
+    const service = artboardExamples[0]
+    const heatmap = service.sample.dashboards[0].widgets.find(widget => widget.id === "latency-distribution")!
+    const buckets = (await query(service.id, heatmap, "uptime-api")).series!
+    const windows = buckets[0].points.map((_, point) => buckets.every(bucket => bucket.points[point].value === null))
+    expect(windows.includes(true), "a whole window with every bucket absent").toBe(true)
+    expect(windows.includes(false), "observed windows around the missing one").toBe(true)
+
+    const edge = artboardExamples.find(entry => entry.id === "artboard-edge-watch")!
+    const outcomes = edge.sample.dashboards[0].widgets.find(widget => widget.id === "outcomes")!
+    const challenged = (await query(edge.id, outcomes, "edge-01")).series!.find(series => series.name === "Challenged")!.points.map(point => point.value)
+    const absent = challenged.flatMap((value, index) => value === null ? [index] : [])
+    expect(absent.length, "a stacked series missing for a few timestamps").toBeGreaterThan(0)
+    expect(challenged.slice(0, absent[0]).some(value => value !== null), "after it has started").toBe(true)
+    expect(challenged.slice(absent.at(-1)! + 1).some(value => value !== null), "and reports again").toBe(true)
+    const destinations = edge.sample.dashboards[0].widgets.find(widget => widget.id === "destinations")!
+    const hosts = (await query(edge.id, destinations, "edge-01")).series!
+    expect(hosts.find(series => series.labels.destination === "assets.example.test")!.points.every(point => point.value === null), "a bar series with no valid sample").toBe(true)
+    expect(hosts.some(series => series.points.some(point => point.value !== null))).toBe(true)
+
+    const reliability = artboardExamples.find(entry => entry.id === "artboard-reliability-room")!
+    const burn = reliability.sample.dashboards[0].widgets.find(widget => widget.id === "burn")!
+    for (const series of (await query(reliability.id, burn, "uptime-api")).series!) {
+      const values = series.points.map(point => point.value)
+      const lastValid = values.reduce<number>((last, value, index) => value === null ? last : index, -1)
+      expect(lastValid, `${series.name} stops before the range end`).toBeLessThan(values.length - 1)
+      expect(values.slice(0, lastValid).includes(null), `${series.name} has an interior gap`).toBe(true)
     }
   })
 

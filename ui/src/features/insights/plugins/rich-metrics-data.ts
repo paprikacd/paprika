@@ -1,11 +1,14 @@
 import { z } from "zod";
 import type { QueryResult } from "../schema";
-import { seriesName } from "../chart-data";
+import { sampleCadence, seriesName } from "../chart-data";
 import { validTimestamp } from "../widget-context";
+import { seriesColorRulesSchema } from "../series-colors";
+import { bucketQuantile, type QuantileEstimate } from "./distribution-quantile";
 
 export type MetricSeries = NonNullable<QueryResult["series"]>[number];
 const label = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/).max(100);
 const plotBounds = {
+  seriesColors: seriesColorRulesSchema.optional(),
   maxSeries: z.number().int().min(1).max(12).optional(),
   maxPoints: z.number().int().min(12).max(240).optional(),
   legendDisplay: z.enum(["compact", "table"]).optional(),
@@ -17,13 +20,20 @@ export const distributionConfigSchema = z.strictObject({
   densityUnit: z.string().max(40).optional(),
   group: z.record(label, z.string().max(256)).refine(value => Object.keys(value).length <= 8, "Choose at most eight histogram labels").optional(),
   aggregation: z.enum(["none", "sum"]).optional(),
+  colorScale: z.enum(["linear", "logarithmic"]).optional(),
   maxBuckets: z.number().int().min(1).max(48).optional(),
   maxColumns: z.number().int().min(8).max(120).optional(),
 });
-export const stackedConfigSchema = z.strictObject({ display: z.enum(["area", "bar"]).optional(), ...plotBounds });
+export const metricAnnotationSchema = z.strictObject({
+  timestamp: z.iso.datetime({ offset: true }),
+  label: z.string().trim().min(1).max(100),
+  severity: z.enum(["info", "warning", "critical"]).optional(),
+});
+export const stackedConfigSchema = z.strictObject({ display: z.enum(["area", "bar"]).optional(), annotations: z.array(metricAnnotationSchema).max(20).optional(), ...plotBounds });
 export const directionalConfigSchema = z.strictObject({
   directionLabel: label.optional(),
   outboundValue: z.string().min(1).max(100).optional(),
+  symmetricAxis: z.boolean().optional(),
   ...plotBounds,
 });
 export type DistributionConfig = z.infer<typeof distributionConfigSchema>;
@@ -31,34 +41,67 @@ export type StackedConfig = z.infer<typeof stackedConfigSchema>;
 export type DirectionalConfig = z.infer<typeof directionalConfigSchema>;
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+/** Expected semantic data errors can be shown without hiding renderer bugs. */
+export class MetricDataError extends Error {}
 
 /** Duplicate timestamps are ambiguous; silently choosing or summing one would invent an aggregation. */
 function observations(series: MetricSeries) {
   const points = new Map<number, number | null>();
   for (const point of series.points) {
     if (!validTimestamp(point.timestamp)) continue;
-    if (points.has(point.timestamp)) throw new Error("Duplicate observation timestamps. Aggregate the query before charting.");
+    if (points.has(point.timestamp)) throw new MetricDataError("Duplicate observation timestamps. Aggregate the query before charting.");
     points.set(point.timestamp, finite(point.value) ? point.value : null);
   }
   return points;
 }
 
-/** Keep recorded timestamps only. Missing columns take priority over peaks so sampling cannot bridge a known gap. */
-export function sampleTimeIndices(length: number, limit: number, missing: (index: number) => boolean, magnitude: (index: number) => number) {
+/**
+ * Keep recorded timestamps only, at most `limit` of them, always including the first and last. Inside a bucket the
+ * priority is: the first missing column (so sampling never bridges a known gap), then a `peak` column, then the largest
+ * magnitude. Without a `peak` predicate this is the magnitude rule alone.
+ *
+ * `options.edge` marks protected columns that give way to missing ones: a bucket that keeps one protected column keeps a
+ * missing column over an edge. With `twoPerBucket`, a bucket also keeps its peak beside its protected column, which can
+ * overshoot the budget. The bucket count then falls one at a time until the selection fits, so each bucket's protected
+ * column and peak survive at the coarser bucketing. Budget left over takes the remaining missing columns, then the
+ * remaining edges, in time order.
+ */
+export function sampleTimeIndices(length: number, limit: number, missing: (index: number) => boolean, magnitude: (index: number) => number, peak: (index: number) => boolean = () => false, options: { twoPerBucket?: boolean; edge?: (index: number) => boolean } = {}) {
   if (length <= limit) return Array.from({ length }, (_, i) => i);
-  const indices = [0];
-  for (let bucket = 0; bucket < limit - 2; bucket++) {
-    const start = 1 + Math.floor(bucket * (length - 2) / (limit - 2));
-    const end = 1 + Math.floor((bucket + 1) * (length - 2) / (limit - 2));
-    let selected = start;
-    for (let index = start; index < end; index++) {
-      if (missing(index)) { selected = index; break; }
-      if (magnitude(index) > magnitude(selected)) selected = index;
-    }
-    indices.push(selected);
+  // Two ends need two columns, so a budget below two keeps the newest column, or nothing.
+  if (limit < 2) return limit > 0 ? [length - 1] : [];
+  // Each predicate is read once per interior column; the bucket-count retries below reuse these flags.
+  const gapFlags = new Uint8Array(length), edgeFlags = new Uint8Array(length), peakFlags = new Uint8Array(length), weights = new Float64Array(length);
+  for (let index = 1; index < length - 1; index++) {
+    gapFlags[index] = missing(index) ? 1 : 0;
+    edgeFlags[index] = options.edge?.(index) ? 1 : 0;
+    peakFlags[index] = peak(index) ? 1 : 0;
+    weights[index] = magnitude(index);
   }
-  indices.push(length - 1);
-  return indices;
+  const interior = length - 2;
+  const select = (buckets: number) => {
+    const kept = new Set<number>();
+    for (let bucket = 0; bucket < buckets; bucket++) {
+      const start = 1 + Math.floor(bucket * interior / buckets), end = 1 + Math.floor((bucket + 1) * interior / buckets);
+      let selected = start, selectedPeak = peakFlags[start], firstGap = -1, firstEdge = -1;
+      for (let index = start; index < end; index++) {
+        if (firstGap < 0 && gapFlags[index] === 1) firstGap = index;
+        if (firstEdge < 0 && edgeFlags[index] === 1) firstEdge = index;
+        if (peakFlags[index] !== selectedPeak ? peakFlags[index] === 1 : weights[index] > weights[selected]) { selected = index; selectedPeak = peakFlags[index]; }
+      }
+      const protectedIndex = firstGap >= 0 ? firstGap : firstEdge;
+      if (protectedIndex < 0) kept.add(selected);
+      else if (options.twoPerBucket) { kept.add(selected); kept.add(protectedIndex); }
+      else kept.add(protectedIndex);
+    }
+    return kept;
+  };
+  // Try one bucket per column of budget first, then shorten the bucketing until the selection fits. Zero buckets always
+  // fit, since the two ends need only two columns.
+  let buckets = limit - 2, kept = select(buckets);
+  while (kept.size + 2 > limit) kept = select(--buckets);
+  for (const flags of [gapFlags, edgeFlags]) for (let index = 1; index < length - 1 && kept.size + 2 < limit; index++) if (flags[index] === 1) kept.add(index);
+  return [0, ...[...kept].sort((a, b) => a - b), length - 1];
 }
 
 export interface MetricCell {
@@ -67,6 +110,8 @@ export interface MetricCell {
   value: number | null;
   lower: number | null;
   upper: number | null;
+  /** A complete stack could not be represented as a finite number. */
+  overflow?: boolean;
 }
 export interface MetricTrack {
   series: MetricSeries;
@@ -74,6 +119,8 @@ export interface MetricTrack {
   index: number;
   cells: MetricCell[];
   statistics: MetricStatistics;
+  /** The last finite observation in the unzoomed history, or null if the track never reported. Ended tracks name it. */
+  lastFinite: number | null;
 }
 export interface MetricStatistics {
   current: number | null;
@@ -87,37 +134,133 @@ export interface MetricStatistics {
 /** Statistics describe raw returned observations, before alignment, stacking or display sampling. */
 function metricStatistics(points: Map<number, number | null>): MetricStatistics {
   let current: number | null = null, currentTimestamp: number | null = null;
-  let mean: number | null = null, max: number | null = null, finiteSamples = 0;
+  let max: number | null = null, finiteSamples = 0;
+  // Float64 values are integer multiples of 2^-1074. Accumulating those
+  // integers exactly prevents both overflow and loss of small observations
+  // when large values later cancel. The accumulator is bounded by the
+  // float64 exponent range plus the bits needed for the observation count.
+  let sum = 0n;
+  const view = new DataView(new ArrayBuffer(8));
   for (const [timestamp, value] of points) {
     if (currentTimestamp === null || timestamp > currentTimestamp) { currentTimestamp = timestamp; current = value; }
     if (value === null) continue;
     finiteSamples++;
-    // Weighted terms avoid overflowing the sum for valid, very large observations.
-    mean = mean === null ? value : mean * ((finiteSamples - 1) / finiteSamples) + value / finiteSamples;
+    view.setFloat64(0, value);
+    const bits = view.getBigUint64(0);
+    const exponent = Number((bits >> 52n) & 0x7ffn);
+    const fraction = bits & ((1n << 52n) - 1n);
+    const mantissa = exponent === 0 ? fraction : fraction | (1n << 52n);
+    const term = mantissa << BigInt(Math.max(0, exponent - 1));
+    sum += bits >> 63n ? -term : term;
     max = max === null ? value : Math.max(max, value);
   }
+  let mean: number | null = null;
+  if (finiteSamples) {
+    const negative = sum < 0n;
+    const magnitude = negative ? -sum : sum;
+    const count = BigInt(finiteSamples);
+    // Divide at a precision that retains at most 53 significant bits. Round
+    // the integer quotient to nearest, ties to even before binary scaling.
+    const difference = magnitude.toString(2).length - count.toString(2).length;
+    const quotientBits = difference < 0 ? 0 : difference + (magnitude >= (count << BigInt(difference)) ? 1 : 0);
+    const shift = Math.max(0, quotientBits - 53);
+    const divisor = count << BigInt(shift);
+    let rounded = magnitude / divisor;
+    const remainder = magnitude % divisor;
+    if (2n * remainder > divisor || (2n * remainder === divisor && (rounded & 1n) === 1n)) rounded++;
+    mean = Number(rounded) * 2 ** (shift - 1074);
+    if (negative) mean = -mean;
+  }
   return { current, currentTimestamp, mean, max, finiteSamples, totalSamples: points.size };
+}
+/** A track's stacked bounds in an incomplete column. The running sums are the complete stack's, over the reporting tracks only. */
+export interface MetricPartial {
+  index: number;
+  lower: number;
+  upper: number;
+}
+/** One time column, aligned with the sampled timestamps. Track indices are listed in track order. */
+export interface MetricColumn {
+  timestamp: number;
+  /** The sum of the reporting tracks, when no track is missing, at least one reports and the sum is finite. Null otherwise. */
+  total: number | null;
+  /** Tracks with a finite value before and after this time but none here: a gap inside their lifetime. Bar mode hatches each one. */
+  missing: number[];
+  /** Tracks whose first finite observation is later than this time. Bar mode draws nothing for them. */
+  notStarted: number[];
+  /** Tracks whose last finite observation is earlier than this time. Bar mode draws nothing for them and does not count them as missing. */
+  ended: number[];
+  /** Bounds of the reporting tracks in an incomplete column. Empty for complete and overflowed columns and for directional traffic. Only bar mode draws them. */
+  partial: MetricPartial[];
+  /** Set when the stack exceeds the finite range, so the column is not drawn. Area mode flags only complete overflows. */
+  overflow?: boolean;
+}
+/** The stack total at one unsampled timestamp. Null where a track is missing, no track reports, or the stack overflows. */
+export interface MetricTotal {
+  timestamp: number;
+  value: number | null;
 }
 export interface MetricPlotData {
   tracks: MetricTrack[];
   timestamps: number[];
+  /** Aligned with `timestamps`. */
+  columns: MetricColumn[];
+  /** Every unsampled timestamp, so the stack-total trend keeps its gaps when display sampling drops columns. */
+  totals: MetricTotal[];
   domain: [number, number];
+  /** The bounds of complete stacks alone over the displayed columns: what an overlay of this plot draws. */
+  completeDomain: [number, number];
   sampled: boolean;
   omittedSeries: number;
   invalidValues: number;
+  overflowColumns: number;
 }
 
-export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | DirectionalConfig, directional = false): MetricPlotData {
+/** Facts about the result that change what an absence means. */
+export interface MetricPlotOptions {
+  /** The provider cut the result, so an absence may be a cut rather than an end or a late start. */
+  truncated?: boolean;
+  /** The widget's stale policy in seconds. A trailing absence is an end only once it outlasts this, if that is longer than twice the cadence. */
+  staleAfterSeconds?: number;
+}
+
+/**
+ * `history` is the unzoomed series for the same tracks, in the same order. A zoomed window passes it so a track that
+ * reported before the window counts as missing inside it, not as not started. Without it, `series` is the history.
+ */
+export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | DirectionalConfig, directional = false, history = series, options: MetricPlotOptions = {}): MetricPlotData {
   const selected = series.slice(0, config.maxSeries ?? 8);
   const maps = selected.map(observations);
   const timestamps = [...new Set(maps.flatMap(map => [...map.keys()]))].sort((a, b) => a - b);
-  let invalidValues = 0;
+  const bars = !directional && "display" in config && config.display === "bar";
+  // A track's lifetime comes from its finite observations in the unzoomed history. It has not started before its first,
+  // and a missing value between them is a gap. A track that never reported never starts.
+  const lifetimes = history.slice(0, config.maxSeries ?? 8);
+  const firstFinite = lifetimes.map(entry => entry.points.reduce((first, point) => validTimestamp(point.timestamp) && finite(point.value) && point.timestamp < first ? point.timestamp : first, Infinity));
+  const lastFinite = lifetimes.map(entry => entry.points.reduce((last, point) => validTimestamp(point.timestamp) && finite(point.value) && point.timestamp > last ? point.timestamp : last, -Infinity));
+  // A trailing absence is an end only once it exceeds the track's grace: twice its cadence, or staleAfterSeconds when that
+  // is longer. This is the expected-samples-missing rule, not a claim about why the samples stopped. A track with fewer
+  // than three samples has no cadence of its own, so the median cadence of the tracks that have one stands in. With no
+  // cadence at all, an absence is never called an end.
+  const cadences = lifetimes.map(entry => sampleCadence(entry.points));
+  const knownCadences = cadences.filter((cadence): cadence is number => cadence !== null).sort((a, b) => a - b);
+  const peerCadence = knownCadences.length ? knownCadences[Math.floor((knownCadences.length - 1) / 2)] : null;
+  const grace = lifetimes.map((_, index) => {
+    const cadence = cadences[index] ?? peerCadence;
+    const limits = [cadence === null ? undefined : 2 * cadence, options.staleAfterSeconds === undefined ? undefined : options.staleAfterSeconds * 1000].filter((limit): limit is number => limit !== undefined);
+    return limits.length ? Math.max(...limits) : Infinity;
+  });
+  // A truncated result may have cut a track short, so every absence in it is missing: never ended and never not started.
+  const truncated = options.truncated === true;
+  let invalidValues = 0, overflowColumns = 0;
   const cells: MetricCell[][] = selected.map(() => []);
+  const columns: MetricColumn[] = [], totals: MetricTotal[] = [];
   const direction = config as DirectionalConfig;
   for (const timestamp of timestamps) {
     const values = maps.map(map => map.get(timestamp) ?? null);
     const complete = values.every(finite);
     let positive = 0, negative = 0;
+    let overflow = false;
     values.forEach((raw, index) => {
       let value = raw, lower: number | null = null, upper: number | null = null;
       if (directional) {
@@ -129,38 +272,154 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
       } else if (complete && value !== null) {
         lower = value >= 0 ? positive : negative;
         upper = lower + value;
+        if (!finite(upper)) overflow = true;
         if (value >= 0) positive = upper; else negative = upper;
       }
       cells[index].push({ timestamp, value, lower, upper });
     });
+    if (overflow) {
+      // The whole stack at this instant is incomplete; retaining the first
+      // layer would falsely present a partial total as the full observation.
+      for (const track of cells) Object.assign(track[track.length - 1], { lower: null, upper: null, overflow: true });
+    }
+    const column: MetricColumn = { timestamp, total: null, missing: [], notStarted: [], ended: [], partial: [] };
+    if (!directional) {
+      // The reporting tracks stack on the complete stack's running sums, so an incomplete column's partial stack
+      // is never drawn with a different baseline.
+      let reportingPositive = 0, reportingNegative = 0, reporting = 0, stackOverflow = false;
+      for (const [index, value] of values.entries()) {
+        if (!finite(value)) {
+          if (!truncated && timestamp < firstFinite[index]) column.notStarted.push(index);
+          else if (!truncated && timestamp > lastFinite[index] && timestamp - lastFinite[index] > grace[index]) column.ended.push(index);
+          else column.missing.push(index);
+          continue;
+        }
+        const lower = value >= 0 ? reportingPositive : reportingNegative, upper = lower + value;
+        if (!finite(upper)) stackOverflow = true;
+        if (value >= 0) reportingPositive = upper; else reportingNegative = upper;
+        reporting++;
+        if (!complete) column.partial.push({ index, lower, upper });
+      }
+      // Area mode omits a column only for a complete overflow, as it did before partial stacks existed.
+      if (stackOverflow && (complete || bars)) {
+        overflowColumns++;
+        column.overflow = true;
+      }
+      if (stackOverflow) column.partial = [];
+      else if (column.missing.length === 0 && reporting > 0) column.total = reportingPositive + reportingNegative;
+    }
+    columns.push(column);
+    totals.push({ timestamp, value: column.total });
+  }
+  const incompleteAt = (index: number) => index >= 0 && index < timestamps.length && cells.some(track => track[index].upper === null);
+  // Bar mode must keep what it draws: the edges of every cap run (a cap is the only sign of a missing track) and each
+  // track's first and last finite column, where its bars start and stop. A bucket keeps a cap edge over a track edge, and
+  // its peak beside either, so a magnitude peak next to an edge survives too. Area mode keeps every gap as before.
+  const capRun = (index: number) => index >= 0 && index < columns.length && columns[index].missing.length > 0 && !columns[index].overflow;
+  const capEdge = (index: number) => capRun(index) && (!capRun(index - 1) || !capRun(index + 1));
+  const edges = new Set<number>();
+  for (const track of cells) {
+    const first = track.findIndex(cell => cell.value !== null), last = track.findLastIndex(cell => cell.value !== null);
+    if (first >= 0) { edges.add(first); edges.add(last); }
   }
   const indices = sampleTimeIndices(timestamps.length, config.maxPoints ?? 120,
-    index => cells.some(track => track[index].upper === null),
-    index => Math.max(0, ...cells.map(track => Math.abs(track[index].upper ?? 0))));
-  let low = 0, high = 0;
-  for (const track of cells) for (const cell of track) {
-    if (cell.upper === null || cell.lower === null) continue;
-    low = Math.min(low, cell.lower, cell.upper);
-    high = Math.max(high, cell.lower, cell.upper);
+    bars ? capEdge : incompleteAt,
+    // A bar column's magnitude is its largest bound, partial bounds included, so a partial spike survives sampling.
+    index => Math.max(0, ...cells.map(track => Math.abs(track[index].upper ?? 0)), ...(bars ? columns[index].partial.flatMap(part => [Math.abs(part.lower), Math.abs(part.upper)]) : [])),
+    () => false, { twoPerBucket: bars, edge: index => bars && edges.has(index) });
+  // Bar mode scales to the columns it draws, so the axis never reflects a value that no bar shows. Area and
+  // directional modes keep every returned column, as before. Only bar mode draws partial bounds.
+  const scaled = bars ? indices : timestamps.map((_, index) => index);
+  let low = 0, high = 0, completeLow = 0, completeHigh = 0;
+  for (const index of scaled) {
+    for (const track of cells) {
+      const cell = track[index];
+      if (cell.upper === null || cell.lower === null) continue;
+      low = Math.min(low, cell.lower, cell.upper);
+      high = Math.max(high, cell.lower, cell.upper);
+      completeLow = Math.min(completeLow, cell.lower, cell.upper);
+      completeHigh = Math.max(completeHigh, cell.lower, cell.upper);
+    }
+    if (bars) for (const part of columns[index].partial) {
+      low = Math.min(low, part.lower, part.upper);
+      high = Math.max(high, part.lower, part.upper);
+    }
   }
   if (low === high) { low = Math.min(0, low); high = Math.max(1, high); }
+  if (directional && direction.symmetricAxis) {
+    const extent = Math.max(Math.abs(low), Math.abs(high));
+    low = -extent; high = extent;
+  }
   return {
-    tracks: selected.map((entry, index) => ({ series: entry, name: seriesName(entry, index), index, cells: indices.map(i => cells[index][i]), statistics: metricStatistics(maps[index]) })),
-    timestamps: indices.map(i => timestamps[i]), domain: [low, high], sampled: indices.length < timestamps.length,
-    omittedSeries: series.length - selected.length, invalidValues,
+    tracks: selected.map((entry, index) => ({ series: entry, name: seriesName(entry, index), index, cells: indices.map(i => cells[index][i]), statistics: metricStatistics(maps[index]), lastFinite: Number.isFinite(lastFinite[index]) ? lastFinite[index] : null })),
+    timestamps: indices.map(i => timestamps[i]), columns: indices.map(i => columns[i]), totals, domain: [low, high], completeDomain: [completeLow, completeHigh], sampled: indices.length < timestamps.length,
+    omittedSeries: series.length - selected.length, invalidValues, overflowColumns,
   };
 }
 
+/** `missing`: a bucket or the bucket below it has no finite observation. `invalid`: negative or decreasing cumulative counts. */
+export type DistributionCellState = "observed" | "missing" | "invalid";
+export interface DistributionCell {
+  timestamp: number;
+  value: number | null;
+  state: DistributionCellState;
+}
 export interface DistributionRow {
   lower: number;
   upper: number;
   labels: Record<string, string>;
-  cells: { timestamp: number; value: number | null }[];
+  /** Drawn cells, aligned with the sampled `timestamps`. */
+  cells: DistributionCell[];
+  /** Every window's non-cumulative observation for this bucket, before display sampling. Inspection reads exact values here. */
+  sourceCells: DistributionCell[];
+}
+/**
+ * `ok`: a complete window with at least one observation. `empty`: complete, with zero observations.
+ * `missing` and `invalid`: some bucket in the window is a gap, and the window has a +Inf bucket.
+ * `unbounded`: no +Inf bucket, so every window has no total and no p95, gaps or not (see `gap`).
+ */
+export type WindowState = "ok" | "empty" | "missing" | "invalid" | "unbounded";
+export interface WindowQuantile {
+  timestamp: number;
+  state: WindowState;
+  /** A missing or invalid bucket at this time, over every bucket. Reported even when the state is unbounded. */
+  gap: "missing" | "invalid" | null;
+  /** The gap lies only in buckets above maxBuckets, so every displayed bucket is observed at this time. */
+  hiddenGap: boolean;
+  /** Sum over every bucket, including buckets above maxBuckets and +Inf. Null unless the window is ok or empty. */
+  total: number | null;
+  /** The p95 bucket, for ok windows only. A rank in +Inf has estimate null and overflow true. */
+  p95: QuantileEstimate | null;
+  /** Sampled columns only: an unsampled window between this column and the previous one is not ok, so the p95 line breaks here. */
+  breakBefore: boolean;
+}
+export interface MergedQuantile {
+  /** The p95 of per-bucket counts summed over the complete windows. Null without a +Inf bucket or without observations. */
+  estimate: QuantileEstimate | null;
+  /** False without a +Inf bucket (or with fewer than two buckets). */
+  bounded: boolean;
+  windows: number;
+  /** Ok and empty windows: the complete windows pooled into the estimate. */
+  used: number;
+  missing: number;
+  invalid: number;
+  /** Missing and invalid windows whose gap lies only above maxBuckets. The readout names them. */
+  hiddenMissing: number;
+  hiddenInvalid: number;
+  empty: number;
 }
 export interface DistributionData {
   rows: DistributionRow[];
   timestamps: number[];
+  /** Aligned with `timestamps`. */
+  quantiles: WindowQuantile[];
+  merged: MergedQuantile;
+  /** The window to quote: the first overflow window, otherwise the highest finite p95. Unsampled. */
+  highest: { timestamp: number; p95: QuantileEstimate } | null;
+  /** Every upper bound in ascending order, including buckets above maxBuckets and +Inf. */
+  bounds: number[];
   max: number;
+  minPositive: number | null;
   invalidCells: number;
   omittedBuckets: number;
   sampled: boolean;
@@ -175,45 +434,115 @@ export function buildDistribution(series: MetricSeries[], config: DistributionCo
     if (Object.entries(config.group ?? {}).some(([key, value]) => entry.labels[key] !== value)) continue;
     const raw = entry.labels[bucketLabel];
     const bound = raw === "+Inf" || raw === "Inf" ? Infinity : raw?.trim() ? Number(raw) : NaN;
-    if (Number.isNaN(bound) || bound === -Infinity) throw new Error(`Every histogram series needs a numeric ${bucketLabel} label or +Inf.`);
+    if (Number.isNaN(bound) || bound === -Infinity) throw new MetricDataError(`Every histogram series needs a numeric ${bucketLabel} label or +Inf.`);
     const labels = Object.fromEntries(Object.entries(entry.labels).filter(([key]) => key !== bucketLabel && key !== "__name__").sort(([a], [b]) => a.localeCompare(b)));
     const id = JSON.stringify(labels);
     let group = groups.get(id);
     if (!group) { group = { labels, buckets: new Map() }; groups.set(id, group); }
-    if (group.buckets.has(bound)) throw new Error("Duplicate histogram bucket. Aggregate the query by histogram labels first.");
-    group.buckets.set(bound, observations(entry));
+    const incoming = observations(entry);
+    const existing = group.buckets.get(bound);
+    if (existing) {
+      // Prometheus can retain old and new textual spellings of a boundary
+      // (such as 1 and 1.0) across a label migration. Join only disjoint
+      // observations; overlapping buckets remain ambiguous and must not be
+      // silently summed or discarded.
+      if ([...incoming.keys()].some(timestamp => existing.has(timestamp)))
+        throw new MetricDataError("Duplicate histogram bucket with overlapping observations. Filter or correct conflicting boundary labels before charting.");
+      for (const [timestamp, value] of incoming) existing.set(timestamp, value);
+    } else group.buckets.set(bound, incoming);
   }
   const histograms = [...groups.values()];
-  if (histograms.length > 1 && config.aggregation !== "sum") throw new Error("Multiple histogram groups. Choose exact group labels or explicitly enable sum.");
+  if (histograms.length > 1 && config.aggregation !== "sum") throw new MetricDataError("Multiple histogram groups. Choose exact group labels or explicitly enable sum.");
   const bounds = [...(histograms[0]?.buckets.keys() ?? [])].sort((a, b) => a - b);
   const signature = bounds.join(",");
   if (histograms.some(group => [...group.buckets.keys()].sort((a, b) => a - b).join(",") !== signature))
-    throw new Error("Histogram groups have different bucket boundaries and cannot be summed.");
+    throw new MetricDataError("Histogram groups have different bucket boundaries and cannot be summed.");
   const allTimes = [...new Set(histograms.flatMap(group => [...group.buckets.values()].flatMap(map => [...map.keys()])))].sort((a, b) => a - b);
   const commonLabels = Object.fromEntries(Object.entries(histograms[0]?.labels ?? {}).filter(([key, value]) => histograms.every(group => group.labels[key] === value)));
-  let invalidCells = 0;
-  const rows = bounds.slice(0, config.maxBuckets ?? 24).map((upper, index) => ({
-    lower: index ? bounds[index - 1] : -Infinity, upper,
-    labels: { ...commonLabels, [bucketLabel]: Number.isFinite(upper) ? String(upper) : "+Inf" },
-    cells: allTimes.map(timestamp => {
-      let sum = 0, valid = true;
-      for (const group of histograms) {
-        const high = group.buckets.get(upper)!.get(timestamp);
-        const low = index ? group.buckets.get(bounds[index - 1])!.get(timestamp) : 0;
-        if (!finite(high) || !finite(low)) { valid = false; break; }
-        const tolerance = Math.max(1, Math.abs(high), Math.abs(low)) * 1e-9;
-        if (high < 0 || low < 0 || high < low - tolerance) { invalidCells++; valid = false; break; }
-        sum += Math.max(0, high - low);
-      }
-      return { timestamp, value: valid && Number.isFinite(sum) ? sum : null };
-    }),
+  // Every bucket over every returned window, before truncation and sampling. A missing group makes the
+  // cell missing even when another group is invalid. Invalid counts are reported per bucket.
+  const bucketCells = bounds.map((upper, index) => allTimes.map((timestamp): { value: number | null; state: DistributionCellState } => {
+    let sum = 0, missing = false, invalid = false;
+    for (const group of histograms) {
+      const high = group.buckets.get(upper)!.get(timestamp);
+      const low = index ? group.buckets.get(bounds[index - 1])!.get(timestamp) : 0;
+      if (!finite(high) || !finite(low)) { missing = true; break; }
+      // Compare floating-point noise relative to the actual bucket scale.
+      // An absolute floor would turn materially decreasing tiny rates into
+      // a fabricated observed zero.
+      const tolerance = Math.max(Math.abs(high), Math.abs(low)) * 1e-9;
+      if (high < 0 || low < 0 || high < low - tolerance) { invalid = true; continue; }
+      sum += Math.max(0, high - low);
+    }
+    if (missing) return { value: null, state: "missing" };
+    if (invalid) return { value: null, state: "invalid" };
+    return Number.isFinite(sum) ? { value: sum, state: "observed" } : { value: null, state: "missing" };
   }));
+  // A p95 needs the +Inf bucket: without it the total is unknown, so no quantile is reported.
+  const hasOverflow = bounds.length > 1 && bounds[bounds.length - 1] === Infinity;
+  const shown = bounds.slice(0, config.maxBuckets ?? 24);
+  const windows: WindowQuantile[] = allTimes.map((timestamp, column) => {
+    const cells = bucketCells.map(row => row[column]);
+    const counts = cells.map(cell => cell.value ?? 0);
+    const total = counts.reduce((sum, count) => sum + count, 0);
+    const gap = cells.some(cell => cell.state === "missing") ? "missing" : cells.some(cell => cell.state === "invalid") ? "invalid" : null;
+    // Rows are in ascending bound order, so the first `shown.length` cells are the displayed rows.
+    const hiddenGap = gap !== null && cells.slice(0, shown.length).every(cell => cell.state === "observed");
+    const state: WindowState = !hasOverflow ? "unbounded" : gap ?? (total > 0 ? "ok" : "empty");
+    return { timestamp, state, gap, hiddenGap, total: state === "ok" || state === "empty" ? total : null, p95: state === "ok" ? bucketQuantile(bounds, counts, .95) : null, breakBefore: false };
+  });
+  const complete = windows.flatMap((window, column) => window.state === "ok" || window.state === "empty" ? [column] : []);
+  // Per-window values are bucket rates over the same rate window at every step, so summing them across
+  // steps pools observations proportionally. Only bucket counts are pooled; percentiles are never averaged.
+  const pooled = bounds.map((_, index) => complete.reduce((sum, column) => sum + (bucketCells[index][column].value ?? 0), 0));
+  const count = (state: WindowState) => windows.filter(window => window.state === state).length;
+  const merged: MergedQuantile = {
+    estimate: hasOverflow && complete.length ? bucketQuantile(bounds, pooled, .95) : null,
+    bounded: hasOverflow, windows: allTimes.length, used: complete.length,
+    missing: windows.filter(window => window.gap === "missing").length, invalid: windows.filter(window => window.gap === "invalid").length,
+    hiddenMissing: windows.filter(window => window.gap === "missing" && window.hiddenGap).length, hiddenInvalid: windows.filter(window => window.gap === "invalid" && window.hiddenGap).length,
+    empty: count("empty"),
+  };
+  // The window to quote is the only forced peak: the first overflow window when any p95 overflows (every overflow
+  // p95 lies above the last finite bound, so they tie), otherwise the highest finite p95. Other overflow windows
+  // compete by magnitude like any window, so sustained overflow still keeps the densest columns.
+  let peakColumn = -1;
+  windows.forEach((window, column) => {
+    const estimate = window.p95?.estimate;
+    if (estimate !== null && estimate !== undefined && (peakColumn < 0 || estimate > windows[peakColumn].p95!.estimate!)) peakColumn = column;
+  });
+  const overflowColumn = windows.findIndex(window => window.p95?.overflow === true);
+  const highestColumn = overflowColumn >= 0 ? overflowColumn : peakColumn;
+  const highest = highestColumn >= 0 ? { timestamp: allTimes[highestColumn], p95: windows[highestColumn].p95! } : null;
+  // A window with a missing or invalid bucket is a source gap. Empty windows are observed zeros, and unbounded windows
+  // are all alike without a +Inf bucket, so neither takes sampling priority. An overflow run's first and last windows are
+  // protected too: overflow moves counts into +Inf and lowers the densest bucket, so the magnitude rule alone drops them.
+  // They give way to a gap in the same bucket, so a gap is never sampled away for an edge.
+  const overflowAt = (column: number) => column >= 0 && column < windows.length && windows[column].p95?.overflow === true;
   const indices = sampleTimeIndices(allTimes.length, config.maxColumns ?? 60,
-    i => rows.some(row => row.cells[i].value === null),
-    i => Math.max(0, ...rows.map(row => row.cells[i].value ?? 0)));
+    column => windows[column].gap !== null,
+    column => Math.max(0, ...shown.map((_, index) => bucketCells[index][column].value ?? 0)),
+    column => column === highestColumn,
+    { twoPerBucket: true, edge: column => overflowAt(column) && (!overflowAt(column - 1) || !overflowAt(column + 1)) });
+  // The full row is built before sampling. Drawn cells are sampled below, but `sourceCells` keeps every window for exact inspection.
+  const rows: DistributionRow[] = shown.map((upper, index) => {
+    const sourceCells = allTimes.map((timestamp, column) => ({ timestamp, ...bucketCells[index][column] }));
+    return {
+      lower: index ? bounds[index - 1] : -Infinity, upper,
+      labels: { ...commonLabels, [bucketLabel]: Number.isFinite(upper) ? String(upper) : "+Inf" },
+      sourceCells, cells: sourceCells,
+    };
+  });
+  const invalidCells = rows.reduce((sum, row) => sum + row.cells.filter(cell => cell.state === "invalid").length, 0);
   const max = rows.reduce((maximum, row) => row.cells.reduce((value, cell) => Math.max(value, cell.value ?? 0), maximum), 0);
+  const minPositive = rows.reduce<number | null>((minimum, row) => row.cells.reduce<number | null>((value, cell) => cell.value !== null && cell.value > 0 && (value === null || cell.value < value) ? cell.value : value, minimum), null);
+  // prefix[k] counts the non-ok windows before column k. A sampled column breaks the line when an
+  // unsampled window between it and the previous sampled column is not ok.
+  const prefix = [0];
+  windows.forEach(window => prefix.push(prefix[prefix.length - 1] + (window.state === "ok" ? 0 : 1)));
+  const quantiles = indices.map((column, position) => ({ ...windows[column], breakBefore: position > 0 && prefix[column] - prefix[indices[position - 1] + 1] > 0 }));
   return {
-    rows: rows.map(row => ({ ...row, cells: indices.map(i => row.cells[i]) })), timestamps: indices.map(i => allTimes[i]), max,
+    rows: rows.map(row => ({ ...row, cells: indices.map(i => row.cells[i]) })), timestamps: indices.map(i => allTimes[i]), quantiles, merged, highest, bounds, max, minPositive,
     invalidCells, omittedBuckets: bounds.length - rows.length, sampled: indices.length < allTimes.length, groups: histograms.length,
   };
 }

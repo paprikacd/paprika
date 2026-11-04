@@ -31,6 +31,21 @@ const series: Series = {
 };
 
 describe("optional single-value history", () => {
+  it("warns when the newest returned observation is missing while preserving the last valid zero", () => {
+    const { rerender, container } = render(<WidgetVisualization widget={{ ...widget, options: { showSparkline: true, sparklinePlacement: "side" } }} result={{ series: [series] }} />);
+    expect(container.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
+    expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+    rerender(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points: [...series.points, { timestamp: 6000, value: 4 }] }] }} />);
+    expect(screen.queryByText(/Last valid · latest missing/)).not.toBeInTheDocument();
+  });
+
+  it("uses the last observation at a duplicate latest timestamp, without treating zero as missing", () => {
+    const points = [{ timestamp: 1000, value: 2 }, { timestamp: 3000, value: null }, { timestamp: 3000, value: 0 }];
+    const { rerender } = render(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points }] }} />);
+    expect(screen.queryByText(/Last valid · latest missing/)).not.toBeInTheDocument();
+    rerender(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points: [...points, { timestamp: 3000, value: null }] }] }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+  });
   it("keeps the original stat unchanged unless its sparkline is explicitly enabled", () => {
     const { rerender, container } = render(
       <WidgetVisualization widget={widget} result={{ series: [series] }} />,
@@ -53,11 +68,36 @@ describe("optional single-value history", () => {
       />,
     );
     expect(
-      screen.getByRole("img", { name: "History for api" }),
+      screen.getByRole("img", { name: "History for Requests" }),
     ).toBeInTheDocument();
     expect(
       container.querySelector('[data-metric-value="0"]'),
     ).toHaveTextContent("0req/s");
+  });
+
+  it("offers a side placement while preserving the selected series and latest value", () => {
+    const { container } = render(<WidgetVisualization widget={{ ...widget, options: { showSparkline: true, sparklinePlacement: "side" } }} result={{ series: [series] }} />);
+    const summary = container.querySelector("[data-stat-summary]");
+    expect(summary).toHaveAttribute("data-sparkline-placement", "side");
+    expect(summary?.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
+    expect(screen.getByRole("img", { name: "History for Requests" })).toHaveAttribute("data-sample-count", "5");
+  });
+
+  it("renders the actual latest value against its explicit bar scale and thresholds", () => {
+    const result = { series: [{ ...series, points: [{ timestamp: 1000, value: 75 }] }] };
+    const options = { showStatBar: true, min: 0, max: 100, thresholds: [{ value: 0, color: "#00aa55" }, { value: 70, color: "#ee9900" }] };
+    const { rerender } = render(<WidgetVisualization widget={{ ...widget, options }} result={result} />);
+    const meter = screen.getByRole("meter", { name: "Requests value on configured scale" });
+    expect(meter).toHaveAttribute("aria-valuenow", "75");
+    expect(meter).toHaveAttribute("data-stat-bar-fraction", "0.75");
+    expect(meter.firstElementChild).toHaveStyle({ width: "75%", backgroundColor: "#ee9900" });
+    rerender(<WidgetVisualization widget={{ ...widget, options }} result={{ series: [{ ...series, points: [{ timestamp: 1000, value: 120 }] }] }} />);
+    expect(meter).toHaveAttribute("aria-valuenow", "100");
+    expect(meter).toHaveAttribute("data-stat-bar-value", "120");
+    expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("120 req/s (outside configured scale)"));
+    expect(meter.firstElementChild).toHaveStyle({ width: "100%" });
+    rerender(<WidgetVisualization widget={{ ...widget, options: { ...options, min: -1e308, max: 1e308 } }} result={{ series: [{ ...series, points: [{ timestamp: 1000, value: 0 }] }] }} />);
+    expect(meter).toHaveAttribute("data-stat-bar-fraction", "0.5");
   });
 
   it("plots the displayed series only, with gaps, exact ranges, zero, and an honest missing tail", () => {
@@ -72,7 +112,7 @@ describe("optional single-value history", () => {
         result={{ series: [series, other] }}
       />,
     );
-    const svg = screen.getByRole("img", { name: "History for api" });
+    const svg = screen.getByRole("img", { name: "History for Requests" });
     expect(svg).toHaveAttribute("data-history-start", "1000");
     expect(svg).toHaveAttribute("data-history-end", "5000");
     expect(svg).toHaveAttribute("data-history-min", "-7.25");
@@ -105,7 +145,7 @@ describe("optional single-value history", () => {
     ).toBeInTheDocument();
     expect(svg).toHaveStyle({ color: "#336699" });
     expect(svg.querySelectorAll("text")).toHaveLength(0);
-    expect(svg).not.toHaveAttribute("tabindex");
+    expect(svg).toHaveAttribute("tabindex", "0");
     expect(
       container.querySelector('[data-metric-value="0"]'),
     ).toBeInTheDocument();
@@ -304,4 +344,31 @@ describe("optional single-value history", () => {
     ).toHaveAttribute("data-history-max", "10");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+});
+
+it("keeps a one-track background stat's saved geometry, precise value, unit and missing-tail disclosure", () => {
+  const compact: Widget = { ...widget, layout: { x: 3, y: 0, w: 3, h: 1 }, options: { showSparkline: true, sparklinePlacement: "background" } };
+  const before = JSON.stringify(compact);
+  const { container, rerender } = render(<WidgetVisualization widget={compact} result={{ series: [series] }} />);
+  expect(container.querySelector("[data-stat-summary]")).toHaveAttribute("data-sparkline-placement", "background");
+  expect(container.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
+  // The reading is plain text; the history is the one keyboard-focusable inspector.
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByRole("img", { name: "History for Requests" })).toHaveAttribute("tabindex", "0");
+  expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+  expect(screen.getByRole("img")).toHaveAccessibleDescription(/1970-01-01T00:00:04.000Z/);
+  rerender(<WidgetVisualization widget={compact} result={{ series: [{ ...series, points: [{ timestamp: 5000, value: null }] }] }} />);
+  expect(container.querySelector("[data-metric-value]")).toBeNull();
+  expect(container.querySelector("[data-widget-state-frame]")).toHaveTextContent("No data in this time range");
+  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  expect(JSON.stringify(compact)).toBe(before);
+});
+
+ it("measures compact failed-query and loading states without losing retry", () => {
+  const retry = vi.fn();
+  const { container, rerender } = render(<WidgetVisualization widget={widget} error="Fixture failure" onRetry={retry} />);
+  expect(container.querySelector("[data-widget-state-frame]")).toHaveTextContent("Query failed");
+  expect(screen.getByRole("button", { name: "Retry query for Requests" })).toBeEnabled();
+  rerender(<WidgetVisualization widget={widget} loading />);
+  expect(container.querySelector("[data-widget-state-frame]")).toContainElement(screen.getByRole("status", { name: "Loading widget" }));
 });

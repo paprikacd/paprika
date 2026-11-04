@@ -121,9 +121,12 @@ func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQuer
 	var dashboard struct {
 		Title   string
 		Widgets []struct {
-			Title    string
-			QueryRef persistedQueryReference `json:"queryRef"`
-			Options  struct {
+			Title            string
+			QueryRef         persistedQueryReference `json:"queryRef"`
+			AnnotationSource struct {
+				QueryRef persistedQueryReference `json:"queryRef"`
+			} `json:"annotationSource"`
+			Options struct {
 				TooltipView struct {
 					Source struct {
 						Type string
@@ -136,8 +139,12 @@ func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQuer
 	if json.Unmarshal(raw, &dashboard) != nil {
 		return errors.New("invalid stored dashboard")
 	}
-	for _, widget := range dashboard.Widgets {
+	for i := range dashboard.Widgets {
+		widget := &dashboard.Widgets[i]
 		if err := check(widget.QueryRef, dashboard.Title, widget.Title, "query"); err != nil {
+			return err
+		}
+		if err := check(widget.AnnotationSource.QueryRef, dashboard.Title, widget.Title, "annotations"); err != nil {
 			return err
 		}
 		if widget.Options.TooltipView.Source.Type == "saved" {

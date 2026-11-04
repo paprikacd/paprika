@@ -38,6 +38,15 @@ describe("query data connections", () => {
     const many = queryFields({ truncated: true, series: Array.from({ length: 1001 }, (_, index) => ({ name: "up", labels: { service: String(index) }, points: [] })) });
     expect(many.seriesCount).toBe(1000); expect(many.partial).toBe(true); expect(many.labels[0].samples).toHaveLength(3);
   });
+  it("exposes only bounded record column metadata, never record values", () => {
+    const result = queryFields({ records: { columns: [{ key: "ticker", type: "string" }, { key: "risk", type: "number" }], rows: [["private-example", 5]] } });
+    expect(result.recordColumns).toEqual([{ name: "ticker", type: "string" }, { name: "risk", type: "number" }]);
+    expect(JSON.stringify(result)).not.toContain("private-example");
+    const many = queryFields({ records: { columns: Array.from({ length: 70 }, (_, index) => ({ key: `field${index}`, type: "string" as const })), rows: [] } });
+    expect(many.recordColumns).toHaveLength(64);
+    expect(many.partial).toBe(true);
+    expect(queryFields({ records: { columns: [{ key: "ticker", type: "string" }], rows: [], truncated: true } }).partial).toBe(true);
+  });
   it("connects exact graph labels only in observation-aware editors", () => {
     const parameter = { name: "service", type: "string" as const };
     expect(suggestParameterConnection(parameter, { fields })).toBeUndefined();

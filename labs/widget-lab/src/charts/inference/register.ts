@@ -1,0 +1,9 @@
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
+import { LogScatter, RackMatrix, RequestFlow } from './InferenceCharts';
+import { logScatterConfig, rackMatrixConfig, requestFlowConfig } from './data';
+
+export function registerInferenceCharts() {
+  if (!getWidgetDefinition('plugin', 'rack-matrix')) registerWidgetPlugin({ id: 'rack-matrix', label: 'Rack utilization matrix', description: 'Device-by-rack utilization with unknown telemetry and exact device history', dataKind: 'records', render: RackMatrix, parseConfig: config => rackMatrixConfig.parse(config ?? {}), defaultConfig: rackMatrixConfig.parse({}), styleControls: ['tooltips'], configFields: [{ key: 'showLabels', label: 'Show rack and slot labels', kind: 'boolean' }, { key: 'showDetails', label: 'Show selected device details', kind: 'boolean' }] });
+  if (!getWidgetDefinition('plugin', 'request-flow')) registerWidgetPlugin({ id: 'request-flow', label: 'Request routing flow', description: 'Conserved original request flow through ingress, processing and outcome', dataKind: 'records', render: RequestFlow, parseConfig: config => requestFlowConfig.parse(config ?? {}), defaultConfig: requestFlowConfig.parse({}), styleControls: ['tooltips'], configFields: [{ key: 'showValues', label: 'Show node values', kind: 'boolean' }] });
+  if (!getWidgetDefinition('plugin', 'log-scatter')) registerWidgetPlugin({ id: 'log-scatter', label: 'Logarithmic paired scatter', description: 'Positive paired observations on logarithmic axes with exact inspection', dataKind: 'records', render: LogScatter, parseConfig: config => logScatterConfig.parse(config ?? {}), defaultConfig: logScatterConfig.parse({}), styleControls: ['tooltips'], configFields: [{ key: 'pointRadius', label: 'Point radius', kind: 'number', min: 1, max: 8, step: .2 }, { key: 'showLegend', label: 'Show model filters', kind: 'boolean' }] });
+}

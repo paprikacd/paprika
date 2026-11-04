@@ -1,0 +1,12 @@
+const number = new Intl.NumberFormat('en', { maximumFractionDigits: 0 });
+const decimal = new Intl.NumberFormat('en', { maximumFractionDigits: 2 });
+const timeFormat = new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const dateFormat = new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' });
+export const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+export const integer = (value: number | null | undefined) => value == null ? '—' : number.format(value);
+export const latency = (value: number | null | undefined) => value == null ? '—' : number.format(value);
+export const rate = (value: number | null | undefined) => value == null ? '—' : value < 1 && value > 0 ? value.toFixed(3) : decimal.format(value);
+export const percentage = (value: number | null | undefined) => value == null ? '—' : `${(value * 100).toFixed(2)}%`;
+export const clockTime = (value: number) => timeFormat.format(new Date(value));
+export const calendarDate = (value: number) => dateFormat.format(new Date(value));
+export const signedPercent = (value: number | null | undefined) => value == null ? 'Unavailable' : `${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;

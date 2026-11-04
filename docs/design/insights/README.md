@@ -55,7 +55,7 @@ widgets:
 | widget `color` | Optional six-digit hex color. |
 | widget `options` | Axis labels, line/area display, interpolation, grid, legend, heatmap label/value visibility, tooltips, precision, bounds, line width/fill, background/text colors, and ascending value thresholds. |
 | widget `pluginId`, `dataKind`, `config` | For plugin widgets only: registered ID, `metrics` or `traces`, and optional JSON settings bounded to 16 KiB and eight nesting levels. |
-| widget `layout` | 12 columns; `x` 0–11, `y` 0–1000, `w` 1–12, `h` 2–12, and `x + w <= 12`. |
+| widget `layout` | 12 columns; `x` 0–11, `y` 0–1000, `w` 1–12, `h` 1–12 for stat widgets and 2–12 for other widgets, and `x + w <= 12`. |
 
 Source documents are limited to 256 KiB of UTF-8. Unknown properties, duplicate widget IDs, duplicate YAML mapping keys, YAML aliases and merge properties are rejected. YAML is decoded only as data; there is no executable tag loader. JSON/YAML export remains suitable for version control. Importing a plain dashboard document edits the active dashboard while retaining its persistence identity. Portable bundles open a separate import review and create new dashboards with their saved-query dependencies; see [portable bundles](portable-bundles.md).
 

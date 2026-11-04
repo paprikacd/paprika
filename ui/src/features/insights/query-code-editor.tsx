@@ -102,6 +102,7 @@ function SQLQueryEditor(props: QueryCodeEditorProps) {
       </div>}
     </div>
     <p className={styles.notice}>Use <code>$1</code>, <code>$2</code> in SQL and ordered values such as <code>{"[{{service}}, 30]"}</code> below. Values are bound separately; keep placeholders out of SQL.</p>
+    <p className={styles.notice}>To bind the selected time range, use <code>{'{"range":"start"}'}</code> and <code>{'{"range":"end"}'}</code> as parameter values. Compare them with timestamp columns in SQL.</p>
     {issue && <p className={styles.syntaxIssue} role="alert">{issue}</p>}
   </div>
 }

@@ -49,6 +49,13 @@ func OpenStore(dir string) (*Store, error) {
 		return nil, fmt.Errorf("read dashboard store: %w", err)
 	}
 	s := &Store{dir: dir, documents: make(map[string]Dashboard)}
+	if err := s.loadEntries(dir, entries); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Store) loadEntries(dir string, entries []os.DirEntry) error {
 	totalBytes := 0
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
@@ -56,22 +63,26 @@ func OpenStore(dir string) (*Store, error) {
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
 		if !validStoreEntry(id, entry) {
-			return nil, errors.New("invalid file in dashboard store")
+			return errors.New("invalid file in dashboard store")
 		}
 		data, err := readStoreDocument(dir, entry.Name(), maxDocumentBytes)
 		if err != nil {
-			return nil, fmt.Errorf("read dashboard document: %w", err)
+			return fmt.Errorf("read dashboard document: %w", err)
 		}
-		if err := validateDashboard(id, data); err != nil {
-			return nil, fmt.Errorf("invalid saved dashboard %s: %w", id, err)
+		staleZone, err := checkStoredDashboard(id, data)
+		if err != nil {
+			return fmt.Errorf("invalid saved dashboard %s: %w", id, err)
+		}
+		if staleZone {
+			slog.Warn("saved dashboard time zone is not on the canonical list; viewers render it in their own zone", "dashboard", id)
 		}
 		totalBytes += len(data)
 		if dashboardStoreFull(len(s.documents), totalBytes) {
-			return nil, ErrCapacity
+			return ErrCapacity
 		}
 		s.documents[id] = data
 	}
-	return s, nil
+	return nil
 }
 
 func (s *Store) List() []Dashboard {
@@ -210,7 +221,7 @@ func validateDashboard(id string, document Dashboard) error {
 	if !validID.MatchString(id) || len(document) > maxDocumentBytes {
 		return errors.New("dashboard id or size is invalid")
 	}
-	root, err := requireObjectShape(document, []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}, []string{"description", "folder", "customTimeRange", "variables"})
+	root, err := requireObjectShape(document, []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}, []string{"description", "folder", "customTimeRange", "timeZone", "variables"})
 	if err != nil {
 		return err
 	}
@@ -228,6 +239,30 @@ func validateDashboard(id string, document Dashboard) error {
 		return err
 	}
 	return validateDashboardWidgets(d.Widgets)
+}
+
+// checkStoredDashboard validates a document the store loads from disk. Its timeZone is exempt, so a stale, unknown or
+// malformed zone never stops the store from opening: the document is validated without the field and is kept exactly
+// as stored, and viewers render it in their own zone. The result reports a zone the canonical list lacks, so the caller
+// can name the document in a warning. Writes still pass through validateDashboard, which refuses such a zone.
+func checkStoredDashboard(id string, document Dashboard) (staleZone bool, err error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(document, &fields) != nil || fields == nil {
+		return false, validateDashboard(id, document)
+	}
+	zone, hasZone := fields["timeZone"]
+	if !hasZone {
+		return false, validateDashboard(id, document)
+	}
+	delete(fields, "timeZone")
+	unzoned, err := json.Marshal(fields)
+	if err != nil {
+		return false, fmt.Errorf("encode dashboard without its time zone: %w", err)
+	}
+	if err := validateDashboard(id, unzoned); err != nil {
+		return false, err
+	}
+	return !canonicalZone(zone), nil
 }
 
 var validWidgetColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -286,7 +321,7 @@ func readStoreDocument(dir, name string, limit int64) ([]byte, error) {
 }
 
 func validateDashboardWidgetShape(raw json.RawMessage) error {
-	widget, err := requireObjectShape(raw, []string{"id", "title", "type", "providerId", "query", "unit", "layout"}, []string{"description", "color", "options", "pluginId", "dataKind", "config", "drilldowns", "queryRef"})
+	widget, err := requireObjectShape(raw, []string{"id", "title", "type", "providerId", "query", "unit", "layout"}, []string{"description", "color", "options", "pluginId", "dataKind", "config", "drilldowns", "queryRef", "selectionBindings", "annotationSource"})
 	if err != nil {
 		return err
 	}
@@ -359,7 +394,11 @@ func validateWidgetText(w *dashboardWidget) error {
 }
 
 func validateWidgetLayout(w *dashboardWidget) error {
-	if w.Layout.X < 0 || w.Layout.Y < 0 || w.Layout.Y > 1000 || w.Layout.W < 1 || w.Layout.W > 12 || w.Layout.X+w.Layout.W > 12 || w.Layout.H < 2 || w.Layout.H > 12 {
+	minHeight := 2
+	if w.Type == "stat" {
+		minHeight = 1
+	}
+	if w.Layout.X < 0 || w.Layout.Y < 0 || w.Layout.Y > 1000 || w.Layout.W < 1 || w.Layout.W > 12 || w.Layout.X+w.Layout.W > 12 || w.Layout.H < minHeight || w.Layout.H > 12 {
 		return errors.New("widget layout is outside the dashboard grid")
 	}
 	return nil
@@ -373,7 +412,7 @@ func validateDashboardIdentity(d *dashboardDocument, id string) error {
 		return errors.New("dashboard title or description is invalid")
 	}
 	switch d.TimeRange {
-	case "15m", "1h", "6h", "24h", "7d":
+	case "15m", "30m", "1h", "6h", "24h", "7d", "30d":
 	default:
 		return errors.New("unsupported dashboard time range")
 	}

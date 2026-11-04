@@ -1,4 +1,4 @@
-
+node_modules
 !vendor/**/zz_generated.*
 .idea
 .terraform/
@@ -46,3 +46,4 @@ output/
 /paprika
 /obsloadgen
 .DS_Store
+.playwright*

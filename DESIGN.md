@@ -43,11 +43,36 @@ Use the host's existing sans font through Gamma's UI token. Reserve monospace fo
 
 ## Layout
 
-The saved dashboard uses twelve columns. `responsive-layout.ts` projects the actual available canvas width: twelve columns from 960px, two compact stat columns from 600px, and a single column below 600px. This projection never overwrites saved placement. The widget inspector provides a non-drag layout alternative at every width. Tables scroll within their widget; an open inspector remains reachable through natural document scrolling on small screens. Widget size, loading and error states reserve useful geometry.
+The saved dashboard uses twelve columns. `responsive-layout.ts` projects the actual available canvas width: twelve columns from 960px, balanced three-column stat groups from 840px, two compact stat columns from 600px, and a single column below 600px. This projection never overwrites saved placement. The widget inspector provides a non-drag layout alternative at every width. Tables scroll within their widget; an open inspector remains reachable through natural document scrolling on small screens. Widget size, loading and error states reserve useful geometry.
 
 ## Elevation & Depth
 
-Use quiet borders for resting data tiles. Menus and tooltips may use Gamma's offset soft shadows to indicate an overlay. No decorative glass, glowing accents or gradient text. Portals retain the scoped theme and viewport collision behavior.
+Use quiet borders for resting data tiles. Menus and tooltips may use Gamma's offset soft shadows to indicate an overlay. No decorative glass, ambient glowing accents or gradient text. Portals retain the scoped theme and viewport collision behavior.
+
+### Compact dark reference direction
+
+The supplied Edge Watch and Reliability Room images (30 October 2026) are the
+visual authority for **dark, Compact, non-editing desktop views** from 1024px.
+The canonical Gamma scope uses midnight blue-black surfaces (`#07141b` canvas,
+`#0b1b22` plots), thin blue-gray boundaries, cyan/teal signals and violet
+comparison. Standard density, light appearance and narrow layouts retain their
+existing theme. Density is a viewing preference, not a saved dashboard edit.
+Portals copy the same tokens and update on density and desktop-boundary changes.
+Explicit authored series colors remain authoritative.
+
+The demo composition follows four Edge stats, traffic/destinations at 8/4,
+geography/outcomes/risk at 4/4/4 and full-width blocked records; Reliability uses
+three stats, burn/attention at 8/4, state history/calendar at 8/4 and full-width
+incidents. Extra investigations follow these rows. These are generated synthetic
+provider demos, not migrations of user documents. Preserve real queries, units,
+missingness, exact inspection and source limitations; never copy concept deltas.
+Keep readable working-desktop typography rather than the small reference pixels.
+Fine-pointer reference views use 24px calendar day targets and state lanes;
+one-month calendars reserve a complete six-week grid and retain their legends.
+Coarse-pointer calendars retain 44px targets and the ordinary taller projection.
+A modest plot-local glow is permitted only when it does not enlarge meaningful
+marks or reduce intersection/label legibility; it is not required, and the default
+implementation uses crisp marks without glow. No ambient or shell glow is allowed.
 
 ## Shapes
 
@@ -63,9 +88,9 @@ The richer chart vocabulary includes stacked areas/bars, mirrored directional tr
 
 Time-based plots share the exact observation timestamp through a dashboard-scoped cursor. Hover remains transient; click/tap or Enter pins the inspector; Escape dismisses it. A result refresh clears stale observations and cursors. Details-only charts do not launch extra queries. Query-backed tooltip widgets remain an explicit authoring choice.
 
-The October 2026 component studies in `output/imagegen/` guide presentation, not dashboard schema or invented data. Prefer thin readable lines, low-opacity areas, quiet horizontal grids, compact aligned legends and tabular values. An observation card should remain beside the selected track where space permits. Its history keeps the selected series' color in both themes; an explicit authored color takes priority. The selected observation and latest history value remain separately labelled. Never invent deltas or combine incompatible units just to reproduce a concept image.
+The October 2026 component studies in `output/imagegen/` guide presentation, not dashboard schema or invented data. Prefer thin readable lines, low-opacity areas, quiet horizontal grids, compact aligned legends and tabular values. Area charts may use a vertical gradient fill per series that fades to transparent at the baseline; no glow or blur on marks. An observation card should remain beside the selected track where space permits. Its history keeps the selected series' color in both themes; an explicit authored color takes priority. The selected observation and latest history value remain separately labelled. Never invent deltas or combine incompatible units just to reproduce a concept image.
 
-Keep motion brief and functional, using Gamma's standard or exponential deceleration. Do not use overshoot or elastic easing. Reduced motion retains visible pending/selected/focus feedback without moving effects. The historic spring token is an alias to the emphasized easing for compatibility.
+Keep motion brief and functional, using Gamma's standard or exponential deceleration. Do not use overshoot or elastic easing. Reduced motion retains visible pending/selected/focus feedback without moving effects. The historic spring token is an alias to the emphasized easing for compatibility. Charts may draw in once on first render (left-to-right reveal, ≤ 700 ms, emphasized easing). Data refreshes never re-animate, values are never interpolated through intermediate states, and reduced motion (OS setting or `data-motion="reduced"`) disables it.
 
 ## Do's and Don'ts
 

@@ -267,6 +267,25 @@ describe("Insights application state", () => {
     expect(screen.queryByText("Dashboard saved.")).not.toBeInTheDocument()
   })
 
+  it("keeps the mobile primary action visible and secondary actions keyboard accessible", async () => {
+    viewport(true)
+    render(<InsightsApp client={client()} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    expect(screen.getByRole("button", { name: "Edit dashboard" })).toBeVisible()
+    expect(screen.queryByRole("button", { name: "Manage dashboards" })).not.toBeInTheDocument()
+    const actions = screen.getByRole("button", { name: "Dashboard actions" })
+    fireEvent.keyDown(actions, { key: "ArrowDown" })
+    const manage = await screen.findByRole("menuitem", { name: "Manage dashboards" })
+    expect(manage).toHaveFocus()
+    fireEvent.keyDown(manage, { key: "Escape" })
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+    expect(actions).toHaveFocus()
+    fireEvent.click(actions)
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Build with AI" }))
+    expect(screen.getByRole("button", { name: "Save dashboard" })).toBeVisible()
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+  })
+
   it("exposes mobile navigation state, traps focus, and restores it on Escape", async () => {
     viewport(true)
     render(<InsightsApp client={client()} />)

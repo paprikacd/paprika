@@ -29,12 +29,32 @@
   --gamma-chart-8: #a44d80;
   --gamma-chart-grid: #e4ebed;
   --gamma-chart-axis: #52636f;
-  --gamma-density-0: #dce9f0;
-  --gamma-density-1: #98bfd7;
-  --gamma-density-2: #509bbf;
-  --gamma-density-3: #35a7a2;
-  --gamma-density-4: #c1bf5d;
-  --gamma-density-5: #d78642;
+  --gamma-chart-empty: #f8fafb;
+  --gamma-chart-hatch: #75858e;
+  --gamma-density-0: #13a0ab;
+  --gamma-density-1: #119ca5;
+  --gamma-density-2: #0f979f;
+  --gamma-density-3: #0d939a;
+  --gamma-density-4: #0a8f94;
+  --gamma-density-5: #088a8e;
+  --gamma-density-6: #068689;
+  --gamma-density-7: #078187;
+  --gamma-density-8: #087d84;
+  --gamma-density-9: #087881;
+  --gamma-density-10: #09747e;
+  --gamma-density-11: #096f7b;
+  --gamma-density-12: #096a79;
+  --gamma-density-13: #086576;
+  --gamma-density-14: #076073;
+  --gamma-density-15: #065b70;
+  --gamma-density-16: #05556d;
+  --gamma-density-17: #03506b;
+  --gamma-density-18: #034b67;
+  --gamma-density-19: #024663;
+  --gamma-density-20: #02415f;
+  --gamma-density-21: #013d5b;
+  --gamma-density-22: #013857;
+  --gamma-density-23: #003353;
   --gamma-color-scheme: light;
   --gamma-radius-small: 4px;
   --gamma-radius-control: 5px;
@@ -45,6 +65,8 @@
   --gamma-duration-fast: 130ms;
   --gamma-duration-base: 200ms;
   --gamma-duration-slow: 360ms;
+  /* One-time chart draw-in; chart-entrance.ts keeps CHART_REVEAL_MS equal to this. */
+  --gamma-duration-reveal: 600ms;
   --gamma-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
   --gamma-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   /* Keep Gamma's token contract, with smooth deceleration in Paprika. */
@@ -88,18 +110,94 @@
   --gamma-chart-8: #d69bbf;
   --gamma-chart-grid: #26343d;
   --gamma-chart-axis: #a8bac6;
-  --gamma-density-0: #233d50;
-  --gamma-density-1: #30648c;
-  --gamma-density-2: #438fb2;
-  --gamma-density-3: #44b5ac;
-  --gamma-density-4: #c5c668;
-  --gamma-density-5: #efaa60;
+  --gamma-chart-empty: #11171b;
+  --gamma-chart-hatch: #6f808a;
+  --gamma-density-0: #0e8299;
+  --gamma-density-1: #0e889c;
+  --gamma-density-2: #0e8da0;
+  --gamma-density-3: #0d93a3;
+  --gamma-density-4: #0d99a6;
+  --gamma-density-5: #0b9faa;
+  --gamma-density-6: #0ba5ac;
+  --gamma-density-7: #0eabaa;
+  --gamma-density-8: #0fb1a8;
+  --gamma-density-9: #0eb7a7;
+  --gamma-density-10: #0cbda5;
+  --gamma-density-11: #07c4a3;
+  --gamma-density-12: #30c99e;
+  --gamma-density-13: #55cd97;
+  --gamma-density-14: #6dd18f;
+  --gamma-density-15: #81d688;
+  --gamma-density-16: #93da80;
+  --gamma-density-17: #a3de77;
+  --gamma-density-18: #b2e17c;
+  --gamma-density-19: #c1e385;
+  --gamma-density-20: #cfe68e;
+  --gamma-density-21: #dde898;
+  --gamma-density-22: #eaeaa1;
+  --gamma-density-23: #f8ecaa;
   --gamma-color-scheme: dark;
   --gamma-shadow-low: none;
   --gamma-shadow-mid: 0 4px 14px rgb(0 0 0 / 22%);
   --gamma-shadow-high: 0 8px 24px rgb(0 0 0 / 32%);
   --gamma-focus-ring: 0 0 0 3px rgb(231 141 107 / 26%);
 }
+/* The supplied Edge Watch / Reliability Room direction is an opt-in reading
+   density, not a replacement for the standard or light workspace. */
+@media (min-width: 1024px) {
+  .scope[data-insights-theme="dark"][data-density="compact"] {
+    --gamma-bg: #0b1b22;
+    --gamma-surface: #10232b;
+    --gamma-surface-2: #182f39;
+    --gamma-page: #07141b;
+    --gamma-sidebar: #091920;
+    --gamma-ink: #e7f0f5;
+    --gamma-muted: #a9becd;
+    --gamma-border: #243d49;
+    --gamma-accent: #20c8dc;
+    --gamma-accent-text: #60dbea;
+    --gamma-accent-ink: #071a20;
+    --gamma-accent-soft: #10343e;
+    --gamma-chart-1: #20c8dc;
+    --gamma-chart-2: #a78af2;
+    --gamma-chart-3: #27cda9;
+    --gamma-chart-4: #f2b84b;
+    --gamma-chart-5: #f47b6a;
+    --gamma-chart-6: #83bcfa;
+    --gamma-chart-7: #b6d57d;
+    --gamma-chart-8: #e6a0cf;
+    --gamma-chart-grid: #1c3440;
+    --gamma-chart-axis: #a9becd;
+    --gamma-chart-empty: #060e12;
+    --gamma-chart-hatch: #5f7884;
+    --gamma-density-0: #0e8299;
+    --gamma-density-1: #0e889c;
+    --gamma-density-2: #0e8da0;
+    --gamma-density-3: #0d93a3;
+    --gamma-density-4: #0d99a6;
+    --gamma-density-5: #0b9faa;
+    --gamma-density-6: #0ba5ac;
+    --gamma-density-7: #0eabaa;
+    --gamma-density-8: #0fb1a8;
+    --gamma-density-9: #0eb7a7;
+    --gamma-density-10: #0cbda5;
+    --gamma-density-11: #07c4a3;
+    --gamma-density-12: #30c99e;
+    --gamma-density-13: #55cd97;
+    --gamma-density-14: #6dd18f;
+    --gamma-density-15: #81d688;
+    --gamma-density-16: #93da80;
+    --gamma-density-17: #a3de77;
+    --gamma-density-18: #b2e17c;
+    --gamma-density-19: #c1e385;
+    --gamma-density-20: #cfe68e;
+    --gamma-density-21: #dde898;
+    --gamma-density-22: #eaeaa1;
+    --gamma-density-23: #f8ecaa;
+    --gamma-focus-ring: 0 0 0 3px rgb(32 200 220 / 30%);
+  }
+}
+
 .scope,
 .scope *,
 .scope *::before,
@@ -115,7 +213,15 @@
     --gamma-duration-fast: 0ms;
     --gamma-duration-base: 0ms;
     --gamma-duration-slow: 0ms;
+    --gamma-duration-reveal: 0ms;
   }
+}
+/* An explicit reduced-motion scope (data-motion="reduced") zeroes every duration, as the OS setting does. */
+.scope[data-motion="reduced"] {
+  --gamma-duration-fast: 0ms;
+  --gamma-duration-base: 0ms;
+  --gamma-duration-slow: 0ms;
+  --gamma-duration-reveal: 0ms;
 }
 
 .scope,

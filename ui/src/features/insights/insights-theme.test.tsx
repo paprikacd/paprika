@@ -9,6 +9,20 @@ function Harness() {
   const { theme, resolvedTheme, setTheme } = useInsightsTheme();
   return <div data-testid="scope" data-insights-theme={resolvedTheme}><InsightsThemeControl value={theme} onChange={setTheme} /></div>;
 }
+/**
+ * Each block's tokens, sliced as the legibility test below does. The compact block inherits the dark
+ * block's other tokens (such as --gamma-warning), so its effective set merges the two, as the cascade does.
+ */
+function themeTokenSets() {
+  const css = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
+  const tokens = (block: string): Record<string, string> => Object.fromEntries([...block.matchAll(/(--gamma-[\w-]+):\s*(#[\da-f]{6})/g)].map((match) => [match[1], match[2]]));
+  const dark = tokens(css.split('.scope[data-insights-theme="dark"]')[1].split("}")[0]);
+  return {
+    light: tokens(css.split('.scope[data-insights-theme="dark"]')[0]),
+    dark,
+    compact: { ...dark, ...tokens(css.split('.scope[data-insights-theme="dark"][data-density="compact"]')[1].split("}")[0]) },
+  };
+}
 afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
 
 describe("dashboard appearance", () => {
@@ -53,9 +67,44 @@ describe("dashboard appearance", () => {
     stop(); root.remove(); panel.remove();
   });
 
+  it("refreshes portal tokens on density and desktop changes, then cleans up", async () => {
+    const root = document.createElement("div"), panel = document.createElement("div");
+    root.dataset.insightsTheme = "dark";
+    document.body.append(root, panel);
+    let desktop = true;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => {
+      expect(query).toBe("(min-width: 1024px)");
+      return { addEventListener: (_: string, listener: () => void) => listeners.add(listener), removeEventListener: (_: string, listener: () => void) => listeners.delete(listener) };
+    });
+    // jsdom does not evaluate media queries. No style mutation here: that
+    // would mask a missing density or breakpoint event in the adapter.
+    const computed = vi.spyOn(window, "getComputedStyle").mockImplementation(() => ({
+      length: 1, item: () => "--gamma-bg",
+      getPropertyValue: (name: string) => name === "--gamma-bg" ? (desktop && root.dataset.density === "compact" ? "#0b1b22" : "#182127") : "dark",
+    }) as unknown as CSSStyleDeclaration);
+    const stop = inheritGammaTheme(root, panel);
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#182127");
+    root.dataset.density = "compact";
+    await act(async () => { await Promise.resolve(); });
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#0b1b22");
+    desktop = false;
+    act(() => listeners.forEach(listener => listener()));
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#182127");
+    desktop = true;
+    act(() => listeners.forEach(listener => listener()));
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#0b1b22");
+    stop();
+    expect(listeners.size).toBe(0);
+    root.dataset.density = "standard";
+    await act(async () => { await Promise.resolve(); });
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#0b1b22");
+    computed.mockRestore(); root.remove(); panel.remove();
+  });
+
   it("keeps normal and muted copy legible on every light/dark surface", () => {
     const css = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
-    for (const block of [css.split('.scope[data-insights-theme="dark"]')[0], css.split('.scope[data-insights-theme="dark"]')[1].split("}")[0]]) {
+    for (const block of [css.split('.scope[data-insights-theme="dark"]')[0], css.split('.scope[data-insights-theme="dark"]')[1].split("}")[0], css.split('.scope[data-insights-theme="dark"][data-density="compact"]')[1].split("}")[0]]) {
       const tokens = Object.fromEntries([...block.matchAll(/(--gamma-[\w-]+):\s*(#[\da-f]{6})/g)].map((match) => [match[1], match[2]]));
       for (const surface of ["bg", "surface", "surface-2", "page", "sidebar"])
         for (const ink of ["ink", "muted"])
@@ -66,5 +115,36 @@ describe("dashboard appearance", () => {
       for (let index = 1; index <= 8; index++)
         expect(contrastRatio(tokens[`--gamma-chart-${index}`], tokens["--gamma-bg"])).toBeGreaterThanOrEqual(3);
     }
+  });
+
+  it("keeps the 24-step density ramp complete, ordered by luminance, and at least 3:1 against its page", () => {
+    const sets = themeTokenSets();
+    for (const [name, direction] of [["light", -1], ["dark", 1], ["compact", 1]] as const) {
+      const tokens = sets[name];
+      const ramp = Array.from({ length: 24 }, (_, index) => tokens[`--gamma-density-${index}`]);
+      for (const color of ramp) expect(color).toMatch(/^#[\da-f]{6}$/);
+      // Contrast against black is (L + 0.05) / 0.05, so it orders colours by relative luminance.
+      const luminance = ramp.map((color) => contrastRatio(color, "#000000"));
+      for (let index = 1; index < luminance.length; index++) expect(Math.sign(luminance[index] - luminance[index - 1])).toBe(direction);
+      for (const color of ramp) expect(contrastRatio(color, tokens["--gamma-bg"])).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps hatch and warning marks at least 3:1 against the empty chart fill in every block", () => {
+    for (const tokens of Object.values(themeTokenSets())) {
+      expect(contrastRatio(tokens["--gamma-chart-hatch"], tokens["--gamma-chart-empty"])).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(tokens["--gamma-warning"], tokens["--gamma-chart-empty"])).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps the lowest density step at least 3:1 against the empty chart fill in every block", () => {
+    for (const tokens of Object.values(themeTokenSets()))
+      expect(contrastRatio(tokens["--gamma-density-0"], tokens["--gamma-chart-empty"])).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps the empty chart fill distinct from the page background in every block", () => {
+    // Empty may sit close to the page (an observed zero reads as nothing drawn), but never on it.
+    for (const tokens of Object.values(themeTokenSets()))
+      expect(tokens["--gamma-chart-empty"]).not.toBe(tokens["--gamma-bg"]);
   });
 });

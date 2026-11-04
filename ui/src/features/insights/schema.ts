@@ -1,14 +1,18 @@
 import { z } from "zod"
+import { seriesColorRulesSchema } from "./series-colors"
+import { timeZones } from "./time-zones.generated"
 import { parseDocument, stringify } from "yaml"
 
 export const MAX_WIDGETS = 48
 export const MAX_DOCUMENT_BYTES = 256 * 1024
 export const timeRanges = {
   "15m": 900,
+  "30m": 1800,
   "1h": 3600,
   "6h": 21600,
   "24h": 86400,
   "7d": 604800,
+  "30d": 2592000,
 } as const
 export const widgetTypes = [
   "timeseries",
@@ -214,6 +218,12 @@ export const thresholdSchema = z.strictObject({
   color: hexColor,
   label: z.string().max(80).optional(),
 })
+/** A labelled horizontal rule on a time series. Its value joins the y domain, so it is never clipped. */
+export const referenceLineSchema = z.strictObject({
+  value: z.number(),
+  label: z.string().min(1).max(80).optional(),
+  color: hexColor.optional(),
+})
 
 // Inspect raw keys before Zod normalizes JSON records (which drops __proto__).
 export const pluginConfigSchema = z
@@ -290,7 +300,7 @@ export const tooltipSourceSchema = z.discriminatedUnion("type", [
 ])
 export const tooltipViewSchema = z.strictObject({
   type: z.enum(widgetTypes),
-  height: z.union([z.literal(120), z.literal(160), z.literal(200), z.literal(320)]).optional(),
+  height: z.union([z.literal(80), z.literal(120), z.literal(160), z.literal(200), z.literal(320)]).optional(),
   showGrid: z.boolean().optional(),
   showAxis: z.boolean().optional(),
   showLegend: z.boolean().optional(),
@@ -324,20 +334,44 @@ export const widgetOptionsSchema = z
     showLabels: z.boolean().optional(),
     showValues: z.boolean().optional(),
     showSparkline: z.boolean().optional(),
+    showStatBar: z.boolean().optional(),
+    sparklinePlacement: z.enum(["background", "side"]).optional(),
+    statIcon: z.enum(["arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"]).optional(),
     showTooltip: z.boolean().optional(),
+    tooltipTitle: z.string().max(120).optional(),
+    tooltipValueLabel: z.string().max(80).optional(),
+    tooltipShowUnit: z.boolean().optional(),
+    tooltipDecimals: z.number().int().min(0).max(8).optional(),
+    // Observation inspector placement; WP-A3's readTooltipPlacement reads these from options.
+    tooltipPlacement: z.enum(["auto", "top", "right", "bottom", "left"]).optional(),
+    tooltipOffset: z.number().min(0).max(40).optional(),
+    tooltipMaxWidth: z.number().min(220).max(640).optional(),
+    tooltipMaxHeight: z.number().min(160).max(800).optional(),
     tooltipView: tooltipViewSchema.optional(),
     showGrid: z.boolean().optional(),
     decimals: z.number().int().min(0).max(8).optional(),
+    staleAfterSeconds: z.number().int().min(1).max(2678400).optional(),
     min: z.number().optional(),
     max: z.number().optional(),
     lineWidth: z.number().min(0.5).max(8).optional(),
+    seriesColors: seriesColorRulesSchema.optional(),
     fillOpacity: z.number().min(0).max(1).optional(),
     curve: z.enum(["linear", "step", "monotone"]).optional(),
     background: hexColor.optional(),
     textColor: hexColor.optional(),
     thresholds: z.array(thresholdSchema).max(12).optional(),
+    // Time-series rendering. gridX and showZeroLine are off by default; timeAxis and axisUnit default to linear and auto.
+    gridX: z.boolean().optional(),
+    timeAxis: z.enum(["linear", "calendar"]).optional(),
+    axisUnit: z.enum(["auto", "ticks", "caption"]).optional(),
+    referenceLines: z.array(referenceLineSchema).max(8).optional(),
+    showZeroLine: z.boolean().optional(),
+    plotInsetLeft: z.number().min(8).max(240).optional(),
+    plotInsetRight: z.number().min(8).max(120).optional(),
   })
   .superRefine((options, context) => {
+    if (options.showStatBar && (options.min === undefined || options.max === undefined))
+      context.addIssue({ code: "custom", path: ["showStatBar"], message: "A stat bar requires explicit minimum and maximum values" })
     if (options.min !== undefined && options.max !== undefined && options.min >= options.max)
       context.addIssue({
         code: "custom",
@@ -364,6 +398,11 @@ export const customTimeRangeSchema = z
     return Date.parse(range.from) > 0 && duration > 0 && duration <= 31 * 24 * 60 * 60 * 1000
   }, "Choose an increasing time range of at most 31 days, after the Unix epoch")
 
+/** Event markers are supported on time-based line and traffic charts. */
+export function supportsAnnotationSource(type: string, pluginId?: string): boolean {
+  return type === "timeseries" || (type === "plugin" && (pluginId === "stacked-timeseries" || pluginId === "directional-traffic"))
+}
+
 export const widgetSchema = z
   .strictObject({
     id: identifier,
@@ -373,6 +412,13 @@ export const widgetSchema = z
     query: z.string().trim().min(1).max(8192),
     unit: z.string().max(24),
     queryRef: dashboardQueryReferenceSchema.optional(),
+    annotationSource: z.strictObject({
+      queryRef: dashboardQueryReferenceSchema,
+      timestampColumn: z.string().trim().min(1).max(128),
+      endColumn: z.string().trim().min(1).max(128).optional(),
+      labelColumn: z.string().trim().min(1).max(128),
+      severityColumn: z.string().trim().min(1).max(128).optional(),
+    }).optional(),
     description: z.string().max(500).optional(),
     color: hexColor.optional(),
     options: widgetOptionsSchema.optional(),
@@ -380,16 +426,27 @@ export const widgetSchema = z
     dataKind: z.enum(["metrics", "traces", "records"]).optional(),
     config: pluginConfigSchema.optional(),
     drilldowns: z.array(drilldownSchema).max(8).optional(),
+    selectionBindings: z.array(drilldownBindingSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
     layout: z
       .strictObject({
         x: z.number().int().min(0).max(11),
         y: z.number().int().min(0).max(1000),
         w: z.number().int().min(1).max(12),
-        h: z.number().int().min(2).max(12),
+        h: z.number().int().min(1).max(12),
       })
       .refine((v) => v.x + v.w <= 12, "Widget must fit within the 12-column canvas"),
   })
   .superRefine((widget, context) => {
+    if (widget.type !== "stat" && widget.layout.h < 2)
+      context.addIssue({ code: "custom", path: ["layout", "h"], message: "Only single-value widgets can use one row" })
+    if (widget.annotationSource && !supportsAnnotationSource(widget.type, widget.pluginId))
+      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-series or directional-traffic widget" })
+    const boundVariables = new Set<string>()
+    widget.selectionBindings?.forEach((binding, index) => {
+      if (boundVariables.has(binding.variable))
+        context.addIssue({ code: "custom", path: ["selectionBindings", index, "variable"], message: "Bind each dashboard variable once" })
+      boundVariables.add(binding.variable)
+    })
     const drilldownIds = new Set<string>()
     widget.drilldowns?.forEach((drilldown, index) => {
       if (drilldownIds.has(drilldown.id))
@@ -424,6 +481,50 @@ export const widgetSchema = z
     }
   })
 
+// The canonical IANA names, generated from the Go toolchain's tz database (hack/gen-time-zones). The server holds the same list.
+const canonicalTimeZoneNames: ReadonlySet<string> = new Set<string>(timeZones)
+
+/** Whether the server accepts `zone` as a dashboard time zone. Matching is exact and case-sensitive. */
+export function isCanonicalTimeZone(zone: string): boolean {
+  return canonicalTimeZoneNames.has(zone)
+}
+
+const formattableTimeZones = new Map<string, boolean>()
+/**
+ * Whether this runtime can format `zone`. An older browser's ICU data can lack a newer name, so a zone it cannot format
+ * falls back at render instead of throwing. This check ignores the canonical list: the list validates saved dashboards,
+ * and the viewer's own zone renders whether or not the list holds it.
+ */
+export function isFormattableTimeZone(zone: string): boolean {
+  let formattable = formattableTimeZones.get(zone)
+  if (formattable === undefined) {
+    try {
+      formattable = Boolean(new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone)
+    } catch {
+      formattable = false
+    }
+    formattableTimeZones.set(zone, formattable)
+  }
+  return formattable
+}
+
+/** A saved dashboard zone this runtime can render: on the canonical list, so a write accepts it, and formattable here. */
+export function isValidTimeZone(zone: string): boolean {
+  return isCanonicalTimeZone(zone) && isFormattableTimeZone(zone)
+}
+
+export const timeZoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isCanonicalTimeZone, "Use an IANA time zone name, such as Europe/London or UTC")
+  .describe("IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of the calendar time axis, the observation inspector and the chart window labels; metric tooltips, linear axis ticks and other readouts always use the viewer's zone. Omitted, the labels above use the viewer's zone.")
+/**
+ * How a stored dashboard reads its zone: any bounded string is kept as saved, so one dashboard's stale or unknown zone
+ * never fails a list and rendering falls back to the viewer's zone. A value that is not a bounded string is dropped.
+ */
+const storedTimeZoneSchema = z.string().max(64).optional().catch(undefined)
+
 export const dashboardSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -451,8 +552,10 @@ export const dashboardSchema = z
       )
       .optional(),
     customTimeRange: customTimeRangeSchema.optional(),
+    /** The zone of the calendar axis, observation inspector and window labels. Omitted, they use the viewer's zone. */
+    timeZone: timeZoneSchema.optional(),
     variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
-    timeRange: z.enum(["15m", "1h", "6h", "24h", "7d"]),
+    timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
     refreshInterval: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60)]),
     widgets: z.array(widgetSchema).max(MAX_WIDGETS),
   })
@@ -479,6 +582,22 @@ export const dashboardSchema = z
     })
   })
 
+/**
+ * A dashboard as the server stores it, for reads. It keeps the same contract as dashboardSchema except for the zone, which is
+ * kept as saved. Writes and imports still pass dashboardSchema, so a zone that is not canonical cannot be saved.
+ */
+export const storedDashboardSchema = dashboardSchema.safeExtend({ timeZone: storedTimeZoneSchema })
+
+/**
+ * A stored dashboard in the form a write accepts, for copy and move. A zone the canonical list lacks is unset: it renders
+ * exactly as the stale value did, in the viewer's zone, and the server would refuse the stale value on the write.
+ */
+export function writableDashboard(input: unknown): Dashboard {
+  const stored = storedDashboardSchema.parse(input)
+  const { timeZone, ...unzoned } = stored
+  return dashboardSchema.parse(timeZone === undefined || isCanonicalTimeZone(timeZone) ? stored : unzoned)
+}
+
 export type Dashboard = z.infer<typeof dashboardSchema>
 export type Widget = z.infer<typeof widgetSchema>
 export type WidgetOptions = z.infer<typeof widgetOptionsSchema>
@@ -487,8 +606,8 @@ export type TooltipSource = z.infer<typeof tooltipSourceSchema>
 export type TooltipQuerySource = Extract<TooltipSource, { type: "query" }>
 export type TooltipBinding = z.infer<typeof tooltipBindingSchema>
 
-export function supportsTooltipView(type: Widget["type"]): boolean {
-  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table"
+export function supportsTooltipView(type: Widget["type"], pluginId?: string): boolean {
+  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginId === "geo-heatmap")
 }
 export type Threshold = z.infer<typeof thresholdSchema>
 export type DashboardVariable = z.infer<typeof dashboardVariableSchema>
@@ -521,6 +640,8 @@ export interface QueryRequest {
   start: number
   end: number
   step: number
+  /** Fetch one trace's spans instead of searching trace summaries. */
+  traceId?: string
   /** Authoring reference; the host resolves and removes this before transport. */
   queryRef?: DashboardQueryReference
 }
@@ -538,6 +659,7 @@ export interface RecordFrame {
 export interface QueryResult {
   records?: RecordFrame
   truncated?: boolean
+  spans?: { spanId: string; parentSpanId?: string; service: string; operation: string; startTime: number; durationMs: number; status: string; attributes?: { key: string; value: string }[]; attributesOmitted?: number }[]
   series?: {
     name: string
     labels: Record<string, string>

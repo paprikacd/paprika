@@ -11,3 +11,7 @@
 .rule legend { padding-inline: 4px; font-size: 12px; color: var(--gamma-muted); }
 .rule > button { align-self: flex-start; }
 .bounds { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+
+.mapping { min-width: 0; margin: 0; padding: 10px; border: 1px solid var(--gamma-border); border-radius: 4px; display: flex; flex-direction: column; gap: 8px; }
+.mapping legend { padding-inline: 4px; font-size: 12px; color: var(--gamma-muted); }
+.mapping > button { align-self: flex-start; }

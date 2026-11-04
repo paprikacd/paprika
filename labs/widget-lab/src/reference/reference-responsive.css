@@ -1,0 +1,225 @@
+/* Operational dashboards use their container at every width. Only explicit source-size and comparison modes retain the authored canvas. */
+.ref-preview-bar { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px 12px; background:var(--gamma-surface); border-bottom:1px solid var(--gamma-border); color:var(--gamma-ink); font:12px Barlow,sans-serif; }
+.ref-preview-bar button { min-height:28px; border:1px solid var(--gamma-muted); border-radius:4px; padding:3px 8px; color:var(--gamma-ink); background:var(--gamma-surface-2); font:inherit; cursor:pointer; }
+.ref-viewport[data-layout=reflow] { width:100%; height:auto; min-width:0; container:reference-reflow / inline-size; overflow:visible; }
+.ref-app[data-layout=reflow] { width:100%; height:auto; min-height:calc(100dvh - 56px); display:flex; flex-direction:column; min-width:0; }
+.ref-app[data-layout=reflow] .ref-outer-frame { display:none; }
+.ref-app[data-layout=reflow] .ref-page-title { position:static; margin:18px 16px 4px; font-size:16px; line-height:1.4; letter-spacing:3px; }
+.ref-app[data-layout=reflow] .ref-page-subtitle { position:static; margin:0 16px 18px; font-size:12px; letter-spacing:1.3px; }
+.ref-app[data-layout=reflow] .ref-rail { order:-1; position:sticky; inset:auto; top:0; z-index:70; width:100%; height:57px; border-width:0 0 1px; border-radius:0; flex-direction:row; padding:0 10px; background:color-mix(in srgb, var(--gamma-page) 96.1%, transparent); }
+.ref-app[data-layout=reflow] .ref-rail-logo { flex:0 0 26px; width:26px; height:40px; margin:0 16px 0 2px; }
+.ref-app[data-layout=reflow] .ref-rail nav { flex-direction:row; gap:4px; margin:0; min-width:0; width:auto; flex:1; justify-content:space-between; }
+.ref-app[data-layout=reflow] .ref-rail nav a,.ref-app[data-layout=reflow] .ref-rail nav button { flex:0 0 36px; width:36px; height:38px; border-radius:5px; }
+.ref-app[data-layout=reflow] .ref-rail nav svg { width:22px; height:22px; }
+.ref-app[data-layout=reflow] .ref-rail nav .ref-rail-selected { height:38px; box-shadow:none; }
+.ref-app[data-layout=reflow] .ref-edge,.ref-app[data-layout=reflow] .ref-reliability { position:relative; inset:auto; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:14px; padding:0 16px 24px; width:100%; min-width:0; }
+.ref-app[data-layout=reflow] .ref-panel { position:relative!important; inset:auto!important; width:auto!important; height:auto; min-width:0; }
+.ref-app[data-layout=reflow] .ref-panel-header { height:auto; min-height:48px; padding:10px 12px; flex-wrap:wrap; gap:7px 12px; }
+.ref-app[data-layout=reflow] .ref-panel-header h2 { font-size:15px; line-height:1.35; white-space:normal; flex:1 1 190px; min-width:0; gap:8px; }
+.ref-app[data-layout=reflow] .ref-panel-header > :last-child:not(h2) { margin-left:auto; }
+.ref-app[data-layout=reflow] .ref-panel-body { height:auto; min-width:0; }
+/* The canonical fixed-height widget uses size containment. Reflow needs its
+   chart, controls and inspector to contribute their natural block size. */
+.ref-app[data-layout=reflow] :is(.ref-edge-traffic,.ref-rel-burn) > .ref-panel-body > [aria-busy] { height:auto; container-type:inline-size; }
+.ref-app[data-layout=reflow] .ref-select { min-height:34px; height:34px; max-width:100%; }
+.ref-app[data-layout=reflow] .ref-panel-header .ref-select select { font-size:13px; }
+.ref-app[data-layout=reflow] .ref-select > svg { top:9px; }
+.ref-app[data-layout=reflow] .ref-icon-button { min-width:32px; min-height:34px; }
+.ref-app[data-layout=reflow] .ref-info { flex:none; }
+.ref-app[data-layout=reflow] .ref-info summary { width:28px; height:28px; }
+.ref-app[data-layout=reflow] .ref-info > div { position:fixed; left:50%; right:auto; top:76px; transform:translateX(-50%); width:min(340px,calc(var(--ref-layout-width) - 32px)); max-height:calc(100dvh - 100px); overflow:auto; }
+.ref-app[data-layout=reflow] .ref-tools-menu { position:fixed; top:66px; left:50%; right:auto; transform:translateX(-50%); width:min(300px,calc(var(--ref-layout-width) - 24px)); max-height:calc(100dvh - 82px); overflow:auto; }
+.ref-app[data-layout=reflow] .ref-modal-backdrop { position:fixed; }
+.ref-app[data-layout=reflow] .ref-modal { width:min(650px,calc(var(--ref-layout-width) - 28px)); max-height:calc(100dvh - 40px); padding:17px; }
+.ref-app[data-layout=reflow] .ref-modal header { gap:12px; }
+.ref-app[data-layout=reflow] .ref-modal header button { min-width:30px; min-height:30px; }
+.ref-app[data-layout=reflow] .ref-modal-links { flex-wrap:wrap; }
+
+/* Scope controls wrap while maintaining their label/control relationship. */
+.ref-app[data-layout=reflow] .ref-edge-toolbar,.ref-app[data-layout=reflow] .ref-rel-toolbar { position:relative; inset:auto; grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:12px; width:100%; height:auto; padding:12px; border:1px solid var(--gamma-border); border-radius:7px; background:var(--gamma-page); }
+.ref-app[data-layout=reflow] .ref-edge-field { position:static; height:auto; min-width:0; flex:1 1 210px; justify-content:space-between; gap:10px; }
+.ref-app[data-layout=reflow] .ref-edge-field .ref-select-field { width:150px; flex:0 1 150px; min-width:0; }
+.ref-app[data-layout=reflow] .ref-edge-global { position:relative; inset:auto; flex:1 1 195px; width:auto; max-width:250px; height:34px; }
+.ref-app[data-layout=reflow] .ref-edge-demo,.ref-app[data-layout=reflow] .ref-edge-search,.ref-app[data-layout=reflow] .ref-edge-menu { position:static; }
+.ref-app[data-layout=reflow] .ref-edge-divider,.ref-app[data-layout=reflow] .ref-rel-toolbar-divider { display:none; }
+.ref-app[data-layout=reflow] .ref-rel-toolbar-field { flex:1 1 205px; min-width:0; justify-content:space-between; gap:10px; }
+.ref-app[data-layout=reflow] .ref-rel-toolbar-field > :last-child { width:150px; flex:0 1 150px; }
+.ref-app[data-layout=reflow] .ref-rel-global-time { margin-left:0; flex:1 1 182px; max-width:240px; height:34px; }
+.ref-app[data-layout=reflow] .ref-rel-live { margin-left:0; height:34px; }
+.ref-app[data-layout=reflow] .ref-rel-toolbar-icon { min-width:32px; min-height:34px; }
+
+/* Metrics use intrinsic rows; labels and values never depend on artboard scale. */
+.ref-app[data-layout=reflow] .ref-edge-metric { position:relative; inset:auto; width:auto; height:auto; min-width:0; display:grid; grid-template-columns:38px minmax(0,1fr); gap:5px 10px; padding:12px; container-type:inline-size; }
+.ref-app[data-layout=reflow] :where(.ref-edge-metric) > div { position:static; inset:auto; width:auto; height:auto; }
+.ref-app[data-layout=reflow] .ref-edge-metric-icon { grid-column:1; grid-row:1 / 3; width:38px!important; height:40px!important; }
+.ref-app[data-layout=reflow] .ref-edge-metric-icon > svg { width:28px; height:28px; }
+.ref-app[data-layout=reflow] .ref-edge-metric-label { grid-column:2; font-size:14px; line-height:1.35; min-height:19px; }
+.ref-app[data-layout=reflow] .ref-edge-metric-value { grid-column:2; font-size:clamp(22px,9cqi,30px); line-height:1.2; }
+.ref-app[data-layout=reflow] .ref-edge-metric-value > span { font-size:17px; margin-left:4px; }
+.ref-app[data-layout=reflow] .ref-edge-metric-change { grid-column:1; grid-row:3; min-width:48px; font-size:13px; line-height:1.5; }
+.ref-app[data-layout=reflow] .ref-edge-metric-period { grid-column:2; grid-row:3; text-align:right; font-size:12px; line-height:1.5; }
+.ref-app[data-layout=reflow] .ref-edge-metric-spark { grid-column:1 / -1; height:30px; width:100%; margin-top:3px; }
+.ref-app[data-layout=reflow] .ref-rel-metric { position:relative; inset:auto; width:auto; height:auto; min-width:0; padding:14px; display:grid; grid-template-columns:48px minmax(0,1fr) auto; align-content:start; column-gap:10px; row-gap:7px; container-type:inline-size; }
+.ref-app[data-layout=reflow] :where(.ref-rel-metric) > div { position:static; inset:auto; width:auto; height:auto; }
+.ref-app[data-layout=reflow] .ref-rel-metric-icon { grid-column:1; grid-row:1 / 3; width:44px!important; height:44px!important; }
+.ref-app[data-layout=reflow] .ref-rel-metric-name { grid-column:2 / -1; font-size:15px; gap:6px; white-space:normal; line-height:1.4; }
+.ref-app[data-layout=reflow] .ref-rel-metric-value { grid-column:2; grid-row:2; font-size:clamp(28px,9cqi,36px); line-height:1.2; }
+.ref-app[data-layout=reflow] .ref-rel-metric-delta { grid-column:3; grid-row:2; align-self:center; font-size:13px; }
+.ref-app[data-layout=reflow] .ref-rel-previous { grid-column:2 / -1; text-align:right; font-size:12px; }
+.ref-app[data-layout=reflow] .ref-rel-mini-axis { grid-column:1; grid-row:4; height:52px; font-size:11px; line-height:12px; }
+.ref-app[data-layout=reflow] .ref-rel-availability-trace { grid-column:2 / -1; grid-row:4; position:relative; min-width:0; height:52px; }
+.ref-app[data-layout=reflow] .ref-rel-error-budget-caption { grid-column:2 / -1; font-size:13px; line-height:1.4; }
+.ref-app[data-layout=reflow] .ref-rel-target-trace { grid-column:2 / -1; grid-row:4; height:52px; min-width:0; }
+.ref-app[data-layout=reflow] .ref-rel-target-key { grid-column:1 / -1; flex-direction:row; flex-wrap:wrap; gap:8px 16px; font-size:12px; }
+.ref-app[data-layout=reflow] .ref-rel-budget { grid-column:1 / -1; }
+.ref-app[data-layout=reflow] .ref-rel-budget-consumed { grid-column:1 / -1; text-align:right; font-size:13px; line-height:1.5; margin-top:4px; }
+.ref-app[data-layout=reflow] .ref-rel-budget-track { grid-column:1 / -1; height:20px; margin-top:5px; }
+.ref-app[data-layout=reflow] .ref-rel-budget-scale { grid-column:1 / -1; font-size:12px; gap:8px; flex-wrap:wrap; line-height:1.5; }
+
+/* Primary evidence is full-width; supporting evidence can share a tablet row. */
+.ref-app[data-layout=reflow] .ref-edge-traffic,.ref-app[data-layout=reflow] .ref-edge-destinations,.ref-app[data-layout=reflow] .ref-edge-events,.ref-app[data-layout=reflow] .ref-rel-burn,.ref-app[data-layout=reflow] .ref-rel-services,.ref-app[data-layout=reflow] .ref-rel-timeline,.ref-app[data-layout=reflow] .ref-rel-calendar,.ref-app[data-layout=reflow] .ref-rel-incidents { grid-column:1 / -1; }
+.ref-app[data-layout=reflow] .ref-edge-plot-controls { flex-wrap:wrap; gap:8px; }
+.ref-app[data-layout=reflow] .edge-supporting-row { display:contents; }
+.ref-app[data-layout=reflow] .edge-supporting-row > .ref-panel { position:relative; top:auto; height:auto; }
+.ref-app[data-layout=reflow] .edge-support-risk { grid-column:1 / -1; }
+.ref-app[data-layout=reflow] .edge-map-legend { position:static; padding:10px 14px 12px; gap:18px; font-size:13px; }
+.ref-app[data-layout=reflow] .edge-outcome-legend { position:static; padding:12px; gap:8px 14px; justify-content:flex-start; flex-wrap:wrap; line-height:1.5; }
+.ref-app[data-layout=reflow] .edge-outcome-detail { position:relative; inset:auto; margin:0 10px 12px; flex-wrap:wrap; max-width:calc(100% - 20px); }
+
+/* Tables share available width and wrap exact prose. Dense records retain a
+   keyboard-reachable local scroll region at the smallest widths. */
+.ref-app[data-layout=reflow] :is(.ref-edge-destinations,.ref-edge-events,.ref-rel-services,.ref-rel-incidents) > .ref-panel-body { overflow:auto; overscroll-behavior-x:contain; padding:0 10px 10px; scrollbar-width:thin; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table { position:relative; inset:auto; min-width:350px; width:100%; margin:0; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table col:nth-child(1) { width:5%!important; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table col:nth-child(2) { width:31%!important; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table col:nth-child(3) { width:23%!important; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table col:nth-child(4) { width:27%!important; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table col:nth-child(5) { width:14%!important; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table td { height:36px; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table td button { min-height:32px; }
+.ref-app[data-layout=reflow] .ref-edge-destination-table th:last-child { padding-right:4px; }
+.ref-app[data-layout=reflow] .ref-edge-destination-track { width:100%; }
+.ref-app[data-layout=reflow] .ref-edge-destination-detail { position:sticky; left:0; top:auto; width:min(270px,100%); margin-top:8px; }
+.ref-app[data-layout=reflow] .edge-risk-table { position:relative; inset:auto; width:100%; min-width:0; }
+.ref-app[data-layout=reflow] .ref-edge-events-table { width:100%; min-width:760px; margin:0; }
+.ref-app[data-layout=reflow] .ref-edge-events-table col { width:auto!important; }
+.ref-app[data-layout=reflow] .ref-edge-events-table col:nth-child(1) { width:17%!important; }
+.ref-app[data-layout=reflow] .ref-edge-events-table col:nth-child(2) { width:24%!important; }
+.ref-app[data-layout=reflow] .ref-edge-events-table col:nth-child(3) { width:18%!important; }
+.ref-app[data-layout=reflow] .ref-edge-events-table col:nth-child(4) { width:24%!important; }
+.ref-app[data-layout=reflow] .ref-edge-events-table col:nth-child(5) { width:7%!important; }
+.ref-app[data-layout=reflow] .ref-edge-events-table td { height:40px; padding:6px; white-space:normal; overflow-wrap:anywhere; }
+.ref-app[data-layout=reflow] .ref-edge-events-table td:first-child span { display:block; margin:0; }
+.ref-app[data-layout=reflow] .ref-edge-events-table td:last-child .ref-dot { margin-right:6px; }
+.ref-app[data-layout=reflow] .ref-rel-service-table { width:100%; min-width:360px; margin:0; }
+.ref-app[data-layout=reflow] .ref-rel-services .ref-panel-header .ref-select-field { width:140px; }
+.ref-app[data-layout=reflow] .ref-rel-service-table col:nth-child(1) { width:25%; }
+.ref-app[data-layout=reflow] .ref-rel-service-table col:nth-child(2) { width:22%; }
+.ref-app[data-layout=reflow] .ref-rel-service-table col:nth-child(3) { width:29%; }
+.ref-app[data-layout=reflow] .ref-rel-service-table col:nth-child(4) { width:24%; }
+.ref-app[data-layout=reflow] .ref-rel-service-table th { font-size:12px; line-height:1.4; white-space:normal; padding-block:7px; }
+.ref-app[data-layout=reflow] .ref-rel-service-table td { padding-block:8px; }
+.ref-app[data-layout=reflow] .ref-rel-service-link { min-height:32px; text-align:left; overflow-wrap:anywhere; }
+.ref-app[data-layout=reflow] .ref-rel-availability-cell { flex-direction:column; align-items:flex-start; gap:3px; }
+.ref-app[data-layout=reflow] .ref-rel-row-budget { gap:6px; }
+.ref-app[data-layout=reflow] .ref-rel-row-track { width:auto; min-width:0; flex:1; }
+.ref-app[data-layout=reflow] .ref-rel-budget-amount { font-size:12px; line-height:1.4; }
+.ref-app[data-layout=reflow] .ref-rel-status { gap:5px; padding-inline:5px; font-size:11px; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table { width:100%; min-width:850px; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table col:nth-child(1) { width:3%; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table col:nth-child(2) { width:13%; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table col:nth-child(3) { width:11%; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table col:nth-child(4) { width:7%; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table col:nth-child(5) { width:31%; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table col:nth-child(6) { width:26%; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table col:nth-child(7) { width:9%; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table th { height:32px; padding:6px 8px; line-height:1.4; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table td { height:40px; padding:8px; white-space:normal; line-height:1.5; overflow:visible; }
+.ref-app[data-layout=reflow] .ref-rel-incident-table td:nth-child(2) span { display:block; margin:0; }
+
+/* Timelines retain all 85 states; native pickers provide exact interval access
+   without requiring a tiny pointer target. */
+.ref-app[data-layout=reflow] .ref-rel-timeline { container:reference-timeline / inline-size; }
+.ref-app[data-layout=reflow] .ref-rel-timeline > .ref-panel-body { padding-bottom:12px; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-rows { min-width:0; margin:0 12px; gap:8px; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-row,.ref-app[data-layout=reflow] .ref-rel-timeline-cells,.ref-app[data-layout=reflow] .ref-rel-state { height:26px; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-label { width:90px; flex-basis:90px; font-size:13px; min-height:30px; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-cells { min-width:0; gap:.5px; }
+.ref-app[data-layout=reflow] .ref-rel-state[aria-pressed=true] { outline:2px solid var(--gamma-ink); outline-offset:1px; z-index:2; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-ticks { min-width:0; margin:9px 12px 0 102px; font-size:12px; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-legend { position:static; margin:14px 12px 0; gap:10px 20px; flex-wrap:wrap; white-space:normal; font-size:12px; line-height:1.5; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-legend > span { gap:7px; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-inspect { display:flex; flex-wrap:wrap; gap:12px; padding:12px; margin-top:12px; border-top:1px solid var(--gamma-border); }
+.ref-rel-timeline-inspect label { display:grid; gap:6px; min-width:0; flex:1 1 150px; font-size:12px; color:var(--gamma-muted); }
+.ref-rel-timeline-inspect label:nth-child(2) { flex:2 1 250px; }
+.ref-rel-timeline-inspect select { min-width:0; width:100%; height:36px; border:1px solid var(--gamma-border); border-radius:4px; background:var(--gamma-bg); color:var(--gamma-ink); padding:5px 7px; font:inherit; }
+.ref-rel-timeline-inspect > button { min-height:36px; align-self:flex-end; padding:6px 10px; border:1px solid var(--gamma-border); border-radius:4px; background:var(--gamma-surface); color:var(--gamma-chart-6); font-size:12px; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-detail { position:static; width:auto; margin:0 12px; gap:12px; font-size:13px; line-height:1.5; }
+.ref-app[data-layout=reflow] .ref-rel-timeline-detail > button { min-width:28px; min-height:28px; }
+.ref-app[data-layout=reflow] .ref-rel-calendar-grid { height:auto; grid-template-rows:28px repeat(var(--calendar-rows),38px); margin:0 12px; }
+.ref-app[data-layout=reflow] .ref-rel-calendar-legend { position:static; padding:12px; flex-wrap:wrap; justify-content:flex-start; gap:10px 18px; white-space:normal; line-height:1.5; }
+.ref-app[data-layout=reflow] .ref-rel-search-popover,.ref-app[data-layout=reflow] .ref-rel-menu-popover { position:fixed; left:50%; top:66px; right:auto; transform:translateX(-50%); width:min(300px,calc(var(--ref-layout-width) - 24px)); max-height:calc(100dvh - 84px); overflow:auto; }
+.ref-app[data-layout=reflow] .ref-rel-window-note { position:static; grid-column:1 / -1; }
+@container reference-timeline (max-width:800px) {
+  .ref-rel-timeline-ticks > span:nth-child(even) { display:none; }
+}
+@container reference-timeline (max-width:480px) {
+  .ref-rel-timeline-ticks > span { display:none; }
+  .ref-rel-timeline-ticks > span:is(:first-child,:nth-child(6),:last-child) { display:inline; }
+}
+
+/* Desktop columns grow with the container; navigation retains its CSS size. */
+.ref-app[data-layout=reflow][data-tier=desktop] { padding-left:72px; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-rail { position:absolute; top:0; bottom:0; left:0; width:72px; height:auto; border-width:0 1px 0 0; flex-direction:column; padding:0 8px; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-rail-logo { flex:0 0 55px; width:34px; height:55px; margin:12px 0 18px; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-rail nav { flex:0; width:100%; flex-direction:column; gap:14px; align-items:center; justify-content:flex-start; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-rail nav a,.ref-app[data-layout=reflow][data-tier=desktop] .ref-rail nav button { flex:0 0 44px; width:44px; height:44px; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge,.ref-app[data-layout=reflow][data-tier=desktop] .ref-reliability { grid-template-columns:repeat(12,minmax(0,1fr)); }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-toolbar { align-items:flex-end; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-field { flex:1 1 140px; flex-direction:column; align-items:stretch; gap:5px; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-field > span { white-space:nowrap; font-size:12px; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-field .ref-select-field { width:100%; flex:0 1 auto; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-global { flex:1 1 180px; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-metric { grid-column:span 3; align-self:stretch; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-traffic { grid-column:span 7; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-edge-destinations { grid-column:span 5; }
+.ref-app[data-layout=reflow][data-tier=desktop] .edge-supporting-row > .ref-panel { grid-column:span 4; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-rel-metric { grid-column:span 4; align-self:stretch; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-rel-burn,.ref-app[data-layout=reflow][data-tier=desktop] .ref-rel-timeline { grid-column:span 7; }
+.ref-app[data-layout=reflow][data-tier=desktop] .ref-rel-services,.ref-app[data-layout=reflow][data-tier=desktop] .ref-rel-calendar { grid-column:span 5; }
+@container reference-reflow (max-width:1700px) {
+  .ref-app[data-layout=reflow][data-tier=desktop] .edge-supporting-row > :is(.edge-support-geography,.edge-support-outcomes) { grid-column:span 6; }
+  .ref-app[data-layout=reflow][data-tier=desktop] .edge-supporting-row > .edge-support-risk { grid-column:1 / -1; }
+}
+
+/* Mobile previews and real narrow windows use the same measured-width branch. */
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-page-title { margin:15px 12px 4px; font-size:14px; letter-spacing:2px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-page-subtitle { margin:0 12px 14px; font-size:11px; letter-spacing:1px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rail { padding-inline:7px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rail-logo { flex-basis:22px; width:22px; height:35px; margin:0 8px 0 0; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rail nav { gap:1px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rail nav a,.ref-app[data-layout=reflow][data-tier=mobile] .ref-rail nav button { flex-basis:31px; width:31px; height:37px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rail nav svg { width:20px; height:20px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge,.ref-app[data-layout=reflow][data-tier=mobile] .ref-reliability { gap:10px; padding:0 10px 16px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-toolbar,.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-toolbar { gap:10px; padding:10px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-field,.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-toolbar-field { flex-basis:100%; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric { padding:10px; grid-template-columns:28px minmax(0,1fr); gap:6px 8px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-icon { grid-row:1; width:28px!important; height:32px!important; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-icon > svg { width:22px; height:22px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-label { min-height:32px; display:flex; align-items:center; font-size:12px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-value { grid-column:1 / -1; font-size:23px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-value > span { font-size:15px; margin-left:3px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-change { grid-column:1 / -1; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-period { grid-column:1 / -1; grid-row:4; text-align:left; font-size:11px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-metric-spark { height:25px; margin:0; }
+.ref-app[data-layout=reflow][data-tier=mobile] .edge-supporting-row > .ref-panel,.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-metric { grid-column:1 / -1; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-metric { padding:12px; grid-template-columns:40px minmax(0,1fr) auto; gap:7px 8px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-metric-icon { width:36px!important; height:40px!important; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-metric-name { font-size:14px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-metric-value { font-size:29px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-rel-metric-value > span { font-size:20px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-panel-header { padding:10px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-panel-header h2 { flex-basis:100%; font-size:15px; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-panel-header > :last-child:not(h2) { margin-left:0; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-edge-plot-controls { width:100%; }
+.ref-app[data-layout=reflow][data-tier=mobile] .ref-inspector-context strong { min-width:0; overflow-wrap:anywhere; }
