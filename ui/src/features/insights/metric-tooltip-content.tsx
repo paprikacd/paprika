@@ -59,7 +59,7 @@ export function MetricDetails({
         {children}
       </div>
       <div className={`${configStyles.tooltipLabels}${compact ? ` ${configStyles.tooltipVisuallyHidden}` : ""}`}>
-        {widget ? <details className={configStyles.tooltipSource}>
+        {widget ? <details className={configStyles.tooltipSource} open={Object.keys(series.labels).length <= 4}>
           <summary>Source details</summary>
           <div className={configStyles.tooltipSourceIdentity}>{seriesName(series, index)}</div>
           <dl>
