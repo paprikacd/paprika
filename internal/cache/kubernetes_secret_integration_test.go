@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"context"
 	"os"
 	"strconv"
 	"sync"
@@ -56,7 +55,7 @@ func TestSecretCacheRealKubernetesRotation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			won, rotateErr := rotator.Replace(context.Background(), oldKey, payload,
+			won, rotateErr := rotator.Replace(ctx, oldKey, payload,
 				"mcp:refresh:new-"+strconv.Itoa(i), payload, time.Hour)
 			results <- won
 			errors <- rotateErr
