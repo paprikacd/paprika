@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Braces, Check, Database, Pencil, RotateCcw } from 'lucide-react';
+import { Braces, Check, Database, MousePointer2, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { WidgetEditor, type WidgetEditorTab } from '../../editor/WidgetEditor';
+import { editorStyleControls } from '../../editor/editor-model';
 import type { QueryResult, Widget } from '@insights/schema';
 import { GammaActionMenu, type GammaActionMenuItem } from '@insights/gamma/action-menu';
 import { GammaButton } from '@insights/gamma/button';
@@ -72,9 +73,11 @@ export function useDashboardPanels(onEdit?: EditDashboardWidget) {
   return { current, actions, actionsFor, apply, reset, overrides, closeEditor: workbench?.close ?? (() => {}) };
 }
 
-export function widgetPanelMenu(open: (tab: WidgetEditorTab) => void, reset: () => void, modified: boolean): GammaActionMenuItem[] {
+export function widgetPanelMenu(open: (tab: WidgetEditorTab) => void, reset: () => void, modified: boolean, tooltips = true): GammaActionMenuItem[] {
   return [
     { id: 'edit', label: 'Edit panel', description: 'Preview and apply presentation changes.', icon: <Pencil size={14}/>, onSelect: () => open('data') },
+    { id: 'appearance', label: 'Appearance and presets', description: 'Theme, chart styles, rules and presentation presets.', icon: <SlidersHorizontal size={14}/>, onSelect: () => open('appearance') },
+    ...(tooltips ? [{ id: 'tooltip', label: 'Configure tooltips', description: 'Content, mini visualizations, placement and inspection.', icon: <MousePointer2 size={14}/>, onSelect: () => open('tooltip') }] : []),
     { id: 'data', label: 'Inspect loaded data', description: 'Exact values from this panel’s current result.', icon: <Database size={14}/>, onSelect: () => open('data') },
     { id: 'config', label: 'View configuration', description: 'Validated options and renderer configuration.', icon: <Braces size={14}/>, onSelect: () => open('config') },
     { id: 'reset', label: 'Reset panel edits', description: 'Restore this panel’s default presentation.', disabled: !modified, icon: <RotateCcw size={14}/>, onSelect: reset },
@@ -87,12 +90,29 @@ export function WidgetPanelActions({ widget, result, onApply, onReset, modified 
 }) {
   const workbench = useContext(WorkbenchContext);
   const dismiss = workbench?.dismiss;
+  const panelActionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const surface = panelActionsRef.current?.closest<HTMLElement>('.lab-panel, .ref-panel, .finance-panel, .catalog-preview, .domain-panel');
+    if (!surface) return;
+    const originalBackground = surface.style.getPropertyValue('background-color');
+    const originalBackgroundPriority = surface.style.getPropertyPriority('background-color');
+    const originalText = surface.style.getPropertyValue('color');
+    const originalTextPriority = surface.style.getPropertyPriority('color');
+    if (widget.options?.background) surface.style.setProperty('background-color', widget.options.background);
+    if (widget.options?.textColor) surface.style.setProperty('color', widget.options.textColor);
+    return () => {
+      if (originalBackground) surface.style.setProperty('background-color', originalBackground, originalBackgroundPriority);
+      else surface.style.removeProperty('background-color');
+      if (originalText) surface.style.setProperty('color', originalText, originalTextPriority);
+      else surface.style.removeProperty('color');
+    };
+  }, [widget.options?.background, widget.options?.textColor]);
   useEffect(() => () => dismiss?.(widget.id), [dismiss, widget.id]);
   if (!workbench && !onEdit) return null;
   const open = (tab: WidgetEditorTab) => workbench ? workbench.open(widget.id, tab) : onEdit?.(widget, result, onApply, tab);
-  const items = widgetPanelMenu(open, onReset, modified);
+  const items = widgetPanelMenu(open, onReset, modified, editorStyleControls(widget).includes('tooltips'));
   const editing = workbench?.editing?.id === widget.id ? workbench.editing : null;
-  return <div className="dashboard-panel-actions" data-widget-panel-actions={widget.id} data-edited={modified || undefined}>
+  return <div ref={panelActionsRef} className="dashboard-panel-actions" data-widget-panel-actions={widget.id} data-edited={modified || undefined}>
     {modified && <span className="dashboard-panel-edited" title="Presentation changed in this dashboard session">Edited</span>}
     {(workbench?.editMode ?? true) && <GammaButton size="sm" variant="ghost" aria-label={`Edit ${widget.title}`} onClick={() => open('data')}><Pencil size={12}/><span>Edit</span></GammaButton>}
     <GammaActionMenu label={`Actions for ${widget.title}`} items={items}/>
