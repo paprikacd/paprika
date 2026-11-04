@@ -780,6 +780,9 @@ repoServer:
 ##
 observabilityGateway:
   enabled: false
+  # -- Retain Observe OAuth sessions in a separate Kubernetes Secret.
+  # Enabling this on an existing in-memory installation needs a fresh grant.
+  persistSessions: false
   replicas: 1
 
   ## How often the gateway probes every registered provider and writes the
@@ -787,8 +790,8 @@ observabilityGateway:
   ## status. 0 disables status writes.
   probeInterval: 5m
 
-  # The OAuth dynamic client registry is process-local. Prevent overlapping
-  # pods during upgrades; users must re-register after a process restart.
+  # Avoid overlapping gateways unless every component's state has been
+  # configured and verified for the intended replica count.
   strategy:
     type: Recreate
 
@@ -1133,6 +1136,9 @@ mcp:
     # ConfigMaps across pod replacement. This does not store OAuth tokens or
     # make the remaining in-memory authorization/refresh cache durable.
     persistClients: true
+    # -- Store fleet MCP OAuth state and rotating refresh grants in a retained,
+    # resource-bound Secret. Observe uses observabilityGateway.persistSessions.
+    persistSessions: false
     # -- Statically registered OAuth client ID accepted by the MCP
     # authorization server. Required for the fleet when mcp.enabled=true;
     # the gateway permits both OAuth fields empty for dynamic registration only.

@@ -143,6 +143,16 @@ func TestNewServerRequiresRegistryAuthenticatorCacheAndSecret(t *testing.T) {
 		_, err := NewServer(cfg)
 		require.Error(t, err)
 	})
+	t.Run("negative token lifetimes", func(t *testing.T) {
+		cfg := valid()
+		cfg.RefreshTTL = -time.Second
+		_, err := NewServer(cfg)
+		require.Error(t, err)
+		cfg = valid()
+		cfg.AccessTTL = -time.Second
+		_, err = NewServer(cfg)
+		require.Error(t, err)
+	})
 	t.Run("empty public URL", func(t *testing.T) {
 		cfg := valid()
 		cfg.PublicURL = ""

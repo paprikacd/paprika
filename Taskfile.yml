@@ -825,6 +825,10 @@ tasks:
           --set auth.enabled=true --set auth.oidc.enabled=true
         expect_fail mcp-missing-oauth \
           --set mcp.enabled=true
+        expect_fail mcp-session-nonboolean \
+          --set-string mcp.oauth.persistSessions=true
+        expect_fail observe-session-nonboolean \
+          --set-string observabilityGateway.persistSessions=true
         expect_fail bad-duration \
           --set manager.reconcile.transientRequeue=bogus
         expect_fail bad-mode \

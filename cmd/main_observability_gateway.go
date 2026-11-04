@@ -274,9 +274,18 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 // /observe-shaped MCP server itself. The authenticator is returned alongside
 // the server because the usage endpoint mounts on the same mux and must
 // verify the same audience.
+//
+//nolint:cyclop // The gateway constructor assembles and validates its independent collaborators.
 func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, observabilitygateway.Backend, error) {
 	if len(authCfg.TokenSecret) == 0 {
 		return nil, nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
+	}
+	if cfg.MCPSessionSecret != "" || cfg.MCPSessionNamespace != "" {
+		persistent, err := newMCPSessionCache(ctx, cfg, k8sClient, observabilityGatewayRoutePrefix+"/mcp", authCfg.TokenSecret)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		cacheClient = persistent
 	}
 	// Provider CRs select a cloud project and may reference credentials. OAuth
 	// scope alone must never grant every principal the gateway service account's

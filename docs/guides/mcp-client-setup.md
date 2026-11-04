@@ -116,10 +116,7 @@ for a different origin or surface.
 
 Client registration does not grant account access. Console authentication,
 consent, scopes and PKCE remain required. Authorization codes, pending consent,
-refresh tokens and confirmations are **not** persisted in these ConfigMaps. A
-replacement that loses the transient OAuth cache still requires a fresh native
-authorization flow; this setting does not make that cache multi-replica safe.
-Existing replica restrictions remain in force.
+refresh tokens and confirmations are **not** persisted in these ConfigMaps.
 
 For local/test installations, leaving both `--mcp-client-registry-configmap` and
 `--mcp-client-registry-namespace` unset retains process-local registration. Setting
@@ -138,6 +135,46 @@ The registry accepts at most 4,096 clients and a bounded data size below the
 ConfigMap limit. Exhaustion rejects new registrations without evicting existing
 clients. Investigate registration churn and review stale public metadata before
 any cleanup; do not delete the registry to clear a connection error.
+
+### Persist OAuth sessions across restarts
+
+Set `mcp.oauth.persistSessions: true` for fleet MCP and/or
+`observabilityGateway.persistSessions: true` for Observe. Each enabled surface
+gets its own retained Kubernetes Secret. The server stores pending authorizations, one-use
+codes, rotating refresh grants and short-lived confirmations there. Entries use
+hashed cache keys and AES-GCM encryption derived from the existing token-signing
+secret and the exact MCP resource URL. The Secret's Role grants only `get` and
+`update` on that Secret. Missing, inaccessible, misbound or undecryptable
+storage fails startup; it never silently falls back to process memory.
+
+Refresh token rotation replaces the old grant and stores the successor in one
+Kubernetes resource-version update. Concurrent refresh attempts have one winner;
+an ordinary storage outage returns a retryable error instead of telling clients
+to discard a valid grant. Storage is bounded, expired entries are cleared on
+writes, and temporary login traffic has its own smaller capacity limit so it
+cannot evict existing refresh grants.
+
+The Helm chart creates an empty Secret once as a retained pre-install/upgrade
+hook. Later upgrades leave its contents entirely to the running server; chart
+rendering never snapshots mutable grants into a Helm release or overwrites them
+with a stale copy. Back up the Secret and the token-signing secret together.
+Replacing the signing secret or changing the MCP resource URL invalidates the
+stored sessions and requires an intentional migration or fresh consent. Do not
+delete the Secret to troubleshoot authentication.
+
+**First enablement:** grants held only in an already running process cannot be
+copied into the new store through the supported OAuth interface. Plan one fresh
+native connection for each affected client after switching from process-local
+storage. Existing access tokens can remain usable until they expire, so a
+successful tool call immediately after rollout alone does not prove that its
+refresh grant was migrated. Rollback to an in-memory build has the same
+limitation. Once a client has connected against persistent storage, its grant
+survives normal gateway and API-server replacements until its refresh lifetime
+expires. Do not extract or copy credentials from a host to bypass this step.
+
+For direct configuration, set both `--mcp-session-secret` and
+`--mcp-session-namespace`; omitting both retains the existing cache backend.
+This setting does not remove the chart's replica restrictions.
 
 Review the [chart settings](../../charts/chart/values.yaml#L859),
 [chart validation](../../charts/chart/templates/api-server/deployment.yaml),

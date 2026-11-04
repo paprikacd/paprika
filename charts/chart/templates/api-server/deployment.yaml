@@ -125,6 +125,10 @@ spec:
         - --mcp-client-registry-configmap={{ include "paprika.resourceName" (dict "suffix" "mcp-clients" "context" $) }}
         - --mcp-client-registry-namespace={{ .Release.Namespace }}
         {{- end }}
+        {{- if .Values.mcp.oauth.persistSessions }}
+        - --mcp-session-secret={{ include "paprika.resourceName" (dict "suffix" "mcp-sessions" "context" $) }}
+        - --mcp-session-namespace={{ .Release.Namespace }}
+        {{- end }}
         {{- end }}
         {{- range .Values.apiServer.args }}
         - {{ . }}

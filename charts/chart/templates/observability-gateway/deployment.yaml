@@ -138,6 +138,10 @@ spec:
         - --mcp-client-registry-configmap={{ include "paprika.resourceName" (dict "suffix" "observe-mcp-clients" "context" $) }}
         - --mcp-client-registry-namespace={{ .Release.Namespace }}
         {{- end }}
+        {{- if .Values.observabilityGateway.persistSessions }}
+        - --mcp-session-secret={{ include "paprika.resourceName" (dict "suffix" "observe-mcp-sessions" "context" $) }}
+        - --mcp-session-namespace={{ .Release.Namespace }}
+        {{- end }}
         {{- if .Values.mcp.oauth.clientId }}
         - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
         - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}
