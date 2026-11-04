@@ -19,6 +19,7 @@ export function MetricDetails({
   description = "Latest valid sample",
   timestampFirst = false,
   compact = false,
+  showSourceContext = false,
   children,
 }: {
   widget?: Widget;
@@ -30,6 +31,7 @@ export function MetricDetails({
   description?: string;
   timestampFirst?: boolean;
   compact?: boolean;
+  showSourceContext?: boolean;
   children?: ReactNode;
 }) {
   const value =
@@ -59,12 +61,20 @@ export function MetricDetails({
         {children}
       </div>
       <div className={`${configStyles.tooltipLabels}${compact ? ` ${configStyles.tooltipVisuallyHidden}` : ""}`}>
-        {widget ? <details className={configStyles.tooltipSource} open={Object.keys(series.labels).length <= 4}>
-          <summary>Source details</summary>
-          <div className={configStyles.tooltipSourceIdentity}>{seriesName(series, index)}</div>
+        {widget ? <details className={configStyles.tooltipSource}>
+          <summary>
+            Source details
+            {showSourceContext && <span className={configStyles.tooltipSourceInline}>
+              <span className={configStyles.tooltipSourceIdentity}>{seriesName(series, index)}</span>
+              {Object.entries(series.labels).map(([key, label]) => <span className={configStyles.tooltipSourceInlineRow} key={key}>
+                <span>{key}</span><span>{label}</span>
+              </span>)}
+            </span>}
+          </summary>
+          {!showSourceContext && <div className={configStyles.tooltipSourceIdentity}>{seriesName(series, index)}</div>}
           <dl>
             <div><dt>Exact value</dt><dd>{value === undefined ? "No data" : exactMetric(value, unit)}</dd></div>
-            {Object.entries(series.labels).map(([key, label]) => <div key={key}><dt>{key}: </dt><dd>{label}</dd></div>)}
+            {!showSourceContext && Object.entries(series.labels).map(([key, label]) => <div key={key}><dt>{key}: </dt><dd>{label}</dd></div>)}
           </dl>
         </details> : <dl>{Object.entries(series.labels).map(([key, label]) => <div key={key}><dt>{key}:</dt><dd>{label}</dd></div>)}</dl>}
       </div>

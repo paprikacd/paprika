@@ -140,7 +140,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     const x=xScale(point.x)+(bar?(current.seriesIndex-series.length/2+.5)*barWidth:0),y=scale(point.value!,entry.right)
     return new DOMRect(box.left+x*box.width/bounds.width-3,box.top+y*box.height/bounds.height-3,6,6)
   }
-  return <div className={styles.wrapper}><svg ref={plot} className={styles.recordChart} viewBox={`0 0 ${bounds.width} ${bounds.height}`} role="group" aria-label={widget.title} aria-describedby={current?tooltipId:undefined} tabIndex={tooltipEnabled?0:undefined}
+  return <div className={styles.wrapper} data-record-chart-host=""><svg ref={plot} className={styles.recordChart} viewBox={`0 0 ${bounds.width} ${bounds.height}`} role="group" aria-label={widget.title} aria-describedby={current?tooltipId:undefined} tabIndex={tooltipEnabled?0:undefined}
     onPointerMove={event=>{if(event.pointerType==="touch"||current?.pinned)return;const hit=nearest(event.clientX,event.clientY);if(hit)show(hit.seriesIndex,hit.point);else hide()}}
     onPointerLeave={hide}
     onClick={event=>{if(event.target instanceof Element&&event.target.hasAttribute("data-record-mark"))return;const hit=nearest(event.clientX,event.clientY);if(!hit)return;if(current?.pinned&&current.point===hit.point&&current.seriesIndex===hit.seriesIndex){setInspection(undefined);return}show(hit.seriesIndex,hit.point,true);select(series[hit.seriesIndex],hit.point)}}

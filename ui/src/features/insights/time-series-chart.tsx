@@ -540,7 +540,7 @@ export function TimeSeriesChart({
       </details>}
       {staleTail && <span className={styles.notice}>Latest sample {dateTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
       {options.showLegend !== false && (
-        <div className={styles.legend} role="list" aria-label="Latest values by series">
+        <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length >= 4 ? 0 : undefined}>
           {data.map((entry, index) => (
             <span
               className={styles.legendItem}

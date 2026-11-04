@@ -59,6 +59,32 @@
 /* A horizontal bank is one readable group, not five isolated centered metrics.
    Only the bank can shrink/scroll; the adjacent scale and notices remain visible. */
 .bank[data-gauge-bank-orientation="horizontal"] .label { color: var(--widget-text, var(--gamma-ink)); font-size: 12px; line-height: 1.4; }
+/* Dense six-row horizontal capacity banks in short, wide dashboard tiles.
+   Compact all six measured rows before opting into overflow: visible labels
+   must not extend beyond the scroll surface while scrollHeight reports zero. */
+@container insight-widget (min-width: 400px) and (max-height: 240px) {
+  .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] {
+    grid-auto-rows: minmax(19px, max-content);
+    gap: 2px 8px;
+    padding-block: 2px;
+  }
+  .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] .body {
+    gap: 4px;
+    font-size: 13px;
+  }
+  .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] .label {
+    line-height: 1.15;
+    font-size: 11px;
+  }
+  .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] .reading {
+    min-height: 18px;
+    padding: 0;
+  }
+  .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] .track {
+    height: 14px;
+  }
+}
+
 .bank[data-gauge-bank-orientation="horizontal"] .status { color: var(--widget-text, var(--gamma-chart-axis)); font-size: 12px; }
 .bank[data-gauge-bank-orientation="horizontal"] .value small { font-size: 12px; }
 .bank[data-gauge-bank-orientation="horizontal"] .track { height: 16px; }

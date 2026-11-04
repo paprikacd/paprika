@@ -114,6 +114,29 @@
   .chartFooter > .notice,
   .chartFooter > .gapDetails { flex: 1 1 100%; margin-left: 0; }
 }
+/* Short desktop tiles use a single-row, keyboard-scrollable legend. A
+   wrapped legend can consume more than half a small timeseries plot. Keep
+   source names and readings available through labelled, horizontally
+   navigable items, rather than shrinking the recorded data area. */
+@container insight-widget (min-width: 400px) and (max-height: 240px) {
+  .chartFooter > .legend[data-series-count] {
+    flex-wrap: nowrap;
+    gap: 8px;
+    max-height: 32px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 3px 2px 1px;
+  }
+  .chartFooter > .legend[data-series-count] .legendItem {
+    flex: 1 0 110px;
+    max-width: none;
+    gap: 4px;
+  }
+  .chartFooter > .legend[data-series-count] .legendValue {
+    white-space: nowrap;
+    font-size: 10px;
+  }
+}
 .legendItem {
   display: flex;
   align-items: center;

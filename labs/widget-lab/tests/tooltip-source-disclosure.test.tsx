@@ -5,7 +5,7 @@ import { MetricDetails } from '@insights/metric-tooltip-content';
 import { makeCatalogFixture } from '../src/catalog/chart-fixtures';
 
 describe('metric tooltip source disclosure', () => {
-  it('reveals the exact provider identity and all labels for compact series', () => {
+  it('keeps ordinary source disclosure collapsed, with optional visible pinned source context', () => {
     const widget = makeCatalogFixture('timeseries').widget;
     const series = {
       name: 'paprika_example_node_cpu{cluster="staging", node="node-01"}',
@@ -15,12 +15,23 @@ describe('metric tooltip source disclosure', () => {
     const html = renderToStaticMarkup(createElement(MetricDetails, {
       widget, series, index:0, point:series.points[0], unit:'cores',
     }));
-    expect(html).toMatch(/<details[^>]+open/);
+    expect(html).not.toMatch(/<details[^>]+open/);
     expect(html).toContain(series.name.replaceAll('"', '&quot;'));
     expect(html).toContain('node-01');
     expect(html).toContain('paprika-collector-01');
     expect(html).toContain('Source details');
     expect(html).toContain('Exact value');
+
+    const pinned = renderToStaticMarkup(createElement(MetricDetails, {
+      widget, series, index:0, point:series.points[0], unit:'cores', showSourceContext:true,
+    }));
+    expect(pinned).not.toMatch(/<details[^>]+open/);
+    expect(pinned).toContain(series.name.replaceAll('"', '&quot;'));
+    expect(pinned).toContain('paprika-collector-01');
+    expect(pinned).toContain('node-01');
+    expect((pinned.match(/paprika-collector-01/g) ?? []).length).toBe(1);
+    expect((pinned.match(/node-01/g) ?? []).length).toBe(2);
+    expect(pinned).toContain('Source details');
   });
 
   it('keeps extensive metadata collapsed until deliberately inspected', () => {

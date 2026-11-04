@@ -695,6 +695,14 @@
 .tooltipSource summary { cursor: pointer; color: var(--gamma-muted); padding-block: 3px; }
 .tooltipSource summary:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: 2px; }
 .tooltipSourceIdentity { font-family: var(--gamma-font-code, monospace); overflow-wrap: anywhere; padding-block: 4px; color: var(--gamma-muted); }
+/* The selected node/pod identity remains visible in a pinned compact inspector,
+   without opening the full source disclosure and displacing its exact reading. */
+.tooltipSourceInline { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 3px; font-weight: 400; min-width: 0; }
+.tooltipSourceInline .tooltipSourceIdentity { display: block; padding-block: 0; font-size: 10px; }
+.tooltipSourceInlineRow { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 8px; min-width: 0; }
+.tooltipSourceInlineRow > span:first-child { font-size: 10px; color: var(--gamma-muted); }
+.tooltipSourceInlineRow > span:last-child { font: 10px/1.5 var(--gamma-font-code, monospace); overflow-wrap: anywhere; }
+
 .tooltipDetail { min-width: 180px; max-width: 320px; white-space: normal; }
 .tooltipDetailBody { padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; line-height: 1.5; }
 .tooltipFact { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 16px; }

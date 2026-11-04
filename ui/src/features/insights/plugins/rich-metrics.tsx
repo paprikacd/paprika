@@ -164,7 +164,8 @@ function Inspector({ widget, observation, peers, extra, footer, pinned, decimals
   return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} options={readTooltipPlacement(widget.options)} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
     <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={() => onClose("close")}><X size={14} /></GammaButton></div>
     <div className={styles.inspectorDetails} data-observation-details>
-      <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}>
+      <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}
+        showSourceContext={pinned && Object.keys(observation.series.labels).length <= 4 && typeof observation.series.labels.pod === "string"}>
         {observation.bucket && <span className={tooltipStyles.tooltipEyebrow}>Selected bucket: {observation.bucket}</span>}
       </MetricDetails>
     </div>
