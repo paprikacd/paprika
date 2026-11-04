@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/cache"
 )
 
 // Default token lifetimes, used whenever ServerConfig.AccessTTL /
@@ -1082,17 +1083,20 @@ func (s *Server) dynamicClientRedirects(ctx context.Context, id string) ([]strin
 	return append([]string(nil), s.dynClients[id]...), nil
 }
 
-// clientIDAllowed reports whether clientID may use this authorization server.
+// checkClientID reports whether clientID may use this authorization server.
 // Registration alone grants no access, and an empty ID is always rejected.
-func (s *Server) clientIDAllowed(ctx context.Context, clientID string) bool {
+func (s *Server) checkClientID(ctx context.Context, clientID string) (bool, error) {
 	if clientID == "" {
-		return false
+		return false, nil
 	}
 	if clientID == s.clientID {
-		return true
+		return true, nil
 	}
 	redirects, err := s.dynamicClientRedirects(ctx, clientID)
-	return err == nil && len(redirects) > 0
+	if err != nil {
+		return false, err
+	}
+	return len(redirects) > 0, nil
 }
 
 // isRegisteredRedirect reports whether candidate is EXACTLY one of the
@@ -1271,6 +1275,19 @@ type tokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
+var errOAuthGrantNotFound = errors.New("OAuth grant not found or expired")
+
+// A storage outage must not tell a client that a valid grant is invalid: hosts
+// commonly discard their saved credentials on invalid_grant.
+func writeGrantError(w http.ResponseWriter, err error, missingDescription string) {
+	if errors.Is(err, errOAuthGrantNotFound) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", missingDescription)
+		return
+	}
+	w.Header().Set("Retry-After", "5")
+	writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "authorization storage is temporarily unavailable")
+}
+
 // handleToken implements the token endpoint, dispatching on grant_type.
 // Only authorization_code and refresh_token are supported — notably NOT
 // password, which RFC 6749 section 4.3 deprecates and which this server
@@ -1295,7 +1312,12 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.clientIDAllowed(r.Context(), r.PostFormValue("client_id")) {
+	allowed, err := s.checkClientID(r.Context(), r.PostFormValue("client_id"))
+	if err != nil {
+		writeGrantError(w, err, "unknown client_id")
+		return
+	}
+	if !allowed {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "unknown client_id")
 		return
 	}
@@ -1334,7 +1356,7 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 
 	rec, err := s.consumeAuthCode(r.Context(), code)
 	if err != nil {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "unknown or expired code")
+		writeGrantError(w, err, "unknown or expired code")
 		return
 	}
 	if rec.Audience != s.audience {
@@ -1374,7 +1396,7 @@ func (s *Server) consumeAuthCode(ctx context.Context, code string) (authCodeReco
 		return rec, fmt.Errorf("mcp: consume auth code: %w", err)
 	}
 	if len(payload) == 0 {
-		return rec, errors.New("mcp: unknown or expired auth code")
+		return rec, errOAuthGrantNotFound
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return rec, fmt.Errorf("mcp: unmarshal auth code record: %w", err)
@@ -1401,10 +1423,14 @@ func (s *Server) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "refresh_token is required")
 		return
 	}
+	if rotator, ok := s.cache.ConditionalReplacer(); ok {
+		s.handleAtomicRefreshTokenGrant(w, r, presented, rotator)
+		return
+	}
 
 	rec, err := s.consumeRefreshToken(r.Context(), presented)
 	if err != nil {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "unknown or expired refresh_token")
+		writeGrantError(w, err, "unknown or expired refresh_token")
 		return
 	}
 	if rec.Audience != s.audience || rec.ClientID == "" || rec.ClientID != r.PostFormValue("client_id") {
@@ -1413,6 +1439,43 @@ func (s *Server) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.issueTokenPair(r.Context(), w, rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope, rec.Groups)
+}
+
+func (s *Server) handleAtomicRefreshTokenGrant(w http.ResponseWriter, r *http.Request, presented string, rotator cache.ConditionalReplacer) {
+	ctx := r.Context()
+	payload, err := s.cache.Get(ctx, refreshKey(presented))
+	if err != nil {
+		writeGrantError(w, err, "unknown or expired refresh_token")
+		return
+	}
+	if len(payload) == 0 {
+		writeGrantError(w, errOAuthGrantNotFound, "unknown or expired refresh_token")
+		return
+	}
+	var rec refreshRecord
+	if unmarshalErr := json.Unmarshal(payload, &rec); unmarshalErr != nil {
+		writeGrantError(w, unmarshalErr, "unknown or expired refresh_token")
+		return
+	}
+	if rec.Audience != s.audience || rec.ClientID == "" || rec.ClientID != r.PostFormValue("client_id") {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh token was not issued to this client")
+		return
+	}
+	pair, successor, err := s.prepareTokenPair(rec.ClientID, rec.Subject, rec.Email, rec.Name, rec.Scope, rec.Groups)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	replaced, err := rotator.Replace(ctx, refreshKey(presented), payload, refreshKey(pair.RefreshToken), successor, s.refreshTTL)
+	if err != nil {
+		writeGrantError(w, err, "unknown or expired refresh_token")
+		return
+	}
+	if !replaced {
+		writeGrantError(w, errOAuthGrantNotFound, "unknown or expired refresh_token")
+		return
+	}
+	writeJSON(w, http.StatusOK, pair)
 }
 
 // consumeRefreshToken atomically looks up and deletes token in a single
@@ -1438,7 +1501,7 @@ func (s *Server) consumeRefreshToken(ctx context.Context, token string) (refresh
 		return rec, fmt.Errorf("mcp: consume refresh token: %w", err)
 	}
 	if len(payload) == 0 {
-		return rec, errors.New("mcp: unknown or expired refresh token")
+		return rec, errOAuthGrantNotFound
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return rec, fmt.Errorf("mcp: unmarshal refresh record: %w", err)
@@ -1454,6 +1517,19 @@ func (s *Server) consumeRefreshToken(ctx context.Context, token string) (refresh
 // types converge, so every successful <prefix>/token response is built the same
 // way.
 func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, clientID, subject, email, name, scope string, groups []string) {
+	pair, payload, err := s.prepareTokenPair(clientID, subject, email, name, scope, groups)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := s.cache.Set(ctx, refreshKey(pair.RefreshToken), payload, s.refreshTTL); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, pair)
+}
+
+func (s *Server) prepareTokenPair(clientID, subject, email, name, scope string, groups []string) (tokenResponse, []byte, error) {
 	access, err := auth.IssueTokenWithOptions(auth.TokenOptions{
 		Subject:  subject,
 		Email:    email,
@@ -1466,32 +1542,24 @@ func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, clie
 		Secret:   s.secret,
 	})
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return tokenResponse{}, nil, fmt.Errorf("mcp: mint access token: %w", err)
 	}
 
 	refresh, err := randomToken()
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return tokenResponse{}, nil, err
 	}
 	payload, err := json.Marshal(refreshRecord{Audience: s.audience, ClientID: clientID, Subject: subject, Email: email, Name: name, Scope: scope, Groups: groups})
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return tokenResponse{}, nil, fmt.Errorf("mcp: encode refresh grant: %w", err)
 	}
-	if err := s.cache.Set(ctx, refreshKey(refresh), payload, s.refreshTTL); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, tokenResponse{
+	return tokenResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 		TokenType:    "Bearer",
 		ExpiresIn:    int(s.accessTTL.Seconds()),
 		Scope:        scope,
-	})
+	}, payload, nil
 }
 
 // randomToken returns a cryptographically random, URL-safe opaque token —

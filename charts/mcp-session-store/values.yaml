@@ -1,0 +1,4 @@
+# All fields are required and contain public configuration, never credentials.
+secretName: ""
+resource: ""
+serviceAccount: ""

@@ -259,6 +259,8 @@ type cliConfig struct {
 	MCPPublicURL               string        `mapstructure:"mcp-public-url"`
 	MCPClientRegistryConfigMap string        `mapstructure:"mcp-client-registry-configmap"`
 	MCPClientRegistryNamespace string        `mapstructure:"mcp-client-registry-namespace"`
+	MCPSessionSecret           string        `mapstructure:"mcp-session-secret"`
+	MCPSessionNamespace        string        `mapstructure:"mcp-session-namespace"`
 
 	// ZapOptions is bound directly by the zap flag set, not through viper.
 	ZapOptions zap.Options `mapstructure:"-"`
@@ -806,6 +808,8 @@ func registerMCPFlags(fs *pflag.FlagSet) {
 			"authorization server. Required when --mcp-enabled=true.")
 	fs.String("mcp-client-registry-configmap", "", "Pre-created ConfigMap retaining public dynamic OAuth client registrations across restarts.")
 	fs.String("mcp-client-registry-namespace", "", "Namespace of the persistent MCP client registry ConfigMap.")
+	fs.String("mcp-session-secret", "", "Pre-created Secret retaining encrypted MCP OAuth sessions across restarts.")
+	fs.String("mcp-session-namespace", "", "Namespace of the persistent MCP OAuth session Secret.")
 }
 
 func registerRepoServerFlags(fs *pflag.FlagSet) {
@@ -1075,9 +1079,9 @@ func buildAPIExtraMuxHandlers(
 
 	var mcpCache *cache.Cache
 	if cfg.MCPEnabled {
-		mcpCache, err = newCacheFromConfig(apiCtx, cfg.cacheConfig(), setupLog)
+		mcpCache, err = newAPIMCPCache(apiCtx, cfg, clients, setupLog)
 		if err != nil {
-			return nil, nil, fmt.Errorf("create MCP cache: %w", err)
+			return nil, mcpCache, err
 		}
 	}
 	var clientRegistry mcp.DynamicClientRegistry

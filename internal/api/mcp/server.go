@@ -283,6 +283,9 @@ func validateServerConfig(cfg *ServerConfig) error {
 	if len(cfg.Secret) == 0 {
 		return errors.New("mcp: ServerConfig.Secret is required")
 	}
+	if cfg.AccessTTL < 0 || cfg.RefreshTTL < 0 {
+		return errors.New("mcp: token lifetimes cannot be negative")
+	}
 	if err := validatePublicURL(cfg.PublicURL); err != nil {
 		return err
 	}
