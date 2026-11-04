@@ -255,7 +255,9 @@ through each exposed endpoint before supplying its credentials for review.
 
 Observe's `/observe/consent?rid=...` handler saves an opaque pending-request
 return path before sending an unauthenticated browser to `/login/`. Starting
-Google sign-in from that page must preserve the saved destination. Both the
+Google sign-in from that page must preserve the saved destination. The return
+path is stored in the current tab's session storage, alongside its PKCE state,
+so another tab's login or dashboard redirect cannot replace or consume it. Both the
 OIDC callback and basic-login success consume it once through the same
 same-origin path validator. An already signed-in visitor to the login page
 also resumes it; React effect replay must not consume it twice.

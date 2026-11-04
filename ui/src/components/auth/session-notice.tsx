@@ -3,8 +3,7 @@
 import { Suspense, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
-import { safeAuthReturnTo } from "@/lib/auth-return-to"
-import { writeBrowserStorage } from "@/lib/browser-session"
+import { safeAuthReturnTo, writeAuthReturnTo } from "@/lib/auth-return-to"
 import { useEntryTheme } from "./entry-theme"
 import styles from "./entry-theme.module.css"
 
@@ -27,7 +26,7 @@ function SessionNoticeContent() {
     try { await retry() } catch { setFailed(true) } finally { setBusy(false) }
   }
   function signIn() {
-    writeBrowserStorage("paprika_return_to", safeAuthReturnTo(window.location.pathname + window.location.search + window.location.hash))
+    writeAuthReturnTo(safeAuthReturnTo(window.location.pathname + window.location.search + window.location.hash))
     window.location.href = "/login/"
   }
   return <div role="alert" data-entry-theme={theme} className={`${styles.scope} fixed right-4 bottom-4 left-4 z-[100] mx-auto flex max-w-xl flex-wrap items-center gap-x-4 gap-y-3 border border-rule bg-card px-4 py-3 text-foreground shadow-lg`}>

@@ -1,11 +1,11 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useSyncExternalStore } from "react"
-import { safeAuthReturnTo } from "@/lib/auth-return-to"
+import { consumeAuthReturnTo, readAuthReturnTo, safeAuthReturnTo, writeAuthReturnTo } from "@/lib/auth-return-to"
 import {
   bootstrapSession, completeSession, ensureValidSession, getAuthConfiguration,
-  getServerSessionSnapshot, getSessionSnapshot, logoutSession, readBrowserStorage,
-  readLoginPreference, sessionRefreshDelay, subscribeSession, writeBrowserStorage,
+  getServerSessionSnapshot, getSessionSnapshot, logoutSession,
+  readLoginPreference, sessionRefreshDelay, subscribeSession,
   type AuthUser, type SessionSnapshot,
 } from "@/lib/browser-session"
 
@@ -55,8 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const config = await getAuthConfiguration()
     if (!config.oidc.enabled) throw new Error("Single sign-on is not available on this console.")
     if (options?.switchAccount) {
-      const destination = safeAuthReturnTo(readBrowserStorage("paprika_return_to"))
-      try { await logoutSession() } finally { writeBrowserStorage("paprika_return_to", destination) }
+      const destination = safeAuthReturnTo(readAuthReturnTo())
+      try { await logoutSession() } finally { writeAuthReturnTo(destination) }
     }
     const redirectURI = `${window.location.origin}/auth/callback`
     const query = new URLSearchParams({ redirect_uri: redirectURI })
@@ -74,9 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { throw new Error("Your browser is blocking the temporary storage needed for sign-in. Allow site storage and try again.") }
     const current = window.location.pathname + window.location.search + (window.location.hash ?? "")
     if (!["/login", "/"].includes(window.location.pathname.replace(/\/+$/, "") || "/")) {
-      writeBrowserStorage("paprika_return_to", safeAuthReturnTo(current))
-    } else if (!safeAuthReturnTo(readBrowserStorage("paprika_return_to"))) {
-      writeBrowserStorage("paprika_return_to", null)
+      writeAuthReturnTo(safeAuthReturnTo(current))
+    } else if (!safeAuthReturnTo(readAuthReturnTo())) {
+      writeAuthReturnTo(null)
     }
     window.location.href = body.url
   }, [])
@@ -98,7 +98,5 @@ export function persistAuth(idToken: string, options?: Parameters<typeof complet
 }
 
 export function consumeReturnTo(): string | null {
-  const path = readBrowserStorage("paprika_return_to")
-  writeBrowserStorage("paprika_return_to", null)
-  return path
+  return consumeAuthReturnTo()
 }
