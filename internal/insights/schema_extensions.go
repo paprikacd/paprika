@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+
 	// Embedded zone data keeps time.LoadLocation working in the alpine runtime image, which ships no zoneinfo.
 	_ "time/tzdata"
 )
@@ -510,13 +511,20 @@ func validateWidgetReferenceLine(raw json.RawMessage) error {
 		return errors.New("reference lines require a finite value")
 	}
 	if label, ok := fields["label"]; ok {
-		var text string
-		if json.Unmarshal(label, &text) != nil || stringUnits(text) < 1 || stringUnits(text) > 80 {
-			return errors.New("reference line labels must be 1 to 80 characters")
+		if err := validateReferenceLineLabel(label); err != nil {
+			return err
 		}
 	}
 	if _, ok := fields["color"]; ok && !validWidgetColor.MatchString(line.Color) {
 		return errors.New("reference line colors must be six-digit hex colors")
+	}
+	return nil
+}
+
+func validateReferenceLineLabel(raw json.RawMessage) error {
+	var text string
+	if json.Unmarshal(raw, &text) != nil || stringUnits(text) < 1 || stringUnits(text) > 80 {
+		return errors.New("reference line labels must be 1 to 80 characters")
 	}
 	return nil
 }
@@ -687,6 +695,10 @@ func validateWidgetNumberBounds(numbers map[string]float64) error {
 	if n, ok := numbers["fillOpacity"]; ok && !validNumberRange(n, 0, 1) {
 		return errors.New("fill opacity must be from 0 to 1")
 	}
+	return validateWidgetLayoutBounds(numbers)
+}
+
+func validateWidgetLayoutBounds(numbers map[string]float64) error {
 	if n, ok := numbers["plotInsetLeft"]; ok && !validNumberRange(n, 8, 240) {
 		return errors.New("left plot inset must be from 8 to 240 pixels")
 	}

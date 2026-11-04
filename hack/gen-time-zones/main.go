@@ -27,6 +27,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -37,6 +38,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 const (
@@ -77,19 +79,26 @@ func main() {
 		filepath.Join(*root, uiPath): renderTS(zones),
 		filepath.Join(*root, goPath): goSource,
 	}
+	if err := writeOutputs(outputs, *check); err != nil {
+		fail(err)
+	}
+	fmt.Fprintf(os.Stderr, "%d dashboard time zones from %s\n", len(zones), *archive)
+}
+
+func writeOutputs(outputs map[string][]byte, check bool) error {
 	for path, content := range outputs {
-		if *check {
+		if check {
 			current, err := os.ReadFile(path) //nolint:gosec // G304: the generator reads its two fixed output files under -root.
 			if err != nil || !bytes.Equal(current, content) {
-				fail(fmt.Errorf("%s is stale: run go run ./hack/gen-time-zones", path))
+				return fmt.Errorf("%s is stale: run go run ./hack/gen-time-zones", path)
 			}
 			continue
 		}
 		if err := os.WriteFile(path, content, 0o644); err != nil { //nolint:gosec // G306: the generated sources are committed and read by the build, like their neighbours.
-			fail(err)
+			return err
 		}
 	}
-	fmt.Fprintf(os.Stderr, "%d dashboard time zones from %s\n", len(zones), *archive)
+	return nil
 }
 
 func fail(err error) {
@@ -100,7 +109,9 @@ func fail(err error) {
 // toolchainArchive asks the go command where its toolchain lives, so the
 // generator reads the tz database that the server build embeds.
 func toolchainArchive() (string, error) {
-	out, err := exec.Command("go", "env", "GOROOT").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "go", "env", "GOROOT").Output()
 	if err != nil {
 		return "", fmt.Errorf("find the Go toolchain: %w", err)
 	}
@@ -113,12 +124,14 @@ func readArchive(path string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open zoneinfo archive: %w", err)
 	}
-	defer reader.Close()
 	names := make([]string, 0, len(reader.File))
 	for _, file := range reader.File {
 		if !strings.HasSuffix(file.Name, "/") {
 			names = append(names, file.Name)
 		}
+	}
+	if err := reader.Close(); err != nil {
+		return nil, fmt.Errorf("close zoneinfo archive: %w", err)
 	}
 	if len(names) == 0 {
 		return nil, errors.New("zoneinfo archive holds no zone files")

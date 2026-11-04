@@ -49,6 +49,13 @@ func OpenStore(dir string) (*Store, error) {
 		return nil, fmt.Errorf("read dashboard store: %w", err)
 	}
 	s := &Store{dir: dir, documents: make(map[string]Dashboard)}
+	if err := s.loadEntries(dir, entries); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Store) loadEntries(dir string, entries []os.DirEntry) error {
 	totalBytes := 0
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
@@ -56,26 +63,26 @@ func OpenStore(dir string) (*Store, error) {
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
 		if !validStoreEntry(id, entry) {
-			return nil, errors.New("invalid file in dashboard store")
+			return errors.New("invalid file in dashboard store")
 		}
 		data, err := readStoreDocument(dir, entry.Name(), maxDocumentBytes)
 		if err != nil {
-			return nil, fmt.Errorf("read dashboard document: %w", err)
+			return fmt.Errorf("read dashboard document: %w", err)
 		}
 		staleZone, err := checkStoredDashboard(id, data)
 		if err != nil {
-			return nil, fmt.Errorf("invalid saved dashboard %s: %w", id, err)
+			return fmt.Errorf("invalid saved dashboard %s: %w", id, err)
 		}
 		if staleZone {
 			slog.Warn("saved dashboard time zone is not on the canonical list; viewers render it in their own zone", "dashboard", id)
 		}
 		totalBytes += len(data)
 		if dashboardStoreFull(len(s.documents), totalBytes) {
-			return nil, ErrCapacity
+			return ErrCapacity
 		}
 		s.documents[id] = data
 	}
-	return s, nil
+	return nil
 }
 
 func (s *Store) List() []Dashboard {

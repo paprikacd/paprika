@@ -262,10 +262,25 @@ export function ObservationTooltip({
     if (ref.current) observer?.observe(ref.current);
     if (ref.current) contentObserver?.observe(ref.current, { subtree: true, childList: true, characterData: true });
     observer?.observe(anchor);
+    // Scrolling *within* a pinned inspector must not move or remeasure it.
+    // Reapplying the measured max-height can reset the native scroll offset in
+    // Chromium, particularly after PageDown/End on a focused mobile region.
+    const externalScroll = (event: Event) => {
+      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
+      schedule();
+    };
+    const geometryKey = (event: KeyboardEvent) => {
+      if (
+        ["PageDown", "PageUp", "Home", "End"].includes(event.key) &&
+        event.target instanceof Node &&
+        ref.current?.contains(event.target)
+      ) return;
+      schedule();
+    };
     window.addEventListener("resize", schedule);
-    window.addEventListener("scroll", schedule, true);
+    window.addEventListener("scroll", externalScroll, true);
     document.addEventListener("pointermove", followPointer, true);
-    document.addEventListener("keydown", schedule, true);
+    document.addEventListener("keydown", geometryKey, true);
     window.visualViewport?.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("scroll", schedule);
     return () => {
@@ -275,9 +290,9 @@ export function ObservationTooltip({
       observer?.disconnect();
       contentObserver?.disconnect();
       window.removeEventListener("resize", schedule);
-      window.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("scroll", externalScroll, true);
       document.removeEventListener("pointermove", followPointer, true);
-      document.removeEventListener("keydown", schedule, true);
+      document.removeEventListener("keydown", geometryKey, true);
       window.visualViewport?.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("scroll", schedule);
     };

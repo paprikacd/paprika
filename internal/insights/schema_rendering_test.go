@@ -29,11 +29,11 @@ func TestTimeSeriesRenderingOptionsRoundTrip(t *testing.T) {
 }
 
 func TestTimeSeriesRenderingOptionsBoundaries(t *testing.T) {
-	var eight []string
+	eight := make([]string, 0, 8)
 	for range 8 {
 		eight = append(eight, `{"value":1}`)
 	}
-	var nine []string
+	nine := make([]string, 0, 9)
 	for range 9 {
 		nine = append(nine, `{"value":1}`)
 	}
