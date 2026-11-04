@@ -12,12 +12,12 @@ import LoginPage from "./page"
 const originalLocation = window.location
 const config = { oidc: { enabled: true, provider: "google", label: "Google" }, basic: { enabled: true }, session: { refreshEnabled: true } }
 beforeEach(() => {
-  resetBrowserSessionForTests(); localStorage.clear(); auth.user = null; auth.isLoading = false; auth.status = "anonymous"; auth.error = null
+  resetBrowserSessionForTests(); localStorage.clear(); sessionStorage.clear(); auth.user = null; auth.isLoading = false; auth.status = "anonymous"; auth.error = null
   auth.persistAuth.mockReset().mockReturnValue(true); auth.login.mockReset().mockResolvedValue(undefined); auth.retry.mockReset().mockResolvedValue(undefined); navigation.router.replace.mockReset(); configuration.get.mockReset().mockResolvedValue(config)
   configuration.password.mockReset().mockResolvedValue(undefined)
   Object.defineProperty(window, "location", { value: { href: "", pathname: "/login/", assign: (path: string) => { window.location.href = path } }, configurable: true, writable: true })
 })
-afterEach(() => { resetBrowserSessionForTests(); Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true }); vi.unstubAllGlobals(); localStorage.clear() })
+afterEach(() => { resetBrowserSessionForTests(); Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true }); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear() })
 async function submitLogin() {
   fireEvent.change(await screen.findByLabelText("Username"), { target: { value: "fixture" } })
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "fixture-password" } })
@@ -66,25 +66,25 @@ describe("entry page", () => {
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeEnabled()
   })
   it.each(["/observe/consent?rid=opaque", "/mcp/consent/?rid=fleet"])("resumes successful basic sign-in at %s", async (destination) => {
-    localStorage.setItem("paprika_return_to", destination)
+    sessionStorage.setItem("paprika_return_to", destination)
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "fixture-token" }) }))
     render(<LoginPage />); await submitLogin()
     await waitFor(() => expect(window.location.href).toBe(destination))
     expect(configuration.password).toHaveBeenCalledWith({ username: "fixture", password: "fixture-password" })
-    expect(localStorage.getItem("paprika_return_to")).toBeNull()
+    expect(sessionStorage.getItem("paprika_return_to")).toBeNull()
   })
   it("preserves the destination and does not remember failed basic login", async () => {
-    localStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque")
+    sessionStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque")
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, text: async () => "Invalid credentials" }))
     configuration.password.mockRejectedValue(new Error("Invalid credentials"))
     render(<LoginPage />); await submitLogin()
     expect(await screen.findByRole("alert")).toHaveTextContent("Invalid credentials")
     expect(auth.persistAuth).not.toHaveBeenCalled()
-    expect(localStorage.getItem("paprika_return_to")).toBe("/observe/consent?rid=opaque")
+    expect(sessionStorage.getItem("paprika_return_to")).toBe("/observe/consent?rid=opaque")
   })
   it("consumes an authenticated user's pending destination once in StrictMode", async () => {
     auth.user = { email: "ada@example.test" }; auth.status = "authenticated"
-    localStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque")
+    sessionStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque")
     render(<StrictMode><LoginPage /></StrictMode>)
     await waitFor(() => expect(window.location.href).toBe("/observe/consent?rid=opaque"))
     expect(navigation.router.replace).not.toHaveBeenCalled()

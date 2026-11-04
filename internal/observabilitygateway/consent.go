@@ -282,8 +282,8 @@ function setBusy(next) {
 // (ui/src/app/mcp/consent): the console session is a paprika-api bearer token
 // in localStorage, not a cookie, so the fetches below attach it explicitly.
 // A missing token sends the user through the console login instead of
-// failing: the paprika_return_to key is the same contract the SPA's login
-// flow consumes to navigate back here after the OIDC round trip.
+// failing: the tab-scoped paprika_return_to key is the same contract the
+// SPA's login flow consumes after the OIDC round trip.
 function consoleToken() {
   try {
     return localStorage.getItem("paprika_id_token");
@@ -294,7 +294,7 @@ function consoleToken() {
 
 function goLogin() {
   try {
-    localStorage.setItem("paprika_return_to", window.location.pathname + window.location.search);
+    sessionStorage.setItem("paprika_return_to", window.location.pathname + window.location.search);
   } catch (err) { /* storage unavailable: the login round trip still works, it just won't return here */ }
   window.location.assign("/login/");
 }

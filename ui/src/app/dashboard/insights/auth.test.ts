@@ -5,10 +5,11 @@ import { authReturnDestination } from "@/lib/auth-return-to"
 import { buildDashboardURL, parseDashboardURL } from "@/features/insights/drilldown"
 
 const originalLocation = window.location
-beforeEach(() => localStorage.clear())
+beforeEach(() => { localStorage.clear(); sessionStorage.clear() })
 afterEach(() => {
   Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true })
   localStorage.clear()
+  sessionStorage.clear()
   vi.restoreAllMocks()
 })
 
@@ -37,14 +38,14 @@ describe("Insights login handoff", () => {
     const resumed = authReturnDestination(consumeReturnTo())
     expect(resumed).toBe(destination)
     expect(parseDashboardURL(new URL(resumed, "https://paprika.example.test").search)).toEqual(navigation)
-    expect(localStorage.getItem("paprika_return_to")).toBeNull()
+    expect(sessionStorage.getItem("paprika_return_to")).toBeNull()
   })
 
   it.each(["//external.example/", "/login/", "/auth/callback/"])("does not retain unsafe or recursive destination %s", pathname => {
     location(pathname)
-    localStorage.setItem("paprika_return_to", "//stale.example/")
+    sessionStorage.setItem("paprika_return_to", "//stale.example/")
     redirectInsightsToLogin()
-    expect(localStorage.getItem("paprika_return_to")).toBeNull()
+    expect(sessionStorage.getItem("paprika_return_to")).toBeNull()
     expect(window.location.href).toBe(pathname === "/login/" ? "" : "/login/")
   })
 })

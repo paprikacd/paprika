@@ -114,7 +114,7 @@ async function newPage(ctx) {
 
 async function login(page, destination = "/dashboard/?service=uptime-api&range=1h") {
   await page.goto(`${ready.baseURL}/login/`)
-  await page.evaluate((target) => localStorage.setItem("paprika_return_to", target), destination)
+  await page.evaluate((target) => sessionStorage.setItem("paprika_return_to", target), destination)
   await expect(page.getByRole("button", { name: /google|single sign-on|continue as/i }).first()).toBeVisible()
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0)
   await page.getByRole("button", { name: /google|single sign-on|continue as/i }).first().click()
@@ -345,7 +345,7 @@ try {
     await page.reload()
     await page.waitForURL(`${ready.baseURL}/login/`)
     assert.equal(await page.evaluate(() => localStorage.getItem("paprika_id_token")), null)
-    assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), destination)
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("paprika_return_to")), destination)
     assert.equal((await ctx.cookies(`${ready.baseURL}/auth/refresh`)).filter((cookie) => cookie.httpOnly).length, 0)
     await ctx.close()
   })
@@ -419,9 +419,46 @@ try {
     const ctx = await context()
     const page = await newPage(ctx)
     await login(page, "/observe/consent?rid=fixture%3Fservice%3Duptime-api&scope=observe")
-    await expect(page.getByRole("heading", { name: "Observe consent resumed" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible()
     await ctx.close()
   })
+
+  for (const surface of ["Observe", "fleet"]) {
+    await check(`${surface} MCP consent survives sign-in in another tab`, async () => {
+      const ctx = await context()
+      let authorizationURL = ""
+      await ctx.route((url) => url.origin === ready.issuerURL && url.pathname === "/authorize", async (route) => {
+        authorizationURL = route.request().url()
+        await route.fulfill({ contentType: "text/html", body: "<h1>Identity provider paused</h1>" })
+      }, { times: 1 })
+      const page = await newPage(ctx)
+      const destination = surface === "Observe" ? "/observe/consent?rid=observe-fixture" : "/mcp/consent/?rid=fleet-fixture"
+      await page.goto(`${ready.baseURL}${destination}`, { waitUntil: "commit" })
+      if (surface === "Observe") {
+        await expect(page.getByRole("button", { name: /google|single sign-on/i }).first()).toBeVisible()
+        await page.getByRole("button", { name: /google|single sign-on/i }).first().click()
+      }
+      await expect(page.getByRole("heading", { name: "Identity provider paused" })).toBeVisible()
+      assert.ok(authorizationURL)
+
+      // A second anonymous dashboard tab starts its own sign-in while the
+      // first tab is at the identity provider.
+      const other = await newPage(ctx)
+      await other.goto(`${ready.baseURL}/dashboard/?view=other-tab`, { waitUntil: "commit" })
+      await expect(other.getByRole("button", { name: /google|single sign-on/i }).first()).toBeVisible()
+      assert.equal(await other.evaluate(() => sessionStorage.getItem("paprika_return_to")), "/dashboard/?view=other-tab")
+
+      await page.goto(authorizationURL, { waitUntil: "commit" })
+      await page.waitForURL(`${ready.baseURL}${destination}`)
+      if (surface === "Observe") {
+        await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible()
+      } else {
+        await expect(page.getByRole("button", { name: "Allow access", exact: true })).toBeVisible()
+      }
+      await proveAuthenticated(page)
+      await ctx.close()
+    })
+  }
 
   await writeFile(path.join(output, "report.json"), JSON.stringify({ passed: checks, count: checks.length, themes: themeChecks, backend: "real auth handlers; loopback RSA OIDC issuer; no cluster" }, null, 2))
   console.log(`Console session E2E passed ${checks.length} scenarios.`)

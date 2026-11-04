@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
 const clientID = "console-session-e2e"
@@ -123,7 +124,22 @@ func run() error {
 			respond(w, map[string]any{})
 		}
 	}))
-	mux.HandleFunc("/observe/consent", consentDestination)
+	// The browser suite exercises the real consent pages with a deterministic,
+	// authenticated pending-request response; no MCP credential is minted.
+	mux.Handle("/observe/consent", observabilitygateway.ConsentHandler("/observe"))
+	for _, prefix := range []string{"/observe", "/mcp"} {
+		scope := "paprika:read"
+		if prefix == "/observe" {
+			scope = "paprika:observe"
+		}
+		mux.HandleFunc(prefix+"/authorize/pending", f.protect(authenticator, func(w http.ResponseWriter, _ *http.Request) {
+			respond(w, map[string]string{
+				"client_id": "fixture-client", "redirect_uri": app.URL + "/__session_fixture/client-callback",
+				"code_challenge": "fixture-challenge", "code_challenge_method": "S256",
+				"state": "fixture-state", "scope": scope,
+			})
+		}))
+	}
 	mux.HandleFunc("/events", http.NotFound)
 	frontend, err := frontendHandler(*uiURL, *uiDir)
 	if err != nil {
@@ -136,13 +152,6 @@ func run() error {
 	fmt.Println("Console session fixture ready (loopback only)")
 	<-ctx.Done()
 	return nil
-}
-
-func consentDestination(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := fmt.Fprint(w, "<!doctype html><title>Observe consent fixture</title><h1>Observe consent resumed</h1>"); err != nil {
-		fmt.Fprintln(os.Stderr, "write fixture consent response failed")
-	}
 }
 
 func (f *fixture) writeReady(filename, appURL string) error {

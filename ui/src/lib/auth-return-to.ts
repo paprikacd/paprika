@@ -1,3 +1,24 @@
+const AUTH_RETURN_TO_KEY = "paprika_return_to"
+
+// The destination belongs to the tab that started sign-in, just like its PKCE
+// verifier. Other tabs may need to sign in at the same time.
+export function readAuthReturnTo(): string | null {
+  try { return sessionStorage.getItem(AUTH_RETURN_TO_KEY) } catch { return null }
+}
+
+export function writeAuthReturnTo(target: string | null): void {
+  try {
+    if (target === null) sessionStorage.removeItem(AUTH_RETURN_TO_KEY)
+    else sessionStorage.setItem(AUTH_RETURN_TO_KEY, target)
+  } catch { /* Sign-in remains available if browser storage is unavailable. */ }
+}
+
+export function consumeAuthReturnTo(): string | null {
+  const target = readAuthReturnTo()
+  writeAuthReturnTo(null)
+  return target
+}
+
 // Shared by Google callback and basic login. The Observe consent handler is
 // served by Go, not Next's trailing-slash static export.
 export function safeAuthReturnTo(target: string | null): string | null {

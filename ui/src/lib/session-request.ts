@@ -1,4 +1,4 @@
-import { safeAuthReturnTo } from "./auth-return-to"
+import { safeAuthReturnTo, writeAuthReturnTo } from "./auth-return-to"
 import { clearRejectedSession, ensureValidSession, getSessionSnapshot, recoverUnauthorized } from "./browser-session"
 
 export function redirectToLogin() {
@@ -7,10 +7,7 @@ export function redirectToLogin() {
   // navigation can cancel its logout request or its wait for the refresh lock.
   if (getSessionSnapshot().logoutPending) return
   const destination = safeAuthReturnTo(window.location.pathname + window.location.search + window.location.hash)
-  try {
-    if (destination) localStorage.setItem("paprika_return_to", destination)
-    else localStorage.removeItem("paprika_return_to")
-  } catch { /* Navigation still works when browser storage is disabled. */ }
+  writeAuthReturnTo(destination)
   if (window.location.pathname !== "/login/") window.location.href = "/login/"
 }
 

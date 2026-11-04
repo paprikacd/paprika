@@ -37,9 +37,11 @@ describe("authentication context", () => {
     expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull()
   })
   it("consumes return-to once", () => {
-    localStorage.setItem("paprika_return_to", "/dashboard/pipelines")
+    sessionStorage.setItem("paprika_return_to", "/dashboard/pipelines")
+    localStorage.setItem("paprika_return_to", "/dashboard/another-tab")
     expect(consumeReturnTo()).toBe("/dashboard/pipelines")
     expect(consumeReturnTo()).toBeNull()
+    expect(localStorage.getItem("paprika_return_to")).toBe("/dashboard/another-tab")
   })
   it("restores a valid bearer without waiting for login configuration", async () => {
     localStorage.setItem(AUTH_TOKEN_KEY, token())
@@ -62,13 +64,13 @@ describe("authentication context", () => {
     expect(sessionStorage.getItem("paprika_code_verifier")).toBe("verifier")
     expect(sessionStorage.getItem("paprika_expected_state")).toBe("state123")
     expect(sessionStorage.getItem("paprika_login_provider")).toBe("google")
-    expect(localStorage.getItem("paprika_return_to")).toBe("/mcp/consent/?rid=opaque#grant")
+    expect(sessionStorage.getItem("paprika_return_to")).toBe("/mcp/consent/?rid=opaque#grant")
   })
   it("preserves a pending Observe request through account switching", async () => {
-    localStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque")
+    sessionStorage.setItem("paprika_return_to", "/observe/consent?rid=opaque")
     render(<AuthProvider><Probe /></AuthProvider>); fireEvent.click(screen.getByText("switch"))
     await waitFor(() => expect(window.location.href).toBe("https://accounts.example/authorize"))
-    expect(localStorage.getItem("paprika_return_to")).toBe("/observe/consent?rid=opaque")
+    expect(sessionStorage.getItem("paprika_return_to")).toBe("/observe/consent?rid=opaque")
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("switchAccount=true"))).toBe(true)
   })
   it("uses the last successful account as a login hint", async () => {
