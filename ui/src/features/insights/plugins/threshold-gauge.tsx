@@ -259,7 +259,8 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     className={`${styles.gaugeSelection} ${display === "radial" ? meterStyles.radialReading : meterStyles.reading}`}
     revision={result}
     onSelect={interactive && onContextChange ? () => onContextChange(metricContext(series, index, true)) : undefined}
-    details={<MetricDetails widget={widget} series={series} index={index} point={point} unit={widget.unit} decimals={options.decimals} description="Latest sample">
+    details={<MetricDetails widget={widget} series={series} index={index} point={point} unit={widget.unit} decimals={options.decimals} description="Latest sample"
+      showSourceContext={Object.keys(series.labels).length <= 4 && typeof series.labels.pod === "string"}>
       <span className={styles.tooltipStatus}>{threshold && <i data-gauge-threshold-swatch aria-hidden="true" style={{ background: threshold.color }} />}{value === undefined ? "Unknown" : threshold?.label ?? "Observed value"}</span>
       {band && <span className={styles.tooltipRange}>{band}</span>}
       <span className={styles.tooltipRange}>Scale: {min} to {max}{widget.unit ? ` ${widget.unit}` : ""}</span>

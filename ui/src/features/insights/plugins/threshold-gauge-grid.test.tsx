@@ -337,4 +337,31 @@ describe("multi-series threshold gauges", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(select).not.toHaveBeenCalled();
   });
+
+  it("keeps full provider identity and node/pod labels visible in a pinned mobile gauge tooltip", () => {
+    const providerLabels = {
+      cluster: "staging",
+      node: "node-01",
+      pod: "paprika-observability-collector-deployment-87f6b76b67-staging-node-01",
+    };
+    const name = 'paprika_example_ab_fleet_atlas_node_cpu{cluster="staging", node="node-01", pod="paprika-observability-collector-deployment-87f6b76b67-staging-node-01"}';
+    const meter = {
+      ...widget,
+      title: "CPU utilization",
+      options: { ...widget.options, min: 0, max: 100 },
+      config: { display: "segmented" as const, seriesMode: "all" as const, columns: 1, maxSeries: 7, segments: 16 },
+    };
+    const result = {
+      series: [{ name, labels: providerLabels, points: [{ timestamp: 1783450000000, value: 31.718 }] }],
+    };
+    render(<ThresholdGauge widget={meter} result={result} onContextChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Select signal for CPU utilization/ }));
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip.querySelector("details")).not.toHaveAttribute("open");
+    expect(within(tooltip).getByText(name, { exact: true })).toBeVisible();
+    expect(within(tooltip).getByText(providerLabels.node, { exact: true })).toBeVisible();
+    expect(within(tooltip).getByText(providerLabels.pod, { exact: true })).toBeVisible();
+    expect(tooltip.querySelector('[data-metric-value="31.718"]')).toBeInTheDocument();
+  });
+
 });
