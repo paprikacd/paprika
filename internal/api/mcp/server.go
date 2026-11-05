@@ -457,7 +457,7 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 			Description:  tool.Description,
 			InputSchema:  tool.InputSchema,
 			OutputSchema: outputSchema,
-			Meta:         s.toolAuthMeta(*tool),
+			Meta:         s.toolAuthMeta(tool),
 			Icons:        tool.Icons,
 			Annotations: &sdkmcp.ToolAnnotations{
 				ReadOnlyHint:    tool.Scope == ScopeRead || tool.Scope == ScopeObserve,
@@ -480,7 +480,7 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 // ChatGPT uses the securitySchemes descriptor alongside OAuth resource
 // discovery to decide when to show a Connect or reauthorization prompt.
 // Retain existing MCP App metadata instead of replacing it.
-func (s *Server) toolAuthMeta(tool Tool) sdkmcp.Meta {
+func (s *Server) toolAuthMeta(tool *Tool) sdkmcp.Meta {
 	meta := make(sdkmcp.Meta, len(tool.Meta)+1)
 	for key, value := range tool.Meta {
 		meta[key] = value
@@ -492,7 +492,7 @@ func (s *Server) toolAuthMeta(tool Tool) sdkmcp.Meta {
 		scopes = []string{string(ScopeObserve), string(ScopeInsightsWrite)}
 	}
 	meta["securitySchemes"] = []map[string]any{{
-		"type": "oauth2",
+		"type":   "oauth2",
 		"scopes": scopes,
 	}}
 	return meta
@@ -885,8 +885,8 @@ func (s *Server) invoke(ctx context.Context, p *auth.Principal, name string, arg
 //   - *ConfirmationRequiredError becomes a SUCCESSFUL tool result carrying
 //     the preview and token, not a protocol error — the model needs to see
 //     it to act on it, which an error response would hide.
-//   - ErrScopeDenied becomes a JSON-RPC error naming the missing scope, at
-//     an application-defined code outside the JSON-RPC reserved range.
+//   - ErrScopeDenied returns an MCP error result with an OAuth challenge on
+//     Observe and the historical JSON-RPC error on the fleet surface.
 //   - ErrToolNotFound becomes a standard JSON-RPC method-not-found error.
 //     In practice the SDK's own dispatcher rejects an unregistered tool name
 //     before callTool ever runs (every registered handler corresponds to a
