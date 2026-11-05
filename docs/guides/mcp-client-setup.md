@@ -69,10 +69,10 @@ skill's endpoint instructions so they point to the same intended server.
 With Node.js 20+ and the selected agent CLI installed, use the GitHub-backed
 npx installer:
 
-`@sh
+```sh
 npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
 # For Claude Code: use --client claude
-`@
+```
 
 This installs `paprika-observe@paprika` with its skill and registers the
 Paprika marketplace, instead of registering only a raw endpoint. Restart

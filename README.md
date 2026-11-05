@@ -84,10 +84,10 @@ Paprika Observe connects the independent observability MCP surface to Codex or
 Claude Code, including dashboard queries, metrics, traces and the Observe skill.
 Install directly from this GitHub repository with Node.js 20+:
 
-`@sh
+```sh
 npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
 # For Claude Code: replace codex with claude
-`@
+```
 
 After installation, complete the client's native OAuth sign-in using
 `paprika:observe` before running a live query. The installer does not

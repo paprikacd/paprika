@@ -230,10 +230,10 @@ The optional `paprika-setup` skill verifies access with `fleet_status` after log
 Node.js 20+ can install the complete Codex or Claude Code plugin from the
 GitHub repository without a manual clone:
 
-`@sh
+```sh
 npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
 npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client claude
-`@
+```
 
 The npx distribution bundles the marketplace, plugin manifests, MCP URL and
 Observe skill. It stages a managed marketplace under
