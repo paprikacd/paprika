@@ -3,6 +3,7 @@ package insights
 import (
 	"bytes"
 	"context"
+	"io"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -479,6 +480,7 @@ func TestDashboardQueryAdmissionIsSharedAndCancellationIsHonest(t *testing.T) {
 	defer provider.Close()
 	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
 	putReadDashboard(t, s, queryReadWidget("requests", "up"))
+	s.queryWaitTimeout = 20 * time.Millisecond
 	for range cap(s.queries) {
 		s.queries <- struct{}{}
 	}
@@ -496,6 +498,69 @@ func TestDashboardQueryAdmissionIsSharedAndCancellationIsHonest(t *testing.T) {
 	if result.Signals[0].Error.Code != "canceled" || result.QueryCount.Executed != 0 || calls.Load() != 0 {
 		t.Fatalf("cancellation was not honored: %+v", result)
 	}
+}
+
+func TestDashboardQueryWaitsForExecutionSlot(t *testing.T) {
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	s.queryWaitTimeout = time.Second
+	putReadDashboard(t, s, queryReadWidget("requests", "up"))
+	for range cap(s.queries) {
+		s.queries <- struct{}{}
+	}
+	replies := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		replies <- request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview"}`), nil)
+	}()
+	require.Eventually(t, func() bool { return len(s.queryWaiting) == 1 }, time.Second, time.Millisecond)
+	select {
+	case <-replies:
+		t.Fatal("queued dashboard returned before capacity was released")
+	default:
+	}
+	<-s.queries
+	reply := <-replies
+	result := readDashboardResult(t, reply)
+	require.Equal(t, 1, result.QueryCount.Executed, "queue admission must execute saved queries once")
+	require.EqualValues(t, 1, calls.Load())
+	require.Empty(t, s.queryWaiting, "completed calls must release queue permits")
+}
+
+func TestDashboardQueryQueueOverflowIsBounded(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("saturated queue must not run provider I/O")
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	s.queryWaitTimeout = time.Second
+	s.queryWaiting = make(chan struct{}, 1)
+	putReadDashboard(t, s, queryReadWidget("requests", "up"))
+	for range cap(s.queries) {
+		s.queries <- struct{}{}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	first := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/query-dashboard", strings.NewReader(`{"id":"overview"}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		first <- rec
+	}()
+	require.Eventually(t, func() bool { return len(s.queryWaiting) == 1 }, time.Second, time.Millisecond)
+	second := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview"}`), nil))
+	require.Zero(t, second.QueryCount.Executed)
+	require.Equal(t, "rate_limited", second.Signals[0].Error.Code)
+	cancel()
+	canceled := readDashboardResult(t, <-first)
+	require.Equal(t, "canceled", canceled.Signals[0].Error.Code)
+	require.Empty(t, s.queryWaiting)
 }
 
 func TestDashboardQueryRangeUsesSavedCustomWindowAndSharedStep(t *testing.T) {

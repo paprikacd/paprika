@@ -53,6 +53,31 @@ Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observ
 - Unsupported query shapes return a `StateNotAvailable` result plus an error
   wrapping `ErrUnsupported`; the backend returns the result and logs the error.
 
+## Query backpressure and provider bulkheads
+
+Paprika Observe now admits short bursts through bounded queues instead of
+rejecting every query when execution is busy:
+
+- MCP per-principal token buckets (50 requests/s, burst 100) permit up to 8
+  queued requests per authenticated user and 64 globally, each waiting at most
+  2 seconds. A canceled MCP call does not execute after disconnect.
+- The observability backend permits **4 concurrent queries globally** and
+  **2 concurrent queries per provider**, with at most 32 global waiters and 8
+  per-provider waiters. Admission waits no longer than 5 seconds, while each
+  execution retains its 30-second budget and any earlier caller deadline.
+- Insights permits **16 concurrent query executions** and up to **64 queued
+  requests** waiting at most 2 seconds. `query_dashboard` executes distinct
+  saved queries once and propagates the request deadline to providers.
+- Overfull queues still return an explicit capacity error (429 / resource
+  exhausted); holding a connection indefinitely would consume worker memory,
+  create head-of-line blocking and hide provider outages.
+- All limits are per process. Multiple replicas do not provide a single global
+  cluster-wide queue; shared ordering across pods requires a separate durable
+  scheduler, which is not appropriate for synchronous MCP requests.
+
+Query results are returned synchronously. Queuing does not change OAuth scopes,
+provider RBAC, saved dashboard versions or query timeout/error semantics.
+
 ## The MCP surface
 
 Fifteen provider tools, all read-only and requiring `paprika:observe`:
