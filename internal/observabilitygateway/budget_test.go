@@ -167,6 +167,40 @@ func TestExecutionBudgetQueueBoundedAndCancellation(t *testing.T) {
 	cleanup()
 }
 
+func TestExecutionBudgetGlobalAdmissionCoversProviderWaiters(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.admitted = make(chan struct{}, 2) // one executing, one waiting in any provider
+	b.perProvider = 1
+	_, doneFirst, err := b.begin(t.Context(), "obs/hot")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	waiting := make(chan error, 1)
+	go func() {
+		_, done, err := b.begin(ctx, "obs/hot")
+		if done != nil {
+			done()
+		}
+		waiting <- err
+	}()
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		slots := b.providers["obs/hot"]
+		return slots != nil && len(slots.waiting) == 1
+	}, time.Second, time.Millisecond)
+	_, _, err = b.begin(t.Context(), "obs/other")
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err),
+		"provider-specific waiting must count against global admission too")
+	cancel()
+	require.Equal(t, connect.CodeCanceled, connect.CodeOf(<-waiting))
+	doneFirst()
+	require.Empty(t, b.admitted)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	require.Empty(t, b.providers)
+}
+
 func TestExecutionBudgetQueueTimeout(t *testing.T) {
 	b := newExecutionBudget(1, time.Second)
 	b.perProvider = 1

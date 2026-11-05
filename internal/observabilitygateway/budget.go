@@ -36,6 +36,7 @@ type providerWorkSlots struct {
 type executionBudget struct {
 	active             chan struct{}
 	waiting            chan struct{}
+	admitted           chan struct{}
 	timeout            time.Duration
 	queueTimeout       time.Duration
 	perProvider        int
@@ -52,6 +53,7 @@ func newExecutionBudget(concurrency int, timeout time.Duration) *executionBudget
 	return &executionBudget{
 		active:             make(chan struct{}, concurrency),
 		waiting:            make(chan struct{}, maxConcurrentQueue),
+		admitted:           make(chan struct{}, concurrency+maxConcurrentQueue),
 		timeout:            timeout,
 		queueTimeout:       queryQueueWait,
 		perProvider:        min(2, concurrency),
@@ -123,6 +125,15 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 	if err := contextError(ctx); err != nil {
 		return nil, nil, err
 	}
+	// Count both active and provider-queued requests in the same global
+	// admission cap. Otherwise arbitrary provider names could accumulate
+	// unbounded waiters before reaching the global execution semaphore.
+	select {
+	case b.admitted <- struct{}{}:
+	default:
+		return nil, nil, connect.NewError(connect.CodeResourceExhausted,
+			errors.New("observability gateway admission queue is full; retry shortly"))
+	}
 	queueCtx, stop := context.WithTimeout(ctx, b.queueTimeout)
 	defer stop()
 	slots := b.providerSlots(provider)
@@ -135,6 +146,7 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 			<-slots.active
 		}
 		b.releaseProvider(provider, slots)
+		<-b.admitted
 	}
 	if err := waitForQuerySlot(queueCtx, slots.active, slots.waiting); err != nil {
 		release()
