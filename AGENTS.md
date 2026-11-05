@@ -5,6 +5,92 @@
 Operate and improve Paprika on the VKE cluster. Fix bugs, add features,
 deploy changes safely, and keep the shared `paprika-e2e` namespace healthy.
 
+## Get changes live and prove Paprika Observe works
+
+This is the **execution checklist**, not a claim about the current deployment.
+Follow it when the user asks to deploy Paprika, reconnect MCP, create a live
+dashboard, or verify a release. The detailed cluster constraints below still
+apply.
+
+1. **Source → validated PR.** Work in a feature branch, open a PR and inspect
+   the required CI outcomes, especially Go lint/race tests, MCP contracts,
+   Insights/browser smoke, integration, Helm, and distribution checks.
+   Read the job failure logs and fix the cause; a source merge, a green unit
+   test, or successful GitHub Pages publishing is **not** a VKE deployment.
+2. **Merge → immutable image → VKE.** On `master`, inspect the matching
+   `.github/workflows/ci.yml` GitHub Actions run. Confirm `Publish image`
+   succeeded and `Deploy published image to VKE / Deploy and validate on VKE`
+   succeeded for the **same commit SHA**. Record the immutable
+   `ghcr.io/paprikacd/paprika@sha256:…` image digest, Helm release
+   `paprika-e2e`, namespace `paprika-e2e` and revision. Before a manual
+   cluster write, confirm `kubectl config current-context`. Preserve the
+   existing Insights PVC (`paprika-e2e-insights`, phase `Bound`); never replace
+   its retained contents as a side effect of deployment.
+3. **Inspect live workloads.** The API server, controller manager, Insights,
+   observability gateway, repo server and webhook receiver should be
+   running and Ready, with restart counts examined. Check the deployed
+   `/healthz`, `/readyz`, UI and `/metrics` endpoints (HTTP 200) through the
+   intended authenticated/port-forward route. Prefer GitHub's VKE deployment
+   receipts and `kubectl` evidence, not assumptions from `master`.
+   Healthy pods do **not** establish that a dashboard has fresh data.
+4. **Connect the correct MCP surface.** Fleet MCP is `/mcp`; observability
+   MCP is `https://paprika.benebsworth.com/observe/mcp`. Select the existing
+   **Paprika Observe** app in ChatGPT or connect via the client's native
+   OAuth flow; it requires `paprika:observe` for read and additionally
+   `paprika:insights:write` plus human Insights RBAC for saved-query/dashboard
+   authoring. The audiences are separate. A GitHub-backed CLI plugin install
+   (`npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex`,
+   or `--client claude`) does **not** register a ChatGPT custom MCP app.
+   If tools are absent, verify that the authenticated app is selected in a
+   fresh conversation. Do not create another plugin, invent app IDs, paste
+   bearer tokens or commit account-specific `.app.json` bindings.
+5. **Discover live sources, then author.** Call `list_observability_providers`
+   for the provider health inventory and `list_insights_providers` for the
+   canonical **Insights provider IDs**. The latter are not the same as
+   `namespace/name` provider references; never derive IDs by hand. Read
+   `get_insights_schema` for `dashboard` and `widget` (and `saved_query` if
+   creating one). Check `list_dashboards` to avoid duplicate IDs; inspect
+   trusted existing dashboards with `get_dashboard` to reuse genuine
+   saved-query IDs, expressions and parameter bindings. For a novel query,
+   first discover metrics and labels, then execute a small bounded read
+   against the actual backend. Avoid invented metric families or synthetic
+   data unless the user explicitly requests a test fixture.
+6. **Write only the requested document.** Call `create_saved_query` first
+   if new reusable queries are needed, then `create_dashboard` with a unique
+   ID, `schemaVersion:1`, title, time range, refresh interval, and widgets
+   with IDs, type, provider ID, query, unit and non-overlapping 12-column
+   layouts. Bind dashboard variables to query parameters explicitly.
+   Edits to existing documents require `get_dashboard`/`get_saved_query`,
+   the **exact ETag**, and `patch_dashboard`/`patch_saved_query`; never
+   overwrite a concurrent revision or silently change another user's draft.
+7. **Prove the live result.** Read the new document back with `get_dashboard`
+   and capture the returned `uiUrl` and ETag. Call `query_dashboard` with
+   bounded options (for example `{"id":"…","history_points":0,"max_series":2,"max_traces":1}`).
+   Verify the number of returned widgets, `queryCount.planned/executed/
+   deduplicated`, every signal's `state`/`error`, last sample timestamps,
+   missing values, partial responses and truncation. A successful save
+   without this query is **not** a working dashboard. Provider `OK` and
+   query `state:"ok"` describe reachability/data availability, not SLO
+   health. Never turn missing samples or failed exports into zero.
+8. **Avoid burst amplification.** Parallel `query_dashboard` calls have
+   returned HTTP 429 under real load. Prefer one dashboard per call,
+   then retry selectively according to `Retry-After`; keep the calls
+   sequential or narrowly bounded. Bounded queue/bulkhead behavior may be
+   under development; verify it is **deployed** before relying on it.
+   Keep client cancellations and tool deadlines intact, and do not infer
+   that queued work completed without an actual result.
+
+**Verified authoring reference (6 Nov 2026):** the saved dashboard
+`omega-observe-operations-control-room` was created through Paprika Observe
+using existing Omega cluster, Telesis collector and service saved queries.
+Its first live `query_dashboard` returned **14 widgets**, **13 distinct queries
+executed**, **1 deduplicated query**, and **no error/empty signals**. The UI
+URL is `https://paprika.benebsworth.com/dashboard/insights/?dashboard=omega-observe-operations-control-room`.
+This is one historical validation receipt, not a guarantee about future
+observations or current workload health. For full tool semantics see
+`plugins/paprika-observe/skills/paprika-observe/SKILL.md` and
+`docs/guides/observability-gateway.md`.
+
 ## Constraints & Preferences
 
 - OTel SDK with Prometheus exporter for metrics (not direct Prometheus client

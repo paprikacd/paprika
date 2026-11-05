@@ -223,3 +223,30 @@ instructions. Do not put secrets in saved documents. These authoring tools do
 not configure providers, change fleet applications, or delete documents. A
 successful save is not proof that a query returns data: run a bounded query
 against the selected provider and inspect the rendered result when appropriate.
+
+### Proven live dashboard authoring pattern
+
+For a new operational view, compose existing real saved queries before
+inventing PromQL. The successful example created on 6 Nov 2026 is
+`omega-observe-operations-control-room`:
+`https://paprika.benebsworth.com/dashboard/insights/?dashboard=omega-observe-operations-control-room`.
+Its widgets reuse the source dashboards `omega-k8s-cluster-overview`,
+`telesis-metrics-gateway`, and `service-overview`; the service variable
+binds explicitly to `uptime-api` or `brandbrain-api`. Kubernetes selectors
+are explicit constant bindings instead of unbound variables. This avoids
+mismatched provider IDs and reuses existing authorized, verified queries.
+
+A proven save sequence was: `list_insights_providers` →
+`get_insights_schema(kind:"dashboard")` → `get_dashboard` for source query
+references → `create_dashboard` → `query_dashboard`. The first readback
+contained 14 widgets, 13 distinct queries actually executed, one reused
+signal and no error/empty signals. Re-run this verification for every new
+dashboard. Inspect actual `signals` and timestamps; a successful `create`
+result alone does not establish telemetry connectivity.
+
+Avoid launching many independent dashboard calls simultaneously: this host
+has returned HTTP 429 for concurrent agent requests. Prefer a single
+`query_dashboard` read (it deduplicates saved queries), then serial/narrow
+follow-ups with bounded inputs; honour `Retry-After`. Do not assume the
+repo's pending queue/bulkhead changes have been deployed. Keep the live
+execution evidence, source identity and saved dashboard ETag separate.
