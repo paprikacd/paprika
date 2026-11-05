@@ -225,12 +225,43 @@ The optional `paprika-setup` skill verifies access with `fleet_status` after log
 
 ## Observability gateway
 
+### Install Paprika Observe through the plugin
+
+Node.js 20+ can install the complete Codex or Claude Code plugin from the
+GitHub repository without a manual clone:
+
+`@sh
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client claude
+`@
+
+The npx distribution bundles the marketplace, plugin manifests, MCP URL and
+Observe skill. It stages a managed marketplace under
+`~/.paprika/plugin-marketplace`, uses the selected client's plugin commands,
+and then asks the user to finish native OAuth. It does not create a duplicate
+direct MCP entry or capture credentials. Rerun the command to refresh the
+staged marketplace, then restart or refresh the client.
+
+**First connection:** grant `paprika:observe` read access, start a new
+conversation, and call `list_observability_providers`. Select an actual
+provider and run a small query before claiming that live data is available.
+Authoring is opt-in: explicitly reconnect with
+`paprika:observe,paprika:insights:write` and retain Insights RBAC.
+
+**ChatGPT:** npx cannot register a ChatGPT custom MCP app or provide an
+interactive Connect control. Register
+`https://paprika.benebsworth.com/observe/mcp` as a custom MCP app, complete
+browser OAuth, and verify its tools. A private ChatGPT plugin can wrap that
+registered app using the real app ID in `.app.json`; do not commit a personal
+app ID to this public repository or invent a binding.
+
+
 The optional [`paprika-observe`](../../plugins/paprika-observe/README.md) package
 connects the separate `/observe/mcp` endpoint and bundles an observability skill.
 Its portable manifest uses `streamable-http` and per-server OpenAI OAuth
-configuration with DCR and the independent `paprika:observe` and
-`paprika:insights:write` scopes; its supported Codex and Claude compatibility
-manifests use `.mcp.json` with `type: "http"`. Version 0.2.0 advertises Read and
+configuration with DCR and `paprika:observe` as the default read scope;
+`paprika:insights:write` requires separate authoring consent; its supported Codex and Claude compatibility
+manifests use `.mcp.json` with `type: "http"`. Version 0.3.0 advertises Read and
 Write capabilities for telemetry reads and saved-query/dashboard authoring.
 The existing fleet package still connects only `/mcp`.
 

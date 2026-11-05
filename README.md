@@ -78,6 +78,25 @@ The [plugin guide](docs/guides/mcp-plugin.md) covers installation into Codex and
 Claude, OAuth sign-in, example prompts, permissions, and troubleshooting. The
 plugin package is in [`plugins/paprika/`](plugins/paprika/).
 
+## Paprika Observe plugin
+
+Paprika Observe connects the independent observability MCP surface to Codex or
+Claude Code, including dashboard queries, metrics, traces and the Observe skill.
+Install directly from this GitHub repository with Node.js 20+:
+
+`@sh
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+# For Claude Code: replace codex with claude
+`@
+
+After installation, complete the client's native OAuth sign-in using
+`paprika:observe` before running a live query. The installer does not
+register a ChatGPT custom MCP app or complete OAuth automatically. For authoring
+saved queries and dashboards, explicitly request
+`paprika:insights:write` and retain Insights RBAC permissions.
+See the [Observe plugin guide](plugins/paprika-observe/README.md) for
+verification, manual installation and troubleshooting.
+
 ## Architecture
 
 ```
