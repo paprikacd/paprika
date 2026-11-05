@@ -264,3 +264,31 @@
   .platform-download, .platform-icon-plate { border: 1px solid ButtonText; }
   .platform-icon-plate svg { forced-color-adjust: none; color: #1d2d3d; }
 }
+
+/* Paprika Observe installation lane, visually separate from fleet commands. */
+.observe-install {
+  display: grid;
+  gap: 26px;
+  margin-top: 37px;
+  padding: clamp(24px, 3vw, 42px);
+  border: 1px solid rgba(180, 217, 247, .32);
+  background: linear-gradient(135deg, rgba(49, 85, 120, .36), rgba(16, 29, 44, .5));
+}
+.observe-install-heading { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 18px 32px; }
+.observe-install-heading > div { max-width: 740px; }
+.observe-install .eyeline { color: #adcce8; }
+.observe-install-heading h3 { margin: 8px 0 14px; font-size: clamp(32px, 3.5vw, 48px); line-height: 1.08; letter-spacing: -.035em; color: #fff; }
+.observe-install-heading p:last-child { max-width: 66ch; margin: 0; color: #d6e4ef; font-size: 15px; line-height: 1.6; }
+.observe-install-heading a { color: #fff; }
+.observe-install-commands { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.observe-command { min-width: 0; border: 1px solid rgba(187, 212, 236, .38); background: #13263a; }
+.observe-command-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 15px; border-bottom: 1px solid rgba(187, 212, 236, .22); color: #c4d9eb; font: 500 11px/1.4 var(--mono); }
+.observe-command .copy-button { padding: 8px 13px; min-height: 38px; color: #fff; border: 1px solid rgba(187, 212, 236, .52); }
+.observe-command code { display: block; min-height: 92px; padding: 19px 15px; overflow-x: auto; color: #fff; font: 400 12px/1.75 var(--mono); overflow-wrap: anywhere; }
+.observe-install-foot { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 18px; color: #d6e4ef; }
+.observe-install-foot p { margin: 0; font-size: 13px; line-height: 1.65; }
+.observe-install-foot strong, .observe-install-foot code { color: #fff; }
+#observe-copy-feedback { min-height: 1.4em; margin-top: 8px; color: #fff; }
+.observe-install :is(a, button):focus-visible { outline: 3px solid #b5d9fd; outline-offset: 4px; }
+@media (max-width: 850px) { .observe-install-commands, .observe-install-foot { grid-template-columns: 1fr; } .observe-command code { min-height: 0; } }
+@media (forced-colors: active) { .observe-install, .observe-command { border-color: CanvasText; background: Canvas; } .observe-install :is(h3, p, code, a) { color: CanvasText; } }
