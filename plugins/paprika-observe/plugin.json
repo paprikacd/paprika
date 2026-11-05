@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "paprika-observe",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Discover and query Paprika observability providers, and create or update saved queries and dashboards with explicitly authorized Insights access.",
   "author": {
     "name": "Paprika"

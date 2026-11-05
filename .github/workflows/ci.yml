@@ -358,6 +358,7 @@ jobs:
           bash hack/test-cli-install.sh
           bash hack/test-taskfile-contract.sh
           bash hack/test-landing-install.sh
+          node --test test/paprika-plugin-installer.test.mjs
 
   fleet-ui-smoke:
     name: Fleet console browser smoke
