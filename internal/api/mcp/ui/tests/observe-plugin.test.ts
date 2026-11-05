@@ -15,7 +15,7 @@ test("observe is an optional separate package with consistent supported manifest
   assert.equal(portable.$schema, "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
   for (const manifest of [portable, codex, claude]) {
     assert.equal(manifest.name, "paprika-observe");
-    assert.equal(manifest.version, "0.2.0");
+    assert.equal(manifest.version, "0.3.0");
     assert.equal(manifest.description, portable.description);
   }
   assert.deepEqual(codex.interface, portable.extensions["com.openai"].interface);
@@ -29,7 +29,7 @@ test("observe is an optional separate package with consistent supported manifest
   assert.deepEqual(Object.keys(mcp.mcpServers), ["paprika_observe"]);
   assert.deepEqual(mcp.mcpServers.paprika_observe, {
     type: "streamable-http", url: endpoint,
-    extensions: { "com.openai": { auth: { type: "oauth", client: { mode: "dcr" }, baseScopes: ["paprika:observe", "paprika:insights:write"] } } },
+    extensions: { "com.openai": { auth: { type: "oauth", client: { mode: "dcr" }, baseScopes: ["paprika:observe"], defaultScopes: ["paprika:observe"] } } },
   });
   const fleet = JSON.parse(await readFile(new URL("plugins/paprika/.mcp.json", root), "utf8"));
   assert.deepEqual(Object.keys(fleet.mcpServers), ["paprika_hosted"], "updating the fleet package must not attach a new connection");

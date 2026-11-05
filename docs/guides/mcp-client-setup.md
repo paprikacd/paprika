@@ -64,6 +64,27 @@ For your own installation, use the direct MCP routes above. If adapting a local
 plugin copy, review both [`.mcp.json`](../../plugins/paprika/.mcp.json) and the
 skill's endpoint instructions so they point to the same intended server.
 
+## Install Observe as a plugin without a manual clone
+
+With Node.js 20+ and the selected agent CLI installed, use the GitHub-backed
+npx installer:
+
+```sh
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+# For Claude Code: use --client claude
+```
+
+This installs `paprika-observe@paprika` with its skill and registers the
+Paprika marketplace, instead of registering only a raw endpoint. Restart
+the client, finish native OAuth with `paprika:observe`, and call
+`list_observability_providers`. Saved-query and dashboard authoring needs
+a separate `paprika:insights:write` grant and Insights RBAC.
+
+**ChatGPT uses a different setup:** register the HTTPS
+`/observe/mcp` endpoint as a custom MCP app and complete OAuth there.
+npx cannot register a ChatGPT app or grant access on the user's behalf.
+See the [Observe plugin guide](../../plugins/paprika-observe/README.md).
+
 ## Choose access deliberately
 
 - **`paprika:read`** permits inspection: fleet health and topology, applications,
