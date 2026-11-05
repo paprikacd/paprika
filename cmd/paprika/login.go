@@ -157,7 +157,9 @@ func executeLogin(ctx context.Context, writer io.Writer, dependencies loginDepen
 		grace := time.NewTimer(loginBrowserResultGrace)
 		defer grace.Stop()
 		select {
-		case <-openResult:
+		case openErr := <-openResult:
+			// Login already finished, so a late browser failure needs no report.
+			_ = openErr
 			browserAttemptFinished = true
 		case <-grace.C:
 		}

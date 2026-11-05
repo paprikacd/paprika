@@ -1,6 +1,8 @@
 package pipelines
 
 import (
+	"time"
+
 	"context"
 	"fmt"
 
@@ -21,6 +23,10 @@ import (
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/sharding"
 )
+
+// conflictRequeueDelay is the wait before a reconcile retries after a status
+// update conflict. ctrl.Result.Requeue is deprecated in favor of RequeueAfter.
+const conflictRequeueDelay = 100 * time.Millisecond
 
 // StageReconciler reconciles Stage resources.
 type StageReconciler struct {
@@ -122,7 +128,7 @@ func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ct
 		result = resultError
 		if apierrors.IsConflict(err) {
 			log.Info("Conflict updating Stage status; will retry", "stage", stage.Name)
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to update stage status: %w", err)
 	}

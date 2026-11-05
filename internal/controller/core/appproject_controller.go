@@ -1,6 +1,8 @@
 package core
 
 import (
+	"time"
+
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +19,10 @@ import (
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	"github.com/benebsworth/paprika/internal/observability"
 )
+
+// conflictRequeueDelay is the wait before a reconcile retries after a status
+// update conflict. ctrl.Result.Requeue is deprecated in favor of RequeueAfter.
+const conflictRequeueDelay = 100 * time.Millisecond
 
 // AppProjectReconciler reconciles a AppProject object.
 type AppProjectReconciler struct {
@@ -68,7 +74,7 @@ func (r *AppProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.client.Status().Update(ctx, &project); err != nil {
 		if apierrors.IsConflict(err) {
 			log.Info("Conflict updating AppProject status; will retry", "appproject", project.Name)
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("update appproject status: %w", err)
 	}

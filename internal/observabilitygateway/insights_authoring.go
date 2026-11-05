@@ -104,13 +104,13 @@ func hasInsightsWriteScope(p *auth.Principal) bool {
 	return false
 }
 
-func (c *InsightsAuthoringClient) request(ctx context.Context, method, path string, document json.RawMessage, headers http.Header) (json.RawMessage, string, error) {
+func (c *InsightsAuthoringClient) request(ctx context.Context, method, path string, document json.RawMessage, headers http.Header) (body json.RawMessage, tag string, err error) {
 	return c.requestAuthorized(ctx, method, path, document, headers, method != http.MethodGet, 2<<20)
 }
 
 // requestAuthorized keeps the action explicit for read-only POST operations.
 // Its callers use fixed routes; arbitrary authoring routes cannot opt into read access.
-func (c *InsightsAuthoringClient) requestAuthorized(ctx context.Context, method, path string, document json.RawMessage, headers http.Header, write bool, limit int64) (json.RawMessage, string, error) {
+func (c *InsightsAuthoringClient) requestAuthorized(ctx context.Context, method, path string, document json.RawMessage, headers http.Header, write bool, limit int64) (body json.RawMessage, tag string, err error) {
 	credential, err := c.credential(ctx, write)
 	if err != nil {
 		return nil, "", err
@@ -133,7 +133,7 @@ func (c *InsightsAuthoringClient) requestAuthorized(ctx context.Context, method,
 	return readInsightsResponseLimit(resp, limit)
 }
 
-func readInsightsResponseLimit(resp *http.Response, limit int64) (json.RawMessage, string, error) {
+func readInsightsResponseLimit(resp *http.Response, limit int64) (payload json.RawMessage, tag string, err error) {
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	closeErr := resp.Body.Close()
 	if readErr != nil || closeErr != nil {

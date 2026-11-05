@@ -78,7 +78,7 @@ func (s *savedQueryStore) list(providerID string) []json.RawMessage {
 	return result
 }
 
-func (s *savedQueryStore) get(id string) (json.RawMessage, string, error) {
+func (s *savedQueryStore) get(id string) (document json.RawMessage, tag string, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	document, exists := s.documents[id]
