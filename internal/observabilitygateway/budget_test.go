@@ -85,12 +85,99 @@ func TestBackendConcurrencyLimitAndRecovery(t *testing.T) {
 		first <- err
 	}()
 	<-started
-	_, err := b.Explore(context.Background(), "obs/prom", connector.ExploreRequest{Kind: connector.ExploreMetricNames})
-	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err), "queries and discovery share the same work cap")
+	second := make(chan error, 1)
+	go func() {
+		_, err := b.Explore(context.Background(), "obs/prom", connector.ExploreRequest{Kind: connector.ExploreMetricNames})
+		second <- err
+	}()
+	select {
+	case err := <-second:
+		t.Fatalf("queued exploration returned before capacity was released: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
 	close(release)
 	require.NoError(t, <-first)
-	_, err = b.Query(context.Background(), "obs/prom", connector.QueryRequest{Query: "up"})
+	require.NoError(t, <-second, "discovery should wait and use the shared work slot")
+	_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Query: "up"})
 	require.NoError(t, err, "a completed query frees capacity")
+}
+
+func TestExecutionBudgetPerProviderIsolation(t *testing.T) {
+	b := newExecutionBudget(2, time.Second)
+	b.perProvider = 1
+	_, doneFirst, err := b.begin(t.Context(), "obs/hot")
+	require.NoError(t, err)
+	waiting := make(chan error, 1)
+	go func() {
+		_, done, err := b.begin(t.Context(), "obs/hot")
+		if done != nil {
+			done()
+		}
+		waiting <- err
+	}()
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		slots := b.providers["obs/hot"]
+		return slots != nil && len(slots.waiting) == 1
+	}, time.Second, time.Millisecond)
+	_, doneOther, err := b.begin(t.Context(), "obs/independent")
+	require.NoError(t, err, "a hot provider cannot take every global execution slot")
+	doneOther()
+	doneFirst()
+	require.NoError(t, <-waiting)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	require.Empty(t, b.providers, "finished work must release provider bulkheads")
+}
+
+func TestExecutionBudgetQueueBoundedAndCancellation(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.perProvider = 1
+	b.perProviderWaiting = 1
+	b.queueTimeout = time.Second
+	_, done, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	waiting := make(chan error, 1)
+	go func() {
+		_, cleanup, err := b.begin(ctx, "obs/prom")
+		if cleanup != nil {
+			cleanup()
+		}
+		waiting <- err
+	}()
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		slots := b.providers["obs/prom"]
+		return slots != nil && len(slots.waiting) == 1
+	}, time.Second, time.Millisecond)
+	_, _, err = b.begin(t.Context(), "obs/prom")
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err),
+		"overflow rejects new work rather than growing unbounded")
+	cancel()
+	require.Equal(t, connect.CodeCanceled, connect.CodeOf(<-waiting))
+	done()
+	b.mu.Lock()
+	require.Empty(t, b.providers)
+	b.mu.Unlock()
+	_, cleanup, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err, "cancellation must free all queued and active permits")
+	cleanup()
+}
+
+func TestExecutionBudgetQueueTimeout(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.perProvider = 1
+	b.queueTimeout = 20 * time.Millisecond
+	_, done, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err)
+	defer done()
+	started := time.Now()
+	_, _, err = b.begin(t.Context(), "obs/prom")
+	require.Equal(t, connect.CodeDeadlineExceeded, connect.CodeOf(err))
+	require.Less(t, time.Since(started), time.Second)
 }
 
 func TestExecutionBudgetKeepsEarlierDeadline(t *testing.T) {
@@ -99,7 +186,7 @@ func TestExecutionBudgetKeepsEarlierDeadline(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	parent, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
-	ctx, done, err := b.begin(parent)
+	ctx, done, err := b.begin(parent, "obs/prom")
 	require.NoError(t, err)
 	defer done()
 	actual, ok := ctx.Deadline()

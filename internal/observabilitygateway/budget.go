@@ -3,6 +3,7 @@ package observabilitygateway
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -15,34 +16,149 @@ import (
 const (
 	queryTimeout       = 30 * time.Second
 	maxConcurrentQuery = 4
+	queryQueueWait     = 5 * time.Second
+	maxConcurrentQueue = 32
+	maxProviderQueue   = 8
 	maxQueryWindow     = 31 * 24 * time.Hour
 	maxQueryResults    = 1000
 	maxQueryBytes      = 32 << 10
 )
 
-type executionBudget struct {
+type providerWorkSlots struct {
 	active  chan struct{}
-	timeout time.Duration
+	waiting chan struct{}
+	refs    int
+}
+
+// executionBudget bounds all provider I/O and isolates each provider behind
+// its own bulkhead. Only bounded FIFO waiters hold connections; no detached
+// background work survives a client disconnect.
+type executionBudget struct {
+	active             chan struct{}
+	waiting            chan struct{}
+	timeout            time.Duration
+	queueTimeout       time.Duration
+	perProvider        int
+	perProviderWaiting int
+
+	mu        sync.Mutex
+	providers map[string]*providerWorkSlots
 }
 
 func newExecutionBudget(concurrency int, timeout time.Duration) *executionBudget {
-	return &executionBudget{active: make(chan struct{}, concurrency), timeout: timeout}
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	return &executionBudget{
+		active:             make(chan struct{}, concurrency),
+		waiting:            make(chan struct{}, maxConcurrentQueue),
+		timeout:            timeout,
+		queueTimeout:       queryQueueWait,
+		perProvider:        min(2, concurrency),
+		perProviderWaiting: maxProviderQueue,
+		providers:          make(map[string]*providerWorkSlots),
+	}
 }
 
-// begin rejects excess work immediately instead of maintaining an unbounded
-// queue. WithTimeout retains any earlier caller deadline and cancellation.
-func (b *executionBudget) begin(ctx context.Context) (context.Context, func(), error) {
+func (b *executionBudget) providerSlots(provider string) *providerWorkSlots {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	slots := b.providers[provider]
+	if slots == nil {
+		slots = &providerWorkSlots{
+			active:  make(chan struct{}, b.perProvider),
+			waiting: make(chan struct{}, b.perProviderWaiting),
+		}
+		b.providers[provider] = slots
+	}
+	slots.refs++
+	return slots
+}
+
+func (b *executionBudget) releaseProvider(provider string, slots *providerWorkSlots) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	slots.refs--
+	if slots.refs == 0 {
+		delete(b.providers, provider)
+	}
+}
+
+func waitForQuerySlot(ctx context.Context, active, waiting chan struct{}) error {
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	select {
+	case active <- struct{}{}:
+		if err := contextError(ctx); err != nil {
+			<-active
+			return err
+		}
+		return nil
+	default:
+	}
+	select {
+	case waiting <- struct{}{}:
+		defer func() { <-waiting }()
+	default:
+		return connect.NewError(connect.CodeResourceExhausted,
+			errors.New("observability query queue is full; retry shortly"))
+	}
+	select {
+	case active <- struct{}{}:
+		if err := contextError(ctx); err != nil {
+			<-active
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return contextError(ctx)
+	}
+}
+
+// begin acquires per-provider execution before the global cap, so a noisy
+// provider cannot occupy every worker. Queue wait and execution budgets are
+// separate, and both inherit the caller's earlier deadline/cancellation.
+func (b *executionBudget) begin(ctx context.Context, provider string) (context.Context, func(), error) {
 	if err := contextError(ctx); err != nil {
 		return nil, nil, err
 	}
-	select {
-	case b.active <- struct{}{}:
-		bounded, cancel := context.WithTimeout(ctx, b.timeout)
-		return bounded, func() { cancel(); <-b.active }, nil
-	default:
-		return nil, nil, connect.NewError(connect.CodeResourceExhausted,
-			errors.New("observability gateway is at its concurrent query limit; retry later"))
+	queueCtx, stop := context.WithTimeout(ctx, b.queueTimeout)
+	defer stop()
+	slots := b.providerSlots(provider)
+	providerAcquired, globalAcquired := false, false
+	release := func() {
+		if globalAcquired {
+			<-b.active
+		}
+		if providerAcquired {
+			<-slots.active
+		}
+		b.releaseProvider(provider, slots)
 	}
+	if err := waitForQuerySlot(queueCtx, slots.active, slots.waiting); err != nil {
+		release()
+		return nil, nil, err
+	}
+	providerAcquired = true
+	if err := waitForQuerySlot(queueCtx, b.active, b.waiting); err != nil {
+		release()
+		return nil, nil, err
+	}
+	globalAcquired = true
+	bounded, cancel := context.WithTimeout(ctx, b.timeout)
+	if err := contextError(bounded); err != nil {
+		cancel()
+		release()
+		return nil, nil, err
+	}
+	var once sync.Once
+	return bounded, func() {
+		once.Do(func() {
+			cancel()
+			release()
+		})
+	}, nil
 }
 
 func contextError(ctx context.Context) error {
