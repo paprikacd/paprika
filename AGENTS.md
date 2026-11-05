@@ -66,8 +66,8 @@ apply.
 7. **Prove the live result.** Read the new document back with `get_dashboard`
    and capture the returned `uiUrl` and ETag. Call `query_dashboard` with
    bounded options (for example `{"id":"…","history_points":0,"max_series":2,"max_traces":1}`).
-   Verify the number of returned widgets, `queryCount.planned/executed/
-   deduplicated`, every signal's `state`/`error`, last sample timestamps,
+   Verify returned widget count and `queryCount.planned`, `.executed`,
+   `.deduplicated`, every signal's `state`/`error`, last sample timestamps,
    missing values, partial responses and truncation. A successful save
    without this query is **not** a working dashboard. Provider `OK` and
    query `state:"ok"` describe reachability/data availability, not SLO
