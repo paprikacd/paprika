@@ -457,7 +457,7 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 			Description:  tool.Description,
 			InputSchema:  tool.InputSchema,
 			OutputSchema: outputSchema,
-			Meta:         tool.Meta,
+			Meta:         s.toolAuthMeta(*tool),
 			Icons:        tool.Icons,
 			Annotations: &sdkmcp.ToolAnnotations{
 				ReadOnlyHint:    tool.Scope == ScopeRead || tool.Scope == ScopeObserve,
@@ -474,6 +474,28 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 		func(*http.Request) *sdkmcp.Server { return sdkSrv },
 		&sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true},
 	)
+}
+
+// toolAuthMeta explicitly advertises the OAuth scope each tool requires.
+// ChatGPT uses the securitySchemes descriptor alongside OAuth resource
+// discovery to decide when to show a Connect or reauthorization prompt.
+// Retain existing MCP App metadata instead of replacing it.
+func (s *Server) toolAuthMeta(tool Tool) sdkmcp.Meta {
+	meta := make(sdkmcp.Meta, len(tool.Meta)+1)
+	for key, value := range tool.Meta {
+		meta[key] = value
+	}
+	scopes := []string{string(tool.Scope)}
+	// The Observe gateway requires observe read access to reach its tools.
+	// Authoring adds a separate permission, not a replacement for read access.
+	if s.disableConsoleResources && tool.Scope == ScopeInsightsWrite {
+		scopes = []string{string(ScopeObserve), string(ScopeInsightsWrite)}
+	}
+	meta["securitySchemes"] = []map[string]any{{
+		"type": "oauth2",
+		"scopes": scopes,
+	}}
+	return meta
 }
 
 func serverDescriptionAndInstructions(disableConsoleResources bool, supportedScopes []Scope) (description, instructions string) {
@@ -883,6 +905,21 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 	}
 	switch {
 	case errors.Is(err, ErrScopeDenied):
+		// Preserve the historical fleet MCP protocol error; Observe also
+		// provides the per-tool OAuth challenge ChatGPT needs to reconnect.
+		if s.disableConsoleResources {
+			challenge := fmt.Sprintf(
+				`Bearer resource_metadata="%s%s/.well-known/oauth-protected-resource", error="insufficient_scope", error_description="Reauthorize Paprika Observe to grant the required scope"`,
+				s.publicURL, s.routePrefix,
+			)
+			return &sdkmcp.CallToolResult{
+				Meta: sdkmcp.Meta{"mcp/www_authenticate": []string{challenge}},
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{
+					Text: s.scopeDeniedMessage(name),
+				}},
+				IsError: true,
+			}, nil
+		}
 		return nil, &sdkjsonrpc.Error{Code: codeScopeDenied, Message: s.scopeDeniedMessage(name)}
 	case errors.Is(err, ErrToolNotFound):
 		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeMethodNotFound, Message: err.Error()}
