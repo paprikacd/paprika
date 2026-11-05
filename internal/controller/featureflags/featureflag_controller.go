@@ -17,6 +17,8 @@ limitations under the License.
 package featureflags
 
 import (
+	"time"
+
 	"context"
 	"errors"
 	"fmt"
@@ -35,6 +37,10 @@ import (
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 )
+
+// conflictRequeueDelay is the wait before a reconcile retries after a status
+// update conflict. ctrl.Result.Requeue is deprecated in favor of RequeueAfter.
+const conflictRequeueDelay = 100 * time.Millisecond
 
 // FeatureFlagReconciler reconciles FeatureFlag resources.
 type FeatureFlagReconciler struct {
@@ -96,7 +102,7 @@ func (r *FeatureFlagReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.client.Status().Update(ctx, &flag); err != nil {
 		if apierrors.IsConflict(err) {
 			log.Info("Conflict updating FeatureFlag status; will retry", "featureflag", flag.Name)
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("updating featureflag status: %w", err)
 	}

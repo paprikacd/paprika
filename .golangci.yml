@@ -40,6 +40,13 @@ linters:
     - wastedassign
     - wrapcheck
   settings:
+    wrapcheck:
+      # These functions construct typed API errors. Wrapping them would hide
+      # the StatusError or connect.Error type that callers and webhooks read.
+      extra-ignore-sigs:
+        - k8s.io/apimachinery/pkg/api/errors.New
+        - (k8s.io/apimachinery/pkg/util/validation/field.ErrorList).ToAggregate(
+        - connectrpc.com/connect.NewError(
     errcheck:
       check-blank: true
       check-type-assertions: true
