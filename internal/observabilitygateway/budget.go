@@ -41,8 +41,8 @@ type executionBudget struct {
 	perProvider        int
 	perProviderWaiting int
 
-	mu        sync.Mutex
-	providers map[string]*providerWorkSlots
+	mu                 sync.Mutex
+	providers          map[string]*providerWorkSlots
 }
 
 func newExecutionBudget(concurrency int, timeout time.Duration) *executionBudget {

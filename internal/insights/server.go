@@ -38,14 +38,14 @@ type Server struct {
 	observe      *observeGateway
 	// Serialize persistent mutations across stores so reference checks and the
 	// corresponding deletion/type change observe a consistent snapshot.
-	mutations     sync.Mutex
-	tokenHash     [32]byte
-	insecureDev   bool
-	queries           chan struct{}
-	queryWaiting      chan struct{}
-	queryWaitTimeout  time.Duration
-	queryCount        metric.Int64Counter
-	queryDuration     metric.Float64Histogram
+	mutations        sync.Mutex
+	tokenHash        [32]byte
+	insecureDev      bool
+	queries          chan struct{}
+	queryWaiting     chan struct{}
+	queryWaitTimeout time.Duration
+	queryCount       metric.Int64Counter
+	queryDuration    metric.Float64Histogram
 }
 
 func NewServer(config Config, store *Store) (*Server, error) {

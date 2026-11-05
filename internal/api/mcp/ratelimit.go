@@ -16,11 +16,11 @@ const (
 	mcpRatePerSecond = 50
 	mcpRateBurst     = 100
 
-	mcpRateQueueWait          = 2 * time.Second
-	mcpRateQueueLimit         = 64
-	mcpRateQueuePerPrincipal  = 8
-	mcpLimiterIdleTTL         = 10 * time.Minute
-	mcpLimiterSweepAt         = 256
+	mcpRateQueueWait         = 2 * time.Second
+	mcpRateQueueLimit        = 64
+	mcpRateQueuePerPrincipal = 8
+	mcpLimiterIdleTTL        = 10 * time.Minute
+	mcpLimiterSweepAt        = 256
 )
 
 var errRateQueueCapacity = errors.New("MCP request rate queue is full or the wait would exceed its budget")
@@ -36,15 +36,15 @@ type limiterEntry struct {
 // waiters retain a bounded number of handler goroutines for a bounded time.
 // The accounting is protected by mu; sleeping never holds the mutex.
 type principalRateLimiter struct {
-	mu             sync.Mutex
-	now            func() time.Time // injected for idle-eviction tests
-	lims           map[string]*limiterEntry
-	per            rate.Limit
-	burst          int
-	waiting        int
-	maxWaiting     int
-	maxPerSubject  int
-	maxWait        time.Duration
+	mu            sync.Mutex
+	now           func() time.Time // injected for idle-eviction tests
+	lims          map[string]*limiterEntry
+	per           rate.Limit
+	burst         int
+	waiting       int
+	maxWaiting    int
+	maxPerSubject int
+	maxWait       time.Duration
 }
 
 func newPrincipalRateLimiter() *principalRateLimiter {
