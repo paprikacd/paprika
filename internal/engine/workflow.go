@@ -258,7 +258,7 @@ func (e *WorkflowEngine) runStepJob(ctx context.Context, pipeline *paprika.Pipel
 		onProgress(ctx, pipeline, StepProgress{Name: s.Name, Phase: status.Phase, StartedAt: status.StartedAt})
 	}
 
-	job, err := e.CreateStepJob(ctx, s, pipeline.Name)
+	job, err := e.createStepJob(ctx, s, pipeline.Name, pipeline.Namespace)
 	if err != nil {
 		status.Phase = paprika.StepFailed
 		completedAt := metav1.Now()
@@ -308,7 +308,7 @@ func (e *WorkflowEngine) runStepJob(ctx context.Context, pipeline *paprika.Pipel
 func (e *WorkflowEngine) retryStep(ctx context.Context, pipeline *paprika.Pipeline, s *paprika.PipelineStep, status *paprika.StepStatus, startedAt *metav1.Time, onProgress StepProgressCallback) error {
 	for attempt := 0; attempt < s.Retry; attempt++ {
 		status.StartedAt = startedAt
-		job, err := e.CreateStepJob(ctx, s, pipeline.Name)
+		job, err := e.createStepJob(ctx, s, pipeline.Name, pipeline.Namespace)
 		if err != nil {
 			return fmt.Errorf("step %q: retry %d failed to create job: %w", s.Name, attempt+1, err)
 		}
@@ -380,8 +380,31 @@ func processJobEvent(event watch.Event) *stepResult {
 	return nil
 }
 
+// Step Job labels. Step Jobs run in the engine namespace, and a Pipeline can
+// live in another namespace. Kubernetes rejects an owner reference across
+// namespaces, so the Pipeline finalizer finds its Jobs by these labels.
+const (
+	StepPipelineLabelKey          = "paprika.io/pipeline"
+	StepPipelineNamespaceLabelKey = "paprika.io/pipeline-namespace"
+	StepNameLabelKey              = "paprika.io/step"
+)
+
 // CreateStepJob creates a Kubernetes Job for a single pipeline step.
 func (e *WorkflowEngine) CreateStepJob(ctx context.Context, step *paprika.PipelineStep, pipelineName string) (*batchv1.Job, error) {
+	return e.createStepJob(ctx, step, pipelineName, "")
+}
+
+// StepJobLabels returns the labels of a step Job. An empty pipelineNamespace
+// omits the namespace label.
+func StepJobLabels(pipelineName, pipelineNamespace, stepName string) map[string]string {
+	labels := map[string]string{StepPipelineLabelKey: pipelineName, StepNameLabelKey: stepName}
+	if pipelineNamespace != "" {
+		labels[StepPipelineNamespaceLabelKey] = pipelineNamespace
+	}
+	return labels
+}
+
+func (e *WorkflowEngine) createStepJob(ctx context.Context, step *paprika.PipelineStep, pipelineName, pipelineNamespace string) (*batchv1.Job, error) {
 	timeoutSeconds := int64(step.Timeout)
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 3600
@@ -393,19 +416,13 @@ func (e *WorkflowEngine) CreateStepJob(ctx context.Context, step *paprika.Pipeli
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
 			Namespace: e.Namespace,
-			Labels: map[string]string{
-				"paprika.io/pipeline": pipelineName,
-				"paprika.io/step":     step.Name,
-			},
+			Labels:    StepJobLabels(pipelineName, pipelineNamespace, step.Name),
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:          &backoffLimit,
 			ActiveDeadlineSeconds: &timeoutSeconds,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
-					"paprika.io/pipeline": pipelineName,
-					"paprika.io/step":     step.Name,
-				}},
+				ObjectMeta: metav1.ObjectMeta{Labels: StepJobLabels(pipelineName, pipelineNamespace, step.Name)},
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					SecurityContext: &corev1.PodSecurityContext{
