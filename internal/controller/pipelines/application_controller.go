@@ -2818,6 +2818,7 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 	log := log.FromContext(ctx)
 
 	r.pruneReleasesIfInline(ctx, app)
+	r.prunePromotionPipelinesQuietly(ctx, app)
 	if promotionTriggered(app) || manualTriggered(app) {
 		return r.handleTriggeredHealthyPhase(ctx, app)
 	}
