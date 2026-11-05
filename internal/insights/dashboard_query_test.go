@@ -3,9 +3,9 @@ package insights
 import (
 	"bytes"
 	"context"
-	"io"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/benebsworth/paprika/internal/dataframe"
 )
