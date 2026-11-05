@@ -295,10 +295,16 @@ func TestProtocolRequestContextCompletionRemovesCarrierCallback(t *testing.T) {
 			require.NoError(t, registry.Register(tool))
 			srv := newObservabilityTestServer(t, registry, nil)
 			srv.linkRequestCancellation = true
-			_, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
-			if outcome == "success" {
+			result, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
+			switch outcome {
+			case "success":
 				require.NoError(t, err)
-			} else {
+				require.False(t, result.IsError)
+			case "scope denied":
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				require.Contains(t, result.Meta, "mcp/www_authenticate")
+			default:
 				require.Error(t, err)
 			}
 			if outcome != "scope denied" {

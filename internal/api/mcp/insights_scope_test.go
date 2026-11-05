@@ -116,7 +116,9 @@ func TestInsightsAuthoringToolRequiresItsScopeAndIsAdvertisedAsWrite(t *testing.
 	srv := newObservabilityTestServer(t, registry, nil, ScopeObserve, ScopeInsightsWrite)
 	for _, scope := range []Scope{ScopeObserve, ScopeWrite} {
 		body := doJSONRPC(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_saved_query","arguments":{}}}`, observeBearerFor(t, scope))
-		assert.Contains(t, string(body), `"code":-32001`)
+		assert.Contains(t, string(body), `"isError":true`)
+		assert.Contains(t, string(body), `"mcp/www_authenticate"`)
+		assert.Contains(t, string(body), string(ScopeInsightsWrite))
 	}
 	body := doJSONRPC(t, srv, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_saved_query","arguments":{}}}`, observeBearerFor(t, ScopeInsightsWrite))
 	assert.NotContains(t, string(body), `"error"`)
@@ -143,7 +145,9 @@ func TestInsightsWriteAloneCannotReadTelemetry(t *testing.T) {
 	require.NoError(t, registry.Register(stubTool("query_metrics", ScopeObserve, false)))
 	srv := newObservabilityTestServer(t, registry, nil, ScopeObserve, ScopeInsightsWrite)
 	body := doJSONRPC(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_metrics","arguments":{}}}`, observeBearerFor(t, ScopeInsightsWrite))
-	assert.Contains(t, string(body), `"code":-32001`)
+	assert.Contains(t, string(body), `"isError":true`)
+	assert.Contains(t, string(body), `"mcp/www_authenticate"`)
+	assert.Contains(t, string(body), string(ScopeObserve))
 }
 
 func TestInsightsNativeDiscoveryAndPendingRequestAdvertiseOnlyAuthoringScopes(t *testing.T) {

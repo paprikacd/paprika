@@ -36,7 +36,8 @@ func TestInitializeAdvertisesTools(t *testing.T) {
 	var out struct {
 		Result struct {
 			Tools []struct {
-				Name        string `json:"name"`
+				Name string `json:"name"`
+				//nolint:tagliatelle // _meta is the MCP wire-protocol key, not an application naming convention.
 				Meta        sdkmcp.Meta `json:"_meta"`
 				Annotations struct {
 					ReadOnlyHint    bool `json:"readOnlyHint"`
@@ -63,25 +64,27 @@ func TestInitializeAdvertisesTools(t *testing.T) {
 
 func TestToolOAuthSchemeAdvertisedPerToolAndPreservesMetadata(t *testing.T) {
 	srv := newTestServer(t)
-	readMeta := srv.toolAuthMeta(Tool{
+	readMeta := srv.toolAuthMeta(&Tool{
 		Name: "fleet_status", Scope: ScopeRead,
 		Meta: sdkmcp.Meta{"ui": map[string]any{"resourceUri": "ui://paprika/fleet"}},
 	})
-	require.Equal(t, "ui://paprika/fleet", readMeta["ui"].(map[string]any)["resourceUri"])
+	ui, ok := readMeta["ui"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "ui://paprika/fleet", ui["resourceUri"])
 	assert.Equal(t, []map[string]any{{"type": "oauth2", "scopes": []string{"paprika:read"}}}, readMeta["securitySchemes"])
 	// The SDK should not mutate an existing tool's metadata in-place.
 	original := sdkmcp.Meta{"existing": "preserved"}
-	_ = srv.toolAuthMeta(Tool{Scope: ScopeRead, Meta: original})
+	_ = srv.toolAuthMeta(&Tool{Scope: ScopeRead, Meta: original})
 	assert.NotContains(t, original, "securitySchemes")
 	srv.disableConsoleResources = true
-	observe := srv.toolAuthMeta(Tool{Name: "query_metrics", Scope: ScopeObserve})
+	observe := srv.toolAuthMeta(&Tool{Name: "query_metrics", Scope: ScopeObserve})
 	assert.Equal(t, []map[string]any{{"type": "oauth2", "scopes": []string{"paprika:observe"}}}, observe["securitySchemes"])
-	author := srv.toolAuthMeta(Tool{Name: "patch_dashboard", Scope: ScopeInsightsWrite})
+	author := srv.toolAuthMeta(&Tool{Name: "patch_dashboard", Scope: ScopeInsightsWrite})
 	assert.Equal(t, []map[string]any{{"type": "oauth2", "scopes": []string{"paprika:observe", "paprika:insights:write"}}}, author["securitySchemes"])
 }
 
 func TestObserveInsufficientScopeProvidesChatGPTOAuthChallenge(t *testing.T) {
-	srv, _, _, _ := newNativeOAuthContractServer(t, ScopeObserve, ScopeInsightsWrite)
+	srv := newObservabilityTestServer(t, nil, nil, ScopeObserve, ScopeInsightsWrite)
 	result, err := srv.mapInvokeError(t.Context(), "query_dashboard", ErrScopeDenied)
 	require.NoError(t, err)
 	require.NotNil(t, result)
