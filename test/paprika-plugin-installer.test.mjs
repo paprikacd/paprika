@@ -42,6 +42,7 @@ test('npm package includes marketplace, OAuth configuration and skills', () => {
   const paths = new Set(JSON.parse(pack.stdout)[0].files.map((entry) => entry.path));
   for (const file of [
     'bin/paprika-plugins.mjs',
+    '.agents/plugins/marketplace.json',
     '.claude-plugin/marketplace.json',
     'plugins/paprika/plugin.json',
     'plugins/paprika-observe/plugin.json',

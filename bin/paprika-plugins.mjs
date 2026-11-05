@@ -36,7 +36,8 @@ function invoke(executable, args, capture = false) {
 }
 
 function stageMarketplace() {
-  const catalog = join(packageRoot, '.claude-plugin', 'marketplace.json');
+  const catalog = join(packageRoot, '.agents', 'plugins', 'marketplace.json');
+  const claudeCatalog = join(packageRoot, '.claude-plugin', 'marketplace.json');
   for (const path of [catalog, join(packageRoot, 'plugins', 'paprika', 'plugin.json'), join(packageRoot, 'plugins', 'paprika-observe', 'mcp.json')]) {
     if (!existsSync(path)) throw new Error('npm package is missing ' + path);
   }
@@ -54,9 +55,11 @@ function stageMarketplace() {
   const backup = managedRoot + '.backup-' + process.pid;
   rmSync(staging, { force: true, recursive: true });
   try {
+    mkdirSync(join(staging, '.agents', 'plugins'), { recursive: true });
     mkdirSync(join(staging, '.claude-plugin'), { recursive: true });
     mkdirSync(join(staging, 'plugins'), { recursive: true });
-    cpSync(catalog, join(staging, '.claude-plugin', 'marketplace.json'));
+    cpSync(catalog, join(staging, '.agents', 'plugins', 'marketplace.json'));
+    cpSync(claudeCatalog, join(staging, '.claude-plugin', 'marketplace.json'));
     for (const plugin of Object.values(names)) {
       cpSync(join(packageRoot, 'plugins', plugin), join(staging, 'plugins', plugin), { recursive: true });
     }

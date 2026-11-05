@@ -9,6 +9,7 @@
   },
   "files": [
     "bin/paprika-plugins.mjs",
+    ".agents/plugins/marketplace.json",
     ".claude-plugin/marketplace.json",
     "plugins/paprika",
     "plugins/paprika-observe"
