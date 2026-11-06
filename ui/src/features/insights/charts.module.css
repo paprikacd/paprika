@@ -551,7 +551,7 @@
   pointer-events: none;
 }
 
-.stat:has([data-sparkline-placement="side"]) .statValue {
+.stat:where(:not(.embeddedStat)):has([data-sparkline-placement="side"]) .statValue {
   /* Two-row KPI cards have a full reading lane; the old 24px ceiling
      made the measurement look tiny beside a large unoccupied history lane.
      One-track cards retain their independent <=40px container override. */

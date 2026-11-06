@@ -7,6 +7,9 @@ const charts = readFileSync(join(process.cwd(), "src/features/insights/charts.mo
 
 it("reserves the full two-row KPI body for an adequately sized number and sparkline", () => {
   expect(charts).toContain("font-size: clamp(26px, 7cqw, 38px)");
+  expect(charts).toContain('.stat:where(:not(.embeddedStat)):has([data-sparkline-placement="side"]) .statValue');
+  expect(charts).toContain('.stat.stat .statValue { font-size: clamp(16px, 8cqw, 21px);');
+  // Do not enlarge readonly embedded single-value widgets inside tooltips.
   expect(sparkline).toContain("height: clamp(36px, 82%, 68px)");
   expect(sparkline).toContain(".withSparkline[data-sparkline-placement=\"side\"] .plot");
   // Keep small one-track and phone-intrinsic layouts separate.
