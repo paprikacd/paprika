@@ -91,6 +91,34 @@ observations or current workload health. For full tool semantics see
 `plugins/paprika-observe/skills/paprika-observe/SKILL.md` and
 `docs/guides/observability-gateway.md`.
 
+
+### Dashboard visual regression checklist (required)
+
+When changing the presentation of an MCP-authored dashboard, follow the
+\`plugins/paprika-observe/skills/paprika-observe/SKILL.md\` **Mandatory visual
+QA** section. A valid schema, ETag save, and successful \`query_dashboard\`
+do not constitute design verification.
+
+- For \`layout.h:2\` stat cards, prefer a short title, value and at most
+  one sparkline. Do not add \`showStatBar:true\` or long descriptions by
+  default; such combinations have created internal card scrollbars.
+- Avoid copied provider/source metadata in every widget description,
+  redundant chart axis captions and unnecessary fixed 0–100 scales.
+- Record before/after rendering at desktop/mobile widths and verify
+  no card-internal scrollbars, clipped values/units, overlap or tooltip
+  placement failures. Inspect a real hover/pinned tooltip.
+- A live \`query_dashboard\` is required to verify source execution,
+  missing/stale data and query count, but it cannot attest to pixel quality.
+  If the screenshot renderer is not deployed, explicitly mark visual QA
+  **NOT RUN**, instead of claiming success.
+- Patch only targeted fields with exact ETags and revert visual regressions
+  without altering saved queries or their provider bindings.
+
+**Postmortem reference:** On 6 Nov 2026 the Omega Observe Control Room
+regressed after enabling five percentage stat bars with \`min/max\` on
+short KPI cards alongside sparklines and lengthy descriptions. Removing
+the redundant elements restored a simpler semantic presentation.
+
 ## Constraints & Preferences
 
 - OTel SDK with Prometheus exporter for metrics (not direct Prometheus client
