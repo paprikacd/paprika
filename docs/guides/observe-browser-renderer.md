@@ -37,3 +37,29 @@ and test slow/error responses, cancellation, cross-origin blocking and
 an authorized viewer's RBAC. The tool is registered only when the sidecar
 configuration is present. An image is visual evidence; use `query_dashboard`
 to verify exact values, missing telemetry and freshness separately.
+
+## Helm activation (after real-browser verification)
+
+An optional chart field `observabilityGateway.renderWorker` renders the
+loopback Chromium sidecar, enables the Go MCP tool and injects a pre-existing
+Kubernetes Secret into both containers. It stays **disabled by default**.
+Enable only with a tested, immutable GHCR image digest, a private Secret and
+the internal UI origin. The gateway Pod's network policy must permit egress
+to the selected Paprika API-server UI Service on TCP 3000. Run
+`helm template` and inspect the Pod SecurityContext/egress rules before
+deployment; never disable network policy or reuse OAuth signing secrets
+as the renderer shared secret.
+
+```yaml
+observabilityGateway:
+  renderWorker:
+    enabled: true
+    image: ghcr.io/paprikacd/paprika-render-worker@sha256:<verified-image-digest>
+    uiOrigin: http://paprika-e2e-api-server:3000
+    secretName: paprika-dashboard-renderer
+    secretKey: secret
+```
+
+No worker image or Secret is created by these Helm changes; publishing,
+secret provisioning and a real authenticated screenshot test are required
+before enabling. Existing deployments are unchanged.
