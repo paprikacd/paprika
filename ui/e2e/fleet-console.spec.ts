@@ -226,7 +226,7 @@ test("loads the next cursor page without replacing existing applications", async
   await expect(sentinel).toContainText("200 loaded / 250 indexed")
 })
 
-test("keeps the fleet-wide instrument summary truthful and readable on desktop and mobile", async ({ page }) => {
+test("keeps the fleet-wide instrument summary truthful and readable on desktop and mobile", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/dashboard")
   const strip = page.getByRole("region", { name: "Fleet signals" })
@@ -259,6 +259,10 @@ test("keeps the fleet-wide instrument summary truthful and readable on desktop a
       expect(cell.numberLeft).toBeGreaterThanOrEqual(cell.left - 1)
       expect(cell.numberRight).toBeLessThanOrEqual(cell.right + 1)
     }
+    await testInfo.attach("fleet-signals-" + width + "px", {
+      body: await strip.screenshot({ animations: "disabled" }),
+      contentType: "image/png",
+    })
   }
 })
 
