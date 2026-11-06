@@ -6,7 +6,7 @@ const shell = readFileSync(join(process.cwd(), "src/features/insights/insights.m
 const charts = readFileSync(join(process.cwd(), "src/features/insights/charts.module.css"), "utf8");
 
 it("reserves the full two-row KPI body for an adequately sized number and sparkline", () => {
-  expect(charts).toContain("font-size: clamp(26px, 7cqw, 38px)");
+  expect(charts).toContain("font-size: clamp(26px, 8cqw, 38px)");
   expect(charts).toContain('.stat:where(:not(.embeddedStat)):has([data-sparkline-placement="side"]) .statValue');
   expect(charts).toContain('.stat.stat .statValue { font-size: clamp(16px, 8cqw, 21px);');
   // Do not enlarge readonly embedded single-value widgets inside tooltips.
