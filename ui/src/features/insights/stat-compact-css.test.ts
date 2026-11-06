@@ -5,6 +5,15 @@ const sparkline = readFileSync(join(process.cwd(), "src/features/insights/stat-s
 const shell = readFileSync(join(process.cwd(), "src/features/insights/insights.module.css"), "utf8");
 const charts = readFileSync(join(process.cwd(), "src/features/insights/charts.module.css"), "utf8");
 
+it("reserves the full two-row KPI body for an adequately sized number and sparkline", () => {
+  expect(charts).toContain("font-size: clamp(26px, 7cqw, 38px)");
+  expect(sparkline).toContain("height: clamp(36px, 82%, 68px)");
+  expect(sparkline).toContain(".withSparkline[data-sparkline-placement=\"side\"] .plot");
+  // Keep small one-track and phone-intrinsic layouts separate.
+  expect(sparkline).toContain(".withSparkline[data-sparkline-placement=\"side\"] .plot { height: min(100%, 28px); }");
+  expect(sparkline).toContain("height: 40px");
+});
+
 it("separates compact history without changing the authored background rule at larger heights", () => {
   const compact = sparkline.slice(sparkline.lastIndexOf("@container insight-widget (max-height: 40px)"));
   expect(compact).toContain("grid-template-columns: minmax(0, auto) minmax(28px, 1fr)");

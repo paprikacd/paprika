@@ -14,6 +14,10 @@ try {
   const providerId = environment.providerIds.metrics;
   const widget = (id, x, options) => ({ id, title: id === "side" ? "Ingress" : id === "background" ? "Egress" : "Target (SLO)", type: "stat", providerId, query: id, unit: "Mb/s", color: "#008fab", options, layout: { x, y: 0, w: 4, h: 1 } });
   const dashboard = { schemaVersion: 1, id: "compact-kpi", title: "Compact KPI", timeRange: "1h", refreshInterval: 0, widgets: [widget("side", 0, { showSparkline: true, sparklinePlacement: "side", statIcon: "arrow-down", decimals: 2 }), widget("background", 4, { showSparkline: true }), widget("plain", 8, { showSparkline: false, statIcon: "target", decimals: 2, showStatBar: true, min: 0, max: 100, thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800" }] })] };
+  // A regular two-row KPI must use the full card reading/history body,
+  // without breaking the existing one-row compact and mobile behaviour.
+  dashboard.widgets.push({ ...widget("roomy", 0, { showSparkline: true, sparklinePlacement: "side", statIcon: "activity", decimals: 2 }),
+    title: "Roomy service rate", layout: { x: 0, y: 1, w: 4, h: 2 } });
   await environment.api(`dashboards/${dashboard.id}`, "PUT", dashboard, { "If-None-Match": "*" });
   const saved = (await environment.api(`dashboards/${dashboard.id}`)).document;
   assert.equal(saved.widgets[0].options.sparklinePlacement, "side");
@@ -57,6 +61,30 @@ try {
         return { chain, card: bounds(card), value: bounds(card.querySelector('[data-metric-value]')), plot: bounds(card.querySelector('[data-stat-sparkline]')), icon: bounds(card.querySelector('[aria-hidden="true"]')), headingFont: getComputedStyle(card.querySelector('h3')).fontFamily, pageOverflow: document.documentElement.scrollWidth > innerWidth + 1 };
       });
       assert.equal(measurements.pageOverflow, false, `${theme} ${viewport.width}: page overflow`);
+      const roomy = page.locator('[data-widget-id="roomy"]');
+      await roomy.locator('[data-metric-value="42.34"]').waitFor();
+      const fullKPI = await roomy.evaluate(card => {
+        const bounds = element => {
+          const box = element.getBoundingClientRect();
+          return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, height: box.height };
+        };
+        const stat = card.querySelector('[data-stat-sparkline-enabled="true"]');
+        const value = card.querySelector('[data-metric-value]');
+        const plot = card.querySelector('[data-stat-sparkline]');
+        return {
+          card: bounds(card), title: bounds(card.querySelector('h3')),
+          value: bounds(value), plot: bounds(plot),
+          fontSize: Number.parseFloat(getComputedStyle(value).fontSize),
+          innerScroll: stat.scrollHeight > stat.clientHeight + 1,
+        };
+      });
+      assert.equal(fullKPI.innerScroll, false, `${theme} ${viewport.width}: two-row KPI must never scroll inside the card: ${JSON.stringify(fullKPI)}`);
+      assert.ok(fullKPI.fontSize >= (viewport.width >= 600 ? 28 : 26), `two-row KPI value should dominate: ${JSON.stringify(fullKPI)}`);
+      assert.ok(fullKPI.plot.height >= (viewport.width >= 600 ? 42 : 38), `trend must use available vertical space: ${JSON.stringify(fullKPI)}`);
+      assert.ok(fullKPI.value.top >= fullKPI.title.bottom - 1 && fullKPI.value.bottom <= fullKPI.card.bottom,
+        `the prominent reading must fit its KPI card: ${JSON.stringify(fullKPI)}`);
+      assert.ok(fullKPI.plot.top >= fullKPI.card.top && fullKPI.plot.bottom <= fullKPI.card.bottom + 1,
+        `the expanded trend must fit its KPI card: ${JSON.stringify(fullKPI)}`);
       assert.ok(measurements.plot.width > 15 && measurements.plot.height >= 20, `side sparkline has drawable area: ${JSON.stringify(measurements)}`);
       assert.ok(measurements.plot.left >= measurements.value.right - 1, `sparkline must sit beside the value: ${JSON.stringify(measurements)}`);
       assert.ok(measurements.plot.top >= measurements.card.top && measurements.plot.bottom <= measurements.card.bottom + 1 && measurements.value.top >= measurements.card.top && measurements.value.bottom <= measurements.card.bottom + 1, `reading and trend must fit vertically: ${JSON.stringify(measurements)}`);

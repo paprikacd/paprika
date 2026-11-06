@@ -552,8 +552,11 @@
 }
 
 .stat:has([data-sparkline-placement="side"]) .statValue {
-  font-size: clamp(18px, 8cqw, 24px);
-  letter-spacing: -0.01em;
+  /* Two-row KPI cards have a full reading lane; the old 24px ceiling
+     made the measurement look tiny beside a large unoccupied history lane.
+     One-track cards retain their independent <=40px container override. */
+  font-size: clamp(26px, 7cqw, 38px);
+  letter-spacing: -0.03em;
 }
 /* Timestamp remains available to assistive technology and in value details. */
 .stat:has([data-sparkline-placement="side"]) .statMeta {

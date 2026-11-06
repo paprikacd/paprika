@@ -71,7 +71,9 @@
   position: static;
   align-self: center;
   width: calc(100% - 8px);
-  height: clamp(24px, 30%, 48px);
+  /* Use the available card body instead of a 24-48px letterbox. A true
+     one-track or phone-intrinsic stat still uses its smaller override. */
+  height: clamp(36px, 82%, 68px);
   margin: 0 8px 0 0;
   mask-image: none;
 }
