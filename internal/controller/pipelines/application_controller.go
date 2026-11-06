@@ -844,9 +844,19 @@ func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, ap
 	// to the one true phase condition.
 	normalizePhaseConditions(app, "PhaseChanged", "phase "+string(app.Status.Phase)+" is active")
 	desiredStatus := app.Status.DeepCopy()
+	attempt := 0
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// The first read uses the cache. After a conflict the cache still holds
+		// the stale resourceVersion until the watch event arrives, so every
+		// retry inside the backoff window would conflict again. Read the API
+		// server instead.
+		reader := client.Reader(r.client)
+		if attempt > 0 {
+			reader = r.applicationCleanupReader()
+		}
+		attempt++
 		var fresh paprikav1.Application
-		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
+		if err := reader.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching application for status update: %w", err)
 		}
 		r.adoptConcurrentStatus(app, desiredStatus, &fresh, preserveReleaseRef)

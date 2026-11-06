@@ -162,7 +162,10 @@ type TrafficRouterFactory func(cfg *paprikav1.TrafficRouter, client dynamic.Inte
 
 // ReleaseReconciler reconciles Release resources.
 type ReleaseReconciler struct {
-	client                client.Client
+	client client.Client
+	// apiReader reads the API server without the informer cache. Status
+	// retries use it after a conflict, when the cache is known to be stale.
+	apiReader             client.Reader
 	Scheme                *runtime.Scheme
 	K8sClient             kubernetes.Interface
 	Namespace             string
@@ -882,9 +885,17 @@ func (r *ReleaseReconciler) handleFailedRollback(ctx context.Context, release *p
 
 func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *paprikav1.Release, oldPhase paprikav1.ReleasePhase) error {
 	desiredStatus := release.Status.DeepCopy()
+	attempt := 0
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// See patchAppStatusPreserving: after a conflict the cached copy is
+		// stale, so the retry reads the API server.
+		reader := client.Reader(r.client)
+		if attempt > 0 && r.apiReader != nil {
+			reader = r.apiReader
+		}
+		attempt++
 		var fresh paprikav1.Release
-		if err := r.client.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &fresh); err != nil {
+		if err := reader.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching release for status update: %w", err)
 		}
 		fresh.Status = *desiredStatus
@@ -4199,6 +4210,7 @@ func (r *ReleaseReconciler) checkApprovalGates(ctx context.Context, release *pap
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.client = mgr.GetClient()
+	r.apiReader = mgr.GetAPIReader()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&paprikav1.Release{}).
 		Owns(&corev1.ConfigMap{}).
