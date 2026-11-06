@@ -102,5 +102,7 @@ func TestDashboardRenderEmitsBrowserImageWithoutExposingToken(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "image/png", embedded.MIMEType)
 	require.Equal(t, imageBytes.Bytes(), embedded.Data)
-	require.NotContains(t, result.Content[0].(*sdkmcp.TextContent).Text, "Bearer")
+	previewText, ok := result.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.NotContains(t, previewText.Text, "Bearer")
 }

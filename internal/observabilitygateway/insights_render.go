@@ -22,7 +22,7 @@ import (
 
 const (
 	dashboardRenderTimeout = 24 * time.Second
-	dashboardRenderMaxPNG = 4 << 20
+	dashboardRenderMaxPNG  = 4 << 20
 )
 
 const dashboardRenderSchema = `{"type":"object","additionalProperties":false,"required":["id"],"properties":{"id":` + insightsIDSchema + `,"width":{"enum":[390,768,1512],"type":"integer"},"theme":{"enum":["dark","light"],"type":"string"},"focus_widget":` + insightsIDSchema + `}}`
@@ -33,15 +33,16 @@ type dashboardPreviewRenderer struct {
 	client   *http.Client
 }
 type dashboardRenderArgs struct {
-	ID string `json:"id"`
-	Width int `json:"width,omitempty"`
-	Theme string `json:"theme,omitempty"`
+	ID          string `json:"id"`
+	Width       int    `json:"width,omitempty"`
+	Theme       string `json:"theme,omitempty"`
 	FocusWidget string `json:"focus_widget,omitempty"` //nolint:tagliatelle // MCP uses snake_case.
 }
 
 // ConfigureDashboardRenderer enables a local, separate Chromium sidecar.
 // The URL is deployment configuration, never an MCP input. Loopback-only
 // prevents a client-selected destination from receiving human credentials.
+//nolint:cyclop // Security-sensitive endpoint checks must remain independently explicit.
 func (c *InsightsAuthoringClient) ConfigureDashboardRenderer(endpoint, secret string) error {
 	if endpoint == "" && secret == "" {
 		c.renderer = nil
@@ -58,6 +59,7 @@ func (c *InsightsAuthoringClient) ConfigureDashboardRenderer(endpoint, secret st
 	return nil
 }
 
+//nolint:cyclop // Validate every independent bound on untrusted MCP arguments.
 func parseDashboardRenderArgs(raw json.RawMessage) (dashboardRenderArgs, error) {
 	var args dashboardRenderArgs
 	if len(raw) == 0 || len(raw) > 2048 {
@@ -73,8 +75,12 @@ func parseDashboardRenderArgs(raw json.RawMessage) (dashboardRenderArgs, error) 
 		(args.FocusWidget != "" && !insightsDocumentID.MatchString(args.FocusWidget)) {
 		return args, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid dashboard or widget identifier"))
 	}
-	if args.Width == 0 { args.Width = 1512 }
-	if args.Theme == "" { args.Theme = "dark" }
+	if args.Width == 0 {
+		args.Width = 1512
+	}
+	if args.Theme == "" {
+		args.Theme = "dark"
+	}
 	if (args.Width != 390 && args.Width != 768 && args.Width != 1512) ||
 		(args.Theme != "dark" && args.Theme != "light") {
 		return args, connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported preview viewport or appearance"))
@@ -88,12 +94,15 @@ func insightsRenderDashboardTool(c *InsightsAuthoringClient) mcp.Tool {
 		Scope: mcp.ScopeObserve, InputSchema: json.RawMessage(dashboardRenderSchema),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
 			args, err := parseDashboardRenderArgs(raw)
-			if err != nil { return nil, err }
+			if err != nil {
+		return nil, err
+	}
 			return c.renderDashboard(ctx, args)
 		},
 	}
 }
 
+//nolint:cyclop // Keep caller authorization and image checks explicit.
 func (c *InsightsAuthoringClient) renderDashboard(ctx context.Context, args dashboardRenderArgs) (*sdkmcp.CallToolResult, error) {
 	if c.renderer == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("dashboard browser renderer is not configured"))
@@ -101,7 +110,9 @@ func (c *InsightsAuthoringClient) renderDashboard(ctx context.Context, args dash
 	// The existing Insights GET path validates human read access before the
 	// renderer receives any delegated token. No web URL comes from callers.
 	doc, err := c.get(ctx, "dashboards", args.ID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var details struct {
 		Title string `json:"title"`
 		Widgets []struct { ID string `json:"id"` } `json:"widgets"`
@@ -112,26 +123,37 @@ func (c *InsightsAuthoringClient) renderDashboard(ctx context.Context, args dash
 	if args.FocusWidget != "" {
 		found := false
 		for _, widget := range details.Widgets {
-			if widget.ID == args.FocusWidget { found = true; break }
+			if widget.ID == args.FocusWidget {
+				found = true
+				break
+			}
 		}
 		if !found {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("widget does not exist in this dashboard"))
 		}
 	}
 	token, err := c.credential(ctx, false)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	payload, err := json.Marshal(args)
-	if err != nil { return nil, connect.NewError(connect.CodeInternal, errors.New("invalid renderer request")) }
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("invalid renderer request"))
+	}
 	bounded, cancel := context.WithTimeout(ctx, dashboardRenderTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(bounded, http.MethodPost, c.renderer.endpoint, bytes.NewReader(payload))
-	if err != nil { return nil, connect.NewError(connect.CodeInternal, errors.New("invalid renderer URL")) }
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("invalid renderer URL"))
+	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("X-Paprika-Render-Secret", c.renderer.secret)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := c.renderer.client.Do(req) // #nosec G704 -- Operator-configured, fixed loopback-only URL.
-	if err != nil { return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser renderer unavailable")) }
-	defer response.Body.Close()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser renderer unavailable"))
+	}
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK || !strings.HasPrefix(response.Header.Get("Content-Type"), "image/png") {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser screenshot was not produced"))
 	}
