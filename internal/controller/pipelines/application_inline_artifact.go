@@ -415,13 +415,23 @@ func validateInlineArtifactReleaseSnapshot(snapshot *corev1.ConfigMap, release *
 	return validateInlineArtifactDocuments(payload, artifact, targetNamespace, defaultNamespace)
 }
 
+// errInlineReleaseSuperseded reports that the accepted inline artifact moved
+// ahead of the active Release. This is the normal state while a new artifact
+// rolls out: the spec carries the new manifestHash before the controller makes
+// its Release active. The diff waits for that Release instead of comparing the
+// live state with a snapshot the Application no longer accepts.
+var errInlineReleaseSuperseded = errors.New("inline artifact release source hash differs from the accepted manifestHash")
+
 func validateInlineArtifactApplicationSnapshot(snapshot *corev1.ConfigMap, release *paprikav1.Release, app *paprikav1.Application) error {
 	if release.Spec.ManifestSource == nil || release.Spec.ManifestSource.Artifact == nil {
 		return nil
 	}
 	deployment := effectiveDeploymentApp(app)
-	if inlineArtifact(deployment) == nil || deployment.Spec.Source.Inline.ManifestHash != release.Annotations[sourceHashAnnotation] {
-		return errors.New("inline artifact release source hash differs from the accepted manifestHash")
+	if inlineArtifact(deployment) == nil {
+		return errors.New("inline artifact release has no accepted inline artifact")
+	}
+	if deployment.Spec.Source.Inline.ManifestHash != release.Annotations[sourceHashAnnotation] {
+		return errInlineReleaseSuperseded
 	}
 	return validateInlineArtifactReleaseSnapshot(snapshot, release, appTargetNamespace(deployment))
 }
