@@ -119,7 +119,7 @@ func (r *RepoServerRenderer) Render(ctx context.Context, tmpl *paprikav1.Templat
 		if timeoutErr := r.timeoutError("render", tmpl, err); timeoutErr != nil {
 			return nil, timeoutErr
 		}
-		log.FromContext(ctx).Error(err, "Repo server render failed; falling back to local renderer",
+		logRepoServerFallback(ctx, err, "Repo server render failed; falling back to local renderer",
 			"namespace", tmpl.Namespace, "name", tmpl.Name, "type", tmpl.Spec.Type)
 	}
 	if r.local != nil {
@@ -158,7 +158,7 @@ func (r *RepoServerRenderer) ResolveSource(ctx context.Context, tmpl *paprikav1.
 		if timeoutErr := r.timeoutError("resolve source", tmpl, err); timeoutErr != nil {
 			return nil, timeoutErr
 		}
-		log.FromContext(ctx).Error(err, "Repo server source resolve failed; falling back to local renderer",
+		logRepoServerFallback(ctx, err, "Repo server source resolve failed; falling back to local renderer",
 			"namespace", tmpl.Namespace, "name", tmpl.Name, "type", tmpl.Spec.Type)
 	}
 	if r.local != nil {
@@ -184,3 +184,16 @@ func (r *RepoServerRenderer) RenderHelmChart(ctx context.Context, chartName, cha
 }
 
 var _ templateRenderer = (*RepoServerRenderer)(nil)
+
+// logRepoServerFallback records a fallback to the local renderer. An
+// Unavailable error means the repo server could not be reached, which is the
+// normal state while its pods roll or restart: log it at info. Every other
+// code means the repo server answered and failed, which stays an error.
+func logRepoServerFallback(ctx context.Context, err error, msg string, keysAndValues ...any) {
+	logger := log.FromContext(ctx)
+	if connect.CodeOf(err) == connect.CodeUnavailable {
+		logger.Info(msg, append([]any{"reason", err.Error()}, keysAndValues...)...)
+		return
+	}
+	logger.Error(err, msg, keysAndValues...)
+}
