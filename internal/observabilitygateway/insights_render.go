@@ -55,7 +55,13 @@ func (c *InsightsAuthoringClient) ConfigureDashboardRenderer(endpoint, secret st
 		return errors.New("dashboard browser renderer requires http://127.0.0.1:<port>/render and a secret of at least 32 bytes")
 	}
 	c.renderer = &dashboardPreviewRenderer{endpoint: u.String(), secret: secret,
-		client: &http.Client{Timeout: dashboardRenderTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+		client: &http.Client{
+			Timeout: dashboardRenderTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+	}
 	return nil
 }
 
@@ -115,7 +121,9 @@ func (c *InsightsAuthoringClient) renderDashboard(ctx context.Context, args dash
 	}
 	var details struct {
 		Title string `json:"title"`
-		Widgets []struct { ID string `json:"id"` } `json:"widgets"`
+		Widgets []struct {
+			ID string `json:"id"`
+		} `json:"widgets"`
 	}
 	if json.Unmarshal(doc.Document, &details) != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("invalid saved dashboard"))
@@ -153,7 +161,9 @@ func (c *InsightsAuthoringClient) renderDashboard(ctx context.Context, args dash
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser renderer unavailable"))
 	}
-	defer func() { _ = response.Body.Close() }()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode != http.StatusOK || !strings.HasPrefix(response.Header.Get("Content-Type"), "image/png") {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser screenshot was not produced"))
 	}
