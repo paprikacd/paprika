@@ -2244,7 +2244,11 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 
 	result, err := r.computeApplicationDiff(ctx, app, diffEngine)
 	if err != nil {
-		log.Error(err, "Failed to compute application diff")
+		if errors.Is(err, errInlineReleaseSuperseded) {
+			log.V(1).Info("Deferring application diff until the accepted inline artifact is active", "releaseRef", app.Status.ReleaseRef)
+		} else {
+			log.Error(err, "Failed to compute application diff")
+		}
 		if remote {
 			markApplicationDiffUnavailable(app)
 		}
