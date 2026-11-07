@@ -82,7 +82,9 @@ try {
   await verifyRedirectIsolation()
   const build=spawn("go",["build","-o",binary,"./hack/insights-observe-e2e"],{cwd:repository,stdio:"inherit"})
   assert.equal((await once(build,"exit"))[0],0,"render fixture must build")
-  processHandle=spawn(binary,["--ready-file="+ready,"--ui-dir="+join(repository,"ui/out"),"--data-dir="+join(temporary,"data"),...(process.env.INSIGHTS_E2E_URL?["--ui-url="+process.env.INSIGHTS_E2E_URL]:[])],{cwd:repository,stdio:["ignore","pipe","pipe"]})
+  // Exercise the same compiled static UI served in production, including its
+  // asset paths. The surrounding browser suite's Next dev URL is irrelevant.
+  processHandle=spawn(binary,["--ready-file="+ready,"--ui-dir="+join(repository,"ui/out"),"--data-dir="+join(temporary,"data")],{cwd:repository,stdio:["ignore","pipe","pipe"]})
   processHandle.stdout.on("data",data=>{outputLog+=data})
   processHandle.stderr.on("data",data=>{outputLog+=data})
   await until(async()=>{
