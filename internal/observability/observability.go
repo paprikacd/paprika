@@ -26,7 +26,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	otellog "go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -235,7 +234,7 @@ func NewTelemetry(ctx context.Context, cfg Config) *Telemetry {
 			sdklog.WithExportInterval(cfg.BatchTimeout),
 		)),
 	)
-	global.SetLoggerProvider(loggerProvider)
+	otel.SetLoggerProvider(loggerProvider)
 	t.loggerProvider = loggerProvider
 	return t
 }

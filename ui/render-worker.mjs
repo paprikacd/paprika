@@ -115,7 +115,9 @@ async function render(params, bearer, origin, signal, etag) {
         // whose next URL does not run this route handler. Fetch exactly one
         // response so neither credentials nor browser requests leave the allowlist.
         const response=await route.fetch({headers,maxRedirects:0,timeout:maxTime})
-        if(response.status()>=300 && response.status()<400) {
+        // Insights uses conditional reads during its regular document refresh.
+        // 304 carries no navigation and must retain the UI's cached document.
+        if(response.status()>=300 && response.status()<400 && response.status()!==304) {
           fail(new RenderError("dashboard request redirected"))
           await route.abort("blockedbyclient").catch(()=>{})
           return

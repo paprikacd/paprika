@@ -199,7 +199,7 @@ func (s *CacheStore) GetOptionalSource(
 	ctx context.Context,
 	prototype client.Object,
 	key types.NamespacedName,
-) (client.Object, bool, error) {
+) (object client.Object, found bool, err error) {
 	if prototype == nil {
 		return nil, false, errors.New("optional source prototype is nil")
 	}
@@ -207,7 +207,7 @@ func (s *CacheStore) GetOptionalSource(
 	if !ok || object == nil {
 		return nil, false, errors.New("optional source prototype is not a client object")
 	}
-	found, err := s.get(ctx, key, object)
+	found, err = s.get(ctx, key, object)
 	if err != nil || !found {
 		return nil, found, err
 	}

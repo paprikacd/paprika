@@ -34,18 +34,18 @@ type workflowRunStep struct {
 var pinnedActionRevisions = map[string]string{
 	"actions/checkout":                   "3d3c42e5aac5ba805825da76410c181273ba90b1",
 	"anchore/sbom-action/download-syft":  "a930d0ac434e3182448fe678398ba5713717112a",
-	"actions/upload-artifact":            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+	"actions/upload-artifact":            "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
 	"actions/setup-go":                   "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
 	"actions/setup-node":                 "820762786026740c76f36085b0efc47a31fe5020",
 	"hashicorp/setup-terraform":          "dfe3c3f87815947d99a8997f908cb6525fc44e9e",
-	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
+	"azure/setup-helm":                   "9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310",
 	"docker/build-push-action":           "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
-	"docker/login-action":                "abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
+	"docker/login-action":                "81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
 	"docker/setup-buildx-action":         "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
 	"google-github-actions/auth":         "7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
 	"google-github-actions/setup-gcloud": "aa5489c8933f4cc7a4f7d45035b3b1440c9c10db",
-	"go-task/setup-task":                 "70f2430ad412f838533de8c0515c749ffb2b8bd3",
-	"goreleaser/goreleaser-action":       "f06c13b6b1a9625abc9e6e439d9c05a8f2190e94",
+	"go-task/setup-task":                 "a00fbb05ce67b35648be3c78cbc9fd85354c757e",
+	"goreleaser/goreleaser-action":       "a4f02ab5355a589de60d917a659ce617ed19b3de",
 	"peaceiris/actions-gh-pages":         "84c30a85c19949d7eee79c4ff27748b70285e453",
 }
 
@@ -911,7 +911,7 @@ func testDownstreamActionPins(t *testing.T) {
 	const (
 		checkoutRevision    = "3d3c42e5aac5ba805825da76410c181273ba90b1"
 		setupGoRevision     = "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
-		setupHelmRevision   = "59b1c81c6280f5abebb1fb1bc585696daa7dfb42"
+		setupHelmRevision   = "9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"
 		setupBuildxRevision = "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c"
 		buildPushRevision   = "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a"
 	)

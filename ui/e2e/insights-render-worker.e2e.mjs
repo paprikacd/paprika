@@ -42,19 +42,29 @@ function render(args,etag,token=fixture.viewerToken) {
   return fetch(workerURL+"/render",{method:"POST",headers:{Authorization:"Bearer "+token,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":etag,"Content-Type":"application/json"},body:JSON.stringify(args),signal:AbortSignal.timeout(25_000)})
 }
 
-async function verifyRedirectIsolation() {
+async function verifyResponseIsolation() {
   const received=[]
   const sink=createServer((req,res)=>{received.push(req.headers);res.writeHead(200).end("unexpected")})
   const token="redirect-isolation-test-token"
   let sourceAuthorization,redirectWorker
+  const revision='"'+"0".repeat(64)+'"'
+  let conditionalReads=0,conditionalMatched=false
   const sourceRequests=[]
   const source=createServer((req,res)=>{
     sourceRequests.push({method:req.method,path:req.url})
     if(req.url==="/api/insights/dashboards/redirect-test") {
       sourceAuthorization=req.headers.authorization
       res.writeHead(302,{Location:"http://127.0.0.1:"+sink.address().port+"/denied"}).end()
+    } else if(req.url==="/api/insights/dashboards/conditional-test") {
+      conditionalReads++
+      conditionalMatched=req.headers["if-none-match"]===revision && req.headers.authorization==="Bearer "+token
+      res.writeHead(conditionalReads===1?200:304,{"Content-Type":"application/json","Cache-Control":"no-store",ETag:revision}).end(conditionalReads===1?'{"id":"conditional-test"}':undefined)
     } else {
-      res.writeHead(200,{"Content-Type":"text/html"}).end('<main data-testid="dashboard-canvas"><div data-widget-id="redirect"><span aria-busy="true"></span></div></main><script>fetch("/api/insights/dashboards/redirect-test").catch(()=>{}).finally(()=>document.querySelector("[aria-busy]").removeAttribute("aria-busy"))</script>')
+      const conditional=new URL(req.url,"http://fixture").searchParams.get("dashboard")==="conditional-test"
+      const load=conditional
+        ? `fetch("/api/insights/dashboards/conditional-test").then(()=>fetch("/api/insights/dashboards/conditional-test",{headers:{"If-None-Match":${JSON.stringify(revision)}}})).then(response=>{if(response.status!==304)throw Error("conditional read did not return304")})`
+        : 'fetch("/api/insights/dashboards/redirect-test").catch(()=>{})'
+      res.writeHead(200,{"Content-Type":"text/html"}).end('<main data-testid="dashboard-canvas"><div data-widget-id="response"><span aria-busy="true">Response policy fixture</span></div></main><script>'+load+'.finally(()=>document.querySelector("[aria-busy]").removeAttribute("aria-busy"))</script>')
     }
   })
   try {
@@ -62,14 +72,22 @@ async function verifyRedirectIsolation() {
     await new Promise(resolve=>source.listen(0,"127.0.0.1",resolve))
     redirectWorker=createRenderServer({secret,uiOrigin:"http://127.0.0.1:"+source.address().port})
     await new Promise(resolve=>redirectWorker.listen(0,"127.0.0.1",resolve))
-    const response=await fetch("http://127.0.0.1:"+redirectWorker.address().port+"/render",{
-      method:"POST",headers:{Authorization:"Bearer "+token,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":'"'+"0".repeat(64)+'"',"Content-Type":"application/json"},
-      body:JSON.stringify({id:"redirect-test"}),signal:AbortSignal.timeout(25_000),
+    const capture=id=>fetch("http://127.0.0.1:"+redirectWorker.address().port+"/render",{
+      method:"POST",headers:{Authorization:"Bearer "+token,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":revision,"Content-Type":"application/json"},
+      body:JSON.stringify({id}),signal:AbortSignal.timeout(25_000),
     })
+    const response=await capture("redirect-test")
     assert.equal(response.status,422,"a redirected dashboard request must fail rendering: "+JSON.stringify({sourceRequests,credentialed:sourceAuthorization==="Bearer "+token,sinkRequests:received.length}))
     assert.equal(sourceAuthorization,"Bearer "+token,"test must exercise credentialed Insights fetch")
     assert.deepEqual(received,[],"a redirect must never reach an unapproved destination or forward its token")
     console.log("PASS browser redirect isolation: credentialed request never reaches denied sink")
+    const conditional=await capture("conditional-test")
+    assert.equal(conditional.status,200,"normal304 document revalidation must remain renderable")
+    assert.equal(conditional.headers.get("x-paprika-dashboard-etag"),revision)
+    assert.equal(conditionalReads,2)
+    assert.equal(conditionalMatched,true,"revalidation must retain its conditional header and scoped credential")
+    await conditional.arrayBuffer()
+    console.log("PASS browser conditional document read:304 retains the observed revision")
   } finally {
     for(const server of [redirectWorker,source,sink])if(server?.listening) {
       server.closeAllConnections();await new Promise(resolve=>server.close(resolve))
@@ -79,7 +97,7 @@ async function verifyRedirectIsolation() {
 
 try {
   await mkdir(output,{recursive:true})
-  await verifyRedirectIsolation()
+  await verifyResponseIsolation()
   const build=spawn("go",["build","-o",binary,"./hack/insights-observe-e2e"],{cwd:repository,stdio:"inherit"})
   assert.equal((await once(build,"exit"))[0],0,"render fixture must build")
   // Exercise the same compiled static UI served in production, including its
@@ -129,7 +147,7 @@ try {
   const after=await tool("get_dashboard",{id:dashboard.id},fixture.mcpViewerToken)
   assert.equal(after.etag,created.etag)
   assert.deepEqual(after.document,created.document,"screenshot inspection must not mutate saved documents")
-  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,redirectIsolationVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true},null,2))
+  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,redirectIsolationVerified:true,conditionalReadVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true},null,2))
   console.log("PASS focused inspection, revision conflict, provider denial and read-only document preservation")
 } finally {
   await closeRenderBrowser()
