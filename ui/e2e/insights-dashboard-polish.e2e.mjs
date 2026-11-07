@@ -35,7 +35,8 @@ try {
       let data = structuredClone(series);
       if (query === 'trend-a') data = data.slice(0, 2);
       if (query === 'trend-b') data = data.slice(0, 4);
-      if (query === 'gauges') data = data.map((entry, index) => ({ ...entry, name: `production-worker-long-identity-${index + 1}`, points: [{ timestamp: end, value: [558.22, 461.49, 391.61, 100, -12, null, 70, 140][index] }] }));
+      // 299.94 also covers Linux font hinting, where semibold digits are wider.
+      if (query === 'gauges') data = data.map((entry, index) => ({ ...entry, name: `production-worker-long-identity-${index + 1}`, points: [{ timestamp: end, value: [558.22, 299.94, 391.61, 100, -12, null, 70, 140][index] }] }));
       if (query === 'history') data = data.slice(0, 5).map(entry => ({ ...entry, points: entry.points.map((point, i) => ({ ...point, value: i === 20 ? null : 1 })) }));
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ series: data }) });
     });
