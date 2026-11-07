@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '@insights/schema';
 
 const replicaSelection = { selectedReplica: z.string().max(80).optional() };
 export const quorumTopologyConfig = z.strictObject({ ...replicaSelection, showAddresses: z.boolean().default(true), showRegions: z.boolean().default(true), showIndices: z.boolean().default(true) });

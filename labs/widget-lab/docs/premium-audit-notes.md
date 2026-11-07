@@ -6,8 +6,10 @@ The audit configuration is `docs/premium-audit.config.json`. It uses the product
 
 ## Command and result
 
+Run from the lab root, with the tool path set to the installed skill's `scripts/audit_project.py`:
+
 ```sh
-python3 /root/.codex/plugins/cache/openai-curated-remote/frontend-design-premium/1.4.0/skills/frontend-design-premium/scripts/audit_project.py /workspace/scratch/ffa6c3757aaa/paprika-widget-lab --mode strict --config /workspace/scratch/ffa6c3757aaa/paprika-widget-lab/docs/premium-audit.config.json --output /workspace/scratch/ffa6c3757aaa/paprika-widget-lab/docs/premium-audit.json
+python3 /path/to/frontend-design-premium/1.4.0/skills/frontend-design-premium/scripts/audit_project.py . --mode strict --config docs/premium-audit.config.json --output docs/premium-audit.json
 ```
 
 Exit code: **1**. The unmodified JSON report records one error, one violation, zero warnings and zero unresolved ownership findings.

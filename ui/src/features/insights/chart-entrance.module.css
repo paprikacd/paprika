@@ -1,0 +1,38 @@
+/*
+ * The one-time draw-in on a chart's first render (see chart-entrance.ts). Only a plot that carries
+ * [data-chart-entering] animates, and only its mark groups: axes, grids, labels, guides and legends never
+ * move. The clip is an animation with no fill mode, so it is gone when the animation ends and the marks return
+ * to their static geometry. Durations come from --gamma-duration-reveal, which the reduced-motion blocks in
+ * gamma-theme.module.css set to 0. The `view-box` reference box measures every group against the same SVG
+ * viewport, so the wipe front sits at the same x in each series group rather than at each group's own width.
+ */
+@keyframes reveal {
+  from {
+    clip-path: inset(0 100% 0 0) view-box;
+  }
+  to {
+    clip-path: inset(0 0 0 0) view-box;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* TanStack mark groups (line, area and bar). Their class names are set by @tanstack/charts. */
+[data-chart-entering] .revealMarks,
+[data-chart-entering] :global(.ts-chart__line),
+[data-chart-entering] :global(.ts-chart__area),
+[data-chart-entering] :global(.ts-chart__bar) {
+  animation: reveal var(--gamma-duration-reveal, 600ms) var(--gamma-ease-emphasized, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+/* Missing-series caps on the stacked plot: an opacity fade with the same duration and no movement. */
+[data-chart-entering] .fadeMarks {
+  animation: fade var(--gamma-duration-reveal, 600ms) var(--gamma-ease-emphasized, cubic-bezier(0.16, 1, 0.3, 1));
+}

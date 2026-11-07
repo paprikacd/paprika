@@ -1,10 +1,10 @@
 import { useDashboardPanels } from '../components/lab/DashboardWorkbench';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Activity, BatteryCharging, CircleHelp, Clock3, MapPinned, RadioTower, Zap } from 'lucide-react';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import type { Widget } from '../vendor/paprika/ui/src/features/insights/schema';
-import type { DrilldownContext } from '../vendor/paprika/ui/src/features/insights/drilldown';
+import { WidgetVisualization } from '@insights/charts';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import type { Widget } from '@insights/schema';
+import type { DrilldownContext } from '@insights/drilldown';
 import { MetricCard, Panel } from '../components/lab/StudyPrimitives';
 import { registerLabCharts } from '../charts/register-lab-charts';
 import { registerGridCharts } from '../charts/grid/register';
@@ -36,12 +36,12 @@ export function GridOperationsLens({onEdit}:{onEdit?:EditLensWidget}) {
           <MetricCard label="Frequency" value={number(latest.frequency,3)} unit="Hz" detail="49.8–50.2 Hz band" trend={data.day.slice(-36).map(p=>p.frequency)} trendFill={false} trendDomain={[49.9,50.1]} tone="violet" icon={<Activity/>}/>
         </div></Panel>
         {render(panels.mix,'grid-mix-panel')}
-        <div className="grid-battery-row">{render(panels.battery,'grid-battery-panel')}<Panel className="grid-soc-panel" title="State of charge" subtitle="Stored energy divided by usable capacity. The time series integrates signed power at five-minute intervals; charging is negative grid power."><div className="grid-soc-ring" role="img" aria-label={`${number(soc,2)} percent state of charge; ${number(latest.energy,2)} of ${BATTERY_CAPACITY_MWH} MWh`}><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46" fill="none" stroke="#173743" strokeWidth="11"/><circle cx="60" cy="60" r="46" fill="none" stroke="#1cd0df" strokeWidth="11" strokeDasharray={`${soc/100*2*Math.PI*46} ${2*Math.PI*46}`} transform="rotate(-90 60 60)"/><text x="60" y="68" textAnchor="middle" fill="#dfedf7" fontSize="24" fontWeight="600">{number(soc)}%</text></svg><strong>{number(latest.energy)} / {BATTERY_CAPACITY_MWH} <small>MWh</small></strong><span>Usable stored energy</span></div></Panel></div>
+        <div className="grid-battery-row">{render(panels.battery,'grid-battery-panel')}<Panel className="grid-soc-panel" title="State of charge" subtitle="Stored energy divided by usable capacity. The time series integrates signed power at five-minute intervals; charging is negative grid power."><div className="grid-soc-ring" role="img" aria-label={`${number(soc,2)} percent state of charge; ${number(latest.energy,2)} of ${BATTERY_CAPACITY_MWH} MWh`}><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46" fill="none" stroke="var(--gamma-border)" strokeWidth="11"/><circle cx="60" cy="60" r="46" fill="none" stroke="var(--gamma-chart-1)" strokeWidth="11" strokeDasharray={`${soc/100*2*Math.PI*46} ${2*Math.PI*46}`} transform="rotate(-90 60 60)"/><text x="60" y="68" textAnchor="middle" fill="var(--gamma-ink)" fontSize="24" fontWeight="600">{number(soc)}%</text></svg><strong>{number(latest.energy)} / {BATTERY_CAPACITY_MWH} <small>MWh</small></strong><span>Usable stored energy</span></div></Panel></div>
       </div>
     </div>
     <div className="grid-bottom-row">
       {render(panels.prediction,'grid-forecast-panel')}
-      {render(panels.states,'grid-state-panel',<div className="grid-state-key"><span><i style={{background:'#20bb9c'}}/>Normal</span><span><i style={{background:'#f9bf56'}}/>Degraded</span><span><i style={{background:'#f56363'}}/>Outage</span><span><i className="grid-unknown-key"/>Unknown</span></div>)}
+      {render(panels.states,'grid-state-panel',<div className="grid-state-key"><span><i style={{background:'var(--gamma-success)'}}/>Normal</span><span><i style={{background:'var(--gamma-warning)'}}/>Degraded</span><span><i style={{background:'var(--gamma-danger)'}}/>Outage</span><span><i className="grid-unknown-key"/>Unknown</span></div>)}
       {render(panels.events,'grid-events-panel')}
     </div></ChartCursorProvider>
     <footer className="grid-lens-footer"><span><i/>Synthetic fixture · {data.day.length} five-minute observations · {scenario==='peak'?'demand peak':'balanced dispatch'}</span><span>Supply + battery = demand + exports · latest balance {number(latest.generation+latest.battery-latest.demand-latest.exportMW,2)} MW</span></footer>

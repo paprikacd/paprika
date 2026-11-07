@@ -101,7 +101,7 @@ func (s *Server) deleteSavedQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.store.usesSavedQuery(id) {
-		writeError(w, 409, "saved query is in use by a persisted dashboard; remove its widget and tooltip references before deleting")
+		writeError(w, 409, "saved query is in use by a persisted dashboard; remove its widget, event and tooltip references before deleting")
 		return
 	}
 	if err := s.savedQueries.remove(id, r.Header.Get("If-Match")); err != nil {

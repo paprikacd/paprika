@@ -2,23 +2,25 @@ import { hasIntrinsicChartLayout } from '../charts/intrinsic-chart-families';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Braces, ChartNoAxesCombined, Check, ChevronRight, Columns3, Database, Eye, FlaskConical, Redo2, Search, Settings2, Table2, Undo2, X } from 'lucide-react';
-import { WidgetVisualization } from '../vendor/paprika/ui/src/features/insights/charts';
-import { ChartCursorProvider } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
-import { widgetKind, type QueryResult, type Widget, type WidgetOptions } from '../vendor/paprika/ui/src/features/insights/schema';
-import { getWidgetDefinition, useWidgetDefinitions, type WidgetConfigField } from '../vendor/paprika/ui/src/features/insights/widget-registry';
-import { GammaButton } from '../vendor/paprika/ui/src/features/insights/gamma/button';
-import { GammaInput, GammaTextarea } from '../vendor/paprika/ui/src/features/insights/gamma/input';
-import { GammaSelect } from '../vendor/paprika/ui/src/features/insights/gamma/select';
-import { GammaSwitch } from '../vendor/paprika/ui/src/features/insights/gamma/switch';
-import { inheritGammaTheme } from '../vendor/paprika/ui/src/features/insights/gamma/inherit-theme';
-import { lockBodyScroll } from '../vendor/paprika/ui/src/features/insights/gamma/scroll-lock';
-import themeStyles from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
-import { createEditorDraft, editorDataTable, editorStyleControls, editorVisualizations, revalidateEditorDraft, reviseEditorDraft, travelEditorDraft, updateWidgetOption, validateEditorWidget, visualizationCandidate, type EditorStyleControl } from './editor-model';
+import { WidgetVisualization } from '@insights/charts';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import { widgetKind, type QueryResult, type Widget, type WidgetOptions } from '@insights/schema';
+import { getWidgetDefinition, useWidgetDefinitions, type WidgetConfigField } from '@insights/widget-registry';
+import { GammaButton } from '@insights/gamma/button';
+import { GammaInput, GammaTextarea } from '@insights/gamma/input';
+import { GammaSelect } from '@insights/gamma/select';
+import { GammaSwitch } from '@insights/gamma/switch';
+import { inheritGammaTheme } from '@insights/gamma/inherit-theme';
+import { lockBodyScroll } from '@insights/gamma/scroll-lock';
+import themeStyles from '@insights/gamma/gamma-theme.module.css';
+import { createEditorDraft, editorDataTable, editorStyleControls, editorVisualizations, isSafeVisualizationTransition, revalidateEditorDraft, reviseEditorDraft, travelEditorDraft, updateWidgetOption, validateEditorWidget, visualizationCandidate, type EditorStyleControl } from './editor-model';
 import { discoverRecordFields } from './field-bindings';
 import { FieldMapping, SourceSchema } from './FieldMapping';
+import { WidgetPreviewBoundary } from './WidgetPreviewBoundary';
+import { AppearanceSettings, AdvancedAxisSettings, LabelSettings, PresentationPresets, SeriesColourSettings, StatSettings, ThresholdSettings, TooltipContentControls } from './RichWidgetOptions';
 import './WidgetEditor.css';
 
-export type WidgetEditorTab = 'data' | 'schema' | 'query' | 'config';
+export type WidgetEditorTab = 'data' | 'schema' | 'query' | 'config' | 'tooltip' | 'appearance';
 export interface WidgetEditorProps { widget: Widget; result: QueryResult; onApply: (widget: Widget) => void; onClose: () => void; initialTab?: WidgetEditorTab }
 
 function Field({ label, children, help }: { label: string; children: ReactNode; help?: string }) {
@@ -26,7 +28,7 @@ function Field({ label, children, help }: { label: string; children: ReactNode; 
 }
 function OptionGroup({ title, keywords, search, children }: { title: string; keywords: string; search: string; children: ReactNode }) {
   if (search && !`${title} ${keywords}`.toLowerCase().includes(search.toLowerCase())) return null;
-  return <details className="we-option-group" open={!!search || title === 'Panel options' || title === 'Visualization' || title === 'Field bindings' || title === 'Tooltip'}><summary><ChevronRight size={13}/>{title}</summary><div>{children}</div></details>;
+  return <details className="we-option-group" open={!!search || title === 'Panel options' || title === 'Visualization' || title === 'Field bindings' || title === 'Tooltip' || title === 'Presentation presets'}><summary><ChevronRight size={13}/>{title}</summary><div>{children}</div></details>;
 }
 
 /** Shared runtime preferences, kept separate from legend and source configuration. */
@@ -35,19 +37,17 @@ export function TooltipSettings({ options, onChange }: {
   onChange: <K extends keyof WidgetOptions>(key: K, value: WidgetOptions[K]) => void;
 }) {
   const enabled = options?.showTooltip !== false;
-  const compact = options?.inspectorDensity === 'compact';
-  return <>
+    return <>
     <GammaSwitch label="Show tooltips" description="Inspect exact observations with a pointer or keyboard." checked={enabled} onChange={value => onChange('showTooltip', value)}/>
     <p className="we-tooltip-help">Tooltips follow the pointer. Click or press Enter to pin an observation; Escape dismisses it. Keyboard inspection anchors to the focused mark.</p>
     <fieldset className="we-tooltip-settings" disabled={!enabled} aria-label="Tooltip appearance and placement">
-      <Field label="Density"><GammaSelect aria-label="Tooltip density" value={options?.inspectorDensity ?? 'comfortable'} options={[{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }]} onValueChange={value => onChange('inspectorDensity', value as 'comfortable' | 'compact')} size="sm"/></Field>
       <Field label="Preferred placement" help="Flips or moves inward when the preferred side would leave the viewport."><GammaSelect aria-label="Tooltip placement" value={options?.tooltipPlacement ?? 'auto'} options={[{ value: 'auto', label: 'Automatic' }, { value: 'top', label: 'Above' }, { value: 'right', label: 'Right' }, { value: 'bottom', label: 'Below' }, { value: 'left', label: 'Left' }]} onValueChange={value => onChange('tooltipPlacement', value === 'auto' ? undefined : value as WidgetOptions['tooltipPlacement'])} size="sm"/></Field>
       <Field label="Pointer gap (px)" help="Leave blank for the 12 px default. Pinned tooltips keep their anchor."><GammaInput aria-label="Tooltip pointer gap" type="number" min={0} max={40} step={1} value={options?.tooltipOffset ?? ''} placeholder="12" onChange={event => onChange('tooltipOffset', event.target.value === '' ? undefined : Number(event.target.value))} size="sm"/></Field>
       <div className="we-field-pair">
-        <Field label="Maximum width (px)"><GammaInput aria-label="Tooltip maximum width" type="number" min={220} max={640} step={1} value={options?.tooltipMaxWidth ?? ''} placeholder={compact ? '292' : '330'} onChange={event => onChange('tooltipMaxWidth', event.target.value === '' ? undefined : Number(event.target.value))} size="sm"/></Field>
+        <Field label="Maximum width (px)"><GammaInput aria-label="Tooltip maximum width" type="number" min={220} max={640} step={1} value={options?.tooltipMaxWidth ?? ''} placeholder='330' onChange={event => onChange('tooltipMaxWidth', event.target.value === '' ? undefined : Number(event.target.value))} size="sm"/></Field>
         <Field label="Maximum height (px)"><GammaInput aria-label="Tooltip maximum height" type="number" min={160} max={800} step={1} value={options?.tooltipMaxHeight ?? ''} placeholder="560" onChange={event => onChange('tooltipMaxHeight', event.target.value === '' ? undefined : Number(event.target.value))} size="sm"/></Field>
       </div>
-      <p className="we-tooltip-help">Blank limits use {compact ? '292' : '330'} × 560 px. The visible viewport takes priority; longer details scroll inside the tooltip.</p>
+      <p className="we-tooltip-help">Blank limits use 330 × 560 px. The visible viewport takes priority; longer details scroll inside the tooltip.</p>
     </fieldset>
     {!enabled && <p className="we-tooltip-help">Your appearance settings are retained while tooltips are off.</p>}
   </>;
@@ -59,13 +59,19 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
   const rendererDrafts = useRef(new Map<string, Widget>());
   if (!rendererDrafts.current.size) { const initial = getWidgetDefinition(widget); if (initial) rendererDrafts.current.set(initial.id, widget); }
   const [draftState, setState] = useState(() => createEditorDraft(widget, result));
-  const [search, setSearch] = useState(''), [tab, setTab] = useState<WidgetEditorTab>(initialTab);
+  const [search, setSearch] = useState(initialTab === 'tooltip' ? 'tooltip' : initialTab === 'appearance' ? 'appearance' : ''), [tab, setTab] = useState<Exclude<WidgetEditorTab, 'tooltip' | 'appearance'>>(initialTab === 'tooltip' || initialTab === 'appearance' ? 'data' : initialTab);
   const [tableView, setTableView] = useState(false), [previewWidth, setPreviewWidth] = useState<'fill' | 'narrow'>('fill');
   const [dataSearch, setDataSearch] = useState(''), [page, setPage] = useState(0);
   const [source, setSource] = useState(''), [sourceError, setSourceError] = useState(''), [sourceDirty, setSourceDirty] = useState(false);
   const definitions = useWidgetDefinitions(), kind = widgetKind(widget);
   const state = useMemo(() => revalidateEditorDraft(draftState, kind, result), [draftState, kind, result]);
   const previewMatchesResult = useMemo(() => state.errors.length === 0 || !!validateEditorWidget(state.preview, kind, result).widget, [state, kind, result]);
+  const previewKey = useMemo(() => JSON.stringify([
+    state.preview.type, state.preview.pluginId, state.preview.options, state.preview.config,
+    result.records?.rows.length, result.records?.columns.length, result.series?.length,
+  ]), [state.preview, result]);
+  const [failedPreviewKey, setFailedPreviewKey] = useState<string | null>(null);
+  const previewFailed = failedPreviewKey === previewKey;
   const definition = getWidgetDefinition(state.draft);
   const choices = useMemo(() => { const available=editorVisualizations(state.draft,result,definitions); const original=getWidgetDefinition(widget); return original&&!available.some(item=>item.id===original.id)?[original,...available]:available; }, [state.draft, result, definitions, widget]);
   const data = useMemo(() => editorDataTable(result), [result]);
@@ -75,7 +81,7 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
   const filteredRows = useMemo(() => data.rows.filter(row => !dataSearch || row.some(value => String(value ?? 'missing').toLowerCase().includes(dataSearch.toLowerCase()))), [data.rows, dataSearch]);
   const pages = Math.max(1, Math.ceil(filteredRows.length / 20)), safePage = Math.min(page, pages - 1);
   const dirty = JSON.stringify(state.draft) !== JSON.stringify(widget);
-  const valid = state.errors.length === 0 && !sourceDirty;
+  const valid = state.errors.length === 0 && !sourceDirty && !previewFailed;
   const controls = editorStyleControls(state.draft, definition);
   const supports = (control: EditorStyleControl) => controls.includes(control);
   const timeSeries = state.draft.type === 'timeseries';
@@ -86,11 +92,30 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
     const next = { ...state.draft.config }; if (value === undefined) delete next[key]; else next[key] = value;
     revise({ ...state.draft, config: next });
   };
+  const [conversionIssue, setConversionIssue] = useState('');
   const switchVisualization = (value: string) => {
-    const next = choices.find(choice => choice.id === value);
-    if (!next) return;
+    const target = choices.find(choice => choice.id === value);
+    // A stale combo selection or a changed fixture must never bypass capability validation.
+    if (!target || !isSafeVisualizationTransition(state.draft, result, target)) {
+      setConversionIssue('This visualization cannot safely display the loaded result. The current chart has been kept; use the Data tab to inspect all observations.');
+      return;
+    }
+    let candidate: Widget;
+    try {
+      candidate = visualizationCandidate(state.draft, target, rendererDrafts.current.get(target.id));
+    } catch {
+      setConversionIssue('The target configuration could not be created. The existing chart is unchanged.');
+      return;
+    }
+    const checked = validateEditorWidget(candidate, kind, result);
+    if (!checked.widget) {
+      setConversionIssue('The target chart is not compatible with this result: ' + checked.errors.slice(0, 2).join(' '));
+      return;
+    }
+    // Only archive the current renderer after the replacement has passed every guard.
     if (definition) rendererDrafts.current.set(definition.id, structuredClone(state.draft));
-    revise(visualizationCandidate(state.draft, next, rendererDrafts.current.get(next.id)));
+    setConversionIssue('');
+    revise(checked.widget);
   };
 
   useLayoutEffect(() => anchor.current && root.current ? inheritGammaTheme(anchor.current, root.current) : undefined, []);
@@ -127,10 +152,12 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
     <div className="we-layout">
       <main className="we-workbench">
         <div className="we-preview-toolbar"><span><Eye size={14}/>Live preview</span><div className="we-segment" role="group" aria-label="Editor preview mode"><button aria-pressed={!tableView} onClick={()=>setTableView(false)}>Chart</button><button aria-pressed={tableView} onClick={()=>setTableView(true)}>Table</button></div><div className="we-segment we-preview-size" role="group" aria-label="Editor preview width"><button aria-pressed={previewWidth==='fill'} onClick={()=>setPreviewWidth('fill')}>Fill</button><button aria-pressed={previewWidth==='narrow'} onClick={()=>setPreviewWidth('narrow')}>390px</button></div><span className="we-source-badge"><FlaskConical size={13}/>Synthetic data</span></div>
-        <section className={`we-preview ${previewWidth==='narrow'?'is-narrow':''}`} aria-label="Live chart preview">
+        <section className={`we-preview ${previewWidth==='narrow'?'is-narrow':''}`} aria-label="Live chart preview" style={{ background:state.preview.options?.background, color:state.preview.options?.textColor }}>
           <header><h2>{state.preview.title}</h2><span>{state.preview.unit}</span></header>
           {state.preview.description&&<p className="we-preview-description">{state.preview.description}</p>}
-          <div className="we-chart" data-editor-family={getWidgetDefinition(state.preview)?.id} data-editor-expanded={!tableView&&hasIntrinsicChartLayout(state.preview)}>{tableView?table:previewMatchesResult?<ChartCursorProvider><WidgetVisualization widget={state.preview} result={result}/></ChartCursorProvider>:<p className="we-empty">The current result does not match the preview configuration. Review field bindings or switch to Table to inspect the loaded data.</p>}</div>
+          <div className="we-chart" data-editor-family={getWidgetDefinition(state.preview)?.id} data-editor-expanded={!tableView&&hasIntrinsicChartLayout(state.preview)}>{tableView?table:previewMatchesResult?<ChartCursorProvider><WidgetPreviewBoundary key={previewKey} onFailure={() => setFailedPreviewKey(previewKey)}>
+            <WidgetVisualization naturalHeight={hasIntrinsicChartLayout(state.preview) || state.preview.type === 'stat'} widget={state.preview} result={result}/>
+          </WidgetPreviewBoundary></ChartCursorProvider>:<p className="we-empty">The current result does not match the preview configuration. Review field bindings or switch to Table to inspect the loaded data.</p>}</div>
         </section>
         {state.errors.length>0&&<div className="we-errors" role="alert"><strong>{previewMatchesResult?'Preview keeps the last valid configuration.':'Configuration needs attention before preview or Apply.'}</strong>{state.errors.map((error,index)=><p key={index}>{error}</p>)}</div>}
         <section className="we-data-workspace" aria-label="Panel data and query">
@@ -149,19 +176,31 @@ export function WidgetEditor({ widget, result, onApply, onClose, initialTab = 'd
         </section>
       </main>
       <aside className="we-options" aria-label="Chart options">
-        <div className="we-options-heading"><Settings2 size={15}/><strong>Chart options</strong><span>{definition?.dataKind}</span></div>
+        <div className="we-options-heading"><Settings2 size={15}/><strong>Widget configuration</strong><span>{definition?.dataKind}</span></div>
         <div className="we-options-search"><Search size={15}/><GammaInput ref={optionSearch} aria-label="Search chart options" placeholder="Search options…" value={search} onChange={event=>setSearch(event.target.value)} size="sm"/>{search&&<GammaButton size="sm" variant="quiet" iconOnly aria-label="Clear option search" onClick={()=>{optionSearch.current?.focus();setSearch('');}}><X size={14}/></GammaButton>}</div>
         {sourceDirty&&<p className="we-code-pending">Validate or revert the JSON draft to continue with guided options.</p>}
         <fieldset disabled={sourceDirty} className="we-options-fields">
-          <OptionGroup title="Visualization" keywords="type chart renderer line bar table treemap map stat" search={search}><GammaSelect aria-label="Visualization type" searchable value={definition?.id??''} options={choices.map(choice=>({value:choice.id,label:choice.label,description:choice.description,icon:<ChartNoAxesCombined size={16}/>}))} onValueChange={switchVisualization}/><p className="we-option-description">{definition?.description}</p>{choices.length>1&&<p className="we-compatible-note">{choices.length} compatible visualizations · settings retained while switching</p>}</OptionGroup>
+          <OptionGroup title="Visualization" keywords="type chart renderer line bar table treemap map stat" search={search}><GammaSelect aria-label="Visualization type" searchable disabled={choices.length <= 1} value={definition?.id??''} options={choices.map(choice=>({value:choice.id,label:choice.label,description:choice.description,icon:<ChartNoAxesCombined size={16}/>}))} onValueChange={switchVisualization}/><p className="we-option-description">{definition?.description}</p><p className="we-option-description">Only data-compatible visualizations that fit a dashboard preview are offered. For wide record sources, use Data to inspect all columns without replacing the chart.</p>{conversionIssue&&<p className="we-switch-issue" role="alert">{conversionIssue}</p>}{choices.length<=1&&<p className="we-compatible-note">No safe alternative visualization is available for this result. The current renderer remains editable.</p>}{choices.length>1&&<p className="we-compatible-note">{choices.length} compatible visualizations · settings retained while switching</p>}</OptionGroup>
+          <OptionGroup title="Presentation presets" keywords="appearance style curated presentation focus investigate briefing look feel theme template" search={search}><PresentationPresets widget={state.draft} onApply={revise}/></OptionGroup>
           <OptionGroup title="Panel options" keywords="title name description" search={search}><Field label="Title"><GammaInput aria-label="Panel title" value={state.draft.title} maxLength={120} onChange={event=>revise({...state.draft,title:event.target.value})} size="sm"/></Field><Field label="Description"><GammaTextarea aria-label="Panel description" value={state.draft.description??''} maxLength={500} rows={2} placeholder="What does this panel explain?" onChange={event=>revise({...state.draft,description:event.target.value})}/></Field></OptionGroup>
+          <OptionGroup title="Panel appearance" keywords="background text color theme palette surface" search={search}><AppearanceSettings widget={state.draft} onOption={option}/></OptionGroup>
           {(supports('unit')||supports('decimals'))&&<OptionGroup title="Value formatting" keywords="unit decimals precision" search={search}>{supports('unit')&&<Field label="Unit" help="Labels the source value; changing this does not convert it."><GammaInput aria-label="Display unit" value={state.draft.unit} maxLength={24} onChange={event=>revise({...state.draft,unit:event.target.value})} size="sm"/></Field>}{supports('decimals')&&<Field label="Decimal places"><GammaInput aria-label="Decimal places" type="number" min={0} max={8} value={state.draft.options?.decimals??''} placeholder="Automatic" onChange={event=>option('decimals',event.target.value===''?undefined:Number(event.target.value))} size="sm"/></Field>}</OptionGroup>}
-          {(timeSeries||supports('color')||state.draft.type==='stat')&&<OptionGroup title="Graph styles" keywords="line area curve interpolation fill opacity color sparkline width" search={search}>{timeSeries&&<><Field label="Draw style"><GammaSelect aria-label="Draw style" value={state.draft.options?.display??'line'} options={[{value:'line',label:'Line'},{value:'area',label:'Area'}]} onValueChange={value=>option('display',value as 'line'|'area')} size="sm"/></Field><Field label="Interpolation"><GammaSelect aria-label="Interpolation" value={state.draft.options?.curve??'linear'} options={[{value:'linear',label:'Linear'},{value:'step',label:'Step'},{value:'monotone',label:'Monotone'}]} onValueChange={value=>option('curve',value as 'linear'|'step'|'monotone')} size="sm"/></Field><Field label="Line width"><GammaInput aria-label="Line width" type="number" step={0.25} min={0.5} max={8} value={state.draft.options?.lineWidth??1.5} onChange={event=>option('lineWidth',Number(event.target.value))} size="sm"/></Field>{state.draft.options?.display==='area'&&<><Field label="Fill style"><GammaSelect aria-label="Fill style" value={state.draft.options?.fillStyle??'solid'} options={[{value:'solid',label:'Solid'},{value:'gradient',label:'Gradient toward zero'}]} onValueChange={value=>option('fillStyle',value as 'solid'|'gradient')} size="sm"/></Field><Field label="Fill opacity"><input aria-label="Fill opacity" type="range" min="0" max="1" step="0.02" value={state.draft.options?.fillOpacity??.2} onChange={event=>option('fillOpacity',Number(event.target.value))}/><output>{Math.round((state.draft.options?.fillOpacity??.2)*100)}%</output></Field></>}</>}{supports('color')&&<Field label="Primary series color"><div className="we-color-field"><input type="color" aria-label="Primary series color" value={state.draft.color??'#00b8d9'} onChange={event=>revise({...state.draft,color:event.target.value})}/><code>{state.draft.color??'Theme default'}</code><button onClick={()=>revise({...state.draft,color:undefined})}>Reset</button></div></Field>}{state.draft.type==='stat'&&<GammaSwitch label="Show history" checked={state.draft.options?.showSparkline!==false} onChange={value=>option('showSparkline',value)}/>}</OptionGroup>}
+          {(timeSeries||supports('color')||state.draft.type==='stat')&&<OptionGroup title="Graph styles" keywords="line area curve interpolation fill opacity color sparkline width" search={search}>{timeSeries&&<><Field label="Draw style"><GammaSelect aria-label="Draw style" value={state.draft.options?.display??'line'} options={[{value:'line',label:'Line'},{value:'area',label:'Area'}]} onValueChange={value=>option('display',value as 'line'|'area')} size="sm"/></Field><Field label="Interpolation"><GammaSelect aria-label="Interpolation" value={state.draft.options?.curve??'linear'} options={[{value:'linear',label:'Linear'},{value:'step',label:'Step'},{value:'monotone',label:'Monotone'}]} onValueChange={value=>option('curve',value as 'linear'|'step'|'monotone')} size="sm"/></Field><Field label="Line width"><GammaInput aria-label="Line width" type="number" step={0.25} min={0.5} max={8} value={state.draft.options?.lineWidth??1.5} onChange={event=>option('lineWidth',Number(event.target.value))} size="sm"/></Field>{state.draft.options?.display==='area'&&<><Field label="Fill opacity"><input aria-label="Fill opacity" type="range" min="0" max="1" step="0.02" value={state.draft.options?.fillOpacity??.2} onChange={event=>option('fillOpacity',Number(event.target.value))}/><output>{Math.round((state.draft.options?.fillOpacity??.2)*100)}%</output></Field></>}</>}{supports('color')&&<Field label="Primary series color"><div className="we-color-field"><input type="color" aria-label="Primary series color" value={state.draft.color??'#00b8d9'} onChange={event=>revise({...state.draft,color:event.target.value})}/><code>{state.draft.color??'Theme default'}</code><button onClick={()=>revise({...state.draft,color:undefined})}>Reset</button></div></Field>}</OptionGroup>}
+          {state.draft.type==='stat'&&<OptionGroup title="Statistic" keywords="stat icon sparkline progress bar stale latest value" search={search}><StatSettings widget={state.draft} onOption={option}/></OptionGroup>}
+          {['bar','heatmap'].includes(state.draft.type)&&<OptionGroup title="Data labels" keywords="labels values annotations categories" search={search}><LabelSettings widget={state.draft} onOption={option}/></OptionGroup>}
+          {['stat','heatmap'].includes(state.draft.type)&&<OptionGroup title="Thresholds" keywords="threshold colors bands conditional state warning" search={search}><ThresholdSettings widget={state.draft} onOption={option}/></OptionGroup>}
           {supports('legend')&&<OptionGroup title="Legend" keywords="legend series labels" search={search}><GammaSwitch label="Show legend" checked={state.draft.options?.showLegend!==false} onChange={value=>option('showLegend',value)}/></OptionGroup>}
-          {supports('tooltips')&&<OptionGroup title="Tooltip" keywords="tooltip inspector inspection hover mouse pointer cursor pin density compact comfortable placement gap offset width height size" search={search}><TooltipSettings options={state.draft.options} onChange={option}/></OptionGroup>}
+          {state.draft.type==='timeseries'&&<OptionGroup title="Time scale & reference lines" keywords="calendar time axis unit plot inset line annotation marker" search={search}><AdvancedAxisSettings widget={state.draft} onOption={option}/></OptionGroup>}
+          {state.draft.type==='timeseries'&&result.series&&<OptionGroup title="Series colours" keywords="color legend matching series labels category palette overrides" search={search}><SeriesColourSettings widget={state.draft} result={result} onOption={option}/></OptionGroup>}
+          {supports('tooltips')&&<OptionGroup title="Tooltip" keywords="tooltip inspector inspection hover mouse pointer cursor pin placement gap offset width height size" search={search}><TooltipSettings options={state.draft.options} onChange={option}/><fieldset className="we-tooltip-content-gate" disabled={state.draft.options?.showTooltip===false}><TooltipContentControls widget={state.draft} result={result} onOption={option}/></fieldset></OptionGroup>}
           {supports('grid')&&<OptionGroup title="Axes and grid" keywords="axis min max domain grid zero label" search={search}><GammaSwitch label="Horizontal grid" checked={state.draft.options?.showGrid!==false} onChange={value=>option('showGrid',value)}/>{timeSeries&&<><GammaSwitch label="Vertical grid" checked={state.draft.options?.gridX===true} onChange={value=>option('gridX',value)}/><GammaSwitch label="Emphasize zero" checked={state.draft.options?.showZeroLine===true} onChange={value=>option('showZeroLine',value)}/></>}{(timeSeries||state.draft.type==='bar')&&<div className="we-field-pair"><Field label="Minimum"><GammaInput aria-label="Axis minimum" type="number" value={state.draft.options?.min??''} placeholder="Auto" onChange={event=>option('min',event.target.value===''?undefined:Number(event.target.value))} size="sm"/></Field><Field label="Maximum"><GammaInput aria-label="Axis maximum" type="number" value={state.draft.options?.max??''} placeholder="Auto" onChange={event=>option('max',event.target.value===''?undefined:Number(event.target.value))} size="sm"/></Field></div>}{timeSeries&&<><Field label="X axis label"><GammaInput aria-label="X axis label" value={state.draft.options?.xAxisLabel??''} onChange={event=>option('xAxisLabel',event.target.value)} size="sm"/></Field><Field label="Y axis label"><GammaInput aria-label="Y axis label" value={state.draft.options?.yAxisLabel??''} onChange={event=>option('yAxisLabel',event.target.value)} size="sm"/></Field></>}</OptionGroup>}
           {!!bindingFields.length&&definition&&<OptionGroup title="Field bindings" keywords={`source mapping columns types units ${bindingFields.map(field=>field.label).join(' ')}`} search={search}><p className="we-option-description">Choose from the loaded source. Unit changes require a source conversion.</p>{bindingFields.map(field=><FieldMapping key={field.key} field={field} definition={definition} config={state.draft.config} result={result} columns={columns} onChange={value=>config(field.key,value)}/>)}</OptionGroup>}
           {!!displayFields.length&&<OptionGroup title="Data display" keywords={displayFields.map(field=>field.label).join(' ')} search={search}>{displayFields.map(pluginField)}</OptionGroup>}
+          <OptionGroup title="Full configuration" keywords="advanced JSON nested source query options plugin configuration all settings" search={search}>
+            <p className="we-option-description">Edit the complete validated options and renderer configuration, including nested plugin settings and authored tooltip query sources. Guided controls are shown only when a renderer declares support.</p>
+            <div className="we-advanced-facts"><span>Renderer <strong>{definition?.id ?? 'Unavailable'}</strong></span><span>Data <strong>{kind}</strong></span><span>Guided plugin fields <strong>{(definition?.configFields ?? []).length}</strong></span></div>
+            <GammaButton size="sm" variant="secondary" onClick={()=>{setSearch('');setTab('config');document.getElementById(id+'-config-tab')?.scrollIntoView({block:'nearest'});}}>Open validated JSON editor</GammaButton>
+          </OptionGroup>
         </fieldset>
         <footer className="we-options-footer"><Check size={13}/>{state.errors.length?'Review validation above':'Typed configuration'}<span>{definition?.id}</span></footer>
       </aside>

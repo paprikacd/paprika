@@ -15,6 +15,11 @@ auth:
   basic:
     enabled: false
 
+# Preserve OAuth grants across the normal image rollout for both MCP surfaces.
+mcp:
+  oauth:
+    persistSessions: true
+
 # The same reasoning applies to the HMAC secret that signs and verifies
 # console, MCP and observability tokens: test-values commits a dev secret for
 # kind, and anyone who reads this repository could mint tokens with it. On
@@ -74,6 +79,7 @@ repoServer:
     backend: auto
 
 observabilityGateway:
+  persistSessions: true
   # Public Supabase Root 2021 CA; verified against the database pooler's TLS
   # certificate and hostname. Expires 2031-04-26T10:56:53Z.
   # Source: https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt

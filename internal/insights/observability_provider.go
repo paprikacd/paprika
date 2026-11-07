@@ -255,7 +255,7 @@ func observeTime(seconds float64) string {
 	return time.Unix(whole, int64((seconds-float64(whole))*1e9)).UTC().Format(time.RFC3339Nano)
 }
 
-func (p *observeProvider) query(ctx context.Context, q Query) ([]byte, error) {
+func (p *observeProvider) query(ctx context.Context, q *Query) ([]byte, error) {
 	input := map[string]any{"provider": p.reference, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
 	switch q.Kind {
 	case "metrics":
@@ -265,6 +265,9 @@ func (p *observeProvider) query(ctx context.Context, q Query) ([]byte, error) {
 		input["limit"] = 1000
 	default:
 		input["limit"] = maxTraces
+		if q.TraceID != "" {
+			input["trace_id"] = q.TraceID
+		}
 	}
 	tool := "query_" + q.Kind
 	return p.data(ctx, tool, input, maxResponseBytes)

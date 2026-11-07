@@ -40,10 +40,15 @@ const pluginIcons = {
   "stacked-timeseries": Layers,
   "directional-traffic": ArrowDownUp,
   "connection-map": Globe2,
+  "geo-heatmap": Globe2,
   "pipeline-topology": Network,
   "incident-calendar": CalendarDays,
   "threshold-gauge": Gauge,
   "status-history": ChartNoAxesCombined,
+  "status-grid": Grid2X2,
+  "uptime-calendar": CalendarDays,
+  "uptime-timeline": ChartNoAxesCombined,
+  "small-multiples": Grid2X2,
 }
 
 export function WidgetLibrary({

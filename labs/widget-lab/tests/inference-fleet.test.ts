@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildInferenceFleet, histogramQuantile, inferenceObservationWindow, inferenceResultInWindow, INFERENCE_AS_OF, INFERENCE_MODELS, LATENCY_BOUNDS } from '../src/lenses/inference-fleet-data';
 import { buildLogScatter, buildRackMatrix, buildRequestFlow, logScatterConfig, rackMatrixConfig, requestFlowConfig, semanticColor } from '../src/charts/inference/data';
-import { buildDistribution } from '../src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data';
+import { buildDistribution } from '@insights/plugins/rich-metrics-data';
 import { registerInferenceCharts } from '../src/charts/inference/register';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetKind, widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { timeWindowExtent } from '../src/vendor/paprika/ui/src/features/insights/time-window';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetKind, widgetSchema } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
+import { timeWindowExtent } from '@insights/time-window';
 
 registerLabCharts(); registerInferenceCharts();
 describe('Inference Fleet source contracts', () => {

@@ -1,6 +1,7 @@
 "use client"
 
 import { clearBrowserQueryCache } from "@/lib/query-provider"
+import { writeAuthReturnTo } from "@/lib/auth-return-to"
 
 export const AUTH_TOKEN_KEY = "paprika_id_token"
 export const AUTH_USER_KEY = "paprika_auth_user"
@@ -305,7 +306,7 @@ export async function logoutSession() {
   // Write the tombstone before waiting for a refreshing tab's lock.
   writeState({ loggedOut: true, refreshAvailable: false })
   anonymous(true)
-  writeBrowserStorage("paprika_return_to", null)
+  writeAuthReturnTo(null)
   try {
     const config = await getAuthConfiguration().catch(() => null)
     if (config && !config.session.refreshEnabled) return

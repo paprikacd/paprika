@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { LogScatter, RackMatrix, RequestFlow } from './InferenceCharts';
 import { logScatterConfig, rackMatrixConfig, requestFlowConfig } from './data';
 

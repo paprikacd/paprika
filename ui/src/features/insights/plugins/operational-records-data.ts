@@ -9,6 +9,7 @@ const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => utcDay(va
 export const connectionMapConfig = z.strictObject({
   latitude: field.default("latitude"), longitude: field.default("longitude"), label: field.default("label"),
   value: field.optional(), status: field.optional(), showLocations: z.boolean().optional(), maxPoints: z.number().int().min(1).max(500).default(120),
+  display: z.enum(["markers", "density"]).default("markers"), showGrid: z.boolean().optional(), showCoordinates: z.boolean().optional(),
 })
 export const pipelineTopologyConfig = z.strictObject({
   source: field.default("source"), target: field.default("target"), value: field.optional(), status: field.optional(),
@@ -17,6 +18,7 @@ export const pipelineTopologyConfig = z.strictObject({
 export const incidentCalendarConfig = z.strictObject({
   date: field.default("date"), value: field.optional(), label: field.optional(), status: field.optional(),
   aggregation: z.enum(["count", "sum", "max"]).default("count"),
+  colorMode: z.enum(["intensity", "thresholds"]).default("intensity"),
   months: z.number().int().min(1).max(6).default(3), endDate: isoDay.optional(),
 }).refine(config => config.aggregation === "count" || !!config.value, "Sum and max aggregation require a value field")
 
@@ -115,7 +117,9 @@ function layoutPipeline(ids: string[], edges: PipelineEdge[]) {
   const groups = new Map<number, string[]>()
   ids.forEach(id => { const level = ranks.get(componentById.get(id)!)!; groups.set(level, [...groups.get(level) ?? [], id]) })
   const width = Math.max(440, (Math.max(0, ...groups.keys()) + 1) * 176 + 32)
-  const height = Math.max(184, Math.max(1, ...[...groups.values()].map(group => group.length)) * 88 + 32)
+  // Keep a small bottom inset after the last stage, without allocating an
+  // additional empty row that turns a fitted diagram into a scrolling one.
+  const height = (Math.max(1, ...[...groups.values()].map(group => group.length)) - 1) * 88 + 98
   const nodes: PipelineNode[] = ids.map(id => {
     const component = componentById.get(id)!, level = ranks.get(component)!, group = groups.get(level)!
     const incoming = edges.filter(edge => edge.target === id), outgoing = edges.filter(edge => edge.source === id)

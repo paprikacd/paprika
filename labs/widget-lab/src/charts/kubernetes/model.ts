@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { RecordFrame } from '@insights/schema';
+import type { DrilldownContext } from '@insights/drilldown';
 import { recordObjects } from '../analytics/data';
 
 const selection = z.string().max(160).default('');

@@ -26,8 +26,10 @@
   <link rel="stylesheet" href="./install-hub.css?v=install-connect-1" />
   <link rel="stylesheet" href="./agents.css?v=install-connect-1" />
   <link rel="stylesheet" href="./tour-launch.css?v=fleet-tour-1" />
+  <link rel="stylesheet" href="./chart-showcase.css?v=public-charts-1" />
   <script src="./gamma-ui.js?v=gamma-story-1" defer></script>
   <script src="./story.js?v=gamma-story-1" defer></script>
+  <script src="./chart-showcase.js?v=public-charts-1" defer></script>
   <style>a:focus-visible,button:focus-visible,.skip-link:focus-visible{outline:3px solid #94bce3;outline-offset:4px}@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}</style>
 </head>
 <body>
@@ -39,6 +41,7 @@
         <a href="#deployment">Deploy</a>
         <a href="#pipeline">Pipelines</a>
         <a href="#promotion">Promotion</a>
+        <a href="#charts">Charts</a>
         <a href="#get-started">Get started</a>
         <a href="#agents">Skills &amp; MCP</a>
         <a href="#community">Community</a>
@@ -49,6 +52,7 @@
             <a href="#deployment">Deploy</a>
             <a href="#pipeline">Pipelines</a>
             <a href="#promotion">Promotion</a>
+            <a href="#charts">Charts</a>
             <a href="#get-started">Get started</a>
             <a href="#agents">Skills &amp; MCP</a>
             <a href="#community">Community</a>
@@ -199,6 +203,44 @@
       </div>
     </section>
 
+    <section id="charts" class="chart-showcase on-dark" aria-labelledby="charts-title">
+      <div class="shell">
+        <div class="story-heading chart-showcase-heading">
+          <div data-enter><p class="eyeline">Paprika Insights · public showcase</p><h2 id="charts-title">The charts belong<br />out in the open.</h2></div>
+          <p class="section-lede" data-enter>Explore the chart library and dashboard studies before connecting a provider. Every example runs against labelled synthetic data using Paprika's real chart renderers. The application itself stays focused on building, configuring and operating your dashboards.</p>
+        </div>
+        <div class="chart-showcase-facts" aria-label="Public showcase coverage" data-enter>
+          <span><strong>85+</strong> chart examples</span>
+          <span><strong>26</strong> dashboard studies</span>
+          <span><strong>0</strong> live provider connections</span>
+        </div>
+        <div class="chart-showcase-stage" data-enter>
+          <div class="chart-showcase-controls">
+            <div class="chart-showcase-tabs" role="group" aria-label="Choose public chart showcase">
+              <a href="./charts/#charts" data-chart-route="charts" data-chart-description="Browse every working chart family, edit its presentation and inspect the exact synthetic input." aria-current="true">Chart library</a>
+              <a href="./charts/#kubernetes-fleet" data-chart-route="kubernetes-fleet" data-chart-description="Explore workload placement, CPU pressure and Kubernetes resource usage across synthetic clusters.">Kubernetes</a>
+              <a href="./charts/#performance-workbench" data-chart-route="performance-workbench" data-chart-description="Inspect traces, latency distributions and performance profiles using synthetic telemetry.">Performance</a>
+              <a href="./charts/#finance" data-chart-route="finance" data-chart-description="Explore financial and market visualizations with deterministic example data.">Finance</a>
+              <a href="./charts/#distributed-systems" data-chart-route="distributed-systems" data-chart-description="Inspect peer latency, replication and distributed-systems signals.">Distributed systems</a>
+            </div>
+            <a class="chart-showcase-open" href="./charts/#charts" data-chart-open>Open full gallery <span aria-hidden="true">↗</span></a>
+          </div>
+          <div class="chart-showcase-screen">
+            <iframe id="chart-showcase-frame" title="Paprika interactive chart library, synthetic data" src="./charts/#charts" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          </div>
+          <div class="chart-showcase-status">
+            <span class="chart-showcase-provenance"><i aria-hidden="true"></i> Synthetic data only</span>
+            <p data-chart-caption aria-live="polite">Browse every working chart family, edit its presentation and inspect the exact synthetic input.</p>
+            <a href="./charts/#charts" data-chart-open-mobile>Explore full screen <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+        <div class="chart-showcase-context" data-enter>
+          <div><span class="chart-showcase-context-label">Public · explore</span><h3>All the examples. One gallery.</h3><p>The full catalogue and every dashboard lens are available inside this showcase. Switch studies in its top navigation, inspect tooltips, try configuration presets and compare responsive layouts.</p><a class="link-arrow" href="./charts/#charts">Browse the complete chart library</a></div>
+          <div><span class="chart-showcase-context-label">Application · build</span><h3>Keep your console focused.</h3><p>The authenticated Insights app remains the dashboard builder: compose panels, connect data sources, configure queries, save dashboards and import starter templates. Public demo navigation lives here, not in the operator console.</p><a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/docs/guides/dashboard-repository-examples.md">Dashboard builder documentation</a></div>
+        </div>
+      </div>
+    </section>
+
     <section id="get-started" class="get-started" aria-labelledby="start-title">
       <div class="shell">
         <div class="start-head"><div data-enter><p class="eyeline">Run it yourself</p><h2 id="start-title">Start on a test cluster.</h2></div><p class="section-lede" data-enter>Self-hosting means selecting a registry image the cluster can pull, installing the Helm chart, and applying a complete Application manifest. Check the active Kubernetes context first.</p></div>
@@ -297,6 +339,26 @@ claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the 
             <div class="mcp-board-footer"><span>Self-hosted MCP must be enabled and configured by your administrator.</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/mcp-client-setup.md">Setup guide <span aria-hidden="true">↗</span></a></div>
           </div>
         </div>
+        <section id="observe-plugin" class="observe-install" aria-labelledby="observe-plugin-title" data-enter>
+          <div class="observe-install-heading">
+            <div><p class="eyeline">Observe / plugin</p><h3 id="observe-plugin-title">Your telemetry. In your agent.</h3><p>Install the Paprika Observe skill and remote MCP connection together. Explore Prometheus metrics, traces, saved dashboards and the data behind each chart.</p></div>
+            <a class="link-arrow" href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika-observe/README.md">Read Observe setup guide</a>
+          </div>
+          <div class="observe-install-commands">
+            <div class="observe-command">
+              <div class="observe-command-title"><span>Codex / Node.js 20+</span><button type="button" class="copy-button" data-copy-target="observe-codex-command" data-copy-feedback="observe-copy-feedback" aria-describedby="observe-copy-guidance" aria-label="Copy Paprika Observe Codex npx install command">Copy</button></div>
+              <code id="observe-codex-command">npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex</code>
+            </div>
+            <div class="observe-command">
+              <div class="observe-command-title"><span>Claude Code / Node.js 20+</span><button type="button" class="copy-button" data-copy-target="observe-claude-command" data-copy-feedback="observe-copy-feedback" aria-describedby="observe-copy-guidance" aria-label="Copy Paprika Observe Claude Code npx install command">Copy</button></div>
+              <code id="observe-claude-command">npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client claude</code>
+            </div>
+          </div>
+          <div class="observe-install-foot">
+            <div><p id="observe-copy-guidance">Copy unavailable? Select the command text and copy it manually.</p><p id="observe-copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p></div>
+            <p><strong>Authentication is a separate step.</strong> After installing, open a new session and complete native OAuth with <code>paprika:observe</code>. Verify <code>list_observability_providers</code> before trusting live charts. ChatGPT requires a separately registered custom MCP app; npx cannot create its OAuth connection.</p>
+          </div>
+        </section>
         <div class="mcp-capability-grid" data-enter>
           <details class="mcp-capability"><summary><span class="capability-mark" aria-hidden="true">◎</span><span><strong>Inspect the fleet.</strong><small>Health, resources, logs and delivery records</small></span><span class="capability-expand" aria-hidden="true">+</span></summary><div><p>Read Application and cluster state, resource trees, releases, rollouts and Pipeline runs with the tools allowed by your read scope.</p><code>fleet_status · get_resource_tree · get_pipeline_run</code></div></details>
           <details class="mcp-capability"><summary><span class="capability-mark" aria-hidden="true">⌕</span><span><strong>Follow the evidence.</strong><small>A guided investigation, one resource at a time</small></span><span class="capability-expand" aria-hidden="true">+</span></summary><div><p>The skill starts with fleet context, investigates the affected Application, then follows logs and resource evidence.</p><code>fleet_status → investigate → get_logs</code></div></details>

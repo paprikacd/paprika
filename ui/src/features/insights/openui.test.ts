@@ -5,8 +5,9 @@ import {
   parseOpenUIDashboard,
   validateAIProviders,
 } from "./openui"
-import type { Dashboard, Provider, SavedQuery, SavedQueryEntry } from "./schema"
+import { dashboardSchema, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
 import { registerWidgetPlugin } from "./widget-registry"
+import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 
 export const fixture: Dashboard = {
   schemaVersion: 1,
@@ -181,6 +182,26 @@ describe("OpenUI dashboard authoring", () => {
     expect(prompt).toContain('"id": "metrics"')
     expect(prompt).toContain("Add a requests stat")
     expect(prompt).toContain("instead of fabricating one")
+  })
+
+  it("gives AI authors the supported presets and real gallery plugin controls", () => {
+    registerDefaultWidgetPlugins()
+    const prompt = buildAIContext(fixture, providers, "Build a grouped treemap and a gauge bank")
+    expect(prompt).toContain(`Keep timeRange in ${dashboardSchema.shape.timeRange.options.join(", ")}`)
+    expect(prompt).toContain('"key": "showStatus"')
+    expect(prompt).toContain('"key": "seriesMode"')
+    expect(prompt).toContain('"key": "group"')
+    expect(prompt).toContain('"key": "colorField"')
+    expect(prompt).toContain('"recordColumn": "number"')
+    expect(prompt).toContain('"defaultConfig"')
+    expect(prompt).toContain("These controls are not necessarily the complete plugin schema")
+    expect(prompt).toContain("PostgreSQL uses a JSON query with sql and optional parameters")
+    expect(prompt).toContain("Do not assume every metrics query uses PromQL")
+    expect(prompt).not.toContain("Prometheus PromQL query displayed as plugin")
+    for (const timeRange of ["30m", "30d"] as const) {
+      const document = { ...fixture, timeRange }
+      expect(parseOpenUIDashboard(dashboardToOpenUI(document))).toEqual(document)
+    }
   })
 
   it("retains folders, custom ranges, display options and plugin JSON through OpenUI", () => {

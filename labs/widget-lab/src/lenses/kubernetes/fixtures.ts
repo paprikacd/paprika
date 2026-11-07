@@ -1,5 +1,5 @@
-import type { QueryResult, RecordColumn, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../../vendor/paprika/ui/src/features/insights/record-data';
+import type { QueryResult, RecordColumn, RecordFrame, Widget } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
 import { FLEET_KEYS, TREND_KEYS, fleetRows, fleetScope, resourceSummary, type FleetEntity } from '../../charts/kubernetes/model';
 
 export const FLEET_START = Date.UTC(2026, 9, 29, 11);

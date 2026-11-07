@@ -1,9 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { distributedUtc, ownerAt, ownershipGeometry, ownershipPaths, ownershipTransfers, shardMovementConfig, UNKNOWN_OWNER, type OwnershipPath } from './model';
 import { DistributedEmpty, Swatch, ownerColor } from './shared';
 import './distributed.css';
+import { PlotHatchDefs, plotHatchFill } from '@insights/plot-hatch';
+import hatchStyles from '@insights/plot-hatch.module.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 export function DistributedShardMovement(props: WidgetRendererProps) {
   const { widget, result, embedded, onContextChange } = props, cfg = useMemo(() => shardMovementConfig.parse(widget.config ?? {}), [widget.config]);
@@ -13,6 +17,7 @@ export function DistributedShardMovement(props: WidgetRendererProps) {
   const interactive = !embedded, inspect = interactive && widget.options?.showTooltip !== false;
   const inspection = useInspection(paths, result, inspect, selected, path => path.shardId);
   const viewport = useRef<HTMLDivElement>(null), measured = usePlotWidth(viewport, 650), width = Math.max(480, measured), height = 290;
+  const entering = useChartEntrance({ disabled: embedded, anchor: viewport });
   const uid = useId().replaceAll(':', ''), top = 36, bottom = 31, plotHeight = height - top - bottom, barWidth = 26, left = 96, right = 76;
   const xs = [left, (left + width - right) / 2, width - right], geometry = ownershipGeometry(paths, plotHeight);
   const targets = useRef(new Map<string, SVGGElement>());
@@ -27,11 +32,11 @@ export function DistributedShardMovement(props: WidgetRendererProps) {
   if (!paths.length) return <DistributedEmpty/>;
   return <div className="ds-chart" onKeyDown={inspection.onKeyDown} data-shard-movement>
     <div className="ds-plot-context"><span>{paths.length} shards · exclusive ownership</span><span>{moves.length} confirmed transfers{unknown ? ` · ${unknown} incomplete paths` : ''}</span></div>
-    <div ref={viewport} className="ds-plot-scroll ds-measured-viewport" role="region" aria-label="Ownership flows; scroll horizontally on narrow panels" tabIndex={interactive ? 0 : undefined}>
+    <div ref={viewport} className="ds-plot-scroll ds-measured-viewport" data-chart-entering={entering || undefined} role="region" aria-label="Ownership flows; scroll horizontally on narrow panels" tabIndex={interactive ? 0 : undefined}>
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label="Shard ownership at three exact UTC checkpoints. Width represents shard count. Arrow keys move between shard paths; Enter selects.">
-        <defs><pattern id={`${uid}-unknown`} patternUnits="userSpaceOnUse" width="5" height="5" patternTransform="rotate(35)"><line x1="0" x2="0" y1="0" y2="5" stroke={C.muted} strokeWidth="1"/></pattern></defs>
+        <PlotHatchDefs id={uid}/>
         {([0, 1, 2] as const).map(stage => <text key={stage} x={xs[stage] + barWidth / 2} y="17" textAnchor="middle" className="ds-axis">{distributedUtc([paths[0].t0, paths[0].t1, paths[0].t2][stage])} UTC</text>)}
-        {[...paths].sort((a, b) => Number(a.shardId === selected || a.id === current?.id) - Number(b.shardId === selected || b.id === current?.id)).map(path => {
+        <g className={chartEntrance.revealMarks}>{[...paths].sort((a, b) => Number(a.shardId === selected || a.id === current?.id) - Number(b.shardId === selected || b.id === current?.id)).map(path => {
           const active = path.shardId === selected || path.id === current?.id, stable = path.owner0 === path.owner1 && path.owner1 === path.owner2;
           const color = active ? C.cyan : ownerColor(ownerAt(path, 0));
           return <g key={path.id} className="ds-shard-flow" data-active={active} ref={node => { if (node) targets.current.set(path.id, node); else targets.current.delete(path.id); }} role={interactive ? 'button' : undefined} tabIndex={interactive && (selectedPath?.id === path.id || !selectedPath && path.id === paths[0].id) ? 0 : interactive ? -1 : undefined} aria-label={`Inspect shard ${path.shardId}: ${ownerAt(path, 0)}, then ${ownerAt(path, 1)}, then ${ownerAt(path, 2)}`} aria-pressed={interactive ? path.shardId === selected : undefined} onPointerEnter={() => inspection.setHover(path.id)} onPointerLeave={() => inspection.setHover(null)} onFocus={() => inspection.setHover(path.id)} onBlur={() => inspection.setHover(null)} onClick={event => choose(path, event.currentTarget)} onKeyDown={event => {
@@ -41,15 +46,15 @@ export function DistributedShardMovement(props: WidgetRendererProps) {
             {([0, 1] as const).map(stage => {
               const x1 = xs[stage] + barWidth, x2 = xs[stage + 1], y1 = position(path, stage), y2 = position(path, stage + 1 as 1 | 2), bend = (x2 - x1) * .45;
               const d = `M${x1},${y1}C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}V${y2 + geometry.unit}C${x2 - bend},${y2 + geometry.unit} ${x1 + bend},${y1 + geometry.unit} ${x1},${y1 + geometry.unit}Z`;
-              return <g key={stage}><path d={d} fill={ownerAt(path, stage) === UNKNOWN_OWNER || ownerAt(path, stage + 1 as 1 | 2) === UNKNOWN_OWNER ? `url(#${uid}-unknown)` : color} fillOpacity={active ? .9 : !cfg.showStable && stable ? 0 : .25} stroke={active ? C.cyan : 'none'} strokeWidth={active ? .7 : 0}/>{interactive && <path d={`M${x1},${y1 + geometry.unit / 2}C${x1 + bend},${y1 + geometry.unit / 2} ${x2 - bend},${y2 + geometry.unit / 2} ${x2},${y2 + geometry.unit / 2}`} fill="none" stroke="transparent" strokeWidth="5"/>}</g>;
+              return <g key={stage}><path d={d} fill={ownerAt(path, stage) === UNKNOWN_OWNER || ownerAt(path, stage + 1 as 1 | 2) === UNKNOWN_OWNER ? plotHatchFill(uid) : color} fillOpacity={active ? .9 : !cfg.showStable && stable ? 0 : .25} stroke={active ? C.cyan : 'none'} strokeWidth={active ? .7 : 0}/>{interactive && <path d={`M${x1},${y1 + geometry.unit / 2}C${x1 + bend},${y1 + geometry.unit / 2} ${x2 - bend},${y2 + geometry.unit / 2} ${x2},${y2 + geometry.unit / 2}`} fill="none" stroke="transparent" strokeWidth="5"/>}</g>;
             })}
           </g>;
-        })}
-        {geometry.stages.map((groups, stage) => groups.map(group => <g key={`${stage}-${group.owner}`} pointerEvents="none">
-          <rect x={xs[stage]} y={top + group.y} width={barWidth} height={group.height} fill={group.owner === UNKNOWN_OWNER ? `url(#${uid}-unknown)` : ownerColor(group.owner)} opacity=".8"/>
+        })}</g>
+        <g className={chartEntrance.revealMarks}>{geometry.stages.map((groups, stage) => groups.map(group => <g key={`${stage}-${group.owner}`} pointerEvents="none">
+          <rect x={xs[stage]} y={top + group.y} width={barWidth} height={group.height} fill={group.owner === UNKNOWN_OWNER ? plotHatchFill(uid) : ownerColor(group.owner)} opacity=".8"/>
           {stage === 0 && <text x={xs[stage] - 9} y={top + group.y + Math.max(13, group.height / 2)} textAnchor="end" className="ds-axis">{group.owner}</text>}
           {cfg.showValues && group.height > 0 && <text x={xs[stage] + barWidth + 6} y={top + group.y + Math.max(13, group.height / 2)} className="ds-value">{group.members.length}</text>}
-        </g>))}
+        </g>))}</g>
         {([0, 1, 2] as const).map(stage => <text key={stage} x={xs[stage] + barWidth / 2} y={height - 7} textAnchor="middle" className="ds-axis">Total {paths.length}</text>)}
       </svg>
     </div>

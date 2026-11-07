@@ -33,6 +33,35 @@ export interface WidgetDefinition {
   /** Only expose controls the renderer actually implements. */
   styleControls?: readonly ("unit" | "decimals" | "color" | "legend" | "grid" | "tooltips")[];
   parseConfig?: (config: Widget["config"]) => Widget["config"];
+  /**
+   * Checks loaded data against the configuration before the editor accepts it. Return one issue per problem;
+   * an empty list means the renderer can draw the result. A check that throws is reported as one issue.
+   */
+  validateInput?: (result: QueryResult, config: Widget["config"]) => readonly WidgetInputIssue[];
+  /** Whether the renderer keeps its intrinsic height or fills its card. Host metadata; it changes no rendering by itself. */
+  sizing?: WidgetSizing;
+}
+export interface WidgetSizing {
+  mode: "intrinsic" | "fill";
+  minWidth?: number;
+  minHeight?: number;
+}
+export interface WidgetInputIssue {
+  /** The configuration key the issue concerns, when one applies. */
+  field?: string;
+  message: string;
+}
+export type WidgetRecordType = "string" | "number" | "boolean" | "timestamp";
+/** The column role a text field expects. Trusted renderer code declares it; a field label never implies it. */
+export interface WidgetFieldBinding {
+  types: readonly WidgetRecordType[];
+  /** A unit every accepted column must declare, when the renderer needs one. */
+  unit?: string;
+  acceptedUnits?: readonly string[];
+  /** What the field means, shown beside its requirement. */
+  role?: string;
+  /** An explicitly empty mapping is valid, and the configuration keeps it empty. */
+  optional?: boolean;
 }
 export interface WidgetConfigField {
   key: string;
@@ -44,8 +73,54 @@ export interface WidgetConfigField {
   max?: number;
   step?: number;
   options?: readonly { value: string; label: string }[];
+  /** A column key from an already-loaded record result; numeric fields are validated by the renderer. */
+  recordColumn?: "any" | "number";
+  /** The column role a text or number input expects. Supersedes `recordColumn`, which keeps working as its alias. */
+  binding?: WidgetFieldBinding;
 }
 export type WidgetPlugin = Omit<WidgetDefinition, "type">;
+
+const recordTypes: readonly WidgetRecordType[] = ["string", "number", "boolean", "timestamp"];
+
+/** `recordColumn` is the older spelling of a binding: "number" accepts numeric columns and "any" accepts every column. */
+export function effectiveFieldBinding(field: WidgetConfigField): WidgetFieldBinding | undefined {
+  if (field.binding) return field.binding;
+  if (field.recordColumn === "number") return { types: ["number"] };
+  if (field.recordColumn === "any") return { types: recordTypes };
+  return undefined;
+}
+
+/** Runs a renderer's own data check. A check that throws is reported as an issue, never as a silent pass. */
+export function widgetInputIssues(definition: WidgetDefinition | undefined, result: QueryResult, config: Widget["config"]): readonly WidgetInputIssue[] {
+  if (!definition?.validateInput) return [];
+  try {
+    return definition.validateInput(result, config);
+  } catch {
+    return [{ message: "The loaded result could not be checked for this widget." }];
+  }
+}
+
+function validateSizing(sizing: WidgetSizing | undefined) {
+  if (sizing === undefined) return;
+  if (sizing.mode !== "intrinsic" && sizing.mode !== "fill")
+    throw new Error("Widget plugin sizing mode must be intrinsic or fill");
+  for (const key of ["minWidth", "minHeight"] as const) {
+    const value = sizing[key];
+    if (value !== undefined && (!Number.isFinite(value) || value < 0))
+      throw new Error(`Widget plugin sizing ${key} must be a finite, nonnegative number`);
+  }
+}
+
+function validateConfigFields(fields: readonly WidgetConfigField[] | undefined) {
+  for (const field of fields ?? []) {
+    const binding = field.binding;
+    if (!binding) continue;
+    if (!Array.isArray(binding.types) || binding.types.length === 0 || binding.types.some((type) => !recordTypes.includes(type)))
+      throw new Error(`Configuration field “${field.key}” needs binding types from string, number, boolean or timestamp`);
+    if (binding.acceptedUnits !== undefined && (!Array.isArray(binding.acceptedUnits) || binding.acceptedUnits.length === 0))
+      throw new Error(`Configuration field “${field.key}” needs at least one accepted unit`);
+  }
+}
 
 export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
   {
@@ -124,6 +199,10 @@ export function registerWidgetPlugin(plugin: WidgetPlugin): () => void {
     throw new Error(`Widget plugin “${plugin.id}” is already registered`);
   if (!plugin.label.trim() || !plugin.description.trim())
     throw new Error("Widget plugins need a label and description");
+  if (plugin.validateInput !== undefined && typeof plugin.validateInput !== "function")
+    throw new Error("Widget plugin validateInput must be a function");
+  validateSizing(plugin.sizing);
+  validateConfigFields(plugin.configFields);
   if (!["metrics", "traces", "records"].includes(plugin.dataKind))
     throw new Error("Widget plugin data kind must be metrics, traces or records");
   if (

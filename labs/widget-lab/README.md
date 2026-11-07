@@ -1,5 +1,14 @@
 # Paprika Widget Lab
 
+## Public showcase and product boundary
+
+The entire chart catalogue and all dashboard lenses are published as the **public chart showcase** under the [Paprika landing page](https://paprikacd.github.io/paprika/#charts), with a standalone view at [Charts](https://paprikacd.github.io/paprika/charts/#charts). The gallery is built from this exact Vite application by `hack/build-landing-with-charts.sh` and the GitHub Pages workflow; it does not copy chart implementation into marketing components.
+
+The authenticated `ui/src/app/dashboard/insights` app remains the **dashboard builder**, with live providers, editing and saved state. Importable starter templates remain available within that builder. No gallery-only route or synthetic showcase asset is added to the authenticated application's bundle.
+
+Local public build: after dependencies are installed, run `bash hack/build-landing-with-charts.sh /tmp/paprika-public-pages`, then serve that directory with an HTTP server to verify the nested `/charts/` routes and relative Vite assets. All public charts use labelled synthetic fixtures and do not connect to a production backend.
+
+
 Dashboard studies built with the **Paprika Dashboard Design** skill and Paprika's chart host, trusted widget registry and shared cursor. The lab now includes **85 working chart examples and 26 dashboard lenses**, with typed field mapping, guided configuration and exact inspection. **Iteration 11 makes Edge Watch and Reliability Room fluid at every available width**: panels reflow, charts measure their content, and map points, flags, controls and labels keep usable sizes. The original **1592 × 988** artboards remain available explicitly through source-size and comparison modes.
 
 The latest shared tooltip and dashboard authoring changes are in the [tooltip and authoring report](docs/iteration-12-tooltip-and-dashboard-authoring.md). Earlier responsive implementation and browser evidence are in the [responsive dashboard report](docs/iteration-11-responsive-reference-dashboards.md). The preceding [domain-widget and configuration report](docs/iteration-10-authoring-and-domain-widgets.md) covers the four new registered families and source-aware editor.
@@ -36,7 +45,7 @@ All four lenses expose panel **Edit** actions. The new families are also availab
 
 ## Interaction improvements — iteration 06
 
-- Core time series and the two reference primary plots support horizontal drag selection, a local **Chart window**, exact UTC start/end entry, **Undo zoom**, and **Reset zoom**. The complete source result remains available; dashboard-wide KPIs and query bounds are unchanged.
+- Core time series and the two reference primary plots support horizontal drag selection, a local **Chart window** with keyboard handles and **Apply window**, **Undo zoom**, and **Reset zoom**. Exact UTC start/end entry is production's Compare window, which lab families do not yet supply series for. The complete source result remains available; dashboard-wide KPIs and query bounds are unchanged.
 - Canonical time-series, directional, stacked and distribution inspectors show exact same-timestamp values, gap-preserving histories, raw window statistics, entity labels and an unrounded-data disclosure. The literal reference inspectors retain their evidence content inside the same pointer-following, viewport-bounded popup.
 - The reference studies now reflow at **every width**, with desktop, tablet and mobile composition derived from the available container. Inspectors participate in panel height. **View settings** provides 390px and 768px layout previews; actual-size and source-overlay comparison remain explicit modes. See iteration 11 for actual browser viewport checks.
 - The shared map supports ordinary pointer-centred wheel zoom, drag pan, explicit pan/zoom controls and reset. Outward wheel input at a zoom limit returns to page scrolling. Ctrl/Command, Shift and horizontal-dominant gestures pass through.
@@ -124,7 +133,7 @@ Automated contract tests, browser interaction and screenshot comparison establis
 
 Open **`#lab-edge`** or **`#lab-reliability`** for the analytical studies described in this section. Their shell offers dark/light themes, a **390px content canvas** for narrow composition, **Motion Auto / Reduced**, controlled **Demo replay**, evaluation notes and links to the references. These controls and numerical contracts describe the retained lab, not the default reference fixtures.
 
-Iteration 03 made the two analytical studies denser and developed the supplied references in the actual chart owner: scale-aligned vertical and horizontal grids, calendar-aware time ticks, zero-anchored signed area gradients, unit captions, reference rules, and a compact inspector with an 80px selected-series history. These are **local, opt-in extensions to the copied Paprika renderer and strict schema**. They are not claims about capabilities merged into upstream Paprika. The patch also adjusts shared focus-ring and tick-label presentation; the copied renderer is no longer byte-for-byte unchanged. [Source provenance](docs/paprika-source.md) records the pinned upstream base, changed owners, dependencies, hashes and reproducible patch.
+Iteration 03 made the two analytical studies denser and developed the supplied references in the actual chart owner: scale-aligned vertical and horizontal grids, calendar-aware time ticks, zero-anchored signed area gradients, unit captions, reference rules, and a compact inspector with an 80px selected-series history. Since WP-B1b those capabilities are production's: the lab renders them from `ui/src/features/insights` and keeps no copy of the renderer or its strict schema. [`src/renderer-extensions/README.md`](src/renderer-extensions/README.md) lists the few lab-only wrappers that remain and the production gap each covers. [Source provenance](docs/paprika-source.md) records the upstream base of the copies that WP-B1b removed.
 
 Shared metric cards target an approximately 80px height, and panel explanations move behind keyboard-accessible information disclosures. The main Edge plot retains a 250px container; all seven destination rows compare mean traffic on one common 0-to-highest domain, with percentage share shown separately. Recent event rows have a bounded default view and an explicit Show all control. Reliability adds a calendar of incident presence in the displayed timezone and keeps exact request-based budget accounting in a disclosure.
 
@@ -172,7 +181,7 @@ The analytical lab composes Paprika's chart and Gamma APIs with owned panels, sp
 | `src/data/edge-telemetry.ts` | Deterministic gateways, rates, request/byte partitions, coverage and chart adaptation. |
 | `src/studies/ReliabilityRoom.tsx` and its CSS Module | Reliability dashboard, timeline selection and budget presentation. |
 | `src/data/reliability.ts` | Request-based availability, pooled burn rates, budgets, history and incident identity. |
-| `docs/paprika-reference-renderer.patch`, `src/vendor/paprika/PROVENANCE.json` | Exact local owner delta and upstream/current per-file hashes. |
+| `src/renderer-extensions/` | Lab-only wrappers and the zoomable connection map that extend production's Insights renderer. No copies: production is imported from `ui/src/features/insights` through `@insights/*`. |
 | `src/BaselineApp.tsx` | Original iteration-01 lab, retained at `#baseline`. |
 
 Verification is recorded per iteration. The [iteration-02 report](docs/iteration-02.md) retains its historical 40-test run and browser checks. The [iteration-03 report](docs/iteration-03.md) records that iteration's tests, screenshots and remaining limits. Neither report establishes verification of the newer reference reconstruction. Numerical tests, type/build checks, browser interaction, actual viewport resizing, reduced motion, touch, screen-reader behavior and production telemetry performance are separate checks; source inspection is not a browser-validation claim. The original [evaluation report](docs/evaluation-report.md), [data contract](docs/data-contract.md), and [Paprika source provenance](docs/paprika-source.md) remain available.
@@ -237,7 +246,7 @@ These quantiles are estimates obtained by pooling compatible histogram counts an
 
 ### Baseline source and structure
 
-The reused Paprika source has upstream base commit [`bb52aed8ded8beb08534f6b190a3e7f37c1b19d8`](https://github.com/paprikacd/paprika/commit/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8). Its selected import closure is retained under `src/vendor/paprika/`, including original paths, license and per-file provenance. The current lab applies the documented local owner patch to this copy; the production Paprika repository is unchanged.
+The renderer is production's `ui/src/features/insights`. The lab consumes it: `@insights/*` resolves there through `vite.config.ts` and `tsconfig.json`, and the lab's packages supply its dependencies, so one React and one TanStack Charts serve both. The lab adds no copy of production code, and it does not edit `ui/`. A change to production appears in the lab on its next build. The lab's own extensions are in `src/renderer-extensions/`. Upstream license and Gamma attribution files are kept in `attribution/`.
 
 | Location | Responsibility |
 | --- | --- |

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '@insights/schema';
 
 const field = z.string().min(1).max(80);
 export const cohortConfig = z.strictObject({ cohort: field.default('cohort'), week: field.default('week'), size: field.default('size'), retained: field.default('retained'), observed: field.default('observed'), showValues: z.boolean().default(true), selectedCohort: z.string().max(80).default('') });

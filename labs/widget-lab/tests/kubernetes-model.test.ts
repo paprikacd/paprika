@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { parseRecordFrame } from '@insights/record-data';
 import { fleetBack, fleetBreadcrumb, fleetRows, fleetScope, fleetSelectionAction, fleetSelectionId, nodeFor, placementConfig, resourceBarsConfig, resourceSummary, resourceTimepoints, resourceTrendConfig, selectExisting, throttleConfig, throttleRows, workloadSummary } from '../src/charts/kubernetes/model';
 import { makeKubernetesCatalogFixture } from '../src/charts/kubernetes/catalog';
 import { FLEET_NAMESPACES, FLEET_START, createFleet, fleetResult, fleetThrottling, fleetTrend, sampleContainer } from '../src/lenses/kubernetes/fixtures';

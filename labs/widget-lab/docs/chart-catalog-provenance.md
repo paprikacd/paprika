@@ -1,5 +1,7 @@
 # Chart catalogue source provenance
 
+> **WP-B1b note:** no holding copies remain. Production files are imported through `@insights/*`, and the lab's own wrappers over production are listed in `src/renderer-extensions/README.md`.
+
 The iteration 05 coverage view uses the existing Paprika widget/result contracts and trusted registry. It imports missing owners from the already-inspected Paprika source snapshot `bb52aed8ded8beb08534f6b190a3e7f37c1b19d8`. The original license and attribution remain in `src/vendor/paprika/`.
 
 ## Newly copied dependency closure
@@ -27,7 +29,7 @@ The exact upstream/local file hashes and reproducible patch belong to the centra
 - `src/charts/register-lab-charts.ts`: calls the canonical default registration explicitly. It does not add a new document schema or fetch data.
 - `src/catalog/chart-fixtures.ts`: 11 typed working examples. Reuses the existing analytical fixture builders for telemetry, outcomes, histograms, reliability and incidents; supplies a separate deterministic geographic `RecordFrame`.
 - `src/catalog/ChartCatalog.tsx` and stylesheet: selects examples, meaningful states and container width, renders through `WidgetVisualization`, and exposes context and source data for evaluation.
-- `src/catalog/ConnectionMap.tsx`: local wrapper around `buildConnectionMap` and the shared `src/charts/geo/GeoMap`. Projection is WGS84 equirectangular, matching the copied land path. Marker size remains stable under zoom and does not encode source magnitude; exact values and supplied classifications remain available in inspection and the optional list.
+- `src/renderer-extensions/connection-map.tsx`: local wrapper around `buildConnectionMap` and the shared `src/charts/geo/GeoMap`. Projection is WGS84 equirectangular, matching the copied land path. Marker size remains stable under zoom and does not encode source magnitude; exact values and supplied classifications remain available in inspection and the optional list.
 - `tests/chart-catalog.test.ts`: registry, schema, data semantics and embedded rendering checks. Browser interactions are verified separately.
 
 The catalogue does not import upstream provider clients, scheduler networking, dashboards persistence, or server credentials. `insights-theme.tsx` only reads/writes a browser-local appearance preference. Shared map view transforms remain local presentation state.

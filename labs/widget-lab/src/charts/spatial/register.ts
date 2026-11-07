@@ -1,4 +1,4 @@
-import {getWidgetDefinition,registerWidgetPlugin} from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import {getWidgetDefinition,registerWidgetPlugin} from '@insights/widget-registry';
 import {mapConfig,intervalConfig,spectrumConfig,iqConfig,roseConfig,curtainConfig} from './model';
 import {RouteMap,CoastalVectorMap} from './Maps';
 import {ETAWindows,DwellBoxplot,DirectionalRose,IQConstellation} from './DistributionCharts';

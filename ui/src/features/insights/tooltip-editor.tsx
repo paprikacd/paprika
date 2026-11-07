@@ -207,9 +207,10 @@ export function TooltipEditor({
             Details are shown by default. Add a chart, value or table alongside
             them.
           </p>
+          {hostType === "plugin" && <p className={styles.hint}>A hex has no history or timestamp. A record tooltip can reuse all existing widget records, or use a provider or saved query. Grouped hexes expose only labels shared by every record.</p>}
           <GammaButton
             variant="primary"
-            onClick={() => onChange({ type: "timeseries" })}
+            onClick={() => onChange(hostType === "plugin" ? { type: "timeseries", source: queryDraft("metrics") } : { type: "timeseries" })}
           >
             <Plus size={15} /> Add tooltip widget
           </GammaButton>
@@ -223,6 +224,7 @@ export function TooltipEditor({
       )}
       {view && (
         <>
+          {hostType === "plugin" && <p className={styles.hint}>Only labels shared by every record in a hex are available. Hexes have no timestamp or history. Reused widget data contains all parent records, bounded to 10 rows, not only the selected hex.</p>}
           <GammaButton
             variant="quiet"
             className={styles.removeWidget}
@@ -256,13 +258,13 @@ export function TooltipEditor({
                   value: "series",
                   label: "Hovered series",
                   icon: <QuerySourceIcon kind="series" />,
-                  disabled: kind !== "metrics",
+                  disabled: kind !== "metrics" || hostType === "plugin",
                 },
                 {
                   value: "widget",
-                  label: "Existing widget query data",
+                  label: hostType === "plugin" && kind === "records" ? "All existing widget records" : "Existing widget query data",
                   icon: <QuerySourceIcon kind="widget" />,
-                  disabled: kind !== "metrics",
+                  disabled: hostType === "plugin" ? kind !== "records" : kind !== "metrics",
                 },
                 { value: "query", label: "Provider query", icon: <QuerySourceIcon kind="provider" /> },
                 { value: "saved", label: "Saved query", icon: <QuerySourceIcon kind="saved" /> },

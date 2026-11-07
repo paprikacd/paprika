@@ -1,14 +1,15 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { differentialProfile, differentialProfileConfig, empiricalQuantile, latencyDensity, latencyHistogram, meanInterval, pairedEvidenceConfig, pairedPerformance, performanceDensityConfig, performanceObservations, performanceTrace, performanceTraceConfig, type PerformanceObservation } from '../src/charts/performance/model';
+import { describeQuantile, differentialProfile, differentialProfileConfig, empiricalQuantile, latencyDensity, latencyHistogram, meanInterval, minimumQuantileSamples, pairedEvidenceConfig, pairedPerformance, performanceDensityConfig, performanceObservations, performanceTrace, performanceTraceConfig, reportedQuantile, stepDensityCell, type PerformanceObservation } from '../src/charts/performance/model';
 import { performanceChartCatalog, makePerformanceCatalogFixture } from '../src/charts/performance/catalog';
 import { registerPerformanceCharts } from '../src/charts/performance/register';
 import { PerformanceDifferentialFlamegraph } from '../src/charts/performance/PerformanceProfile';
 import { buildPerformanceWorkbench, PERFORMANCE_ROUTES, performanceProfileFixture, performanceRequestFixture } from '../src/lenses/performance/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { parseRecordFrame } from '@insights/record-data';
+import { widgetSchema } from '@insights/schema';
 
 describe('performance request populations and distributions', () => {
   it('keeps seeded workload variation deterministic and paired while preserving exact trace examples', () => {
@@ -189,8 +190,8 @@ describe('performance registered authoring and passive previews', () => {
       const fixture = makePerformanceCatalogFixture(feature.id, preset), owner = getWidgetDefinition('plugin', feature.id)!;
       expect(() => widgetSchema.parse(fixture.widget)).not.toThrow();
       expect(() => parseRecordFrame(fixture.result.records)).not.toThrow();
-      expect(owner.layout?.mode).toBe('intrinsic');
-      expect(() => owner.validateInput?.(fixture.result, owner.parseConfig?.(fixture.widget.config))).not.toThrow();
+      expect(owner.sizing?.mode).toBe('intrinsic');
+      expect(owner.validateInput?.(fixture.result, owner.parseConfig?.(fixture.widget.config)) ?? []).toEqual([]);
       expect(fixture.result.records!.rows.length).toBeLessThanOrEqual(1000);
       expect(fixture.result.records!.columns.length).toBeLessThanOrEqual(64);
     }
@@ -219,5 +220,53 @@ describe('performance registered authoring and passive previews', () => {
     expect(paths(hidden)).toEqual(paths(standard));
     expect(render(fixture.widget, true)).not.toContain('Emphasize p');
     expect(render({ ...fixture.widget, config: { ...fixture.widget.config, showQuantiles: false } })).not.toContain('Emphasize p');
+  });
+});
+
+describe('interval quantile sample sufficiency and heatmap keyboard stepping', () => {
+  it('requires about 1/(1-q) samples before a tail is reported as an interpolation', () => {
+    expect([.5, .9, .95, .99].map(minimumQuantileSamples)).toEqual([2, 10, 20, 100]);
+    const values = Array.from({ length: 20 }, (_, i) => 10 + i * 3);
+    expect(reportedQuantile(values.slice(0, 19), .95)).toEqual({ value: 64, basis: 'maximum', samples: 19 });
+    expect(reportedQuantile(values, .95)).toEqual({ value: empiricalQuantile(values, .95), basis: 'empirical', samples: 20 });
+    expect(reportedQuantile(values, .99)).toEqual({ value: 67, basis: 'maximum', samples: 20 });
+    const hundred = Array.from({ length: 100 }, (_, i) => i);
+    expect(reportedQuantile(hundred.slice(0, 99), .99).basis).toBe('maximum');
+    expect(reportedQuantile(hundred, .99)).toEqual({ value: empiricalQuantile(hundred, .99), basis: 'empirical', samples: 100 });
+    expect(reportedQuantile([], .99)).toEqual({ value: null, basis: 'empirical', samples: 0 });
+  });
+
+  it('labels a sparse tail as its maximum with the sample count and whole milliseconds', () => {
+    expect(describeQuantile(41.27, 'maximum', 20)).toBe('max of 20 samples · 41 ms');
+    expect(describeQuantile(41.27, 'empirical', 100)).toBe('41.3 ms');
+    expect(describeQuantile(null, 'empirical', 0)).toBe('Unknown');
+  });
+
+  it('assigns each heatmap interval its own tail basis, from that interval only', () => {
+    const observations = performanceObservations(performanceRequestFixture('checkout', false).records!);
+    const data = latencyDensity(observations);
+    expect(data.buckets.some(bucket => bucket.count > 0 && bucket.count < 100)).toBe(true);
+    for (const bucket of data.buckets) {
+      const values = observations.flatMap(row => row.version === 'after' && row.latency !== null && row.timestamp >= bucket.start && row.timestamp < bucket.end ? [row.latency] : []);
+      expect(bucket.count).toBe(values.length);
+      if (!values.length) { expect(bucket.p99).toBeNull(); continue; }
+      expect(bucket.quantileBasis.p99).toBe(values.length < 100 ? 'maximum' : 'empirical');
+      expect(bucket.p99).toBeCloseTo(values.length < 100 ? Math.max(...values) : empiricalQuantile(values, .99)!, 9);
+      expect(bucket.quantileBasis.p95).toBe(values.length < 20 ? 'maximum' : 'empirical');
+    }
+  });
+
+  it('stops arrow movement at the grid edges instead of wrapping into a neighbouring bucket', () => {
+    const buckets = [3, 4, 5];
+    expect(stepDensityCell(buckets, 24, { bucket: 3, index: 23 }, 'ArrowUp')).toEqual({ bucket: 3, index: 23 });
+    expect(stepDensityCell(buckets, 24, { bucket: 4, index: 0 }, 'ArrowDown')).toEqual({ bucket: 4, index: 0 });
+    expect(stepDensityCell(buckets, 24, { bucket: 5, index: 10 }, 'ArrowRight')).toEqual({ bucket: 5, index: 10 });
+    expect(stepDensityCell(buckets, 24, { bucket: 3, index: 10 }, 'ArrowLeft')).toEqual({ bucket: 3, index: 10 });
+    expect(stepDensityCell(buckets, 24, { bucket: 3, index: 10 }, 'ArrowRight')).toEqual({ bucket: 4, index: 10 });
+    expect(stepDensityCell(buckets, 24, { bucket: 4, index: 10 }, 'ArrowUp')).toEqual({ bucket: 4, index: 11 });
+    expect(stepDensityCell(buckets, 24, { bucket: 4, index: 10 }, 'ArrowDown')).toEqual({ bucket: 4, index: 9 });
+    expect(stepDensityCell(buckets, 24, null, 'ArrowUp')).toEqual({ bucket: 3, index: 1 });
+    expect(stepDensityCell(buckets, 24, { bucket: 4, index: 10 }, 'Enter')).toBeNull();
+    expect(stepDensityCell([], 24, null, 'ArrowUp')).toBeNull();
   });
 });

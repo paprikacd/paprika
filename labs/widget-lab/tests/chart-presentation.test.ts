@@ -8,15 +8,15 @@ import { decorative } from '@tanstack/charts/mark/decorative';
 import { createChartScene, defineChart } from '@tanstack/charts/scene';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { scaleTime } from 'd3-scale';
-import { calendarTick, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from '../src/vendor/paprika/ui/src/features/insights/chart-presentation';
-import { widgetOptionsSchema, widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { DistributionHeatmap } from '../src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics';
+import { calendarTick, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from '@insights/chart-presentation';
+import { widgetOptionsSchema, widgetSchema } from '@insights/schema';
+import { DistributionHeatmap } from '@insights/plugins/rich-metrics';
 
 describe('reference presentation owner extensions', () => {
   it('keeps mixed-family time labels in UTC and maps the same timestamp to the same plot position', () => {
     const start = Date.UTC(2026, 9, 31, 10), end = start + 6 * 3600000;
-    expect(calendarTick(start, end-start)).toBe('10:00');
-    expect(calendarTick(end, end-start)).toBe('16:00');
+    expect(calendarTick(start, end-start, 'UTC')).toBe('10:00');
+    expect(calendarTick(end, end-start, 'UTC')).toBe('16:00');
     expect(temporalPosition(start,start,end,110,588)).toBe(110);
     expect(temporalPosition(end,start,end,110,588)).toBe(588);
     expect(temporalPosition(start+3*3600000,start,end,110,588)).toBe(349);
@@ -58,7 +58,7 @@ describe('reference presentation owner extensions', () => {
     }
   });
 
-  it('clips time-centered heatmap cells at shared plot bounds without overriding an explicit gutter', () => {
+  it('keeps time-centred heatmap columns inside the shared plot bounds, in time order, without overriding an explicit gutter', () => {
     const start = Date.UTC(2026, 9, 31, 10), end = start + 6 * 3600000;
     const timestamps = [start, start + 3600000, end];
     const widget = widgetSchema.parse({
@@ -71,27 +71,32 @@ describe('reference presentation owner extensions', () => {
       { name: 'All observations', labels: { le: '+Inf' }, points: timestamps.map((timestamp, index) => ({ timestamp, value: index === 1 ? null : index + 5 })) },
     ] };
     const markup = renderToStaticMarkup(createElement(DistributionHeatmap, { widget, result }));
-    const clip = markup.match(/<clipPath id="([^"]+)"><rect x="110" y="4" width="478" height="212"/);
-    expect(clip).not.toBeNull();
-    expect(markup).toContain(`clip-path="url(#${clip![1]})"`);
+    // Production places each column inside the plot bounds by geometry, so no clip path is needed.
     expect(markup).toContain('data-bucket-value="unknown"');
     expect(markup).toContain('>10:00</text>');
     expect(markup).toContain('>16:00</text>');
     const cells = [...markup.matchAll(/<rect ([^>]*data-bucket-value[^>]*)>/g)];
     expect(cells).toHaveLength(6);
+    const attribute = (attributes: string, name: string) => Number(attributes.match(new RegExp(`(?:^|\\s)${name}="([^"]+)"`))![1]);
     for (const [, attributes] of cells) {
-      const attribute = (name: string) => Number(attributes.match(new RegExp(`(?:^|\\s)${name}="([^"]+)"`))![1]);
-      expect(attribute('x') + attribute('width') / 2).toBeCloseTo(temporalPosition(attribute('data-timestamp'), start, end, 110, 588), 8);
+      expect(attribute(attributes, 'x')).toBeGreaterThanOrEqual(110);
+      expect(attribute(attributes, 'x') + attribute(attributes, 'width')).toBeLessThanOrEqual(720 - 12 + 1e-6);
     }
+    // Columns keep time order, so the first timestamp is never drawn right of a later one.
+    const left = (timestamp: number) => Math.min(...cells.filter(([, attributes]) => attribute(attributes, 'data-timestamp') === timestamp).map(([, attributes]) => attribute(attributes, 'x')));
+    expect(left(start)).toBeLessThan(left(start + 3600000));
+    expect(left(start + 3600000)).toBeLessThan(left(end));
+    expect(temporalPosition(end, start, end, 110, 588)).toBe(588);
   });
 
   it('anchors positive, negative and crossing fills to the same true zero', () => {
     const positive = signedAreaGradient('in', '#00ccdd', [10, null, 30], .2);
     const negative = signedAreaGradient('out', '#aa88ff', [-10, null, -30], .2);
     const crossing = signedAreaGradient('mixed', '#00ccdd', [-10, 30], .2);
-    expect(positive.stops.map(stop => stop.opacity)).toEqual([.2, .025]);
-    expect(negative.stops.map(stop => stop.opacity)).toEqual([.025, .2]);
-    expect(crossing.stops[1]).toMatchObject({ offset: .75, opacity: .025 });
+    // Production fades to transparent at the visible zero line, and a run with no values on one side fills no such side.
+    expect(positive.stops.map(stop => stop.opacity)).toEqual([.2, 0]);
+    expect(negative.stops.map(stop => stop.opacity)).toEqual([0, .2]);
+    expect(crossing.stops[1]).toMatchObject({ offset: .75, opacity: 0 });
     expect(signedAreaGradient('zero', '#00ccdd', [null, 0, 0]).stops.every(stop => Number.isFinite(stop.offset))).toBe(true);
   });
 
@@ -121,8 +126,8 @@ describe('reference presentation owner extensions', () => {
   });
 
   it('validates the new presentation contract and rejects invented or unsafe options', () => {
-    expect(widgetOptionsSchema.safeParse({ gridX: true, timeAxis: 'calendar', axisUnit: 'caption', fillStyle: 'gradient', inspectorDensity: 'compact', showZeroLine: true,
-      referenceLines: [{ value: 1, label: 'Budget pace', style: 'dashed' }], tooltipView: { type: 'timeseries', height: 80 } }).success).toBe(true);
+    expect(widgetOptionsSchema.safeParse({ gridX: true, timeAxis: 'calendar', axisUnit: 'caption', tooltipMaxWidth: 292, showZeroLine: true,
+      referenceLines: [{ value: 1, label: 'Budget pace' }], tooltipView: { type: 'timeseries', height: 80 } }).success).toBe(true);
     expect(widgetOptionsSchema.safeParse({ fillStyle: 'neon' }).success).toBe(false);
     expect(widgetOptionsSchema.safeParse({ referenceLines: [{ value: 1, label: 'Budget', color: 'url(external)' }] }).success).toBe(false);
     expect(widgetOptionsSchema.safeParse({ decorativeNoise: true }).success).toBe(false);

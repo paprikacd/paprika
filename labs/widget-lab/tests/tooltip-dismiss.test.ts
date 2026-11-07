@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTooltipDismissController } from '../src/components/lab/useTooltipDismiss';
+import { createTooltipDismissController } from '@insights/tooltip-dismiss';
 
 describe('transient tooltip handoff', () => {
   beforeEach(() => vi.useFakeTimers());

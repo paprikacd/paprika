@@ -164,6 +164,7 @@ export function dashboardUsesSavedQuery(
   return dashboard.widgets.some(
     (widget) =>
       widget.queryRef?.id === id ||
+      widget.annotationSource?.queryRef.id === id ||
       (widget.options?.tooltipView?.source?.type === "saved" &&
         widget.options.tooltipView.source.ref.id === id),
   );

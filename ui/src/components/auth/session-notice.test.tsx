@@ -9,10 +9,10 @@ vi.mock("next/navigation", () => ({
 import { SessionNotice } from "./session-notice"
 const originalLocation = window.location
 beforeEach(() => {
-  auth.status = "unavailable"; auth.retry.mockReset().mockResolvedValue(undefined); localStorage.clear()
+  auth.status = "unavailable"; auth.retry.mockReset().mockResolvedValue(undefined); localStorage.clear(); sessionStorage.clear()
   Object.defineProperty(window, "location", { value: { href: "", pathname: "/dashboard/insights/", search: "?dashboard=service-overview&var-service=uptime-api", hash: "#signals" }, configurable: true, writable: true })
 })
-afterEach(() => { Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true }); localStorage.clear() })
+afterEach(() => { Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true }); localStorage.clear(); sessionStorage.clear() })
 describe("dashboard session recovery", () => {
   it("retries in place and reports a temporary outage without destroying the workspace", async () => {
     auth.retry.mockRejectedValue(new Error("offline")); render(<SessionNotice />)
@@ -24,7 +24,7 @@ describe("dashboard session recovery", () => {
   it("preserves dashboard and service filter when starting sign-in again", () => {
     render(<SessionNotice />)
     fireEvent.click(screen.getByRole("button", { name: "Sign in again" }))
-    expect(localStorage.getItem("paprika_return_to")).toBe("/dashboard/insights/?dashboard=service-overview&var-service=uptime-api#signals")
+    expect(sessionStorage.getItem("paprika_return_to")).toBe("/dashboard/insights/?dashboard=service-overview&var-service=uptime-api#signals")
     expect(window.location.href).toBe("/login/")
   })
   it("stays out of the way for a healthy session", () => {

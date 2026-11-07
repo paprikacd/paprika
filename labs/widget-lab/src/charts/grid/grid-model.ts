@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '@insights/schema';
 
 export const gridNetworkConfig = z.strictObject({ showLabels: z.boolean().default(true), showFlows: z.boolean().default(true), maxNodes: z.number().int().min(1).max(100).default(40) });
 export const forecastBandConfig = z.strictObject({ show68: z.boolean().default(true), show95: z.boolean().default(true), showGrid: z.boolean().default(true), showCapacity: z.boolean().default(true) });
@@ -60,4 +60,4 @@ export function forecastRecords(frame: RecordFrame) {
   return { points, omitted };
 }
 
-export function gridFlowColor(value: number, capacity: number) { return value / capacity >= 1 ? '#ff665c' : value / capacity >= .8 ? '#ffc35a' : '#21d1e7'; }
+export function gridFlowColor(value: number, capacity: number) { return value / capacity >= 1 ? 'var(--gamma-danger)' : value / capacity >= .8 ? 'var(--gamma-warning)' : 'var(--gamma-chart-1)'; }

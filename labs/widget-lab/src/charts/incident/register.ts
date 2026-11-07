@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { AlignedTelemetry, ServiceDependency, TraceWaterfall } from './IncidentCharts';
 import { alignedTelemetryConfig, dependencyConfig, traceWaterfallConfig } from './incident-model';
 

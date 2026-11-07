@@ -1,39 +1,41 @@
-.grid-network,.grid-forecast{position:relative;display:flex;flex-direction:column;width:100%;height:100%;min-height:0;color:var(--gamma-ink,#d9e9f1);font:12px Barlow,sans-serif;font-variant-numeric:tabular-nums}
+.grid-network,.grid-forecast{position:relative;display:flex;flex-direction:column;width:100%;height:100%;min-height:0;color:var(--gamma-ink);font:12px Barlow,sans-serif;font-variant-numeric:tabular-nums}
 .grid-network *,.grid-forecast *{box-sizing:border-box}
 .grid-network button,.grid-network select,.grid-forecast button{font:inherit;cursor:pointer}
-.grid-network :focus-visible,.grid-forecast :focus-visible{outline:2px solid var(--gamma-accent,#ff7956);outline-offset:2px}
-.grid-network-canvas{position:relative;flex:1;min-height:280px;overflow:hidden;border-radius:3px;background:#071d26}
+.grid-network :focus-visible,.grid-forecast :focus-visible{outline:2px solid var(--gamma-accent);outline-offset:2px}
+.grid-network-canvas{position:relative;flex:1;min-height:280px;overflow:hidden;border-radius:3px;background:var(--gamma-surface)}
 .grid-network-canvas>svg{display:block;width:100%;height:100%;cursor:grab;user-select:none}
 .grid-network-canvas>svg:active{cursor:grabbing}
 .grid-network-node{cursor:pointer}
+.grid-network-water{fill:var(--gamma-bg)}
+.grid-network-land{fill:color-mix(in srgb,var(--gamma-chart-1) 14%,var(--gamma-surface));stroke:var(--gamma-border)}
 .grid-map-tools{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:2px;align-items:stretch}
-.grid-map-tools>span{font-size:10px;color:#9bb7c5;text-align:center;background:#061820e8;padding:4px}
-.grid-map-tools button{width:30px;height:30px;background:#09242fe8;border:1px solid #315263;color:#d4eaf6;border-radius:3px;display:grid;place-items:center}
+.grid-map-tools>span{font-size:10px;color:var(--gamma-muted);text-align:center;background:var(--gamma-surface);padding:4px}
+.grid-map-tools button{width:30px;height:30px;background:var(--gamma-surface);border:1px solid var(--gamma-border);color:var(--gamma-ink);border-radius:3px;display:grid;place-items:center}
 .grid-map-tools button:disabled{opacity:.45;cursor:default}
 .grid-map-pan{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;margin-top:5px}
 .grid-map-pan button{width:24px;height:26px}
-.grid-map-legend{position:absolute;left:10px;bottom:26px;padding:8px 10px;background:#051b25eb;border:1px solid #264856;border-radius:3px;font-size:10px;color:#a9c2d0}
-.grid-map-legend strong{display:block;font-size:11px;font-weight:500;color:#c8dce7;margin-bottom:6px}
+.grid-map-legend{position:absolute;left:10px;bottom:26px;padding:8px 10px;background:var(--gamma-surface);border:1px solid var(--gamma-border);border-radius:3px;font-size:10px;color:var(--gamma-muted)}
+.grid-map-legend strong{display:block;font-size:11px;font-weight:500;color:var(--gamma-ink);margin-bottom:6px}
 .grid-map-legend span{display:flex;align-items:center;gap:6px}
 .grid-map-legend i{width:16px;height:2px;display:inline-block;margin-left:3px}
-.grid-map-legend small{display:block;margin-top:5px;font-size:9px;color:#7c9fae}
+.grid-map-legend small{display:block;margin-top:5px;font-size:9px;color:var(--gamma-muted)}
 .grid-map-inspector{font-size:11px;min-width:0}
-.grid-map-inspector header,.grid-forecast-inspector header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:#e2eff7}
+.grid-map-inspector header,.grid-forecast-inspector header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:var(--gamma-ink)}
 .grid-map-inspector header>span{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
-.grid-map-inspector header svg{color:#ffc35a}
-.grid-map-inspector header button,.grid-forecast-inspector header button{background:none;border:0;color:#b6cfdd;padding:0;display:flex}
+.grid-map-inspector header svg{color:var(--gamma-warning)}
+.grid-map-inspector header button,.grid-forecast-inspector header button{background:none;border:0;color:var(--gamma-muted);padding:0;display:flex}
 .grid-map-inspector dl,.grid-forecast-inspector dl{margin:0;display:grid;gap:5px}
 .grid-map-inspector dl div,.grid-forecast-inspector dl div{display:flex;justify-content:space-between;gap:8px}
-.grid-map-inspector dt,.grid-forecast-inspector dt{color:#8faebe}
-.grid-map-inspector dd,.grid-forecast-inspector dd{margin:0;text-align:right;color:#d9eaf3;font-weight:500}
-.grid-map-inspector dd small{font-weight:400;color:#9ab9ca;margin-left:5px}
-.grid-map-inspector p{font-size:10px;color:#91b3c5;margin:12px 0 5px}
+.grid-map-inspector dt,.grid-forecast-inspector dt{color:var(--gamma-muted)}
+.grid-map-inspector dd,.grid-forecast-inspector dd{margin:0;text-align:right;color:var(--gamma-ink);font-weight:500}
+.grid-map-inspector dd small{font-weight:400;color:var(--gamma-muted);margin-left:5px}
+.grid-map-inspector p{font-size:10px;color:var(--gamma-muted);margin:12px 0 5px}
 .grid-map-inspector>.grid-map-history{width:100%;height:45px;display:block}
-.grid-map-inspector footer,.grid-forecast-inspector footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #1d3a48;margin-top:8px;padding-top:7px;color:#819fad;font-size:10px}
-.grid-map-inspector footer button,.grid-forecast-inspector footer button{color:#1fd6e4;border:0;background:transparent;padding:2px}
-.grid-map-bottom{height:34px;display:flex;align-items:center;gap:9px;justify-content:space-between;color:#7f9fab;font-size:10px;padding:5px 0 0}
-.grid-map-bottom select,.grid-map-bottom button{font-size:11px;background:#0a2530;color:#b1ccd9;border:1px solid #294957;border-radius:3px;min-height:27px;padding:3px 6px;max-width:220px}
-.grid-forecast-key{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:1px 0 7px;color:#a9c3d1;font-size:10px;min-height:26px}
+.grid-map-inspector footer,.grid-forecast-inspector footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--gamma-border);margin-top:8px;padding-top:7px;color:var(--gamma-muted);font-size:10px}
+.grid-map-inspector footer button,.grid-forecast-inspector footer button{color:var(--gamma-accent-text);border:0;background:transparent;padding:2px}
+.grid-map-bottom{height:34px;display:flex;align-items:center;gap:9px;justify-content:space-between;color:var(--gamma-muted);font-size:10px;padding:5px 0 0}
+.grid-map-bottom select,.grid-map-bottom button{font-size:11px;background:var(--gamma-surface);color:var(--gamma-ink);border:1px solid var(--gamma-border);border-radius:3px;min-height:27px;padding:3px 6px;max-width:220px}
+.grid-forecast-key{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:1px 0 7px;color:var(--gamma-muted);font-size:10px;min-height:26px}
 .grid-forecast-key span{display:flex;align-items:center;gap:5px}
 .grid-forecast-key i{width:17px;height:5px;display:inline-block}
 .grid-forecast-key .is-dashed{height:1px;border-top:2px dashed;background:transparent}
@@ -43,10 +45,10 @@
 .grid-forecast-inspector header{font-size:10px;margin-bottom:6px}
 .grid-forecast-inspector header strong{font-weight:500}
 .grid-forecast .paprika-time-window{flex:none}
-.grid-chart-empty{padding:12px;text-align:center;color:#93afbe}
-.grid-chart-note{font-size:10px;color:#d1ad73;padding:3px 0;margin:0}
+.grid-chart-empty{padding:12px;text-align:center;color:var(--gamma-muted)}
+.grid-chart-note{font-size:10px;color:var(--gamma-warning);padding:3px 0;margin:0}
 .grid-sr{position:absolute;overflow:hidden;width:1px;height:1px;clip-path:inset(50%)}
-.grid-map-inspector .grid-amber{color:#ffc35a}
+.grid-map-inspector .grid-amber{color:var(--gamma-warning)}
 @container lens-preview (max-width:650px){.grid-map-legend{bottom:12px;font-size:9px}.grid-map-legend strong{font-size:10px}.grid-map-legend small{display:none}.grid-map-bottom>span{display:none}.grid-map-bottom select{max-width:230px}.grid-forecast-key{gap:8px}.grid-forecast-canvas{display:flex;flex-direction:column;min-height:260px}.grid-forecast-canvas>svg{height:180px;flex:1;min-height:150px}.grid-forecast-inspector dl{grid-template-columns:1fr}.grid-forecast-inspector footer{margin-top:5px;padding-top:4px}}
 
 .grid-map-inspector header>span{min-width:0;overflow-wrap:anywhere}

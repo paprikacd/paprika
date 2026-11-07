@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
+
+	// Embedded zone data keeps time.LoadLocation working in the alpine runtime image, which ships no zoneinfo.
+	_ "time/tzdata"
 )
 
 var folderUnsafe = regexp.MustCompile(`[\x00-\x1f\x7f\\]`)
@@ -19,7 +23,7 @@ func validateDashboardExtensions(root map[string]json.RawMessage) error {
 		field    string
 		validate func(json.RawMessage) error
 	}{
-		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange},
+		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange}, {"timeZone", validateDashboardTimeZone},
 	} {
 		if raw, ok := root[check.field]; ok {
 			if err := check.validate(raw); err != nil {
@@ -47,6 +51,26 @@ func validateDashboardFolder(raw json.RawMessage) error {
 	return nil
 }
 
+// validateDashboardTimeZone accepts exactly the names in canonicalTimeZones, which the UI's timeZones list holds too.
+// Matching is exact and case-sensitive. Offsets, Local, Factory and posixrules are refused, and so is any other spelling.
+// Writes are checked this way; a stored zone is loaded through checkStoredDashboard, which never refuses it.
+func validateDashboardTimeZone(raw json.RawMessage) error {
+	if !canonicalZone(raw) {
+		return errors.New("timeZone must be an IANA time zone name such as Europe/London or UTC")
+	}
+	return nil
+}
+
+// canonicalZone reports whether raw is a JSON string that names a zone on the canonical list.
+func canonicalZone(raw json.RawMessage) bool {
+	var zone string
+	if json.Unmarshal(raw, &zone) != nil {
+		return false
+	}
+	_, ok := canonicalTimeZones[zone]
+	return ok
+}
+
 func validateDashboardTimeRange(raw json.RawMessage) error {
 	if _, err := requireObjectShape(raw, []string{"from", "to"}, nil); err != nil {
 		return err
@@ -70,22 +94,75 @@ func validateDashboardTimeRange(raw json.RawMessage) error {
 }
 
 func validateWidgetExtensions(widget map[string]json.RawMessage) error {
+	if raw, ok := widget["annotationSource"]; ok {
+		if err := validateWidgetAnnotationSource(widget, raw); err != nil {
+			return err
+		}
+	}
 	if ref, ok := widget["queryRef"]; ok {
 		if err := validateQueryReference(ref, false); err != nil {
 			return err
 		}
 	}
-	if raw, ok := widget["drilldowns"]; ok {
-		if err := validateDrilldowns(raw); err != nil {
-			return err
-		}
-	}
-	if options, ok := widget["options"]; ok {
-		if err := validateWidgetOptions(options); err != nil {
-			return err
+	for _, check := range []struct {
+		field    string
+		validate func(json.RawMessage) error
+	}{
+		{"drilldowns", validateDrilldowns}, {"selectionBindings", validateDrilldownBindings}, {"options", validateWidgetOptions},
+	} {
+		if raw, ok := widget[check.field]; ok {
+			if err := check.validate(raw); err != nil {
+				return err
+			}
 		}
 	}
 	return validateWidgetPluginFields(widget)
+}
+
+func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
+	var kind string
+	if err := json.Unmarshal(widget["type"], &kind); err != nil {
+		return false
+	}
+	if kind == "timeseries" {
+		return true
+	}
+	if kind != "plugin" {
+		return false
+	}
+	var pluginID string
+	if err := json.Unmarshal(widget["pluginId"], &pluginID); err != nil {
+		return false
+	}
+	return pluginID == "stacked-timeseries" || pluginID == "directional-traffic"
+}
+
+func validateWidgetAnnotationSource(widget map[string]json.RawMessage, raw json.RawMessage) error {
+	if !supportsWidgetAnnotationSource(widget) {
+		return errors.New("event queries require a time-series or directional-traffic widget")
+	}
+	fields, err := requireObjectShape(raw, []string{"queryRef", "timestampColumn", "labelColumn"}, []string{"severityColumn", "endColumn"})
+	if err != nil {
+		return err
+	}
+	if err := validateQueryReference(fields["queryRef"], false); err != nil {
+		return err
+	}
+	return validateWidgetAnnotationColumns(fields)
+}
+
+func validateWidgetAnnotationColumns(fields map[string]json.RawMessage) error {
+	for _, name := range []string{"timestampColumn", "labelColumn", "severityColumn", "endColumn"} {
+		value, exists := fields[name]
+		if !exists {
+			continue
+		}
+		var column string
+		if json.Unmarshal(value, &column) != nil || trimJS(column) == "" || trimJS(column) != column || stringUnits(column) > 128 {
+			return errors.New("event query column names must contain 1–128 characters")
+		}
+	}
+	return nil
 }
 
 func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
@@ -115,7 +192,7 @@ func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipView", "showGrid", "showSparkline", "decimals", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds"})
+	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
 	if err != nil {
 		return err
 	}
@@ -124,7 +201,7 @@ func validateWidgetOptions(raw json.RawMessage) error {
 			return err
 		}
 	}
-	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetFlags, validateWidgetAppearance, validateWidgetNumbers, validateWidgetThresholds} {
+	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetTooltipPlacement, validateWidgetFlags, validateWidgetAppearance, validateWidgetRenderingOptions, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
 		if err := check(options); err != nil {
 			return err
 		}
@@ -192,8 +269,8 @@ func validateTooltipPresentation(view map[string]json.RawMessage) error {
 func validateTooltipHeight(view map[string]json.RawMessage) error {
 	if value, ok := view["height"]; ok {
 		var height float64
-		if json.Unmarshal(value, &height) != nil || !slices.Contains([]float64{120, 160, 200, 320}, height) {
-			return errors.New("tooltip widget height must be 120, 160, 200, or 320")
+		if json.Unmarshal(value, &height) != nil || !slices.Contains([]float64{80, 120, 160, 200, 320}, height) {
+			return errors.New("tooltip widget height must be 80, 120, 160, 200, or 320")
 		}
 	}
 	return nil
@@ -321,11 +398,23 @@ func validateWidgetAxisLabels(options map[string]json.RawMessage) error {
 	return nil
 }
 
+func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error {
+	for field, limit := range map[string]int{"tooltipTitle": 120, "tooltipValueLabel": 80} {
+		if value, ok := options[field]; ok {
+			var text string
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || stringUnits(text) > limit {
+				return fmt.Errorf("%s must be a string of at most %d characters", field, limit)
+			}
+		}
+	}
+	return nil
+}
+
 func validateWidgetFlags(options map[string]json.RawMessage) error {
-	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "showGrid", "showSparkline"} {
+	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar", "gridX", "showZeroLine"} {
 		if value, ok := options[field]; ok {
 			var flag bool
-			if json.Unmarshal(value, &flag) != nil {
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &flag) != nil {
 				return errors.New("legend, label, value, tooltip, grid, and sparkline settings must be boolean")
 			}
 		}
@@ -338,19 +427,117 @@ func validateWidgetAppearance(options map[string]json.RawMessage) error {
 	if err := validateWidgetColors(options); err != nil {
 		return err
 	}
-	if value, ok := options["display"]; ok {
-		var display string
-		if json.Unmarshal(value, &display) != nil || !slices.Contains([]string{"line", "area"}, display) {
-			return errors.New("display must be line or area")
+	if err := validateWidgetEnum(options, "display", []string{"line", "area"}, "display must be line or area"); err != nil {
+		return err
+	}
+	for field, allowed := range map[string][]string{
+		"sparklinePlacement": {"background", "side"},
+		"statIcon":           {"arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"},
+	} {
+		if err := validateWidgetEnum(options, field, allowed, "invalid "+field); err != nil {
+			return err
 		}
 	}
-	if value, ok := options["curve"]; ok {
-		var curve string
-		if json.Unmarshal(value, &curve) != nil || !slices.Contains([]string{"linear", "step", "monotone"}, curve) {
-			return errors.New("curve must be linear, step, or monotone")
-		}
-	}
+	return validateWidgetEnum(options, "curve", []string{"linear", "step", "monotone"}, "curve must be linear, step, or monotone")
+}
 
+// validateWidgetTooltipPlacement checks the observation inspector settings with the ranges the UI schema publishes.
+// Unset keeps the renderer's defaults, and a value outside its range is refused rather than clamped.
+func validateWidgetTooltipPlacement(options map[string]json.RawMessage) error {
+	if err := validateWidgetEnum(options, "tooltipPlacement", []string{"auto", "top", "right", "bottom", "left"}, "tooltipPlacement must be auto, top, right, bottom, or left"); err != nil {
+		return err
+	}
+	for _, bound := range []struct {
+		field    string
+		min, max float64
+	}{{"tooltipOffset", 0, 40}, {"tooltipMaxWidth", 220, 640}, {"tooltipMaxHeight", 160, 800}} {
+		value, ok := options[bound.field]
+		if !ok {
+			continue
+		}
+		var n float64
+		if json.Unmarshal(value, &n) != nil || !finite(n) || !validNumberRange(n, bound.min, bound.max) {
+			return fmt.Errorf("%s must be from %g to %g", bound.field, bound.min, bound.max)
+		}
+	}
+	return nil
+}
+
+// validateWidgetRenderingOptions checks the time-series rendering options against the ranges the UI schema publishes.
+// An unset key keeps the renderer's default, and a value outside its range is refused rather than clamped.
+func validateWidgetRenderingOptions(options map[string]json.RawMessage) error {
+	if err := validateWidgetEnum(options, "timeAxis", []string{"linear", "calendar"}, "timeAxis must be linear or calendar"); err != nil {
+		return err
+	}
+	if err := validateWidgetEnum(options, "axisUnit", []string{"auto", "ticks", "caption"}, "axisUnit must be auto, ticks, or caption"); err != nil {
+		return err
+	}
+	return validateWidgetReferenceLines(options)
+}
+
+func validateWidgetReferenceLines(options map[string]json.RawMessage) error {
+	value, ok := options["referenceLines"]
+	if !ok {
+		return nil
+	}
+	var lines []json.RawMessage
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &lines) != nil || lines == nil || len(lines) > 8 {
+		return errors.New("reference lines must be an array of at most 8 entries")
+	}
+	for _, raw := range lines {
+		if err := validateWidgetReferenceLine(raw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWidgetReferenceLine(raw json.RawMessage) error {
+	fields, err := requireObjectShape(raw, []string{"value"}, []string{"label", "color"})
+	if err != nil {
+		return err
+	}
+	for name, field := range fields {
+		if bytes.Equal(bytes.TrimSpace(field), []byte("null")) {
+			return fmt.Errorf("reference line %s must not be null", name)
+		}
+	}
+	var line struct {
+		Value float64 `json:"value"`
+		Label string  `json:"label"`
+		Color string  `json:"color"`
+	}
+	if json.Unmarshal(raw, &line) != nil || !finite(line.Value) {
+		return errors.New("reference lines require a finite value")
+	}
+	if label, ok := fields["label"]; ok {
+		if err := validateReferenceLineLabel(label); err != nil {
+			return err
+		}
+	}
+	if _, ok := fields["color"]; ok && !validWidgetColor.MatchString(line.Color) {
+		return errors.New("reference line colors must be six-digit hex colors")
+	}
+	return nil
+}
+
+func validateReferenceLineLabel(raw json.RawMessage) error {
+	var text string
+	if json.Unmarshal(raw, &text) != nil || stringUnits(text) < 1 || stringUnits(text) > 80 {
+		return errors.New("reference line labels must be 1 to 80 characters")
+	}
+	return nil
+}
+
+func validateWidgetEnum(options map[string]json.RawMessage, field string, allowed []string, message string) error {
+	value, ok := options[field]
+	if !ok {
+		return nil
+	}
+	var selected string
+	if json.Unmarshal(value, &selected) != nil || !slices.Contains(allowed, selected) {
+		return errors.New(message)
+	}
 	return nil
 }
 
@@ -367,17 +554,89 @@ func validateWidgetColors(options map[string]json.RawMessage) error {
 }
 
 func validateWidgetNumbers(options map[string]json.RawMessage) error {
-	numbers := map[string]float64{}
-	for _, field := range []string{"decimals", "min", "max", "lineWidth", "fillOpacity"} {
-		if value, ok := options[field]; ok {
-			var n float64
-			if json.Unmarshal(value, &n) != nil || !finite(n) {
-				return errors.New("widget numeric settings must be finite")
-			}
-			numbers[field] = n
-		}
+	numbers, err := parseWidgetNumbers(options)
+	if err != nil {
+		return err
+	}
+	if err := validateWidgetStatBarBounds(options, numbers); err != nil {
+		return err
 	}
 	return validateWidgetNumberBounds(numbers)
+}
+
+func parseWidgetNumbers(options map[string]json.RawMessage) (map[string]float64, error) {
+	numbers := map[string]float64{}
+	for _, field := range []string{"decimals", "tooltipDecimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "plotInsetLeft", "plotInsetRight"} {
+		value, ok := options[field]
+		if !ok {
+			continue
+		}
+		var n float64
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &n) != nil || !finite(n) {
+			return nil, errors.New("widget numeric settings must be finite")
+		}
+		numbers[field] = n
+	}
+	return numbers, nil
+}
+
+func validateWidgetStatBarBounds(options map[string]json.RawMessage, numbers map[string]float64) error {
+	raw, ok := options["showStatBar"]
+	if !ok {
+		return nil
+	}
+	var enabled bool
+	if json.Unmarshal(raw, &enabled) != nil {
+		return errors.New("stat bar setting must be boolean")
+	}
+	if !enabled {
+		return nil
+	}
+	if _, ok := numbers["min"]; !ok {
+		return errors.New("stat bar requires an explicit minimum")
+	}
+	if _, ok := numbers["max"]; !ok {
+		return errors.New("stat bar requires an explicit maximum")
+	}
+	return nil
+}
+
+func validateWidgetSeriesColors(options map[string]json.RawMessage) error {
+	raw, ok := options["seriesColors"]
+	if !ok {
+		return nil
+	}
+	var rules []json.RawMessage
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &rules) != nil || len(rules) > 24 {
+		return errors.New("series colors must be an array of at most 24 rules")
+	}
+	seen := make(map[[2]string]bool, len(rules))
+	for _, entry := range rules {
+		key, err := validateWidgetSeriesColorRule(entry)
+		if err != nil {
+			return err
+		}
+		if seen[key] {
+			return errors.New("duplicate series color label and value")
+		}
+		seen[key] = true
+	}
+	return nil
+}
+
+func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
+	if _, err := requireObjectShape(entry, []string{"label", "value", "color"}, nil); err != nil {
+		return [2]string{}, err
+	}
+	var rule struct {
+		Label string `json:"label"`
+		Value string `json:"value"`
+		Color string `json:"color"`
+	}
+	if json.Unmarshal(entry, &rule) != nil || !validPromLabel.MatchString(rule.Label) || len(rule.Label) > 100 || stringUnits(rule.Value) < 1 || stringUnits(rule.Value) > 256 || !validWidgetColor.MatchString(rule.Color) {
+		return [2]string{}, errors.New("series colors require a valid metric label, nonempty value, and six-digit hex color")
+	}
+	return [2]string{rule.Label, rule.Value}, nil
 }
 
 func validateWidgetThresholds(options map[string]json.RawMessage) error {
@@ -413,15 +672,38 @@ func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, er
 	return threshold.Value, nil
 }
 
-func validateWidgetNumberBounds(numbers map[string]float64) error {
+func validateWidgetPrecisionBounds(numbers map[string]float64) error {
+	if n, ok := numbers["staleAfterSeconds"]; ok && (n < 1 || n > 2678400 || math.Trunc(n) != n) {
+		return errors.New("stale sample threshold must be an integer from 1 to 2678400 seconds")
+	}
+	if n, ok := numbers["tooltipDecimals"]; ok && !validDecimalPrecision(n) {
+		return errors.New("tooltip decimals must be an integer from 0 to 8")
+	}
 	if n, ok := numbers["decimals"]; ok && !validDecimalPrecision(n) {
 		return errors.New("decimals must be an integer from 0 to 8")
+	}
+	return nil
+}
+
+func validateWidgetNumberBounds(numbers map[string]float64) error {
+	if err := validateWidgetPrecisionBounds(numbers); err != nil {
+		return err
 	}
 	if n, ok := numbers["lineWidth"]; ok && !validNumberRange(n, 0.5, 8) {
 		return errors.New("line width must be from 0.5 to 8")
 	}
 	if n, ok := numbers["fillOpacity"]; ok && !validNumberRange(n, 0, 1) {
 		return errors.New("fill opacity must be from 0 to 1")
+	}
+	return validateWidgetLayoutBounds(numbers)
+}
+
+func validateWidgetLayoutBounds(numbers map[string]float64) error {
+	if n, ok := numbers["plotInsetLeft"]; ok && !validNumberRange(n, 8, 240) {
+		return errors.New("left plot inset must be from 8 to 240 pixels")
+	}
+	if n, ok := numbers["plotInsetRight"]; ok && !validNumberRange(n, 8, 120) {
+		return errors.New("right plot inset must be from 8 to 120 pixels")
 	}
 	if minimum, ok := numbers["min"]; ok {
 		if maximum, present := numbers["max"]; present && minimum >= maximum {

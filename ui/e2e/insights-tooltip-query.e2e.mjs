@@ -218,18 +218,18 @@ const observationSeries = (service = quotedService, signal = "historical") => `o
 function expectedObservationQuery(value, offset, service = quotedService, signal = "historical", prefix = "point_context") {
   return `${prefix}{service=${JSON.stringify(service)},signal=${JSON.stringify(observationSeries(service, signal))}} @ ${Date.parse(initialRange.to) / 1000 - offset} > ${value}`
 }
-async function firstPlottedPoint(seriesIndex = 0) {
+async function firstPlottedPoint(seriesIndex = 0, fraction = 0) {
   await tile().scrollIntoViewIfNeeded()
   const line = hostChart().locator('path[stroke-width="1.8"]').nth(seriesIndex)
   await line.waitFor()
-  return line.evaluate(element => {
-    const point = element.getPointAtLength(0), transform = element.getScreenCTM()
+  return line.evaluate((element, fraction) => {
+    const point = element.getPointAtLength(element.getTotalLength() * fraction), transform = element.getScreenCTM()
     if (!transform) throw new Error("Rendered line has no screen transform")
     const screen = new DOMPoint(point.x, point.y).matrixTransform(transform)
     return { x: screen.x, y: screen.y }
-  })
+  }, fraction)
 }
-async function observe(value, offset, service = quotedService, signal = "historical", fields = true) {
+async function observe(value, offset, service = quotedService, signal = "historical", fields = true, cached = false) {
   await tooltip().locator(`[data-metric-value=${JSON.stringify(String(value))}]`).waitFor()
   const timestamp = Date.parse(initialRange.to) - offset * 1000
   if (fields) {
@@ -240,7 +240,7 @@ async function observe(value, offset, service = quotedService, signal = "histori
   }
   await tooltip().locator(`time[datetime=${JSON.stringify(new Date(timestamp).toISOString())}]`).waitFor()
   const expected = expectedObservationQuery(value, offset, service, signal)
-  await until(() => childQueries().at(-1)?.params.query === expected, `Provider did not receive exact observation query: ${expected}`)
+  await until(() => cached ? childQueries().some(entry => entry.params.query === expected) : childQueries().at(-1)?.params.query === expected, `Provider did not receive exact observation query: ${expected}`)
   const expectedChildValue = service === "worker" ? "222" : "111"
   await tooltip().locator(`[data-tooltip-widget="stat"] [data-metric-value=${JSON.stringify(expectedChildValue)}]`).waitFor()
   await contained(tooltip())
@@ -254,16 +254,34 @@ async function historicalHost(width) {
   if (width < 600) await page.touchscreen.tap(position.x, position.y)
   else await page.mouse.move(position.x, position.y)
   const first = await observe(-7.25, 120.25)
+  // The nested query can resize its portal after the parent value arrives.
+  // Check the settled result, including viewport containment, before comparing
+  // it to the host widget.
+  const popup = await contained(tooltip()), card = await tile().boundingBox()
+  assert.equal(await tooltip().evaluate(node => node.parentElement === document.body), true, "A chart tooltip must escape the widget's clipping container")
+  const fallback = await tooltip().getAttribute("data-tooltip-overlap") === "true"
+  if (!fallback) assert.ok(popup.x + popup.width <= card.x + 1 || popup.x >= card.x + card.width - 1 || popup.y + popup.height <= card.y + 1 || popup.y >= card.y + card.height - 1, "Chart tooltip should not cover the plotted widget when outside space is available")
+  else if (width >= 600) assert.equal(await tooltip().evaluate(node => getComputedStyle(node).pointerEvents), "none", "An overlapping hover preview must not block pointer traversal")
   await screenshot(`host-historical-pointer-${width}.png`)
   if (width < 600) { await page.touchscreen.tap(position.x, position.y); await tooltip().waitFor({ state: "hidden" }) }
-  else { await page.mouse.click(position.x, position.y); await tooltip().getByText(/Pinned ·/).waitFor(); await page.keyboard.press("Escape"); await tooltip().waitFor({ state: "hidden" }) }
+  else {
+    const last = await firstPlottedPoint(0, 1)
+    await page.mouse.move(last.x, last.y, { steps: 12 })
+    await observe(32, 0)
+    const moving = await contained(tooltip()), host = await tile().boundingBox()
+    if (await tooltip().getAttribute("data-tooltip-overlap") !== "true") assert.ok(moving.x + moving.width <= host.x + 1 || moving.x >= host.x + host.width - 1 || moving.y + moving.height <= host.y + 1 || moving.y >= host.y + host.height - 1, "Moving across a plotted line keeps the settled inspector outside the host")
+    await page.mouse.move(position.x, position.y, { steps: 12 })
+    // Returning to the first observation may reuse its previously verified response.
+    await observe(-7.25, 120.25, quotedService, "historical", true, true)
+    await page.mouse.click(position.x, position.y); await tooltip().getByText(/Pinned ·/).waitFor(); await page.keyboard.press("Escape"); await tooltip().waitFor({ state: "hidden" })
+  }
   await page.getByRole("heading", { name: "Tooltip query integration", exact: true }).click()
   await hostChart().focus()
-  await observe(-7.25, 120.25)
-  await page.keyboard.press("ArrowRight"); await observe(41, 120, "worker", "worker")
-  await page.keyboard.press("ArrowRight"); const zero = await observe(0, 60.5)
+  await observe(-7.25, 120.25, quotedService, "historical", true, width >= 600)
+  await page.keyboard.press("ArrowRight"); await observe(41, 120, "worker", "worker", true, width >= 600)
+  await page.keyboard.press("ArrowRight"); const zero = await observe(0, 60.5, quotedService, "historical", true, width >= 600)
   await page.keyboard.press("Enter"); await tooltip().getByText(/Pinned ·/).waitFor()
-  await page.keyboard.press("ArrowRight"); await observe(42, 60, "worker", "worker")
+  await page.keyboard.press("ArrowRight"); await observe(42, 60, "worker", "worker", true, width >= 600)
   await tooltip().getByText(/Pinned ·/).waitFor()
   await screenshot(`host-historical-keyboard-${width}.png`)
   await page.keyboard.press("Escape"); await tooltip().waitFor({ state: "hidden" })

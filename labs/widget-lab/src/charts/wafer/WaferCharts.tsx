@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { scaleLinear, scaleLog } from 'd3-scale';
 import { line } from 'd3-shape';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { BIN_LABEL, chamberRows, processSteps, summarizeWafer, waferChamberConfig, waferLineageConfig, waferLosses, waferRows, waferSignature, waferSignatureConfig, waferYieldConfig } from './model';
 import { dieLabel, signed, waferNumber, WAFER_COLORS } from './WaferMap';

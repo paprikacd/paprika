@@ -1,10 +1,11 @@
+import { issueText } from './input-issues.helper';
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { OrbitalPassProfile } from '../src/charts/orbital/OrbitalPassProfile';
 import { passProfileConfig, passProfilePoints, profilePasses, profileSignalPath, qualifyProfile, type PassProfilePoint } from '../src/charts/orbital/pass-profile-model';
 import { orbitalFixtures } from '../src/lenses/orbital/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition } from '@insights/widget-registry';
 import { registerOrbitalCharts } from '../src/charts/orbital/register';
 import { validateEditorWidget } from '../src/editor/editor-model';
 
@@ -136,9 +137,9 @@ describe('contact profile schema and independent input', () => {
   it('rejects a broken mapping through the actual editor acceptance owner', () => {
     registerOrbitalCharts();
     const source = orbitalFixtures().profile, definition = getWidgetDefinition(source.widget)!;
-    expect(definition.layout?.mode).toBe('intrinsic');
+    expect(definition.sizing?.mode).toBe('intrinsic');
     expect(definition.configFields?.filter(field => field.binding)).toHaveLength(8);
-    expect(() => definition.validateInput?.(source.result, source.widget.config)).not.toThrow();
+    expect(definition.validateInput?.(source.result, source.widget.config) ?? []).toEqual([]);
     const bad = { ...source.widget, config: { ...source.widget.config, throughputField: 'does_not_exist' } };
     const validation = validateEditorWidget(bad, 'records', source.result);
     expect(validation.widget).toBeNull();

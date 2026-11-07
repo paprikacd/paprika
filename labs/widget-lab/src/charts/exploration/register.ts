@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin, type WidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin, type WidgetPlugin } from '@insights/widget-registry';
 import { AdjacencyMatrix, EntityNeighbourhood, EventSwimlanes } from './ThreatCharts';
 import { ResourceGantt, ResourceLoad, ScheduleDependencies } from './ScheduleCharts';
 import { ParallelCoordinates, ParetoScatter, TernaryComposition } from './MaterialCharts';

@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, Clock3, Layers3 } from 'lucide-react';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import type { EditLensWidget } from '../LensStudio';
 import { DomainChartPanel, DomainHeader, MetricStrip, DetailValues } from '../../components/lab/DomainPrimitives';
 import { Panel } from '../../components/lab/StudyPrimitives';

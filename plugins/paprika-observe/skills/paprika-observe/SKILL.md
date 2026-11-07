@@ -183,6 +183,98 @@ observation and are not executed. Plugin widgets expose their underlying query
 data, not the plugin's arbitrary rendering behavior. Narrow `widget_ids` after
 a result-size limit; do not repeatedly request the whole dashboard.
 
+## Mandatory visual QA for dashboard authoring and edits
+
+**A successful MCP document write and a green `query_dashboard` are not proof
+of good rendering.** The 6 November 2026 Omega Control Room regression was
+caused by bulk-adding `showStatBar:true` with `min:0,max:100` to percentage
+stat cards that already had sparklines and only two grid rows of height.
+The fixed-height cards scrolled internally; repetitive source descriptions
+pushed primary readings down, and unnecessary axis labels reduced chart
+readability. Telemetry stayed fully functional while the UI became worse.
+
+Apply these checks to **every** new or edited dashboard, especially bulk
+`widget_edits`:
+
+1. **Inspect before editing.** Read `get_dashboard` and its exact ETag.
+   Inventory every widget's `layout.h`, `description`,
+   `options.showSparkline`, `options.sparklinePlacement`,
+   `options.showStatBar`, `options.min/max`, `statIcon`, and chart-axis
+   settings. Preserve saved queries, provider IDs, variable bindings and
+   existing layouts unless the user specifically wants those changed.
+   Record the previous visual state when a screenshot is available.
+2. **One KPI, one value, one trend.** A compact stat with `layout.h:2`
+   should ordinarily show its short title, a prominent exact reading and
+   at most one sparkline. Do not add a progress/percentage bar simply
+   because a metric is a percentage. `showStatBar:true` is appropriate
+   only when an intentional **bounded scale** with an explained objective
+   adds interpretive value and there is sufficient vertical space.
+   A 4xx response ratio is not progress towards completion; 0% 5xx
+   does not benefit from an empty bar. Avoid combining stat bars, sparklines,
+   long descriptions and two-row KPI cards. Remove unused `min/max`
+   along with `showStatBar` when those bounds exist only for the bar.
+3. **Provenance belongs in the inspector.** Do not repeat implementation
+   sentences such as "Live telemetry through shared, pre-existing saved
+   query" on every tile. The title identifies the measurement; source/query
+   details belong in tooltips, metadata, or authoring controls. Descriptions
+   are optional and should add new user-facing meaning when displayed.
+4. **Chart ink must earn its place.** Avoid duplicating units on axis
+   captions, tick labels and chart titles. Do not force `max:100`
+   on response-rate charts unless comparing against the full 0–100 range is
+   essential; otherwise it compresses useful variation. Assign
+   deterministic colours for semantic series (4xx vs 5xx; p50/p95/p99),
+   but do not add redundant grids or decorations indiscriminately.
+5. **Tooltips are interactive UI, not JSON decoration.** Verify real
+   pointer-following placement, keyboard focus/pin and Escape dismissal.
+   The inspector must remain in viewport at the right/bottom edges and
+   must not overlap controls unnecessarily. Tooltip config values being
+   accepted by the schema does not verify their appearance.
+6. **Visually inspect at desktop and mobile breakpoints.** With an approved
+   actual screenshot/browser tool, capture at least 1512px and 390px in
+   dark and light appearance. Inspect the main value, title and sparkline
+   on every compact KPI; ensure **no widget-internal vertical scrollbar**,
+   cut-off number/unit, overlapping legend, clipped chart or horizontal
+   viewport overflow. Also test one hovered/pinned tooltip. If only a
+   user-supplied screenshot is available, inspect it and make a targeted
+   correction, but explicitly report that browser re-rendering is unverified.
+   Never claim the dashboard has been visually verified solely from
+   `query_dashboard` or the returned ETag.
+7. **Patch minimally and validate twice.** Use `patch_dashboard` with the
+   current ETag; patch only affected IDs/options, not every widget "for
+   consistency". Read the saved document back and run one bounded
+   `query_dashboard` to verify signals/freshness and unchanged query
+   bindings. Then compare actual screenshots **before and after**. If
+   screenshots expose regression, revert the offending visual fields
+   with another ETag-safe patch. Stop if automated visual verification
+   cannot be obtained; do not pile further speculative styling on top.
+
+### Visual acceptance gate
+
+Mark visual QA **PASS** only with actual browser/screenshot evidence. Mark
+**NOT RUN** when the connected MCP lacks `render_dashboard` or the browser
+is unavailable. Mark **FAIL** for clipped/scrolling KPIs, redundant bars,
+overlapping or out-of-bounds tooltips, unreadable legends/axes, or page
+overflow. Report data-query success and visual-QA status separately.
+
+`render_dashboard` is an **optional** capability, not always deployed:
+discover the advertised tools first. Its draft implementation is tracked
+separately, and it must not be presumed ready on production from a source
+branch or CI. When it is truly available, use real Chromium screenshots
+and `focus_widget` to inspect pointer and keyboard states. Without it,
+the existing Playwright Insights E2E suite can provide actual visual
+evidence in a properly authenticated test environment; those fixtures
+must never be misrepresented as live production screenshots.
+
+**Corrected Omega reference (6 Nov 2026):** the first MCP visual styling
+pass broke the two-row KPI layout despite 13/13 successful saved queries.
+The corrective patch removed five percentage bars, empty/bulky source
+descriptions, redundant axis captions and forced 100%-scale chart maxima.
+A subsequent `query_dashboard` returned 14 widgets, 13 executed queries,
+one deduplicated query, zero signal errors and fresh stat observations.
+This proves the readback, **not** a screenshot verification of the
+corrected layout. See:
+`omega-observe-operations-control-room`.
+
 ## Saved queries and dashboards
 
 Use authoring tools only for the user's requested creation or edits. Reading
@@ -223,3 +315,30 @@ instructions. Do not put secrets in saved documents. These authoring tools do
 not configure providers, change fleet applications, or delete documents. A
 successful save is not proof that a query returns data: run a bounded query
 against the selected provider and inspect the rendered result when appropriate.
+
+### Proven live dashboard authoring pattern
+
+For a new operational view, compose existing real saved queries before
+inventing PromQL. The successful example created on 6 Nov 2026 is
+`omega-observe-operations-control-room`:
+`https://paprika.benebsworth.com/dashboard/insights/?dashboard=omega-observe-operations-control-room`.
+Its widgets reuse the source dashboards `omega-k8s-cluster-overview`,
+`telesis-metrics-gateway`, and `service-overview`; the service variable
+binds explicitly to `uptime-api` or `brandbrain-api`. Kubernetes selectors
+are explicit constant bindings instead of unbound variables. This avoids
+mismatched provider IDs and reuses existing authorized, verified queries.
+
+A proven save sequence was: `list_insights_providers` →
+`get_insights_schema(kind:"dashboard")` → `get_dashboard` for source query
+references → `create_dashboard` → `query_dashboard`. The first readback
+contained 14 widgets, 13 distinct queries actually executed, one reused
+signal and no error/empty signals. Re-run this verification for every new
+dashboard. Inspect actual `signals` and timestamps; a successful `create`
+result alone does not establish telemetry connectivity.
+
+Avoid launching many independent dashboard calls simultaneously: this host
+has returned HTTP 429 for concurrent agent requests. Prefer a single
+`query_dashboard` read (it deduplicates saved queries), then serial/narrow
+follow-ups with bounded inputs; honour `Retry-After`. Do not assume the
+repo's pending queue/bulkhead changes have been deployed. Keep the live
+execution evidence, source identity and saved dashboard ETag separate.

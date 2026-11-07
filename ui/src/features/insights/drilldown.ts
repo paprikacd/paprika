@@ -7,6 +7,7 @@ import {
   MAX_DASHBOARD_VARIABLES,
   type Dashboard,
   type Drilldown,
+  type DrilldownBinding,
 } from "./schema"
 
 export type VariableValues = Record<string, string>
@@ -14,6 +15,8 @@ export interface DrilldownContext {
   labels?: Record<string, string>
   value?: number | null
   series?: string
+  /** Exact selected observation time in milliseconds, when deliberately chosen. */
+  timestamp?: number
 }
 export interface DashboardNavigation {
   dashboardId: string
@@ -196,6 +199,15 @@ export function resolveDrilldown(
     }
   }
   return navigation
+}
+
+/** Apply a deliberate selection atomically, retaining other current filters. */
+export function resolveSelectionBindings(
+  bindings: DrilldownBinding[], context: DrilldownContext, dashboard: Dashboard, current: VariableValues,
+): VariableValues {
+  const resolved = resolveDrilldown({ id: "selection", title: "Selection", dashboardId: dashboard.id, carryTimeRange: false, bindings }, context, dashboard)
+  const selected = Object.fromEntries(bindings.map(binding => [binding.variable, resolved.variables![binding.variable]]))
+  return resolveDashboardVariables(dashboard, { ...current, ...selected })
 }
 
 function checkedNavigation(input: DashboardNavigation): DashboardNavigation {

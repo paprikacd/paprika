@@ -5,7 +5,7 @@ import { DispatchMerit } from '../src/charts/energy/EnergyCharts';
 import { contingencyCells, flexibilityPoints, powerNodes } from '../src/charts/energy/model';
 import { forecastRecords } from '../src/charts/grid/grid-model';
 import { buildGridBalance, GRID_TIME, type GridScenario } from '../src/lenses/energy/fixtures';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { parseRecordFrame } from '@insights/record-data';
 
 const scenarios: GridScenario[] = ['evening', 'low-wind', 'peak'];
 

@@ -25,6 +25,8 @@ import type { DrilldownContext } from "./drilldown";
 import { widgetTextColor } from "./appearance";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
+import { GammaButton } from "./gamma/button";
+import { WidgetInitialLoading, useWidgetLoadingPresentation } from "./widget-loading";
 export {
   downsamplePoints,
   formatMetric,
@@ -36,7 +38,10 @@ export interface WidgetVisualizationProps {
   widget: Widget;
   result?: QueryResult;
   loading?: boolean;
+  naturalHeight?: boolean;
+  deferred?: boolean;
   error?: string | null;
+  onRetry?: () => void;
   onContextChange?: (context: DrilldownContext) => void;
 }
 
@@ -98,15 +103,24 @@ function RegisteredRenderer({
   );
 }
 
+// State renderers need the same measured container as populated charts.
+function WidgetStateFrame({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
+  return <div className={`${styles.visualization}${busy ? ` ${styles.loadingFrame}` : ""}`} data-widget-state-frame="" aria-busy={busy || undefined}>{children}</div>;
+}
+
 export const WidgetVisualization = memo(function WidgetVisualization({
   widget,
   result,
   loading,
+  naturalHeight = false,
+  deferred,
   error,
+  onRetry,
   onContextChange,
 }: WidgetVisualizationProps) {
   // Registered plugins may arrive after a host loads an optional bundle.
   useWidgetDefinitions();
+  const loadingPresentation = useWidgetLoadingPresentation();
   const definition = getWidgetDefinition(widget);
   const resetKey = useMemo(
     () => ({ widget, result, definition }),
@@ -114,26 +128,34 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   );
   if (!definition)
     return (
-      <div className={`${styles.state} ${styles.error}`} role="alert">
+      <WidgetStateFrame><div className={`${styles.state} ${styles.error}`} role="alert">
         <strong>Widget plugin unavailable</strong>
         <p>
           Install the trusted “{widget.pluginId}” plugin in this Paprika host.
         </p>
-      </div>
+      </div></WidgetStateFrame>
     );
+  // A failed widget that reloads keeps its error in place and marks the frame busy, so the alert is not re-inserted on each refresh.
   if (error)
     return (
-      <div className={`${styles.state} ${styles.error}`} role="alert">
+      <WidgetStateFrame busy={loading}><div className={`${styles.state} ${styles.error}`} role="alert">
         <strong>Query failed</strong>
         <p>{error}</p>
-      </div>
+        {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}
+      </div></WidgetStateFrame>
     );
+  if (deferred && !result)
+    return (
+      <WidgetStateFrame><div className={styles.state} role="status" aria-label="Widget waiting to load">
+        <span>Waiting to load…</span>
+      </div></WidgetStateFrame>
+    );
+  // The initial load alone shows placeholders. A refresh keeps the last result visible and never announces itself.
   if (loading && !result)
     return (
-      <div className={styles.state} role="status" aria-label="Loading widget">
-        <span className={styles.loading} />
-        <span>Querying data source…</span>
-      </div>
+      <WidgetStateFrame busy>
+        <WidgetInitialLoading widget={widget} />
+      </WidgetStateFrame>
     );
   const series = result?.series ?? [];
   const textColor = widgetTextColor(widget.options);
@@ -146,10 +168,10 @@ export const WidgetVisualization = memo(function WidgetVisualization({
           ? !series.length
           : !series.some((entry) => latestPoint(entry))))
   )
-    return <EmptyState />;
+    return <WidgetStateFrame><EmptyState partial={!!(result?.truncated || result?.records?.truncated)} /></WidgetStateFrame>;
   return (
     <div
-      className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
+      className={`${styles.visualization} ${naturalHeight ? styles.intrinsicStat : ""} ${configStyles.visualization} ${textColor ? configStyles.customText : ""} ${loading && loadingPresentation ? styles.refreshHost : ""}`}
       style={
         {
           background: widget.options?.background,
@@ -160,24 +182,27 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       }
       aria-busy={!!loading}
     >
-      {result?.truncated && (
+      {loading && loadingPresentation && <div className={styles.refreshNotice}>{loadingPresentation({ widget, phase: "refresh" })}</div>}
+      {(result?.truncated || result?.records?.truncated) && (
         <p className={styles.limitNotice} role="status">
-          Provider result limit reached. Narrow the query to see more.
+          Provider response may be incomplete. Narrow the query or check the data source.
         </p>
       )}
-      <RendererBoundary
-        key={`${definition.id}:${widget.id}`}
-        resetKey={resetKey}
-      >
-        <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
-          <RegisteredRenderer
-            widget={widget}
-            result={result}
-            definition={definition}
-            onContextChange={onContextChange}
-          />
-        </TooltipWidgetDataProvider>
-      </RendererBoundary>
+      <div className={styles.visualizationContent}>
+        <RendererBoundary
+          key={`${definition.id}:${widget.id}`}
+          resetKey={resetKey}
+        >
+          <TooltipWidgetDataProvider result={result} kind={widgetKind(widget)}>
+            <RegisteredRenderer
+              widget={widget}
+              result={result}
+              definition={definition}
+              onContextChange={onContextChange}
+            />
+          </TooltipWidgetDataProvider>
+        </RendererBoundary>
+      </div>
     </div>
   );
 });

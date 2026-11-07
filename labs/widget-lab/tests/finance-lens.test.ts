@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { allocationColor, allocationRecords, allocationTreemapConfig, financeHistory, financePanels, FINANCE_AS_OF, FINANCE_HOLDINGS, summarizeHoldings } from '../src/lenses/finance-data';
 import { AllocationTreemap } from '../src/lenses/FinanceLens';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
 
 describe('finance lens accounting and allocation', () => {
   it('reconciles holdings, sector weights, cash and the portfolio headline', () => {
@@ -73,7 +73,9 @@ describe('finance lens accounting and allocation', () => {
   });
 
   it('uses a stable zero midpoint and clips only the visual color scale', () => {
-    expect(allocationColor(0)).toBe('#193741');
+    expect(allocationColor(0)).toBe('var(--gamma-chart-grid)');
+    expect(allocationColor(1)).toContain('var(--gamma-success)');
+    expect(allocationColor(-1)).toContain('var(--gamma-danger)');
     expect(allocationColor(null)).not.toBe(allocationColor(0));
     expect(allocationColor(-100)).toBe(allocationColor(-3));
     expect(allocationColor(100)).toBe(allocationColor(3));

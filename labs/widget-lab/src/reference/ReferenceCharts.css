@@ -1,25 +1,25 @@
-.ref-chart{position:relative;width:100%;height:100%;font-family:Barlow,sans-serif;color:var(--ref-muted);isolation:isolate}
+.ref-chart{position:relative;width:100%;height:100%;font-family:Barlow,sans-serif;color:var(--gamma-muted);isolation:isolate}
 .ref-chart-svg{display:block;width:100%;height:auto;overflow:visible;outline-offset:-2px!important}
-.ref-chart-svg:focus-visible{outline:1px solid #79c9e577!important}
-.ref-grid-line{stroke:var(--ref-grid);stroke-width:1;opacity:.9}
-.ref-zero-line{stroke:#8fbbca;stroke-width:1.1;opacity:.85}
-.ref-chart-tick,.ref-chart-unit{font-family:inherit;fill:#bad1e5;font-size:13px;font-weight:400}
-.ref-chart-unit{font-size:14px}.ref-tick-threshold{fill:#ffbc1d;font-size:14px}
-.ref-chart-legend{position:absolute;bottom:10px;left:17px;right:18px;display:flex;align-items:center;gap:22px;font-size:14px;color:#c0d4e9;line-height:19px}
+.ref-chart-svg:focus-visible{outline:1px solid color-mix(in srgb, var(--gamma-chart-1) 46.7%, transparent)!important}
+.ref-grid-line{stroke:var(--gamma-chart-grid);stroke-width:1;opacity:.9}
+.ref-zero-line{stroke:var(--gamma-muted);stroke-width:1.1;opacity:.85}
+.ref-chart-tick,.ref-chart-unit{font-family:inherit;fill:var(--gamma-ink);font-size:13px;font-weight:400}
+.ref-chart-unit{font-size:14px}.ref-tick-threshold{fill:var(--gamma-warning);font-size:14px}
+.ref-chart-legend{position:absolute;bottom:10px;left:17px;right:18px;display:flex;align-items:center;gap:22px;font-size:14px;color:var(--gamma-ink);line-height:19px}
 .ref-chart-legend>span{display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
 .ref-chart-legend .ref-dot{width:14px;height:14px;flex-basis:14px}
-.ref-chart-legend strong{font-weight:500;margin-left:1px;color:#eff6ff}
+.ref-chart-legend strong{font-weight:500;margin-left:1px;color:var(--gamma-ink)}
 .ref-chart-reliability .ref-chart-legend{bottom:10px;left:18px;right:24px;gap:28px;font-size:14px}
 .ref-chart-reliability .ref-chart-legend .ref-dot{width:12px;height:12px;flex-basis:12px}
-.ref-threshold-key{width:34px;border-top:2px dashed #fabc04}.ref-incident-key,.ref-unknown-key{width:36px;height:16px;display:inline-block;background:repeating-linear-gradient(130deg,transparent 0 2px,#bc433ab0 2px 3px);border:1px solid #d5423d70}
-.ref-unknown-key{background:repeating-linear-gradient(130deg,transparent 0 2px,#7495a8a0 2px 3px);border:0}
+.ref-threshold-key{width:34px;border-top:2px dashed var(--gamma-warning)}.ref-incident-key,.ref-unknown-key{width:36px;height:16px;display:inline-block;background:repeating-linear-gradient(130deg,transparent 0 2px,color-mix(in srgb, var(--gamma-danger) 69%, transparent) 2px 3px);border:1px solid color-mix(in srgb, var(--gamma-danger) 43.9%, transparent)}
+.ref-unknown-key{background:repeating-linear-gradient(130deg,transparent 0 2px,color-mix(in srgb, var(--gamma-muted) 62.7%, transparent) 2px 3px);border:0}
 .ref-unknown-key-label{margin-left:auto}
 
 /* Measured operational geometry keeps labels and point rings in CSS pixels. */
 .ref-chart[data-responsive=true]{min-width:0;height:auto;padding:0 10px 12px;container:reference-timeseries / inline-size}
 .ref-chart[data-responsive=true] .ref-chart-svg{max-width:100%;height:auto}
 .ref-chart[data-responsive=true] .ref-chart-svg path,.ref-chart[data-responsive=true] .ref-chart-svg line,.ref-chart[data-responsive=true] .ref-chart-svg circle{vector-effect:non-scaling-stroke}
-.ref-chart[data-responsive=true] .ref-chart-annotation{paint-order:stroke;stroke:var(--ref-panel,#081c26);stroke-width:3px;stroke-linejoin:round}
+.ref-chart[data-responsive=true] .ref-chart-annotation{paint-order:stroke;stroke:var(--gamma-bg,var(--gamma-bg));stroke-width:3px;stroke-linejoin:round}
 .ref-chart[data-responsive=true] .ref-chart-legend{position:static;margin:8px 2px 0;display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13px;line-height:1.5}
 .ref-chart[data-responsive=true] .ref-chart-legend>span{gap:7px}
 .ref-chart[data-responsive=true] .ref-chart-legend .ref-dot{width:11px;height:11px;flex-basis:11px}

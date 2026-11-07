@@ -35,6 +35,7 @@ temporary provider failures. Browser contexts start with no authentication;
 storage-state restoration uses only the session created by that test.
 
 Dashboard data is intentionally empty. This suite validates session behavior,
-not provider queries. The Observe consent endpoint is a destination fixture
-used to verify exact return URL preservation; the separate Observe/MCP E2E
-suite validates real consent and authoring behavior.
+not provider queries. It serves the real Observe and fleet consent pages with
+fixture pending requests and checks that overlapping sign-ins in other tabs
+do not change the pending consent destination. The separate Observe/MCP E2E
+suite validates consent approval and authoring behavior.

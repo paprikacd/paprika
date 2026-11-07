@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Sparkline } from '../../components/lab/StudyPrimitives';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
-import type { Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { DrilldownContext } from '@insights/drilldown';
+import type { Widget } from '@insights/schema';
 import type { EditLensWidget } from '../LensStudio';
 import { registerExplorationCharts } from '../../charts/exploration/register';
 import { relationMatrix } from '../../charts/exploration/model';

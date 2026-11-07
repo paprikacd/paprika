@@ -1,5 +1,5 @@
 import type { CatalogFeature, CatalogPreset } from '../../catalog/chart-fixtures';
-import type { QueryResult, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 import { powerFlowConfig, contingencyConfig, flexibilityConfig, meritConfig, powerNodes } from '../../charts/energy/model';
 import { reserveEnvelopeConfig } from '../../charts/energy/reserve-model';
 

@@ -1,5 +1,7 @@
 # Framework and rendering stack
 
+> **WP-B1b note:** no holding copies remain. Production files are imported through `@insights/*`, and the lab's own wrappers over production are listed in `src/renderer-extensions/README.md`.
+
 This inventory describes the running Paprika Widget Lab. The lab preserves Paprika's copied widget host, registry, query-result adapters, theme and cursor owners; local changes are recorded in the provenance patch. It does not establish that these changes are integrated into the production Paprika repository.
 
 ## Installed foundations
@@ -23,7 +25,7 @@ Versions are resolved from this checkout and its lockfile, rather than inferred 
 
 | Surface | Rendering and interaction owner |
 | --- | --- |
-| Core time series | TanStack Charts inside `src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx`, with D3 calendar scales and the existing cursor/tooltip host. |
+| Core time series | TanStack Charts inside production's `ui/src/features/insights/chart-renderers.tsx`, imported through `@insights/chart-renderers`, with D3 calendar scales and the existing cursor/tooltip host. |
 | Directional traffic, stacked outcomes and distribution | Custom React SVG in the trusted `rich-metrics` plugin, using normalized canonical data and a shared observation inspector. |
 | Literal Edge Watch and Reliability Room plots | Custom React SVG and D3 in `src/reference/ReferenceCharts.tsx`. The original full-range geometry follows the supplied concept artwork; selected windows use actual timestamp geometry. |
 | Geographic maps | Shared React SVG map in `src/charts/geo/GeoMap.tsx` with bounded projection/camera math in `geo-viewport.ts`. Natural Earth geometry and synthetic location fixtures are locally available. |

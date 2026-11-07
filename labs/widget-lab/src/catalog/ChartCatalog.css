@@ -4,8 +4,6 @@
 .catalog-title > span { font-size: 10px; letter-spacing: .23em; color: var(--gamma-muted); }
 .catalog-title h1 { margin: 3px 0 0; font-size: 20px; font-weight: 500; letter-spacing: -.02em; }
 .catalog-fixture { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--gamma-muted); font-size: 12px; }
-.catalog-theme, .catalog-controls button, .catalog-context button { background: var(--gamma-bg); border: 1px solid var(--gamma-border); color: var(--gamma-muted); border-radius: 4px; cursor: pointer; }
-.catalog-theme { width: 34px; height: 34px; display: grid; place-items: center; }
 .catalog-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); max-width: 1540px; margin: 0 auto; }
 .catalog-nav { border-right: 1px solid var(--gamma-border); padding: 23px 14px; }
 .catalog-nav > p { color: var(--gamma-muted); font-size: 11px; margin: 0 10px 12px; }
@@ -42,7 +40,7 @@
 .catalog-chart-body[data-catalog-family=budget-meter], .catalog-chart-body[data-catalog-family=segmented-meter] { height: 310px; }
 .catalog-chart-body[data-catalog-family=status-history] { height: 280px; }
 .catalog-chart-body[data-catalog-family=incident-calendar] { height: 380px; }
-.chart-catalog-map > .paprika-geo-map { height: auto; min-height: 190px; flex: 1 1 auto; background: #061923; border-radius: 5px; }
+.chart-catalog-map > .paprika-geo-map { height: auto; min-height: 190px; flex: 1 1 auto; background: var(--gamma-page); border-radius: 5px; }
 .chart-catalog-map > .paprika-geo-map > svg { min-height: 190px; }
 .catalog-explanation { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(230px, .85fr); gap: 26px; margin-top: 23px; padding-top: 20px; border-top: 1px solid var(--gamma-border); }
 .catalog-explanation h3 { font-size: 12px; font-weight: 600; margin: 0 0 5px; }
@@ -96,7 +94,7 @@
 .catalog-nav-group:first-of-type { margin-top:0; padding-top:0; border-top:0; }
 .catalog-family-select { display:none; }
 .catalog-lens-link { display:inline-flex; align-items:center; gap:5px; color:var(--gamma-accent-text); font-size:12px; text-decoration:none; }
-.catalog-preview.is-concept { --gamma-bg:#09202a; --gamma-page:#061720; --gamma-ink:#dcebf3; --gamma-muted:#9bb9c9; --gamma-border:#21404e; --gamma-chart-grid:#193846; --gamma-chart-1:#11cde5; --gamma-chart-2:#a289f5; --gamma-chart-3:#f7bd54; --gamma-success:#27d8b0; --gamma-danger:#ff7568; --gamma-warning:#f5bd56; --gamma-accent:#ff7956; color:var(--gamma-ink); }
+.catalog-preview.is-concept {              color:var(--gamma-ink); }
 .catalog-chart-body[data-catalog-family="grid-network-map"] { height:510px; }
 .catalog-chart-body[data-catalog-family="forecast-bands"] { height:430px; }
 .catalog-chart-body[data-catalog-family="rack-matrix"] { height:auto; min-height:440px; }

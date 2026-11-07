@@ -76,6 +76,7 @@ type Query struct {
 	Start      float64 `json:"start"`
 	End        float64 `json:"end"`
 	Step       float64 `json:"step"`
+	TraceID    string  `json:"traceId,omitempty"`
 }
 
 type Point struct {
@@ -101,8 +102,27 @@ type Trace struct {
 type QueryResult struct {
 	Series    []Series         `json:"series,omitempty"`
 	Traces    []Trace          `json:"traces,omitempty"`
+	Spans     []TraceSpan      `json:"spans,omitempty"`
 	Records   *dataframe.Frame `json:"records,omitempty"`
 	Truncated bool             `json:"truncated,omitempty"`
+}
+
+// TraceSpan contains bounded trace topology, timing and safe semantic dimensions.
+type TraceSpan struct {
+	SpanID            string           `json:"spanId"`
+	ParentSpanID      string           `json:"parentSpanId,omitempty"`
+	Service           string           `json:"service"`
+	Operation         string           `json:"operation"`
+	StartTime         float64          `json:"startTime"`
+	DurationMs        float64          `json:"durationMs"`
+	Status            string           `json:"status"`
+	Attributes        []TraceAttribute `json:"attributes,omitempty"`
+	AttributesOmitted int              `json:"attributesOmitted,omitempty"`
+}
+
+type TraceAttribute struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // Dashboard documents follow the strict versioned contract shared with the UI.

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../../vendor/paprika/ui/src/features/insights/record-data';
+import type { RecordFrame } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
 import { buildTraceSpans, type TraceSpan } from '../incident/incident-model';
 import { validateProfile, type Profile, type ProfileFrame } from '../profiling/profile-model';
 
@@ -52,6 +52,15 @@ export function empiricalQuantile(values: readonly number[], fraction: number) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
 }
 
+/** An R-7 tail quantile needs about 1/(1−q) observations before it is more than an interpolation of the top two. */
+export const minimumQuantileSamples = (fraction: number) => Math.ceil(1 / (1 - fraction) - 1e-9);
+/** Below that minimum the reported tail is the interval maximum, which the renderer labels as such. */
+export function reportedQuantile(values: readonly number[], fraction: number): { value: number | null; basis: 'empirical' | 'maximum'; samples: number } {
+  const samples = values.length;
+  if (samples && samples < minimumQuantileSamples(fraction)) return { value: values.reduce((top, value) => Math.max(top, value), -Infinity), basis: 'maximum', samples };
+  return { value: empiricalQuantile(values, fraction), basis: 'empirical', samples };
+}
+
 export function latencyHistogram(values: readonly number[], bins: number, maximum: number) {
   if (!Number.isInteger(bins) || bins < 2 || !Number.isFinite(maximum) || maximum <= 1 || values.some(value => !Number.isFinite(value) || value < 0 || value > maximum)) throw new Error('Histogram input requires finite nonnegative values within its declared maximum.');
   const edges = Array.from({ length: bins + 1 }, (_, index) => index === bins ? maximum : index ? Math.exp(index / bins * Math.log(maximum)) : 0);
@@ -70,10 +79,29 @@ export function latencyDensity(rows: PerformanceObservation[], config: z.input<t
     const begin = start + index * span, finish = begin + span;
     const observations = selected.filter(row => row.timestamp >= begin && row.timestamp < finish);
     const values = observations.flatMap(row => row.latency === null ? [] : [row.latency]);
-    return { id: `time-${index}`, index, start: begin, end: finish, count: values.length, missing: observations.length - values.length, p50: empiricalQuantile(values, .5), p95: empiricalQuantile(values, .95), p99: empiricalQuantile(values, .99), bins: latencyHistogram(values, c.bins, maximum) };
+    const p50 = reportedQuantile(values, .5), p95 = reportedQuantile(values, .95), p99 = reportedQuantile(values, .99);
+    return { id: `time-${index}`, index, start: begin, end: finish, count: values.length, missing: observations.length - values.length, p50: p50.value, p95: p95.value, p99: p99.value, quantileBasis: { p50: p50.basis, p95: p95.basis, p99: p99.basis }, bins: latencyHistogram(values, c.bins, maximum) };
   });
   const cells = buckets.flatMap(bucket => bucket.bins.map(bin => ({ ...bin, id: `${bucket.index}:${bin.index}`, start: bucket.start, end: bucket.end, bucket: bucket.index, total: bucket.count, missing: bucket.missing })));
   return { maximum, extent, buckets, cells, before: latencyHistogram(rows.filter(row => row.version === 'before').flatMap(row => row.latency === null ? [] : [row.latency]), c.bins, maximum), after: latencyHistogram(rows.filter(row => row.version === 'after').flatMap(row => row.latency === null ? [] : [row.latency]), c.bins, maximum) };
+}
+
+/** Display text for an interval quantile: maxima carry their sample count and whole milliseconds; empirical tails keep one decimal. */
+export function describeQuantile(value: number | null, basis: 'empirical' | 'maximum', samples: number) {
+  if (value === null) return 'Unknown';
+  if (basis === 'maximum') return `max of ${samples} samples · ${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} ms`;
+  return `${value.toLocaleString('en-US', { maximumFractionDigits: 1 })} ms`;
+}
+/** Arrow keys move one time bucket left/right or one latency bin up/down. Grid edges stop movement; nothing wraps into a neighbouring bucket. `buckets` lists the visible bucket indices in ascending order. */
+export function stepDensityCell(buckets: readonly number[], bins: number, current: { bucket: number; index: number } | null, key: string): { bucket: number; index: number } | null {
+  if (!buckets.length || !Number.isInteger(bins) || bins < 1) return null;
+  const first = buckets[0], last = buckets[buckets.length - 1], base = current ?? { bucket: first, index: 0 };
+  const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
+  if (key === 'ArrowRight') return { bucket: clamp(base.bucket + 1, first, last), index: base.index };
+  if (key === 'ArrowLeft') return { bucket: clamp(base.bucket - 1, first, last), index: base.index };
+  if (key === 'ArrowUp') return { bucket: base.bucket, index: clamp(base.index + 1, 0, bins - 1) };
+  if (key === 'ArrowDown') return { bucket: base.bucket, index: clamp(base.index - 1, 0, bins - 1) };
+  return null;
 }
 
 export type PerformanceSpan = TraceSpan & { phase: boolean; functionName: string | null };

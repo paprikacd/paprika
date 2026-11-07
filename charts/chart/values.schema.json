@@ -43,6 +43,7 @@
     "observabilityGateway": {
       "type": "object",
       "properties": {
+        "persistSessions": {"type": "boolean"},
         "additionalCACertificates": {
           "description": "Additional public CA certificates, one PEM certificate per filename; never private keys or credentials.",
           "type": ["object", "null"],
@@ -111,6 +112,8 @@
         "oauth": {
           "type": "object",
           "properties": {
+            "persistSessions": {"type": "boolean"},
+            "persistClients": {"type": "boolean"},
             "clientId": {"type": ["string", "null"]},
             "redirectUris": {"type": "array", "items": {"type": "string"}}
           }

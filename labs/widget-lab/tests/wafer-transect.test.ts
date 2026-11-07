@@ -1,3 +1,4 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +7,7 @@ import { WaferTransect } from '../src/charts/wafer/WaferTransect';
 import { makeWaferCatalogFixture } from '../src/charts/wafer/catalog';
 import { registerWaferCharts } from '../src/charts/wafer/register';
 import { waferResult } from '../src/lenses/wafer/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition } from '@insights/widget-registry';
 
 const config = waferTransectConfig.parse({ followSelection: false });
 const source = waferResult(), dies = waferRows(source.records);
@@ -97,8 +98,8 @@ describe('wafer cross-section field mapping and independent data', () => {
     registerWaferCharts();
     const definition = getWidgetDefinition('plugin', 'wafer-transect')!;
     expect(definition.configFields?.find(field => field.key === 'valueField')?.binding).toMatchObject({ types: ['number'], unit: 'nA' });
-    expect(() => definition.validateInput!(source, { index: 50, followSelection: false })).toThrow(/No supplied die/);
-    expect(() => definition.validateInput!(source, { valueField: 'not_in_result' })).toThrow(/Missing chart column/);
+    expect(issueText(definition.validateInput!(source, { index: 50, followSelection: false }))).toMatch(/No supplied die/);
+    expect(issueText(definition.validateInput!(source, { valueField: 'not_in_result' }))).toMatch(/Missing chart column/);
     expect(() => definition.parseConfig!({ scale: 'symlog' })).toThrow();
   });
 

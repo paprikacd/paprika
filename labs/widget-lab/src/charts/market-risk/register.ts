@@ -1,4 +1,4 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { ContributionWaterfall, CorrelationMatrix, LiquidityLadder } from './MarketCharts';
 import { correlationConfig, liquidityConfig, waterfallConfig } from './market-chart-data';
 

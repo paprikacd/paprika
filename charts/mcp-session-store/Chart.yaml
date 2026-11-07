@@ -1,0 +1,5 @@
+apiVersion: v2
+name: paprika-mcp-session-store
+description: Retained, narrowly scoped OAuth session storage for a standalone Paprika MCP surface
+type: application
+version: 0.1.0

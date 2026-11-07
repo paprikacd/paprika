@@ -1,4 +1,4 @@
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '@insights/schema';
 import { marketRiskPanels } from '../lenses/market-risk-data';
 import { buildInferenceFleet } from '../lenses/inference-fleet-data';
 import { incidentDependencyPanel, incidentTelemetryPanel, incidentTracePanel } from '../lenses/incident-room-data';

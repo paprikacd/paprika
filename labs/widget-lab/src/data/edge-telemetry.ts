@@ -1,4 +1,4 @@
-import type { QueryResult } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult } from '@insights/schema';
 
 export type EdgeScenario = 'steady' | 'incident' | 'gaps';
 export type EdgeGateway = 'all' | 'edge-01' | 'edge-02';

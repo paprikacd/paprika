@@ -1,9 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { hierarchy, treemap } from 'd3-hierarchy';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { fleetRows, fleetSelectionAction, fleetSelectionId, nodeFor, placementConfig, resourceSummary, type FleetEntity } from './model';
 import './kubernetes.css';
+import { PlotHatchDefs, plotHatchFill } from '@insights/plot-hatch';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 export const fleetNumber = (n: number | null, digits = 2) => n === null ? 'Unavailable' : n.toLocaleString('en-US', { maximumFractionDigits: digits });
 export const fleetTime = (n: number) => new Date(n).toISOString().slice(11, 16);
@@ -21,6 +24,7 @@ export function KubernetesPlacement({ widget, result, embedded, onContextChange 
   useEffect(() => setLocalChoice(null), [result, cfg.selectedId, cfg.selectionOwner]);
   const nodes = entities.filter(e => e.kind === 'node'), pods = entities.filter(e => e.kind === 'pod' && e.nodeId !== null);
   const host = useRef<HTMLDivElement>(null), width = usePlotWidth(host, 740), columns = width >= 520 ? 3 : width >= 370 ? 2 : 1;
+  const entering = useChartEntrance({ anchor: host });
   const zones = [...new Set(nodes.map(n => n.zone!))].sort(), gap = 9, zoneWidth = (width - gap * (columns - 1)) / columns, zoneHeight = 344, height = Math.ceil(zones.length / columns) * (zoneHeight + gap) - gap;
   const enabled = !embedded && widget.options?.showTooltip !== false, inspect = useInspection(entities, result, enabled, selectionId);
   const selectedNode = nodeFor(entities, selectionId), active = inspect.item, activeNode = active ? nodeFor(entities, active.id) : '', uid = `fleet-${useId().replaceAll(':', '')}`;
@@ -42,9 +46,9 @@ export function KubernetesPlacement({ widget, result, embedded, onContextChange 
     onKeyDown: (event: React.KeyboardEvent<SVGElement>) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose(entity.id, event.currentTarget); } },
   });
   if (!nodes.length) return <div className="domain-empty">No cluster placement observations</div>;
-  return <div ref={host} className="kube-chart kube-placement" onKeyDown={inspect.onKeyDown}>
+  return <div ref={host} className="kube-chart kube-placement" data-chart-entering={entering || undefined} onKeyDown={inspect.onKeyDown}>
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={widget.title}>
-      <defs><pattern id={`${uid}-unknown`} width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="var(--gamma-bg)"/><path d="M0 5 5 0" stroke={C.muted} strokeWidth="1"/></pattern></defs>
+      <defs><PlotHatchDefs id={uid}/></defs>
       {zones.map((zone, zi) => {
         const left = zi % columns * (zoneWidth + gap), top = Math.floor(zi / columns) * (zoneHeight + gap), group = nodes.filter(n => n.zone === zone);
         const usableHeight = (zoneHeight - 34) * (zoneCapacity.get(zone)! / maxZoneCapacity);
@@ -56,7 +60,7 @@ export function KubernetesPlacement({ widget, result, embedded, onContextChange 
             const children = pods.filter(p => p.nodeId === node.id), childValues = children.map(p => { const s = summaries.get(p.id)!; return { id: p.id, value: cfg.resource === 'cpu' ? s.cpuRequested : s.memoryRequested }; });
             const slack = Math.max(0, capacity - request), inner = tiles([...childValues, { id: '__unrequested', value: slack }], nw - 6, nh - 22, 1.3);
             return <g key={node.id} transform={`translate(${tile.x0} ${tile.y0})`} data-kube-node={node.id} data-inspected={activeNode === node.id} className="kube-placement-node">
-              <rect className="kube-placement-boundary" width={nw} height={nh} fill={available ? 'var(--gamma-surface)' : `url(#${uid}-unknown)`} stroke={selected ? C.cyan : pressure ? C.amber : 'var(--gamma-border)'} strokeWidth={selected || pressure ? 2 : 1} {...events(node, true)}/>
+              <g className={chartEntrance.revealMarks}><rect className="kube-placement-boundary" width={nw} height={nh} fill={available ? 'var(--gamma-surface)' : plotHatchFill(uid)} stroke={selected ? C.cyan : pressure ? C.amber : 'var(--gamma-border)'} strokeWidth={selected || pressure ? 2 : 1} {...events(node, true)}/></g>
               {available && cfg.showPods && <g transform="translate(3 3)">{inner.map(cell => { const pod = children.find(p => p.id === cell.data.id), cw = cell.x1 - cell.x0, ch = cell.y1 - cell.y0; if (cw <= 0 || ch <= 0) return null;
                 return pod ? <rect key={pod.id} className="kube-pod-mark" data-active={selectionId === pod.id || active?.id === pod.id} x={cell.x0} y={cell.y0} width={cw} height={ch} fill={namespaceColor(pod.namespace)} fillOpacity={selectionId === pod.id ? .92 : .46} stroke={selectionId === pod.id || active?.id === pod.id ? C.orange : namespaceColor(pod.namespace)} strokeWidth={selectionId === pod.id || active?.id === pod.id ? 1.5 : .7} {...events(pod, selected)}><title>{pod.name} · {fleetNumber(cell.value ?? 0)} {cfg.resource === 'cpu' ? 'requested cores' : 'requested GiB'}</title></rect> : <rect key="slack" x={cell.x0} y={cell.y0} width={cw} height={ch} fill="var(--gamma-bg)" pointerEvents="none"/>;
               })}</g>}

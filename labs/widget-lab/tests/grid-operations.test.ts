@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ForecastBands } from '../src/charts/grid/ForecastBands';
 import { BATTERY_CAPACITY_MWH, GRID_AS_OF, GRID_DAY_START, GRID_LOCATIONS, GRID_STEP, buildGridOperations, gridDay, gridForecast, gridNetwork } from '../src/lenses/grid-operations-data';
 import { forecastBandConfig, forecastRecords, gridFlowColor, gridNetworkConfig, networkRecords } from '../src/charts/grid/grid-model';
-import type { RecordFrame } from '../src/vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '@insights/schema';
 
 describe('Grid Operations source accounting',()=>{
   it.each(['peak','balanced'] as const)('reconciles every %s power observation and exclusive generation source',scenario=>{
@@ -42,7 +42,7 @@ describe('Geographic network adapter',()=>{
   it('rejects duplicate IDs, skips invalid coordinates and uses capacity thresholds',()=>{
     const frame=gridNetwork('peak').records!;expect(()=>networkRecords({...frame,rows:[...frame.rows,frame.rows[0]]})).toThrow(/unique/);
     const invalid=frame.rows[0].slice();invalid[3]=200;const parsed=networkRecords({...frame,rows:[invalid,...frame.rows.slice(1)]});expect(parsed.omitted).toBeGreaterThan(0);expect(parsed.nodes.some(n=>n.id===invalid[1])).toBe(false);
-    expect(gridFlowColor(79,100)).toBe('#21d1e7');expect(gridFlowColor(80,100)).toBe('#ffc35a');expect(gridFlowColor(100,100)).toBe('#ff665c');
+    expect(gridFlowColor(79,100)).toBe('var(--gamma-chart-1)');expect(gridFlowColor(80,100)).toBe('var(--gamma-warning)');expect(gridFlowColor(100,100)).toBe('var(--gamma-danger)');
   });
 });
 

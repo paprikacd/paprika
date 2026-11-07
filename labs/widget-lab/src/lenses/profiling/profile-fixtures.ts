@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 import { encodeFlamebearer, profileFromStacks, profileToRecords, samplesToRecords, type Profile, type StackSample } from '../../charts/profiling/profile-model';
 
 export type ProfileFixtureId = 'postgres-cpu' | 'go-cpu' | 'python-cpu' | 'go-alloc';

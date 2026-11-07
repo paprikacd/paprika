@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RecordFrame } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { RecordFrame } from '@insights/schema';
 
 const field = (name: string) => z.string().trim().min(1).max(80).default(name);
 export const powerFlowConfig = z.strictObject({ valueField: field('power'), labelField: field('label'), showValues: z.boolean().default(true), selectedAsset: z.string().max(80).default('battery') });

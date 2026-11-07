@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { DomainChartPanel, DomainHeader, MetricStrip } from '../../components/lab/DomainPrimitives';
 import { Panel } from '../../components/lab/StudyPrimitives';
 import type { EditLensWidget } from '../LensStudio';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import { registerEnergyCharts } from '../../charts/energy/register';
 import { registerGridCharts } from '../../charts/grid/register';
 import { contingencyCells } from '../../charts/energy/model';

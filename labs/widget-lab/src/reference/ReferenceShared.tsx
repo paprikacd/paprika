@@ -15,9 +15,9 @@ export function Info({ text = 'Authored synthetic reference fixture. This view r
 export function RefPanel({ title, info, action, className = '', children, style, scrollLabel }: { title: ReactNode; info?: string; action?: ReactNode; className?: string; children: ReactNode; style?: CSSProperties; scrollLabel?: string }) {
   return <section className={`ref-panel ${className}`} style={style}><header className="ref-panel-header"><h2>{title}<Info text={info}/></h2>{action}</header><div className="ref-panel-body" tabIndex={scrollLabel?0:undefined} role={scrollLabel?'region':undefined} aria-label={scrollLabel}>{children}</div></section>;
 }
-export function RefSelect({ value, options, onChange, label, className = '', style }: { value: string; options: string[]; onChange?: (value:string)=>void; label?: string; className?: string; style?: CSSProperties }) {
+export function RefSelect({ value, options, onChange, label, className = '', style, disabled = false, title }: { value: string; options: string[]; onChange?: (value:string)=>void; label?: string; className?: string; style?: CSSProperties; disabled?: boolean; title?: string }) {
   const [local,setLocal] = useState(value);
-  return <label className={`ref-select-field ${className}`} style={style}>{label && <span className="ref-sr-only">{label}</span>}<span className="ref-select"><select aria-label={label ?? options[0]} value={onChange ? value : local} onChange={e=>{setLocal(e.target.value); onChange?.(e.target.value);}}>{options.map(option=><option key={option} value={option}>{option}</option>)}</select><ChevronDown size={14}/></span></label>;
+  return <label className={`ref-select-field ${className}`} style={style}>{label && <span className="ref-sr-only">{label}</span>}<span className="ref-select"><select aria-label={label ?? options[0]} disabled={disabled} title={title} value={onChange ? value : local} onChange={e=>{setLocal(e.target.value); onChange?.(e.target.value);}}>{options.map(option=><option key={option} value={option}>{option}</option>)}</select><ChevronDown size={14}/></span></label>;
 }
 export function MiniTrace({ values, color, height=32, width=180, fill=true, min, max }: { values: Array<number|null>; color: string; height?: number; width?: number; fill?: boolean; min?: number; max?: number }) {
   const id=useId().replace(/:/g,'');

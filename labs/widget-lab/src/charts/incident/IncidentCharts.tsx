@@ -1,17 +1,22 @@
-import { restoreTooltipFocus } from '../../vendor/paprika/ui/src/features/insights/tooltip-focus';
-import { useTooltipDismiss } from '../../components/lab/useTooltipDismiss';
-import { ChartTooltip } from '../../components/lab/ChartTooltip';
+import { restoreTooltipFocus } from '@insights/tooltip-focus';
+import { useTooltipDismiss } from '../../renderer-extensions/use-tooltip-dismiss';
+import { ChartTooltip } from '../../renderer-extensions/chart-tooltip';
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { area, line } from 'd3-shape';
 import { scaleLinear, scaleUtc } from 'd3-scale';
 import { ChevronDown, ChevronRight, Crosshair, Search, X } from 'lucide-react';
 import { Sparkline } from '../../components/lab/StudyPrimitives';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
-import { useChartCursorPublisher } from '../../vendor/paprika/ui/src/features/insights/chart-cursor';
-import { minimumTimeWindow, nearestTimeIndex, timeWindowExtent } from '../../vendor/paprika/ui/src/features/insights/time-window';
-import { TimeWindowControls, useChartTimeWindow, useTimeWindowBrush } from '../../vendor/paprika/ui/src/features/insights/time-window-controls';
+import type { WidgetRendererProps } from '@insights/widget-registry';
+import { useChartCursorPublisher } from '@insights/chart-cursor';
+import { minimumTimeWindow, nearestTimeIndex, timeWindowExtent } from '@insights/time-window';
+import { useChartTimeWindow, useTimeWindowBrush } from '@insights/chart-window-controls';
+import { LabWindowControls } from '../../renderer-extensions/lab-window-controls';
 import { alignedTelemetryConfig, buildDependencyGraph, buildTraceSpans, dependencyConfig, telemetryAt, traceWaterfallConfig, visibleTraceSpans } from './incident-model';
 import './IncidentCharts.css';
+import { PlotHatchDefs, plotHatchFill } from '@insights/plot-hatch';
+import hatchStyles from '@insights/plot-hatch.module.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 function useWidth(ref: RefObject<HTMLDivElement | null>, fallback = 720) {
   const [width,setWidth] = useState(fallback);
@@ -25,7 +30,7 @@ const statusColor = (status:string) => status==='ERROR'?'var(--gamma-danger)':st
 export function AlignedTelemetry({widget,result,embedded,onContextChange}:WidgetRendererProps) {
   const config=useMemo(()=>alignedTelemetryConfig.parse(widget.config),[widget.config]);
   const series=result.series??[];
-  const wrapper=useRef<HTMLDivElement>(null),svg=useRef<SVGSVGElement>(null),width=useWidth(wrapper),uid=useId().replaceAll(':','');
+  const wrapper=useRef<HTMLDivElement>(null),svg=useRef<SVGSVGElement>(null),width=useWidth(wrapper),entering=useChartEntrance({anchor:wrapper}),uid=useId().replaceAll(':','');
   const publisher=useChartCursorPublisher();
   const [selectedValue,setSelected]=useState<number|null>(null),[pinned,setPinned]=useState(false);
   const extent=useMemo(()=>timeWindowExtent(series),[series]);
@@ -53,14 +58,14 @@ export function AlignedTelemetry({widget,result,embedded,onContextChange}:Widget
   const pointer=(event:{clientX:number;clientY:number},pin=false)=>{if(!interactive||brush.active||(pinned&&!pin))return;const p=point(event.clientX,event.clientY);if(!p?.inPlot){hoverDismiss.schedule();return;}const index=nearestTimeIndex(eligible.map(timestamp=>({timestamp,value:0})),p.timestamp);if(index!==null)inspect(eligible[index],pin);};
   const exact=selected===null?[]:telemetryAt(series,selected);
   if(!series.length)return <div className="incident-empty">No telemetry in this result.</div>;
-  return <div ref={wrapper} className="aligned-telemetry" data-shared-window-start={windowState.window.start} data-shared-window-end={windowState.window.end} onPointerLeave={()=>{if(!brush.active)hoverDismiss.schedule();}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))hoverDismiss.schedule();}} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
-    {!embedded&&<TimeWindowControls state={windowState} compact/>}
+  return <div ref={wrapper} className="aligned-telemetry" data-chart-entering={entering || undefined} data-shared-window-start={windowState.window.start} data-shared-window-end={windowState.window.end} onPointerLeave={()=>{if(!brush.active)hoverDismiss.schedule();}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))hoverDismiss.schedule();}} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
+    {!embedded&&<LabWindowControls state={windowState}/>}
     <svg ref={svg} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={widget.title} aria-description="Separate units share the same UTC time axis. Drag any lane to zoom all lanes; Time window offers exact input, Undo and Reset. Arrow keys inspect, Enter pins, Escape closes." tabIndex={embedded?-1:0} {...brush.handlers} onPointerMove={event=>pointer(event)} onClick={event=>pointer(event,true)} onKeyDown={event=>{
       if(!interactive)return;
       if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();const current=selected===null?0:Math.max(0,eligible.indexOf(selected));const index=event.key==='Home'?0:event.key==='End'?eligible.length-1:Math.max(0,Math.min(eligible.length-1,current+(event.key==='ArrowRight'?1:-1)));if(eligible[index]!==undefined)inspect(eligible[index]);}
       else if(event.key==='Enter'||event.key===' '){event.preventDefault();const stamp=selected??eligible[Math.floor(eligible.length/2)];if(stamp!==undefined)inspect(stamp,!pinned);}
     }} style={{touchAction:'pan-y',userSelect:'none'}}>
-      <defs><pattern id={`${uid}-missing`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" x2="0" y1="0" y2="6" stroke="var(--gamma-muted)" strokeOpacity=".24" strokeWidth="1"/></pattern></defs>
+      <defs><PlotHatchDefs id={uid}/></defs>
       {config.tracks.map((track,index)=>{
         const entry=series.find(item=>item.name===track.name),points=entry?.points??[];
         const top=index*laneStride+23,bottom=top+config.laneHeight;
@@ -77,18 +82,18 @@ export function AlignedTelemetry({widget,result,embedded,onContextChange}:Widget
           {[0,maximum/2,maximum].map(v=><g key={v}><line x1={plot.left} x2={width-plot.right} y1={y(v)} y2={y(v)} className="incident-gridline"/><text x={plot.left-8} y={y(v)+4} textAnchor="end" className="incident-svg-muted">{compact(v)}</text></g>)}
           {ticks.map(tick=><line key={+tick} x1={x(+tick)} x2={x(+tick)} y1={top} y2={bottom} className="incident-gridline"/>)}
           <g clipPath={`url(#${uid}-lane-${index})`}>
-            {(config.showEvents?config.events:[]).filter(event=>event.kind==='incident').map(event=><rect key={event.id} x={x(event.start)} y={top} width={Math.max(1,x(event.end??event.start)-x(event.start))} height={config.laneHeight} fill="var(--gamma-danger)" opacity=".055"/>)}
-            {gaps.map((g,i)=><g key={i}><rect x={x(g.start)} y={top} width={Math.max(0,x(g.end)-x(g.start))} height={config.laneHeight} fill={`url(#${uid}-missing)`}/>{x(g.end)-x(g.start)>65&&<text x={(x(g.start)+x(g.end))/2} y={top+config.laneHeight/2} textAnchor="middle" className="incident-svg-muted">No telemetry</text>}</g>)}
+            <g className={chartEntrance.revealMarks}>{(config.showEvents?config.events:[]).filter(event=>event.kind==='incident').map(event=><rect key={event.id} x={x(event.start)} y={top} width={Math.max(1,x(event.end??event.start)-x(event.start))} height={config.laneHeight} fill="var(--gamma-danger)" opacity=".055"/>)}</g>
+            {gaps.map((g,i)=><g key={i}><rect x={x(g.start)} y={top} width={Math.max(0,x(g.end)-x(g.start))} height={config.laneHeight} fill={plotHatchFill(uid)}/>{x(g.end)-x(g.start)>65&&<text x={(x(g.start)+x(g.end))/2} y={top+config.laneHeight/2} textAnchor="middle" className="incident-svg-muted">No telemetry</text>}</g>)}
             {config.showFill&&<path d={fill} fill={`url(#${uid}-fill-${index})`}/>}<path d={path} fill="none" stroke={track.color} strokeWidth={config.lineWidth} vectorEffect="non-scaling-stroke"/>
-            {selected!==null&&<><line x1={x(selected)} x2={x(selected)} y1={top} y2={bottom} stroke="#d6eef4" strokeDasharray="4 3"/>{value!==null&&value!==undefined&&<circle cx={x(selected)} cy={y(value)} r={4} fill={track.color} stroke="#edfaff" strokeWidth="1.5"/>}</>}
-            {brush.preview&&<rect x={Math.min(brush.preview.x1,brush.preview.x2)} y={top} width={Math.abs(brush.preview.x2-brush.preview.x1)} height={config.laneHeight} fill="#7ac9e0" fillOpacity=".15" stroke="#a9dbe8" strokeDasharray="3 2"/>}
+            {selected!==null&&<><line x1={x(selected)} x2={x(selected)} y1={top} y2={bottom} stroke="var(--gamma-ink)" strokeDasharray="4 3"/>{value!==null&&value!==undefined&&<circle cx={x(selected)} cy={y(value)} r={4} fill={track.color} stroke="var(--gamma-ink)" strokeWidth="1.5"/>}</>}
+            {brush.preview&&<rect x={Math.min(brush.preview.x1,brush.preview.x2)} y={top} width={Math.abs(brush.preview.x2-brush.preview.x1)} height={config.laneHeight} fill="var(--gamma-chart-1)" fillOpacity=".15" stroke="var(--gamma-chart-1)" strokeDasharray="3 2"/>}
           </g>
         </g>;
       })}
       {ticks.map(tick=><text key={+tick} x={x(+tick)} y={plotBottom+12} textAnchor="middle" className="incident-svg-muted">{tick.toISOString().slice(11,windowState.window.end-windowState.window.start<300_000?19:16)}</text>)}
-      {config.showEvents&&['deployment','incident'].map((kind,row)=><g key={kind}><text x="2" y={plotBottom+32+row*20} className="incident-svg-muted">{kind==='deployment'?'Deploy':'Incident'}</text><line x1={plot.left} x2={width-plot.right} y1={plotBottom+28+row*20} y2={plotBottom+28+row*20} className="incident-gridline"/>{config.events.filter(e=>e.kind===kind&&e.start<=windowState.window.end&&(e.end??e.start)>=windowState.window.start).map(event=>{const left=x(Math.max(event.start,windowState.window.start)),end=x(Math.min(event.end??event.start,windowState.window.end));return <g key={event.id}><rect x={left} y={plotBottom+21+row*20} width={Math.max(4,end-left)} height={13} rx="1" fill={kind==='incident'?'#c44f5a':'#15b9a7'} opacity={kind==='incident'?.65:.9}/>{width>460&&<text x={Math.min(left+8,width-145)} y={plotBottom+32+row*20} fill="#e0eff4">{event.label}</text>}<title>{event.label} · {utc(event.start)} UTC{event.end?` – ${utc(event.end)}`:''}</title></g>;})}</g>)}
+      {config.showEvents&&['deployment','incident'].map((kind,row)=><g key={kind}><text x="2" y={plotBottom+32+row*20} className="incident-svg-muted">{kind==='deployment'?'Deploy':'Incident'}</text><line x1={plot.left} x2={width-plot.right} y1={plotBottom+28+row*20} y2={plotBottom+28+row*20} className="incident-gridline"/>{config.events.filter(e=>e.kind===kind&&e.start<=windowState.window.end&&(e.end??e.start)>=windowState.window.start).map(event=>{const left=x(Math.max(event.start,windowState.window.start)),end=x(Math.min(event.end??event.start,windowState.window.end));return <g key={event.id}><rect x={left} y={plotBottom+21+row*20} width={Math.max(4,end-left)} height={13} rx="1" fill={kind==='incident'?'var(--gamma-danger)':'var(--gamma-chart-5)'} opacity={kind==='incident'?.65:.9}/>{width>460&&<text x={Math.min(left+8,width-145)} y={plotBottom+32+row*20} fill="var(--gamma-ink)">{event.label}</text>}<title>{event.label} · {utc(event.start)} UTC{event.end?` – ${utc(event.end)}`:''}</title></g>;})}</g>)}
     </svg>
-    {widget.options?.showLegend!==false&&<div className="incident-chart-legend">{config.tracks.map(track=><span key={track.name}><i style={{background:track.color}}/>{track.label} <small>{track.unit}</small></span>)}<span><i className="is-hatched"/>Unknown</span><span className="incident-utc">UTC · 10s source samples</span></div>}
+    {widget.options?.showLegend!==false&&<div className="incident-chart-legend">{config.tracks.map(track=><span key={track.name}><i style={{background:track.color}}/>{track.label} <small>{track.unit}</small></span>)}<span><i className={`${hatchStyles.hatch} ${hatchStyles.swatch}`}/>Unknown</span><span className="incident-utc">UTC · 10s source samples</span></div>}
     {interactive&&selected!==null&&<ChartTooltip pinned={pinned} onClose={dismiss} onLeave={hoverDismiss.schedule}><section className="incident-time-inspector" aria-label="Aligned telemetry details"><header><strong>{pinned?'Pinned':'Inspecting'} · {utc(selected)} UTC</strong><button onClick={dismiss} aria-label="Close telemetry details"><X size={13}/></button></header><div>{config.tracks.map(track=>{const value=exact.find(item=>item.name===track.name)?.value;return <article key={track.name}><span style={{color:track.color}}>{track.label}</span><strong>{value===null||value===undefined?'No telemetry':`${value.toFixed(track.decimals)} ${track.unit}`}</strong><div className="incident-mini-history"><Sparkline values={(series.find(s=>s.name===track.name)?.points??[]).map(p=>p.value)} color={track.color} height={30}/></div></article>;})}</div><footer>{series[0]?.labels.service} · exact same-time samples<button onClick={()=>{hoverDismiss.cancel();setPinned(!pinned);}}>{pinned?'Unpin observation':'Pin observation'}</button></footer></section></ChartTooltip>}
   </div>;
 }
@@ -97,7 +102,7 @@ export function TraceWaterfall({widget,result,embedded,onContextChange}:WidgetRe
   const config=useMemo(()=>traceWaterfallConfig.parse(widget.config??{}),[widget.config]);
   const data=useMemo(()=>result.records?buildTraceSpans(result.records,config):null,[result.records,config]);
   const [search,setSearch]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(new Set()),[selected,setSelected]=useState<string|null>(null),[tab,setTab]=useState<'attributes'|'timing'>('attributes');
-  const container=useRef<HTMLDivElement>(null),svg=useRef<SVGSVGElement>(null),measured=useWidth(container),uid=useId().replaceAll(':','');
+  const container=useRef<HTMLDivElement>(null),svg=useRef<SVGSVGElement>(null),measured=useWidth(container),entering=useChartEntrance({anchor:container}),uid=useId().replaceAll(':','');
   const spanRefs=useRef(new Map<string,SVGGElement>()),sourceRevision=useRef(result);
   const interactive=!embedded&&widget.options?.showTooltip!==false;
   const extent=useMemo(()=>data&&data.duration>0?{start:0,end:data.duration}:null,[data]);
@@ -115,7 +120,7 @@ export function TraceWaterfall({widget,result,embedded,onContextChange}:WidgetRe
   const select=(id:string)=>{if(!interactive)return;setSelected(id);const span=data?.byId.get(id);if(span)onContextChange?.({series:span.operation,value:span.duration,labels:{spanId:span.id,traceId:span.traceId,service:span.service,status:span.status,startMs:String(span.start),durationMs:String(span.duration)}});};
   const focusSelected=()=>{if(!selectedSpan)return;const margin=Math.max(20,selectedSpan.duration*.15);time.commit({start:Math.max(0,selectedSpan.start-margin),end:Math.min(data!.duration,selectedSpan.end+margin)});};
   if(!data?.spans.length)return <div className="incident-empty">No trace spans in this result.</div>;
-  return <div className="incident-trace" data-trace-duration={data.duration} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
+  return <div className="incident-trace" data-chart-entering={entering || undefined} data-trace-duration={data.duration} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
     {!embedded&&<div className="incident-trace-toolbar"><label><Search size={13}/><input aria-label="Search trace spans" placeholder="Search spans, services, status…" value={search} onChange={event=>setSearch(event.target.value)}/></label><span>{data.spans.length} spans · {data.duration.toLocaleString()}ms elapsed</span><button disabled={!selectedSpan} onClick={focusSelected}><Crosshair size={12}/>Focus selected</button>{time.canUndo&&<button onClick={time.undo}>Undo zoom</button>}<button onClick={time.reset} disabled={!time.zoomed}>Fit trace</button></div>}
     <div className="incident-trace-layout">
       <div ref={container} className="incident-trace-scroll" tabIndex={0} aria-label="Trace span timeline; scroll horizontally at narrow widths">
@@ -123,18 +128,18 @@ export function TraceWaterfall({widget,result,embedded,onContextChange}:WidgetRe
           <defs><clipPath id={`${uid}-traceclip`}><rect x={labelWidth} y={top-7} width={width-labelWidth-62} height={height-top+7}/></clipPath></defs>
           <text x="3" y="13" className="incident-svg-muted">Service / span</text><text x={labelWidth-13} y="13" textAnchor="end" className="incident-svg-muted">ms</text>
           {tickValues.map(tick=><g key={tick}><line x1={x(tick)} x2={x(tick)} y1={top-10} y2={height} className="incident-gridline"/><text x={x(tick)} y="13" textAnchor="middle" className="incident-svg-muted">{Math.round(tick)}</text></g>)}
-          {rows.map((span,index)=>{const y=top+index*config.rowHeight,active=span.id===selectedSpan?.id,indent=Math.min(span.depth*12,labelWidth-130),color=span.status==='ERROR'?'#f4787d':span.service.includes('payment')?'#a289f5':'#13c7df';return <g key={span.id} className="incident-span-row" data-selected={active}>
-            <rect x="0" y={y-4} width={width} height={config.rowHeight} fill={active?'#103e4b':index%2===0?'#0a2029':'transparent'} stroke={active?'#24667a':'none'}/>
+          {rows.map((span,index)=>{const y=top+index*config.rowHeight,active=span.id===selectedSpan?.id,indent=Math.min(span.depth*12,labelWidth-130),color=span.status==='ERROR'?'var(--gamma-danger)':span.service.includes('payment')?'var(--gamma-chart-2)':'var(--gamma-chart-1)';return <g key={span.id} className="incident-span-row" data-selected={active}>
+            <rect x="0" y={y-4} width={width} height={config.rowHeight} fill={active?'var(--gamma-border)':index%2===0?'var(--gamma-border)':'transparent'} stroke={active?'var(--gamma-muted)':'none'}/>
             {span.children.length>0&&!embedded&&<g role="button" tabIndex={0} aria-label={`${collapsed.has(span.id)?'Expand':'Collapse'} ${span.operation}`} aria-expanded={!collapsed.has(span.id)} onClick={()=>setCollapsed(previous=>{const next=new Set(previous);if(next.has(span.id))next.delete(span.id);else next.add(span.id);return next;})} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setCollapsed(previous=>{const next=new Set(previous);if(next.has(span.id))next.delete(span.id);else next.add(span.id);return next;});}}}><rect x={indent} y={y-2} width="20" height="21" fill="transparent"/>{collapsed.has(span.id)?<ChevronRight x={indent+2} y={y+1} size={12}/>:<ChevronDown x={indent+2} y={y+1} size={12}/>}</g>}
             <g ref={element=>{if(element)spanRefs.current.set(span.id,element);else spanRefs.current.delete(span.id);}} role={interactive?'button':'img'} tabIndex={interactive?0:undefined} aria-label={`Inspect span ${span.operation}, ${span.duration} milliseconds, ${span.status}`} aria-pressed={interactive?active:undefined} onClick={()=>select(span.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(span.id);}}}>
               <rect x={indent+20} y={y-4} width={Math.max(1,width-indent-20)} height={config.rowHeight} fill="transparent"/>
               <defs><clipPath id={`${uid}-label-${index}`}><rect x={indent+20} y={y-4} width={Math.max(1,labelWidth-indent-65)} height={config.rowHeight}/></clipPath></defs>
               <text x={indent+22} y={y+12} className="incident-span-label" clipPath={`url(#${uid}-label-${index})`}>{span.operation.length>25?`${span.operation.slice(0,24)}…`:span.operation}</text><text x={labelWidth-15} y={y+12} textAnchor="end" className="incident-svg-muted">{span.duration}</text>
-              <g clipPath={`url(#${uid}-traceclip)`}><rect x={x(span.start)} y={y+1} width={Math.max(1,x(span.end)-x(span.start))} height={config.rowHeight-12} rx="1" fill={color} opacity={active?1:.84} stroke={active?'#f8fcff':'none'} strokeWidth="1.5"/>{span.parentId&&<path d={`M${x(data.byId.get(span.parentId)!.start)} ${y-5} V${y+8} H${x(span.start)}`} stroke="#527984" strokeDasharray="2 2" fill="none" opacity=".7"/>}</g>
+              <g clipPath={`url(#${uid}-traceclip)`}><g className={chartEntrance.revealMarks}><rect x={x(span.start)} y={y+1} width={Math.max(1,x(span.end)-x(span.start))} height={config.rowHeight-12} rx="1" fill={color} opacity={active?1:.84} stroke={active?'var(--gamma-ink)':'none'} strokeWidth="1.5"/></g>{span.parentId&&<path d={`M${x(data.byId.get(span.parentId)!.start)} ${y-5} V${y+8} H${x(span.start)}`} stroke="var(--gamma-muted)" strokeDasharray="2 2" fill="none" opacity=".7"/>}</g>
               <title>{config.showService?`${span.service} · `:''}{span.operation} · {span.start}–{span.end}ms · {span.status}</title>
             </g>
           </g>;})}
-          {brush.preview&&<rect x={Math.min(brush.preview.x1,brush.preview.x2)} y={top-9} width={Math.abs(brush.preview.x2-brush.preview.x1)} height={height-top+9} fill="#89cddd" fillOpacity=".15" stroke="#bfdce9"/>}
+          {brush.preview&&<rect x={Math.min(brush.preview.x1,brush.preview.x2)} y={top-9} width={Math.abs(brush.preview.x2-brush.preview.x1)} height={height-top+9} fill="var(--gamma-chart-1)" fillOpacity=".15" stroke="var(--gamma-chart-1)"/>}
         </svg>
         {rows.length===0&&<div className="incident-empty">No spans match this search.</div>}
       </div>
@@ -197,6 +202,7 @@ function dependencyLabel(name:string,width:number) {
 }
 
 export function ServiceDependency({widget,result,embedded,onContextChange}:WidgetRendererProps) {
+  const entering = useChartEntrance();
   const config=useMemo(()=>dependencyConfig.parse(widget.config??{}),[widget.config]);
   const data=useMemo(()=>result.records?buildDependencyGraph(result.records,config):{nodes:[],edges:[]},[result.records,config]);
   const [selected,setSelected]=useState<string|null>(null);
@@ -211,12 +217,12 @@ export function ServiceDependency({widget,result,embedded,onContextChange}:Widge
   const node=data.nodes.find(n=>n.name===selected);
   const select=(name:string)=>{if(!interactive)return;setSelected(name);const item=data.nodes.find(n=>n.name===name)!;onContextChange?.({series:name,value:item.errorRate,labels:{service:name,requests:String(item.requests),errors:String(item.errors)}});};
   const dismiss=()=>{const target=selected?nodeRefs.current.get(selected):null;setSelected(null);restoreTooltipFocus(target??svg.current);};
-  const colour=(rate:number|null)=>rate===null?'#7895a4':rate>5?'#f4787d':rate>1?'#f5bd56':'#16d6b0';
+  const colour=(rate:number|null)=>rate===null?'var(--gamma-muted)':rate>5?'var(--gamma-danger)':rate>1?'var(--gamma-warning)':'var(--gamma-success)';
   if(!data.nodes.length)return <div className="incident-empty">No dependency edges in this result.</div>;
-  return <div className="incident-dependency" onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
+  return <div className="incident-dependency" data-chart-entering={entering || undefined} onKeyDown={event=>{if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();dismiss();}}}>
     <div ref={container} className="incident-dependency-graph" tabIndex={height>410?0:undefined} aria-label={height>410?'Service graph; scroll to see all services':undefined}>
       <svg ref={svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={widget.title} tabIndex={-1}>
-        <defs><marker id={`${uid}-arrow`} viewBox="0 0 8 8" markerWidth="5" markerHeight="5" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 1 L7 4 L0 7" fill="none" stroke="#88b9c6" strokeWidth="1.3"/></marker></defs>
+        <defs><marker id={`${uid}-arrow`} viewBox="0 0 8 8" markerWidth="5" markerHeight="5" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 1 L7 4 L0 7" fill="none" stroke="var(--gamma-chart-1)" strokeWidth="1.3"/></marker></defs>
         {data.edges.map(edge=>{
           const a=positions.get(edge.source)!,b=positions.get(edge.target)!,distance=Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)),dx=(b.x-a.x)/distance,dy=(b.y-a.y)/distance;
           const related=!selected||edge.source===selected||edge.target===selected,bad=edge.errorRate!==null&&edge.errorRate>5;
@@ -225,8 +231,8 @@ export function ServiceDependency({widget,result,embedded,onContextChange}:Widge
           const lx=(a.x+b.x)/2-dy*9,ly=(a.y+b.y)/2+dx*9;
           const latency=Number((edge.latency??0).toFixed(2));
           return <g key={edge.id} opacity={related?1:.18}>
-            <path d={`M${sx},${sy} L${tx},${ty}`} fill="none" stroke={edge.errorRate===null?'#6b8490':bad?'#e9706e':'#5a9cab'} strokeWidth={bad?1.65:1} markerEnd={`url(#${uid}-arrow)`}/>
-            {config.showLatency&&edge.latency!==null&&distance>48&&(data.nodes.length<=12||!!selected&&related)&&<g className="incident-edge-latency" aria-hidden="true"><rect x={lx-23} y={ly-8} width="46" height="14" rx="2"/><text x={lx} y={ly+3} textAnchor="middle" fill={bad?'#f59794':'#a3c9d4'}>{latency}ms</text></g>}
+            <path d={`M${sx},${sy} L${tx},${ty}`} fill="none" stroke={edge.errorRate===null?'var(--gamma-muted)':bad?'var(--gamma-danger)':'var(--gamma-chart-1)'} strokeWidth={bad?1.65:1} markerEnd={`url(#${uid}-arrow)`}/>
+            {config.showLatency&&edge.latency!==null&&distance>48&&(data.nodes.length<=12||!!selected&&related)&&<g className="incident-edge-latency" aria-hidden="true"><rect x={lx-23} y={ly-8} width="46" height="14" rx="2"/><text x={lx} y={ly+3} textAnchor="middle" fill={bad?'var(--gamma-danger)':'var(--gamma-chart-1)'}>{latency}ms</text></g>}
             <title>{edge.source} → {edge.target}; median {edge.latency===null?'unknown':`${edge.latency}ms`}; {edge.errors.toLocaleString()} errors / {edge.requests.toLocaleString()} requests</title>
           </g>;
         })}
@@ -237,8 +243,8 @@ export function ServiceDependency({widget,result,embedded,onContextChange}:Widge
             else if(event.key.startsWith('Arrow')){event.preventDefault();const next=data.nodes[Math.max(0,Math.min(data.nodes.length-1,index+(event.key==='ArrowLeft'||event.key==='ArrowUp'?-1:1)))];nodeRefs.current.get(next.name)?.focus();}
           }}>
             <circle r="20" fill="transparent"/>
-            <circle className="incident-dependency-ring" r={radius} fill={color} fillOpacity=".16" stroke={color} strokeWidth="1.5"/>
-            <circle r={radius-4} fill={color}/>
+            <g className={chartEntrance.revealMarks}><circle className="incident-dependency-ring" r={radius} fill={color} fillOpacity=".16" stroke={color} strokeWidth="1.5"/>
+            <circle r={radius-4} fill={color}/></g>
             {n.name===selected&&<circle r={radius+6} fill="none" stroke="var(--gamma-accent)" strokeWidth="1.5"/>}
             {config.showLabels&&<g pointerEvents="none"><rect x={-labelWidth/2} y="17" width={labelWidth} height={lines.length*12+3} rx="2" fill="var(--gamma-bg)" opacity=".95"/><text y="27" textAnchor="middle" className="incident-dependency-label">{lines.map((line,lineIndex)=><tspan x="0" dy={lineIndex?12:0} key={lineIndex}>{line}</tspan>)}</text></g>}
             <title>{n.name} · {n.requests.toLocaleString()} observed calls · {n.errors.toLocaleString()} failures</title>

@@ -1,8 +1,9 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { OrbitalContactTimeline, OrbitalGroundTrack, OrbitalLinkBudget, OrbitalSkyplot } from './OrbitalCharts';
 import { budgetTerms, contactTimelineConfig, groundPoints, groundTrackConfig, linkBudgetConfig, skyPoints, skyplotConfig, summarizePasses } from './model';
 import { OrbitalPassProfile } from './OrbitalPassProfile';
 import { passProfileConfig, passProfilePoints, profilePasses } from './pass-profile-model';
+import { checkedInput } from '../../renderer-extensions/input-issues';
 
 export function registerOrbitalCharts() {
   const definitions = [
@@ -11,12 +12,12 @@ export function registerOrbitalCharts() {
     { id:'orbital-contact-timeline',label:'Contact windows and signals',description:'Predicted access intervals with gap-aware margin and throughput on one reversible UTC window',render:OrbitalContactTimeline,schema:contactTimelineConfig,validate:(frame:Parameters<typeof skyPoints>[0])=>summarizePasses(skyPoints(frame)),fields:[{key:'showSignals',label:'Show aligned signal tracks',kind:'boolean' as const},{key:'showUncertainty',label:'Show supplied margin uncertainty',kind:'boolean' as const},{key:'showPassPicker',label:'Show pass picker',kind:'boolean' as const}]},
     { id:'orbital-link-budget',label:'Relative link margin waterfall',description:'Additive relative dB gains and losses with exact cumulative accounting',render:OrbitalLinkBudget,schema:linkBudgetConfig,validate:budgetTerms,fields:[{key:'showValues',label:'Show exact contribution values',kind:'boolean' as const}]},
   ];
-  for (const d of definitions) if (!getWidgetDefinition('plugin',d.id)) registerWidgetPlugin({ id:d.id,label:d.label,description:d.description,dataKind:'records',render:d.render,defaultConfig:d.schema.parse({}),parseConfig:config=>d.schema.parse(config??{}),configFields:d.fields,styleControls:['tooltips','legend'],layout:{mode:'intrinsic',minWidth:280,minHeight:220},validateInput:(result,config)=>{d.schema.parse(config??{});d.validate(result.records);} });
+  for (const d of definitions) if (!getWidgetDefinition('plugin',d.id)) registerWidgetPlugin({ id:d.id,label:d.label,description:d.description,dataKind:'records',render:d.render,defaultConfig:d.schema.parse({}),parseConfig:config=>d.schema.parse(config??{}),configFields:d.fields,styleControls:['tooltips','legend'],sizing: { mode:'intrinsic',minWidth:280,minHeight:220},validateInput: (result,config) => checkedInput(() => { d.schema.parse(config??{});d.validate(result.records); }) });
   if (!getWidgetDefinition('plugin', 'orbital-pass-profile')) registerWidgetPlugin({
     id: 'orbital-pass-profile', label: 'Contact qualification profile', description: 'Aligned elevation, margin and throughput with gap-aware threshold-qualified duration and capacity',
     dataKind: 'records', render: OrbitalPassProfile, defaultConfig: passProfileConfig.parse({}), parseConfig: config => passProfileConfig.parse(config ?? {}),
-    validateInput: (result, config) => { profilePasses(passProfilePoints(result.records, config)); },
-    layout: { mode: 'intrinsic', minWidth: 280, minHeight: 400 }, styleControls: ['tooltips', 'legend'],
+    validateInput: (result, config) => checkedInput(() => { profilePasses(passProfilePoints(result.records, config)); }),
+    sizing: { mode: 'intrinsic', minWidth: 280, minHeight: 400 }, styleControls: ['tooltips', 'legend'],
     configFields: [
       { key: 'minimumElevation', label: 'Minimum elevation (°)', kind: 'number', min: 0, max: 90, step: 1, help: 'Planning threshold; intersections are interpolated between supplied samples.' },
       { key: 'minimumMargin', label: 'Minimum link margin (dB)', kind: 'number', min: -50, max: 100, step: .5 },

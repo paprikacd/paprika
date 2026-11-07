@@ -1725,7 +1725,7 @@ func TestRegisterMintsDynamicClientWithSafeRedirects(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	require.True(t, strings.HasPrefix(resp.ClientID, "paprika-"))
-	require.True(t, srv.clientIDAllowed(context.Background(), resp.ClientID), "registered client must pass the authorize check")
+	require.True(t, testClientIDAllowed(t, srv, resp.ClientID), "registered client must pass the authorize check")
 	require.True(t, srv.isRegisteredRedirect(context.Background(), resp.ClientID, "http://localhost:1455/auth/callback"))
 	require.False(t, srv.isRegisteredRedirect(context.Background(), resp.ClientID, "https://attacker.example/cb"),
 		"redirects are bound to the registered client, not global")
@@ -1748,7 +1748,7 @@ func TestRegisterRejectsUnsafeRedirects(t *testing.T) {
 		mux.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp/register", body))
 		require.Equal(t, http.StatusBadRequest, rec.Code, "uris %v should be rejected", uris)
 	}
-	require.False(t, srv.clientIDAllowed(context.Background(), "paprika-never"))
+	require.False(t, testClientIDAllowed(t, srv, "paprika-never"))
 }
 
 func TestRegisterCapacityPreservesEveryExistingClient(t *testing.T) {
@@ -1779,10 +1779,10 @@ func TestRegisterCapacityPreservesEveryExistingClient(t *testing.T) {
 	require.Len(t, srv.dynClients, dynClientCap)
 	for n := range dynClientCap - 1 {
 		clientID := fmt.Sprintf("existing-%d", n)
-		require.True(t, srv.clientIDAllowed(context.Background(), clientID), "existing client %s must survive capacity exhaustion", clientID)
+		require.True(t, testClientIDAllowed(t, srv, clientID), "existing client %s must survive capacity exhaustion", clientID)
 		require.True(t, srv.isRegisteredRedirect(context.Background(), clientID, redirect))
 	}
-	assert.True(t, srv.clientIDAllowed(context.Background(), registered.ClientID))
+	assert.True(t, testClientIDAllowed(t, srv, registered.ClientID))
 	assert.True(t, srv.isRegisteredRedirect(context.Background(), registered.ClientID, redirect))
 }
 
@@ -1808,7 +1808,7 @@ func TestRegisterThrottlePreservesClientsAndCannotBeBypassedByForwardedIP(t *tes
 		assert.Equal(t, "temporarily_unavailable", failure.Error)
 	}
 	assert.Len(t, srv.dynClients, 1)
-	assert.True(t, srv.clientIDAllowed(context.Background(), "existing-client"))
+	assert.True(t, testClientIDAllowed(t, srv, "existing-client"))
 }
 
 func TestToolErrorResultMapsDomainErrors(t *testing.T) {

@@ -38,7 +38,7 @@ try {
     await page.goto(new URL(target, origin).href, { waitUntil: "domcontentloaded" })
     await page.waitForURL(new URL("/login/", origin).href)
     await page.getByRole("button", { name: /Google/i }).waitFor()
-    assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), target)
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("paprika_return_to")), target)
   })
   await check("An authenticated login returns to the saved dashboard and service", async () => {
     // Match successful authentication, including clearing the prior signed-out
@@ -55,13 +55,13 @@ try {
     const filter = page.getByRole("form", { name: "Dashboard variables", exact: true }).getByRole("combobox", { name: "Service", exact: true })
     assert.ok((await filter.innerText()).includes(service))
     await page.locator('[data-widget-id="request-rate"] [data-metric-value]').waitFor({ timeout: 45_000 })
-    assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), null)
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("paprika_return_to")), null)
   })
   await check("An invalid stored session returns to login without losing the destination", async () => {
     await open("invalid-validation-session")
     await page.goto(new URL(target, origin).href, { waitUntil: "domcontentloaded" })
     await page.waitForURL(new URL("/login/", origin).href)
-    assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), target)
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("paprika_return_to")), target)
   })
   await check("Anonymous example mode remains available without login", async () => {
     await open()
@@ -72,7 +72,7 @@ try {
     assert.equal(current.origin, target.origin)
     assert.equal(current.pathname, target.pathname)
     assert.equal(current.searchParams.get("example"), "1")
-    assert.equal(await page.evaluate(() => localStorage.getItem("paprika_return_to")), null)
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("paprika_return_to")), null)
   })
   assert.deepEqual(errors, [])
   assert.deepEqual(writes, [])

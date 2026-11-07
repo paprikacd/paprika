@@ -1,5 +1,35 @@
 # Paprika Observe plugin
 
+## One-command install (Codex / Claude Code)
+
+Requires Node.js 20+ and an installed Codex or Claude Code CLI. This GitHub-backed
+npx command installs the complete plugin and its skill, not just an MCP URL:
+
+```sh
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+# Or use --client claude, or --client both
+```
+
+The installer stages the marketplace at `~/.paprika/plugin-marketplace`, registers
+it with the selected client, and installs `paprika-observe@paprika`. Rerun the
+command to refresh the staged package; restart the client or refresh its plugin.
+It never copies OAuth tokens or silently registers a second direct MCP entry.
+
+Complete sign-in in your client. First grant `paprika:observe` for read-only
+telemetry and dashboards; for Insights authoring, reconnect with
+`paprika:observe,paprika:insights:write` and your existing Insights RBAC.
+Verify access with `list_observability_providers`, then `list_dashboards` and
+`query_dashboard`. Successful installation alone is not proof of connection.
+
+**ChatGPT:** npx configures Codex or Claude Code; it cannot register a ChatGPT
+custom MCP app or initiate browser consent on the user's behalf. In ChatGPT,
+add `https://paprika.benebsworth.com/observe/mcp` as a custom MCP app and
+complete OAuth there. To bundle that registered app into a private ChatGPT
+plugin, use its actual app ID in `.app.json` and reference it from
+`extensions.com.openai.apps`; never guess that ID or copy another user's app
+binding into this public repository.
+
+
 An optional plugin for Paprika's separate observability gateway. It bundles
 provider discovery, bounded telemetry queries, dashboard query bundles, and
 saved-query/dashboard authoring.

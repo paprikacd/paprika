@@ -1,15 +1,18 @@
 import { useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { scaleLinear } from 'd3-scale';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { followupConfig, followupDistribution, survivalConfig, survivalObservations, type FollowupBin } from './model';
 import './clinical.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 const number = (value: number, digits = 2) => value.toLocaleString('en-US', { maximumFractionDigits: digits });
 const interval = (bin: FollowupBin) => `${number(bin.start)}–${bin.upperInclusive ? '' : '<'}${number(bin.end)} months`;
 
 export function FollowupDistribution(props: WidgetRendererProps) {
   const c = followupConfig.parse(props.widget.config ?? {}), ref = useRef<HTMLDivElement>(null), width = usePlotWidth(ref, 760);
+  const entering = useChartEntrance({ disabled: props.embedded, anchor: ref });
   const observations = useMemo(() => props.result.records ? survivalObservations(props.result.records, survivalConfig.parse({ id: c.id, arm: c.arm, duration: c.duration, event: c.event })) : [], [props.result.records, c.id, c.arm, c.duration, c.event]);
   const data = useMemo(() => followupDistribution(observations, c.binWidthMonths), [observations, c.binWidthMonths]);
   const selectedParticipant = observations.find(row => row.id === c.selectedId);
@@ -40,7 +43,7 @@ export function FollowupDistribution(props: WidgetRendererProps) {
     } else inspection.onKeyDown(event);
   };
   if (!observations.length) return <div className="domain-empty">No follow-up endpoint observations</div>;
-  return <div className="clinical-chart clinical-followup" ref={ref} onKeyDown={inspection.onKeyDown}>
+  return <div className="clinical-chart clinical-followup" ref={ref} data-chart-entering={entering || undefined} onKeyDown={inspection.onKeyDown}>
     <div className="clinical-followup-summary"><span><strong>{data.population}</strong> participants</span><span>{data.events} observed endpoints</span><span>{data.censored} right-censored</span></div>
     <svg width={width} height={height} role="group" aria-label={`${props.widget.title}, endpoint and censor counts by observed follow-up duration`}>
       {ticks.map(tick => <g key={tick}>{props.widget.options?.showGrid !== false && <line x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} className="clinical-grid"/>}<text x={left - 8} y={y(tick) + 4} textAnchor="end">{number(tick, 1)}{c.measure === 'percent' ? '%' : ''}</text></g>)}
@@ -53,13 +56,13 @@ export function FollowupDistribution(props: WidgetRendererProps) {
           onPointerEnter={() => inspection.setHover(bin.id)} onPointerLeave={() => inspection.setHover(null)} onFocus={() => inspection.setHover(bin.id)} onBlur={() => inspection.setHover(null)}
           onClick={(event: MouseEvent<SVGGElement>) => { if (interactive) select(bin, event.currentTarget); }} onKeyDown={event => keyDown(event, bin)}>
           <rect x={x(bin.start)} y={top - 6} width={columnWidth} height={bottom - top + 6} fill={active ? 'color-mix(in srgb, var(--gamma-chart-1) 8%, transparent)' : 'transparent'} stroke={active ? C.cyan : 'transparent'}/>
-          {c.arrangement === 'stacked' ? <>
+          <g className={chartEntrance.revealMarks}>{c.arrangement === 'stacked' ? <>
             <rect x={bx} y={y(value(bin.events))} width={barWidth} height={bottom - y(value(bin.events))} fill={C.violet} opacity={.9}/>
             <rect x={bx} y={y(value(bin.count))} width={barWidth} height={y(value(bin.events)) - y(value(bin.count))} fill={C.muted} opacity={.52}/>
             {c.showValues && columnWidth > 34 && bin.count > 0 && <text x={bx + barWidth / 2} y={y(value(bin.count)) - 6} textAnchor="middle" className="clinical-strong">{c.measure === 'percent' ? `${number(value(bin.count), 1)}%` : bin.count}</text>}
           </> : <>
             {[{ count: bin.events, color: C.violet, opacity: .9 }, { count: bin.censored, color: C.muted, opacity: .6 }].map((series, index) => <g key={index}><rect x={bx + index * barWidth / 2} y={y(value(series.count))} width={Math.max(.5, barWidth / 2 - 1)} height={bottom - y(value(series.count))} fill={series.color} opacity={series.opacity}/>{c.showValues && columnWidth > 70 && series.count > 0 && <text x={bx + (index + .5) * barWidth / 2} y={y(value(series.count)) - 6} textAnchor="middle">{c.measure === 'percent' ? `${number(value(series.count), 1)}%` : series.count}</text>}</g>)}
-          </>}
+          </>}</g>
           {participant && !props.embedded && <path d={`M${x(selectedParticipant!.duration)},${bottom + 1}l-4,7h8Z`} fill={C.cyan} stroke="var(--gamma-ink)" strokeWidth={.6}/>}
           <title>{label}</title>
         </g>;

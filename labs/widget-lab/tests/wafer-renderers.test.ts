@@ -1,3 +1,4 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -5,9 +6,9 @@ import { waferChartCatalog, makeWaferCatalogFixture } from '../src/charts/wafer/
 import { registerWaferCharts } from '../src/charts/wafer/register';
 import { waferFocusId, waferKeyboardTarget, waferRows } from '../src/charts/wafer/model';
 import { waferFixtures, waferResult } from '../src/lenses/wafer/fixtures';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
 
 describe('wafer authoring and registered owners', () => {
   registerWaferCharts();
@@ -17,23 +18,23 @@ describe('wafer authoring and registered owners', () => {
       expect(() => widgetSchema.parse(fixture.widget)).not.toThrow();
       expect(() => parseRecordFrame(fixture.result.records)).not.toThrow();
       expect(() => definition.parseConfig!(fixture.widget.config)).not.toThrow();
-      expect(() => definition.validateInput!(fixture.result, fixture.widget.config)).not.toThrow();
-      expect(definition.layout?.mode).toBe('intrinsic');
+      expect(definition.validateInput!(fixture.result, fixture.widget.config)).toEqual([]);
+      expect(definition.sizing?.mode).toBe('intrinsic');
       if (preset === 'empty') expect(fixture.result.records!.rows).toHaveLength(0);
     }
   });
   it('rejects absent fields, incompatible column metadata and unrepresentable stage timestamps', () => {
     const def = getWidgetDefinition('plugin', 'wafer-die-map')!;
     const missing = waferResult(); missing.records!.columns.find(c => c.key === 'xMm')!.key = 'renamed';
-    expect(() => def.validateInput!(missing, {})).toThrow(/Missing chart column/);
+    expect(issueText(def.validateInput!(missing, {}))).toMatch(/Missing chart column/);
     const wrong = waferResult(); wrong.records!.columns.find(c => c.key === 'column')!.type = 'string';
-    expect(() => def.validateInput!(wrong, {})).toThrow(/type number/);
+    expect(issueText(def.validateInput!(wrong, {}))).toMatch(/type number/);
     const units = waferResult(); units.records!.columns.find(c => c.key === 'leakageNA')!.unit = 'A';
-    expect(() => def.validateInput!(units, {})).toThrow(/must use nA/);
+    expect(issueText(def.validateInput!(units, {}))).toMatch(/must use nA/);
     const time = waferResult(); const i = time.records!.columns.findIndex(c => c.key === 'cleanAt'); time.records!.rows[0][i] = 1e30;
-    expect(() => def.validateInput!(time, {})).toThrow(/timestamp/);
+    expect(issueText(def.validateInput!(time, {}))).toMatch(/timestamp/);
     const chamber = waferFixtures().chambers.result; chamber.records!.columns.find(c => c.key === 'median')!.unit = 'A';
-    expect(() => getWidgetDefinition('plugin', 'wafer-chamber-distribution')!.validateInput!(chamber, {})).toThrow(/nA/);
+    expect(issueText(getWidgetDefinition('plugin', 'wafer-chamber-distribution')!.validateInput!(chamber, {}))).toMatch(/nA/);
   });
   it('renders ready, missing-test and empty states as passive embedded content', () => {
     for (const feature of waferChartCatalog) for (const preset of feature.presets.filter(p => p !== 'error')) {

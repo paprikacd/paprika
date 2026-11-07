@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { QueryResult, RecordFrame, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 
 export const FINANCE_AS_OF = Date.UTC(2026, 9, 30, 20);
 export type FinanceWindow = 30 | 90 | 180;
@@ -96,11 +96,13 @@ export function allocationRecords(frame: RecordFrame, config: AllocationConfig) 
 }
 
 /** A fixed zero-centred diverging scale. Display clipping never changes the exact change. */
+/** Gain and loss tint in Gamma tokens: the grid colour at zero, success or danger toward the clip limit. */
 export function allocationColor(change: number | null, limit = 3) {
-  if (change === null) return '#33424e';
+  if (change === null) return 'color-mix(in srgb, var(--gamma-muted) 30%, var(--gamma-chart-grid))';
   const magnitude = Math.min(1, Math.abs(change) / limit);
-  const base = [25, 55, 65], end = change < 0 ? [168, 54, 69] : [0, 135, 108];
-  return `#${base.map((channel, i) => Math.round(channel + (end[i] - channel) * magnitude).toString(16).padStart(2, '0')).join('')}`;
+  if (magnitude === 0) return 'var(--gamma-chart-grid)';
+  const token = change < 0 ? 'var(--gamma-danger)' : 'var(--gamma-success)';
+  return `color-mix(in srgb, ${token} ${Math.round(magnitude * 100)}%, var(--gamma-chart-grid))`;
 }
 
 const baseWidget = (id: string, title: string): Widget => ({ id, title, type: 'plugin', dataKind: 'records', pluginId: 'record-table', providerId: 'finance-fixture', query: 'synthetic.portfolio.closing_snapshot', unit: '', layout: { x: 0, y: 0, w: 6, h: 5 } });
@@ -113,7 +115,7 @@ export function financePanels(days: FinanceWindow = 30) {
   } };
   const allocation: { widget: Widget; result: QueryResult } = { widget: { ...baseWidget('finance-allocation', 'Portfolio allocation'), pluginId: 'allocation-treemap', unit: 'USD', config: allocationTreemapConfig.parse({}), options: { showTooltip: true, decimals: 2 } }, result: allocationResult };
   const performance: { widget: Widget; result: QueryResult } = {
-    widget: { ...baseWidget('finance-performance', 'Cumulative return'), type: 'timeseries', dataKind: undefined, pluginId: undefined, unit: '%', query: 'synthetic.portfolio.daily_return', color: '#00d5b1', options: { display: 'area', timeAxis: 'calendar', gridX: true, showGrid: true, showLegend: true, showTooltip: true, fillStyle: 'gradient', fillOpacity: .14, lineWidth: 1.5, curve: 'linear', decimals: 2, inspectorDensity: 'compact', showZeroLine: true } },
+    widget: { ...baseWidget('finance-performance', 'Cumulative return'), type: 'timeseries', dataKind: undefined, pluginId: undefined, unit: '%', query: 'synthetic.portfolio.daily_return', color: '#00d5b1', options: { display: 'area', timeAxis: 'calendar', gridX: true, showGrid: true, showLegend: true, showTooltip: true, fillOpacity: .14, lineWidth: 1.5, curve: 'linear', decimals: 2, tooltipMaxWidth: 292, showZeroLine: true } },
     result: { series: [{ name: 'Portfolio', labels: { portfolio: 'Core allocation', fixture: 'synthetic', basis: 'Period start = 0%' }, points: history.map(point => ({ timestamp: point.timestamp, value: point.portfolio })) }, { name: 'Reference basket', labels: { fixture: 'synthetic', basis: 'Period start = 0%' }, points: history.map(point => ({ timestamp: point.timestamp, value: point.benchmark })) }] },
   };
   const holdings: { widget: Widget; result: QueryResult } = {

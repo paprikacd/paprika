@@ -95,6 +95,26 @@ func TestPostgreSQLIntegration(t *testing.T) {
 		require.Equal(t, []any{"1", "0.12345678901234567890123456789"}, frame.Rows[0])
 		require.Equal(t, "9007199254740993", frame.Rows[1][0])
 	})
+	t.Run("range references bind historical inclusive boundaries", func(t *testing.T) {
+		envelope, err := json.Marshal(map[string]any{
+			"sql":        "SELECT observed, service FROM " + quoted + ".events WHERE observed >= $1::timestamptz AND observed <= $2::timestamptz ORDER BY observed,service",
+			"parameters": []any{map[string]string{"range": "start"}, map[string]string{"range": "end"}},
+		})
+		require.NoError(t, err)
+		start := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
+		request := connector.QueryRequest{Config: cfg, Credentials: creds, Query: string(envelope), Signal: connector.Signal("records"), Limit: 10, Range: connector.TimeRange{Start: start, End: start.Add(30 * time.Second)}}
+		result, err := New().Query(t.Context(), request)
+		require.NoError(t, err)
+		frame, err := dataframe.Decode(result.Data)
+		require.NoError(t, err)
+		require.Len(t, frame.Rows, 3, "both start and end observations are included by these SQL operators")
+		request.Range = connector.TimeRange{Start: start.Add(31 * time.Second), End: start.Add(time.Minute)}
+		result, err = New().Query(t.Context(), request)
+		require.NoError(t, err)
+		frame, err = dataframe.Decode(result.Data)
+		require.NoError(t, err)
+		require.Empty(t, frame.Rows)
+	})
 	t.Run("ambient driver settings do not change the explicit connection", func(t *testing.T) {
 		t.Setenv("PGHOST", "untrusted.invalid")
 		t.Setenv("PGUSER", "untrusted")

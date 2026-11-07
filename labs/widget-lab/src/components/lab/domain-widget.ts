@@ -1,4 +1,4 @@
-import type { Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { Widget } from '@insights/schema';
 
 /** Presentation changes follow a renderer; query identity follows the current lens. */
 export function mergeDomainWidget(source: Widget, override: Widget | null, selection?: Widget['config']): Widget {

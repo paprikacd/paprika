@@ -260,7 +260,7 @@ export interface ImportCompatibilityIssue {
   dashboardId: string;
   dashboardTitle: string;
   widgetId: string;
-  location: "widget" | "tooltip";
+  location: "widget" | "tooltip" | "annotations";
   reason: string;
 }
 export interface ImportCompatibility {
@@ -272,7 +272,7 @@ export interface ImportCompatibility {
 interface ReferenceUse {
   dashboard: Dashboard;
   widgetId: string;
-  location: "widget" | "tooltip";
+  location: "widget" | "tooltip" | "annotations";
   reference: SavedQueryReference;
   kind: DataKind;
 }
@@ -293,6 +293,8 @@ function queryUses(
           reference: widget.queryRef,
           kind: widgetKind(widget),
         });
+      if (widget.annotationSource?.queryRef.id === id)
+        uses.push({ dashboard, widgetId: widget.id, location: "annotations", reference: widget.annotationSource.queryRef, kind: "records" });
       const view = widget.options?.tooltipView;
       if (view?.source?.type === "saved" && view.source.ref.id === id)
         uses.push({

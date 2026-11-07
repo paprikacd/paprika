@@ -78,7 +78,7 @@ func (s *savedQueryStore) list(providerID string) []json.RawMessage {
 	return result
 }
 
-func (s *savedQueryStore) get(id string) (json.RawMessage, string, error) {
+func (s *savedQueryStore) get(id string) (document json.RawMessage, tag string, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	document, exists := s.documents[id]
@@ -151,8 +151,11 @@ func (s *Store) usesSavedQuery(id string) bool {
 	for _, raw := range s.documents {
 		var dashboard struct {
 			Widgets []struct {
-				QueryRef struct{ ID string } `json:"queryRef"`
-				Options  struct {
+				QueryRef         struct{ ID string } `json:"queryRef"`
+				AnnotationSource struct {
+					QueryRef struct{ ID string } `json:"queryRef"`
+				} `json:"annotationSource"`
+				Options struct {
 					TooltipView struct {
 						Source struct {
 							Type string
@@ -164,7 +167,7 @@ func (s *Store) usesSavedQuery(id string) bool {
 		}
 		_ = json.Unmarshal(raw, &dashboard) //nolint:errcheck // Every stored dashboard passed validateDashboard.
 		for _, widget := range dashboard.Widgets {
-			if widget.QueryRef.ID == id || (widget.Options.TooltipView.Source.Type == "saved" && widget.Options.TooltipView.Source.Ref.ID == id) {
+			if widget.QueryRef.ID == id || widget.AnnotationSource.QueryRef.ID == id || (widget.Options.TooltipView.Source.Type == "saved" && widget.Options.TooltipView.Source.Ref.ID == id) {
 				return true
 			}
 		}

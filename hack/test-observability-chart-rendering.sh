@@ -150,6 +150,73 @@ render --set mcp.oauth.persistClients=false > "$work/ephemeral-clients.yaml"
 if grep -Eq -- '--mcp-client-registry-|component: mcp-client-registry' "$work/ephemeral-clients.yaml"; then
   echo 'Explicit process-local client registration unexpectedly installed durable storage' >&2; exit 1
 fi
+render --set mcp.oauth.persistSessions=true --set observabilityGateway.persistSessions=true --show-only templates/mcp-sessions.yaml > "$work/session-stores.yaml"
+python3 - "$work/session-stores.yaml" <<'PY'
+import base64, pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+documents = [doc for doc in text.split('\n---') if 'kind:' in doc]
+assert len(documents) == 6, 'fleet and observe need separate Secret/Role/RoleBinding triples'
+stores = {}
+for doc in documents:
+    kind = re.search(r'^kind: (\S+)$', doc, re.M).group(1)
+    name = re.search(r'^  name: (\S+)$', doc, re.M).group(1)
+    assert '  namespace: paprika-system' in doc
+    stores.setdefault(kind, []).append(name)
+    if kind == 'Secret':
+        assert 'helm.sh/hook: pre-install,pre-upgrade' in doc
+        assert 'helm.sh/resource-policy: keep' in doc
+        encoded = re.search(r'^  resource: "([^"]+)"$', doc, re.M).group(1)
+        resource = base64.b64decode(encoded).decode()
+        assert resource == 'https://paprika.example.test' + ('/observe/mcp' if 'observe' in name else '/mcp')
+        assert 'entry.' not in doc and 'canary:' not in doc
+    elif kind == 'Role':
+        assert 'resources: [secrets]' in doc
+        assert f'resourceNames: ["{name}"]' in doc
+        assert 'verbs: [get, update]' in doc and '*' not in doc
+    elif kind == 'RoleBinding' and 'observe' in name:
+        assert 'name: preapproved-observe-reader' in doc
+assert sorted(stores['Secret']) == sorted(stores['Role']) == sorted(stores['RoleBinding'])
+assert len(set(stores['Secret'])) == 2
+PY
+helm lint "$root/charts/mcp-session-store" --set secretName=observe-sessions \
+  --set resource=https://paprika.example.test/observe/mcp --set serviceAccount=preapproved-observe-reader >/dev/null
+helm template standalone "$root/charts/mcp-session-store" -n paprika-system \
+  --set secretName=observe-sessions --set resource=https://paprika.example.test/observe/mcp \
+  --set serviceAccount=preapproved-observe-reader > "$work/standalone-session-store.yaml"
+python3 - "$work/standalone-session-store.yaml" <<'PY'
+import base64, pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+documents = [doc for doc in text.split('\n---') if 'kind:' in doc]
+assert sorted(re.search(r'^kind: (\S+)$', doc, re.M).group(1) for doc in documents) == ['Role', 'RoleBinding', 'Secret']
+for doc in documents:
+    assert '  namespace: paprika-system' in doc
+    if re.search(r'^kind: Secret$', doc, re.M):
+        assert 'helm.sh/hook: pre-install,pre-upgrade' in doc and 'helm.sh/resource-policy: keep' in doc
+        assert base64.b64decode(re.search(r'^  resource: "([^"]+)"$', doc, re.M).group(1)).decode() == 'https://paprika.example.test/observe/mcp'
+    elif re.search(r'^kind: Role$', doc, re.M):
+        assert 'resources: [secrets]' in doc and 'resourceNames: ["observe-sessions"]' in doc
+        assert 'verbs: [get, update]' in doc and '*' not in doc
+    else:
+        assert 'name: preapproved-observe-reader' in doc
+PY
+if helm template standalone "$root/charts/mcp-session-store" -n paprika-system >/dev/null 2>&1; then
+  echo 'Standalone session storage unexpectedly accepted incomplete configuration' >&2; exit 1
+fi
+render --set observabilityGateway.persistSessions=true --show-only templates/observability-gateway/deployment.yaml > "$work/session-deployment.yaml"
+grep -Eq -- '--mcp-session-secret=paprika-observe-mcp-sessions$' "$work/session-deployment.yaml"
+grep -Eq -- '--mcp-session-namespace=paprika-system$' "$work/session-deployment.yaml"
+render --set observabilityGateway.persistSessions=true --show-only templates/api-server/deployment.yaml > "$work/fleet-unmodified.yaml"
+if grep -q -- '--mcp-session-' "$work/fleet-unmodified.yaml"; then
+  echo 'Observe session persistence unexpectedly changed fleet authentication' >&2; exit 1
+fi
+render --set mcp.oauth.persistSessions=true --show-only templates/observability-gateway/deployment.yaml > "$work/observe-unmodified.yaml"
+if grep -q -- '--mcp-session-' "$work/observe-unmodified.yaml"; then
+  echo 'Fleet session persistence unexpectedly changed Observe authentication' >&2; exit 1
+fi
+render > "$work/ephemeral-sessions.yaml"
+if grep -Eq -- '--mcp-session-secret=|--mcp-session-namespace=' "$work/ephemeral-sessions.yaml"; then
+  echo 'Session persistence unexpectedly enabled without an explicit opt-in' >&2; exit 1
+fi
 render --show-only templates/observability-gateway/deployment.yaml > "$work/deployment.yaml"
 grep -Eq -- '--mcp-client-registry-configmap=paprika-observe-mcp-clients$' "$work/deployment.yaml"
 grep -Eq -- '--mcp-client-registry-namespace=paprika-system$' "$work/deployment.yaml"

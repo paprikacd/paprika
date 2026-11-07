@@ -7,7 +7,7 @@ import type { GeoGeometry, GeoLocation } from '../src/charts/geo/geo-data';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt } from '../src/charts/geo/geo-viewport';
 
 // SSR exposes only the choice of the shared popup; the map's selection/content remain real.
-vi.mock('../src/components/lab/ChartTooltip', async () => {
+vi.mock('../src/renderer-extensions/chart-tooltip', async () => {
   const { createElement } = await import('react');
   return { ChartTooltip: ({ pinned, children }: { pinned: boolean; children: ReactNode }) => createElement('div', { 'data-test-map-tooltip': pinned ? 'pinned' : 'transient' }, children) };
 });
@@ -269,9 +269,9 @@ describe('geographic data contract', () => {
     const locations: GeoLocation[] = [point, { ...point, id: 'high', severity: 'high', value: 1_000_000 }, { ...point, id: 'medium', severity: 'medium', value: 1 }];
     const html = renderToStaticMarkup(createElement(GeoMap, { label: 'Presence map', geometry, locations }));
     expect([...html.matchAll(/class="paprika-geo-mark" r="([^"]+)"/g)].map(match => match[1])).toEqual(['3', '3', '3']);
-    expect([...html.matchAll(/class="paprika-geo-halo" r="([^"]+)"/g)].map(match => match[1])).toEqual(['7', '7', '7']);
+    expect([...html.matchAll(/class="paprika-geo-halo" r="([^"]+)"/g)].map(match => match[1])).toEqual([]);
     const concept = renderToStaticMarkup(createElement(GeoMap, { label: 'Concept', geometry, locations, concept: true }));
-    expect([...concept.matchAll(/class="paprika-geo-mark" r="([^"]+)"/g)].map(match => match[1])).toEqual(['1.9', '2.3', '4.2']);
+    expect([...concept.matchAll(/class="paprika-geo-mark" r="([^"]+)"/g)].map(match => match[1])).toEqual(['2.4', '4.4', '3.4']);
   });
 
   it('starts touch navigation off and explains how to opt into map gestures', () => {

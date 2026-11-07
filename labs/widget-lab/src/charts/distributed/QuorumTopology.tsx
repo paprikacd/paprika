@@ -1,9 +1,11 @@
 import { useId, useMemo, useRef } from 'react';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { commitLag, distributedUtc, formatIndex, quorumSummary, quorumTopologyConfig, replicaSamples, replicaSnapshots, replicaState } from './model';
 import { DistributedEmpty, ReplicaDrillAction, ReplicaValues, Swatch, replicaColor, useReplicaSelection } from './shared';
 import './distributed.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 export function DistributedQuorumTopology(props: WidgetRendererProps) {
   const { widget, result, embedded } = props;
@@ -12,6 +14,7 @@ export function DistributedQuorumTopology(props: WidgetRendererProps) {
   const selection = useReplicaSelection(props, cfg.selectedReplica), interactive = !embedded, inspect = interactive && widget.options?.showTooltip !== false;
   const inspection = useInspection(nodes, result, inspect, selection.selected, row => row.replicaId);
   const ref = useRef<HTMLDivElement>(null), measured = usePlotWidth(ref, 650);
+  const entering = useChartEntrance({ disabled: embedded, anchor: ref });
   const uid = useId().replaceAll(':', ''), regions = [...new Set(nodes.map(n => n.region))], width = Math.max(550, measured, regions.length * 150 + 28), height = Math.max(300, ...regions.map(region => nodes.filter(n => n.region === region).length * 100 + 50));
   const lane = (width - 28) / Math.max(1, regions.length), leader = nodes.find(n => n.role === 'leader');
   const positions = new Map(nodes.map(node => { const members = nodes.filter(n => n.region === node.region), i = members.findIndex(n => n.replicaId === node.replicaId); return [node.replicaId, { x: 14 + lane * (regions.indexOf(node.region) + .5), y: members.length === 1 ? height / 2 + 5 : 80 + i * (height - 163) / (members.length - 1) }]; }));
@@ -26,13 +29,13 @@ export function DistributedQuorumTopology(props: WidgetRendererProps) {
   return <div className="ds-chart" onKeyDown={inspection.onKeyDown} onPointerLeave={() => inspection.setHover(null)} data-distributed-topology>
     {widget.options?.showLegend !== false && <div className="domain-legend"><Swatch color={C.cyan}>Leader</Swatch><Swatch color={C.blue}>Follower</Swatch><Swatch color={C.amber}>Lagging</Swatch><Swatch color={C.muted}>Unavailable / unknown</Swatch></div>}
     <div className="ds-topology-layout" data-embedded={!!embedded}>
-      <div ref={ref} className="ds-plot-scroll" role="region" aria-label="Replica topology; scroll horizontally on narrow panels" tabIndex={interactive ? 0 : undefined}>
+      <div ref={ref} className="ds-plot-scroll" data-chart-entering={entering || undefined} role="region" aria-label="Replica topology; scroll horizontally on narrow panels" tabIndex={interactive ? 0 : undefined}>
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`Shard ${nodes[0].shardId} replication topology. ${quorum.reachable} of ${quorum.voters} voters reachable; ${quorum.required} required.`}>
           <defs><marker id={`${uid}-arrow`} viewBox="0 0 7 7" refX="6" refY="3.5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L7,3.5L0,7Z" fill={C.muted}/></marker></defs>
           {regions.map((region, i) => <g key={region}>
             {cfg.showRegions && <><rect x={14 + i * lane} y="35" width={lane - 12} height={height - 50} rx="3" className="ds-region"/><text x={22 + i * lane} y="20" className="ds-axis">{region.length > 16 ? `${region.slice(0, 14)}…` : region} · {nodes.filter(n => n.region === region).length}<title>{region}</title></text></>}
           </g>)}
-          {leader && nodes.filter(n => n.replicaId !== leader.replicaId).map(node => {
+          <g className={chartEntrance.revealMarks}>{leader && nodes.filter(n => n.replicaId !== leader.replicaId).map(node => {
             const a = positions.get(leader.replicaId)!, b = positions.get(node.replicaId)!, horizontal = Math.abs(b.x - a.x) > 15;
             const signX = Math.sign(b.x - a.x), signY = Math.sign(b.y - a.y);
             const x1 = a.x + (horizontal ? 61 * signX : 0), y1 = a.y + (horizontal ? 0 : signY > 0 ? 42 : -32), x2 = b.x - (horizontal ? 63 * signX : 0), y2 = b.y - (horizontal ? 0 : signY > 0 ? 34 : -44);
@@ -49,7 +52,7 @@ export function DistributedQuorumTopology(props: WidgetRendererProps) {
               {cfg.showAddresses && <text x={p.x - 22} y={p.y + 7} className="ds-address">{node.address}</text>}
               <text x={p.x} y={p.y + 29} textAnchor="middle" className="ds-axis" style={{ fill: color }}>{node.role === 'leader' ? 'Leader' : replicaState(node)}</text>
             </g>;
-          })}
+          })}</g>
         </svg>
       </div>
       {!embedded && <aside className="ds-topology-evidence">

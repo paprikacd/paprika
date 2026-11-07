@@ -25,7 +25,7 @@ Both manifests retain the original `product-admin` profile, `en` locale, `UX-CON
 The supported static auditor was run in strict mode with each supplemental manifest and a separate output path. To reproduce from the project root:
 
 ```sh
-AUDIT_TOOL=/root/.codex/plugins/cache/openai-curated-remote/frontend-design-premium/1.4.0/skills/frontend-design-premium/scripts/audit_project.py
+AUDIT_TOOL=/path/to/frontend-design-premium/1.4.0/skills/frontend-design-premium/scripts/audit_project.py
 python3 "$AUDIT_TOOL" . --mode strict --config docs/premium-audit-iteration-10-editor.config.json --output docs/premium-audit-iteration-10-editor.json
 python3 "$AUDIT_TOOL" . --mode strict --config docs/premium-audit-iteration-10-domain.config.json --output docs/premium-audit-iteration-10-domain.json
 ```

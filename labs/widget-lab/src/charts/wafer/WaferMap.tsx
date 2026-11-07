@@ -1,11 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Minus, Plus, RotateCcw } from 'lucide-react';
 import { scaleLinear } from 'd3-scale';
-import type { WidgetRendererProps } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import type { WidgetRendererProps } from '@insights/widget-registry';
 import { CHART_COLORS as C, DetailValues, DomainInspector, useInspection, usePlotWidth } from '../../components/lab/DomainPrimitives';
 import { constrainGeoView, geoToScreen, geoWheelView, INITIAL_GEO_VIEW, panGeoBy, pinchGeo, revealGeoPoint, zoomGeoAt, type GeoPoint, type GeoViewport } from '../geo/geo-viewport';
 import { BIN_LABEL, DIE_BINS, filterDies, summarizeWafer, waferFocusId, waferKeyboardTarget, waferMapConfig, waferRows, type WaferDie } from './model';
 import './wafer.css';
+import { PlotHatchDefs, plotHatchFill } from '@insights/plot-hatch';
+import hatchStyles from '@insights/plot-hatch.module.css';
+import { useChartEntrance } from '@insights/chart-entrance';
+import chartEntrance from '@insights/chart-entrance.module.css';
 
 export const WAFER_COLORS = { pass: C.cyan, leakage: C.red, timing: C.amber, open: C.violet, untested: C.muted, excluded: 'var(--gamma-border)' };
 export const waferNumber = (value: number | null, decimals = 2) => value === null ? 'Unavailable' : value.toLocaleString('en-US', { maximumFractionDigits: decimals });
@@ -23,6 +27,7 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
   const dies = useMemo(() => waferRows(result.records), [result]);
   const visible = useMemo(() => filterDies(dies, cfg.filter), [dies, cfg.filter]);
   const plot = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), width = usePlotWidth(plot, 560);
+  const entering = useChartEntrance({ anchor: plot });
   const height = Math.min(490, Math.max(300, width * .94));
   const pad = { left: cfg.showCoordinates ? 43 : 14, right: 14, top: 13, bottom: cfg.showCoordinates ? 37 : 14 };
   const board = Math.max(180, Math.min(width - pad.left - pad.right, height - pad.top - pad.bottom));
@@ -126,7 +131,7 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
       <button className="domain-control" aria-label="Zoom out wafer" disabled={view.k <= 1} onClick={() => zoom(1 / 1.5)}><Minus size={15}/></button>
       <button className="domain-control" aria-label="Fit wafer" onClick={reset}><RotateCcw size={14}/>Fit</button><span>{view.k.toFixed(1)}×</span>
     </div><span className="domain-note">Scroll to zoom · drag to pan</span>{selected && <button className="domain-control" onClick={clear}>Clear die</button>}</div>}
-    <div className="wafer-map-layout"><div ref={plot} className="wafer-map-stage">
+    <div className="wafer-map-layout"><div ref={plot} data-chart-entering={entering || undefined} className="wafer-map-stage">
       <svg ref={svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${dies[0].wafer} die map. Scroll to zoom; arrow keys pan; plus and minus zoom; Home fits the wafer.`} tabIndex={embedded ? undefined : 0}
         style={{ touchAction: touch ? 'none' : 'pan-y' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { stopGesture(); suppressClick.current = true; }}
         onKeyDown={event => {
@@ -137,18 +142,18 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
           else if (event.key === 'Home') { event.preventDefault(); reset(); }
         }}>
         <defs><clipPath id={`${uid}-plot`}><rect x={pad.left - 1} y="0" width={width - pad.left} height={height - pad.bottom + 3}/></clipPath><clipPath id={`${uid}-wafer`}><circle cx={cx} cy={cy} r={board / 2}/></clipPath>
-          <pattern id={`${uid}-unknown`} width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="var(--gamma-surface)"/><path d="M0 5 5 0" stroke={C.muted} strokeWidth="1"/></pattern>
+          <PlotHatchDefs id={uid}/>
           <linearGradient id={`${uid}-leakage`}><stop stopColor={C.cyan}/><stop offset="1" stopColor={C.red}/></linearGradient>
         </defs>
         <g clipPath={`url(#${uid}-plot)`}><g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <circle cx={cx} cy={cy} r={board / 2} fill="var(--gamma-bg)" stroke={C.muted} strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
           {cfg.showGrid && coordinateTicks.map(t => <g key={t} className="wafer-grid"><line x1={cx + t * scale} x2={cx + t * scale} y1={cy - board / 2} y2={cy + board / 2} vectorEffect="non-scaling-stroke"/><line x1={cx - board / 2} x2={cx + board / 2} y1={cy - t * scale} y2={cy - t * scale} vectorEffect="non-scaling-stroke"/></g>)}
-          <g clipPath={`url(#${uid}-wafer)`}>{visible.map(die => {
+          <g clipPath={`url(#${uid}-wafer)`}><g className={chartEntrance.revealMarks}>{visible.map(die => {
             const p = point(die), side = die.dieSizeMm * scale * (1 - cfg.cellGap), selectedMark = die.id === active?.id || die.id === selected;
             return <rect key={die.id} ref={node => { if (node) marks.current.set(die.id, node); else marks.current.delete(die.id); }} x={p.x - side / 2} y={p.y - side / 2} width={side} height={side} rx=".25"
               data-wafer-die={die.id} role={enabled ? 'button' : undefined} tabIndex={enabled ? die.id === rovingId ? 0 : -1 : undefined}
               aria-label={`Inspect die ${dieLabel(die)}`} aria-pressed={enabled ? selected === die.id : undefined}
-              fill={die.bin === 'untested' ? `url(#${uid}-unknown)` : cfg.colorMode === 'leakage' && die.bin !== 'excluded' ? leakageColor(die.leakageNA) : WAFER_COLORS[die.bin]}
+              fill={die.bin === 'untested' ? plotHatchFill(uid) : cfg.colorMode === 'leakage' && die.bin !== 'excluded' ? leakageColor(die.leakageNA) : WAFER_COLORS[die.bin]}
               opacity={die.bin === 'excluded' ? .7 : 1} stroke={die.id === active?.id ? C.orange : die.id === selected ? C.cyan : 'none'} strokeWidth={selectedMark ? 2.5 : 0} vectorEffect="non-scaling-stroke"
               onPointerEnter={() => { if (enabled && !inspect.pinned) inspect.setHover(die.id); }} onFocus={() => { if (enabled && !inspect.pinned) inspect.setHover(die.id); }} onPointerLeave={() => inspect.setHover(null)} onBlur={() => inspect.setHover(null)}
               onClick={event => { if (suppressClick.current) { suppressClick.current = false; return; } if (!moved.current) choose(die.id, event.currentTarget); }}
@@ -161,7 +166,7 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
                   if (next) focusDie(next.id);
                 }
               }}><title>{`${dieLabel(die)} · X ${die.xMm} mm, Y ${die.yMm} mm · ${waferNumber(die.leakageNA, 3)} nA`}</title></rect>;
-          })}</g>
+          })}</g></g>
           <path d={`M${cx - 7 * scale},${cy + board / 2 + 2}Q${cx},${cy + board / 2 - 15 * scale} ${cx + 7 * scale},${cy + board / 2 + 2}`} fill="var(--gamma-bg)" stroke={C.muted} strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
         </g></g>
         {cfg.showCoordinates && <g className="wafer-axis">{coordinateTicks.map(t => {
@@ -174,7 +179,7 @@ export function WaferDieMap({ widget, result, embedded, onContextChange }: Widge
       ['Physical X / Y', `${signed(active.xMm)} / ${signed(active.yMm)} mm`], ['Etch chamber', active.chamber],
       ['Probe · UTC', active.probeAt === null ? 'Not tested' : new Date(active.probeAt).toISOString().slice(11, 19)],
     ]}/>{!inspect.pinned && <button className="wafer-pin" onClick={() => choose(active.id)}>Pin die</button>}</DomainInspector>}</div>
-    {widget.options?.showLegend !== false && <div className="domain-legend">{cfg.colorMode === 'bin' ? DIE_BINS.map(bin => <span key={bin}><i style={{ background: WAFER_COLORS[bin], ...(bin === 'untested' ? { backgroundImage: 'repeating-linear-gradient(135deg,transparent 0 2px,var(--gamma-ink) 2px 3px)' } : {}) }}/>{BIN_LABEL[bin]}</span>) : <><span>Leakage · nA</span><i className="wafer-color-scale"/><span>≤0.1 → ≥150 · log colour</span><span>Hatch: untested · grey: unmeasured</span></>}</div>}
+    {widget.options?.showLegend !== false && <div className="domain-legend">{cfg.colorMode === 'bin' ? DIE_BINS.map(bin => <span key={bin}><i className={bin === 'untested' ? `${hatchStyles.hatch} ${hatchStyles.swatch}` : undefined} style={bin === 'untested' ? undefined : { background: WAFER_COLORS[bin] }}/>{BIN_LABEL[bin]}</span>) : <><span>Leakage · nA</span><i className="wafer-color-scale"/><span>≤0.1 → ≥150 · log colour</span><span>Hatch: untested · grey: unmeasured</span></>}</div>}
     {!embedded && <><div className="wafer-controls"><label>Inspect die <select className="domain-control" aria-label="Inspect wafer die" value={selected ?? ''} onChange={event => event.target.value ? choose(event.target.value, event.currentTarget) : clear()} disabled={!enabled}><option value="">Choose a die</option>{visible.map(d => <option key={d.id} value={d.id}>{dieLabel(d)}</option>)}</select></label>
       <button className="domain-control" aria-pressed={touch} onClick={() => { stopGesture(); setTouch(v => !v); }}>Touch pan {touch ? 'on' : 'off'}</button>
       {view.k > 1 && <div className="wafer-camera-controls">{([{ icon: ArrowUp, x: 0, y: 35, label: 'up' }, { icon: ArrowLeft, x: 35, y: 0, label: 'left' }, { icon: ArrowRight, x: -35, y: 0, label: 'right' }, { icon: ArrowDown, x: 0, y: -35, label: 'down' }] as const).map(p => <button key={p.label} className="domain-control" aria-label={`Pan wafer ${p.label}`} onClick={() => update(panGeoBy(camera.current, p, extent), true)}><p.icon size={14}/></button>)}</div>}

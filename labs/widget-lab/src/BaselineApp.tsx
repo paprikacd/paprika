@@ -1,12 +1,13 @@
 import { DashboardEditControls, useDashboardPanels } from './components/lab/DashboardWorkbench';
+import { useGammaScope } from './components/lab/appearance';
 import { useMemo, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, ChevronRight, FlaskConical, GitCommitHorizontal, Info, Maximize2, Minimize2, Moon, RefreshCw, Sun, TableProperties, X, TriangleAlert } from 'lucide-react';
-import { ChartCursorProvider } from './vendor/paprika/ui/src/features/insights/chart-cursor';
-import { WidgetVisualization } from './vendor/paprika/ui/src/features/insights/charts';
-import { GammaButton } from './vendor/paprika/ui/src/features/insights/gamma/button';
-import { GammaSelect } from './vendor/paprika/ui/src/features/insights/gamma/select';
-import gammaTheme from './vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
-import { registerRichMetricPlugins } from './vendor/paprika/ui/src/features/insights/plugins/rich-metrics';
+import { ArrowRight, ArrowUpRight, ChevronRight, FlaskConical, GitCommitHorizontal, Info, Maximize2, Minimize2, RefreshCw, TableProperties, X, TriangleAlert } from 'lucide-react';
+import { ChartCursorProvider } from '@insights/chart-cursor';
+import { WidgetVisualization } from '@insights/charts';
+import { GammaButton } from '@insights/gamma/button';
+import { GammaSelect } from '@insights/gamma/select';
+import gammaTheme from '@insights/gamma/gamma-theme.module.css';
+import { registerRichMetricPlugins } from '@insights/plugins/rich-metrics';
 import { aggregateTimeline, buildTelemetry, REGIONS, selectTelemetry, summarize, type RegionId, type Scenario } from './data/telemetry';
 import { makeChartResults, LATENCY_WIDGET, TRAFFIC_WIDGET, ERROR_WIDGET, DISTRIBUTION_WIDGET } from './data/chart-adapter';
 import { RegionalLatency } from './components/RegionalLatency';
@@ -26,7 +27,7 @@ const REGION_OPTIONS = [{ value: 'all', label: 'All regions' }, ...REGIONS.map(r
 
 export function BaselineApp() {
   const panels = useDashboardPanels();
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const scope = useGammaScope();
   const [scenario, setScenario] = useState<Scenario>('regression');
   const [region, setRegion] = useState<RegionId | 'all'>('all');
   const [minutes, setMinutes] = useState<15 | 30 | 60>(60);
@@ -62,11 +63,11 @@ export function BaselineApp() {
   }
   function changeScenario(value: string) { setScenario(value as Scenario); setRevision(0); setPanelState('ready'); }
 
-  return <div className={`${gammaTheme.scope} lab-app`} data-insights-theme={theme}>
+  return <div className={`${gammaTheme.scope} lab-app`} {...scope}>
     <a className="skip-link" href="#dashboard">Skip to widgets</a>
     <header className="topbar">
       <div className="brand"><span className="wordmark">paprika</span><span className="brand-divider" /><span>Insights</span><ChevronRight size={14} /><strong>Widget lab</strong></div>
-      <div className="top-actions"><DashboardEditControls/><span className="synthetic-label"><FlaskConical size={14} />Synthetic telemetry</span><GammaButton variant="ghost" size="sm" iconOnly aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}</GammaButton></div>
+      <div className="top-actions"><DashboardEditControls/><span className="synthetic-label"><FlaskConical size={14} />Synthetic telemetry</span></div>
     </header>
 
     <main className="workspace">

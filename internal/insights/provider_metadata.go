@@ -109,7 +109,7 @@ func (p *providerClient) testConnection(ctx context.Context) error {
 		if p.public.supports("records") {
 			expression := map[string]string{"shorted": `{"operation":"top_shorts","args":{"limit":1}}`, "uptime": `{"operation":"services","args":{"limit":1}}`, "postgresql": "SELECT 1 AS value"}[p.public.Type]
 			now := float64(time.Now().Unix())
-			_, err := p.query(ctx, Query{ProviderID: p.public.ID, Kind: "records", Query: expression, Start: now - 60, End: now, Step: 1})
+			_, err := p.query(ctx, &Query{ProviderID: p.public.ID, Kind: "records", Query: expression, Start: now - 60, End: now, Step: 1})
 			return err
 		}
 		_, err := p.metadata(ctx, "labels", "", "")

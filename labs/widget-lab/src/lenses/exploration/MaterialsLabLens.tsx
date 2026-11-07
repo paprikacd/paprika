@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { EditLensWidget } from '../LensStudio';
-import type { DrilldownContext } from '../../vendor/paprika/ui/src/features/insights/drilldown';
+import type { DrilldownContext } from '@insights/drilldown';
 import { registerExplorationCharts } from '../../charts/exploration/register';
 import { feasibleCandidates, paretoFrontier } from '../../charts/exploration/model';
 import { DetailValues, PALETTE } from '../../charts/exploration/shared';

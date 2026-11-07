@@ -33,25 +33,57 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `observedAt` | When this execution snapshot started |
 | `range` | Resolved RFC3339 start/end and `stepSeconds` |
 | `variables` | Saved defaults with this call's declared overrides applied |
-| `widgets` | ID, title, type, unit, optional decimals and signal reference or resolution error |
+| `widgets` | ID, title, type, unit, optional decimals, configured Single value threshold band and signal reference or resolution error; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
 | `savedQueries` | Referenced saved-query IDs and exact ETags captured with the dashboard |
-| `signals` | Deduplicated query results, indexed by `q1`, `q2`, … |
+| `signals` | Deduplicated query results, indexed by `q1`, `q2`, …; each identifies the query kind and, when provider lookup is authorized, its resolved provider ID |
 | `queryCount` | Unique planned queries, provider calls begun and duplicate widget queries avoided |
 | `state` | `ok`, `empty` or `partial`; availability, not service health |
 
+Plugin visualization identity is attached to each widget even when its query is
+deduplicated with other widgets. The bounded text fallback identifies the first
+widget's view and the number of widgets sharing its signal; use structured
+content for all widget identities. Annotation column mappings include the
+optional interval end column when configured.
+
+`savedQueryId` and `annotationSavedQueryId` identify the references authored on
+each widget, including references that fail resolution. A corresponding entry in
+`savedQueries` supplies the exact captured ETag when the query exists. Signals
+include their normalized `kind` even on an empty result or provider error; their
+`providerId` is included only after the caller is authorized to resolve that
+provider. Neither field contains a query expression or credentials. Multiple
+widgets can share a signal while referencing distinct saved-query documents.
+
 Metric series report their original provider `index`, bounded name/labels,
-`samples`, `valid`, `missing`, first/last finite points and min/max. Point
+`samples`, `valid`, `missing`, first/last finite points, min/max and `mean`. The
+mean is the unweighted arithmetic average of finite returned observations with
+valid timestamps; it is omitted when no finite observations exist. Duplicate
+timestamps count separately, so it is not a time-weighted or source-wide
+average. A provider-truncated result summarizes only the returned sample. Point
 timestamps are Unix milliseconds. `firstAt`/`lastAt` bound valid timestamps even
 when their values are missing. Invalid timestamps are counted separately.
+`duplicateObservations`, when present, counts additional returned samples that
+share an already-seen valid timestamp in that series, including missing-valued
+samples. It does not alter statistics or establish source-wide duplication.
+Some rich charts reject duplicate timestamps because choosing or combining values
+would invent an aggregation; adjust the query if that visualization needs a
+single observation per timestamp. The text fallback totals this count only over
+the summarized series, so check `seriesOmitted` before assuming full coverage.
 `primarySeries` points to the original index of the first series with a finite
 observation, matching the UI single-value card. The latest finite value retains
 its full numeric precision; widget `decimals` only describes display formatting.
 `tailMissing` explicitly marks missing values after that last finite observation.
+When a Single value has configured thresholds, widget `threshold` reports the
+matched visual band (`boundary`, `color`, optional `label`) or `unknown` when no
+valid observation is available. It uses that same last valid value, including
+zero; the first threshold is the fallback below its boundary, matching the UI.
+An explicit text color can override the visible text color. The band is an
+author-configured visualization, not an alert or a service-health verdict;
+check `tailMissing` and freshness before treating its observation as current.
 Do not describe an old reading as current just because it is the latest finite
 point.
 
 Trace results include `returned`, `statusCounts` and a few examples with IDs,
-service, operation, duration in milliseconds and start time. Counts describe the
+service, operation, duration in milliseconds and start time in Unix milliseconds. Counts describe the
 bounded provider sample, never total requests. Unknown status stays unknown.
 Malformed numeric trace fields are omitted and marked with `invalidFields`.
 
@@ -60,8 +92,14 @@ failures are signal errors with fixed, sanitized codes/messages. Empty successfu
 queries remain empty; no synthetic zero or health judgment is introduced. A
 dashboard is `partial` when a widget fails or a signal is partial/error. Sampling
 and size omissions have explicit truncation flags; they are not automatically
-provider failures. Check `truncated`, `providerTruncated`, `seriesTruncated`,
+provider failures. A provider-limited response with no usable observations is
+`partial`, not a conclusive empty result; a limited response with observations
+is `ok` and separately reports `providerTruncated`. Check `truncated`, `providerTruncated`, `seriesTruncated`,
 `metadataTruncated`, `historyTruncated` and `examplesTruncated` where present.
+Successful metric signals report `seriesReturned` and `seriesOmitted`, including
+zero for an empty response. The former counts the bounded provider response,
+not total source cardinality; the latter counts fetched series omitted from the
+compact summary. Both are independent of `providerTruncated`.
 
 ## Targeted drilldown
 
@@ -88,6 +126,23 @@ History points are `[unixMilliseconds, valueOrNull]` tuples. The bounded sample
 prioritizes endpoints, extrema and gaps as the requested size permits; aggregate
 counts/min/max always summarize the full normalized series. Inspect truncation
 flags rather than treating the sampled history as every observation.
+
+The compact text synopsis includes the resolved time range, step, observation
+time and dashboard ETag, followed by bounded effective variable values (saved
+defaults plus any overrides). Variable names are sorted; shortened values use
+an ellipsis and omitted variables are counted. Use structured content for the
+complete context. The synopsis also includes a bounded per-series summary for signals
+with multiple metric series: identity, latest valid value and timestamp, and
+whether the latest observation is missing, and its sample mean when available.
+A series without a valid observation
+is reported as such. At most three sorted labels are shown per series; additional
+labels and series omitted to fit the 1,000-byte per-signal detail budget are
+disclosed. Structured content remains authoritative for complete included
+series metadata and for the overall source and preview truncation flags.
+Trace text likewise includes sample status counts and bounded example IDs,
+service, operation, status, duration and start time when present. It labels
+these as sampled results, discloses omitted examples, and never invents missing
+numeric fields. Use structured content for the authoritative included examples.
 
 | Input/budget | Limit |
 |---|---|

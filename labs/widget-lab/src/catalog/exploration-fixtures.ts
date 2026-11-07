@@ -1,5 +1,5 @@
 import type { CatalogFeature, CatalogPreset } from './chart-fixtures';
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, Widget } from '@insights/schema';
 import { explorationExample } from '../lenses/exploration/data';
 
 export type ExplorationCatalogId='adjacency-matrix'|'entity-neighbourhood'|'event-swimlanes'|'resource-gantt'|'resource-load'|'schedule-dependencies'|'ternary-composition'|'pareto-scatter'|'parallel-coordinates';

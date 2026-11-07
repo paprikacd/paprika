@@ -221,9 +221,37 @@ try {
     assert.equal(schemaProperty(query, "tags").maxItems, 12)
     assert.equal(schemaProperty(board, "widgets").maxItems, 48)
     assert.ok(schemaProperty(board, "variables")); assert.ok(schemaProperty(board, "customTimeRange"))
+    const notes = schemas.widget.notes.join("\n")
+    for (const term of ["display=status-badge", "barColorMode=gradient|value", "colorField?:string,colorMin?:number,colorMax?:number", "options.staleAfterSeconds"]) assert.ok(notes.includes(term), `Missing chart authoring contract: ${term}`)
+    assert.ok(schemas.widget.examples.find(example => example.id === "service-capacity"))
+    assert.ok(schemas.widget.examples.find(example => example.id === "market-composition"))
     await rejectedTool("get_insights_schema", { kind: "unknown" }, fixture.mcpToken)
     await rejectedTool("get_insights_schema", { kind: "dashboard" }, fixture.mcpNoInsightsToken, /permission|forbidden|denied/i)
     return { kinds: Object.keys(schemas), completeNestedSchemas: true, readOnlyViewerAllowed: true, noInsightsCallerDenied: true }
+  })
+  await check("Discovered record chart examples survive conditional MCP edits", async () => {
+    // The local fixture exposes a metrics provider; these examples exercise
+    // document authoring only, so their illustrative records queries are not run.
+    const examples = ["service-capacity", "market-composition"].map(id => ({ ...schemas.widget.examples.find(widget => widget.id === id), providerId: metricProvider.id }))
+    const document = { schemaVersion: 1, id: "mcp-record-chart-examples", title: "Record chart examples", timeRange: "1h", refreshInterval: 0, widgets: examples }
+    const created = verifyDocumentResult(await tool("create_dashboard", { document }), document)
+    try {
+      const patch = { id: document.id, etag: created.etag, widget_edits: [{ op: "update", id: "market-composition", patch: { config: { colorMax: 30 } } }] }
+      const updated = await tool("patch_dashboard", patch)
+      assert.notEqual(updated.etag, created.etag)
+      assert.equal(updated.document.widgets[1].config.colorMax, 30)
+      assert.equal(updated.document.widgets[1].config.group, "sector")
+      assert.equal(updated.document.widgets[0].config.cellStyles[1].display, "status-badge")
+      await rejectedConflict("patch_dashboard", patch)
+      const saved = await api(`dashboards/${document.id}`)
+      assert.equal(saved.etag, updated.etag)
+      assert.deepEqual(saved.document, updated.document)
+      return { chartConfigsRetained: true, staleWriteRejected: true }
+    } finally {
+      const saved = await api(`dashboards/${document.id}`)
+      const deleted = await http(`dashboards/${document.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${fixture.token}`, "If-Match": saved.etag } })
+      assert.ok(deleted.ok, `Clean up isolated authoring fixture: ${deleted.status}`)
+    }
   })
   // Use the advertised canonical examples as the starting point, binding their
   // illustrative provider and document IDs to this authenticated workspace.

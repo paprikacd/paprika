@@ -3,7 +3,9 @@ package source
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -156,6 +158,13 @@ func buildOCIRef(url, tag string) string {
 }
 
 // writeChart extracts a pulled chart's tarball data to a directory and returns the chart path.
+//
+// The directory is named by the archive digest and is never written after it
+// appears. Concurrent resolves of one chart can run in the same process, so each
+// one writes its own temporary archive and staging directory, then renames the
+// staging directory into place. A resolve that loses the rename uses the
+// winner's identical directory. A shared path would let one resolve delete
+// the archive that another still reads, or interleave two extractions.
 func writeChart(chartSummary *registry.DescriptorPullSummaryWithMeta, destDir string) (string, error) {
 	if chartSummary == nil || len(chartSummary.Data) == 0 {
 		return "", errors.New("pulled chart has no data")
@@ -164,21 +173,59 @@ func writeChart(chartSummary *registry.DescriptorPullSummaryWithMeta, destDir st
 	if chartName == "" {
 		chartName = "chart"
 	}
-	chartDir := filepath.Join(destDir, chartName)
-	if mkErr := os.MkdirAll(chartDir, 0o750); mkErr != nil {
-		return "", fmt.Errorf("create chart dir: %w", mkErr)
+	digest := sha256.Sum256(chartSummary.Data)
+	chartDir := filepath.Join(destDir, chartName+"-"+hex.EncodeToString(digest[:8]))
+	if isDir(chartDir) {
+		return chartDir, nil
 	}
-	tmpFile := filepath.Join(destDir, chartName+".tgz")
-	if writeErr := os.WriteFile(tmpFile, chartSummary.Data, 0o600); writeErr != nil {
-		return "", fmt.Errorf("write chart tarball: %w", writeErr)
+	return stageChartDir(chartSummary.Data, destDir, chartName, chartDir)
+}
+
+// stageChartDir extracts data into a private staging directory and renames it
+// to chartDir. If another resolve renamed its copy first, it returns that one.
+func stageChartDir(data []byte, destDir, chartName, chartDir string) (string, error) {
+	stage, err := os.MkdirTemp(destDir, "."+chartName+"-extract-*")
+	if err != nil {
+		return "", fmt.Errorf("create chart staging dir: %w", err)
 	}
-	if err := extractChartFiles(tmpFile, chartDir); err != nil {
-		return "", fmt.Errorf("extract chart: %w", err)
+	defer os.RemoveAll(stage) //nolint:errcheck // gone after the rename; cleanup after a failure
+	if err := extractChartData(data, destDir, chartName, stage); err != nil {
+		return "", err
 	}
-	if err := os.Remove(tmpFile); err != nil {
-		return "", fmt.Errorf("remove temporary chart tarball %q: %w", tmpFile, err)
+	if err := os.Rename(stage, chartDir); err != nil {
+		if isDir(chartDir) {
+			return chartDir, nil
+		}
+		return "", fmt.Errorf("publish chart dir: %w", err)
 	}
 	return chartDir, nil
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// extractChartData writes data to a private temporary archive, extracts it
+// into dir and removes the archive.
+func extractChartData(data []byte, tmpDir, chartName, dir string) error {
+	archive, err := os.CreateTemp(tmpDir, "."+chartName+"-*.tgz")
+	if err != nil {
+		return fmt.Errorf("create chart tarball: %w", err)
+	}
+	archivePath := archive.Name()
+	defer os.Remove(archivePath) //nolint:errcheck // private temporary archive; cleanup only
+	if _, err := archive.Write(data); err != nil {
+		_ = archive.Close() //nolint:errcheck // cleanup after a failed write
+		return fmt.Errorf("write chart tarball: %w", err)
+	}
+	if err := archive.Close(); err != nil {
+		return fmt.Errorf("close chart tarball: %w", err)
+	}
+	if err := extractChartFiles(archivePath, dir); err != nil {
+		return fmt.Errorf("extract chart: %w", err)
+	}
+	return nil
 }
 
 // dockerCredentials holds parsed registry credentials.

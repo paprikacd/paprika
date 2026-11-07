@@ -1,5 +1,7 @@
 # Chart capability coverage
 
+> **WP-B1b note:** no holding copies remain. Production files are imported through `@insights/*`, and the lab's own wrappers over production are listed in `src/renderer-extensions/README.md`.
+
 ## Current additions — iteration 10
 
 Four registered families extend the existing domain lenses through `Widget` / `QueryResult.records`, strict configuration parsers and semantic input validators. Each has an independent catalogue example and registry-owned intrinsic layout. They add evidence within existing investigations rather than introducing another dashboard document model.

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { bandBounds, buoyRows, curtainConfig, dwellRows, fieldAxes, fieldCells, fieldColor, fitEquirectangular, intervalConfig, iqConfig, iqRows, mapConfig, nearestValue, polarPoint, rmsEvm, roseConfig, roseRows, roseSector, shipments, spectrumConfig } from '../src/charts/spatial/model';
+import { widgetSchema } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
+import { bandBounds, buoyRows, curtainConfig, dwellRows, fieldAxes, fieldCells, fieldDensityLevel, fitEquirectangular, intervalConfig, iqConfig, iqRows, mapConfig, nearestValue, polarPoint, rmsEvm, roseConfig, roseRows, roseSector, shipments, spectrumConfig } from '../src/charts/spatial/model';
 import { coastalFixtures, logisticsFixtures, recordResult, spectrumFixtures } from '../src/lenses/spatial/fixtures';
 import { isSpatialCatalogId, makeSpatialCatalogFixture, spatialChartCatalog } from '../src/catalog/spatial-fixtures';
 import { registerSpatialCharts } from '../src/charts/spatial/register';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition } from '@insights/widget-registry';
 import { vectorBearing } from '../src/charts/spatial/model';
 
 describe('logistics population and arrival interval contracts',()=>{
@@ -82,7 +82,7 @@ describe('frequency domain and raster missingness',()=>{
     expect(axes.x[1]-axes.x[0]).toBeCloseTo(.0005,10);expect(axes.y[1]-axes.y[0]).toBe(10000);
     const fixture=recordResult([['x','number'],['y','number'],['value','number']],[[0,0,0],[1,0,null]]);
     expect(fieldCells(fixture.records,'x','y','value').map(p=>p.value)).toEqual([0,null]);
-    expect(fieldColor(0,-110,-30)).not.toBe(fieldColor(null,-110,-30));
+    expect(fieldDensityLevel(-110,-110,-30)).toBe(0);expect(fieldDensityLevel(0,-110,-30)).toBe(23);expect(fieldDensityLevel(null,-110,-30)).toBeNull();
     fixture.records!.rows.push([0,0,2]);expect(()=>fieldCells(fixture.records,'x','y','value')).toThrow(/Duplicate/);
   });
   it('retains depth/time dimensions and makes profile changes follow selected buoy identity',()=>{

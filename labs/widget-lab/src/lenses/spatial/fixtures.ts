@@ -1,4 +1,4 @@
-import type { QueryResult, RecordFrame, Widget } from '../../vendor/paprika/ui/src/features/insights/schema';
+import type { QueryResult, RecordFrame, Widget } from '@insights/schema';
 export type SpatialPanel={widget:Widget;result:QueryResult;caption:string};
 export const SPATIAL_DAY=Date.UTC(2026,9,31),DAY=86400000;
 const round=(x:number,d=3)=>Number(x.toFixed(d));

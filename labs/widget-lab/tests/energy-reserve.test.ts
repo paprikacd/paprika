@@ -1,3 +1,4 @@
+import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -5,10 +6,10 @@ import { ReserveEnvelope } from '../src/charts/energy/ReserveEnvelope';
 import { reserveEnvelopeConfig, reserveEnvelopePoints, reserveExtent } from '../src/charts/energy/reserve-model';
 import { registerEnergyCharts } from '../src/charts/energy/register';
 import { buildGridBalance, GRID_TIME, makeEnergyCatalogFixture, type GridScenario } from '../src/lenses/energy/fixtures';
-import type { RecordFrame } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
+import type { RecordFrame } from '@insights/schema';
+import { widgetSchema } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
+import { getWidgetDefinition } from '@insights/widget-registry';
 
 function frame(rows: RecordFrame['rows']): RecordFrame {
   return {
@@ -107,7 +108,7 @@ describe('reserve authoring and host integration', () => {
       const fixture = makeEnergyCatalogFixture('reserve-envelope', preset);
       expect(() => widgetSchema.parse(fixture.widget)).not.toThrow();
       expect(() => parseRecordFrame(fixture.result.records)).not.toThrow();
-      expect(() => definition.validateInput!(fixture.result, fixture.widget.config)).not.toThrow();
+      expect(definition.validateInput!(fixture.result, fixture.widget.config)).toEqual([]);
       if (preset !== 'error') {
         const markup = renderToStaticMarkup(createElement(ReserveEnvelope, { ...fixture, embedded: true }));
         expect(markup).not.toMatch(/NaN|Infinity/);
@@ -117,9 +118,9 @@ describe('reserve authoring and host integration', () => {
     }
     expect(definition.configFields?.find(field => field.key === 'capacityField')?.binding).toMatchObject({ types: ['number'], unit: 'MW' });
     expect(definition.configFields?.find(field => field.key === 'low68Field')?.binding?.optional).toBe(true);
-    expect(() => definition.validateInput!({}, {})).toThrow(/require forecast/);
+    expect(issueText(definition.validateInput!({}, {}))).toMatch(/require forecast/);
     const valid = makeEnergyCatalogFixture('reserve-envelope');
-    expect(() => definition.validateInput!(valid.result, { capacityField: 'absent' })).toThrow(/Missing reserve field/);
+    expect(issueText(definition.validateInput!(valid.result, { capacityField: 'absent' }))).toMatch(/Missing reserve field/);
   });
   it('retains a single observed point and all-unknown samples as honest finite geometry', () => {
     const fixture = makeEnergyCatalogFixture('reserve-envelope');

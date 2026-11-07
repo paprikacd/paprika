@@ -2,10 +2,11 @@ import { lazy, Suspense, useState } from 'react';
 import { ArrowLeft, FlaskConical } from 'lucide-react';
 import { DashboardEditControls, type EditDashboardWidget } from '../components/lab/DashboardWorkbench';
 import { registerLabCharts } from '../charts/register-lab-charts';
-import theme from '../vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css';
+import theme from '@insights/gamma/gamma-theme.module.css';
 import './LensStudio.css';
 import type { LensId } from './lens-routes';
-import { labMotionStyle, useLabMotion } from '../components/lab/motion';
+import { useLabMotion } from '../components/lab/motion';
+import { useGammaScope } from '../components/lab/appearance';
 import { StudyLoading } from '../components/lab/StudyLoading';
 export type { LensId } from './lens-routes';
 
@@ -41,9 +42,10 @@ export type EditLensWidget = EditDashboardWidget;
 
 export function LensStudio({ lens }: { lens: LensId }) {
   const motion = useLabMotion();
+  const scope = useGammaScope();
   const [canvasWidth, setCanvasWidth] = useState('auto');
   const Component=lens==='website'||lens==='infrastructure'?null:lensComponents[lens];
-  return <div className={`${theme.scope} obs-app lens-studio`} data-insights-theme="dark" data-motion={motion.reduced ? 'reduced' : 'auto'} style={labMotionStyle(motion.reduced)}>
+  return <div className={`${theme.scope} obs-app lens-studio`} {...scope}>
     <header className="lens-toolbar" aria-label="Lens presentation">
       <span><FlaskConical size={13}/>Synthetic data</span>
       <DashboardEditControls/>

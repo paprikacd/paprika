@@ -1,5 +1,5 @@
 import { Pin, MousePointer2 } from 'lucide-react';
-import { useChartCursor } from '../vendor/paprika/ui/src/features/insights/chart-cursor';
+import { useChartCursor } from '@insights/chart-cursor';
 import type { AggregatePoint } from '../data/telemetry';
 import { clockTime, latency, rate, percentage } from '../format';
 

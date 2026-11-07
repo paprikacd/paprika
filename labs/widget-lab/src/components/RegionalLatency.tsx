@@ -1,5 +1,5 @@
 import { useId, type CSSProperties } from "react";
-import { GammaButton } from "../vendor/paprika/ui/src/features/insights/gamma/button";
+import { GammaButton } from "@insights/gamma/button";
 import styles from "./RegionalLatency.module.css";
 
 export type RegionalLatencyItem = {

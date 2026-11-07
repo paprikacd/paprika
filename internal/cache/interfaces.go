@@ -35,6 +35,13 @@ type GetDeleter interface {
 	GetDel(ctx context.Context, key string) ([]byte, error)
 }
 
+// ConditionalReplacer atomically replaces an unchanged, unexpired entry
+// with a new entry. It prevents a refresh grant being consumed without its
+// successor being stored, while preserving single-use semantics.
+type ConditionalReplacer interface {
+	Replace(ctx context.Context, oldKey string, expected []byte, newKey string, value []byte, ttl time.Duration) (bool, error)
+}
+
 // Pinger checks connectivity to the cache backend.
 type Pinger interface {
 	Ping(ctx context.Context) error
@@ -69,6 +76,13 @@ type cacheImpl interface {
 // Setter, or PrefixDeleter.
 type Cache struct {
 	cacheImpl
+}
+
+// ConditionalReplacer reports whether this backend supports atomic rotation.
+// Other backends retain their existing single-use GetDel behavior.
+func (c *Cache) ConditionalReplacer() (ConditionalReplacer, bool) {
+	r, ok := c.cacheImpl.(ConditionalReplacer)
+	return r, ok
 }
 
 //go:generate mockgen -destination=mocks/cache.go -package=mocks -typed . Getter,Setter,Deleter,GetDeleter,Pinger,Closer,PrefixDeleter

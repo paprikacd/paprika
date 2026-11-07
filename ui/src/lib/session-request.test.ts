@@ -15,6 +15,7 @@ vi.mock("./browser-session", () => ({
 const originalLocation = window.location
 beforeEach(() => {
   vi.resetAllMocks()
+  sessionStorage.clear()
   session.token = "old"; session.identityKey = "user"; session.identityEpoch = 1; session.logoutPending = false
   session.ensure.mockImplementation(async () => session.token)
   session.recover.mockImplementation(async () => { session.token = "new"; return "new" })
@@ -23,6 +24,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   localStorage.clear()
+  sessionStorage.clear()
   Object.defineProperty(window, "location", { configurable: true, value: originalLocation })
 })
 function mockResponses(...statuses: number[]) {
@@ -37,7 +39,7 @@ describe("authenticated requests", () => {
     session.logoutPending = true
     redirectToLogin()
     expect(window.location.href).toBe("")
-    expect(localStorage.getItem("paprika_return_to")).toBeNull()
+    expect(sessionStorage.getItem("paprika_return_to")).toBeNull()
   })
   it("waits for session bootstrap before requesting protected data", async () => {
     let resolve!: (token: string) => void
@@ -69,7 +71,7 @@ describe("authenticated requests", () => {
     mockResponses(401)
     await sessionFetch("/read", {}, true)
     expect(window.location.href).toBe("/login/")
-    expect(localStorage.getItem("paprika_return_to")).toBe("/dashboard/insights/?dashboard=service&var.service=uptime-api#traces")
+    expect(sessionStorage.getItem("paprika_return_to")).toBe("/dashboard/insights/?dashboard=service&var.service=uptime-api#traces")
   })
   it("does not sign out or navigate on a transient renewal failure", async () => {
     session.recover.mockRejectedValue(new Error("Temporary network failure"))

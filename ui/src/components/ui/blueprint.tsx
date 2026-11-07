@@ -50,7 +50,7 @@ function BoardHeader({
     <div
       data-slot="board-header"
       className={cn(
-        "flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-rule py-1.5 pr-2.5 pl-3.5",
+        "flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-rule py-2 pr-3 pl-3.5",
         className
       )}
     >
@@ -60,7 +60,7 @@ function BoardHeader({
             {index}
           </span>
         ) : null}
-        <h2 className="font-cond text-board font-semibold tracking-[0.04em] whitespace-nowrap uppercase">
+        <h2 className="font-cond text-board leading-tight font-semibold tracking-[0.01em]">
           {title}
         </h2>
       </div>

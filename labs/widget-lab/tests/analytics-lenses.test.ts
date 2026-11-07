@@ -5,9 +5,9 @@ import { cohortCells, cohortConfig, controlConfig, controlSamples, countRows, de
 import { buildCohorts, buildExperiments, buildFactory, buildJourney } from '../src/lenses/analytics/analytics-data';
 import { analyticsChartCatalog, makeAnalyticsCatalogFixture } from '../src/catalog/analytics-fixtures';
 import { registerAnalyticsCharts } from '../src/charts/analytics/register';
-import { getWidgetDefinition } from '../src/vendor/paprika/ui/src/features/insights/widget-registry';
-import { widgetSchema } from '../src/vendor/paprika/ui/src/features/insights/schema';
-import { parseRecordFrame } from '../src/vendor/paprika/ui/src/features/insights/record-data';
+import { getWidgetDefinition } from '@insights/widget-registry';
+import { widgetSchema } from '@insights/schema';
+import { parseRecordFrame } from '@insights/record-data';
 
 describe('cohort population contracts',()=>{
  it('distinguishes future, missing and observed zero',()=>{const f=buildCohorts(true).records!,d=cohortCells(f);expect(d.cells.find(c=>c.cohort==='Oct 26'&&c.week===4)?.observed).toBe(false);expect(d.cells.find(c=>c.cohort==='Sep 14'&&c.week===3)?.percent).toBeNull();const copy=structuredClone(f);copy.rows[1][3]=0;expect(cohortCells(copy).cells[1].percent).toBe(0);});

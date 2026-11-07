@@ -1,9 +1,10 @@
-import { getWidgetDefinition, registerWidgetPlugin } from '../../vendor/paprika/ui/src/features/insights/widget-registry';
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
 import { DistributedQuorumTopology } from './QuorumTopology';
 import { DistributedPeerLatency } from './PeerLatencyMatrix';
 import { DistributedReplicationTracks } from './ReplicationTracks';
 import { DistributedShardMovement } from './ShardMovement';
 import { ownershipPaths, peerCells, peerLatencyConfig, quorumTopologyConfig, replicaSamples, replicationTracksConfig, shardMovementConfig } from './model';
+import { checkedInput } from '../../renderer-extensions/input-issues';
 
 export function registerDistributedCharts() {
   const definitions = [
@@ -12,5 +13,5 @@ export function registerDistributedCharts() {
     { id: 'distributed-replication-tracks', label: 'Replication index tracks', description: 'Common-scale received/applied progress with supplied leader commit, exact time inspection and local time zoom', render: DistributedReplicationTracks, schema: replicationTracksConfig, validate: replicaSamples, fields: [{ key: 'showReceived', label: 'Show received-index tracks', kind: 'boolean' as const }, { key: 'showCommitted', label: 'Show supplied leader commit', kind: 'boolean' as const }, { key: 'showLag', label: 'Show aligned commit-lag plot', kind: 'boolean' as const }] },
     { id: 'distributed-shard-movement', label: 'Shard ownership flow', description: 'Conserved exclusive-ownership paths with supplied transfer intervals and unknown owner states', render: DistributedShardMovement, schema: shardMovementConfig, validate: ownershipPaths, fields: [{ key: 'showValues', label: 'Show ownership counts', kind: 'boolean' as const }, { key: 'showStable', label: 'Show stable ownership paths', kind: 'boolean' as const }] },
   ];
-  for (const d of definitions) if (!getWidgetDefinition('plugin', d.id)) registerWidgetPlugin({ id: d.id, label: d.label, description: d.description, dataKind: 'records', render: d.render, defaultConfig: d.schema.parse({}), parseConfig: value => d.schema.parse(value ?? {}), configFields: d.fields, styleControls: ['tooltips', 'legend'], layout: { mode: 'intrinsic', minWidth: 280, minHeight: 220 }, validateInput: (result, config) => { d.schema.parse(config ?? {}); d.validate(result.records); } });
+  for (const d of definitions) if (!getWidgetDefinition('plugin', d.id)) registerWidgetPlugin({ id: d.id, label: d.label, description: d.description, dataKind: 'records', render: d.render, defaultConfig: d.schema.parse({}), parseConfig: value => d.schema.parse(value ?? {}), configFields: d.fields, styleControls: ['tooltips', 'legend'], sizing: { mode: 'intrinsic', minWidth: 280, minHeight: 220 }, validateInput: (result, config) => checkedInput(() => { d.schema.parse(config ?? {}); d.validate(result.records); }) });
 }

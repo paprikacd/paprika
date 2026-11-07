@@ -39,4 +39,11 @@ describe("saved query presentation", () => {
     expect(screen.getByRole("combobox", { name: "Saved query" })).not.toHaveAttribute("aria-describedby");
     expect(screen.queryByText("production", { exact: true })).not.toBeInTheDocument();
   });
+
+  it("uses the query data kind instead of guessing a provider language", () => {
+    const withoutDescription = { ...query, description: undefined, tags: undefined, metadata: undefined };
+    expect(savedQueryOption({ ...withoutDescription, kind: "metrics", providerId: "postgresql" }).description).toBe("Metrics · 0 parameters");
+    expect(savedQueryOption({ ...withoutDescription, kind: "records", providerId: "postgresql", parameters: [{ name: "service", type: "string" }] }).description).toBe("Records · 1 parameter");
+    expect(savedQueryOption({ ...withoutDescription, kind: "traces", providerId: "cloudtrace" }).description).toBe("Traces · 0 parameters");
+  });
 });

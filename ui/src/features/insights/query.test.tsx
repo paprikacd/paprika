@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createQueryScheduler, useWidgetQuery } from "./query";
+import { createQueryScheduler, createResolvedQueryFetcher, useWidgetQuery } from "./query";
 import type { QueryRequest, QueryResult, Widget } from "./schema";
 
 const widget: Widget = {
@@ -26,6 +26,46 @@ afterEach(() => {
 });
 
 describe("widget query lifecycle", () => {
+  it("keys resolved fetchers by their actual request and underlying scheduler", () => {
+    const scheduler = createQueryScheduler(vi.fn().mockResolvedValue(data));
+    const wrap = (service: string, unrelated: string) => { void unrelated; return createResolvedQueryFetcher(scheduler, request => ({ ...request, query: service })); };
+    const request: QueryRequest = { ...bounds, providerId: "prometheus", query: "latency", kind: "metrics" };
+    const first = wrap("api", "one"), unrelated = wrap("api", "two"), changed = wrap("worker", "two");
+    expect(first.requestRevision).toBe(unrelated.requestRevision);
+    expect(first.requestIdentity?.(request)).toBe(unrelated.requestIdentity?.(request));
+    expect(first.requestIdentity?.(request)).not.toBe(changed.requestIdentity?.(request));
+    const unavailable = createResolvedQueryFetcher(scheduler, () => { throw new Error("Missing service"); });
+    expect(unavailable.requestIdentity?.(request)).toContain("Missing service");
+    expect(createResolvedQueryFetcher(createQueryScheduler(vi.fn().mockResolvedValue(data)), request => request).requestRevision).not.toBe(first.requestRevision);
+  });
+  it("retains an unchanged resolved query across unrelated dashboard changes and cancels changed bindings", async () => {
+    let finishWorker!: (value: QueryResult) => void;
+    const provider = vi.fn((request: QueryRequest, signal: AbortSignal): Promise<QueryResult> => { void signal; return request.query === "worker"
+      ? new Promise(resolve => { finishWorker = resolve; })
+      : Promise.resolve(data); });
+    const wrapped = (service: string, unrelated: string) => { void unrelated; return Object.assign(
+      (request: QueryRequest, signal: AbortSignal) => provider({ ...request, query: service }, signal),
+      { requestIdentity: () => service, requestRevision: provider },
+    ); };
+    const { result, rerender } = renderHook(({ fetcher }) => useWidgetQuery(widget, { ...bounds, fetcher }),
+      { initialProps: { fetcher: wrapped("api", "one") } });
+    await waitFor(() => expect(result.current.data).toEqual(data));
+    const initialSignal = provider.mock.calls[0][1];
+    rerender({ fetcher: wrapped("api", "two") });
+    expect(result.current.data).toBe(data);
+    expect(initialSignal.aborted).toBe(false);
+    expect(provider).toHaveBeenCalledTimes(1);
+    rerender({ fetcher: wrapped("worker", "two") });
+    expect(result.current.data).toBeUndefined();
+    await waitFor(() => expect(provider).toHaveBeenCalledTimes(2));
+    const workerSignal = provider.mock.calls[1][1];
+    expect(initialSignal.aborted).toBe(true);
+    rerender({ fetcher: wrapped("api", "three") });
+    await waitFor(() => expect(result.current.data).toBe(data));
+    expect(workerSignal.aborted).toBe(true);
+    await act(async () => finishWorker({ series: [] }));
+    expect(result.current.data).toBe(data);
+  });
   it("restores cached saved-query results when a dashboard variable returns to a previous value", async () => {
     const provider = vi.fn(async (request: QueryRequest): Promise<QueryResult> => ({
       series: [{ name: request.query, labels: { service: request.query }, points: [{ timestamp: 1000, value: request.query === "api" ? 101.2345 : 202.3456 }] }],

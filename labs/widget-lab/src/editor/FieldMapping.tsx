@@ -1,8 +1,8 @@
 import { Check, CircleAlert, Columns3 } from 'lucide-react';
 import { useId } from 'react';
-import { GammaSelect } from '../vendor/paprika/ui/src/features/insights/gamma/select';
-import type { QueryResult, Widget } from '../vendor/paprika/ui/src/features/insights/schema';
-import type { WidgetConfigField, WidgetDefinition } from '../vendor/paprika/ui/src/features/insights/widget-registry';
+import { GammaSelect } from '@insights/gamma/select';
+import type { QueryResult, Widget } from '@insights/schema';
+import type { WidgetConfigField, WidgetDefinition } from '@insights/widget-registry';
 import { bindingMismatch, formatFieldSample, validateFieldBindings, type DiscoveredField } from './field-bindings';
 
 export function FieldMapping({ field, definition, config, result, columns, onChange }: {

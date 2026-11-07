@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
-import { ChartTooltip } from './ChartTooltip';
+import { ChartTooltip } from '../../renderer-extensions/chart-tooltip';
 import { useLabMotion } from './motion';
 import './DomainPrimitives.css';
 

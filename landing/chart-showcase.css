@@ -1,0 +1,59 @@
+/* Public chart gallery. Paprika's documented landing tokens remain authoritative. */
+.chart-showcase{padding:clamp(86px,9vw,136px) 0 108px;background:var(--navy);color:var(--paper)}
+.chart-showcase-heading{align-items:end;margin-bottom:36px}
+.chart-showcase-heading .eyeline{color:#b5d9fd}
+.chart-showcase-heading h2{max-width:14ch}
+.chart-showcase-heading .section-lede{color:#d9e4ed}
+.chart-showcase-facts{display:flex;flex-wrap:wrap;gap:10px 33px;margin-bottom:30px;padding:18px 0;border-top:1px solid var(--line-on-dark);border-bottom:1px solid var(--line-on-dark);font:500 14px/1.45 var(--sans);color:#c6d7e5}
+.chart-showcase-facts span{display:flex;align-items:baseline;gap:9px}
+.chart-showcase-facts strong{color:var(--white);font:600 clamp(25px,2.6vw,36px)/1 var(--display);font-variant-numeric:tabular-nums}
+.chart-showcase-stage{background:#101a25;border:1px solid #577087;box-shadow:15px 15px 0 rgba(13,23,33,.56);min-width:0}
+.chart-showcase-controls{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;padding:10px 12px 10px 20px;border-bottom:1px solid #46617a;background:#20354a;min-width:0}
+.chart-showcase-tabs{display:flex;align-items:center;gap:5px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;min-width:0;max-width:100%;padding-bottom:2px}
+.chart-showcase-tabs a{display:inline-flex;align-items:center;flex:none;white-space:nowrap;min-height:37px;padding:7px 12px;border:1px solid transparent;color:#c7d9e7;font:600 12px/1.2 var(--sans)}
+.chart-showcase-tabs a:hover{background:#304c65;color:var(--white)}
+.chart-showcase-tabs a[aria-current=true]{color:var(--white);background:#385e7c;border-color:#739ab8}
+.chart-showcase-open{display:inline-flex;align-items:center;justify-content:center;gap:9px;flex:none;padding:9px 12px;border:1px solid #7798b0;color:var(--white);font:600 12px/1.3 var(--sans);white-space:nowrap}
+.chart-showcase-open:hover{background:#385e7c}
+.chart-showcase-screen{position:relative;min-width:0;background:#10171f;isolation:isolate}
+.chart-showcase-screen::before{content:'Rendering the chart catalogue';position:absolute;top:20px;left:22px;color:#9cb3c5;font:500 12px/1.5 var(--mono);z-index:-1}
+.chart-showcase-screen iframe{display:block;width:100%;height:clamp(510px,58vw,775px);border:0;background:#10171f}
+.chart-showcase-status{display:flex;align-items:center;gap:14px 24px;padding:15px 20px;border-top:1px solid #46617a;color:#cbd9e4;font:400 13px/1.4 var(--sans)}
+.chart-showcase-status p{margin:0;flex:1;max-width:none;min-width:0}
+.chart-showcase-provenance{display:flex;align-items:center;gap:8px;white-space:nowrap;font:600 10px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.035em;color:#acc6dc}
+.chart-showcase-provenance i{display:inline-block;width:6px;height:6px;border-radius:50%;background:#a5c1d6}
+.chart-showcase-status > a{display:none;color:var(--white);font-size:12px;font-weight:600;border-bottom:1px solid currentColor;white-space:nowrap}
+.chart-showcase-context{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(24px,5vw,74px);margin-top:68px;border-top:1px solid var(--line-on-dark)}
+.chart-showcase-context > div{padding:30px 0 0;min-width:0}
+.chart-showcase-context > div+div{border-left:1px solid var(--line-on-dark);padding-left:clamp(24px,5vw,70px)}
+.chart-showcase-context-label{display:block;color:#b5d9fd;font:500 11px/1.3 var(--mono);text-transform:uppercase;letter-spacing:.07em;margin-bottom:15px}
+.chart-showcase-context h3{font-size:clamp(29px,3.3vw,45px);max-width:18ch;margin-bottom:12px}
+.chart-showcase-context p{font-size:16px;line-height:1.6;color:#dae5ed;margin-bottom:18px}
+.chart-showcase-context .link-arrow{font-size:15px}
+@media(max-width:920px){
+ .chart-showcase-controls{flex-direction:column;align-items:stretch;gap:10px;padding:12px}
+ .chart-showcase-tabs{width:100%}
+ .chart-showcase-open{align-self:flex-end}
+ .chart-showcase-screen iframe{height:670px}
+ .chart-showcase-status{align-items:flex-start;flex-wrap:wrap}
+ .chart-showcase-provenance{flex:none}
+ .chart-showcase-status p{flex-basis:60%}
+}
+@media(max-width:600px){
+ .chart-showcase{padding:85px 0 88px}
+ .chart-showcase-heading{gap:23px}
+ .chart-showcase-facts{gap:12px 20px}
+ .chart-showcase-facts span{font-size:12px}
+ .chart-showcase-facts strong{font-size:27px}
+ .chart-showcase-stage{margin:0 -12px;box-shadow:none}
+ .chart-showcase-tabs a{padding:8px 10px}
+ .chart-showcase-open{display:none}
+ .chart-showcase-screen iframe{height:590px}
+ .chart-showcase-status{gap:10px;padding:12px}
+ .chart-showcase-status p{flex-basis:100%;font-size:12px}
+ .chart-showcase-status > a{display:inline-flex}
+ .chart-showcase-context{grid-template-columns:1fr;gap:24px;margin-top:42px}
+ .chart-showcase-context > div+div{border-left:0;border-top:1px solid var(--line-on-dark);padding:25px 0 0}
+}
+@media(prefers-reduced-motion:reduce){.chart-showcase-tabs{scroll-behavior:auto}}
+

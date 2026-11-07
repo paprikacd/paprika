@@ -46,6 +46,12 @@
       ],
       "additionalProperties": false
     },
+    "timeZone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of the calendar time axis, the observation inspector and the chart window labels; metric tooltips, linear axis ticks and other readouts always use the viewer's zone. Omitted, the labels above use the viewer's zone."
+    },
     "variables": {
       "maxItems": 20,
       "type": "array",
@@ -86,10 +92,12 @@
       "type": "string",
       "enum": [
         "15m",
+        "30m",
         "1h",
         "6h",
         "24h",
-        "7d"
+        "7d",
+        "30d"
       ]
     },
     "refreshInterval": {
@@ -238,6 +246,119 @@
             ],
             "additionalProperties": false
           },
+          "annotationSource": {
+            "type": "object",
+            "properties": {
+              "queryRef": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+                  },
+                  "bindings": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "parameter": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                            },
+                            "source": {
+                              "type": "string",
+                              "const": "variable"
+                            },
+                            "variable": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                            }
+                          },
+                          "required": [
+                            "parameter",
+                            "source",
+                            "variable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "parameter": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                            },
+                            "source": {
+                              "type": "string",
+                              "const": "constant"
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 1024
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "parameter",
+                            "source",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "timestampColumn": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "endColumn": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "labelColumn": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "severityColumn": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "queryRef",
+              "timestampColumn",
+              "labelColumn"
+            ],
+            "additionalProperties": false
+          },
           "description": {
             "type": "string",
             "maxLength": 500
@@ -276,8 +397,71 @@
               "showSparkline": {
                 "type": "boolean"
               },
+              "showStatBar": {
+                "type": "boolean"
+              },
+              "sparklinePlacement": {
+                "type": "string",
+                "enum": [
+                  "background",
+                  "side"
+                ]
+              },
+              "statIcon": {
+                "type": "string",
+                "enum": [
+                  "arrow-down",
+                  "arrow-up",
+                  "shield",
+                  "network",
+                  "activity",
+                  "target",
+                  "pie"
+                ]
+              },
               "showTooltip": {
                 "type": "boolean"
+              },
+              "tooltipTitle": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "tooltipValueLabel": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "tooltipShowUnit": {
+                "type": "boolean"
+              },
+              "tooltipDecimals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8
+              },
+              "tooltipPlacement": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "top",
+                  "right",
+                  "bottom",
+                  "left"
+                ]
+              },
+              "tooltipOffset": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 40
+              },
+              "tooltipMaxWidth": {
+                "type": "number",
+                "minimum": 220,
+                "maximum": 640
+              },
+              "tooltipMaxHeight": {
+                "type": "number",
+                "minimum": 160,
+                "maximum": 800
               },
               "tooltipView": {
                 "type": "object",
@@ -296,6 +480,10 @@
                   },
                   "height": {
                     "anyOf": [
+                      {
+                        "type": "number",
+                        "const": 80
+                      },
                       {
                         "type": "number",
                         "const": 120
@@ -641,6 +829,11 @@
                 "minimum": 0,
                 "maximum": 8
               },
+              "staleAfterSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2678400
+              },
               "min": {
                 "type": "number"
               },
@@ -697,8 +890,113 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "seriesColors": {
+                "maxItems": 24,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "maxLength": 100,
+                      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "value",
+                    "color"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "gridX": {
+                "type": "boolean"
+              },
+              "timeAxis": {
+                "type": "string",
+                "enum": [
+                  "linear",
+                  "calendar"
+                ]
+              },
+              "axisUnit": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "ticks",
+                  "caption"
+                ]
+              },
+              "referenceLines": {
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "number"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "showZeroLine": {
+                "type": "boolean"
+              },
+              "plotInsetLeft": {
+                "type": "number",
+                "minimum": 8,
+                "maximum": 240
+              },
+              "plotInsetRight": {
+                "type": "number",
+                "minimum": 8,
+                "maximum": 120
               }
             },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "showStatBar": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "showStatBar"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "min",
+                    "max"
+                  ]
+                }
+              }
+            ],
             "additionalProperties": false
           },
           "pluginId": {
@@ -792,6 +1090,39 @@
               "additionalProperties": false
             }
           },
+          "selectionBindings": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variable": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "label",
+                    "value",
+                    "series",
+                    "constant"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "required": [
+                "variable",
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
           "layout": {
             "type": "object",
             "properties": {
@@ -812,7 +1143,7 @@
               },
               "h": {
                 "type": "integer",
-                "minimum": 2,
+                "minimum": 1,
                 "maximum": 12
               }
             },
@@ -833,6 +1164,31 @@
           "query",
           "unit",
           "layout"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "stat"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "else": {
+              "properties": {
+                "layout": {
+                  "properties": {
+                    "h": {
+                      "minimum": 2
+                    }
+                  }
+                }
+              }
+            }
+          }
         ],
         "additionalProperties": false
       }
@@ -882,5 +1238,5 @@
   },
   "title": "Paprika Insights dashboard",
   "description": "Version 1 of the portable Paprika Insights dashboard document.",
-  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names."
+  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, timeZone names from the canonical IANA list (exact and case-sensitive, so offsets, Local, Factory and posixrules are refused), safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names."
 }
