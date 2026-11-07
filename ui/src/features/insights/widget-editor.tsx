@@ -71,7 +71,17 @@ function tooltipPresentation(options?: WidgetOptions): Partial<WidgetOptions> {
     ...(options?.tooltipValueLabel !== undefined ? { tooltipValueLabel: options.tooltipValueLabel } : {}),
     ...(options?.tooltipShowUnit !== undefined ? { tooltipShowUnit: options.tooltipShowUnit } : {}),
     ...(options?.tooltipDecimals !== undefined ? { tooltipDecimals: options.tooltipDecimals } : {}),
+    ...(options?.tooltipPlacement !== undefined ? { tooltipPlacement: options.tooltipPlacement } : {}),
+    ...(options?.tooltipOffset !== undefined ? { tooltipOffset: options.tooltipOffset } : {}),
+    ...(options?.tooltipMaxWidth !== undefined ? { tooltipMaxWidth: options.tooltipMaxWidth } : {}),
+    ...(options?.tooltipMaxHeight !== undefined ? { tooltipMaxHeight: options.tooltipMaxHeight } : {}),
   };
+}
+
+/** Tooltip settings also belong to renderers that do not support embedded tooltip widgets. */
+function supportsTooltipSettings(widget: Pick<Widget, "type" | "pluginId">): boolean {
+  return widget.type !== "plugin" ||
+    getWidgetDefinition(widget.type, widget.pluginId)?.styleControls?.includes("tooltips") === true;
 }
 
 /** Widgets whose observation inspector reads tooltipPlacement, tooltipOffset, tooltipMaxWidth and tooltipMaxHeight. */
@@ -234,11 +244,10 @@ function StyleEditor({
       : "#c46146";
   return (
     <div className={styles.stack}>
-      {supportsTooltipView(widget.type, widget.pluginId) && (
+      {supportsTooltipSettings(widget) && (
         <div className={styles.tooltipShortcut}>
           <p className={styles.hint}>
-            Add a widget or change the details shown when you inspect this
-            visualization.
+            Control the details shown when you inspect this visualization.
           </p>
           <GammaButton
             type="button"
@@ -518,19 +527,6 @@ function StyleEditor({
             onChange={(showValues) => update({ showValues })}
           />
         </>
-      )}
-      {hasStyleControl("tooltips") && !supportsTooltipView(widget.type, widget.pluginId) && (
-        <GammaSwitch
-          label="Show tooltips"
-          checked={options.showTooltip !== false}
-          onChange={(showTooltip) => update({ showTooltip })}
-        />
-      )}
-      {hasStyleControl("tooltips") && !supportsTooltipView(widget.type, widget.pluginId) && options.showTooltip !== false && (
-        <TooltipPresentationEditor options={options} onChange={update} />
-      )}
-      {rendersInspectorPlacement(widget) && options.showTooltip !== false && (
-        <TooltipPlacementEditor options={options} onChange={update} />
       )}
       {(["heatmap", "stat", "bar", "timeseries"].includes(widget.type) || gauge || ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") || (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds")) && (
         <fieldset className={styles.thresholds}>
@@ -943,7 +939,7 @@ export function WidgetEditor({
     if (type !== "stat" && dimensions.h < 2) setSize({ w: dimensions.w, h: 2 });
     setPendingVisualization(undefined);
     setDraft(next);
-    if (tab === "tooltips" && !supportsTooltipView(type, next.pluginId)) setTab("style");
+    if (tab === "tooltips" && !supportsTooltipSettings(next)) setTab("style");
   }
   const source = preview ?? widget;
   const sourceText = sourceFormat === "yaml"
@@ -1214,7 +1210,7 @@ export function WidgetEditor({
               />
             ),
           },
-          ...(supportsTooltipView(draft.type, draft.pluginId)
+          ...(supportsTooltipSettings(draft)
             ? [
                 {
                   id: "tooltips",
@@ -1225,14 +1221,20 @@ export function WidgetEditor({
                         <h3>Details on demand</h3>
                         <p className={styles.hint}>
                           {draft.type === "plugin" && draft.pluginId === "geo-heatmap"
-                            ? "Inspect a hex to see its recorded values and shared labels. Add a widget for more context."
+                            ? "Inspect a hex to see its recorded values and shared labels."
                             : draft.type === "timeseries"
-                            ? "Inspect a chart point to see its value and time. Add a widget for more context."
-                            : draft.type === "bar"
-                              ? "Inspect a bar to see its latest valid value. Add a widget for more context."
-                              : draft.type === "table"
-                                ? "Inspect a row to see its latest valid value and labels. Add a widget for more context."
-                                : "Inspect a heatmap cell to see its value, status and labels. Add a widget for more context."}
+                              ? "Inspect a chart point to see its value and time."
+                              : draft.type === "bar"
+                                ? "Inspect a bar to see its latest valid value."
+                                : draft.type === "table"
+                                  ? "Inspect a row to see its latest valid value and labels."
+                                  : draft.type === "stat"
+                                    ? "Inspect the sparkline to see recorded values and sample times."
+                                    : draft.type === "traces"
+                                      ? "Inspect a trace to see its duration and recorded attributes."
+                                      : draft.type === "plugin"
+                                        ? "Inspect a chart item to see its recorded values and labels."
+                                        : "Inspect a heatmap cell to see its value, status and labels."}
                         </p>
                       </div>
                       <GammaSwitch
@@ -1252,44 +1254,57 @@ export function WidgetEditor({
                         </p>
                       ) : (
                         <>
-                        <TooltipPresentationEditor options={draft.options ?? {}} onChange={(options) => setDraft({ ...draft, options: { ...draft.options, ...options } })} />
-                        <label className={styles.field}>
-                          Details decimal places
-                          <GammaInput
-                            type="number"
-                            min={0}
-                            max={8}
-                            step={1}
-                            value={draft.options?.decimals ?? ""}
-                            placeholder="Auto"
-                            onChange={(event) => setDraft({
-                              ...draft,
-                              options: { ...draft.options, decimals: event.target.value === "" ? undefined : Number(event.target.value) },
-                            })}
+                          <TooltipPresentationEditor
+                            options={draft.options ?? {}}
+                            onChange={(options) => setDraft({ ...draft, options: { ...draft.options, ...options } })}
                           />
-                        </label>
-                        <p className={styles.hint}>
-                          Also sets the widget’s value precision. Query bindings
-                          and inspected source data keep their original values.
-                        </p>
-                        <TooltipEditor
-                          view={draft.options?.tooltipView}
-                          hostType={draft.type}
-                          providers={providers}
-                          client={client}
-                          parentProviderId={draft.providerId}
-                          parentColor={draft.color}
-                          parentFields={queryFields}
-                          parentQueryRef={draft.queryRef}
-                          onChange={(tooltipView) =>
-                            setDraft({
-                              ...draft,
-                              options: { ...draft.options, tooltipView },
-                            })
-                          }
-                          pluginConfig={tooltipPluginConfig}
-                          onPluginConfigChange={setTooltipPluginConfig}
-                        />
+                          {rendersInspectorPlacement(draft) && (
+                            <TooltipPlacementEditor
+                              options={draft.options ?? {}}
+                              onChange={(options) => setDraft({ ...draft, options: { ...draft.options, ...options } })}
+                            />
+                          )}
+                          {supportsTooltipView(draft.type, draft.pluginId) && (
+                            <>
+                              <label className={styles.field}>
+                                Details decimal places
+                                <GammaInput
+                                  type="number"
+                                  min={0}
+                                  max={8}
+                                  step={1}
+                                  value={draft.options?.decimals ?? ""}
+                                  placeholder="Auto"
+                                  onChange={(event) => setDraft({
+                                    ...draft,
+                                    options: { ...draft.options, decimals: event.target.value === "" ? undefined : Number(event.target.value) },
+                                  })}
+                                />
+                              </label>
+                              <p className={styles.hint}>
+                                Also sets the widget’s value precision. Query bindings
+                                and inspected source data keep their original values.
+                              </p>
+                              <TooltipEditor
+                                view={draft.options?.tooltipView}
+                                hostType={draft.type}
+                                providers={providers}
+                                client={client}
+                                parentProviderId={draft.providerId}
+                                parentColor={draft.color}
+                                parentFields={queryFields}
+                                parentQueryRef={draft.queryRef}
+                                onChange={(tooltipView) =>
+                                  setDraft({
+                                    ...draft,
+                                    options: { ...draft.options, tooltipView },
+                                  })
+                                }
+                                pluginConfig={tooltipPluginConfig}
+                                onPluginConfigChange={setTooltipPluginConfig}
+                              />
+                            </>
+                          )}
                         </>
                       )}
                     </div>
