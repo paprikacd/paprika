@@ -126,6 +126,9 @@ export function galleryDocuments(providers) {
       nodeStates.unit = "";
       nodeStates.options = { ...nodeStates.options, decimals: 0, thresholds: [{ value: 0, color: "#e45d50", label: "Unavailable" }, { value: 1, color: "#e4ac35", label: "Pressure" }, { value: 2, color: "#20b88b", label: "Ready" }] };
       nodeStates.config = { ...nodeStates.config, labelField: "node", showTimeAxis: true, maxSeries: 8, maxPoints: 120, segmented: true };
+      nodeStates.layout = { ...nodeStates.layout, x: 0, w: 8 };
+      const disk = dashboard.widgets.find(widget => widget.id === "disk-meter");
+      disk.layout = { ...disk.layout, x: 8, w: 4 };
       nodeStates.selectionBindings = [{ variable: "node", source: "label", value: "node" }];
       dashboard.description += " Node readiness and conditions are independent synthetic observations; the ready count includes observed ready and pressure states only, and missing samples are unknown.";
       const resource = dashboard.widgets.find(widget => widget.id === "resources");
@@ -321,6 +324,7 @@ export function galleryDocuments(providers) {
     // Reference studies use a compact top row without leaving an empty grid
     // track between the KPIs and the first chart.
     for (const widget of dashboard.widgets) {
+      if (widget.type === "stat") widget.options = { ...widget.options, sparklinePlacement: "side" };
       if (widget.type === "stat" && widget.layout.y === 0 && widget.layout.h === 3) widget.layout.h = 1;
       else if (widget.layout.y > 0) widget.layout.y -= 2;
     }

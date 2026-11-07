@@ -31,6 +31,8 @@ export const exampleDashboard: Dashboard = {
       providerId: "example-prometheus",
       query: "sum(rate(http_requests_total[5m]))",
       unit: "req/s",
+      color: "#2867b9",
+      options: { showSparkline: true, sparklinePlacement: "side", decimals: 0 },
       layout: { x: 0, y: 0, w: 4, h: 2 },
     },
     {
@@ -41,7 +43,8 @@ export const exampleDashboard: Dashboard = {
       query:
         "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) * 1000",
       unit: "ms",
-      color: "#648b76",
+      color: "#087f8c",
+      options: { showSparkline: true, sparklinePlacement: "side", decimals: 1 },
       layout: { x: 4, y: 0, w: 4, h: 2 },
     },
     {
@@ -52,7 +55,8 @@ export const exampleDashboard: Dashboard = {
       query:
         'sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) * 100',
       unit: "%",
-      color: "#7698ad",
+      color: "#b65332",
+      options: { showSparkline: true, sparklinePlacement: "side", decimals: 2 },
       layout: { x: 8, y: 0, w: 4, h: 2 },
     },
     {

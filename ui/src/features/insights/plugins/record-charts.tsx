@@ -5,6 +5,8 @@ import { z } from "zod"
 import { formatMetric, EmptyState, ObservationTooltip } from "../chart-renderers"
 import type { RecordFrame } from "../schema"
 import { DashboardWindowProvider } from "../dashboard-window"
+import { useDashboardTimeZone } from "../dashboard-time-zone"
+import { formatTimeTick } from "../chart-data"
 import { TimeWindowLens } from "../time-window-lens"
 import type { ObservationWindow } from "../time-window"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
@@ -47,6 +49,7 @@ function plotData(frame:RecordFrame, config:Config) {
 }
 
 function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererProps & {bar?:boolean}) {
+  const timeZone = useDashboardTimeZone()
   const unique=useId()
   const plot=useRef<SVGSVGElement>(null)
   const [bounds,setBounds]=useState({width:600,height:280})
@@ -99,7 +102,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const barWidth=Math.min(28,plotWidth*spacing/(domainSpan||1)*.8/series.length)
   const extent=(right:boolean)=>{const values=series.filter(s=>s.right===right).flatMap(s=>s.points.flatMap(p=>p.value===null?[]:[p.value]));return {min:Math.min(0,...values),max:Math.max(1,...values)}}
   const left=extent(false),right=extent(true), scale=(value:number,isRight:boolean)=>{const range=isRight?right:left;return plotBottom-positionFraction(value,range.min,range.max)*plotHeight}
-  const xText=(x:number,exact=false)=>data.category?data.categories[Math.round(x)]??"":data.xColumn.type==="timestamp"?(exact?new Date(x).toISOString():maxX-minX<86_400_000?new Date(x).toISOString().slice(11,16):new Date(x).toISOString().slice(0,10)):exact?String(x):formatMetric(x,"",false,0)
+  const xText=(x:number,exact=false)=>data.category?data.categories[Math.round(x)]??"":data.xColumn.type==="timestamp"?(exact?new Date(x).toISOString():formatTimeTick(x,maxX-minX,timeZone)):exact?String(x):formatMetric(x,"",false,0)
   const ticks=(data.category?[minX,positions[Math.floor((positions.length-1)/2)],maxX]:[minX,minX*.5+maxX*.5,maxX]).filter((x,i,list)=>list.indexOf(x)===i)
   const select=(entry:PlotSeries,point:Datum)=>onContextChange?.({series:entry.name,value:point.value,labels:Object.fromEntries(frame.columns.flatMap((column,i)=>point.row[i]===null?[]:[[column.key,String(point.row[i])]])),...(data.xColumn.type==="timestamp"?{timestamp:point.x}:{})})
   const current=tooltipEnabled&&inspection?.revision===revision?inspection:undefined

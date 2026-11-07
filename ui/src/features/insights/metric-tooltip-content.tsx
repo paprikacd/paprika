@@ -1,7 +1,8 @@
 "use client";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import { useDashboardTimeZone } from "./dashboard-time-zone";
 import type { Widget } from "./schema";
-import { seriesName, formatMetricDetails, exactMetric, fullDateTimeFormat, type Point, type Series } from "./chart-data";
+import { seriesName, formatMetricDetails, exactMetric, fullDateTimeOptions, type Point, type Series } from "./chart-data";
 import { validTimestamp } from "./widget-context";
 import configStyles from "./chart-styles.module.css";
 
@@ -34,13 +35,15 @@ export function MetricDetails({
   showSourceContext?: boolean;
   children?: ReactNode;
 }) {
+  const timeZone = useDashboardTimeZone();
+  const timestampFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
   const value =
     typeof point?.value === "number" && Number.isFinite(point.value)
       ? point.value
       : undefined;
   const timestamp = point && validTimestamp(point.timestamp) ? (
     <time dateTime={new Date(point.timestamp).toISOString()}>
-      {fullDateTimeFormat.format(new Date(point.timestamp))}
+      {timestampFormat.format(new Date(point.timestamp))}
     </time>
   ) : <span>No valid timestamp</span>;
   return (

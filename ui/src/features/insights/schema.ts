@@ -745,6 +745,7 @@ export function newWidget(
     providerId: provider?.id ?? "unconfigured",
     query: kind === "traces" ? "{}" : "up",
     unit: "",
+    ...(type === "stat" ? { options: { sparklinePlacement: "side" as const } } : {}),
     ...(type === "heatmap"
       ? {
           options: {

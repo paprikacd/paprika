@@ -36,6 +36,11 @@ const dashboard: Dashboard = {
 }
 
 describe("tooltip sub-widget contract", () => {
+  it("places newly authored stat sparklines beside values without rewriting legacy documents", () => {
+    expect(newWidget("stat", [], []).options?.sparklinePlacement).toBe("side")
+    expect(widgetSchema.parse({ ...dashboard.widgets[0], type: "stat", options: { showSparkline: true } }).options?.sparklinePlacement).toBeUndefined()
+  })
+
   it("accepts optional stat sparkline booleans without changing legacy defaults", () => {
     for (const enabled of [true, false]) {
       expect(tooltipViewSchema.parse({ type: "stat", showSparkline: enabled })).toEqual({ type: "stat", showSparkline: enabled })

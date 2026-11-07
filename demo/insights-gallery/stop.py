@@ -23,6 +23,8 @@ if state.get("network") != f"paprika-gallery-network-{suffix}" or state.get("vol
 for name in names.values():
     subprocess.run(["docker", "stop", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 subprocess.run(["docker", "network", "rm", state["network"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-if args.delete_data:
+if args.delete_data and state.get("storage") == "bind":
+    print("Bind-mounted data remains in the selected state directory; remove that directory explicitly when no longer needed.")
+elif args.delete_data:
     subprocess.run(["docker", "volume", "rm", state["volume"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-print("Stopped selected gallery containers." + (" Synthetic Prometheus data removed." if args.delete_data else " Prometheus volume retained."))
+print("Stopped selected gallery containers." + (" Local data retained in the state directory." if state.get("storage") == "bind" else " Synthetic Prometheus data removed." if args.delete_data else " Prometheus volume retained."))

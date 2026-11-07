@@ -3,12 +3,20 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordBar, RecordLine } from "./record-charts"
 import type { QueryResult, Widget } from "../schema"
 import { DashboardWindowProvider } from "../dashboard-window"
+import { DashboardTimeZoneProvider } from "../dashboard-time-zone"
 
 afterEach(cleanup)
 const widget: Widget = { id:"chart",title:"Service observations",type:"plugin",pluginId:"records-line",dataKind:"records",providerId:"uptime",query:"records",unit:"",layout:{x:0,y:0,w:6,h:4},options:{decimals:2},config:{x:"service",y:["uptime"]} }
 const frame = (rows: NonNullable<QueryResult["records"]>["rows"]): QueryResult => ({records:{columns:[{key:"service",type:"string"},{key:"uptime",type:"number",unit:"percent"}],rows}})
 
 describe("record charts", () => {
+  it("labels timestamps in the dashboard zone while retaining the exact source instant", () => {
+    const result: QueryResult = {records:{columns:[{key:"at",type:"timestamp"},{key:"value",type:"number"}],rows:[["2026-11-07T00:00:00Z",12],["2026-11-07T01:00:00Z",24]]}}
+    render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><RecordLine widget={{...widget,config:{x:"at",y:["value"]}}} result={result}/></DashboardTimeZoneProvider>)
+    expect(screen.getByText("11:00")).toBeInTheDocument()
+    expect(screen.getByText("12:00")).toBeInTheDocument()
+    expect(screen.getByRole("img",{name:"value · 2026-11-07T00:00:00.000Z · 12.00"})).toBeInTheDocument()
+  })
   it.each([{rows:[["api",12]]},{rows:[["api",12],["worker",24],["web",6]]}])("keeps every complete bar inside the plot, including singleton and edge categories", ({rows}) => {
     const {container} = render(<RecordBar widget={widget} result={frame(rows as NonNullable<QueryResult["records"]>["rows"])} />)
     const clip = container.querySelector("clipPath rect")!
@@ -64,7 +72,7 @@ describe("record charts", () => {
     const start="2026-10-27T01:00:00Z", end="2026-10-27T02:00:00Z"
     const result: QueryResult = {records:{columns:[{key:"at",type:"timestamp"},{key:"rate",label:"Rate",type:"number",unit:"req/s"},{key:"latency",label:"Latency",type:"number",unit:"ms"}],rows:[[end,1,1000],[start,0.5,500]]}}
     const config={x:"at",y:["rate","latency"],rightAxis:["latency"],annotations:[{x:start,label:"Deployment"}]}
-    const {container} = render(<RecordLine widget={{...widget,config}} result={result} />)
+    const {container} = render(<DashboardTimeZoneProvider timeZone="UTC"><RecordLine widget={{...widget,config}} result={result} /></DashboardTimeZoneProvider>)
     const rate=screen.getByRole("img",{name:"Rate · 2026-10-27T02:00:00.000Z · 1.00 req/s"})
     const latency=screen.getByRole("img",{name:"Latency · 2026-10-27T02:00:00.000Z · 1,000.00 ms"})
     expect(rate.getAttribute("cy")).toBe(latency.getAttribute("cy"))

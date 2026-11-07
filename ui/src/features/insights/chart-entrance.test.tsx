@@ -129,7 +129,7 @@ describe("chart-entrance styles", () => {
   it("applies every rule only to a plot carrying data-chart-entering, so nothing animates on a static render", () => {
     const selectors = [...rules.replace(/@keyframes [\w-]+ \{[\s\S]*?\n\}/g, "").matchAll(/([^{}]+)\{/g)].flatMap((match) => match[1].split(",").map((selector) => selector.trim()));
     expect(selectors.length).toBeGreaterThan(0);
-    for (const selector of selectors) expect(selector).toMatch(/^\[data-chart-entering\] /);
+    for (const selector of selectors) expect(selector).toMatch(/^\[data-chart-entering\](?:\.tanstackPlot)? /);
   });
 
   it("covers TanStack's line, area and bar groups, and leaves axes, grids and guides out", () => {

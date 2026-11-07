@@ -18,6 +18,7 @@ try {
     const page=await context.newPage(), fixture=await installRichChartFixtureAPI(page,base)
     page.on("pageerror",error=>errors.push(error.message))
     const dashboard=fixture.documents.get("example-artboard-service-pulse"), widget=dashboard.widgets.find(widget=>widget.id==="states")
+    dashboard.timeZone="Australia/Melbourne"
     fixture.savedQueries.set("test-incidents",{schemaVersion:1,id:"test-incidents",name:"Recorded incidents",providerId:"example-records",kind:"records",query:'{"fixture":"test-incident"}'})
     const chart=dashboard.widgets.find(widget=>widget.id==="request-history")
     chart.annotationSource={queryRef:{id:"test-incidents"},timestampColumn:"started_at",endColumn:"ended_at",labelColumn:"label",severityColumn:"severity"}
@@ -56,9 +57,10 @@ try {
     assert.equal(await rows.count(),5)
     assert.deepEqual(await rows.evaluateAll(nodes=>nodes.map(node=>node.getAttribute("data-history-series"))),["uptime-api","payment-api","auth-api","catalog-api","worker"])
     assert.notEqual(await rows.first().getByRole("button").first().evaluate(node=>getComputedStyle(node).boxShadow),"none")
-    const axis=host.getByRole("group",{name:"Status history time scale in UTC"})
+    const axis=host.getByRole("group",{name:"Status history time scale in Australia/Melbourne"})
     assert.equal(await axis.locator("time").count(),5)
     const times=await axis.locator("time").evaluateAll(nodes=>nodes.map(node=>Date.parse(node.dateTime)))
+    assert.equal(await axis.locator("time").first().innerText(), new Intl.DateTimeFormat(undefined,{timeZone:"Australia/Melbourne",month:"short",day:"numeric"}).format(times[0]))
     assert.equal(times[4]-times[0],30*24*60*60*1000)
     const incident=rows.nth(1).getByRole("button",{name:/Breaching/}); await incident.focus()
     await page.keyboard.press("Enter")

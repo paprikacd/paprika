@@ -7,7 +7,7 @@ import type { Dashboard } from "./schema";
 vi.mock("./canvas", () => ({ DashboardCanvas: ({ referenceCompact }: { referenceCompact?: boolean }) => <div data-testid="canvas" data-reference-compact={referenceCompact || undefined} /> }));
 afterEach(() => { cleanup(); window.localStorage.clear(); vi.restoreAllMocks(); });
 
-function setup({ dense = true, theme = "dark", width = 1440, fine = true } = {}) {
+function setup({ dense = true, theme = "dark", width = 1440, fine = true, description = "Synthetic local observations; no production traffic." } = {}) {
   window.history.replaceState(null, "", "/dashboard/insights/");
   window.localStorage.setItem("paprika-insights-compact-view", String(dense));
   window.localStorage.setItem("paprika-insights-theme", theme);
@@ -15,7 +15,7 @@ function setup({ dense = true, theme = "dark", width = 1440, fine = true } = {})
     matches: query === "(min-width: 1024px)" ? width >= 1024 : query === "(max-width: 950px)" ? width <= 950 : query === "(pointer: fine)" ? fine : false,
     media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
   }));
-  const dashboard: Dashboard = { schemaVersion: 1, id: "edge", title: "Edge Watch", description: "Synthetic local observations; no production traffic.", widgets: [{ id: "stat", type: "stat", title: "Observed", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 4, h: 1 } }], refreshInterval: 0, timeRange: "1h" };
+  const dashboard: Dashboard = { schemaVersion: 1, id: "edge", title: "Edge Watch", description, widgets: [{ id: "stat", type: "stat", title: "Observed", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 4, h: 1 } }], refreshInterval: 0, timeRange: "1h" };
   const client: InsightsClient = {
     providers: vi.fn().mockResolvedValue([]), list: vi.fn().mockResolvedValue([dashboard]),
     get: vi.fn().mockResolvedValue({ dashboard, etag: '"v1"' }), save: vi.fn(), remove: vi.fn(), query: vi.fn(),
@@ -68,6 +68,19 @@ it("leaves compact chrome while editing without clearing the stored preference",
   expect(await screen.findByLabelText("Dashboard title")).toHaveValue("Edge Watch");
   expect(container.querySelector("[data-compact-shell]")).toBeNull();
   expect(window.localStorage.getItem("paprika-insights-compact-view")).toBe("true");
+  expect(client.save).not.toHaveBeenCalled();
+});
+
+it("keeps long mobile context accessible without taking space from the metrics", async () => {
+  const description = "Synthetic local provider observations. Node readiness is independently sampled; missing samples remain unknown. The resource inventory is a separate snapshot and must not be interpreted as the same observation.";
+  const { client } = setup({ width: 390, description, dense: false });
+  await screen.findByRole("heading", { name: "Edge Watch" });
+  const disclosure = screen.getByText("Dashboard context").closest("details")!;
+  expect(disclosure).not.toHaveAttribute("open");
+  expect(disclosure).toHaveTextContent(description);
+  fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }));
+  expect(screen.queryByText("Dashboard context")).not.toBeInTheDocument();
+  expect(screen.getByText(description)).toBeVisible();
   expect(client.save).not.toHaveBeenCalled();
 });
 

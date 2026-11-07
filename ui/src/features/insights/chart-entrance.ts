@@ -1,6 +1,4 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useState, type RefObject } from "react";
-// The reveal rules for TanStack's mark groups are global selectors, so this module must load them with the hook.
-import "./chart-entrance.module.css";
 
 /**
  * The one-time draw-in of a chart's marks, on its first render only. While it plays, the plot carries

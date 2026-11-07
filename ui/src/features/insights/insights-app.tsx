@@ -1358,7 +1358,7 @@ export default function InsightsApp({
             ) : (
               <h1>{dashboard.title}</h1>
             )}
-            {dashboard.description && (compactShell ? <details className={styles.compactDescription}><summary>Dashboard context</summary><p>{dashboard.description}</p></details> : <p>{dashboard.description}</p>)}
+            {dashboard.description && (compactShell || (isMobile && !editing && dashboard.description.length > 140) ? <details className={styles.compactDescription}><summary>Dashboard context</summary><p>{dashboard.description}</p></details> : <p>{dashboard.description}</p>)}
           </div>
           <div className={styles.actions}>
             {isMobile || compactShell ? <GammaActionMenu
