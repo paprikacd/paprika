@@ -169,6 +169,30 @@ async function visit(page, path) {
   await identity(page, path);
 }
 
+async function deploymentImage(page, filename) {
+  const image = page.locator('.deployment-diagram img');
+  await image.scrollIntoViewIfNeeded();
+  await page.waitForFunction((filename) => {
+    const image = document.querySelector('.deployment-diagram img');
+    return image?.complete && image.naturalWidth > 0 && new URL(image.currentSrc).pathname.endsWith(`/${filename}`);
+  }, filename);
+  await image.evaluate((element) => element.decode());
+  await page.waitForFunction(() => {
+    const workbench = document.querySelector('#deployment [data-gamma-tabs]');
+    return getComputedStyle(workbench).opacity === '1';
+  });
+}
+
+async function deploymentTabs(page, device) {
+  const suffix = device === 'mobile' ? '-mobile' : '';
+  for (const phase of ['source', 'build', 'apply', 'observe']) {
+    await page.locator(`#deploy-${phase}-tab`).click();
+    await deploymentImage(page, `deployment-${phase}${suffix}.svg`);
+    assert(await page.locator(`#deploy-${phase}`).isVisible());
+  }
+  await page.locator('.deployment-diagram').screenshot({ path: resolve(artifacts, `${device}-deployment.png`) });
+}
+
 async function structuredDataMatchesPage(page, path) {
   const rendered = await page.evaluate(() => {
     const canonical = document.querySelector('link[rel="canonical"]').href;
@@ -269,6 +293,7 @@ async function run() {
           : device === 'mobile' && path === 'docs/' ? 'mobile-docs-index.png'
           : device === 'mobile' && path.startsWith('blog/kubernetes-') ? 'mobile-article.png' : null;
         if (screenshot) await page.screenshot({ path: resolve(artifacts, screenshot), fullPage: false, animations: 'disabled' });
+        if (path === '') await deploymentTabs(page, device);
       }
       if (device === 'mobile') {
         await visit(page, 'docs/');
@@ -288,7 +313,79 @@ async function run() {
         await tocAnchor(page);
       }
     } finally { await context.close(); }
-    console.log(`PASS ${device}: five page types, metadata, layout${device === 'mobile' ? ', menu and contents navigation' : ''}`);
+    console.log(`PASS ${device}: five page types, metadata, layout, all four decoded lifecycle diagrams${device === 'mobile' ? ', menu and contents navigation' : ''}`);
+  }
+
+  for (const [device, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
+    const suffix = device === 'mobile' ? '-mobile' : '';
+    const unavailable = ['source', 'build'].map((phase) => `${BASE}diagrams/deployment-${phase}${suffix}.svg`);
+    const { page, context } = await newPage({ viewport }, unavailable);
+    try {
+      const failureStatus = device === 'desktop' ? 503 : 200;
+      for (const path of unavailable) {
+        await page.route(`**${path}`, (route) => route.fulfill({ status: failureStatus,
+          contentType: 'image/svg+xml', body: 'Diagram temporarily unavailable' }));
+      }
+      const initialFailure = page.waitForResponse((response) => new URL(response.url()).pathname === unavailable[0]);
+      await visit(page, '');
+      await page.locator('.deployment-diagram').scrollIntoViewIfNeeded();
+      assert.equal((await initialFailure).status(), failureStatus);
+      await deploymentImage(page, `deployment${suffix}.svg`);
+
+      // A failed later phase must show the neutral overview, not the preceding phase's highlight.
+      await page.locator('#deploy-apply-tab').click();
+      await deploymentImage(page, `deployment-apply${suffix}.svg`);
+      const nextFailure = page.waitForResponse((response) => new URL(response.url()).pathname === unavailable[1]);
+      await page.locator('#deploy-build-tab').click();
+      assert.equal((await nextFailure).status(), failureStatus);
+      await deploymentImage(page, `deployment${suffix}.svg`);
+      assert(await page.locator('#deploy-build').isVisible());
+      await page.locator('.deployment-diagram').screenshot({ path: resolve(artifacts, `${device}-deployment-fallback.png`) });
+
+      // Both responsive sources must remain usable after a failed enhancement.
+      await page.setViewportSize(device === 'mobile' ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
+      await deploymentImage(page, `deployment${device === 'mobile' ? '' : '-mobile'}.svg`);
+      await page.locator('#deploy-observe-tab').click();
+      await deploymentImage(page, `deployment-observe${device === 'mobile' ? '' : '-mobile'}.svg`);
+      console.log(`PASS ${device}: failed initial/later phase images retain the overview; resize and subsequent phases recover`);
+    } finally { await context.close(); }
+  }
+
+  const delayed = await newPage();
+  let releaseImages;
+  const pendingImages = new Promise((accept) => { releaseImages = accept; });
+  try {
+    const paths = ['deployment-build.svg', 'deployment-build-mobile.svg'];
+    for (const path of paths) {
+      await delayed.page.route(`**/diagrams/${path}`, async (route) => {
+        await pendingImages;
+        await route.continue();
+      });
+    }
+    await visit(delayed.page, '');
+    await deploymentImage(delayed.page, 'deployment-source.svg');
+    const requested = delayed.page.waitForRequest(`**/diagrams/deployment-build.svg`);
+    await delayed.page.locator('#deploy-build-tab').click();
+    await requested;
+    await deploymentImage(delayed.page, 'deployment.svg');
+    await delayed.page.locator('#deploy-observe-tab').click();
+    await deploymentImage(delayed.page, 'deployment-observe.svg');
+    releaseImages();
+    // Let the delayed SVGs finish decoding before checking that they did not win the race.
+    await delayed.page.evaluate(async (paths) => {
+      await Promise.all(paths.map(async (path) => {
+        const image = new Image();
+        image.src = `./diagrams/${path}`;
+        await image.decode();
+      }));
+      await new Promise((accept) => requestAnimationFrame(() => requestAnimationFrame(accept)));
+    }, paths);
+    await deploymentImage(delayed.page, 'deployment-observe.svg');
+    assert(await delayed.page.locator('#deploy-observe').isVisible());
+    console.log('PASS delayed phase images: overview remains visible while loading; the latest selected phase wins');
+  } finally {
+    releaseImages();
+    await delayed.context.close();
   }
 
   const { page, context } = await newPage();
@@ -382,6 +479,8 @@ async function run() {
 
   const noJS = await newPage({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   try {
+    await visit(noJS.page, '');
+    await deploymentImage(noJS.page, 'deployment-mobile.svg');
     await visit(noJS.page, 'docs/');
     await directory(noJS.page);
     assert.equal(await noJS.page.locator('[data-docs-search]').isVisible(), false);
