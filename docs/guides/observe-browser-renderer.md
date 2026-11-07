@@ -10,7 +10,7 @@ worker using the exact published image digest.
 Build the opt-in image with:
 
 ```sh
-docker build -f ui/Dockerfile.render-worker -t ghcr.io/paprikacd/paprika:render-worker-sha-<revision> .
+docker build -f ui/Dockerfile.render-worker -t ghcr.io/paprikacd/paprika-render-worker:<revision> .
 node --test ui/render-worker.test.mjs
 ```
 
@@ -57,23 +57,8 @@ freshness separately.
 ## Trusted publication and VKE deployment
 
 After the required checks pass on a trusted master push, the existing publish
-job builds both the application and `ui/Dockerfile.render-worker`. The worker
-uses `ghcr.io/paprikacd/paprika:render-worker-sha-<commit>` in the existing public
-application package. The application's `latest` and `sha-<commit>` tags remain
-application images. This avoids introducing a separately private package:
-[GHCR defaults new packages to private](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry),
-and linking a public repository does not make a new package public.
-
-Before deployment, `hack/check-anonymous-image-access.sh` checks the manifests
-of both exact published digests with a fresh Docker config and no environment
-credentials. A denied or missing manifest fails publication and prevents the
-dependent VKE job from starting. This matters because VKE has no committed
-registry pull secrets and the gateway uses a `Recreate` rollout strategy.
-The check reads registry manifests; it does not claim that a VKE node has
-downloaded or started the containers.
-
-The job passes each immutable `ghcr.io/paprikacd/paprika@sha256:…` digest to the
-VKE reusable workflow. That workflow validates
+job builds both the application and `ui/Dockerfile.render-worker`. It passes
+each immutable GHCR digest to the VKE reusable workflow. That workflow validates
 the renderer reference before privileged operations, then calls
 `hack/prepare-dashboard-renderer.sh` in the verified `vke` context.
 
@@ -88,9 +73,6 @@ the final authenticated screenshot check.
 Manual application deployments may omit `render_worker_image_ref`; the helper
 preserves an already deployed immutable worker image. If no worker is deployed,
 that manual path leaves it disabled. It never substitutes an unpinned tag.
-Existing immutable `ghcr.io/paprikacd/paprika-render-worker@sha256:…` references
-remain accepted for manual compatibility; their registry access must already
-be configured by the installation owner.
 
 ## Helm activation (after real-browser verification)
 
@@ -108,7 +90,7 @@ as the renderer shared secret.
 observabilityGateway:
   renderWorker:
     enabled: true
-    image: ghcr.io/paprikacd/paprika@sha256:<verified-worker-image-digest>
+    image: ghcr.io/paprikacd/paprika-render-worker@sha256:<verified-image-digest>
     uiOrigin: http://paprika-e2e-api-server:3000
     secretName: paprika-dashboard-renderer
     secretKey: secret

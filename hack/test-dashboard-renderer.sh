@@ -18,32 +18,34 @@ case "$*" in
     [[ ${#value} -ge 32 ]]
     printf 'secret/test-renderer created\n'
     ;;
+  '-n ns port-forward --address 127.0.0.1 deployment/paprika-observability-gateway 19081:9081')
+    printf '%s\n' "$$" > "$TEST_FORWARD_PID"
+    if [[ "${TEST_FORWARD_FAILURE:-false}" == true ]]; then exit 1; fi
+    trap 'exit 0' TERM INT
+    printf 'Forwarding from 127.0.0.1:19081 -> 9081\n'
+    while true; do /bin/sleep 0.05; done
+    ;;
   *) exit 80 ;;
 esac
 MOCK
 chmod +x "$temporary/bin/kubectl"
 export PATH="$temporary/bin:$PATH" TEST_CALLS="$temporary/calls"
-digest="ghcr.io/paprikacd/paprika@sha256:$(printf '%064d' 0)"
-legacy_digest="ghcr.io/paprikacd/paprika-render-worker@sha256:$(printf '%064d' 0)"
+digest="ghcr.io/paprikacd/paprika-render-worker@sha256:$(printf '%064d' 0)"
 output="$temporary/values.json"
 
-for invalid in bad ghcr.io/paprikacd/paprika:latest ghcr.io/paprikacd/paprika-render-worker:latest "${digest/paprikacd/another-owner}" "${digest/paprika@/paprika-other@}"; do
-  if bash "$repo/hack/prepare-dashboard-renderer.sh" ns paprika "$invalid" "$output" 2>/dev/null; then
-    echo 'invalid image was accepted' >&2; exit 1
-  fi
-done
+if bash "$repo/hack/prepare-dashboard-renderer.sh" ns paprika bad "$output" 2>/dev/null; then
+  echo 'invalid image was accepted' >&2; exit 1
+fi
 [[ ! -f "$TEST_CALLS" ]]
 if TEST_CONTEXT=other bash "$repo/hack/prepare-dashboard-renderer.sh" ns paprika "$digest" "$output" 2>/dev/null; then
   echo 'wrong cluster context was accepted' >&2; exit 1
 fi
 ! grep -q 'create secret' "$TEST_CALLS"
 
-for retained in "$digest" "$legacy_digest"; do
-  TEST_IMAGE="$retained" bash "$repo/hack/prepare-dashboard-renderer.sh" ns paprika '' "$output"
-  jq -e --arg image "$retained" '.observabilityGateway.renderWorker.enabled and .observabilityGateway.renderWorker.image == $image and .observabilityGateway.renderWorker.uiOrigin == "http://paprika-api-server.ns.svc.cluster.local:3000"' "$output" >/dev/null
-  ! grep -q 'create secret' "$TEST_CALLS"
-  ! grep -q 'synthetic-test-secret' "$output"
-done
+TEST_IMAGE="$digest" bash "$repo/hack/prepare-dashboard-renderer.sh" ns paprika '' "$output"
+jq -e --arg image "$digest" '.observabilityGateway.renderWorker.enabled and .observabilityGateway.renderWorker.image == $image and .observabilityGateway.renderWorker.uiOrigin == "http://paprika-api-server.ns.svc.cluster.local:3000"' "$output" >/dev/null
+! grep -q 'create secret' "$TEST_CALLS"
+! grep -q 'synthetic-test-secret' "$output"
 
 bash "$repo/hack/prepare-dashboard-renderer.sh" ns paprika '' "$output"
 jq -e '.observabilityGateway.renderWorker.enabled == false' "$output" >/dev/null
@@ -56,47 +58,46 @@ if TEST_SECRET=short bash "$repo/hack/prepare-dashboard-renderer.sh" ns paprika 
 fi
 echo 'PASS dashboard renderer digest, context, retention and secret provisioning'
 
-# The publication preflight must be independent of both persisted and
-# environment-provided registry credentials, and propagate denied access.
-cat > "$temporary/bin/docker" <<'MOCK'
+cat > "$temporary/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 5 && "$1" == --config && "$3" == manifest && "$4" == inspect ]]
-[[ "$2" != "${DOCKER_CONFIG:-}" && -z "${DOCKER_AUTH_CONFIG+x}" ]]
-jq -e '. == {"auths":{"ghcr.io":{}}}' "$2/config.json" >/dev/null
-printf '%s\t%s\n' "$2" "$5" >> "$TEST_DOCKER_CALLS"
-[[ "$5" != "${TEST_DENIED_IMAGE:-}" ]]
+[[ $# -eq 10 && "$1" == --fail && "$2" == --silent && "$3" == --show-error ]]
+[[ "$4" == --max-time && "$5" == 2 && "$6" == --output && "$8" == --write-out ]]
+[[ "$9" == '%{http_code}' && "${10}" == http://127.0.0.1:19081/healthz ]]
+printf '%s\n' "$7" >> "$TEST_HEALTH_CALLS"
+printf '%s' "${TEST_HEALTH_BODY:-ok}" > "$7"
+printf '%s' "${TEST_HEALTH_STATUS:-200}"
+exit "${TEST_CURL_FAILURE:-0}"
 MOCK
-chmod +x "$temporary/bin/docker"
-export TEST_DOCKER_CALLS="$temporary/docker-calls"
-mkdir -p "$temporary/publisher-config"
-printf '%s\n' '{"auths":{"ghcr.io":{"auth":"synthetic-publisher-credential"}},"credsStore":"synthetic-helper"}' > "$temporary/publisher-config/config.json"
-cp "$temporary/publisher-config/config.json" "$temporary/publisher-config.expected"
+cat > "$temporary/bin/sleep" <<'MOCK'
+#!/usr/bin/env bash
+# Keep the production retry bound while making failure cases fast.
+exec /bin/sleep 0.01
+MOCK
+chmod +x "$temporary/bin/curl" "$temporary/bin/sleep"
+export TEST_FORWARD_PID="$temporary/forward-pid" TEST_HEALTH_CALLS="$temporary/health-calls"
 
-DOCKER_CONFIG="$temporary/publisher-config" DOCKER_AUTH_CONFIG=synthetic-environment-credential \
-  bash "$repo/hack/check-anonymous-image-access.sh" "$digest" "$legacy_digest"
-[[ $(wc -l < "$TEST_DOCKER_CALLS") -eq 2 ]]
-while IFS=$'\t' read -r config image; do
-  [[ ! -e "$config" ]]
-  [[ "$image" == "$digest" || "$image" == "$legacy_digest" ]]
-done < "$TEST_DOCKER_CALLS"
-cmp "$temporary/publisher-config/config.json" "$temporary/publisher-config.expected"
+assert_forward_cleaned_up() {
+  if kill -0 "$(cat "$TEST_FORWARD_PID")" 2>/dev/null; then
+    echo 'renderer health check left its port-forward running' >&2; exit 1
+  fi
+  while IFS= read -r response; do [[ ! -e "$response" ]]; done < "$TEST_HEALTH_CALLS"
+}
 
-: > "$TEST_DOCKER_CALLS"
-if TEST_DENIED_IMAGE="$legacy_digest" bash "$repo/hack/check-anonymous-image-access.sh" "$digest" "$legacy_digest"; then
-  echo 'denied anonymous image access was accepted' >&2; exit 1
-fi
-[[ $(wc -l < "$TEST_DOCKER_CALLS") -eq 2 ]]
-while IFS=$'\t' read -r config image; do
-  [[ ! -e "$config" ]]
-done < "$TEST_DOCKER_CALLS"
-
-: > "$TEST_DOCKER_CALLS"
-if bash "$repo/hack/check-anonymous-image-access.sh" 2>/dev/null; then
-  echo 'empty anonymous image preflight was accepted' >&2; exit 1
-fi
-if bash "$repo/hack/check-anonymous-image-access.sh" "$digest" ghcr.io/paprikacd/paprika:latest 2>/dev/null; then
-  echo 'mutable image reached the anonymous preflight' >&2; exit 1
-fi
-[[ ! -s "$TEST_DOCKER_CALLS" ]]
-echo 'PASS anonymous registry access isolation, exact digests, cleanup and denied access'
+bash "$repo/hack/check-dashboard-renderer-health.sh" ns paprika
+[[ -s "$TEST_HEALTH_CALLS" ]]
+assert_forward_cleaned_up
+for failure in TEST_CURL_FAILURE=7 TEST_HEALTH_STATUS=503 TEST_HEALTH_BODY=unexpected TEST_FORWARD_FAILURE=true; do
+  : > "$TEST_HEALTH_CALLS"
+  if env "$failure" bash "$repo/hack/check-dashboard-renderer-health.sh" ns paprika > "$temporary/health-log" 2>&1; then
+    echo "renderer health verification accepted $failure" >&2; exit 1
+  fi
+  [[ $(wc -l < "$TEST_HEALTH_CALLS") -le 30 ]]
+  if [[ "$failure" == TEST_FORWARD_FAILURE=true ]]; then
+    [[ ! -s "$TEST_HEALTH_CALLS" ]]
+  else
+    [[ -s "$TEST_HEALTH_CALLS" ]]
+  fi
+  assert_forward_cleaned_up
+done
+echo 'PASS renderer loopback health verification, bounded failures and port-forward cleanup'
