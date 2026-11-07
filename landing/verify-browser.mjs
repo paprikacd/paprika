@@ -6,6 +6,7 @@ import { createServer, request } from 'node:http';
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { chromium } from 'playwright';
+import { readManifest } from './build-content.mjs';
 
 const BASE = '/paprika/';
 const CANONICAL = 'https://paprikacd.github.io/paprika/';
@@ -166,6 +167,56 @@ async function visit(page, path) {
   const response = await page.goto(url(path), { waitUntil: 'load' });
   assert.equal(response.status(), 200, `${path}: HTTP 200`);
   await identity(page, path);
+}
+
+async function structuredDataMatchesPage(page, path) {
+  const rendered = await page.evaluate(() => {
+    const canonical = document.querySelector('link[rel="canonical"]').href;
+    const publicURL = (href) => {
+      const target = new URL(href, location.href);
+      return target.origin === location.origin ? new URL(target.pathname, canonical).href : target.href;
+    };
+    return {
+      canonical,
+      schemas: [...document.querySelectorAll('script[type="application/ld+json"]')].map((script) => JSON.parse(script.textContent)),
+      title: document.title,
+      description: document.querySelector('meta[name="description"]').content,
+      heading: document.querySelector('h1').textContent.trim(),
+      breadcrumbs: [...document.querySelectorAll('.breadcrumbs li')].map((item) => ({
+        name: item.querySelector('a, [aria-current="page"]').textContent.trim(),
+        item: item.querySelector('a') ? publicURL(item.querySelector('a').href) : canonical,
+      })),
+      author: document.querySelector('[rel="author"]')?.textContent.trim(),
+      authorURL: document.querySelector('[rel="author"]')?.href,
+      date: document.querySelector('.article-header time')?.getAttribute('datetime'),
+      section: document.querySelector('.article-section')?.textContent,
+      entries: [...document.querySelectorAll('.docs-directory .doc-link, .post-copy h2 a')].map((link) => ({
+        name: (link.querySelector('h3') || link).textContent.trim(), url: publicURL(link.href),
+      })),
+    };
+  });
+  assert.equal(rendered.schemas.length, 1, `${path}: one crawlable JSON-LD block`);
+  const graph = rendered.schemas[0]['@graph'];
+  const byID = new Map(graph.map((entity) => [entity['@id'], entity]));
+  const webpage = byID.get(`${rendered.canonical}#webpage`);
+  assert.equal(webpage.name, rendered.title);
+  assert.equal(webpage.description, rendered.description);
+  if (rendered.breadcrumbs.length) {
+    assert.deepEqual(byID.get(webpage.breadcrumb['@id']).itemListElement.map(({ name, item }) => ({ name, item })), rendered.breadcrumbs);
+    assert(await page.locator('.breadcrumbs [aria-current="page"]').isVisible());
+  }
+  const article = graph.find((entity) => ['TechArticle', 'BlogPosting'].includes(entity['@type']));
+  if (article) {
+    assert.equal(article.headline, rendered.heading, `${path}: schema headline matches rendered H1`);
+    assert.equal(byID.get(article.author['@id']).name, rendered.author);
+    assert.equal(byID.get(article.author['@id']).url, rendered.authorURL);
+    assert(await page.locator('[rel="author"]').isVisible());
+    assert.equal(article.datePublished, rendered.date);
+    assert.equal(article.articleSection, rendered.section);
+  }
+  if (rendered.entries.length) {
+    assert.deepEqual(byID.get(webpage.mainEntity['@id']).itemListElement.map(({ name, url }) => ({ name, url })), rendered.entries);
+  }
 }
 
 async function directory(page) {
@@ -345,6 +396,13 @@ async function run() {
     assert((await noJS.page.locator('.prose').innerText()).length > 500);
     assert.equal(await noJS.page.locator('.copy-code').count(), 0);
     console.log('PASS JavaScript disabled: complete directory, readable guides/articles, no dead enhancement controls');
+    const manifest = readManifest();
+    const schemaRoutes = ['', 'docs/', 'blog/', ...manifest.docs.map((item) => item.route), ...manifest.posts.map((item) => item.route)];
+    for (const path of schemaRoutes) {
+      await visit(noJS.page, path);
+      await structuredDataMatchesPage(noJS.page, path);
+    }
+    console.log(`PASS structured data: ${schemaRoutes.length} pages, rendered breadcrumbs, authors, dates, directory entries and mobile layout with JavaScript disabled`);
   } finally { await noJS.context.close(); }
 
   const reduced = await newPage({ reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });

@@ -128,6 +128,39 @@ with `list_recent_browser_events` using the observed site/project IDs. HTTP 202
 alone is not sufficient: rejected or filtered batches can accept zero events.
 Do not send fabricated visits from a command-line HTTP client.
 
+### Structured data
+
+`structured-data.mjs` renders one JSON-LD graph per page at build time. The
+homepage, documentation and blog share stable identities for the Paprika
+website, maintainers and Apache-licensed source project. Each canonical page
+has its own `WebPage` identity; guides use `TechArticle`, posts use
+`BlogPosting`, and directory pages use `CollectionPage` with an `ItemList`
+matching their visible links. The blog also has a shared `Blog` identity.
+
+Visible breadcrumbs and `BreadcrumbList` use the same entries, including the
+current article title. Every article displays its linked maintainer byline.
+Publication dates come only from the blog manifest. Undated guides remain
+undated, and builds never create `dateModified` values. The generic console
+social preview is not asserted to be an article-specific image. Add an article
+image only alongside a relevant, visible illustration and validation for it.
+
+`npm test --prefix landing` covers safe JSON-LD embedding and repeat builds.
+The assembled-site verifier checks graph identities and references, absolute
+URLs and assets, canonical metadata, visible breadcrumbs, bylines, dates and
+directory entries. Browser checks cover all 22 landing/docs/blog pages with
+JavaScript disabled at 390px, plus desktop/mobile reading and navigation.
+Both checks run before the publishing step in the website workflow.
+
+For schema changes, also test representative generated pages in the
+[Schema.org validator](https://validator.schema.org/) and
+[Google Rich Results Test](https://search.google.com/test/rich-results).
+Schema.org validity and Google rich-result eligibility are different checks;
+`SoftwareSourceCode` and `TechArticle` describe the content without inventing
+offers or ratings. Follow the current
+[Google article guidance](https://developers.google.com/search/docs/appearance/structured-data/article)
+when adding editorial metadata. Successful validation does not guarantee a
+particular search appearance.
+
 ### Monitoring through MCP
 
 Use passive reads: `get_browser_analytics_overview`, `get_web_vitals`,
