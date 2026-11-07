@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import {spawn} from "node:child_process"
 import {randomBytes} from "node:crypto"
 import {once} from "node:events"
-import {createServer} from "node:http"
+import {createServer,request as httpRequest} from "node:http"
 import {mkdir,mkdtemp,readFile,rm,writeFile} from "node:fs/promises"
 import {tmpdir} from "node:os"
 import {join,resolve} from "node:path"
@@ -106,6 +106,117 @@ async function verifyResponseIsolation() {
   }
 }
 
+function fixtureProxy(queryRequest) {
+  return createServer((req,res)=>{
+    if(req.method==="POST" && req.url==="/api/insights/query" && queryRequest(req,res))return
+    const target=new URL(req.url,fixture.baseURL)
+    const upstream=httpRequest(target,{method:req.method,headers:{...req.headers,host:target.host}},response=>{
+      res.writeHead(response.statusCode,response.headers)
+      response.pipe(res)
+    })
+    upstream.on("error",()=>{if(!res.headersSent)res.writeHead(502);res.end()})
+    req.on("aborted",()=>upstream.destroy())
+    res.on("close",()=>upstream.destroy())
+    req.pipe(upstream)
+  })
+}
+
+async function verifyCanonicalCapacityRetry(dashboard) {
+  const created=await tool("create_dashboard",{document:{...dashboard,id:"mcp-render-capacity",widgets:[dashboard.widgets[1]]}})
+  let mode="once",attempts=0,rejections=0,retryWorker
+  const proxy=fixtureProxy((req,res)=>{
+    attempts++
+    if(mode!=="always" && rejections!==0)return false
+    rejections++
+    req.resume()
+    res.writeHead(429,{"Content-Type":"application/json","Retry-After":"1"}).end('{"error":"fixture query capacity is exhausted; retry shortly"}')
+    return true
+  })
+  try {
+    await new Promise(resolve=>proxy.listen(0,"127.0.0.1",resolve))
+    retryWorker=createRenderServer({secret,uiOrigin:"http://127.0.0.1:"+proxy.address().port})
+    await new Promise(resolve=>retryWorker.listen(0,"127.0.0.1",resolve))
+    const capture=()=>fetch("http://127.0.0.1:"+retryWorker.address().port+"/render",{
+      method:"POST",headers:{Authorization:"Bearer "+fixture.viewerToken,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":created.etag,"Content-Type":"application/json"},
+      body:JSON.stringify({id:created.document.id,width:1512}),signal:AbortSignal.timeout(25_000),
+    })
+    const recovered=await capture()
+    assert.equal(recovered.status,200,"the canonical UI must recover from one query429 with Retry-After")
+    assert.equal(recovered.headers.get("x-paprika-dashboard-etag"),created.etag)
+    assert.equal(recovered.headers.get("content-type"),"image/png")
+    assert.equal(rejections,1)
+    assert.ok(attempts>=2,"the retry must reach the same canonical read-only query endpoint")
+    await recovered.arrayBuffer()
+    console.log("PASS canonical UI query retries429 with Retry-After and produces an exact-revision PNG")
+
+    mode="always";attempts=0;rejections=0
+    const rejected=await capture()
+    assert.ok([422,504].includes(rejected.status),"persistent429 must end in a widget error or the existing deadline")
+    assert.ok(attempts>=2,"persistent rate limits must exercise the UI's bounded retry path")
+    assert.notEqual(rejected.headers.get("content-type"),"image/png")
+    await rejected.arrayBuffer()
+    console.log("PASS persistent query429 cannot produce a misleading screenshot")
+  } finally {
+    for(const server of [retryWorker,proxy])if(server?.listening) {
+      server.closeAllConnections();await new Promise(resolve=>server.close(resolve))
+    }
+  }
+}
+
+async function verifyDenseDashboard(dashboard) {
+  const document={...dashboard,id:"mcp-render-sixteen-fixture",title:"Synthetic16-widget render fixture",
+    description:"Deterministic test data with16 distinct fixture expressions; never a production telemetry claim.",
+    widgets:Array.from({length:16},(_,i)=>({...dashboard.widgets[1],id:"fixture-"+(i+1),title:"Synthetic signal "+(i+1),
+      query:dashboard.widgets[1].query+" + "+i,layout:{x:i%4*3,y:Math.floor(i/4)*4,w:3,h:4}})),
+  }
+  const expectedQueries=document.widgets.map(widget=>widget.query).sort()
+  assert.equal(new Set(expectedQueries).size,16)
+  const created=await tool("create_dashboard",{document})
+  const signals=await tool("query_dashboard",{id:document.id,history_points:0,max_series:1},fixture.mcpViewerToken)
+  assert.equal(signals.state,"ok")
+  assert.equal(signals.queryCount.executed,16)
+  assert.equal(signals.queryCount.deduplicated,0)
+  const observedQueries=new Set(),evidence=[]
+  let denseWorker
+  const proxy=fixtureProxy(req=>{
+    const chunks=[]
+    req.on("data",chunk=>chunks.push(chunk))
+    req.on("end",()=>observedQueries.add(JSON.parse(Buffer.concat(chunks).toString("utf8")).query))
+    return false
+  })
+  try {
+    await new Promise(resolve=>proxy.listen(0,"127.0.0.1",resolve))
+    denseWorker=createRenderServer({secret,uiOrigin:"http://127.0.0.1:"+proxy.address().port})
+    await new Promise(resolve=>denseWorker.listen(0,"127.0.0.1",resolve))
+    for(const width of [1512,390]) {
+      observedQueries.clear()
+      const response=await fetch("http://127.0.0.1:"+denseWorker.address().port+"/render",{
+        method:"POST",headers:{Authorization:"Bearer "+fixture.viewerToken,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":created.etag,"Content-Type":"application/json"},
+        body:JSON.stringify({id:document.id,width,theme:"dark"}),signal:AbortSignal.timeout(25_000),
+      })
+      assert.equal(response.status,200,`synthetic16-widget render failed at${width}px: `+response.headers.get("x-paprika-render-failure"))
+      assert.equal(response.headers.get("x-paprika-dashboard-etag"),created.etag)
+      assert.equal(response.headers.get("content-type"),"image/png")
+      const png=Buffer.from(await response.arrayBuffer())
+      assert.deepEqual([...png.subarray(0,8)],[137,80,78,71,13,10,26,10])
+      assert.equal(png.readUInt32BE(16),width)
+      assert.ok(png.readUInt32BE(20)>=980 && png.readUInt32BE(20)<=12000 && png.length<=(4<<20))
+      assert.deepEqual([...observedQueries].sort(),expectedQueries,"every distinct fixture query must reach the canonical HTTP endpoint")
+      await writeFile(join(output,`synthetic-sixteen-dark-${width}.png`),png)
+      evidence.push({width,height:png.readUInt32BE(20),widgets:16,queries:observedQueries.size,etag:created.etag})
+      console.log(`PASS synthetic16-widget dashboard at${width}px renders16 distinct queries with exact revision`)
+    }
+    const after=await tool("get_dashboard",{id:document.id},fixture.mcpViewerToken)
+    assert.equal(after.etag,created.etag)
+    assert.deepEqual(after.document,created.document,"dense browser captures must not mutate their saved document")
+    return evidence
+  } finally {
+    for(const server of [denseWorker,proxy])if(server?.listening) {
+      server.closeAllConnections();await new Promise(resolve=>server.close(resolve))
+    }
+  }
+}
+
 try {
   await mkdir(output,{recursive:true})
   await verifyResponseIsolation()
@@ -159,7 +270,9 @@ try {
   const after=await tool("get_dashboard",{id:dashboard.id},fixture.mcpViewerToken)
   assert.equal(after.etag,created.etag)
   assert.deepEqual(after.document,created.document,"screenshot inspection must not mutate saved documents")
-  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,redirectIsolationVerified:true,conditionalReadVerified:true,queryErrorRejected:true,focusedInspectionVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true},null,2))
+  await verifyCanonicalCapacityRetry(dashboard)
+  const denseDashboard=await verifyDenseDashboard(dashboard)
+  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,denseDashboard,redirectIsolationVerified:true,conditionalReadVerified:true,queryErrorRejected:true,focusedInspectionVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true,capacityRetryVerified:true,persistentCapacityRejected:true},null,2))
   console.log("PASS focused inspection, revision conflict, provider denial and read-only document preservation")
 } finally {
   await closeRenderBrowser()

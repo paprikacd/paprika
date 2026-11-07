@@ -1,7 +1,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 import {request} from "node:http"
-import {parseRenderRequest,allowedRequest,createRenderServer} from "./render-worker.mjs"
+import {parseRenderRequest,allowedRequest,createRenderServer,RenderError} from "./render-worker.mjs"
 
 test("strict viewport, identity and no arbitrary URL",()=>{
   assert.deepEqual(parseRenderRequest({id:"board"}),{id:"board",width:1512,theme:"dark",focusWidget:""})
@@ -100,4 +100,45 @@ test("render worker rejects missing and invalid authentication",async()=>{
   } finally {
     await new Promise(resolve=>server.close(resolve))
   }
+})
+
+test("render failures expose only fixed categories and numeric HTTP statuses",async()=>{
+  const privateText="https://private.example/path?token=never-echo Bearer delegated-read-token "+secret
+  const unknown=new Error(privateText)
+  unknown.category=privateText;unknown.status=503;unknown.upstreamStatus=privateText
+  const changed=new RenderError("insights_http",422,429)
+  changed.category=privateText;changed.message=privateText;changed.upstreamStatus=privateText
+  for(const [error,category,upstream] of [
+    [unknown,"render_failed",null],
+    [changed,"render_failed",null],
+    [new RenderError(privateText),"render_failed",null],
+    [new RenderError("insights_http",422,429),"insights_http","429"],
+    [new RenderError("redirect_rejected",422,302),"redirect_rejected","302"],
+    [new RenderError("query_error",422,200),"query_error","200"],
+    [new RenderError("insights_http",422,"429"),"insights_http",null],
+    [new RenderError("insights_http",422,700),"insights_http",null],
+  ]) {
+    error.stack=privateText
+    await withServer({renderPage:async()=>{throw error}},async origin=>{
+      const response=await fetch(origin+"/render",{method:"POST",headers,body:'{"id":"board"}'})
+      assert.equal(response.status,422)
+      assert.equal(response.headers.get("x-paprika-render-failure"),category)
+      assert.equal(response.headers.get("x-paprika-render-upstream-status"),upstream)
+      const body=await response.text()
+      assert.equal(body,"")
+      const wire=JSON.stringify([...response.headers])+body
+      for(const forbidden of ["private.example","never-echo","delegated-read-token",secret]) assert.equal(wire.includes(forbidden),false)
+    })
+  }
+})
+
+test("deadline diagnostics retain the existing timeout status without exception text",async()=>{
+  await withServer({timeoutMs:30,renderPage:async(params,token,origin,signal)=>new Promise((resolve,reject)=>{
+    signal.addEventListener("abort",()=>reject(new Error("private browser exception "+token)),{once:true})
+  })},async origin=>{
+    const response=await fetch(origin+"/render",{method:"POST",headers,body:'{"id":"board"}'})
+    assert.equal(response.status,504)
+    assert.equal(response.headers.get("x-paprika-render-failure"),"render_deadline")
+    assert.equal(await response.text(),"")
+  })
 })

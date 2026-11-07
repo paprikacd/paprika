@@ -500,6 +500,58 @@ describe("point and row tooltip hosts", () => {
     expect(labels).toHaveTextContent("service: api");
   });
 
+  it("uses the legend's percentile identities without replacing authored labels or historical observations", async () => {
+    const percentiles = [
+      { quantile: "p50", historical: 0, latest: 1.25 },
+      { quantile: "p95", historical: 9.456789, latest: 19.15 },
+      { quantile: "p99", historical: 9.981234, latest: 29.75 },
+    ];
+    const response: QueryResult = { series: percentiles.map(({ quantile, historical, latest }) => ({
+      name: `{quantile="${quantile}"}`,
+      labels: { quantile },
+      points: [{ timestamp: 1000.25, value: historical }, { timestamp: 2000.5, value: latest }],
+    })) };
+    const original = JSON.stringify(response);
+    const fetcher = vi.fn().mockResolvedValue(child);
+    render(<Host value={{ ...widget, options: { tooltipTitle: "Latency percentiles", tooltipValueLabel: "Duration", tooltipDecimals: 2 } }} response={response} fetcher={fetcher} />);
+    const legend = screen.getByRole("list", { name: "Latest values by series" });
+    for (const { quantile } of percentiles) expect(within(legend).getByText(quantile, { exact: true })).toBeVisible();
+    const chart = screen.getByRole("img", { name: widget.title });
+    hoverLine(chart, 2, 0);
+    const tip = await screen.findByRole("tooltip");
+    fireEvent.keyDown(chart, { key: "Enter" });
+    expect(within(tip).getByText("Latency percentiles", { exact: true })).toBeVisible();
+    expect(within(tip).getByText("Duration", { exact: true })).toBeVisible();
+    expect(within(tip).getByText("Selected series · p99", { exact: true })).toBeVisible();
+    expect(tip.querySelector("[data-observation-series]")).toHaveAttribute("data-observation-series", '{quantile="p99"}');
+    expect(tip.querySelector("[data-observation-timestamp]")).toHaveAttribute("data-observation-timestamp", "1000.25");
+    expect(tip.querySelector('[data-metric-value="9.981234"]')).toHaveTextContent("9.98 ms");
+    expect(tip.querySelector("details")).toHaveTextContent("9.981234 ms");
+    const peers = Array.from(tip.querySelectorAll("[data-peer-series]"));
+    expect(peers).toHaveLength(2);
+    for (const [index, peer] of peers.entries()) {
+      const expected = percentiles[index];
+      expect(peer.querySelector("summary")).toHaveTextContent(expected.quantile);
+      expect(peer.querySelector("summary")).toBeVisible();
+      expect(peer).toHaveAttribute("data-peer-series", `{quantile="${expected.quantile}"}`);
+      expect(peer).toHaveAttribute("data-peer-value", String(expected.historical));
+      expect(peer).toHaveAttribute("data-peer-timestamp", "1000.25");
+      expect(peer.querySelector("strong")).toHaveTextContent(`${expected.historical.toFixed(2)} ms`);
+    }
+    expect(tip).not.toHaveTextContent(/Series [123]/);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(JSON.stringify(response)).toBe(original);
+  });
+
+  it("keeps single-series observation context without an unnecessary series label", async () => {
+    render(<Host value={{ ...widget, options: {} }} response={{ series: [series[0]] }} />);
+    act(() => screen.getByRole("img", { name: widget.title }).focus());
+    const tip = await screen.findByRole("tooltip");
+    expect(within(tip).getByText("Selected observation", { exact: true })).toBeVisible();
+    expect(tip).not.toHaveTextContent("Selected series ·");
+    expect(tip).not.toHaveTextContent("Other plotted series at this time");
+  });
+
   it("allows inspecting all coincident series when the preview is truncated", async () => {
     render(<Host value={{ ...widget, options: {} }} response={{ series: Array.from({ length: 8 }, (_, i) => ({
       name: `series-${i}`, labels: {}, points: [{ timestamp: 1000, value: i }, { timestamp: 2000, value: i }],
@@ -577,12 +629,13 @@ describe("point and row tooltip hosts", () => {
       tip.querySelector('[data-observation-timestamp="1000.25"]'),
     ).toBeInTheDocument();
     expect(chart).toHaveAttribute("aria-describedby", tip.id);
-    expect(within(tip).getByText("Selected observation")).toBeInTheDocument();
+    expect(within(tip).getByText("Selected series · api")).toBeVisible();
     fireEvent.keyDown(chart, { key: "ArrowRight" });
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     expect(fetcher.mock.calls[1][0]).toMatchObject({
       query: 'metric{service="worker",signal="worker"} > 41 @ 1.0005',
     });
+    expect(within(tip).getByText("Selected series · worker")).toBeVisible();
     fireEvent.keyDown(chart, { key: "ArrowRight" });
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
     expect(fetcher.mock.calls[2][0]).toMatchObject({
@@ -891,7 +944,7 @@ describe("point and row tooltip hosts", () => {
       <Host value={{ ...widget, options: {} }} fetcher={fetcher} />,
     );
     act(() => screen.getByRole("img", { name: widget.title }).focus());
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Selected observation");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Selected series · api");
     expect(screen.getByRole("tooltip").querySelector("[data-tooltip-widget]")).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
     rerender(

@@ -76,6 +76,8 @@ export function usePlotTooltip(
   series: Series[],
   enabled: boolean,
   onContextChange?: (context: DrilldownContext) => void,
+  // Use the host's plotted-series labels so inspection and its legend agree.
+  displayLabels?: readonly string[],
 ) {
   const id = useId();
   useEffect(() => enabled ? installTooltipPointerTracking() : undefined, [enabled]);
@@ -215,6 +217,9 @@ export function usePlotTooltip(
     };
   }, [current, id]);
   const entry = current ? series[current.point.datum.seriesIndex] : undefined;
+  const selectedSeriesLabel = current && widget.type === "timeseries" && displayLabels && displayLabels.length > 1
+    ? displayLabels[current.point.datum.seriesIndex]
+    : undefined;
   const point = current
     ? {
         timestamp: current.point.datum.timestamp,
@@ -268,7 +273,7 @@ export function usePlotTooltip(
             data-observation-timestamp={String(point.timestamp)}
             data-observation-series={entry.name}
           >
-            <MetricDetails widget={widget} series={entry} index={current.point.datum.seriesIndex} point={point} unit={widget.unit} decimals={widget.options?.decimals} description="Selected observation" timestampFirst />
+            <MetricDetails widget={widget} series={entry} index={current.point.datum.seriesIndex} point={point} unit={widget.unit} decimals={widget.options?.decimals} description={selectedSeriesLabel ? `Selected series · ${selectedSeriesLabel}` : "Selected observation"} timestampFirst />
             {widget.type === "timeseries" && peersAtTime.length > 0 && <div className={styles.plotTooltipValues}>
               <span className={styles.plotTooltipCaption}>Other plotted series at this time</span>
               <ul>{(showAllPeers ? peersAtTime : peersAtTime.slice(0, 5)).map(candidate => {
@@ -276,7 +281,7 @@ export function usePlotTooltip(
                 const name = seriesName(peer, candidate.datum.seriesIndex);
                 return <li key={candidate.datum.seriesIndex} data-peer-series={name} data-peer-value={candidate.datum.value} data-peer-timestamp={candidate.datum.timestamp}>
                   <i aria-hidden="true" style={{ background: candidate.color }} />
-                  <details className={styles.tooltipSource}><summary>Series {candidate.datum.seriesIndex + 1}</summary><span className={styles.tooltipSourceIdentity}>{name}</span></details>
+                  <details className={styles.tooltipSource}><summary>{displayLabels?.[candidate.datum.seriesIndex] ?? name}</summary><span className={styles.tooltipSourceIdentity}>{name}</span></details>
                   <strong>{formatMetricDetails(candidate.datum.value!, widget.options?.tooltipShowUnit === false ? "" : widget.unit, widget.options?.tooltipDecimals ?? widget.options?.decimals)}</strong>
                 </li>;
               })}</ul>
