@@ -1,0 +1,22 @@
+{
+  "name": "paprika-public-content",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static documentation and engineering articles for the Paprika public site.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build-content.mjs",
+    "test": "node build-content.mjs --self-test",
+    "test:browser": "node verify-browser.mjs"
+  },
+  "dependencies": {
+    "github-slugger": "2.0.0",
+    "markdown-it": "15.0.3"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}

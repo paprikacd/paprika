@@ -9,8 +9,11 @@ delivery operations, with OAuth sign-in and the same application permissions as
 the API. The guide covers installation, example prompts, and MCP Apps support.
 
 A second, independent MCP surface lives at `/observe/mcp` (the observability
-gateway): read-only tools for querying logs, metrics, and traces through
-`ObservabilityProvider` connectors, granted by the `paprika:observe` scope.
+gateway). The `paprika:observe` scope allows authorized reads of logs, metrics,
+traces, and Insights documents. Creating or editing saved queries and dashboards
+additionally requires explicit `paprika:insights:write` consent and the caller's
+Insights write permission. These document-authoring tools do not grant provider
+configuration or fleet delivery writes.
 See the [observability gateway guide](guides/observability-gateway.md).
 
 ## Direct Connect JSON requests

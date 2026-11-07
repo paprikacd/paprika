@@ -1,0 +1,376 @@
+#!/usr/bin/env node
+// Run against a fully assembled static site, never a production URL.
+// Usage: node landing/verify-browser.mjs <staging-directory> <artifact-directory>
+import assert from 'node:assert/strict';
+import { createServer, request } from 'node:http';
+import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { chromium } from 'playwright';
+
+const BASE = '/paprika/';
+const CANONICAL = 'https://paprikacd.github.io/paprika/';
+const EXPECTED_GUIDES = 16;
+const [stagingArgument, artifactArgument, ...extra] = process.argv.slice(2);
+if (!stagingArgument || !artifactArgument || extra.length) {
+  console.error('Usage: node landing/verify-browser.mjs <staging-directory> <artifact-directory>');
+  process.exit(1);
+}
+const root = await realpath(resolve(stagingArgument));
+const artifacts = resolve(artifactArgument);
+function within(parent, child) {
+  const path = relative(parent, child);
+  return !isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`);
+}
+assert(!within(root, artifacts), 'Screenshot output must be outside the served staging directory.');
+await mkdir(artifacts, { recursive: true });
+for (const file of ['index.html', 'docs/index.html', 'blog/index.html', '404.html', 'search-index.json']) {
+  assert((await stat(resolve(root, file))).isFile(), `Assemble the public site first: missing ${file}`);
+}
+
+const types = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.webp': 'image/webp', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.avif': 'image/avif', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2',
+};
+const errors = [];
+const server = createServer((req, res) => {
+  const send = (status, body, contentType = 'text/plain; charset=utf-8') => {
+    res.writeHead(status, { 'Content-Type': contentType, 'Content-Length': Buffer.byteLength(body),
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.end(req.method === 'HEAD' ? undefined : body);
+  };
+  const missing = async () => send(404, await readFile(resolve(root, '404.html')), types['.html']);
+  (async () => {
+    if (!['GET', 'HEAD'].includes(req.method)) return send(405, 'Method not allowed');
+    // Inspect the raw path before URL normalization can erase dot segments.
+    const rawPath = (req.url || '/').split(/[?#]/, 1)[0];
+    let pathname;
+    try { pathname = decodeURIComponent(rawPath); } catch { return send(400, 'Invalid URL'); }
+    if (/[\u0000-\u001f\u007f\\]/.test(pathname) || pathname.split('/').some((part) => part === '.' || part === '..')) {
+      return send(403, 'Forbidden path');
+    }
+    if (pathname === BASE.slice(0, -1)) {
+      res.writeHead(308, { Location: `${BASE}${new URL(req.url, 'http://localhost').search}` });
+      return res.end();
+    }
+    if (!pathname.startsWith(BASE)) return missing();
+    let file = resolve(root, pathname.slice(BASE.length));
+    if (!within(root, file)) return send(403, 'Forbidden path');
+    try {
+      file = await realpath(file);
+      if (!within(root, file)) return send(403, 'Forbidden path');
+      if ((await stat(file)).isDirectory()) {
+        if (!pathname.endsWith('/')) {
+          res.writeHead(308, { Location: `${rawPath}/${new URL(req.url, 'http://localhost').search}` });
+          return res.end();
+        }
+        file = await realpath(resolve(file, 'index.html'));
+      }
+      if (!within(root, file)) return send(403, 'Forbidden path');
+      if (!(await stat(file)).isFile()) return missing();
+      return send(200, await readFile(file), types[extname(file)] || 'application/octet-stream');
+    } catch (error) {
+      if (['ENOENT', 'ENOTDIR'].includes(error.code)) return missing();
+      throw error;
+    }
+  })().catch((error) => {
+    errors.push(`Preview server: ${error.message}`);
+    if (!res.headersSent) send(500, 'Preview server error');
+    else res.destroy();
+  });
+});
+await new Promise((accept, reject) => {
+  server.once('error', reject);
+  server.listen(0, '127.0.0.1', accept);
+});
+const origin = `http://127.0.0.1:${server.address().port}`;
+const url = (path = '') => `${origin}${BASE}${path}`;
+let browser;
+let deadline;
+let assertions = 0;
+
+function rawStatus(path) {
+  return new Promise((accept, reject) => {
+    const req = request(`${origin}${path}`, (res) => { res.resume(); res.on('end', () => accept(res.statusCode)); });
+    req.setTimeout(5000, () => req.destroy(new Error('Preview server check timed out')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function newPage(options = {}, allowedFailures = []) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 },
+    deviceScaleFactor: 1, serviceWorkers: 'block', ...options });
+  context.setDefaultTimeout(7000);
+  context.setDefaultNavigationTimeout(15000);
+  // External fonts/APIs are not part of this local-site regression gate.
+  // Fulfill them locally so this check never makes requests to production services.
+  await context.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin === origin) return route.continue();
+    const kind = route.request().resourceType();
+    const contentType = kind === 'stylesheet' ? 'text/css' : kind === 'script' ? 'text/javascript' : 'application/json';
+    return route.fulfill({ status: 200, contentType, body: ['fetch', 'xhr'].includes(kind) ? '{}' : '' });
+  });
+  const page = await context.newPage();
+  const expected = new Set(allowedFailures);
+  const localFailure = (address) => {
+    try {
+      const parsed = new URL(address);
+      return parsed.origin === origin && parsed.pathname.startsWith(BASE) && !expected.has(parsed.pathname);
+    } catch { return false; }
+  };
+  page.on('pageerror', (error) => errors.push(`${page.url()}: ${error.message}`));
+  page.on('console', (message) => {
+    // Failed-resource errors are checked below, where intentional failures can be scoped by URL.
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+      errors.push(`${page.url()} console: ${message.text()}`);
+    }
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400 && localFailure(response.url())) errors.push(`HTTP ${response.status()}: ${response.url()}`);
+  });
+  page.on('requestfailed', (req) => {
+    if (localFailure(req.url()) && req.failure()?.errorText !== 'net::ERR_ABORTED') {
+      errors.push(`${req.failure()?.errorText}: ${req.url()}`);
+    }
+  });
+  return { context, page };
+}
+
+async function identity(page, path) {
+  await page.locator('main').first().waitFor({ state: 'visible' });
+  assert.equal(await page.locator('h1:visible').count(), 1, `${path}: one visible H1`);
+  assert((await page.locator('h1:visible').textContent()).trim(), `${path}: nonempty H1`);
+  assert.match(await page.title(), /Paprika/i, `${path}: page title identifies Paprika`);
+  if (path.startsWith('docs/')) assert.match(await page.title(), /docs|documentation/i);
+  if (path.startsWith('blog/')) assert.match(await page.title(), /blog|engineering/i);
+  assert.equal(await page.locator('link[rel="canonical"]').count(), 1);
+  assert.equal(await page.locator('link[rel="canonical"]').getAttribute('href'), `${CANONICAL}${path}`);
+  // Indexable pages deliberately omit this optional tag; do not wait for it to appear.
+  const robots = await page.evaluate(() => document.querySelector('meta[name="robots"]')?.content || '');
+  assert(!/noindex/i.test(robots));
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    root: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  assert(dimensions.root <= dimensions.viewport + 1 && dimensions.body <= dimensions.viewport + 1,
+    `${path}: horizontal page overflow ${JSON.stringify(dimensions)}`);
+  assertions += 1;
+}
+
+async function visit(page, path) {
+  const response = await page.goto(url(path), { waitUntil: 'load' });
+  assert.equal(response.status(), 200, `${path}: HTTP 200`);
+  await identity(page, path);
+}
+
+async function directory(page) {
+  await page.locator('.docs-directory').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.docs-directory .doc-link').count(), EXPECTED_GUIDES);
+}
+
+async function resultsFor(page, query, { empty = false } = {}) {
+  await page.waitForFunction(({ query, empty }) => {
+    const status = document.querySelector('.search-status')?.textContent || '';
+    return status.includes(`found for “${query}”.`) && (empty ? status.startsWith('0 ') : /^[1-9]\d* /.test(status));
+  }, { query, empty });
+  assert.equal(await page.locator('#docs-query').inputValue(), query);
+  assert.equal(await page.locator('.docs-directory').isVisible(), false);
+}
+
+async function tocAnchor(page) {
+  const contents = page.locator('.article-toc details');
+  if (!(await contents.getAttribute('open') !== null)) await contents.locator('summary').click();
+  const link = contents.locator('a[href^="#"]').first();
+  const hash = await link.getAttribute('href');
+  await link.click();
+  await page.waitForFunction((hash) => {
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    const rect = target?.getBoundingClientRect();
+    return location.hash === hash && rect && rect.top >= 0 && rect.top < innerHeight - 20;
+  }, hash);
+}
+
+async function run() {
+  assert.equal(await rawStatus(`${BASE}missing-browser-smoke-page/`), 404, 'Missing pages must return HTTP 404');
+  // An options.path request preserves traversal segments (URL strings normalize literal dot segments).
+  const traversalStatus = await new Promise((accept, reject) => {
+    const req = request({ hostname: '127.0.0.1', port: server.address().port,
+      path: `${BASE}%2e%2e/package.json` }, (res) => { res.resume(); res.on('end', () => accept(res.statusCode)); });
+    req.setTimeout(5000, () => req.destroy(new Error('Traversal check timed out')));
+    req.on('error', reject); req.end();
+  });
+  assert.equal(traversalStatus, 403, 'Preview must reject path traversal');
+  browser = await chromium.launch({ headless: true, timeout: 20000 });
+  const routes = ['', 'docs/', 'blog/', 'docs/getting-started/', 'blog/kubernetes-health-vs-drift/'];
+  for (const [device, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
+    const { page, context } = await newPage({ viewport });
+    try {
+      for (const path of routes) {
+        await visit(page, path);
+        const screenshot = path === '' ? `${device}-home.png`
+          : device === 'desktop' && path === 'docs/getting-started/' ? 'desktop-docs.png'
+          : device === 'desktop' && path.startsWith('blog/kubernetes-') ? 'desktop-article.png'
+          : device === 'mobile' && path === 'docs/' ? 'mobile-docs-index.png'
+          : device === 'mobile' && path.startsWith('blog/kubernetes-') ? 'mobile-article.png' : null;
+        if (screenshot) await page.screenshot({ path: resolve(artifacts, screenshot), fullPage: false, animations: 'disabled' });
+      }
+      if (device === 'mobile') {
+        await visit(page, 'docs/');
+        const menu = page.locator('.mobile-menu');
+        const summary = menu.locator('summary');
+        await summary.click();
+        await menu.locator('.mobile-menu-links').getByRole('link', { name: 'Blog', exact: true }).focus();
+        await page.keyboard.press('Escape');
+        assert.equal(await menu.getAttribute('open'), null, 'Escape closes mobile menu');
+        assert(await summary.evaluate((element) => element === document.activeElement), 'Escape returns focus to Menu');
+        await summary.click();
+        await menu.locator('.mobile-menu-links').getByRole('link', { name: 'Blog', exact: true }).click();
+        await page.waitForURL(url('blog/'));
+        await identity(page, 'blog/');
+        assert.equal(await page.locator('.mobile-menu').getAttribute('open'), null);
+        await visit(page, 'docs/getting-started/');
+        await tocAnchor(page);
+      }
+    } finally { await context.close(); }
+    console.log(`PASS ${device}: five page types, metadata, layout${device === 'mobile' ? ', menu and contents navigation' : ''}`);
+  }
+
+  const { page, context } = await newPage();
+  try {
+    await visit(page, 'docs/');
+    await directory(page);
+    const input = page.locator('#docs-query');
+    await input.fill('promotion');
+    await input.press('Enter');
+    await resultsFor(page, 'promotion');
+    assert(await page.locator('.search-results a[href$="/docs/environment-promotion/"]').count());
+    await page.getByRole('button', { name: 'Clear search', exact: true }).click();
+    await directory(page);
+    assert.equal(await input.inputValue(), '');
+    assert.equal(new URL(page.url()).searchParams.get('q'), null);
+    await input.fill('no-guide-zzzz-67291');
+    await input.press('Enter');
+    await resultsFor(page, 'no-guide-zzzz-67291', { empty: true });
+    await page.getByRole('button', { name: 'Show all guides', exact: true }).click();
+    await directory(page);
+
+    // Typing updates results; only submission creates a navigable search entry.
+    await input.fill('prometheus');
+    await resultsFor(page, 'prometheus');
+    assert.equal(new URL(page.url()).searchParams.get('q'), null);
+    await input.press('Enter');
+    await page.waitForURL((address) => address.searchParams.get('q') === 'prometheus');
+    await input.fill('canary');
+    await resultsFor(page, 'canary');
+    assert.equal(new URL(page.url()).searchParams.get('q'), 'prometheus');
+    await input.press('Enter');
+    await page.waitForURL((address) => address.searchParams.get('q') === 'canary');
+    await page.goBack();
+    await resultsFor(page, 'prometheus');
+    assert.equal(new URL(page.url()).searchParams.get('q'), 'prometheus');
+    await page.goForward();
+    await resultsFor(page, 'canary');
+    await page.getByRole('button', { name: 'Clear search', exact: true }).click();
+    await directory(page);
+    assert.equal(new URL(page.url()).searchParams.get('q'), null);
+    await page.goBack();
+    await resultsFor(page, 'canary');
+    console.log('PASS search: results, clear, empty state, draft queries and Back/Forward history');
+
+    await visit(page, 'docs/getting-started/');
+    await tocAnchor(page);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+    const block = page.locator('[data-code-block]').first();
+    const exactCode = await block.locator('pre code').textContent();
+    assert(exactCode.length > 0);
+    await block.getByRole('button', { name: 'Copy code example 1', exact: true }).click();
+    await block.locator('.code-copy-status').filter({ hasText: 'Code example 1 copied.' }).waitFor();
+    // Paste through the browser clipboard rather than accepting a visual success message alone.
+    await page.evaluate(() => {
+      const textarea = document.createElement('textarea');
+      textarea.id = 'smoke-clipboard-target';
+      textarea.setAttribute('aria-label', 'Clipboard verification');
+      textarea.style.cssText = 'position:fixed;left:10px;top:100px;width:250px;height:100px;z-index:9999';
+      document.body.append(textarea);
+      textarea.focus();
+    });
+    await page.keyboard.press('ControlOrMeta+V');
+    await page.waitForFunction((expected) => document.querySelector('#smoke-clipboard-target')?.value === expected, exactCode);
+    assert.equal(await page.locator('#smoke-clipboard-target').inputValue(), exactCode);
+    await page.locator('#smoke-clipboard-target').evaluate((element) => element.remove());
+    await context.clearPermissions();
+    console.log('PASS contents anchors and exact code clipboard paste');
+  } finally { await context.close(); }
+
+  const failedSearch = await newPage({}, [`${BASE}search-index.json`]);
+  try {
+    let unavailable = true;
+    await failedSearch.page.route(`**${BASE}search-index.json`, (route) => unavailable
+      ? route.fulfill({ status: 503, body: 'Unavailable for smoke test' })
+      : route.continue());
+    await visit(failedSearch.page, 'docs/');
+    await failedSearch.page.locator('#docs-query').fill('promotion');
+    await failedSearch.page.locator('#docs-query').press('Enter');
+    await failedSearch.page.locator('.search-status').filter({ hasText: 'Search could not load.' }).waitFor();
+    await directory(failedSearch.page);
+    unavailable = false;
+    await failedSearch.page.getByRole('button', { name: 'Try search again', exact: true }).click();
+    await resultsFor(failedSearch.page, 'promotion');
+    await failedSearch.page.getByRole('button', { name: 'Clear search', exact: true }).click();
+    await directory(failedSearch.page);
+    await failedSearch.page.locator('.docs-directory a[href="./getting-started/"]').click();
+    await failedSearch.page.waitForURL(url('docs/getting-started/'));
+    await identity(failedSearch.page, 'docs/getting-started/');
+    console.log('PASS unavailable search index: error feedback, retry recovery and full directory navigation');
+  } finally { await failedSearch.context.close(); }
+
+  const noJS = await newPage({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  try {
+    await visit(noJS.page, 'docs/');
+    await directory(noJS.page);
+    assert.equal(await noJS.page.locator('[data-docs-search]').isVisible(), false);
+    assert.equal(await noJS.page.locator('.copy-code').count(), 0);
+    await noJS.page.locator('.docs-directory a[href="./getting-started/"]').click();
+    await noJS.page.waitForURL(url('docs/getting-started/'));
+    await identity(noJS.page, 'docs/getting-started/');
+    assert((await noJS.page.locator('.prose').innerText()).length > 500);
+    assert(await noJS.page.locator('pre code').count());
+    assert.equal(await noJS.page.locator('.copy-code').count(), 0);
+    await visit(noJS.page, 'blog/kubernetes-health-vs-drift/');
+    assert((await noJS.page.locator('.prose').innerText()).length > 500);
+    assert.equal(await noJS.page.locator('.copy-code').count(), 0);
+    console.log('PASS JavaScript disabled: complete directory, readable guides/articles, no dead enhancement controls');
+  } finally { await noJS.context.close(); }
+
+  const reduced = await newPage({ reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });
+  try {
+    await visit(reduced.page, 'docs/getting-started/');
+    assert(await reduced.page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches));
+    assert.equal(await reduced.page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior), 'auto');
+    await tocAnchor(reduced.page);
+    console.log('PASS reduced motion: readable content and immediate contents navigation');
+  } finally { await reduced.context.close(); }
+
+  assert.deepEqual(errors, [], 'Unexpected browser or local resource errors');
+  console.log(`Passed public-site browser smoke check (${assertions} page checks). Screenshots: ${artifacts}`);
+}
+
+try {
+  await Promise.race([run(), new Promise((_, reject) => {
+    deadline = setTimeout(() => reject(new Error('Public-site browser smoke exceeded 180 seconds')), 180000);
+  })]);
+} catch (error) {
+  console.error(error.stack || error);
+  if (errors.length) console.error(errors.join('\n'));
+  process.exitCode = 1;
+} finally {
+  clearTimeout(deadline);
+  if (browser) await browser.close();
+  server.closeAllConnections();
+  await new Promise((accept) => server.close(accept));
+}
