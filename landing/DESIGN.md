@@ -110,3 +110,20 @@ have matching structured data and breadcrumbs. Use real publication dates and
 omit unknown update dates. The project site lives under `/paprika/`, so a robots
 file in that path cannot govern the host. The generated sitemap describes the
 actual public routes; it is not evidence of indexing or rankings.
+
+Every guide and blog post has a relevant conceptual illustration after its
+opening paragraph. `content/site.json` owns the image, dimensions, alt text and
+visible caption; the same primary image supplies Article/TechArticle schema,
+WebPage `primaryImageOfPage`, Open Graph and Twitter previews. Keep the full-size
+link available without JavaScript. Related articles may share a diagram when
+its mechanism is relevant to both; a generic console preview is not an article
+illustration.
+
+`article-images/` contains crawlable PNGs and editable sources. The renderer in
+`hack/render-article-images.mjs` exports separate desktop and mobile compositions
+from documented behavior, including the existing delivery diagrams. Do not
+crop away labels to make a phone image. Preserve source attribution and never
+present conceptual flows, example traffic weights or synthetic resource states
+as production evidence. Regenerate PNGs after editing their sources; browser
+verification must decode every image at both viewport sizes and compare the
+visible figure with its structured data.

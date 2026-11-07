@@ -160,6 +160,11 @@ input { caret-color: var(--steel-dark); }
 .prose blockquote > :last-child { margin-bottom: 0; }
 .prose hr { border: 0; border-top: 1px solid var(--line); margin: 36px 0; }
 .prose img { max-width: 100%; height: auto; }
+.article-figure { margin: 32px 0 40px; }
+.article-figure picture { display: block; background: var(--paper, #f2f2f3); }
+.article-figure img { display: block; width: 100%; height: auto; }
+.article-figure figcaption { margin-top: 12px; color: var(--muted); font-size: 15px; line-height: 1.55; }
+.article-figure figcaption a { display: inline-block; margin-top: 6px; font-weight: 600; }
 .prose .table-scroll { max-width: 100%; overflow: auto; margin: 26px 0; border: 1px solid var(--line); }
 .prose table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.5; }
 .prose :is(th, td) { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); min-width: 125px; }
