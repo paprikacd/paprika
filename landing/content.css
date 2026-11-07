@@ -21,7 +21,7 @@ input { caret-color: var(--steel-dark); }
 .footer-inner a:hover { color: var(--white); }
 .nav-links a[aria-current="page"] { color: var(--white); text-decoration: underline; text-underline-offset: 7px; }
 .nav-links .nav-action, .mobile-menu summary { min-height: 44px; }
-.nav-links .nav-action { gap: 5px; }
+.nav-links .nav-action { gap: 5px; white-space: nowrap; }
 .nav-links .nav-action:hover { background: var(--navy-2); color: var(--white); }
 
 /* First-use routes and editorial links on the product page. */
@@ -214,6 +214,8 @@ input { caret-color: var(--steel-dark); }
   .post-card { grid-template-columns: 130px minmax(0, 1fr); column-gap: 24px; }
 }
 @media (max-width: 600px) {
+  .masthead-inner { gap: 12px; }
+  .nav-links { gap: 10px; }
   .learn-section, .reading-section { padding: 56px 0; }
   .learn-intro h2 { max-width: 15ch; font-size: 42px; }
   .learn-paths > a { padding: 20px 0; }
