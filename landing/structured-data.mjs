@@ -40,7 +40,7 @@ function articleEntity(item) {
     author: ref(publisherID), publisher: ref(publisherID), inLanguage: 'en',
     about: ref(softwareID), isPartOf: ref(collection(item.kind)['@id']),
     articleSection: item.kind === 'blog' ? item.category : item.section,
-    // Publication days are editorial metadata; never substitute build times.
+    // Publication timestamps are editorial metadata; never substitute build times.
     ...(item.kind === 'blog' ? { datePublished: item.date } : {}),
     // The generic social preview is not an illustration of each article.
   };

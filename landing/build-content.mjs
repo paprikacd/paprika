@@ -28,7 +28,7 @@ const encodePath = (value) => value.split('/').map(encodeURIComponent).join('/')
 const publicURL = (route) => new URL(route, siteURL).href;
 const assetPrefix = (route) => '../'.repeat(route.split('/').filter(Boolean).length) || './';
 const sourceURL = (source) => `${repositoryURL}/blob/master/${encodePath(source)}`;
-const dateLabel = (date) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+const dateLabel = (date) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(date));
 
 function insideRepository(path) {
   const absolute = resolve(repoRoot, path);
@@ -113,9 +113,9 @@ export function validateManifest(manifest) {
       routes.add(item.route);
       sources.add(item.source);
       if (kind === 'posts') {
-        assert.match(item.date, /^\d{4}-\d{2}-\d{2}$/, `${item.slug} needs a publication date`);
-        const date = new Date(`${item.date}T00:00:00Z`);
-        assert.ok(!Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === item.date, `Invalid publication date: ${item.date}`);
+        assert.match(item.date, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, `${item.slug} needs a UTC publication timestamp`);
+        const date = new Date(item.date);
+        assert.ok(!Number.isNaN(date.valueOf()) && date.toISOString() === item.date.replace('Z', '.000Z'), `Invalid publication date: ${item.date}`);
       }
     }
   }

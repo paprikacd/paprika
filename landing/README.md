@@ -139,7 +139,10 @@ matching their visible links. The blog also has a shared `Blog` identity.
 
 Visible breadcrumbs and `BreadcrumbList` use the same entries, including the
 current article title. Every article displays its linked maintainer byline.
-Publication dates come only from the blog manifest. Undated guides remain
+Publication timestamps come only from the blog manifest (`YYYY-MM-DDTHH:mm:ssZ`).
+The initial three posts use `2026-11-07T06:57:52Z`, the completion of the first
+successful [Pages deployment containing the blog](https://github.com/paprikacd/paprika/actions/runs/42349213527).
+Undated guides remain
 undated, and builds never create `dateModified` values. The generic console
 social preview is not asserted to be an article-specific image. Add an article
 image only alongside a relevant, visible illustration and validation for it.

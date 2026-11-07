@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildContent, readAnalyticsConfig } from './build-content.mjs';
+import { buildContent, readAnalyticsConfig, validateManifest } from './build-content.mjs';
 import { jsonScript } from './structured-data.mjs';
 
 test('embedded JSON-LD cannot terminate its script and preserves editorial text', () => {
@@ -12,6 +12,16 @@ test('embedded JSON-LD cannot terminate its script and preserves editorial text'
   assert.ok(!script.includes('<'));
   assert.ok(!/[\u2028\u2029]/.test(script));
   assert.deepEqual(JSON.parse(script), value);
+});
+
+test('publication dates require a real calendar date, time and explicit UTC zone', () => {
+  const post = { slug: 'test', title: 'Test', description: 'Test publication date',
+    category: 'Delivery', source: 'landing/content/blog/promoting-pinned-revisions.md' };
+  for (const date of ['2026-11-07', '2026-11-07T06:57:52', '2026-02-30T06:57:52Z', '2026-11-07T25:00:00Z']) {
+    assert.throws(() => validateManifest({ docs: [], posts: [{ ...post, date }] }), /publication/);
+  }
+  assert.equal(validateManifest({ docs: [], posts: [{ ...post, date: '2026-11-07T06:57:52Z' }] }).posts[0].date,
+    '2026-11-07T06:57:52Z');
 });
 
 test('a rebuild replaces homepage schema, decodes metadata and retains one analytics loader', () => {

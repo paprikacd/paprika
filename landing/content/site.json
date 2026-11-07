@@ -119,7 +119,7 @@
       "title": "Kubernetes health and drift answer different questions",
       "description": "A healthy workload can still differ from Git. Learn how to read Kubernetes health, desired-state drift and prune candidates together.",
       "category": "Operations",
-      "date": "2026-11-07",
+      "date": "2026-11-07T06:57:52Z",
       "source": "landing/content/blog/kubernetes-health-vs-drift.md"
     },
     {
@@ -127,7 +127,7 @@
       "title": "Promoting a tested Git revision across Kubernetes environments",
       "description": "Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.",
       "category": "Delivery",
-      "date": "2026-11-07",
+      "date": "2026-11-07T06:57:52Z",
       "source": "landing/content/blog/promoting-pinned-revisions.md"
     },
     {
@@ -135,7 +135,7 @@
       "title": "Build and verify observability dashboards through MCP",
       "description": "Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.",
       "category": "Observability",
-      "date": "2026-11-07",
+      "date": "2026-11-07T06:57:52Z",
       "source": "landing/content/blog/building-dashboards-with-mcp.md"
     }
   ]
