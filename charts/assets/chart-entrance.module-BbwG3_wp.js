@@ -1,1 +1,0 @@
-import{c as a}from"./index-C7M4DJhV.js";const r=[["path",{d:"M5 12h14",key:"1ays0h"}],["path",{d:"m12 5 7 7-7 7",key:"xquz4c"}]],t=a("arrow-right",r),e="_revealMarks_1d35y_28",s="_fadeMarks_1d35y_36",o={revealMarks:e,fadeMarks:s};export{t as A,o as c};
