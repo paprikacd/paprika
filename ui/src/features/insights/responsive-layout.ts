@@ -131,7 +131,7 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, 
     // Reserve a complete six-week month, but never compress multi-month views
     // or long state inventories using this bounded one-month/six-lane rule.
     if (referenceCompact && widget.type === "plugin") {
-      if (widget.pluginId === "incident-calendar" && widget.config?.months === 1) return 9
+      if (widget.pluginId === "incident-calendar" && widget.config?.months === 1) return 11
       if (widget.pluginId === "status-history" && typeof widget.config?.maxSeries === "number" && widget.config.maxSeries <= 6) return 8
     }
     const tall = widget.type === "plugin" && (["incident-calendar", "uptime-calendar", "status-history"].includes(widget.pluginId ?? "") ||
@@ -140,7 +140,7 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, 
     // Preserve the physical space for multi-week calendars and status lanes
     // on the finer compact grid; ordinary plots and tables can be denser.
     const protectedTall = tall && !(widget.pluginId === "record-table")
-    return widget.type === "stat" ? item.h * 2 : Math.max(calendar && item.h >= 6 ? 15 : needsPlotRoom(widget) ? 8 : 0, Math.ceil(item.h * (protectedTall ? 2.3 : tall ? 2.2 : 1.55)))
+    return widget.type === "stat" ? item.h * 2 : Math.max(calendar && item.h >= 4 ? item.h >= 6 ? 15 : 14 : needsPlotRoom(widget) ? 8 : 0, Math.ceil(item.h * (protectedTall ? 2.3 : tall ? 2.2 : 1.55)))
   }
   const fineGroups = new Map<string, number>()
   for (const item of placed) {

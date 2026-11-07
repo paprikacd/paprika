@@ -483,7 +483,7 @@ function StyleEditor({
           <GammaSwitch
             label="Show sparkline"
             checked={options.showSparkline === true}
-            onChange={(showSparkline) => update({ showSparkline })}
+            onChange={(showSparkline) => update({ showSparkline, ...(showSparkline && !options.sparklinePlacement ? { sparklinePlacement: "side" } : {}) })}
           />
           {options.showSparkline && <label className={styles.field}>
             Sparkline placement

@@ -12,6 +12,7 @@ import { defineChart } from "@tanstack/charts/scene";
 import { tooltip } from "@tanstack/charts/tooltip";
 import { dateTimeFormat, formatMetric, formatMetricDetails, latestPoint, seriesName } from "./chart-data";
 import { useChartEntrance } from "./chart-entrance";
+import chartEntrance from "./chart-entrance.module.css";
 import { ChartDataInspector } from "./chart-data-inspector";
 import {
   EMPTY_OPTIONS,
@@ -293,7 +294,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
   return (
     <div className={styles.chart}>
       <div
-        className={styles.plot}
+        className={`${styles.plot} ${chartEntrance.tanstackPlot}`}
         ref={ref}
         data-chart-entering={entering || undefined}
         onPointerMoveCapture={

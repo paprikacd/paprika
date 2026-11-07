@@ -143,18 +143,27 @@ def main():
     global ACTIVE_RESOURCES
     parser = argparse.ArgumentParser()
     parser.add_argument("--state-dir", type=Path, default=None)
+    parser.add_argument("--storage", choices=("volume", "bind"), default="volume",
+                        help="Use bind to keep demo database files in the state directory instead of Docker's disk")
     args = parser.parse_args()
     suffix = secrets.token_hex(4)
     state = (args.state_dir or ROOT / "artifacts" / "insights" / f"gallery-live-{suffix}").resolve()
     state.mkdir(mode=0o700, parents=True, exist_ok=False)
     state.chmod(0o700)
+    pg_storage = []
+    prom_storage = None
+    if args.storage == "bind":
+        for directory in ("postgres-data", "prometheus-data", "tempo-data"):
+            (state / directory).mkdir()
+        pg_storage = ["-v", f"{state / 'postgres-data'}:/var/lib/postgresql/data"]
+        prom_storage = str(state / "prometheus-data")
     names = {kind: f"paprika-gallery-{kind}-{suffix}" for kind in ("postgres", "prometheus", "tempo", "exporter")}
     volume = f"paprika-gallery-prometheus-{suffix}"
     network = f"paprika-gallery-network-{suffix}"
     importer = f"paprika-gallery-import-{suffix}"
     # Record only resource identities before any Docker mutation, so an
     # interrupted setup can be inspected without exposing credentials.
-    write_private(state / "state.json", json.dumps({"names": names, "volume": volume, "network": network, "status": "starting"}, indent=2))
+    write_private(state / "state.json", json.dumps({"names": names, "volume": volume, "network": network, "storage": args.storage, "status": "starting"}, indent=2))
     ACTIVE_RESOURCES = {"names": names, "importer": importer, "network": network}
     print(f"Local state: {state}", flush=True)
     password, reader_password = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
@@ -185,7 +194,7 @@ storage:
         subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0 or run(["docker", "pull", image], silent=True)
     run(["docker", "network", "create", network], silent=True)
     print("Starting isolated PostgreSQL and Tempo…", flush=True)
-    run(["docker", "run", "-d", "--rm", "--name", names["postgres"], "--env-file", str(state / "postgres.env"), "-p", "127.0.0.1::5432", PG_IMAGE], silent=True)
+    run(["docker", "run", "-d", "--rm", "--name", names["postgres"], "--env-file", str(state / "postgres.env"), *pg_storage, "-p", "127.0.0.1::5432", PG_IMAGE], silent=True)
     # pg_isready can succeed against the temporary init server before the
     # target database exists. Require a successful query against that database.
     wait(lambda: subprocess.run(["docker", "exec", names["postgres"], "sh", "-c", 'PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U postgres -d gallery_demo -At -c "SELECT 1"'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, "local PostgreSQL")
@@ -200,7 +209,8 @@ storage:
     # bounded chunks after pauses; its log is local to the container.
     run(["docker", "exec", "-d", "--user", "postgres", names["postgres"], "sh", "-c", "while :; do psql -U postgres -d gallery_demo -v ON_ERROR_STOP=1 -c 'SELECT gallery.refresh_synthetic_history(clock_timestamp())' >/dev/null 2>/tmp/paprika-synthetic-history-error.log; sleep 60; done"], silent=True)
     pg_port = port(names["postgres"], 5432)
-    run(["docker", "run", "-d", "--rm", "--network", network, "--name", names["tempo"], "-p", "127.0.0.1::3200", "-p", "127.0.0.1::4318", "-v", f"{state / 'tempo.yaml'}:/etc/tempo.yaml:ro", TEMPO_IMAGE, "-config.file=/etc/tempo.yaml"], silent=True)
+    tempo_storage = ["--user", "0:0", "-v", f"{state / 'tempo-data'}:/tmp/tempo"] if args.storage == "bind" else []
+    run(["docker", "run", "-d", "--rm", "--network", network, "--name", names["tempo"], *tempo_storage, "-p", "127.0.0.1::3200", "-p", "127.0.0.1::4318", "-v", f"{state / 'tempo.yaml'}:/etc/tempo.yaml:ro", TEMPO_IMAGE, "-config.file=/etc/tempo.yaml"], silent=True)
     tempo_port, otlp_port = port(names["tempo"], 3200), port(names["tempo"], 4318)
     wait(lambda: ready(f"http://127.0.0.1:{tempo_port}/ready"), "local Tempo")
     req = urllib.request.Request(f"http://127.0.0.1:{otlp_port}/v1/traces", data=traces(), headers={"Content-Type": "application/json"}, method="POST")
@@ -210,14 +220,16 @@ storage:
     print("Generating and importing synthetic Prometheus history…", flush=True)
     metrics = state / "metrics.openmetrics"
     run([sys.executable, str(HERE / "generate-metrics.py"), "--out", str(metrics)], silent=True)
-    run(["docker", "volume", "create", volume], silent=True)
-    run(["docker", "run", "--rm", "--name", importer, "--user", "0:0", "-v", f"{metrics}:/input/metrics.openmetrics:ro", "-v", f"{volume}:/prometheus", "--entrypoint=promtool", PROM_IMAGE, "tsdb", "create-blocks-from", "openmetrics", "--quiet", "/input/metrics.openmetrics", "/prometheus"], silent=True)
+    if prom_storage is None:
+        run(["docker", "volume", "create", volume], silent=True)
+        prom_storage = volume
+    run(["docker", "run", "--rm", "--name", importer, "--user", "0:0", "-v", f"{metrics}:/input/metrics.openmetrics:ro", "-v", f"{prom_storage}:/prometheus", "--entrypoint=promtool", PROM_IMAGE, "tsdb", "create-blocks-from", "openmetrics", "--quiet", "/input/metrics.openmetrics", "/prometheus"], silent=True)
     run(["docker", "run", "-d", "--rm", "--network", network, "--name", names["exporter"], "-e", f"PAPRIKA_DEMO_TEMPO=http://{names['tempo']}:4318/v1/traces", "-e", "PAPRIKA_DEMO_BOOTSTRAP=true", "-v", f"{metrics}:/data/metrics.openmetrics:ro", "-v", f"{HERE / 'live-exporter.py'}:/app/live-exporter.py:ro", "-v", f"{HERE / 'live_series.py'}:/app/live_series.py:ro", "-v", f"{HERE / 'sample_clock.py'}:/app/sample_clock.py:ro", "-v", f"{HERE / 'trace_patterns.py'}:/app/trace_patterns.py:ro", EXPORTER_IMAGE, "python", "/app/live-exporter.py"], silent=True)
     config = state / "prometheus.yaml"
     # Drop scraper-added labels so live samples continue the imported series
     # rather than showing duplicate lines for the first five minutes.
     config.write_text(prometheus_config(names["exporter"], "1s"), encoding="utf-8")
-    run(["docker", "run", "-d", "--rm", "--network", network, "--user", "0:0", "--name", names["prometheus"], "-p", "127.0.0.1::9090", "-v", f"{volume}:/prometheus", "-v", f"{config}:/etc/prometheus/prometheus.yml:ro", PROM_IMAGE, "--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=35d", "--web.listen-address=0.0.0.0:9090", "--web.enable-lifecycle"], silent=True)
+    run(["docker", "run", "-d", "--rm", "--network", network, "--user", "0:0", "--name", names["prometheus"], "-p", "127.0.0.1::9090", "-v", f"{prom_storage}:/prometheus", "-v", f"{config}:/etc/prometheus/prometheus.yml:ro", PROM_IMAGE, "--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=35d", "--web.listen-address=0.0.0.0:9090", "--web.enable-lifecycle"], silent=True)
     prom_port = port(names["prometheus"], 9090)
     wait(lambda: ready(f"http://127.0.0.1:{prom_port}/-/ready"), "local Prometheus", 120)
     wait(lambda: scrape_ready(prom_port), "fresh synthetic metrics scrape", 120)
@@ -231,7 +243,7 @@ storage:
         {"name": "gallery-tempo", "type": "tempo", "config": {"endpoint": f"http://127.0.0.1:{tempo_port}"}, "credentials": ""},
     ]
     write_private(state / "providers.json", json.dumps(providers))
-    write_private(state / "state.json", json.dumps({"names": names, "volume": volume, "network": network, "prometheus": f"http://127.0.0.1:{prom_port}", "postgresPort": pg_port, "tempo": f"http://127.0.0.1:{tempo_port}", "providersFile": str(state / "providers.json")}, indent=2))
+    write_private(state / "state.json", json.dumps({"names": names, "volume": volume, "network": network, "storage": args.storage, "prometheus": f"http://127.0.0.1:{prom_port}", "postgresPort": pg_port, "tempo": f"http://127.0.0.1:{tempo_port}", "providersFile": str(state / "providers.json")}, indent=2))
     print(f"Ready. Local state: {state}\nProvider definitions: {state / 'providers.json'}\nPrometheus: http://127.0.0.1:{prom_port}\nTempo: http://127.0.0.1:{tempo_port}\nPostgreSQL: 127.0.0.1:{pg_port} (credentials in private provider file)", flush=True)
 
 

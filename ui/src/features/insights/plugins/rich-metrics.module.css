@@ -112,3 +112,14 @@
 .heatmapFooter .notices { padding: 0; min-width: 0; max-width: 100%; }
 .heatmapFooter .notices > span { min-width: 0; overflow-wrap: anywhere; }
 .heatmapFooter .unknownKey { margin-left: 5px; }
+
+/* Reserve a useful plot budget when a side legend reflows below a chart.
+   The scrollable statistics yield space before the signal does. */
+.metricContent > .plot { min-height: min(128px, 55cqh); overflow: clip; }
+.metricContent > .legendContainer { max-height: min(128px, 38cqh); }
+/* A compact key still needs one complete text row plus its scroll hint. */
+.metricContent[data-legend-display="compact"] > .plot { min-height: min(128px, max(48px, calc(100% - 48px))); }
+.metricContent[data-legend-display="compact"] > .legendContainer { min-height: 48px; }
+@container rich-metric (max-width: 679px) {
+  .metricContent[data-legend-display="table"] > .legendContainer { max-height: min(128px, 38cqh); }
+}

@@ -26,9 +26,9 @@
 
 /* TanStack mark groups (line, area and bar). Their class names are set by @tanstack/charts. */
 [data-chart-entering] .revealMarks,
-[data-chart-entering] :global(.ts-chart__line),
-[data-chart-entering] :global(.ts-chart__area),
-[data-chart-entering] :global(.ts-chart__bar) {
+[data-chart-entering].tanstackPlot :global(.ts-chart__line),
+[data-chart-entering].tanstackPlot :global(.ts-chart__area),
+[data-chart-entering].tanstackPlot :global(.ts-chart__bar) {
   animation: reveal var(--gamma-duration-reveal, 600ms) var(--gamma-ease-emphasized, cubic-bezier(0.16, 1, 0.3, 1));
 }
 

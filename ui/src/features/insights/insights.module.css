@@ -303,6 +303,12 @@
   margin: 4px 0 0;
   line-height: 1.4;
 }
+.compactDescription { color: var(--gamma-muted); font-size: 12px; }
+.compactDescription summary { cursor: pointer; width: fit-content; }
+.compactDescription summary:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: 3px; }
+@media (max-width: 950px) {
+  .compactDescription summary { min-height: 44px; align-content: center; }
+}
 /* Compact mode is a viewing preference, so retain all controls and the
    description while giving the dashboard more of the viewport. */
 .workspace[data-density="compact"] .pageHeader {

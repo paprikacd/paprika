@@ -98,14 +98,20 @@ try {
       await trigger.hover()
       const tooltip = page.getByRole("tooltip")
       await tooltip.waitFor({ state: "visible" })
+      // A visible preview can still belong to the chart the pointer crossed.
+      await page.waitForFunction(() => document.querySelector('[role="tooltip"]')?.textContent?.includes("Below 10 GB"))
       assert.match(await tooltip.innerText(), /Critical[\s\S]*Below 10 GB[\s\S]*Scale: 0 to 100 GB/, `${width}px ${theme}: gauge tooltip should explain its threshold band and scale`)
+      // Transient pointer previews follow the pointer and remain transparent.
+      // Pinning switches to the outside-widget investigation placement.
+      assert.equal(await tooltip.evaluate(element => getComputedStyle(element).pointerEvents), "none")
+      await trigger.click()
+      assert.equal(await trigger.getAttribute("aria-pressed"), "true")
+      await page.waitForFunction(() => document.querySelector('[role="tooltip"]')?.getAttribute("data-tooltip-pointer") !== "true")
       const [panel, widgetBounds] = await Promise.all([tooltip.boundingBox(), tile.boundingBox()])
       assert.ok(panel && widgetBounds && (panel.x + panel.width <= widgetBounds.x + 1 || panel.x >= widgetBounds.x + widgetBounds.width - 1 || panel.y + panel.height <= widgetBounds.y + 1 || panel.y >= widgetBounds.y + widgetBounds.height - 1), `${width}px ${theme}: gauge details should sit outside the widget when there is space`)
       if (width === 1600) await page.screenshot({ path: join(output, `gauge-tooltip-${theme.toLowerCase()}.png`), animations: "disabled" })
       if (width === 1600) assert.equal(await tooltip.getAttribute("data-tooltip-overlaps-other-widget"), "true", "This dense reference must exercise a tooltip over a neighboring chart")
       if (await tooltip.getAttribute("data-tooltip-overlaps-other-widget") === "true") {
-        assert.equal(await tooltip.evaluate(element => getComputedStyle(element).pointerEvents), "none", "An unpinned tooltip cannot block a neighboring chart")
-        await trigger.click()
         assert.equal(await trigger.getAttribute("aria-pressed"), "true", "Clicking the gauge pins details")
         assert.notEqual(await tooltip.evaluate(element => getComputedStyle(element).pointerEvents), "none", "Pinned details remain interactive")
         await page.keyboard.press("Escape")

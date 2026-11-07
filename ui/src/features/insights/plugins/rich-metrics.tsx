@@ -5,7 +5,8 @@ import { resolveSeriesColor } from "../series-colors";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { Pin, X } from "lucide-react";
 import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
-import { fullDateTimeFormat, formatTimeTick } from "../chart-data";
+import { useDashboardTimeZone } from "../dashboard-time-zone";
+import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
 import { GammaButton } from "../gamma/button";
 import { StatSparkline } from "../stat-sparkline";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
@@ -41,9 +42,7 @@ const densityPalette = ["var(--gamma-density-0, #13a0ab)", "var(--gamma-density-
 const hoverHistogramLimit = 12;
 /** Bar-mode caps are fixed-size and never encode a value. One per incomplete column, a gap above the partial stack. */
 const capHeight = 6, capGap = 1, capHeadroom = 7;
-const readoutClock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 const stamp = (timestamp: number) => new Date(timestamp).toISOString();
-const localEventTime = (timestamp: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(timestamp));
 const number = (value: number) => Number.isFinite(value) ? Number(value.toFixed(3)) : 0;
 
 interface Observation {
@@ -274,6 +273,8 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
 }
 
 function DistributionHeatmapPlot(props: WidgetRendererProps & { config: DistributionConfig; fullData: DistributionData }) {
+  const timeZone = useDashboardTimeZone();
+  const readoutClock = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }), [timeZone]);
   const { widget, result, config, fullData } = props;
   const signature = JSON.stringify([widget.id, config, widget.unit, widget.options]);
   const { ref, width, height } = useSize();
@@ -313,7 +314,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   // Labels come from the full bounds, so a bucket hidden by maxBuckets can still be named in the inspector.
   const bucketLabel = (bucket: number) => cellLabel(bucket ? fullData.bounds[bucket - 1] : -Infinity, fullData.bounds[bucket], unit);
   // The readout names one window, so it shows seconds; the axis format is too coarse to tell neighbours apart.
-  const clock = (timestamp: number) => timeSpan >= 86_400_000 ? formatTimeTick(timestamp, timeSpan) : readoutClock.format(new Date(timestamp));
+  const clock = (timestamp: number) => timeSpan >= 86_400_000 ? formatTimeTick(timestamp, timeSpan, timeZone) : readoutClock.format(new Date(timestamp));
   const observation = (row: number, column: number): Observation => {
     const bucket = data.rows[row], cell = bucket.cells[column], name = cellLabel(bucket.lower, bucket.upper, unit);
     const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
@@ -389,7 +390,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
           <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={3} pointerEvents="none" aria-hidden="true" />
           <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />
         </>}
-        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], timeSpan)}</text>)}
+        {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], timeSpan, timeZone)}</text>)}
       </svg>
       {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
@@ -432,6 +433,9 @@ function segments(cells: MetricCell[]) {
 }
 
 function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
+  const timeZone = useDashboardTimeZone();
+  const timestampFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
+  const eventTimeFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }), [timeZone]);
   const { widget, result, directional } = props;
   const config = useMemo(() => directional ? directionalConfigSchema.parse(widget.config ?? {}) : stackedConfigSchema.parse(widget.config ?? {}), [directional, widget.config]);
   const signature = JSON.stringify([widget.id, config, widget.unit, widget.options, directional]);
@@ -528,7 +532,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
       const at = data.tracks[index].lastFinite;
       if (at !== null) endedAt.set(at, [...endedAt.get(at) ?? [], data.tracks[index].name]);
     }
-    const parts = [status, ...[...endedAt].map(([at, names]) => `${names.join(", ")}: no samples since ${fullDateTimeFormat.format(new Date(at))}.`)];
+    const parts = [status, ...[...endedAt].map(([at, names]) => `${names.join(", ")}: no samples since ${timestampFormat.format(new Date(at))}.`)];
     const waiting = notStarted.map(index => data.tracks[index].name);
     if (waiting.length) parts.push(`${waiting.join(", ")}: no samples yet.`);
     // Every missing series is named here; the cap is one shape for all of them.
@@ -631,7 +635,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
           <circle cx={x(event.at)} cy={top + 4} r={3} className={styles.annotationMarker} data-severity={event.severity ?? "unclassified"} pointerEvents="none" /></>}
         </g>)}
         {cursorTime !== undefined && <line x1={x(cursorTime)} x2={x(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
-        {showAxis && timeTicks(displayTimes, plotWidth).map(index => <text key={index} x={x(displayTimes[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === displayTimes.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(displayTimes[index], span)}</text>)}
+        {showAxis && timeTicks(displayTimes, plotWidth).map(index => <text key={index} x={x(displayTimes[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === displayTimes.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(displayTimes[index], span, timeZone)}</text>)}
       </svg>}
       {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} peers={data.tracks.map((track, index) => ({ name: track.name, display: displayLabels[index], color: color(index), value: track.cells[inspection.active!.observation.column].value }))} footer={stackFooter} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
@@ -658,7 +662,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
       <TimeWindowLens title={widget.title} series={fullSeries} unit={widget.unit} decimals={widget.options?.decimals} zoom={zoom} onZoom={window => setSelection({ source: result, window })} onOverlay={(window, previous) => setSelection({ source: result, window, previous })} onReset={() => setSelection(undefined)} canOverlay={canOverlay} overlayUnavailable={directional ? undefined : "A previous stacked boundary requires every displayed series to match uniquely and contain recorded values."} />
       {prior.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={prior.map(entry => entry.original)} buttonText="Inspect prior data" />}
     </div>}
-    {annotations.length > 0 && !props.embedded && !embeddedChart && <details className={styles.annotationEvents} role="group" aria-label="Chart events"><summary>{annotations.length} {annotations.length === 1 ? "event" : "events"} in view</summary><ul>{annotations.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={styles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.at).toISOString()}>{localEventTime(event.at)}</time>{event.endAt !== undefined && <time dateTime={new Date(event.endAt).toISOString()}>to {localEventTime(event.endAt)}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
+    {annotations.length > 0 && !props.embedded && !embeddedChart && <details className={styles.annotationEvents} role="group" aria-label="Chart events"><summary>{annotations.length} {annotations.length === 1 ? "event" : "events"} in view</summary><ul>{annotations.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={styles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.at).toISOString()}>{eventTimeFormat.format(new Date(event.at))}</time>{event.endAt !== undefined && <time dateTime={new Date(event.endAt).toISOString()}>to {eventTimeFormat.format(new Date(event.endAt))}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && inView.length > queried.length && <p>{inView.length - queried.length} additional events in view omitted.</p>}

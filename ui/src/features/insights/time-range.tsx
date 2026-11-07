@@ -6,6 +6,7 @@ import shared from "./insights.module.css"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
+import { resolveDashboardTimeZone } from "./dashboard-time-zone"
 
 export function dashboardRange(dashboard: Dashboard, now: number) {
   return dashboard.customTimeRange
@@ -35,6 +36,7 @@ export function TimeRangeControl({
   const [error, setError] = useState("")
   const custom = dashboard.customTimeRange
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const displayTimeZone = resolveDashboardTimeZone(dashboard.timeZone)
   function close() {
     setOpen(false)
     trigger.current?.focus()
@@ -160,6 +162,7 @@ export function TimeRangeControl({
       {custom && (
         <span className={styles.rangeSummary} title={`${custom.from} – ${custom.to}`}>
           {new Date(custom.from).toLocaleString([], {
+            timeZone: displayTimeZone,
             month: "short",
             day: "numeric",
             hour: "2-digit",
@@ -167,6 +170,8 @@ export function TimeRangeControl({
           })}{" "}
           —{" "}
           {new Date(custom.to).toLocaleString([], {
+            timeZone: displayTimeZone,
+            timeZoneName: "short",
             month: "short",
             day: "numeric",
             hour: "2-digit",

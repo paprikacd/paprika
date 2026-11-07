@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MetricPie, StatusHistory, statusHistoryTicks } from "./metric-distributions"
 import type { QueryResult, Widget } from "../schema"
+import { DashboardTimeZoneProvider } from "../dashboard-time-zone"
 import { EmbeddedWidgetProvider } from "../widget-presentation"
 
 afterEach(cleanup)
@@ -9,6 +10,23 @@ const widget: Widget={id:"distribution",title:"Service state",type:"plugin",plug
 const series=(name:string,values:(number|null)[]):NonNullable<QueryResult["series"]>[number]=>({name,labels:{service:name},points:values.map((value,index)=>({timestamp:Date.UTC(2026,9,27,0,index),value}))})
 
 describe("metric distributions",()=>{
+  it("distinguishes sub-minute history observations in accessible names",()=>{
+    const sample={name:"api",labels:{},points:[{timestamp:Date.UTC(2026,10,7,0,0,1),value:1},{timestamp:Date.UTC(2026,10,7,0,0,59),value:1}]}
+    const {container}=render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><StatusHistory widget={widget} result={{series:[sample]}} /></DashboardTimeZoneProvider>)
+    expect(container.querySelector('[data-history-key="0-0"]')?.getAttribute("aria-label")).toContain("11:00:01")
+    expect(container.querySelector('[data-history-key="0-1"]')?.getAttribute("aria-label")).toContain("11:00:59")
+  })
+
+  it("uses the dashboard timezone for history ticks and accessible sample names",()=>{
+    const sample=series("api",[1,2,1])
+    const {container}=render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><StatusHistory widget={{...widget,config:{showTimeAxis:true}}} result={{series:[sample]}} /></DashboardTimeZoneProvider>)
+    const scale=screen.getByRole("group",{name:"Status history time scale in Australia/Melbourne"})
+    expect(scale.querySelector("time")).toHaveTextContent("11:00")
+    expect(scale.querySelector("time")).toHaveAttribute("datetime","2026-10-27T00:00:00.000Z")
+    expect(container.querySelector('[data-history-key="0-0"]')?.getAttribute("aria-label")).toMatch(/11:00/)
+    expect(statusHistoryTicks(Date.UTC(2026,9,27),Date.UTC(2026,9,27,1),"UTC")[0].label).toBe("00:00")
+  })
+
   it("exposes history marks through named button semantics rather than native title tooltips",()=>{
     const {container}=render(<StatusHistory widget={widget} result={{series:[series("api",[2.125])]}} />)
     const mark=screen.getByRole("button",{name:/api .*2.13/})
@@ -27,7 +45,7 @@ describe("metric distributions",()=>{
     const first=series("up{service=api}",[1,2]), second=series("up{service=worker}",[1,2])
     first.labels.service="api";second.labels.service="worker"
     second.points[1].timestamp=Date.UTC(2026,10,26)
-    const {container}=render(<StatusHistory widget={{...widget,config:{labelField:"service",showTimeAxis:true}}} result={{series:[first,second]}} />)
+    const {container}=render(<DashboardTimeZoneProvider timeZone="UTC"><StatusHistory widget={{...widget,config:{labelField:"service",showTimeAxis:true}}} result={{series:[first,second]}} /></DashboardTimeZoneProvider>)
     expect(container.querySelector('[data-history-series="api"]')).toBeInTheDocument()
     expect(container.querySelector('[data-history-series="worker"]')).toBeInTheDocument()
     const scale=screen.getByRole("group",{name:"Status history time scale in UTC"})

@@ -10,6 +10,21 @@ const widget: Widget = { id: "capacity", title: "Free disk space", type: "plugin
 const result: QueryResult = { series: Array.from({ length: 6 }, (_, index) => ({ name: `sda${index + 1}`, labels: { disk: `sda${index + 1}`, host: "omega" }, points: [{ timestamp: 1000, value: 99 }, { timestamp: 2000, value: 22.718 + index * 3 }] })) };
 
 describe("multi-series threshold gauges", () => {
+  it.each(["linear", "segmented", "radial"] as const)("identifies out-of-scale %s readings without changing exact values or missingness", display => {
+    const values = [558, 100, -12, null];
+    const { container } = render(<ThresholdGauge widget={{ ...widget, config: { display, seriesMode: "all" } }} result={{ series: values.map((value, i) => ({ name: `node-${i}`, labels: {}, points: [{ timestamp: 2000, value }] })) }} />);
+    expect(screen.getByRole("img", { name: "Above scale maximum: 100 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Below scale minimum: 0 GB" })).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-gauge-outside-scale]")).toHaveLength(2);
+    expect(container.querySelector('[data-gauge-value="558"]')).toHaveTextContent("558.00");
+    expect(container.querySelector('[data-gauge-value="unknown"]')).toHaveTextContent("No data");
+    const meters = screen.getAllByRole("meter");
+    expect(meters[0]).toHaveAttribute("aria-valuenow", "100");
+    expect(meters[0]).toHaveAttribute("aria-valuetext", "558 GB");
+    fireEvent.focus(screen.getByRole("button", { name: /node-0: 558 GB/ }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Above scale maximum: 100 GB");
+  });
+
   it.each(["linear", "segmented", "radial"] as const)("keeps %s gauges finite across extreme signed bounds", display => {
     const value = { series: [{ name: "sample", labels: {}, points: [{ timestamp: 1000, value: 5e307 }] }] };
     const thresholds = [{ value: -1e308, color: "#00aa00" }, { value: 0, color: "#ffaa00" }, { value: 5e307, color: "#cc0000" }];

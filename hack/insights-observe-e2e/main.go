@@ -58,6 +58,7 @@ func run() error {
 	uiURL := flag.String("ui-url", "", "Optional local frontend server")
 	uiDir := flag.String("ui-dir", "ui/out", "Built static UI")
 	dataDir := flag.String("data-dir", "", "Isolated Insights persistence")
+	tokenTTL := flag.Duration("token-ttl", time.Hour, "Local fixture credential lifetime, at most 24h")
 	applicationFixtures := flag.Bool("application-fixtures", false, "Include deterministic Shorted and Uptime source APIs")
 	applicationProviders := flag.String("application-providers", "", "Private optional application provider fixture file")
 	applicationProvidersStdin := flag.Bool("application-providers-stdin", false, "Read private optional provider fixtures from stdin without persisting credentials")
@@ -109,7 +110,7 @@ func run() error {
 	if err = registerFixtureGateway(gatewayMux, proxy, backend, storeCache, secret, app.URL); err != nil {
 		return err
 	}
-	if err = writeReadyFile(*ready, app.URL, gateway.URL, secret); err != nil {
+	if err = writeReadyFile(*ready, app.URL, gateway.URL, secret, *tokenTTL); err != nil {
 		return err
 	}
 	fmt.Println("Observe/Insights E2E fixture ready")
@@ -236,20 +237,23 @@ func frontendHandler(uiURL, uiDir string) (http.Handler, error) {
 	return httputil.NewSingleHostReverseProxy(frontend), nil
 }
 
-func mintFixtureToken(secret []byte, subject, audience string, groups []string, scopes ...mcp.Scope) (string, error) {
+func mintFixtureToken(secret []byte, subject, audience string, groups []string, ttl time.Duration, scopes ...mcp.Scope) (string, error) {
+	if ttl <= 0 || ttl > 24*time.Hour {
+		return "", errors.New("local fixture token lifetime must be positive and at most 24h")
+	}
 	granted := make([]string, 0, 1+len(scopes))
 	granted = append(granted, string(mcp.ScopeObserve))
 	for _, scope := range scopes {
 		granted = append(granted, string(scope))
 	}
-	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: subject, Email: subject + "@example.test", Name: subject, Groups: groups, Audience: audience, Issuer: fixtureIssuer, Scope: strings.Join(granted, " "), Secret: secret, TTL: time.Hour})
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: subject, Email: subject + "@example.test", Name: subject, Groups: groups, Audience: audience, Issuer: fixtureIssuer, Scope: strings.Join(granted, " "), Secret: secret, TTL: ttl})
 	if err != nil {
 		return "", fmt.Errorf("issue fixture token: %w", err)
 	}
 	return token, nil
 }
 
-func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
+func writeReadyFile(path, appURL, gatewayURL string, secret []byte, ttl time.Duration) error {
 	ready := map[string]string{"baseURL": appURL, "mcpURL": gatewayURL + "/observe/mcp", "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"}
 	credentials := []struct {
 		key, subject, audience string
@@ -271,7 +275,7 @@ func writeReadyFile(path, appURL, gatewayURL string, secret []byte) error {
 		if credential.providerAccess {
 			groups = append(groups, "metrics-readers")
 		}
-		token, err := mintFixtureToken(secret, credential.subject, credential.audience, groups, credential.scopes...)
+		token, err := mintFixtureToken(secret, credential.subject, credential.audience, groups, ttl, credential.scopes...)
 		if err != nil {
 			return err
 		}

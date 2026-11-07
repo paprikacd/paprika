@@ -10,7 +10,7 @@ vi.mock("react-grid-layout", () => ({
   useContainerWidth: () => ({ width: 1100, containerRef: { current: null }, mounted: true }),
   verticalCompactor: {},
 }));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 // Hourly samples from 14:00Z to 17:00Z on 3 October 2026, across Melbourne's spring-forward change.
 const melbourneDay: QueryResult = { series: [{ name: "load", labels: {}, points: [14, 15, 16, 17].map((hour) => ({ timestamp: Date.UTC(2026, 9, 3, hour), value: hour - 13 })) }] };
@@ -39,11 +39,10 @@ it("labels a calendar axis in the dashboard's own time zone", async () => {
 
 it("falls back to the viewer's zone when the dashboard names none", async () => {
   vi.stubGlobal("IntersectionObserver", undefined);
+  const runtimeOptions = Intl.DateTimeFormat().resolvedOptions();
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ ...runtimeOptions, timeZone: "UTC" });
   const props = { dashboard: dashboardWith(), providers: exampleProviders, fetcher: vi.fn().mockResolvedValue(melbourneDay), end: 3600, onSelect: vi.fn(), onLayout: vi.fn(), editing: false };
   render(<DashboardCanvas {...props} />);
-  await waitFor(() => expect(axisLabels("Melbourne load").length).toBeGreaterThan(0), { timeout: 4000 });
-  // The viewer's zone is not Melbourne (the labels are not the Melbourne ones), so no Melbourne hour appears at 01:00.
-  const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  expect(viewer).toBeTruthy();
+  await waitFor(() => expect(axisLabels("Melbourne load")).toEqual(expect.arrayContaining(["14:00", "15:00", "16:00", "17:00"])), { timeout: 4000 });
   expect(axisLabels("Melbourne load")).not.toEqual(expect.arrayContaining(["Oct 4"]));
 });

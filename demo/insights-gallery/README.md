@@ -37,6 +37,18 @@ node demo/insights-gallery/check-edge-continuation-live.mjs http://127.0.0.1:<ha
 python3 demo/insights-gallery/start.py
 ```
 
+If Docker's virtual disk is full but the host has free space, keep this run's
+PostgreSQL, Tempo and Prometheus data in its private state directory instead:
+
+```sh
+python3 demo/insights-gallery/start.py --storage=bind --state-dir=/tmp/paprika-gallery-local
+```
+
+The directory must be new. Bind storage can make the initial history import
+slower on macOS. Stopping the stack retains these files, including when
+`--delete-data` is requested; remove the selected state directory explicitly
+when finished. This mode never removes other Docker images, volumes or data.
+
 To seed the seven local gallery dashboards, the availability and query stress labs, and their saved queries into a
 separate Insights store, first build and serve the UI on loopback (use a free
 port and leave that server running):
@@ -51,7 +63,7 @@ From the repository root, start the isolated Insights/Observe harness, using
 the private provider file printed by `start.py`:
 
 ```sh
-node demo/insights-gallery/serve.mjs \
+node --experimental-strip-types demo/insights-gallery/serve.mjs \
   --providers=artifacts/insights/gallery-live-<id>/providers.json \
   --ui-url=http://127.0.0.1:3062/ \
   --ready-file=artifacts/insights/gallery-ready.json
@@ -60,6 +72,8 @@ node demo/insights-gallery/serve.mjs \
 Use the loopback URL printed by the harness to open **Local gallery demos**.
 Keep both servers and the Docker stack running. The proxy attaches a short-lived
 local test credential server-side; restart the harness for a fresh session.
+The default session lasts one hour. For a longer local review, add
+`--session-duration=12h` to the harness command (maximum 24 hours).
 The harness creates a fresh private document store each time and never writes
 to the production dashboard store. To exercise the saved queries with both
 default and alternate filters against the local providers:
@@ -301,8 +315,9 @@ for repeatable waterfall checks. This keeps filtered trace and error views popul
 startup burst ages out, and a 30-minute search exercises the result bound.
 The synthetic trace failure fraction is illustrative and does not represent
 or derive from the separate request-error metrics.
-The Prometheus TSDB is in an isolated Docker volume rather than a slow macOS
-bind mount. PostgreSQL uses a disposable container and local volume layer.
+By default the Prometheus TSDB is in an isolated Docker volume, and PostgreSQL
+uses a disposable container and local volume layer. `--storage=bind` keeps
+all three providers' data in the selected state directory instead.
 If history import takes several minutes, the synthetic exporter fills the
 missing past minutes with samples from the same deterministic continuation
 used for live data. Prometheus briefly scrapes at one-second intervals to

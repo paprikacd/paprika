@@ -2,6 +2,7 @@
 
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { z } from "zod";
+import { ChevronsUp, ChevronsDown } from "lucide-react";
 import { registerRecordWidgetPlugins } from "./records";
 import { registerMetricDistributionPlugins } from "./metric-distributions";
 import { registerRecordChartPlugins } from "./record-charts";
@@ -82,7 +83,7 @@ export function gaugeArcSize(width: number, height: number, maximumWidth: number
   return { width: arcWidth, height: Math.max(0, Math.min(height, arcWidth * 114 / 200)) };
 }
 
-function RadialLayout({ reading, track, bank }: { reading: ReactNode; track: ReactNode; bank: boolean }) {
+function RadialLayout({ reading, track, cue, bank }: { reading: ReactNode; track: ReactNode; cue?: ReactNode; bank: boolean }) {
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ width: number; height: number }>();
   useLayoutEffect(() => {
@@ -100,6 +101,7 @@ function RadialLayout({ reading, track, bank }: { reading: ReactNode; track: Rea
     return () => observer.disconnect();
   }, [bank]);
   return <div className={meterStyles.radialFrame} ref={frame} data-gauge-arc-frame>
+    {cue && <span className={meterStyles.radialRangeCue}>{cue}</span>}
     <div className={meterStyles.radialBody} data-gauge-arc-body style={size ? { width: size.width, height: size.height, "--gauge-arc-width": `${size.width}px`, "--gauge-arc-height": `${size.height}px` } as CSSProperties : undefined}>{reading}{track}</div>
   </div>;
 }
@@ -216,9 +218,10 @@ function GaugeBank(props: WidgetRendererProps & { config: GaugeConfig; series: G
     void document.fonts?.ready.then(measure);
     return () => { cancelled = true; cancelAnimationFrame(frame); observer?.disconnect(); };
   }, [series, columns, config.display, config.maxSeries, orientation]);
+  const { min, max } = gaugeBounds(props.widget);
   const readingWidth = Math.min(22, Math.max(7, ...selected.map(series => {
     const value = latestGaugePoint(series)?.value;
-    return typeof value === "number" && Number.isFinite(value) ? formatMetric(value, props.widget.unit, false, props.widget.options?.decimals).length + 1 : 7;
+    return typeof value === "number" && Number.isFinite(value) ? formatMetric(value, props.widget.unit, false, props.widget.options?.decimals).length + (config.display !== "radial" && (value < min || value > max) ? 3 : 1) : 7;
   })));
   const compactRows = config.display !== "radial" && orientation === "horizontal";
   return <div className={meterStyles.bankContainer} data-gauge-bank-layout={compactRows ? "rows" : undefined}>
@@ -248,6 +251,9 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     threshold && thresholdIndex > 0 ? `≥ ${exactMetric(threshold.value, widget.unit)}${nextThreshold ? ` and < ${exactMetric(nextThreshold.value, widget.unit)}` : ""}` : undefined;
   const display = config.display ?? "linear", orientation = config.orientation ?? "horizontal";
   const name = seriesName(series, index), title = bank ? `${widget.title}: ${name}` : widget.title;
+  const outsideScale = value === undefined ? undefined : value > max ? "above" : value < min ? "below" : undefined;
+  const scaleNotice = outsideScale ? `${outsideScale === "above" ? "Above scale maximum" : "Below scale minimum"}: ${exactMetric(outsideScale === "above" ? max : min, widget.unit)}` : undefined;
+  const rangeCue = outsideScale && <span className={meterStyles.rangeCue} data-gauge-outside-scale={outsideScale} role="img" aria-label={scaleNotice} title={scaleNotice}>{outsideScale === "above" ? <ChevronsUp aria-hidden="true" size={13} /> : <ChevronsDown aria-hidden="true" size={13} />}</span>;
   const exact = value === undefined ? "No data" : exactMetric(value, widget.unit);
   const label = bank && config.label ? `${config.label} · ${name}` : config.label ?? name;
   const visualLabel = bank && config.label ? `${config.label} · ${displayLabel ?? name}` : config.label ?? displayLabel ?? name;
@@ -262,12 +268,14 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     details={<MetricDetails widget={widget} series={series} index={index} point={point} unit={widget.unit} decimals={options.decimals} description="Latest sample"
       showSourceContext={Object.keys(series.labels).length <= 4 && typeof series.labels.pod === "string"}>
       <span className={styles.tooltipStatus}>{threshold && <i data-gauge-threshold-swatch aria-hidden="true" style={{ background: threshold.color }} />}{value === undefined ? "Unknown" : threshold?.label ?? "Observed value"}</span>
+      {scaleNotice && <span className={styles.tooltipRange}>{scaleNotice}</span>}
       {band && <span className={styles.tooltipRange}>{band}</span>}
       <span className={styles.tooltipRange}>Scale: {min} to {max}{widget.unit ? ` ${widget.unit}` : ""}</span>
     </MetricDetails>}>
     <span className={`${styles.gaugeValue} ${display === "radial" ? meterStyles.radialValue : meterStyles.value} ${bank && threshold ? meterStyles.statusValue : ""}`}
       data-gauge-value={value === undefined ? "unknown" : value} title={interactive && options.showTooltip !== false ? undefined : exact}
       style={{ color: widgetTextColor(options) ?? (bank ? undefined : threshold?.color ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": threshold.color } : {}) } as CSSProperties}>
+      {display !== "radial" && rangeCue}
       <span data-gauge-number>{value === undefined ? "No data" : formatMetric(value, "", false, options.decimals)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{widget.unit}</small>}
     </span>
   </ObservationDetails>;
@@ -276,7 +284,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
   const statusLabel = value === undefined ? "Unknown" : threshold?.label ?? "Observed";
   return <div className={meterStyles.item} data-gauge-series={name} data-gauge-kind={display}
     data-gauge-orientation={display === "radial" ? undefined : orientation} data-gauge-bank-item={bank || undefined}>
-    {display === "radial" ? <><RadialLayout reading={reading} track={track} bank={bank} /><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span></> :
+    {display === "radial" ? <><RadialLayout reading={reading} track={track} cue={rangeCue} bank={bank} /><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span></> :
       <div className={meterStyles.body} data-gauge-show-status={showStatus || undefined}><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span>{track}{reading}{showStatus && <span className={meterStyles.status} data-gauge-status title={statusLabel} style={{ "--gauge-status-color": threshold?.color ?? "var(--gamma-muted)" } as CSSProperties}><i aria-hidden="true" />{statusLabel}</span>}</div>}
     {value === undefined && <span role="status" className={meterStyles.srOnly}>Unknown · latest sample has no finite value</span>}
     {!bank && <GaugeLegend widget={widget} config={config} />}

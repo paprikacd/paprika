@@ -18,13 +18,13 @@ import { useAnnotationEvents } from "./annotation-events";
 import { useChartCursor } from "./chart-cursor";
 import { ChartDataInspector } from "./chart-data-inspector";
 import {
-  dateTimeFormat,
+  dateTimeOptions,
   downsamplePoints,
   fittingBandLabel,
   formatMetric,
   formatMetricDetails,
   formatTimeTick,
-  fullDateTimeFormat,
+  fullDateTimeOptions,
   isolatedPlotPoints,
   latestPoint,
   observedRuns,
@@ -32,7 +32,6 @@ import {
   sampleCadence,
   seriesCoverage,
   seriesName,
-  timeFormat,
   uncoveredIntervals,
   withGapBreaks,
 } from "./chart-data";
@@ -54,6 +53,7 @@ import {
 import styles from "./charts.module.css";
 import chartStyles from "./time-series-chart.module.css";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
+import chartEntrance from "./chart-entrance.module.css";
 import { useDashboardWindow } from "./dashboard-window";
 import type { DrilldownContext } from "./drilldown";
 import hatchStyles from "./plot-hatch.module.css";
@@ -166,6 +166,8 @@ export function TimeSeriesChart({
   const cursor = useChartCursor();
   const eventData = useAnnotationEvents();
   const timeZone = useDashboardTimeZone();
+  const detailTimeFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...dateTimeOptions, timeZone }), [timeZone]);
+  const timestampFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
   const entering = useChartEntrance({ disabled: embedded, anchor: ref });
   const { rangeEnd } = useDashboardWindow();
@@ -314,7 +316,7 @@ export function TimeSeriesChart({
   // The tail says when its samples stopped if it can hold that, and otherwise says "No samples". It is unlabelled only
   // when neither fits.
   const tailLabel = staleTail && tailBox
-    ? fittingBandLabel([`No samples since ${timeFormat.format(new Date(staleTail.from))}`, "No samples"], tailBox.width, measureLabel)
+    ? fittingBandLabel([`No samples since ${formatTimeTick(staleTail.from, 0, timeZone)}`, "No samples"], tailBox.width, measureLabel)
     : undefined;
 
   const definition = useMemo(
@@ -370,7 +372,7 @@ export function TimeSeriesChart({
                   line: false,
                   ticks: calendarTickList
                     ? { values: calendarTickList.map(tick => tick.value), line: false, padding: 10, format: (value: number) => calendarLabels.get(value) ?? "—" }
-                    : { count: ticks.x, line: false, padding: 10, format: (value: number) => formatTimeTick(value, timeSpan) },
+                    : { count: ticks.x, line: false, padding: 10, format: (value: number) => formatTimeTick(value, timeSpan, timeZone) },
                   tickLabels: {
                     opacity: 1,
                     fontSize: 11,
@@ -432,7 +434,7 @@ export function TimeSeriesChart({
                   sticky: true,
                   className: styles.tooltip,
                   format: (point) =>
-                    `${point.datum.series}\n${dateTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : "No data"}`,
+                    `${point.datum.series}\n${detailTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : "No data"}`,
                 },
       }),
     [
@@ -456,13 +458,15 @@ export function TimeSeriesChart({
       areaFills,
       calendarTickList,
       calendarLabels,
+      timeZone,
+      detailTimeFormat,
     ],
   );
 
   return (
     <div className={styles.chart} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
       <div
-        className={styles.plot}
+        className={`${styles.plot} ${chartEntrance.tanstackPlot}`}
         ref={ref}
         {...brush.handlers}
         data-chart-entering={entering || undefined}
@@ -479,12 +483,12 @@ export function TimeSeriesChart({
           // A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times.
           const label = fittingBandLabel(["No samples"], box.width, measureLabel);
           return (
-            <span key={`${band.from}-${band.to}`} role="img" aria-label={`No samples from ${fullDateTimeFormat.format(new Date(band.from))} to ${fullDateTimeFormat.format(new Date(band.to))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-no-sample-band data-from={band.from} data-to={band.to} style={{ ...box, top: eventTop, bottom: eventBottom }}>
+            <span key={`${band.from}-${band.to}`} role="img" aria-label={`No samples from ${timestampFormat.format(new Date(band.from))} to ${timestampFormat.format(new Date(band.to))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-no-sample-band data-from={band.from} data-to={band.to} style={{ ...box, top: eventTop, bottom: eventBottom }}>
               {label && <span aria-hidden="true" className={styles.noSampleLabel}>{label}</span>}
             </span>
           );
         })}
-        {staleTail && tailBox && <span role="img" aria-label={`No samples after ${fullDateTimeFormat.format(new Date(staleTail.from))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-stale-tail data-from={staleTail.from} data-to={staleTail.to} style={{ ...tailBox, top: eventTop, bottom: eventBottom }}>
+        {staleTail && tailBox && <span role="img" aria-label={`No samples after ${timestampFormat.format(new Date(staleTail.from))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-stale-tail data-from={staleTail.from} data-to={staleTail.to} style={{ ...tailBox, top: eventTop, bottom: eventBottom }}>
           {tailLabel && <span aria-hidden="true" className={styles.noSampleLabel}>{tailLabel}</span>}
         </span>}
         {emptyZoom ? <div className={styles.state} role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <Chart
@@ -521,7 +525,7 @@ export function TimeSeriesChart({
             style={{ left: position(Math.max(at, eventStart)), width: finish > at ? Math.max(0, position(Math.min(finish, eventEnd)) - position(Math.max(at, eventStart))) : undefined, top: eventTop, bottom: eventBottom }} />;
         })}
       </div>
-      {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
+      {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer data-timeseries-footer role="group" aria-label="Chart legend and controls" tabIndex={previousData.length > 0 ? 0 : undefined}>
       {emptyCurrent && previousData.length > 0 && <span role="status" className={styles.notice}>No current observations in this window; the dashed lines show the preceding period.</span>}
       {gapsHidden && <span className={styles.notice}>Gaps not shown: the provider result was truncated</span>}
       {intervalCount > 0 && <details className={styles.gapDetails} data-gap-intervals onKeyDown={(event) => {
@@ -534,13 +538,13 @@ export function TimeSeriesChart({
         <summary>No samples in {intervalCount} {intervalCount === 1 ? "interval" : "intervals"}</summary>
         {/* The open list floats above the footer (see charts.module.css), so opening it never changes the plot's height. */}
         <ul tabIndex={0} aria-label="No-sample intervals" data-gap-list>
-          {visibleBands.map((band) => <li key={`${band.from}-${band.to}`}>{dateTimeFormat.format(new Date(band.from))}–{dateTimeFormat.format(new Date(band.to))}</li>)}
-          {staleTail && <li>{dateTimeFormat.format(new Date(staleTail.from))}–{dateTimeFormat.format(new Date(staleTail.to))}, after the latest sample</li>}
+          {visibleBands.map((band) => <li key={`${band.from}-${band.to}`}>{detailTimeFormat.format(new Date(band.from))}–{detailTimeFormat.format(new Date(band.to))}</li>)}
+          {staleTail && <li>{detailTimeFormat.format(new Date(staleTail.from))}–{detailTimeFormat.format(new Date(staleTail.to))}, after the latest sample</li>}
         </ul>
       </details>}
-      {staleTail && <span className={styles.notice}>Latest sample {dateTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
+      {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
       {options.showLegend !== false && (
-        <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length >= 4 ? 0 : undefined}>
+        <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 ? 0 : undefined}>
           {data.map((entry, index) => (
             <span
               className={styles.legendItem}
@@ -557,7 +561,7 @@ export function TimeSeriesChart({
               <span
                 className={styles.legendValue}
                 title={options.showTooltip === false ? undefined : entry.latest
-                  ? `Latest valid sample · ${fullDateTimeFormat.format(new Date(entry.latest.timestamp))}`
+                  ? `Latest valid sample · ${timestampFormat.format(new Date(entry.latest.timestamp))}`
                   : "No valid sample"}
                 aria-label={entry.latest
                   ? `${entry.name}, latest valid sample: ${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
@@ -576,15 +580,15 @@ export function TimeSeriesChart({
       {previousData.length > 0 && zoom && <div className={styles.priorLegend} role="group" aria-label="Previous period overlay" tabIndex={0}>
         <span>Previous period · dashed · aligned to selected window</span>
         {previousData.map(entry => { const last = latestPoint(entry.original); const first = entry.original.points[0]; return <span key={entry.index} data-prior-series={entry.index} data-prior-original-first={first?.timestamp} data-prior-aligned-first={entry.points[0]?.timestamp} title={last ? `Previous sample: ${formatMetricDetails(last.value, widget.unit)} at ${new Date(last.timestamp).toISOString()}` : "No prior sample"}>
-          <i aria-hidden="true" style={{ borderColor: entry.color }} />{seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{new Date(last.timestamp).toLocaleString()}</time></> : "No data"}
+          <i aria-hidden="true" style={{ borderColor: entry.color }} />{seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : "No data"}
         </span> })}
         {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}
-      {!embedded && <TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />}
+      {!embedded && <div className={styles.chartActions} data-chart-actions><TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />
       {!embedded && previousData.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={previousData.map(entry => entry.original)} buttonText="Inspect prior data" />}
-      {!embedded && <ChartDataInspector widget={widget} series={visibleSeries} />}
+      <ChartDataInspector widget={widget} series={visibleSeries} /></div>}
       </div>}
-      {visibleEvents.length > 0 && <details className={eventStyles.annotationEvents} role="group" aria-label="Chart events"><summary>{visibleEvents.length} {visibleEvents.length === 1 ? "event" : "events"} in view</summary><ul>{visibleEvents.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={eventStyles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.timestamp).toISOString()}>{new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(event.timestamp))}</time>{event.endTimestamp && <time dateTime={event.endTimestamp}>to {new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(event.endTimestamp))}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
+      {visibleEvents.length > 0 && <details className={eventStyles.annotationEvents} role="group" aria-label="Chart events"><summary>{visibleEvents.length} {visibleEvents.length === 1 ? "event" : "events"} in view</summary><ul>{visibleEvents.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={eventStyles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.timestamp).toISOString()}>{new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short", timeZone }).format(new Date(event.timestamp))}</time>{event.endTimestamp && <time dateTime={event.endTimestamp}>to {new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short", timeZone }).format(new Date(event.endTimestamp))}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
       {widget.annotationSource && !embedded && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
       {widget.annotationSource && !embedded && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
       {widget.annotationSource && !embedded && eventsInView.length > visibleEvents.length && <p>{eventsInView.length - visibleEvents.length} additional events in view omitted.</p>}

@@ -14,19 +14,20 @@ import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } f
 import styles from "./records.module.css"
 import historyStyles from "./status-history.module.css"
 import tooltipStyles from "../chart-styles.module.css"
+import { useDashboardTimeZone } from "../dashboard-time-zone"
 import { statusHistoryLayout } from "./status-history-data"
 
 const pieConfig = z.strictObject({ donut: z.boolean().optional() })
 const historyConfig = z.strictObject({ maxSeries: z.number().int().min(1).max(24).optional(), maxPoints: z.number().int().min(8).max(120).optional(), labelField: z.string().trim().min(1).max(128).optional(), showTimeAxis: z.boolean().optional(), segmented: z.boolean().optional() })
 
-/** UTC ticks represent the observed chart domain, not invented samples. */
-export function statusHistoryTicks(start: number, end: number) {
+/** Zoned ticks represent the observed chart domain, not invented samples. */
+export function statusHistoryTicks(start: number, end: number, timeZone = "UTC") {
   const span = end - start
   if (!(span > 0)) return []
   const format: Intl.DateTimeFormatOptions = span >= 86400_000
-    ? { timeZone: "UTC", month: "short", day: "numeric" }
-    : span < 120_000 ? { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }
-      : { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
+    ? { timeZone, month: "short", day: "numeric" }
+    : span < 120_000 ? { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }
+      : { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
   const formatter = new Intl.DateTimeFormat(undefined, format)
   return Array.from({ length: 5 }, (_, index) => {
     const timestamp = start + span * index / 4
@@ -106,6 +107,10 @@ export function MetricPie({ widget, result, onContextChange, embedded }: WidgetR
 }
 
 export function StatusHistory({ widget,result,onContextChange,embedded }: WidgetRendererProps) {
+  const timeZone = useDashboardTimeZone()
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, dateStyle: "medium", timeStyle: "medium" }), [timeZone])
+  // A city/zone stays accurate when the historical range crosses a DST change.
+  const zoneLabel = timeZone.split("/").at(-1)!.replaceAll("_", " ")
   const config = historyConfig.parse(widget.config ?? {}), maxSeries = config.maxSeries ?? 12, maxPoints = config.maxPoints ?? 60
   const series = useMemo(() => result.series ?? [], [result.series])
   const parentEmbedded = useEmbeddedWidget(), interactive = !embedded && !parentEmbedded
@@ -157,13 +162,13 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
   const activeThreshold = active && typeof active.point.value === "number" ? thresholdForValue(active.point.value, thresholds) : undefined
   const hasMixed = data.rows.some(row => row.bridges.some(bridge => bridge.kind === "mixed"))
   const labelFor = (entry: Series, index: number) => (config.labelField && entry.labels?.[config.labelField]) || seriesName(entry,index)
-  const ticks = config.showTimeAxis && data.domain ? statusHistoryTicks(data.domain.start, data.domain.end) : []
+  const ticks = config.showTimeAxis && data.domain ? statusHistoryTicks(data.domain.start, data.domain.end, timeZone) : []
   return <div className={`${styles.wrapper} ${styles.historyWrapper}`}>{interactive && <span className={historyStyles.srOnly} id={`${id}-keys`}>Use arrow keys to move through history.</span>}<div className={styles.scroll} role="region" aria-label={`${widget.title} history`}><div ref={historyRef} className={`${styles.history} ${historyStyles.lanes}`}>{data.rows.map(({entry,cells,bridges},index) => {
     const name = labelFor(entry,index)
     const chars = Array.from(name), split = chars.length > 10 ? chars.length - 3 : chars.length
-    return <div key={index} className={styles.historyRow} data-history-series={name}><strong title={name} aria-label={name} className={historyStyles.seriesLabel}><span aria-hidden="true">{chars.slice(0,split).join("")}</span>{split < chars.length && <span aria-hidden="true">{chars.slice(split).join("")}</span>}</strong><div className={`${styles.historyCells} ${historyStyles.cells}`} data-segmented={config.segmented || undefined}>{bridges.map((bridge,i) => bridge.kind === "gap" ? null : <span key={`band-${i}`} data-history-band={bridge.kind} className={`${historyStyles.band} ${bridge.kind === "mixed" ? historyStyles.mixed : ""}`} aria-hidden={bridge.kind === "stable" ? true : undefined} role={bridge.kind === "mixed" ? "img" : undefined} aria-label={bridge.kind === "mixed" ? `Changes, missing samples or duplicate timestamps from ${new Date(bridge.from).toLocaleString()} to ${new Date(bridge.to).toLocaleString()}` : undefined} style={{left:`${bridge.left}%`,width:`${bridge.width}%`,...(bridge.kind === "stable" && typeof bridge.value === "number" ? {background:thresholdForValue(bridge.value,thresholds)?.color ?? widget.color ?? "var(--gamma-accent, #53876a)"} : {})}} />)}{cells.map(({point,left,width},i) => {
+    return <div key={index} className={styles.historyRow} data-history-series={name}><strong title={name} aria-label={name} className={historyStyles.seriesLabel}><span aria-hidden="true">{chars.slice(0,split).join("")}</span>{split < chars.length && <span aria-hidden="true">{chars.slice(split).join("")}</span>}</strong><div className={`${styles.historyCells} ${historyStyles.cells}`} data-segmented={config.segmented || undefined}>{bridges.map((bridge,i) => bridge.kind === "gap" ? null : <span key={`band-${i}`} data-history-band={bridge.kind} className={`${historyStyles.band} ${bridge.kind === "mixed" ? historyStyles.mixed : ""}`} aria-hidden={bridge.kind === "stable" ? true : undefined} role={bridge.kind === "mixed" ? "img" : undefined} aria-label={bridge.kind === "mixed" ? `Changes, missing samples or duplicate timestamps from ${dateFormat.format(bridge.from)} to ${dateFormat.format(bridge.to)}` : undefined} style={{left:`${bridge.left}%`,width:`${bridge.width}%`,...(bridge.kind === "stable" && typeof bridge.value === "number" ? {background:thresholdForValue(bridge.value,thresholds)?.color ?? widget.color ?? "var(--gamma-accent, #53876a)"} : {})}} />)}{cells.map(({point,left,width},i) => {
       const finite = typeof point.value === "number" && Number.isFinite(point.value), threshold = finite ? thresholdForValue(point.value!,thresholds) : undefined
-      const title = `${name} · ${new Date(point.timestamp).toLocaleString()} · ${finite ? formatMetric(point.value!,widget.unit,false,widget.options?.decimals) : "No data"}${threshold?.label ? ` · ${threshold.label}` : ""}`
+      const title = `${name} · ${dateFormat.format(point.timestamp)} · ${finite ? formatMetric(point.value!,widget.unit,false,widget.options?.decimals) : "No data"}${threshold?.label ? ` · ${threshold.label}` : ""}`
       const color = finite ? threshold?.color ?? widget.color ?? "var(--gamma-accent, #53876a)" : undefined
       // Keep the portion of an endpoint mark that lies inside the time axis
       // as its actual hit area. A centered mark at 0% or 100% otherwise has
@@ -180,7 +185,7 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
         onBlur={() => { interaction.current.focused = false; scheduleHide() }}
         onClick={event => { onContextChange?.({labels:entry.labels,value:finite ? point.value : null,series:name,timestamp:point.timestamp}); if (active?.pinned && active.anchor === event.currentTarget) dismiss(); else show(entry,point,index,event.currentTarget,true) }} />
     })}</div></div>
-  })}</div></div>{ticks.length > 0 && <div className={historyStyles.timeAxis} role="group" aria-label="Status history time scale in UTC"><span>UTC</span><div className={historyStyles.tickRow}>{ticks.map((tick,index) => <time key={index} dateTime={new Date(tick.timestamp).toISOString()} title={new Date(tick.timestamp).toISOString()}>{tick.label}</time>)}</div></div>}<div className={`${styles.note} ${historyStyles.footer}`}>{widget.options?.showLegend !== false && <div className={historyStyles.legend} role="group" aria-label="Status history legend">{thresholds.map((threshold,index) => <span key={index}><i style={{background:threshold.color}} />{threshold.label ?? (index === 0 ? thresholds[1] ? `Below ${formatMetric(thresholds[1].value,widget.unit,false,widget.options?.decimals)}` : "All values" : `≥ ${formatMetric(threshold.value,widget.unit,false,widget.options?.decimals)}`)}</span>)}{!thresholds.length && <span><i style={{background:widget.color ?? "var(--gamma-accent, #53876a)"}} />Observed</span>}<span><i className={historyStyles.unknown} />Unknown</span>{hasMixed && <span><i className={historyStyles.mixed} />Mixed / uncertain</span>}</div>}<span title="Empty intervals are unobserved" aria-label="Earlier to latest; empty intervals are unobserved">Earlier → latest</span>{series.length > maxSeries ? <span>Sampled view · {Math.min(maxSeries,series.length)} of {series.length} series</span> : data.sampled && <span>Sampled</span>}{hasMixed && widget.options?.showLegend === false && <span>Striped intervals: mixed / uncertain</span>}{data.duplicateTimes && <span>Multiple observations share a timestamp</span>}{result.truncated && <span>Partial source response</span>}</div>
+  })}</div></div>{ticks.length > 0 && <div className={historyStyles.timeAxis} role="group" aria-label={`Status history time scale in ${timeZone}`}><span title={timeZone}>{zoneLabel}</span><div className={historyStyles.tickRow}>{ticks.map((tick,index) => <time key={index} dateTime={new Date(tick.timestamp).toISOString()} title={new Date(tick.timestamp).toISOString()}>{tick.label}</time>)}</div></div>}<div className={`${styles.note} ${historyStyles.footer}`}>{widget.options?.showLegend !== false && <div className={historyStyles.legend} role="group" aria-label="Status history legend">{thresholds.map((threshold,index) => <span key={index}><i style={{background:threshold.color}} />{threshold.label ?? (index === 0 ? thresholds[1] ? `Below ${formatMetric(thresholds[1].value,widget.unit,false,widget.options?.decimals)}` : "All values" : `≥ ${formatMetric(threshold.value,widget.unit,false,widget.options?.decimals)}`)}</span>)}{!thresholds.length && <span><i style={{background:widget.color ?? "var(--gamma-accent, #53876a)"}} />Observed</span>}<span><i className={historyStyles.unknown} />Unknown</span>{hasMixed && <span><i className={historyStyles.mixed} />Mixed / uncertain</span>}</div>}<span title="Empty intervals are unobserved" aria-label="Earlier to latest; empty intervals are unobserved">Earlier → latest</span>{series.length > maxSeries ? <span>Sampled view · {Math.min(maxSeries,series.length)} of {series.length} series</span> : data.sampled && <span>Sampled</span>}{hasMixed && widget.options?.showLegend === false && <span>Striped intervals: mixed / uncertain</span>}{data.duplicateTimes && <span>Multiple observations share a timestamp</span>}{result.truncated && <span>Partial source response</span>}</div>
     {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clearHide() }} onLeave={() => { interaction.current.panel = false; scheduleHide() }}><MetricDetails widget={widget} series={{...active.entry,name:labelFor(active.entry,active.index)}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample">{activeThreshold?.label && <span>{activeThreshold.label}</span>}</MetricDetails><div className={historyStyles.legend}><span>{active.pinned ? "Pinned · tap again to close" : "Click or tap to keep open"}</span><TooltipInstructions /></div></ObservationTooltip>}
   </div>
 }
@@ -191,7 +196,7 @@ export function registerMetricDistributionPlugins() {
     {key:"maxSeries",label:"Maximum series",kind:"number",min:1,max:24},
     {key:"maxPoints",label:"Maximum samples per series",kind:"number",min:8,max:120},
     {key:"labelField",label:"Series label field",kind:"text",help:"Optional metric label used to name each row; missing labels retain the series name."},
-    {key:"showTimeAxis",label:"Show time axis",kind:"boolean",help:"Show the shared observed time domain in UTC."},
+    {key:"showTimeAxis",label:"Show time axis",kind:"boolean",help:"Show the observed time domain in the dashboard timezone."},
     {key:"segmented",label:"Separate samples",kind:"boolean",help:"Draw fine boundaries at each recorded sample."},
   ]})
 }

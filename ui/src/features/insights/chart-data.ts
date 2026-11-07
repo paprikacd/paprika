@@ -18,14 +18,15 @@ export const timeFormat = new Intl.DateTimeFormat("en", {
   minute: "2-digit",
   hour12: false,
 });
-export const dateTimeFormat = new Intl.DateTimeFormat("en", {
+export const dateTimeOptions: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
   hour12: false,
-});
+};
+export const dateTimeFormat = new Intl.DateTimeFormat("en", dateTimeOptions);
 const dateTickFormat = new Intl.DateTimeFormat("en", {
   month: "short",
   day: "numeric",
@@ -33,13 +34,21 @@ const dateTickFormat = new Intl.DateTimeFormat("en", {
   minute: "2-digit",
   hour12: false,
 });
-export function formatTimeTick(timestamp: number, span: number) {
+const zonedTickFormats = new Map<string, Intl.DateTimeFormat>();
+export function formatTimeTick(timestamp: number, span: number, timeZone?: string) {
   if (!validTimestamp(timestamp)) return "—";
-  return (span >= 86_400_000 ? dateTickFormat : timeFormat).format(
-    new Date(timestamp),
-  );
+  const base = span >= 86_400_000 ? dateTickFormat : timeFormat;
+  if (!timeZone) return base.format(new Date(timestamp));
+  const key = `${timeZone}:${span >= 86_400_000}`;
+  let format = zonedTickFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en", { ...(span >= 86_400_000 ? { month: "short", day: "numeric" } : {}), hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
+    if (zonedTickFormats.size >= 64) zonedTickFormats.clear();
+    zonedTickFormats.set(key, format);
+  }
+  return format.format(new Date(timestamp));
 }
-export const fullDateTimeFormat = new Intl.DateTimeFormat("en", {
+export const fullDateTimeOptions: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "short",
   day: "numeric",
@@ -49,7 +58,8 @@ export const fullDateTimeFormat = new Intl.DateTimeFormat("en", {
   timeZoneName: "short",
   fractionalSecondDigits: 3,
   hour12: false,
-});
+};
+export const fullDateTimeFormat = new Intl.DateTimeFormat("en", fullDateTimeOptions);
 
 const decimalFormats = new Map<string, Intl.NumberFormat>();
 export function formatMetric(

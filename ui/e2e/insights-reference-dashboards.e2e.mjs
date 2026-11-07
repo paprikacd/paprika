@@ -112,7 +112,9 @@ async function renderEveryPanel(board) {
             assert.ok(track.height>track.width*1.5,`${widget.title}: vertical meters must have useful height`)
           } else {
             assert.ok(track.width>track.height,`${widget.title}: horizontal meters must have useful width`)
-            assert.ok(track.label.right<=track.left+1 && track.right<=track.reading.left+1,`${widget.title}: label, bar and value must be aligned horizontally`)
+            const labelBeside=track.label.right<=track.left+1
+            const labelAbove=track.label.bottom<=track.top+1
+            assert.ok((labelBeside||labelAbove) && track.right<=track.reading.left+1,`${widget.title}: label stays beside or above the bar and the exact reading remains beside it: ${JSON.stringify(track)}`)
           }
           if(track.rendering==="segmented") {
             assert.ok(track.cells.every(cell=>(vertical?cell.height:cell.width)>=3.95),`${widget.title}: separated cells must retain at least 4px of visible length`)
@@ -392,6 +394,9 @@ try {
       const board=persisted.dashboards.find(item=>item.title==="Service overview")
       await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${board.id}`,{waitUntil:"domcontentloaded"})
       await page.getByRole("heading",{name:board.title,exact:true}).waitFor()
+      // Match the canvas width used by the reference composition checks.
+      const sidebar=page.getByRole("button",{name:"Toggle sidebar",exact:true})
+      if(await sidebar.getAttribute("aria-expanded")==="true")await sidebar.click()
       await until(()=>blocked,"Saved-query list must be held for the loading-state check")
       await page.getByRole("status",{name:"Loading widget",exact:true}).first().waitFor()
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))

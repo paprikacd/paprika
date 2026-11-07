@@ -9,7 +9,7 @@ import { galleryDocuments } from "./dashboards.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map(argument => {
   const match = /^--([a-z-]+)=(.*)$/.exec(argument);
-  if (!match) throw Error("Use --providers=PATH --ui-url=URL [--ready-file=PATH]");
+  if (!match) throw Error("Use --providers=PATH --ui-url=URL [--ready-file=PATH] [--session-duration=12h]");
   return [match[1], match[2]];
 }));
 if (!args.providers || !args["ui-url"]) throw Error("A private provider file and local static UI URL are required");
@@ -19,7 +19,7 @@ const parent = resolve("artifacts/insights"); await mkdir(parent, { recursive: t
 const state = await mkdtemp(resolve(parent, "gallery-insights-"));
 await import("node:fs/promises").then(fs => fs.chmod(state, 0o700));
 const connectionFile = resolve(state, "private-connection.json"), data = resolve(state, "documents");
-const child = spawn("go", ["run", "./hack/insights-observe-e2e", `--ready-file=${connectionFile}`, `--data-dir=${data}`, `--ui-url=${ui.href}`, "--application-fixtures", `--application-providers=${resolve(args.providers)}`], { stdio: ["ignore", "ignore", "pipe"] });
+const child = spawn("go", ["run", "./hack/insights-observe-e2e", `--ready-file=${connectionFile}`, `--data-dir=${data}`, `--ui-url=${ui.href}`, `--token-ttl=${args["session-duration"] ?? "1h"}`, "--application-fixtures", `--application-providers=${resolve(args.providers)}`], { stdio: ["ignore", "ignore", "pipe"] });
 let diagnostic = ""; child.stderr.on("data", data => { diagnostic = (diagnostic + data).slice(-8000); });
 let connection;
 try {

@@ -518,7 +518,7 @@ export const timeZoneSchema = z
   .min(1)
   .max(64)
   .refine(isCanonicalTimeZone, "Use an IANA time zone name, such as Europe/London or UTC")
-  .describe("IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of the calendar time axis, the observation inspector and the chart window labels; metric tooltips, linear axis ticks and other readouts always use the viewer's zone. Omitted, the labels above use the viewer's zone.")
+  .describe("IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of chart axes, metric tooltips, observation inspectors, comparison windows, status history and range labels. Omitted, these displays use the viewer's zone. UTC-based calendar aggregation and raw ISO timestamps are unchanged.")
 /**
  * How a stored dashboard reads its zone: any bounded string is kept as saved, so one dashboard's stale or unknown zone
  * never fails a list and rendering falls back to the viewer's zone. A value that is not a bounded string is dropped.
@@ -745,6 +745,7 @@ export function newWidget(
     providerId: provider?.id ?? "unconfigured",
     query: kind === "traces" ? "{}" : "up",
     unit: "",
+    ...(type === "stat" ? { options: { sparklinePlacement: "side" as const } } : {}),
     ...(type === "heatmap"
       ? {
           options: {

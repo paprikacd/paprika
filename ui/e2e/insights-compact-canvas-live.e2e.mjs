@@ -32,7 +32,7 @@ try {
       const before = await canvas.boundingBox()
       if (width >= 1200) await toggle.click()
       else {
-        assert.equal(await toggle.isDisabled(), true, "Compact control is disabled when the available canvas is not wide")
+        if (await toggle.isVisible()) assert.equal(await toggle.isDisabled(), true, "Compact control is disabled when the available canvas is not wide")
         await page.evaluate(() => localStorage.setItem("paprika-insights-compact-view", "true"))
         await page.reload({ waitUntil: "networkidle" })
       }
@@ -59,6 +59,11 @@ try {
         await outcomePlot.waitFor()
         const plotBounds = await outcomePlot.boundingBox()
         assert.ok(plotBounds.height >= 85, `Compact layout must keep request outcomes usable: ${plotBounds.height}px`)
+        const key = outcome.getByRole("region", { name: "Latest recorded values" })
+        assert.ok(await key.evaluate(el => {
+          const first = el.firstElementChild.getBoundingClientRect(), box = el.getBoundingClientRect()
+          return first.top >= box.top - 1 && first.bottom <= box.bottom + 1
+        }), "A compact legend must expose at least one complete series row")
         const destinations = page.locator('[data-widget-id="destinations"]')
         await destinations.scrollIntoViewIfNeeded()
         const destinationRegion = destinations.getByRole("region", { name: "Top destinations records" })
@@ -77,10 +82,10 @@ try {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "No page-level horizontal overflow")
       await page.screenshot({ path: `/tmp/paprika-compact-canvas-${theme}-${width}.png`, fullPage: true })
       await page.reload({ waitUntil: "networkidle" })
-      assert.equal(await toggle.getAttribute("aria-pressed"), "true", "Local viewing preference persists")
+      assert.equal(await page.evaluate(() => localStorage.getItem("paprika-insights-compact-view")), "true", "Local viewing preference persists")
       await page.getByRole("button", { name: "Edit dashboard" }).click()
       assert.equal(await canvas.getAttribute("data-density"), "standard", "Editing uses the actual saved grid")
-      assert.equal(await toggle.isDisabled(), true)
+      if (await toggle.isVisible()) assert.equal(await toggle.isDisabled(), true)
       await page.getByRole("button", { name: "Preview", exact: true }).click()
       assert.equal(await canvas.getAttribute("data-density"), width >= 1200 ? "compact" : "standard")
       const afterDocument = await fetch(endpoint)

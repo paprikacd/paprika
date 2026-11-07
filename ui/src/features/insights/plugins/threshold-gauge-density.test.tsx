@@ -67,11 +67,12 @@ describe("content-led horizontal gauge banks", () => {
     const css = readFileSync(join(process.cwd(), "src/features/insights/plugins/capacity-meter.module.css"), "utf8");
     const rowBank = css.match(/\.bank\[data-gauge-bank-orientation="horizontal"\] \{([^}]+)\}/)?.[1];
     expect(rowBank).toContain("flex: 0 1 auto");
-    expect(rowBank).toContain("grid-auto-rows: minmax(32px, max-content)");
+    expect(rowBank).toContain("grid-auto-rows: max-content");
+    expect(css).toContain('.bank[data-gauge-bank-orientation="horizontal"] .item { min-height: 32px; }');
     expect(rowBank).toContain("align-content: start");
     expect(rowBank).toContain("gap: 8px 12px");
     expect(rowBank).not.toContain("space-evenly");
-    expect(css).toContain('@container insight-widget (max-width: 300px)');
+    expect(css).toContain('@container insight-widget (max-width: 420px)');
     expect(css).toContain('@media (max-width: 600px) { .bank[data-gauge-bank-orientation="horizontal"] .reading.reading.reading { min-height: 44px; } }');
     expect(css).toMatch(/@media \(pointer: coarse\)[^}]+min-height: 44px/);
   });
