@@ -4,12 +4,13 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readManifest, siteURL } from '../landing/build-content.mjs';
+import { readAnalyticsConfig, readManifest, siteURL } from '../landing/build-content.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 assert.ok(process.argv[2], 'Usage: node hack/verify-landing-content.mjs <assembled-site-directory>');
 const destination = resolve(process.argv[2]);
 const manifest = readManifest();
+const analytics = readAnalyticsConfig();
 const items = [...manifest.docs, ...manifest.posts];
 const routes = ['', 'tour.html', 'charts/', 'docs/', 'blog/', ...items.map((item) => item.route)];
 const htmlRoutes = routes.filter((route) => route !== 'charts/').concat('404.html');
@@ -157,7 +158,17 @@ for (const entry of search) {
   assert.ok(entry.text.length > 80, `Search index has no body content: ${entry.href}`);
   assert.ok(manifest.docs.some((doc) => doc.route === entry.href && doc.title === entry.title), `Search entry has unknown route: ${entry.href}`);
 }
-for (const privatePath of ['node_modules', 'content', 'package.json', 'package-lock.json', 'build-content.mjs']) {
+for (const route of [...routes, '404.html']) {
+  const { html } = readHTML(route);
+  const loaders = [...html.matchAll(/<script\b[^>]*\bid="paprika-analytics"[^>]*>/g)];
+  assert.equal(loaders.length, analytics.siteId ? 1 : 0, `Unexpected Flaggr loader count on ${route || '/'}`);
+  if (analytics.siteId) {
+    const attrs = attributes(loaders[0][0]);
+    assert.equal(attrs['data-site-id'], analytics.siteId, `Wrong public Flaggr site ID on ${route || '/'}`);
+    verifyURL(attrs.src, route, { asset: true });
+  }
+}
+for (const privatePath of ['node_modules', 'content', 'package.json', 'package-lock.json', 'build-content.mjs', 'analytics.test.mjs', 'verify-browser.mjs']) {
   assert.ok(!existsSync(join(destination, privatePath)), `Build source should not be published: ${privatePath}`);
 }
 assert.equal(failures.length, 0, `Public content verification failed:\n${failures.join('\n')}`);

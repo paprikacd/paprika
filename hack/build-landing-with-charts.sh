@@ -22,7 +22,7 @@ import { basename } from 'node:path';
 
 const excluded = new Set([
   'node_modules', 'content', 'package.json', 'package-lock.json',
-  'build-content.mjs', 'build-content.test.mjs', 'verify-browser.mjs',
+  'build-content.mjs', 'build-content.test.mjs', 'analytics.test.mjs', 'verify-browser.mjs',
   'DESIGN.md', 'README.md',
 ]);
 cpSync(process.argv[2], process.argv[3], {

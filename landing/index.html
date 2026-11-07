@@ -512,6 +512,8 @@ claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the 
           if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = 'Copied';
           announceCopyFeedback(button, state, feedback, 'Command copied.');
+          const analyticsName = /^(mcp|observe)-/.test(button.dataset.copyTarget) ? 'mcp_copy' : 'code_copy';
+          window.dispatchEvent(new CustomEvent('paprika:analytics', { detail: { name: analyticsName } }));
         } catch (_) {
           if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = 'Try again';
