@@ -57,7 +57,7 @@ jobs:
             echo "::error::image_ref must be ghcr.io/paprikacd/paprika@sha256 followed by exactly 64 lowercase hexadecimal characters"
             exit 1
           fi
-          if [[ -n "${RENDER_WORKER_IMAGE_REFERENCE}" && ! "${RENDER_WORKER_IMAGE_REFERENCE}" =~ ^ghcr\.io/paprikacd/paprika-render-worker@sha256:[0-9a-f]{64}$ ]]; then
+          if [[ -n "${RENDER_WORKER_IMAGE_REFERENCE}" && ! "${RENDER_WORKER_IMAGE_REFERENCE}" =~ ^ghcr\.io/paprikacd/paprika(-render-worker)?@sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::render_worker_image_ref must be an immutable Paprika dashboard renderer digest"
             exit 1
           fi

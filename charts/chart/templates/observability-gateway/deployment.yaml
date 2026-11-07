@@ -47,8 +47,8 @@
 {{- fail "observabilityGateway.enabled=true requires mcp.publicURL: the gateway's discovery metadata, token issuer, and consent redirects are all derived from it" }}
 {{- end }}
 {{- if .Values.observabilityGateway.renderWorker.enabled }}
-{{- if not (regexMatch "^ghcr\\.io/paprikacd/paprika-render-worker@sha256:[a-f0-9]{64}$" .Values.observabilityGateway.renderWorker.image) }}
-{{- fail "browser render worker must pin an immutable ghcr.io/paprikacd/paprika-render-worker@sha256 digest" }}
+{{- if not (regexMatch "^ghcr\\.io/paprikacd/paprika(-render-worker)?@sha256:[a-f0-9]{64}$" .Values.observabilityGateway.renderWorker.image) }}
+{{- fail "browser render worker must pin an immutable ghcr.io/paprikacd/paprika@sha256 digest (legacy paprika-render-worker digests are also accepted)" }}
 {{- end }}
 {{- if or (not .Values.observabilityGateway.renderWorker.secretName) (not .Values.observabilityGateway.renderWorker.uiOrigin) }}
 {{- fail "browser render worker requires secretName and trusted in-cluster uiOrigin" }}

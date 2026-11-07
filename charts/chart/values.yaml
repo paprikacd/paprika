@@ -874,7 +874,7 @@ observabilityGateway:
   # Never enable before publishing and testing the pinned renderer image.
   renderWorker:
     enabled: false
-    image: "" # exact ghcr.io/paprikacd/paprika-render-worker@sha256:<digest>
+    image: "" # exact ghcr.io/paprikacd/paprika@sha256:<worker-digest>; legacy paprika-render-worker digests also accepted
     uiOrigin: "" # trusted in-cluster Paprika API UI origin
     secretName: "" # pre-existing K8s Secret, never checked into values
     secretKey: secret

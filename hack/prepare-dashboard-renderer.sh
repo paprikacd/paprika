@@ -8,7 +8,7 @@ renderer_image="${3-}"
 output="${4:?values output required}"
 
 valid_image() {
-  [[ "$1" =~ ^ghcr\.io/paprikacd/paprika-render-worker@sha256:[0-9a-f]{64}$ ]]
+  [[ "$1" =~ ^ghcr\.io/paprikacd/paprika(-render-worker)?@sha256:[0-9a-f]{64}$ ]]
 }
 if [[ -n "$renderer_image" ]] && ! valid_image "$renderer_image"; then
   echo 'Dashboard renderer requires an immutable image digest' >&2

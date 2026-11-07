@@ -310,7 +310,7 @@ cat > "$work/renderer.yaml" <<'YAML'
 observabilityGateway:
   renderWorker:
     enabled: true
-    image: ghcr.io/paprikacd/paprika-render-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    image: ghcr.io/paprikacd/paprika@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     secretName: dedicated-renderer-secret
     secretKey: secret
     uiOrigin: http://paprika-api-server.paprika-system.svc.cluster.local:3000
@@ -325,7 +325,7 @@ policy = (work / 'renderer-policy.yaml').read_text()
 assert deployment.count('name: "dedicated-renderer-secret"') == 2, 'Gateway and worker must share only the dedicated Secret reference'
 assert 'value: http://127.0.0.1:9081/render' in deployment
 assert 'value: "http://paprika-api-server.paprika-system.svc.cluster.local:3000"' in deployment
-assert 'image: "ghcr.io/paprikacd/paprika-render-worker@sha256:' + 'b' * 64 + '"' in deployment
+assert 'image: "ghcr.io/paprikacd/paprika@sha256:' + 'b' * 64 + '"' in deployment
 worker = deployment.split('      - name: dashboard-renderer\n', 1)[1].split('      serviceAccountName:', 1)[0]
 for boundary in ('runAsNonRoot: true', 'runAsUser: 1000', 'readOnlyRootFilesystem: true', 'allowPrivilegeEscalation: false', 'drop: [ALL]', 'type: RuntimeDefault', 'mountPath: /tmp'):
     assert boundary in worker, boundary
@@ -334,7 +334,10 @@ assert re.search(r'app.kubernetes.io/instance: paprika\n\s+app.kubernetes.io/com
 assert 'port: 9081' not in policy, 'Worker must remain loopback only'
 print('Browser renderer default, immutable image, Secret, isolation and exact UI egress checks passed.')
 PY
-for invalid in observabilityGateway.renderWorker.image=ghcr.io/paprikacd/paprika-render-worker:latest observabilityGateway.renderWorker.secretName=; do
+legacy_renderer_image="ghcr.io/paprikacd/paprika-render-worker@sha256:$(printf '%064d' 0)"
+render -f "$work/renderer.yaml" --set-string "observabilityGateway.renderWorker.image=$legacy_renderer_image" --show-only templates/observability-gateway/deployment.yaml > "$work/legacy-renderer-deployment.yaml"
+grep -Fq "image: \"$legacy_renderer_image\"" "$work/legacy-renderer-deployment.yaml"
+for invalid in observabilityGateway.renderWorker.image=ghcr.io/paprikacd/paprika:latest observabilityGateway.renderWorker.image=ghcr.io/paprikacd/paprika-render-worker:latest "observabilityGateway.renderWorker.image=${legacy_renderer_image/paprikacd/another-owner}" observabilityGateway.renderWorker.secretName=; do
   if render -f "$work/renderer.yaml" --set "$invalid" > "$work/renderer-invalid.yaml" 2>&1; then
     echo "Unsafe browser renderer configuration unexpectedly rendered: $invalid" >&2; exit 1
   fi
