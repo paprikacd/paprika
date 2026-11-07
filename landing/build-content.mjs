@@ -6,13 +6,13 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import GithubSlugger from 'github-slugger';
+import { jsonScript, pageStructuredData, repositoryURL, siteURL } from './structured-data.mjs';
+
+export { siteURL } from './structured-data.mjs';
 
 const landingRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(landingRoot, '..');
-export const siteURL = 'https://paprikacd.github.io/paprika/';
-const repositoryURL = 'https://github.com/paprikacd/paprika';
 const socialImage = `${siteURL}demo-applications.webp`;
-const publisher = { '@type': 'Organization', name: 'Paprika maintainers', url: repositoryURL };
 const sectionDescriptions = {
   Start: 'Install the operator, learn the resource model, and find your way around the CLI.',
   Deliver: 'Run pipelines, promote revisions, and inspect your Kubernetes deployments.',
@@ -24,12 +24,11 @@ export function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
 const escapeXML = escapeHTML;
-const jsonScript = (value) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 const encodePath = (value) => value.split('/').map(encodeURIComponent).join('/');
 const publicURL = (route) => new URL(route, siteURL).href;
 const assetPrefix = (route) => '../'.repeat(route.split('/').filter(Boolean).length) || './';
 const sourceURL = (source) => `${repositoryURL}/blob/master/${encodePath(source)}`;
-const dateLabel = (date) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+const dateLabel = (date) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(date));
 
 function insideRepository(path) {
   const absolute = resolve(repoRoot, path);
@@ -114,9 +113,9 @@ export function validateManifest(manifest) {
       routes.add(item.route);
       sources.add(item.source);
       if (kind === 'posts') {
-        assert.match(item.date, /^\d{4}-\d{2}-\d{2}$/, `${item.slug} needs a publication date`);
-        const date = new Date(`${item.date}T00:00:00Z`);
-        assert.ok(!Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === item.date, `Invalid publication date: ${item.date}`);
+        assert.match(item.date, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, `${item.slug} needs a UTC publication timestamp`);
+        const date = new Date(item.date);
+        assert.ok(!Number.isNaN(date.valueOf()) && date.toISOString() === item.date.replace('Z', '.000Z'), `Invalid publication date: ${item.date}`);
       }
     }
   }
@@ -263,8 +262,8 @@ export function renderDocument(item, sourceRoutes, assets = new Map(), markdown 
   return { html, toc, headingID, text, readingMinutes: Math.max(1, Math.ceil(text.split(/\s+/).length / 220)) };
 }
 
-function breadcrumbHTML(items) {
-  return `<nav class="breadcrumbs" aria-label="Breadcrumb"><ol>${items.map((item, index) => `<li>${item.href ? `<a href="${escapeHTML(item.href)}">${escapeHTML(item.name)}</a>` : `<span aria-current="page">${escapeHTML(item.name)}</span>`}${index < items.length - 1 ? '<span aria-hidden="true">/</span>' : ''}</li>`).join('')}</ol></nav>`;
+function breadcrumbHTML(items, prefix) {
+  return `<nav class="breadcrumbs" aria-label="Breadcrumb"><ol>${items.map((item, index) => `<li>${index < items.length - 1 ? `<a href="${escapeHTML(`${prefix}${item.route}`)}">${escapeHTML(item.name)}</a>` : `<span aria-current="page">${escapeHTML(item.name)}</span>`}${index < items.length - 1 ? '<span aria-hidden="true">/</span>' : ''}</li>`).join('')}</ol></nav>`;
 }
 
 function header(prefix, active) {
@@ -284,13 +283,10 @@ function footer(prefix) {
   return `<footer class="content-footer"><div class="shell"><a href="${prefix}" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="${prefix}docs/">Documentation</a><a href="${prefix}blog/">Engineering blog</a><a href="${prefix}feed.xml">RSS feed</a><a href="${repositoryURL}">GitHub</a><a href="${repositoryURL}/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>`;
 }
 
-function page({ route, title, description, active, body, schema, breadcrumbs, noindex = false, fileRoute = false }) {
+function page({ route, title, description, active, body, article, listing, breadcrumbs, noindex = false, fileRoute = false }) {
   const prefix = fileRoute ? './' : assetPrefix(route);
   const canonical = publicURL(route);
-  const graph = [schema, {
-    '@type': 'BreadcrumbList',
-    itemListElement: breadcrumbs.map((item, index) => ({ '@type': 'ListItem', position: index + 1, name: item.name, item: publicURL(item.route) })),
-  }];
+  const structured = pageStructuredData({ route, title, description, article, listing, breadcrumbs });
   return `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
@@ -308,7 +304,7 @@ ${noindex ? '<meta name="robots" content="noindex"/>' : ''}
 <meta property="og:url" content="${canonical}"/>
 <meta property="og:image" content="${socialImage}"/>
 <meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
-${schema.datePublished ? `<meta property="article:published_time" content="${schema.datePublished}"/>` : ''}
+${article?.date ? `<meta property="article:published_time" content="${article.date}"/>` : ''}
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:title" content="${escapeHTML(title)}"/>
 <meta name="twitter:description" content="${escapeHTML(description)}"/>
@@ -320,7 +316,7 @@ ${schema.datePublished ? `<meta property="article:published_time" content="${sch
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="${prefix}site.css?v=public-content-1"/>
 <link rel="stylesheet" href="${prefix}content.css?v=public-content-1"/>
-<script type="application/ld+json">${jsonScript({ '@context': 'https://schema.org', '@graph': graph })}</script>
+<script type="application/ld+json">${jsonScript(structured)}</script>
 <script src="${prefix}content.js?v=public-content-1" defer></script>
 </head><body class="content-page">
 ${header(prefix, active)}
@@ -338,17 +334,18 @@ function articlePage(item, document, manifest) {
   const prefix = assetPrefix(item.route);
   const blog = item.kind === 'blog';
   const groupLabel = blog ? 'Blog' : 'Docs';
+  const breadcrumbs = [{ name: 'Paprika', route: '' }, { name: groupLabel, route: `${item.kind}/` }, { name: item.title, route: item.route }];
   const list = blog ? manifest.posts : manifest.docs.filter((doc) => doc.section === item.section);
   const index = list.indexOf(item);
   const previous = list[index - 1];
   const next = list[index + 1];
   const toc = `<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol>${document.toc.map((heading) => `<li class="toc-level-${heading.level}"><a href="#${escapeHTML(heading.id)}">${escapeHTML(heading.title)}</a></li>`).join('')}</ol></nav></details></aside>`;
-  const body = `<div class="shell article-breadcrumbs">${breadcrumbHTML([{ name: 'Paprika', href: prefix }, { name: groupLabel, href: `${prefix}${item.kind}/` }, { name: blog ? item.category : item.section }])}</div>
+  const body = `<div class="shell article-breadcrumbs">${breadcrumbHTML(breadcrumbs, prefix)}</div>
 <div class="article-layout${blog ? ' article-layout--blog' : ''} shell">
 ${blog ? '' : articleSidebar(manifest.docs, item, prefix)}
 ${toc}
 <main id="main-content" class="article-main" tabindex="-1"><article>
-<header class="article-header"><h1 id="${escapeHTML(document.headingID)}">${escapeHTML(item.title)}</h1><p class="article-description">${escapeHTML(item.description)}</p><div class="article-meta">${blog ? `<span>By Paprika maintainers</span><time datetime="${item.date}">${dateLabel(item.date)}</time><span>${document.readingMinutes} min read</span>` : '<span>Maintained with the source</span>'}<a href="${sourceURL(item.source)}">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<header class="article-header"><h1 id="${escapeHTML(document.headingID)}">${escapeHTML(item.title)}</h1><p class="article-description">${escapeHTML(item.description)}</p><div class="article-meta"><span>${blog ? 'By' : 'Maintained by'} <a rel="author" href="${repositoryURL}">Paprika maintainers</a></span><span class="article-section">${escapeHTML(blog ? item.category : item.section)}</span>${blog ? `<time datetime="${item.date}">${dateLabel(item.date)}</time><span>${document.readingMinutes} min read</span>` : ''}<a href="${sourceURL(item.source)}">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
 <div class="prose">${document.html}</div>
 </article>
 <nav class="article-next" aria-label="${blog ? 'More articles' : 'More guides'}">${previous ? `<a href="${prefix}${previous.route}" rel="prev"><span>Previous ${blog ? 'article' : 'guide'}</span><strong>${escapeHTML(previous.title)}</strong></a>` : `<a href="${prefix}${item.kind}/"><span>Browse</span><strong>All ${blog ? 'engineering articles' : 'documentation'}</strong></a>`}${next ? `<a href="${prefix}${next.route}" rel="next"><span>Next ${blog ? 'article' : 'guide'}</span><strong>${escapeHTML(next.title)}</strong></a>` : `<a href="${prefix}${blog ? 'docs/' : 'blog/'}"><span>Keep exploring</span><strong>${blog ? 'Read the documentation' : 'Read the engineering blog'}</strong></a>`}</nav>
@@ -357,8 +354,7 @@ ${toc}
     route: item.route, active: item.kind,
     title: `${item.title} · Paprika ${blog ? 'engineering' : 'docs'}`,
     description: item.description, body,
-    breadcrumbs: [{ name: 'Paprika', route: '' }, { name: groupLabel, route: `${item.kind}/` }, { name: item.title, route: item.route }],
-    schema: { '@type': blog ? 'BlogPosting' : 'TechArticle', headline: item.title, description: item.description, url: publicURL(item.route), mainEntityOfPage: publicURL(item.route), author: publisher, publisher, inLanguage: 'en', image: socialImage, ...(blog ? { datePublished: item.date, articleSection: item.category } : {}), isPartOf: { '@type': blog ? 'Blog' : 'WebSite', name: blog ? 'Paprika engineering blog' : 'Paprika documentation', url: publicURL(`${item.kind}/`) } },
+    breadcrumbs, article: item,
   });
 }
 
@@ -366,26 +362,28 @@ function docsIndex(manifest) {
   const title = 'Paprika documentation';
   const description = 'Install Paprika, deliver applications to Kubernetes, connect telemetry, and build dashboards with practical guides and API references.';
   const sections = [...new Set(manifest.docs.map((item) => item.section))];
-  const body = `<main id="main-content" tabindex="-1"><header class="content-hero shell">${breadcrumbHTML([{ name: 'Paprika', href: '../' }, { name: 'Documentation' }])}<h1>Paprika documentation</h1><p>${description}</p><a class="btn" href="./getting-started/">Deploy your first Application</a></header>
+  const breadcrumbs = [{ name: 'Paprika', route: '' }, { name: 'Documentation', route: 'docs/' }];
+  const body = `<main id="main-content" tabindex="-1"><header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}<h1>Paprika documentation</h1><p>${description}</p><a class="btn" href="./getting-started/">Deploy your first Application</a></header>
 <div class="content-index shell">
 <section class="docs-search" aria-label="Find documentation" data-docs-search hidden><form role="search"><label for="docs-query">Search documentation</label><div class="search-field"><input id="docs-query" name="q" type="search" placeholder="Try promotion, Prometheus, or MCP" autocomplete="off" enterkeyhint="search"/><button type="button" data-search-clear hidden aria-label="Clear search">Clear</button></div></form><p class="search-status" role="status" aria-live="polite" aria-atomic="true"></p><div class="search-results" hidden></div></section>
 <div class="docs-directory">${sections.map((section) => `<section class="doc-group" aria-labelledby="group-${section.toLowerCase()}"><div class="doc-group-heading"><h2 id="group-${section.toLowerCase()}">${escapeHTML(section)}</h2><p>${escapeHTML(sectionDescriptions[section] || '')}</p></div><ul class="doc-list">${manifest.docs.filter((item) => item.section === section).map((item) => `<li><a class="doc-link" href="./${item.slug}/"><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.description)}</p><span aria-hidden="true">↗</span></a></li>`).join('')}</ul></section>`).join('')}</div>
 <noscript><p class="search-note">Browse the guides above. Search is available when JavaScript is enabled.</p></noscript>
 </div></main>`;
-  return page({ route: 'docs/', active: 'docs', title, description, body, breadcrumbs: [{ name: 'Paprika', route: '' }, { name: 'Documentation', route: 'docs/' }], schema: { '@type': 'CollectionPage', name: title, description, url: publicURL('docs/'), hasPart: manifest.docs.map((item) => ({ '@type': 'TechArticle', name: item.title, url: publicURL(item.route) })) } });
+  return page({ route: 'docs/', active: 'docs', title, description, body, breadcrumbs, listing: manifest.docs });
 }
 
 function blogIndex(manifest, rendered) {
   const title = 'Paprika engineering blog';
+  const breadcrumbs = [{ name: 'Paprika', route: '' }, { name: 'Engineering blog', route: 'blog/' }];
   const description = 'Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP.';
-  const body = `<main id="main-content" tabindex="-1"><header class="content-hero shell">${breadcrumbHTML([{ name: 'Paprika', href: '../' }, { name: 'Engineering blog' }])}<h1>Notes from the control plane.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header><div class="content-index shell"><ol class="post-list">${manifest.posts.map((post) => `<li><article class="post-card"><div class="post-meta"><span>${escapeHTML(post.category)}</span><time datetime="${post.date}">${dateLabel(post.date)}</time><span>${rendered.get(post.source).readingMinutes} min read</span></div><div class="post-copy"><h2><a href="./${post.slug}/">${escapeHTML(post.title)}</a></h2><p>${escapeHTML(post.description)}</p><a class="link-arrow" href="./${post.slug}/" aria-label="Read ${escapeHTML(post.title)}">Read article</a></div></article></li>`).join('')}</ol><section class="blog-next"><h2>Put it into practice.</h2><p>Each article links back to the maintained implementation and guides. Start with a test cluster and a first Application.</p><a href="../docs/getting-started/" class="btn">Open the getting started guide</a></section></div></main>`;
-  return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs: [{ name: 'Paprika', route: '' }, { name: 'Engineering blog', route: 'blog/' }], schema: { '@type': 'Blog', name: title, description, url: publicURL('blog/'), publisher, blogPost: manifest.posts.map((post) => ({ '@type': 'BlogPosting', headline: post.title, url: publicURL(post.route), datePublished: post.date, author: publisher })) } });
+  const body = `<main id="main-content" tabindex="-1"><header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}<h1>Notes from the control plane.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header><div class="content-index shell"><ol class="post-list">${manifest.posts.map((post) => `<li><article class="post-card"><div class="post-meta"><span>${escapeHTML(post.category)}</span><time datetime="${post.date}">${dateLabel(post.date)}</time><span>${rendered.get(post.source).readingMinutes} min read</span></div><div class="post-copy"><h2><a href="./${post.slug}/">${escapeHTML(post.title)}</a></h2><p>${escapeHTML(post.description)}</p><a class="link-arrow" href="./${post.slug}/" aria-label="Read ${escapeHTML(post.title)}">Read article</a></div></article></li>`).join('')}</ol><section class="blog-next"><h2>Put it into practice.</h2><p>Each article links back to the maintained implementation and guides. Start with a test cluster and a first Application.</p><a href="../docs/getting-started/" class="btn">Open the getting started guide</a></section></div></main>`;
+  return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs, listing: manifest.posts });
 }
 
 function notFoundPage() {
   const body = `<main id="main-content" class="content-hero shell" tabindex="-1"><h1>That page isn’t here.</h1><p>The link may have moved. Browse the documentation, read the engineering blog, or return to Paprika.</p><div class="hero-actions"><a href="/paprika/docs/" class="btn">Browse documentation</a><a href="/paprika/" class="link-arrow">Paprika home</a></div></main>`;
   // A Pages 404 is served at the requested URL, so all resource URLs must be absolute from the host root.
-  return page({ route: '404.html', fileRoute: true, title: 'Page not found · Paprika', description: 'Find Paprika documentation, engineering articles, and Kubernetes delivery resources.', active: '', noindex: true, body, breadcrumbs: [{ name: 'Paprika', route: '' }], schema: { '@type': 'WebPage', name: 'Page not found', url: publicURL('404.html') } }).replaceAll('href="./', 'href="/paprika/').replaceAll('src="./', 'src="/paprika/');
+  return page({ route: '404.html', fileRoute: true, title: 'Page not found · Paprika', description: 'Find Paprika documentation, engineering articles, and Kubernetes delivery resources.', active: '', noindex: true, body }).replaceAll('href="./', 'href="/paprika/').replaceAll('src="./', 'src="/paprika/');
 }
 
 function rss(manifest) {
@@ -429,7 +427,16 @@ export function buildContent(output) {
   const homepage = join(destination, 'index.html');
   if (existsSync(homepage)) {
     const content = readFileSync(homepage, 'utf8');
-    writeFileSync(homepage, content.replace(/<!-- featured-posts:start -->[\s\S]*?<!-- featured-posts:end -->/, `<!-- featured-posts:start -->\n${featuredPosts(manifest)}\n<!-- featured-posts:end -->`));
+    const decode = new MarkdownIt().utils.unescapeAll;
+    const title = decode(content.match(/<title>([^<]+)<\/title>/)?.[1] || '');
+    const description = decode(content.match(/<meta name="description" content="([^"]+)"/)?.[1] || '');
+    assert.ok(title && description, 'Homepage metadata is required for structured data');
+    const marker = /<!-- structured-data:start -->[\s\S]*?<!-- structured-data:end -->/g;
+    assert.equal([...content.matchAll(marker)].length, 1, 'Homepage needs one structured-data placeholder');
+    const structured = jsonScript(pageStructuredData({ route: '', title, description }));
+    writeFileSync(homepage, content
+      .replace(marker, () => `<!-- structured-data:start -->\n<script type="application/ld+json">${structured}</script>\n<!-- structured-data:end -->`)
+      .replace(/<!-- featured-posts:start -->[\s\S]*?<!-- featured-posts:end -->/, `<!-- featured-posts:start -->\n${featuredPosts(manifest)}\n<!-- featured-posts:end -->`));
   }
   for (const route of [...routes, '404.html']) {
     const path = join(destination, route.endsWith('.html') ? route : `${route}index.html`);
