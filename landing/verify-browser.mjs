@@ -200,6 +200,9 @@ async function structuredDataMatchesPage(page, path) {
       const target = new URL(href, location.href);
       return target.origin === location.origin ? new URL(target.pathname, canonical).href : target.href;
     };
+    const figure = document.querySelector('.article-figure');
+    const image = figure?.querySelector('img');
+    const mobile = figure?.querySelector('source');
     return {
       canonical,
       schemas: [...document.querySelectorAll('script[type="application/ld+json"]')].map((script) => JSON.parse(script.textContent)),
@@ -214,6 +217,13 @@ async function structuredDataMatchesPage(page, path) {
       authorURL: document.querySelector('[rel="author"]')?.href,
       date: document.querySelector('.article-header time')?.getAttribute('datetime'),
       section: document.querySelector('.article-section')?.textContent,
+      image: image ? { url: publicURL(image.src), alt: image.alt,
+        width: Number(image.getAttribute('width')), height: Number(image.getAttribute('height')),
+        caption: figure.querySelector('figcaption span').textContent,
+        mobile: { url: publicURL(mobile.srcset), width: Number(mobile.getAttribute('width')), height: Number(mobile.getAttribute('height')) },
+        openURL: publicURL(figure.querySelector('a').href),
+        socialURL: document.querySelector('meta[property="og:image"]').content,
+        twitterURL: document.querySelector('meta[name="twitter:image"]').content } : null,
       entries: [...document.querySelectorAll('.docs-directory .doc-link, .post-copy h2 a')].map((link) => ({
         name: (link.querySelector('h3') || link).textContent.trim(), url: publicURL(link.href),
       })),
@@ -237,6 +247,23 @@ async function structuredDataMatchesPage(page, path) {
     assert(await page.locator('[rel="author"]').isVisible());
     assert.equal(article.datePublished, rendered.date);
     assert.equal(article.articleSection, rendered.section);
+    const image = byID.get(article.image?.['@id']);
+    assert.equal(image?.['@type'], 'ImageObject', `${path}: article image schema`);
+    assert.equal(webpage.primaryImageOfPage['@id'], image['@id']);
+    assert.equal(image.contentUrl, rendered.image.url);
+    assert.equal(image.width, rendered.image.width);
+    assert.equal(image.height, rendered.image.height);
+    assert.equal(image.caption, rendered.image.caption);
+    assert.equal(image.description, rendered.image.alt);
+    for (const key of ['socialURL', 'twitterURL', 'openURL']) assert.equal(rendered.image[key], image.url);
+    const illustration = page.locator('.article-figure img');
+    assert(await illustration.isVisible());
+    await illustration.evaluate(element => element.decode());
+    const selected = await illustration.evaluate(element => ({ src: new URL(element.currentSrc).pathname, width: element.naturalWidth, height: element.naturalHeight }));
+    const expected = page.viewportSize().width <= 600 ? rendered.image.mobile : rendered.image;
+    assert.equal(selected.src, new URL(expected.url).pathname, `${path}: responsive image source`);
+    assert.equal(selected.width, expected.width);
+    assert.equal(selected.height, expected.height);
   }
   if (rendered.entries.length) {
     assert.deepEqual(byID.get(webpage.mainEntity['@id']).itemListElement.map(({ name, url }) => ({ name, url })), rendered.entries);
@@ -500,8 +527,28 @@ async function run() {
     for (const path of schemaRoutes) {
       await visit(noJS.page, path);
       await structuredDataMatchesPage(noJS.page, path);
+      if (['docs/canary/', 'blog/building-dashboards-with-mcp/'].includes(path)) {
+        await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
+        await noJS.page.screenshot({ path: resolve(artifacts, path.startsWith('docs/') ? 'mobile-canary-figure.png' : 'mobile-dashboard-figure.png'), animations: 'disabled' });
+      }
     }
     console.log(`PASS structured data: ${schemaRoutes.length} pages, rendered breadcrumbs, authors, dates, directory entries and mobile layout with JavaScript disabled`);
+    await noJS.page.setViewportSize({ width: 1440, height: 1000 });
+    for (const item of [...manifest.docs, ...manifest.posts]) {
+      await visit(noJS.page, item.route);
+      await structuredDataMatchesPage(noJS.page, item.route);
+      if (['getting-started', 'building-dashboards-with-mcp'].includes(item.slug)) {
+        await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
+        await noJS.page.screenshot({ path: resolve(artifacts, `${item.kind === 'docs' ? 'desktop-guide' : 'desktop-dashboard'}-figure.png`), animations: 'disabled' });
+      }
+    }
+    const imageResponse = await Promise.all([
+      noJS.page.waitForResponse(response => response.url().endsWith(manifest.posts.at(-1).image.src)),
+      noJS.page.getByRole('link', { name: 'Open full-size diagram' }).click(),
+    ]);
+    assert.equal(imageResponse[0].status(), 200);
+    assert.equal(imageResponse[0].headers()['content-type'], 'image/png');
+    console.log('PASS article images: all 19 desktop and mobile images decode, match schema/social previews, and open at full size without JavaScript');
   } finally { await noJS.context.close(); }
 
   const reduced = await newPage({ reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });

@@ -5,112 +5,304 @@
       "title": "Install Paprika and deploy your first Application",
       "description": "Set up the Paprika CLI and Kubernetes operator, create an Application, and inspect its first Release and workload health.",
       "section": "Start",
-      "source": "docs/getting-started.md"
+      "source": "docs/getting-started.md",
+      "image": {
+        "src": "article-images/deployment.png",
+        "width": 1200,
+        "height": 620,
+        "mobile": {
+          "src": "article-images/deployment-mobile.png",
+          "width": 600,
+          "height": 910
+        },
+        "alt": "An Application pins a Git revision, optionally runs a Pipeline, creates a Release and applies resources to a Kubernetes target.",
+        "caption": "The first Application connects source configuration to a Release and live Kubernetes resources. Pipeline work is optional; the Stage selects the target."
+      }
     },
     {
       "slug": "concepts",
       "title": "Paprika concepts and feature guide",
       "description": "Understand Applications, Templates, Pipelines, Stages and Releases, then find the guide for your delivery or observability task.",
       "section": "Start",
-      "source": "docs/features.md"
+      "source": "docs/features.md",
+      "image": {
+        "src": "article-images/deployment.png",
+        "width": 1200,
+        "height": 620,
+        "mobile": {
+          "src": "article-images/deployment-mobile.png",
+          "width": 600,
+          "height": 910
+        },
+        "alt": "Application, optional Pipeline, Release and Kubernetes resources connected by delivery and observation arrows.",
+        "caption": "Applications describe intent, Releases pin source identity, and Paprika observes resource health and desired/live synchronization."
+      }
     },
     {
       "slug": "cli",
       "title": "Paprika CLI reference",
       "description": "Install and authenticate the Paprika command-line client, inspect applications and releases, and work with delivery controls.",
       "section": "Start",
-      "source": "docs/cli.md"
+      "source": "docs/cli.md",
+      "image": {
+        "src": "article-images/api-access.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/api-access-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "The Paprika CLI sends an authenticated request to the API, which checks permissions and works with Kubernetes resource records.",
+        "caption": "CLI commands use the Paprika API. Read the resulting resource state to distinguish an accepted action from a completed rollout."
+      }
     },
     {
       "slug": "pipelines",
       "title": "Run Kubernetes delivery pipelines",
       "description": "Configure container steps, dependencies, concurrency, retries and declared artifacts in Paprika Pipelines backed by Kubernetes Jobs.",
       "section": "Deliver",
-      "source": "docs/guides/pipelines.md"
+      "source": "docs/guides/pipelines.md",
+      "image": {
+        "src": "article-images/pipeline-running.png",
+        "width": 1200,
+        "height": 620,
+        "mobile": {
+          "src": "article-images/pipeline-running-mobile.png",
+          "width": 600,
+          "height": 880
+        },
+        "alt": "A build step branches into unit and policy tests; the package step waits for both prerequisites.",
+        "caption": "Illustrative Pipeline: container Jobs follow declared dependencies, with at most two steps running in parallel. Outputs are explicit references."
+      }
     },
     {
       "slug": "environment-promotion",
       "title": "Promote releases through dev, staging and production",
       "description": "Connect environment-specific Applications with pinned Git revisions, upstream verification, candidate approval and explicit target settings.",
       "section": "Deliver",
-      "source": "docs/guides/environment-promotion.md"
+      "source": "docs/guides/environment-promotion.md",
+      "image": {
+        "src": "article-images/promotion.png",
+        "width": 1200,
+        "height": 720,
+        "mobile": {
+          "src": "article-images/promotion-mobile.png",
+          "width": 600,
+          "height": 1090
+        },
+        "alt": "Separate dev, staging and production Applications select environment targets while verification and approval gate a pinned Git revision.",
+        "caption": "Illustrative promotion: each environment has its own Application and target settings. Production retains its accepted Release while a candidate awaits approval."
+      }
     },
     {
       "slug": "canary",
       "title": "Configure canary deployments",
       "description": "Set canary steps and intervals, connect traffic routing, inspect rollout progress, and configure analysis for Kubernetes releases.",
       "section": "Deliver",
-      "source": "docs/guides/canary.md"
+      "source": "docs/guides/canary.md",
+      "image": {
+        "src": "article-images/canary.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/canary-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Canary configuration routes traffic between stable and candidate backends, with workload, interval and analysis gates before each advance.",
+        "caption": "Example weights of 10, 25, 50 and 100 percent illustrate a configured rollout, not live traffic. Workload convergence and configured analysis gate each step."
+      }
     },
     {
       "slug": "drift-and-prune",
       "title": "Inspect Kubernetes drift and pruning",
       "description": "Compare desired manifests with live resources, understand sync classifications, preview stale resources, and configure opt-in pruning.",
       "section": "Deliver",
-      "source": "docs/guides/drift-and-prune.md"
+      "source": "docs/guides/drift-and-prune.md",
+      "image": {
+        "src": "article-images/evidence.png",
+        "width": 1200,
+        "height": 620,
+        "mobile": {
+          "src": "article-images/evidence-mobile.png",
+          "width": 600,
+          "height": 860
+        },
+        "alt": "Desired replicas are three while the live Deployment has two ready replicas; sync comparison and workload health are separate observations.",
+        "caption": "Illustrative resource comparison: two ready replicas can be healthy while still differing from the desired count of three. Review prune candidates separately."
+      }
     },
     {
       "slug": "multi-cluster",
       "title": "Manage delivery across Kubernetes clusters",
       "description": "Register deployment targets, configure direct or satellite connections, and understand cluster inventory and application placement.",
       "section": "Deliver",
-      "source": "docs/guides/multi-cluster.md"
+      "source": "docs/guides/multi-cluster.md",
+      "image": {
+        "src": "article-images/cluster-targets.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/cluster-targets-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "A Stage selects a registered Cluster and its in-cluster, direct or agent connection before applying resources to the target.",
+        "caption": "Cluster registration and deployment transport determine where a Stage applies resources. Satellite observation alone does not prove that deployment access works."
+      }
     },
     {
       "slug": "observability-gateway",
       "title": "Connect the observability gateway",
       "description": "Configure Paprika Observe providers and authenticated MCP access for querying metrics, logs, traces and saved dashboards.",
       "section": "Observe",
-      "source": "docs/guides/observability-gateway.md"
+      "source": "docs/guides/observability-gateway.md",
+      "image": {
+        "src": "article-images/observe-gateway.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/observe-gateway-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "An authenticated MCP client queries the Observe gateway, which authorizes bounded reads against metrics, logs and traces providers.",
+        "caption": "The separate /observe/mcp surface connects authorized clients to telemetry providers. Inspect freshness and query results as well as provider reachability."
+      }
     },
     {
       "slug": "dashboards",
       "title": "Use dashboard examples with real data",
       "description": "Explore Paprika Insights examples, map their queries to connected providers, and inspect live results without a sample-data fallback.",
       "section": "Observe",
-      "source": "docs/guides/dashboard-repository-examples.md"
+      "source": "docs/guides/dashboard-repository-examples.md",
+      "image": {
+        "src": "article-images/dashboard-authoring.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/dashboard-authoring-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Discover real provider IDs, bind saved queries and parameters to dashboard widgets, then verify data and layout.",
+        "caption": "Adapt examples by binding their queries to actual providers. Execute the saved dashboard and inspect returned data before relying on its panels."
+      }
     },
     {
       "slug": "metrics",
       "title": "Monitor Paprika metrics and alerts",
       "description": "Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation.",
       "section": "Observe",
-      "source": "docs/guides/metrics.md"
+      "source": "docs/guides/metrics.md",
+      "image": {
+        "src": "article-images/metrics.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/metrics-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules.",
+        "caption": "Metrics become useful after scraping, label selection and freshness checks. Tune alert thresholds and durations to the installation."
+      }
     },
     {
       "slug": "observe-browser-renderer",
       "title": "Render dashboards for visual verification",
       "description": "Deploy the optional private browser worker and inspect saved dashboards at different viewport sizes without replacing live data checks.",
       "section": "Observe",
-      "source": "docs/guides/observe-browser-renderer.md"
+      "source": "docs/guides/observe-browser-renderer.md",
+      "image": {
+        "src": "article-images/browser-renderer.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/browser-renderer-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Authorized dashboard identity and ETag pass to a private browser worker, which returns a real Insights screenshot for visual inspection.",
+        "caption": "The optional worker captures the actual Insights interface at the requested viewport. Use query_dashboard alongside the image to verify data freshness and errors."
+      }
     },
     {
       "slug": "mcp-client-setup",
       "title": "Connect an MCP client to Paprika",
       "description": "Configure Codex, Claude Code or another MCP client for your Paprika server and complete the native OAuth sign-in flow.",
       "section": "Integrate",
-      "source": "docs/guides/mcp-client-setup.md"
+      "source": "docs/guides/mcp-client-setup.md",
+      "image": {
+        "src": "article-images/mcp-access.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/mcp-access-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Configure an MCP client, complete native OAuth, then verify authorized fleet or Observe tools on the selected endpoint.",
+        "caption": "Choose /mcp for fleet operations or /observe/mcp for telemetry. Their audiences and permissions are separate; client setup does not grant server access."
+      }
     },
     {
       "slug": "mcp-plugin",
       "title": "Use the Paprika fleet plugin",
       "description": "Install the Paprika plugin for Codex or Claude, inspect fleet and application state, and understand permissions for delivery actions.",
       "section": "Integrate",
-      "source": "docs/guides/mcp-plugin.md"
+      "source": "docs/guides/mcp-plugin.md",
+      "image": {
+        "src": "article-images/mcp-access.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/mcp-access-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "A plugin configures the client connection, OAuth grants approved access, and tool discovery verifies the selected Paprika surface.",
+        "caption": "The plugin supplies client configuration and guidance. Sign in to the intended server and verify available tools before using delivery actions."
+      }
     },
     {
       "slug": "observe-plugin",
       "title": "Install and use Paprika Observe",
       "description": "Install the Observe plugin, connect with OAuth, discover telemetry providers, and create or update shared Insights dashboards.",
       "section": "Integrate",
-      "source": "plugins/paprika-observe/README.md"
+      "source": "plugins/paprika-observe/README.md",
+      "image": {
+        "src": "article-images/dashboard-authoring.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/dashboard-authoring-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Provider discovery leads to saved queries and dashboard widgets, followed by execution and visual verification.",
+        "caption": "After connecting Observe, discover genuine provider IDs and reuse or create queries. Editing a shared dashboard requires the exact ETag and appropriate write access."
+      }
     },
     {
       "slug": "api",
       "title": "Paprika API reference",
       "description": "Explore Paprika's Connect-RPC API for applications, releases, pipelines and related resources, with request and response examples.",
       "section": "Integrate",
-      "source": "docs/api.md"
+      "source": "docs/api.md",
+      "image": {
+        "src": "article-images/api-access.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/api-access-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "A Connect-RPC client sends a request to Paprika, which authenticates and authorizes access to Applications, Releases and related resources.",
+        "caption": "Connect JSON requests and the CLI use the same resource model. Check the response and resulting resource state after an action."
+      }
     }
   ],
   "posts": [
@@ -120,7 +312,19 @@
       "description": "A healthy workload can still differ from Git. Learn how to read Kubernetes health, desired-state drift and prune candidates together.",
       "category": "Operations",
       "date": "2026-11-07T06:57:52Z",
-      "source": "landing/content/blog/kubernetes-health-vs-drift.md"
+      "source": "landing/content/blog/kubernetes-health-vs-drift.md",
+      "image": {
+        "src": "article-images/evidence.png",
+        "width": 1200,
+        "height": 620,
+        "mobile": {
+          "src": "article-images/evidence-mobile.png",
+          "width": 600,
+          "height": 860
+        },
+        "alt": "A desired Deployment requests three replicas while two live replicas are ready, illustrating healthy workloads that are still out of sync.",
+        "caption": "Illustrative evidence: workload health and desired-state drift answer different questions. A healthy running resource can still differ from Git."
+      }
     },
     {
       "slug": "promoting-pinned-revisions",
@@ -128,7 +332,19 @@
       "description": "Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.",
       "category": "Delivery",
       "date": "2026-11-07T06:57:52Z",
-      "source": "landing/content/blog/promoting-pinned-revisions.md"
+      "source": "landing/content/blog/promoting-pinned-revisions.md",
+      "image": {
+        "src": "article-images/promotion.png",
+        "width": 1200,
+        "height": 720,
+        "mobile": {
+          "src": "article-images/promotion-mobile.png",
+          "width": 600,
+          "height": 1090
+        },
+        "alt": "Dev and staging verify a pinned revision while production keeps its accepted Release until the separate candidate is approved.",
+        "caption": "Illustrative promotion binds a candidate to a Git revision and verification evidence. Each Application retains its own target configuration and release history."
+      }
     },
     {
       "slug": "building-dashboards-with-mcp",
@@ -136,7 +352,19 @@
       "description": "Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.",
       "category": "Observability",
       "date": "2026-11-07T06:57:52Z",
-      "source": "landing/content/blog/building-dashboards-with-mcp.md"
+      "source": "landing/content/blog/building-dashboards-with-mcp.md",
+      "image": {
+        "src": "article-images/dashboard-authoring.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/dashboard-authoring-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Discover real telemetry, bind provider-backed queries to widgets with exact ETags, and verify query execution and the rendered dashboard.",
+        "caption": "MCP dashboard authoring follows discovery, query, save, read-back and verification. A successful save alone does not establish fresh data or a readable layout."
+      }
     }
   ]
 }

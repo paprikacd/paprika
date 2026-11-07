@@ -117,6 +117,19 @@ export function validateManifest(manifest) {
         const date = new Date(item.date);
         assert.ok(!Number.isNaN(date.valueOf()) && date.toISOString() === item.date.replace('Z', '.000Z'), `Invalid publication date: ${item.date}`);
       }
+      assert.ok(item.image && typeof item.image === 'object', `${item.slug} needs an article image`);
+      for (const key of ['alt', 'caption']) {
+        assert.ok(typeof item.image[key] === 'string' && item.image[key].trim(), `${item.slug} image needs ${key}`);
+      }
+      for (const image of [item.image, item.image.mobile]) {
+        assert.ok(image && typeof image.src === 'string', `${item.slug} needs desktop and mobile images`);
+        assert.match(image.src, /^article-images\/[a-z0-9-]+\.png$/, 'Article image paths must be local PNG assets');
+        const bytes = readFileSync(insideRepository(`landing/${image.src}`));
+        assert.ok(bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) && bytes.length >= 24, `Invalid PNG: ${image.src}`);
+        assert.equal(image.width, bytes.readUInt32BE(16), `Wrong image width: ${image.src}`);
+        assert.equal(image.height, bytes.readUInt32BE(20), `Wrong image height: ${image.src}`);
+        assert.ok(image.width * image.height >= 50_000, `Article image is too small: ${image.src}`);
+      }
     }
   }
   return manifest;
@@ -287,6 +300,8 @@ function page({ route, title, description, active, body, article, listing, bread
   const prefix = fileRoute ? './' : assetPrefix(route);
   const canonical = publicURL(route);
   const structured = pageStructuredData({ route, title, description, article, listing, breadcrumbs });
+  const preview = article?.image ? publicURL(article.image.src) : socialImage;
+  const previewAlt = article?.image?.alt || 'Paprika console showing synthetic application data';
   return `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
@@ -302,20 +317,21 @@ ${noindex ? '<meta name="robots" content="noindex"/>' : ''}
 <meta property="og:title" content="${escapeHTML(title)}"/>
 <meta property="og:description" content="${escapeHTML(description)}"/>
 <meta property="og:url" content="${canonical}"/>
-<meta property="og:image" content="${socialImage}"/>
-<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+<meta property="og:image" content="${preview}"/>
+<meta property="og:image:alt" content="${escapeHTML(previewAlt)}"/>
+${article?.image ? `<meta property="og:image:width" content="${article.image.width}"/><meta property="og:image:height" content="${article.image.height}"/><meta property="og:image:type" content="image/png"/>` : ''}
 ${article?.date ? `<meta property="article:published_time" content="${article.date}"/>` : ''}
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:title" content="${escapeHTML(title)}"/>
 <meta name="twitter:description" content="${escapeHTML(description)}"/>
-<meta name="twitter:image" content="${socialImage}"/>
-<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<meta name="twitter:image" content="${preview}"/>
+<meta name="twitter:image:alt" content="${escapeHTML(previewAlt)}"/>
 <link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="${prefix}feed.xml"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="${prefix}site.css?v=public-content-1"/>
-<link rel="stylesheet" href="${prefix}content.css?v=public-content-1"/>
+<link rel="stylesheet" href="${prefix}content.css?v=article-images-1"/>
 <script type="application/ld+json">${jsonScript(structured)}</script>
 <script src="${prefix}content.js?v=public-content-1" defer></script>
 </head><body class="content-page">
@@ -339,6 +355,10 @@ function articlePage(item, document, manifest) {
   const index = list.indexOf(item);
   const previous = list[index - 1];
   const next = list[index + 1];
+  const { image } = item;
+  const figure = `<figure class="article-figure"><picture><source media="(max-width: 600px)" srcset="${prefix}${image.mobile.src}" width="${image.mobile.width}" height="${image.mobile.height}"/><img src="${prefix}${image.src}" alt="${escapeHTML(image.alt)}" width="${image.width}" height="${image.height}" decoding="async"/></picture><figcaption><span>${escapeHTML(image.caption)}</span> <a href="${prefix}${image.src}">Open full-size diagram</a></figcaption></figure>`;
+  const illustratedBody = document.html.includes('</p>')
+    ? document.html.replace('</p>', () => `</p>${figure}`) : figure + document.html;
   const toc = `<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol>${document.toc.map((heading) => `<li class="toc-level-${heading.level}"><a href="#${escapeHTML(heading.id)}">${escapeHTML(heading.title)}</a></li>`).join('')}</ol></nav></details></aside>`;
   const body = `<div class="shell article-breadcrumbs">${breadcrumbHTML(breadcrumbs, prefix)}</div>
 <div class="article-layout${blog ? ' article-layout--blog' : ''} shell">
@@ -346,7 +366,7 @@ ${blog ? '' : articleSidebar(manifest.docs, item, prefix)}
 ${toc}
 <main id="main-content" class="article-main" tabindex="-1"><article>
 <header class="article-header"><h1 id="${escapeHTML(document.headingID)}">${escapeHTML(item.title)}</h1><p class="article-description">${escapeHTML(item.description)}</p><div class="article-meta"><span>${blog ? 'By' : 'Maintained by'} <a rel="author" href="${repositoryURL}">Paprika maintainers</a></span><span class="article-section">${escapeHTML(blog ? item.category : item.section)}</span>${blog ? `<time datetime="${item.date}">${dateLabel(item.date)}</time><span>${document.readingMinutes} min read</span>` : ''}<a href="${sourceURL(item.source)}">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
-<div class="prose">${document.html}</div>
+<div class="prose">${illustratedBody}</div>
 </article>
 <nav class="article-next" aria-label="${blog ? 'More articles' : 'More guides'}">${previous ? `<a href="${prefix}${previous.route}" rel="prev"><span>Previous ${blog ? 'article' : 'guide'}</span><strong>${escapeHTML(previous.title)}</strong></a>` : `<a href="${prefix}${item.kind}/"><span>Browse</span><strong>All ${blog ? 'engineering articles' : 'documentation'}</strong></a>`}${next ? `<a href="${prefix}${next.route}" rel="next"><span>Next ${blog ? 'article' : 'guide'}</span><strong>${escapeHTML(next.title)}</strong></a>` : `<a href="${prefix}${blog ? 'docs/' : 'blog/'}"><span>Keep exploring</span><strong>${blog ? 'Read the documentation' : 'Read the engineering blog'}</strong></a>`}</nav>
 </main></div>`;
@@ -406,6 +426,12 @@ export function buildContent(output) {
   for (const directory of ['docs', 'blog', 'content-assets']) {
     rmSync(join(destination, directory), { recursive: true, force: true });
   }
+  const articleImages = new Set(items.flatMap(item => [item.image.src, item.image.mobile.src]));
+  for (const source of articleImages) {
+    const target = join(destination, source);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(join(landingRoot, source), target);
+  }
   const writePage = (route, html) => {
     const path = join(destination, route, 'index.html');
     mkdirSync(dirname(path), { recursive: true });
@@ -462,7 +488,7 @@ export function selfTest() {
   assert.throws(() => stagingDestination(repoRoot), /repository or one of its ancestors/);
   assert.throws(() => stagingDestination(resolve(repoRoot, '..')), /repository or one of its ancestors/);
   assert.throws(() => stagingDestination(landingRoot), /outside landing sources/);
-  const entry = { slug: 'start', title: 'Start', description: 'Start with a test cluster', section: 'Start', source: 'docs/getting-started.md' };
+  const entry = { slug: 'start', title: 'Start', description: 'Start with a test cluster', section: 'Start', source: 'docs/getting-started.md', image: readManifest().docs[0].image };
   assert.throws(() => validateManifest({ docs: [entry, { ...entry, source: 'docs/cli.md' }], posts: [] }), /Duplicate route/);
   const document = renderDocument(item, sources, new Map(), '# Source title\n\n## Repeat `code`\n\n## Repeat `code`\n\n<script>alert(1)</script>\n\n[Bad](javascript:alert(1))\n\n```html\n<img src=x onerror=alert(1)>\n```\n\n| A | B |\n| - | - |\n| 1 | 2 |\n');
   assert.equal(document.headingID, 'source-title');

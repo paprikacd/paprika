@@ -42,7 +42,7 @@ function articleEntity(item) {
     articleSection: item.kind === 'blog' ? item.category : item.section,
     // Publication timestamps are editorial metadata; never substitute build times.
     ...(item.kind === 'blog' ? { datePublished: item.date } : {}),
-    // The generic social preview is not an illustration of each article.
+    image: ref(`${canonical}#primaryimage`),
   };
 }
 
@@ -61,7 +61,14 @@ export function pageStructuredData({ route, title, description, breadcrumbs = []
   if (!route) webpage.mainEntity = ref(softwareID);
   if (article) {
     webpage.mainEntity = ref(`${canonical}#article`);
-    graph.push(collection(article.kind), articleEntity(article));
+    webpage.primaryImageOfPage = ref(`${canonical}#primaryimage`);
+    graph.push(collection(article.kind), articleEntity(article), {
+      '@type': 'ImageObject', '@id': `${canonical}#primaryimage`,
+      url: url(article.image.src), contentUrl: url(article.image.src),
+      width: article.image.width, height: article.image.height,
+      encodingFormat: 'image/png', description: article.image.alt,
+      caption: article.image.caption, representativeOfPage: true,
+    });
   }
   if (listing) {
     // A directory describes linked pages; full article markup belongs on each article.

@@ -103,7 +103,7 @@ function verifyStructuredData(structured, html, route, title, description) {
       }
       return Object.entries(value).forEach(([property, child]) => walk(child, property));
     }
-    if (['@id', 'url', 'item', 'logo', 'image', 'license', 'codeRepository'].includes(key)) {
+    if (['@id', 'url', 'contentUrl', 'item', 'logo', 'image', 'license', 'codeRepository'].includes(key)) {
       assert.equal(new URL(value).protocol, 'https:', `Structured-data URL must be absolute HTTPS: ${value}`);
       verifyURL(value, route, { fragment: false });
     }
@@ -191,7 +191,25 @@ for (const route of htmlRoutes) {
       assert.equal(article.mainEntityOfPage['@id'], `${canonical[0].href}#webpage`);
       assert.equal(entities.get(article.isPartOf['@id'])?.url, new URL(`${item.kind}/`, siteURL).href);
       assert.equal(article.articleSection, item.kind === 'blog' ? item.category : item.section);
-      assert.ok(!article.image, `Do not reuse the generic social preview as an article image: ${route}`);
+      const image = entities.get(article.image?.['@id']);
+      assert.equal(image?.['@type'], 'ImageObject', `Missing article image: ${route}`);
+      assert.equal(image.url, new URL(item.image.src, siteURL).href);
+      assert.equal(image.contentUrl, image.url);
+      assert.equal(image.width, item.image.width);
+      assert.equal(image.height, item.image.height);
+      assert.equal(image.caption, item.image.caption);
+      assert.equal(image.description, item.image.alt);
+      assert.equal(entities.get(`${canonical[0].href}#webpage`).primaryImageOfPage['@id'], image['@id']);
+      const figure = html.match(/<figure class="article-figure">([\s\S]*?)<\/figure>/)?.[1];
+      assert.ok(figure, `Missing visible article illustration: ${route}`);
+      const figureImage = attributes(figure.match(/<img\b[^>]*>/)[0]);
+      assert.equal(new URL(figureImage.src, canonical[0].href).href, image.url);
+      assert.equal(figureImage.alt, item.image.alt);
+      assert.equal(Number(figureImage.width), image.width);
+      assert.equal(Number(figureImage.height), image.height);
+      assert.equal(decode(figure.match(/<figcaption><span>(.*?)<\/span>/)[1]), image.caption);
+      assert.equal(meta.find(tag => tag.property === 'og:image')?.content, image.url);
+      assert.equal(meta.find(tag => tag.name === 'twitter:image')?.content, image.url);
       assert.ok(!article.dateModified, `Do not invent modification dates: ${route}`);
       assert.ok(html.includes('View source on GitHub'), `Missing source link: ${route}`);
       if (item.kind === 'blog') {
