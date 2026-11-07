@@ -91,6 +91,12 @@ async function render(params, bearer, origin, signal, etag) {
   const abort=()=>{void context.close().catch(()=>{})}
   signal.addEventListener("abort",abort,{once:true})
   let failure,observedETag
+  const fail=error=>{
+    failure??=error
+    // A known failed render must not sit in a UI readiness wait until the
+    // outer deadline. Closing this request's context interrupts those waits.
+    void context.close().catch(()=>{})
+  }
   try {
     signal.throwIfAborted()
     await context.addInitScript(({token,theme,origin})=>{
@@ -110,24 +116,24 @@ async function render(params, bearer, origin, signal, etag) {
         // response so neither credentials nor browser requests leave the allowlist.
         const response=await route.fetch({headers,maxRedirects:0,timeout:maxTime})
         if(response.status()>=300 && response.status()<400) {
-          failure??=new RenderError("dashboard request redirected")
-          await route.abort("blockedbyclient")
+          fail(new RenderError("dashboard request redirected"))
+          await route.abort("blockedbyclient").catch(()=>{})
           return
         }
         await route.fulfill({response})
       } catch {
-        failure??=new RenderError("dashboard request failed")
+        fail(new RenderError("dashboard request failed"))
         await route.abort("failed").catch(()=>{})
       }
     })
     await page.routeWebSocket("**/*",ws=>ws.close())
-    page.on("pageerror",()=>{failure??=new RenderError("dashboard script failed")})
+    page.on("pageerror",()=>{fail(new RenderError("dashboard script failed"))})
     page.on("response",response=>{
       const path=new URL(response.url()).pathname
-      if (path.startsWith("/api/insights/") && response.status()>=400) failure??=new RenderError("dashboard data request failed")
+      if (path.startsWith("/api/insights/") && response.status()>=400) fail(new RenderError("dashboard data request failed"))
       if(path==="/api/insights/dashboards/"+params.id && response.request().method()==="GET" && response.ok()) {
         observedETag=response.headers()["x-paprika-document-etag"]??response.headers().etag
-        if(observedETag!==etag)failure=new RenderError("dashboard changed during rendering",409)
+        if(observedETag!==etag)fail(new RenderError("dashboard changed during rendering",409))
       }
     })
     const path="/dashboard/insights/?dashboard="+encodeURIComponent(params.id)

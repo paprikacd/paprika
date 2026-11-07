@@ -47,7 +47,9 @@ async function verifyRedirectIsolation() {
   const sink=createServer((req,res)=>{received.push(req.headers);res.writeHead(200).end("unexpected")})
   const token="redirect-isolation-test-token"
   let sourceAuthorization,redirectWorker
+  const sourceRequests=[]
   const source=createServer((req,res)=>{
+    sourceRequests.push({method:req.method,path:req.url})
     if(req.url==="/api/insights/dashboards/redirect-test") {
       sourceAuthorization=req.headers.authorization
       res.writeHead(302,{Location:"http://127.0.0.1:"+sink.address().port+"/denied"}).end()
@@ -64,7 +66,7 @@ async function verifyRedirectIsolation() {
       method:"POST",headers:{Authorization:"Bearer "+token,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":'"'+"0".repeat(64)+'"',"Content-Type":"application/json"},
       body:JSON.stringify({id:"redirect-test"}),signal:AbortSignal.timeout(25_000),
     })
-    assert.equal(response.status,422,"a redirected dashboard request must fail rendering")
+    assert.equal(response.status,422,"a redirected dashboard request must fail rendering: "+JSON.stringify({sourceRequests,credentialed:sourceAuthorization==="Bearer "+token,sinkRequests:received.length}))
     assert.equal(sourceAuthorization,"Bearer "+token,"test must exercise credentialed Insights fetch")
     assert.deepEqual(received,[],"a redirect must never reach an unapproved destination or forward its token")
     console.log("PASS browser redirect isolation: credentialed request never reaches denied sink")

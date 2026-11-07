@@ -1,0 +1,79 @@
+{
+  "fixture_version": 1,
+  "provenance": "Deterministic synthetic observations for testing. Not Paprika dashboard schema or production telemetry.",
+  "timestamp_unit": "unix-seconds",
+  "cases": {
+    "unit_conversion": {
+      "base_unit": "seconds",
+      "display_unit": "milliseconds",
+      "value": 0.125,
+      "threshold": 0.2,
+      "scale": 1000,
+      "expected_display_value": 125,
+      "expected_display_threshold": 200
+    },
+    "weighted_error_ratio": {
+      "instances": [
+        {"id": "small", "errors": 1, "requests": 10},
+        {"id": "large", "errors": 9, "requests": 990}
+      ],
+      "expected_fraction": 0.01,
+      "zero_traffic": {"errors": 0, "requests": 0, "expected_state": "undefined-no-traffic"}
+    },
+    "counter_reset": {
+      "metric_kind": "counter",
+      "series": [
+        {"id": "replica-a", "samples": [[0, 100], [15, 110], [30, 5], [45, 15]]},
+        {"id": "replica-b", "samples": [[0, 200], [15, 210], [30, 220], [45, 230]]}
+      ],
+      "assertion": "Evaluate the real rate-before-aggregation query. Do not use a hand-written difference as a complete Prometheus rate oracle."
+    },
+    "cumulative_buckets": {
+      "upper_bounds": [0.1, 0.2, 0.5, "+Inf"],
+      "cumulative_counts": [2, 5, 9, 10],
+      "expected_disjoint_counts": [2, 3, 4, 1],
+      "invalid_nonmonotonic_counts": [2, 5, 4, 10]
+    },
+    "gap_and_zero": {
+      "samples": [[0, 0], [15, 3], [30, null], [45, null], [60, 0], [75, 4]],
+      "assertion": "Two zero observations and a missing interval remain visually and semantically distinct."
+    },
+    "missing_tail": {
+      "samples": [[0, 4], [15, 7], [30, null]],
+      "historical_latest_finite": {"timestamp": 15, "value": 7},
+      "current_final_sample": {"timestamp": 30, "value": null}
+    },
+    "narrow_breach": {
+      "generator": {"length": 10001, "start": 0, "step": 1, "baseline": 10, "override_index": 5001, "override_value": 250},
+      "threshold": 100,
+      "expected_max": 250,
+      "assertion": "Actual reduction keeps or explicitly exposes the threshold breach; semantic max remains 250 at every panel width."
+    },
+    "mismatched_timestamps": {
+      "range": [0, 60],
+      "series": [
+        {"id": "a", "samples": [[0, 1], [15, 2], [30, 3], [45, 4], [60, 5]]},
+        {"id": "b", "samples": [[10, 10], [30, 20], [50, 30]]}
+      ],
+      "assertion": "Synchronize by time; timestamp 30 means a=3 and b=20, never the same array index."
+    },
+    "stable_identity": {
+      "first_order": ["checkout", "billing", "search"],
+      "second_order": ["search", "checkout", "billing"],
+      "filtered_order": ["billing", "search"],
+      "assertion": "Color and legend identity follow the entity across ordering/filtering, with explicit authored overrides preserved."
+    },
+    "melbourne_dst": {
+      "timezone": "Australia/Melbourne",
+      "utc_instants": ["2026-10-03T15:59:00Z", "2026-10-03T16:00:00Z"],
+      "assertion": "Maintain monotonic UTC chronology; local labels cross from 01:59 AEST to 03:00 AEDT on 2026-10-04."
+    },
+    "partial_records": {
+      "returned_count": 100,
+      "limit": 100,
+      "truncated": true,
+      "known_total": null,
+      "assertion": "Show a bounded sample/limit, not a claim that there are exactly 100 events."
+    }
+  }
+}
