@@ -29,13 +29,16 @@
   <link rel="stylesheet" href="./tour.css?v=tour-2" />
   <script src="./gamma-ui.js?v=gamma-story-1" defer></script>
   <script src="./tour.js?v=tour-1" defer></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="./analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
 </head>
 <body class="tour-page">
   <a class="skip-link" href="#tour-content">Skip to walkthrough</a>
   <header class="tour-header">
     <a class="wordmark" href="./" aria-label="Paprika home"><img src="./paprika-mark.png" width="35" height="35" alt="" /><span>Paprika</span></a>
     <span class="tour-header-label">Inside the console</span>
-    <a href="./#get-started" class="tour-header-action">Start self-hosting <span aria-hidden="true">↗</span></a>
+    <a data-analytics-event="get_started" href="./#get-started" class="tour-header-action">Start self-hosting <span aria-hidden="true">↗</span></a>
   </header>
 
   <main id="tour-content" class="tour-shell" data-tour tabindex="-1">
@@ -90,7 +93,7 @@
             <div class="tour-narrative"><div><p class="tour-kicker">05 / Resource logs</p><h2 id="logs-title" tabindex="-1">Read what happened.</h2><p>The captured logs include an earlier dependency failure followed by recovery. Together with the current <strong>Healthy · Synced</strong> state, they explain why an error in history doesn’t mean an incident is still active.</p></div><div class="tour-reading tour-reading-recovered"><span class="tour-reading-icon" aria-hidden="true">✓</span><p><b>Recovery has evidence.</b> Read the sequence and the current state together. This walkthrough performs no remediation.</p></div></div>
             <figure class="tour-capture"><div class="tour-capture-toolbar"><span>checkout-service <span class="tour-breadcrumb">/ resource inspector / logs</span></span><button type="button" class="tour-zoom tour-interactive" data-tour-zoom aria-label="Enlarge checkout-service resource log capture"><span aria-hidden="true">⤢</span> Enlarge</button></div><div class="tour-image-wrap"><img src="./tour/logs.webp" width="1440" height="900" alt="Actual Paprika resource Logs inspector with synthetic checkout-service records containing a prior dependency error and subsequent recovery." loading="lazy" /></div><figcaption>Actual console · captured synthetic log records · this is not a live stream</figcaption></figure>
             <details class="tour-evidence"><summary><span><span aria-hidden="true">✓</span> The evidence trail</span><span class="evidence-plus" aria-hidden="true">+</span></summary><div><p><strong>Application → target → resource → logs.</strong> The inventory and heatmap locate the workload. The Application and resource views retain its identity. The logs provide the earlier failure and recovery sequence.</p><p><strong>Replay evidence:</strong> <code>database_app state=unavailable</code> → <code>GET /deepcheck status=503 readiness=false</code> → retry → <code>database_app state=ok</code> → <code>GET /deepcheck status=200 readiness=true</code> → <code>ready_replicas=3/3 health=Healthy</code>.</p><p>Current health and sync describe current observations. Historical log lines describe events. Read both before deciding what needs action.</p></div></details>
-            <div class="tour-stage-action"><span>You’ve followed the evidence from the fleet to the workload.</span><a class="tour-primary" href="./#get-started">Try Paprika on your cluster <span aria-hidden="true">↗</span></a></div>
+            <div class="tour-stage-action"><span>You’ve followed the evidence from the fleet to the workload.</span><a data-analytics-event="get_started" class="tour-primary" href="./#get-started">Try Paprika on your cluster <span aria-hidden="true">↗</span></a></div>
           </article>
         </div>
 

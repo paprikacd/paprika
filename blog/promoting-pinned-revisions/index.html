@@ -29,10 +29,13 @@
 <link rel="stylesheet" href="../../content.css?v=public-content-1"/>
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BlogPosting","headline":"Promoting a tested Git revision across Kubernetes environments","description":"Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.","url":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/","mainEntityOfPage":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","datePublished":"2026-11-07","articleSection":"Delivery","isPartOf":{"@type":"Blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Promoting a tested Git revision across Kubernetes environments","item":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/"}]}]}</script>
 <script src="../../content.js?v=public-content-1" defer></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="../../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
 </head><body class="content-page">
 <a href="#main-content" class="skip-link">Skip to main content</a>
-<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
-<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Delivery</span></li></ol></nav></div>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="blog_open" href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Delivery</span></li></ol></nav></div>
 <div class="article-layout article-layout--blog shell">
 
 <aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#give-each-environment-its-own-application">Give each environment its own Application</a></li><li class="toc-level-2"><a href="#pin-source-identity-and-preserve-target-configuration">Pin source identity and preserve target configuration</a></li><li class="toc-level-2"><a href="#put-checks-on-the-environment-they-actually-test">Put checks on the environment they actually test</a></li><li class="toc-level-2"><a href="#review-the-candidate-before-approving-it">Review the candidate before approving it</a></li><li class="toc-level-2"><a href="#pin-container-images-as-well">Pin container images as well</a></li><li class="toc-level-2"><a href="#verify-the-deployed-target">Verify the deployed target</a></li></ol></nav></details></aside>
@@ -44,7 +47,7 @@ to answer is precise: which revision will production receive?</p>
 run. Paprika's Git promotion flow selects the exact revision from a completed
 upstream Release. Each environment keeps its own Application and deployment
 settings, while the source revision connects the chain. The
-<a href="../../docs/environment-promotion/">environment promotion guide</a>
+<a data-analytics-event="docs_open" href="../../docs/environment-promotion/">environment promotion guide</a>
 defines this behaviour and provides the complete manifest.</p>
 <h2 id="give-each-environment-its-own-application">Give each environment its own Application</h2>
 <p>A dev-to-production chain uses separate Applications for dev, staging and
@@ -87,7 +90,7 @@ the source and Stage configuration from your complete Application:</p>
 </code></pre></div>
 <p><code>from.namespace</code> identifies the upstream Application's management namespace,
 not a namespace on a remote target cluster. See the
-<a href="../../docs/environment-promotion/#choose-a-trigger-for-each-environment">trigger rules</a>
+<a data-analytics-event="docs_open" href="../../docs/environment-promotion/#choose-a-trigger-for-each-environment">trigger rules</a>
 before adapting this fragment.</p>
 <h2 id="pin-source-identity-and-preserve-target-configuration">Pin source identity and preserve target configuration</h2>
 <p>In Git promotion, upstream and downstream Applications resolve to the same
@@ -104,7 +107,7 @@ does not help a later render if the repository can no longer serve the
 commit. Review all environment-specific paths at that revision, too: a
 commit that contains the dev chart path must also contain the path production
 will render. These are prerequisites in the
-<a href="../../docs/environment-promotion/#complete-example">complete example</a>.</p>
+<a data-analytics-event="docs_open" href="../../docs/environment-promotion/#complete-example">complete example</a>.</p>
 <h2 id="put-checks-on-the-environment-they-actually-test">Put checks on the environment they actually test</h2>
 <p>Promotion has a before-and-after boundary. <code>trigger.tests</code> runs a verification
 Pipeline against the upstream environment before the downstream Release is
@@ -115,7 +118,7 @@ configured execution namespace.</p>
 location. A remote cluster's internal service DNS name is not generally
 reachable there. Choose an endpoint with the intended network path, or use
 a target-side hook when a check needs to run inside the workload cluster.
-The <a href="../../docs/environment-promotion/#tests-before-promotion-and-verification-after-deployment">verification guide</a>
+The <a data-analytics-event="docs_open" href="../../docs/environment-promotion/#tests-before-promotion-and-verification-after-deployment">verification guide</a>
 describes both placements.</p>
 <p>Checks of the newly deployed target belong in <code>stages[].gates</code> or the
 appropriate target-side verification flow. Testing dev successfully cannot
@@ -143,7 +146,7 @@ invalidate that approval. While a candidate waits or fails verification, the
 accepted downstream release remains in place. Failed verification is latched;
 an explicit candidate retry follows the documented retry flow and requires
 fresh approval where manual sync applies. Use the
-<a href="../../docs/environment-promotion/">approval and retry instructions</a>
+<a data-analytics-event="docs_open" href="../../docs/environment-promotion/">approval and retry instructions</a>
 for the exact annotations and status checks.</p>
 <h2 id="pin-container-images-as-well">Pin container images as well</h2>
 <p>A Git SHA identifies source content. It does not make a mutable container
@@ -153,7 +156,7 @@ pull different image bytes if the chart uses a tag that has moved.</p>
 the promoted source or deliberately manage explicit per-environment image
 parameters. Git promotion does not automatically transfer an image built by
 <code>spec.build</code> or a declared Pipeline artifact. The
-<a href="../../docs/environment-promotion/#keep-environment-configuration-explicit">configuration boundary</a>
+<a data-analytics-event="docs_open" href="../../docs/environment-promotion/#keep-environment-configuration-explicit">configuration boundary</a>
 is part of the contract, not an implementation detail to infer away.</p>
 <h2 id="verify-the-deployed-target">Verify the deployed target</h2>
 <p>After admission, inspect the new Release, target resources and fresh health
@@ -161,12 +164,12 @@ and sync observations. The selected SHA establishes what was rendered;
 the target's observations establish what happened after deployment.</p>
 <p>Start with the <a href="https://github.com/paprikacd/paprika/blob/master/config/samples/pipelines_v1alpha1_environment_promotion.yaml">complete promotion manifest</a>,
 adapt its repository, paths, clusters and endpoints, and follow the
-<a href="../../docs/environment-promotion/">environment promotion guide</a>
+<a data-analytics-event="docs_open" href="../../docs/environment-promotion/">environment promotion guide</a>
 on a test installation. Keep the revision, environment settings, verification
 result and approved candidate together when reviewing each promotion.</p>
 </div>
 </article>
-<nav class="article-next" aria-label="More articles"><a href="../../blog/kubernetes-health-vs-drift/" rel="prev"><span>Previous article</span><strong>Kubernetes health and drift answer different questions</strong></a><a href="../../blog/building-dashboards-with-mcp/" rel="next"><span>Next article</span><strong>Build and verify observability dashboards through MCP</strong></a></nav>
+<nav class="article-next" aria-label="More articles"><a data-analytics-event="blog_open" href="../../blog/kubernetes-health-vs-drift/" rel="prev"><span>Previous article</span><strong>Kubernetes health and drift answer different questions</strong></a><a data-analytics-event="blog_open" href="../../blog/building-dashboards-with-mcp/" rel="next"><span>Next article</span><strong>Build and verify observability dashboards through MCP</strong></a></nav>
 </main></div>
-<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../../docs/">Documentation</a><a data-analytics-event="blog_open" href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
 </body></html>

@@ -37,6 +37,9 @@
   <script src="./story.js?v=gamma-story-1" defer></script>
   <script src="./chart-showcase.js?v=public-charts-1" defer></script>
   <style>a:focus-visible,button:focus-visible,.skip-link:focus-visible{outline:3px solid #94bce3;outline-offset:4px}@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}</style>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="./analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -45,21 +48,21 @@
       <a href="./" class="wordmark" aria-label="Paprika home"><img src="./paprika-mark.png" width="35" height="35" alt="" /><span>Paprika</span></a>
       <nav class="nav-links" aria-label="Main navigation">
         <a href="#deployment">Product</a>
-        <a href="./docs/">Docs</a>
+        <a data-analytics-event="docs_open" href="./docs/">Docs</a>
         <a href="#charts">Charts</a>
-        <a href="./blog/">Blog</a>
-        <a href="#get-started">Get started</a>
+        <a data-analytics-event="blog_open" href="./blog/">Blog</a>
+        <a data-analytics-event="get_started" href="#get-started">Get started</a>
         <details class="mobile-menu">
           <summary>Menu</summary>
           <div class="mobile-menu-links">
             <a href="#deployment">Product</a>
-            <a href="./docs/">Documentation</a>
+            <a data-analytics-event="docs_open" href="./docs/">Documentation</a>
             <a href="#charts">Charts</a>
-            <a href="./blog/">Engineering blog</a>
-            <a href="#get-started">Get started</a>
+            <a data-analytics-event="blog_open" href="./blog/">Engineering blog</a>
+            <a data-analytics-event="get_started" href="#get-started">Get started</a>
             <a href="#agents">Skills &amp; MCP</a>
             <a href="#community">Community</a>
-            <a href="./tour.html">Explore the demo</a>
+            <a data-analytics-event="demo_open" href="./tour.html">Explore the demo</a>
           </div>
         </details>
         <a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub ↗</a>
@@ -74,9 +77,9 @@
           <h1 id="hero-title">Trace every <span>release.</span></h1>
           <p>Paprika is an open source Kubernetes operator for application delivery. Define sources, run optional pipelines, promote pinned revisions, and inspect health and drift from one console.</p>
           <div class="hero-actions">
-            <a href="#get-started" class="btn">Start self-hosting</a>
-            <a href="./tour.html" class="btn btn-tour">Explore the demo <span aria-hidden="true">↗</span></a>
-            <a href="./docs/" class="link-arrow">Read the documentation</a>
+            <a data-analytics-event="get_started" href="#get-started" class="btn">Start self-hosting</a>
+            <a data-analytics-event="demo_open" href="./tour.html" class="btn btn-tour">Explore the demo <span aria-hidden="true">↗</span></a>
+            <a data-analytics-event="docs_open" href="./docs/" class="link-arrow">Read the documentation</a>
           </div>
           <p class="hero-note">Apache 2.0 · early stage · evaluate on a non-production cluster.</p>
         </div>
@@ -101,12 +104,12 @@
         <div class="learn-intro">
           <h2 id="learn-title">What do you want<br />to build?</h2>
           <p>Start with a working setup, follow a release, or connect the data behind your dashboards.</p>
-          <a class="link-arrow" href="./docs/">Browse all guides</a>
+          <a data-analytics-event="docs_open" class="link-arrow" href="./docs/">Browse all guides</a>
         </div>
         <nav class="learn-paths" aria-label="Choose a Paprika guide">
-          <a href="./docs/getting-started/"><span><strong>Deploy your first Application</strong><span>Install the operator and follow a source revision into Kubernetes.</span></span><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
-          <a href="./docs/environment-promotion/"><span><strong>Promote a tested revision</strong><span>Connect environments with verification and explicit approval.</span></span><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
-          <a href="./docs/dashboards/"><span><strong>Build a dashboard from real data</strong><span>Start with the examples, then map queries to your own providers.</span></span><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
+          <a data-analytics-event="get_started" href="./docs/getting-started/"><span><strong>Deploy your first Application</strong><span>Install the operator and follow a source revision into Kubernetes.</span></span><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
+          <a data-analytics-event="docs_open" href="./docs/environment-promotion/"><span><strong>Promote a tested revision</strong><span>Connect environments with verification and explicit approval.</span></span><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
+          <a data-analytics-event="docs_open" href="./docs/dashboards/"><span><strong>Build a dashboard from real data</strong><span>Start with the examples, then map queries to your own providers.</span></span><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
         </nav>
       </div>
     </section>
@@ -131,7 +134,7 @@
           </figure>
           <div class="story-panel" role="tabpanel" id="deploy-source" aria-labelledby="deploy-source-tab" tabindex="0">
             <div><h3>Pin the source revision.</h3><p>The Application selects its source. For Git, the Release render pins the resolved commit so the revision remains traceable through deployment.</p></div>
-            <div class="record-card" data-spotlight><span class="record-type">Source identity</span><strong>Git revision → Release</strong><p>A branch finds the candidate. A commit identifies the source used for the render.</p><a href="./docs/getting-started/" class="link-arrow">Read the Application guide</a></div>
+            <div class="record-card" data-spotlight><span class="record-type">Source identity</span><strong>Git revision → Release</strong><p>A branch finds the candidate. A commit identifies the source used for the render.</p><a data-analytics-event="get_started" href="./docs/getting-started/" class="link-arrow">Read the Application guide</a></div>
           </div>
           <div class="story-panel" role="tabpanel" id="deploy-build" aria-labelledby="deploy-build-tab" tabindex="0">
             <div><h3>Add execution when needed.</h3><p>Configured build steps run as container Jobs through a Pipeline. Dependencies decide which steps become eligible, and <code>maxParallel</code> limits concurrency.</p></div>
@@ -164,10 +167,10 @@
           <div class="fleet-notes" data-enter>
             <div><strong>Scope the fleet.</strong><p>Project, cluster and stage controls keep large inventories navigable.</p></div>
             <div><strong>Read both signals.</strong><p>Health and sync are separate states. A healthy workload can still differ from its desired resources.</p></div>
-            <div><strong>Follow the resource.</strong><p>The Application owns related Template, Stage and Release records.</p><a class="link-arrow" href="./docs/getting-started/">Application guide</a></div>
+            <div><strong>Follow the resource.</strong><p>The Application owns related Template, Stage and Release records.</p><a data-analytics-event="get_started" class="link-arrow" href="./docs/getting-started/">Application guide</a></div>
           </div>
         </div>
-        <a class="tour-launch" href="./tour.html" data-spotlight>
+        <a data-analytics-event="demo_open" class="tour-launch" href="./tour.html" data-spotlight>
           <span class="tour-launch-label"><span class="tour-launch-mark" aria-hidden="true">↳</span><span>Guided console tour <small>Real console captures · synthetic fleet data</small></span></span>
           <span class="tour-launch-story"><strong>Follow the evidence.</strong><span>Applications <b aria-hidden="true">→</b> Heatmap <b aria-hidden="true">→</b> Drilldown <b aria-hidden="true">→</b> Resources <b aria-hidden="true">→</b> Logs</span></span>
           <span class="tour-launch-action">Open the tour <span aria-hidden="true">↗</span></span>
@@ -196,7 +199,7 @@
             <div class="pipeline-detail"><div><h3>A failed branch stops the join.</h3><p>A step becomes eligible only after all declared dependencies succeed. Configured retries can retry a failing step; exhausted failure prevents this example’s package step from running.</p></div><ol class="gamma-step-stack" aria-label="Illustrative failed Pipeline states"><li class="gamma-step-card" data-state="done"><span class="gamma-step-title">unit-test</span><span class="gamma-step-state">Succeeded</span></li><li class="gamma-step-card" data-state="failed"><span class="gamma-step-title">policy-test</span><span class="gamma-step-state">Failed</span></li><li class="gamma-step-card" data-state="pending"><span class="gamma-step-title">package</span><span class="gamma-step-state">Blocked by dependency</span></li></ol></div>
           </div>
         </div>
-        <div class="console-evidence" data-enter><figure class="product-frame" data-ui><div class="frame-head"><span>Paprika console / pipelines</span><span class="demo-tag">Synthetic demo</span></div><img src="./demo-pipelines.webp" width="1440" height="900" alt="Actual Paprika Pipeline list with synthetic execution phases" loading="lazy" /><figcaption>Actual console · local synthetic fleet data</figcaption></figure><div><h3>Follow the actual run.</h3><p>Inspect Pipeline phase, step results and declared output references in the console. The diagrams above explain one possible configuration.</p><a href="./docs/pipelines/" class="link-arrow">Read the Pipeline guide</a></div></div>
+        <div class="console-evidence" data-enter><figure class="product-frame" data-ui><div class="frame-head"><span>Paprika console / pipelines</span><span class="demo-tag">Synthetic demo</span></div><img src="./demo-pipelines.webp" width="1440" height="900" alt="Actual Paprika Pipeline list with synthetic execution phases" loading="lazy" /><figcaption>Actual console · local synthetic fleet data</figcaption></figure><div><h3>Follow the actual run.</h3><p>Inspect Pipeline phase, step results and declared output references in the console. The diagrams above explain one possible configuration.</p><a data-analytics-event="docs_open" href="./docs/pipelines/" class="link-arrow">Read the Pipeline guide</a></div></div>
       </div>
     </section>
 
@@ -209,7 +212,7 @@
           <article class="story-callout" data-spotlight><span class="record-type">Admission</span><h3>Hold the reviewed candidate.</h3><p>With manual sync policy, approval stays bound to the candidate and its deployment settings. A waiting or failed candidate leaves the accepted downstream Release in place.</p></article>
           <article class="story-callout" data-spotlight><span class="record-type">After target deployment</span><h3>Observe the new target.</h3><p>Stage gates check the newly deployed environment. Health and sync observations provide evidence for any later promotion.</p></article>
         </div>
-        <div class="story-guide"><p>A configured promotion chain can use different clusters and namespaces while retaining the upstream Git revision.</p><a class="link-arrow" href="./docs/environment-promotion/">Read the promotion guide</a></div>
+        <div class="story-guide"><p>A configured promotion chain can use different clusters and namespaces while retaining the upstream Git revision.</p><a data-analytics-event="docs_open" class="link-arrow" href="./docs/environment-promotion/">Read the promotion guide</a></div>
       </div>
     </section>
 
@@ -217,7 +220,7 @@
       <div class="shell">
         <div class="story-heading"><div data-enter><p class="eyeline">Resource evidence</p><h2 id="evidence-title">Compare the desired.<br />Inspect the live.</h2></div><p class="section-lede" data-enter>Sync compares rendered manifests with live Kubernetes resources. Health assesses the workload’s observed state. Read both signals when deciding what needs attention.</p></div>
         <figure class="software-diagram evidence-diagram" data-enter><div class="workbench-label"><span>Desired manifest ↔ live object</span><span>Synthetic field difference</span></div><picture><source media="(max-width: 600px)" srcset="./diagrams/evidence-mobile.svg" width="600" height="860" /><img src="./diagrams/evidence.svg" width="1200" height="620" alt="Synthetic Deployment comparison with desired replicas three and live replicas two, shown as separate manifest and Kubernetes resource stacks; health is assessed separately from sync" loading="lazy" /></picture><figcaption>Illustrative resource comparison. These values are a teaching example, not live fleet telemetry.</figcaption></figure>
-        <div class="evidence-summary" data-enter><div><h3>Keep the evidence attached.</h3><p>Open Application and Release status, inspect phase and conditions, then compare the desired resources with the target. Current resource counts are also exposed as metrics.</p><a class="link-arrow" href="./docs/metrics/">Read the metrics guide</a></div><div class="metric-plate" aria-label="Documented metric meanings"><div><code>paprika_out_of_sync</code><span>Current out-of-sync resource count</span></div><div><code>paprika_prunable</code><span>Current prunable resource count</span></div></div></div>
+        <div class="evidence-summary" data-enter><div><h3>Keep the evidence attached.</h3><p>Open Application and Release status, inspect phase and conditions, then compare the desired resources with the target. Current resource counts are also exposed as metrics.</p><a data-analytics-event="docs_open" class="link-arrow" href="./docs/metrics/">Read the metrics guide</a></div><div class="metric-plate" aria-label="Documented metric meanings"><div><code>paprika_out_of_sync</code><span>Current out-of-sync resource count</span></div><div><code>paprika_prunable</code><span>Current prunable resource count</span></div></div></div>
       </div>
     </section>
 
@@ -254,7 +257,7 @@
         </div>
         <div class="chart-showcase-context" data-enter>
           <div><span class="chart-showcase-context-label">Public · explore</span><h3>All the examples. One gallery.</h3><p>The full catalogue and every dashboard lens are available inside this showcase. Switch studies in its top navigation, inspect tooltips, try configuration presets and compare responsive layouts.</p><a class="link-arrow" href="./charts/#charts">Browse the complete chart library</a></div>
-          <div><span class="chart-showcase-context-label">Application · build</span><h3>Keep your console focused.</h3><p>The authenticated Insights app remains the dashboard builder: compose panels, connect data sources, configure queries, save dashboards and import starter templates. Public demo navigation lives here, not in the operator console.</p><a class="link-arrow" href="./docs/dashboards/">Dashboard builder documentation</a></div>
+          <div><span class="chart-showcase-context-label">Application · build</span><h3>Keep your console focused.</h3><p>The authenticated Insights app remains the dashboard builder: compose panels, connect data sources, configure queries, save dashboards and import starter templates. Public demo navigation lives here, not in the operator console.</p><a data-analytics-event="docs_open" class="link-arrow" href="./docs/dashboards/">Dashboard builder documentation</a></div>
         </div>
       </div>
     </section>
@@ -263,7 +266,7 @@
       <div class="shell">
         <div class="start-head"><div data-enter><p class="eyeline">Run it yourself</p><h2 id="start-title">Start on a test cluster.</h2></div><p class="section-lede" data-enter>Self-hosting means selecting a registry image the cluster can pull, installing the Helm chart, and applying a complete Application manifest. Check the active Kubernetes context first.</p></div>
         <div class="start-grid">
-          <div data-enter><ol class="start-steps"><li><span class="num">01</span><div><h3>Prepare</h3><p>Use Kubernetes, kubectl, Helm, Docker and Go 1.26+. Cert-manager is needed only if you enable admission webhooks.</p></div></li><li><span class="num">02</span><div><h3>Install</h3><p>Build and push an operator image, pass its tag to the chart, then check the controller pod.</p></div></li><li><span class="num">03</span><div><h3>Apply</h3><p>Create an Application from a complete manifest. Inspect its status and the related Release.</p></div></li></ol><div class="start-actions"><a class="btn" href="./docs/getting-started/">Read the setup guide</a><a class="link-arrow" href="https://github.com/paprikacd/paprika/tree/master/config/samples">Browse samples</a></div></div>
+          <div data-enter><ol class="start-steps"><li><span class="num">01</span><div><h3>Prepare</h3><p>Use Kubernetes, kubectl, Helm, Docker and Go 1.26+. Cert-manager is needed only if you enable admission webhooks.</p></div></li><li><span class="num">02</span><div><h3>Install</h3><p>Build and push an operator image, pass its tag to the chart, then check the controller pod.</p></div></li><li><span class="num">03</span><div><h3>Apply</h3><p>Create an Application from a complete manifest. Inspect its status and the related Release.</p></div></li></ol><div class="start-actions"><a data-analytics-event="get_started" class="btn" href="./docs/getting-started/">Read the setup guide</a><a class="link-arrow" href="https://github.com/paprikacd/paprika/tree/master/config/samples">Browse samples</a></div></div>
           <div class="terminal" data-ui data-enter><div class="terminal-head"><span>Self-hosted operator</span><span>documented sequence</span></div><pre><code>git clone https://github.com/paprikacd/paprika.git
 cd paprika
 kubectl config current-context
@@ -283,7 +286,7 @@ kubectl apply -f application.yaml</code></pre><div class="terminal-note">The gui
       <div class="shell">
         <div class="install-head">
           <div data-enter><p class="eyeline">Optional CLI</p><h2 id="install-title">Your control plane.<br />At the command line.</h2></div>
-          <p data-enter>Inspect Applications, Releases and fleet health from your terminal. Download the CLI for your platform, then connect it to your own Paprika server. <a href="#get-started">Set up the operator first ↗</a></p>
+          <p data-enter>Inspect Applications, Releases and fleet health from your terminal. Download the CLI for your platform, then connect it to your own Paprika server. <a data-analytics-event="get_started" href="#get-started">Set up the operator first ↗</a></p>
         </div>
         <div class="download-release" data-enter>
           <div><span class="release-indicator" aria-hidden="true"></span><strong>Paprika CLI</strong><span class="download-version">v0.4.7</span></div>
@@ -293,13 +296,13 @@ kubectl apply -f application.yaml</code></pre><div class="terminal-note">The gui
           <article class="download-platform" data-spotlight aria-labelledby="download-macos-title">
             <div class="platform-index"><span>01 / DARWIN</span><span>.tar.gz</span></div>
             <div class="platform-identity"><div class="platform-icon-plate" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="M44 23c0-8 5-14 13-15 1 8-4 14-13 15Z" fill="currentColor"/><path d="M56 27c-5-2-10 1-14 1s-8-3-14-1C14 32 16 52 24 63c3 4 6 9 10 9s6-3 10-3 6 3 10 3c5 0 10-8 13-16-10-4-13-18-3-25-3-2-5-3-8-4Z" fill="currentColor"/><path d="M22 53c2 6 5 11 8 13" stroke="#c5deef" stroke-width="2" stroke-linecap="square"/></svg></div><div><h3 id="download-macos-title">macOS</h3><p>Choose your processor.</p></div></div>
-            <div class="platform-downloads"><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_darwin_arm64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for macOS Apple Silicon arm64"><span>Apple Silicon <code>arm64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_darwin_amd64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for macOS Intel amd64"><span>Intel <code>amd64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a></div>
+            <div class="platform-downloads"><a data-analytics-event="cli_download" class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_darwin_arm64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for macOS Apple Silicon arm64"><span>Apple Silicon <code>arm64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a><a data-analytics-event="cli_download" class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_darwin_amd64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for macOS Intel amd64"><span>Intel <code>amd64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a></div>
             <p class="platform-footnote">Native macOS binary · checksum available</p>
           </article>
           <article class="download-platform" data-spotlight aria-labelledby="download-linux-title">
             <div class="platform-index"><span>02 / LINUX</span><span>.tar.gz</span></div>
             <div class="platform-identity"><div class="platform-icon-plate" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="M27 32c-1-15 5-23 13-23s14 8 13 23c5 8 10 18 10 27 0 8-10 10-23 10S17 67 17 59c0-9 5-19 10-27Z" fill="currentColor"/><path d="M27 48c0-10 6-16 13-16s13 6 13 16c0 12-6 17-13 17s-13-5-13-17Z" fill="#e7f0f8"/><ellipse cx="34" cy="28" rx="5" ry="7" fill="#e7f0f8"/><ellipse cx="46" cy="28" rx="5" ry="7" fill="#e7f0f8"/><path d="m32 37 8-5 8 5-8 7-8-7Z" fill="#5980a6"/><path d="m21 62-8 8 18 1 5-6m23-3 8 8-18 1-5-6" fill="#5980a6"/><path d="M35 27v3m10-3v3" stroke="currentColor" stroke-width="2"/></svg></div><div><h3 id="download-linux-title">Linux</h3><p>Ready for your shell.</p></div></div>
-            <div class="platform-downloads"><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_linux_amd64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for Linux x86_64 amd64"><span>x86_64 <code>amd64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a><a class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_linux_arm64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for Linux ARM64 arm64"><span>ARM64 <code>arm64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a></div>
+            <div class="platform-downloads"><a data-analytics-event="cli_download" class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_linux_amd64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for Linux x86_64 amd64"><span>x86_64 <code>amd64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a><a data-analytics-event="cli_download" class="platform-download" href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/paprika_0.4.7_linux_arm64.tar.gz" aria-label="Download Paprika CLI v0.4.7 for Linux ARM64 arm64"><span>ARM64 <code>arm64</code></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 13v4h12v-4"/></svg></a></div>
             <p class="platform-footnote">Native Linux binary · checksum available</p>
           </article>
           <article class="download-platform platform-source" data-spotlight aria-labelledby="download-windows-title">
@@ -326,7 +329,7 @@ cd paprika
 go build -o ./bin/paprika ./cmd/paprika</pre></div>
           </div>
         </div>
-        <p class="install-operator-note"><span aria-hidden="true">↳</span> The CLI is a client. Installing it does not install the operator. <a href="#get-started">Follow the self-hosting guide above ↗</a></p>
+        <p class="install-operator-note"><span aria-hidden="true">↳</span> The CLI is a client. Installing it does not install the operator. <a data-analytics-event="get_started" href="#get-started">Follow the self-hosting guide above ↗</a></p>
       </div>
     </section>
 
@@ -354,13 +357,13 @@ codex mcp login paprika</code></pre></div><p class="mcp-host-note">Replace <code
 claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the example host with your MCP URL. For the repository plugin route, follow the <a href="https://github.com/paprikacd/paprika/tree/master/plugins/paprika">plugin instructions</a>.</p></div>
             <div class="mcp-client-panel" role="tabpanel" id="mcp-other" aria-labelledby="mcp-other-tab" tabindex="0"><div class="mcp-panel-intro"><span class="agent-client-mark" aria-hidden="true">↔</span><div><h3>Use a remote MCP client.</h3><p>Add your server URL in a client that supports remote HTTP MCP and native OAuth.</p></div></div><div class="mcp-command-field"><div class="mcp-command-label"><span>Example endpoint · replace this host</span><button type="button" class="copy-button" data-copy-target="mcp-endpoint-command" data-copy-feedback="mcp-copy-feedback" aria-describedby="mcp-copy-guidance" aria-label="Copy example MCP endpoint">Copy URL</button></div><pre><code id="mcp-endpoint-command">https://paprika.example.com/mcp</code></pre></div><p class="mcp-host-note">Choose scopes in the client’s authorization flow. Complete sign-in through Paprika; do not paste access tokens into a chat.</p></div>
             <div class="mcp-copy-support"><p id="mcp-copy-guidance">Copy unavailable? Select the text and copy it manually.</p><p id="mcp-copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p></div>
-            <div class="mcp-board-footer"><span>Self-hosted MCP must be enabled and configured by your administrator.</span><a href="./docs/mcp-client-setup/">Setup guide <span aria-hidden="true">↗</span></a></div>
+            <div class="mcp-board-footer"><span>Self-hosted MCP must be enabled and configured by your administrator.</span><a data-analytics-event="docs_open" href="./docs/mcp-client-setup/">Setup guide <span aria-hidden="true">↗</span></a></div>
           </div>
         </div>
         <section id="observe-plugin" class="observe-install" aria-labelledby="observe-plugin-title" data-enter>
           <div class="observe-install-heading">
             <div><p class="eyeline">Observe / plugin</p><h3 id="observe-plugin-title">Your telemetry. In your agent.</h3><p>Install the Paprika Observe skill and remote MCP connection together. Explore Prometheus metrics, traces, saved dashboards and the data behind each chart.</p></div>
-            <a class="link-arrow" href="./docs/observe-plugin/">Read Observe setup guide</a>
+            <a data-analytics-event="docs_open" class="link-arrow" href="./docs/observe-plugin/">Read Observe setup guide</a>
           </div>
           <div class="observe-install-commands">
             <div class="observe-command">
@@ -387,9 +390,9 @@ claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the 
 
     <section id="engineering" class="reading-section" aria-labelledby="engineering-title">
       <div class="shell">
-        <div class="reading-heading"><div><h2 id="engineering-title">Engineering notes.</h2><p>Practical guides to the decisions behind a delivery system: what to compare, what to promote, and what to verify.</p></div><a class="link-arrow" href="./blog/">All articles</a></div>
+        <div class="reading-heading"><div><h2 id="engineering-title">Engineering notes.</h2><p>Practical guides to the decisions behind a delivery system: what to compare, what to promote, and what to verify.</p></div><a data-analytics-event="blog_open" class="link-arrow" href="./blog/">All articles</a></div>
         <!-- featured-posts:start -->
-<ol class="reading-list"><li><div class="reading-meta"><span>Operations</span><span>Guide</span></div><div><h3><a href="./blog/kubernetes-health-vs-drift/">Kubernetes health and drift answer different questions</a></h3><p>A healthy workload can still differ from Git. Learn how to read Kubernetes health, desired-state drift and prune candidates together.</p></div><a class="reading-open" href="./blog/kubernetes-health-vs-drift/" aria-label="Read Kubernetes health and drift answer different questions">Read article <span aria-hidden="true">→</span></a></li><li><div class="reading-meta"><span>Delivery</span><span>Guide</span></div><div><h3><a href="./blog/promoting-pinned-revisions/">Promoting a tested Git revision across Kubernetes environments</a></h3><p>Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.</p></div><a class="reading-open" href="./blog/promoting-pinned-revisions/" aria-label="Read Promoting a tested Git revision across Kubernetes environments">Read article <span aria-hidden="true">→</span></a></li><li><div class="reading-meta"><span>Observability</span><span>Guide</span></div><div><h3><a href="./blog/building-dashboards-with-mcp/">Build and verify observability dashboards through MCP</a></h3><p>Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.</p></div><a class="reading-open" href="./blog/building-dashboards-with-mcp/" aria-label="Read Build and verify observability dashboards through MCP">Read article <span aria-hidden="true">→</span></a></li></ol>
+<ol class="reading-list"><li><div class="reading-meta"><span>Operations</span><span>Guide</span></div><div><h3><a data-analytics-event="blog_open" href="./blog/kubernetes-health-vs-drift/">Kubernetes health and drift answer different questions</a></h3><p>A healthy workload can still differ from Git. Learn how to read Kubernetes health, desired-state drift and prune candidates together.</p></div><a data-analytics-event="blog_open" class="reading-open" href="./blog/kubernetes-health-vs-drift/" aria-label="Read Kubernetes health and drift answer different questions">Read article <span aria-hidden="true">→</span></a></li><li><div class="reading-meta"><span>Delivery</span><span>Guide</span></div><div><h3><a data-analytics-event="blog_open" href="./blog/promoting-pinned-revisions/">Promoting a tested Git revision across Kubernetes environments</a></h3><p>Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.</p></div><a data-analytics-event="blog_open" class="reading-open" href="./blog/promoting-pinned-revisions/" aria-label="Read Promoting a tested Git revision across Kubernetes environments">Read article <span aria-hidden="true">→</span></a></li><li><div class="reading-meta"><span>Observability</span><span>Guide</span></div><div><h3><a data-analytics-event="blog_open" href="./blog/building-dashboards-with-mcp/">Build and verify observability dashboards through MCP</a></h3><p>Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.</p></div><a data-analytics-event="blog_open" class="reading-open" href="./blog/building-dashboards-with-mcp/" aria-label="Read Build and verify observability dashboards through MCP">Read article <span aria-hidden="true">→</span></a></li></ol>
 <!-- featured-posts:end -->
         <p class="reading-subscribe"><a href="./feed.xml">Follow the RSS feed</a> for new guides and engineering articles.</p>
       </div>
@@ -397,13 +400,13 @@ claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the 
 
     <section id="community" class="community on-dark" aria-labelledby="community-title">
       <div class="shell"><div class="community-grid"><div class="community-copy" data-enter><p class="eyeline">Build in the open</p><h2 id="community-title">Help shape Paprika.</h2><p class="section-lede">Bring a reproducible bug, a question from your first install, a focused feature idea, or a docs fix. Issues are the current public support and planning channel.</p><a class="btn btn-light" href="https://github.com/paprikacd/paprika/issues/new/choose">Open an issue</a></div>
-        <div class="community-links" data-enter><a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md"><span><strong>Contribute</strong><br />Local setup, checks and pull request guidance.</span><span class="arrow" aria-hidden="true">↗</span></a><a href="./docs/concepts/"><span><strong>Read the guides</strong><br />Features, resource models and use cases.</span><span class="arrow" aria-hidden="true">↗</span></a><a href="https://github.com/paprikacd/paprika/blob/master/SECURITY.md"><span><strong>Report a vulnerability</strong><br />Use the private route in the security policy.</span><span class="arrow" aria-hidden="true">↗</span></a></div></div>
+        <div class="community-links" data-enter><a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md"><span><strong>Contribute</strong><br />Local setup, checks and pull request guidance.</span><span class="arrow" aria-hidden="true">↗</span></a><a data-analytics-event="docs_open" href="./docs/concepts/"><span><strong>Read the guides</strong><br />Features, resource models and use cases.</span><span class="arrow" aria-hidden="true">↗</span></a><a href="https://github.com/paprikacd/paprika/blob/master/SECURITY.md"><span><strong>Report a vulnerability</strong><br />Use the private route in the security policy.</span><span class="arrow" aria-hidden="true">↗</span></a></div></div>
         <p class="community-footnote">Participation follows the <a href="https://github.com/paprikacd/paprika/blob/master/CODE_OF_CONDUCT.md">Code of Conduct</a>. Review the <a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0 license</a> before reusing the code.</p>
         <div class="big-close" aria-label="Paprika"><strong>Paprika</strong><span>Source. Stage. Release.</span></div>
       </div>
     </section>
   </main>
-  <footer class="footer"><div class="footer-inner shell"><span>© 2026 Paprika CD</span><nav aria-label="Footer"><a href="./docs/">Documentation</a><a href="./blog/">Blog</a><a href="./feed.xml">RSS</a><a href="./sitemap.xml">Sitemap</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+  <footer class="footer"><div class="footer-inner shell"><span>© 2026 Paprika CD</span><nav aria-label="Footer"><a data-analytics-event="docs_open" href="./docs/">Documentation</a><a data-analytics-event="blog_open" href="./blog/">Blog</a><a href="./feed.xml">RSS</a><a href="./sitemap.xml">Sitemap</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
   <script>
     // The page stays fully visible without JavaScript or when motion is reduced.
     if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -508,6 +511,8 @@ claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the 
           if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = 'Copied';
           announceCopyFeedback(button, state, feedback, 'Command copied.');
+          const analyticsName = /^(mcp|observe)-/.test(button.dataset.copyTarget) ? 'mcp_copy' : 'code_copy';
+          window.dispatchEvent(new CustomEvent('paprika:analytics', { detail: { name: analyticsName } }));
         } catch (_) {
           if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = 'Try again';

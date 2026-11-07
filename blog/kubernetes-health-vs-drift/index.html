@@ -29,10 +29,13 @@
 <link rel="stylesheet" href="../../content.css?v=public-content-1"/>
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BlogPosting","headline":"Kubernetes health and drift answer different questions","description":"A healthy workload can still differ from Git. Learn how to read Kubernetes health, desired-state drift and prune candidates together.","url":"https://paprikacd.github.io/paprika/blog/kubernetes-health-vs-drift/","mainEntityOfPage":"https://paprikacd.github.io/paprika/blog/kubernetes-health-vs-drift/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","datePublished":"2026-11-07","articleSection":"Operations","isPartOf":{"@type":"Blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Kubernetes health and drift answer different questions","item":"https://paprikacd.github.io/paprika/blog/kubernetes-health-vs-drift/"}]}]}</script>
 <script src="../../content.js?v=public-content-1" defer></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="../../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
 </head><body class="content-page">
 <a href="#main-content" class="skip-link">Skip to main content</a>
-<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
-<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Operations</span></li></ol></nav></div>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="blog_open" href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Operations</span></li></ol></nav></div>
 <div class="article-layout article-layout--blog shell">
 
 <aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#read-the-two-signals-together">Read the two signals together</a></li><li class="toc-level-2"><a href="#start-with-the-application-and-its-observation">Start with the Application and its observation</a></li><li class="toc-level-2"><a href="#compare-declared-intent-not-raw-yaml-text">Compare declared intent, not raw YAML text</a></li><li class="toc-level-2"><a href="#review-pruning-separately">Review pruning separately</a></li><li class="toc-level-2"><a href="#alert-on-persistent-drift-and-observation-lag">Alert on persistent drift and observation lag</a></li></ol></nav></details></aside>
@@ -47,7 +50,7 @@ rendered desired resources with the live objects. Reading both helps you
 decide whether to investigate the workload, its configuration, or the
 controller observing it. The distinction is visible in the
 <a href="https://github.com/paprikacd/paprika/blob/master/internal/health/resources.go">resource health implementation</a> and
-the <a href="../../docs/drift-and-prune/">drift guide</a>.</p>
+the <a data-analytics-event="docs_open" href="../../docs/drift-and-prune/">drift guide</a>.</p>
 <h2 id="read-the-two-signals-together">Read the two signals together</h2>
 <p>Consider these illustrative observations; they are not live fleet data:</p>
 <div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
@@ -119,7 +122,7 @@ displayed state as current.</p>
 inspect its events and conditions, and compare the changed field with the
 rendered release. For a remote target, the Application record remains on the
 management cluster; the workload inspection needs the corresponding target
-context. The <a href="../../docs/multi-cluster/">multi-cluster guide</a>
+context. The <a data-analytics-event="docs_open" href="../../docs/multi-cluster/">multi-cluster guide</a>
 explains those connections.</p>
 <h2 id="compare-declared-intent-not-raw-yaml-text">Compare declared intent, not raw YAML text</h2>
 <p>Kubernetes adds fields while admitting and reconciling objects, so a raw text
@@ -129,7 +132,7 @@ not automatically drift. The engine also normalises supported cases such as
 equivalent resource quantities and omitted defaults.</p>
 <p>An object identity includes its API version and kind as well as namespace
 and name. A core <code>Service</code> and a Knative <code>Service</code> with the same name are
-different resources. The <a href="../../docs/drift-and-prune/">drift guide</a>
+different resources. The <a data-analytics-event="docs_open" href="../../docs/drift-and-prune/">drift guide</a>
 documents this comparison and the <code>Synced</code>, <code>OutOfSync</code>, <code>Missing</code> and
 <code>Pruned</code> classifications.</p>
 <p>If a difference is intentional, decide where its authority belongs. Update
@@ -148,13 +151,13 @@ Inspect <code>status.prunableResources</code> before enabling cleanup:</p>
 management labels, ownership, protection annotations and allowed kinds.
 Generated children with owners are excluded, and an individual object can
 carry <code>paprika.io/prune: &quot;false&quot;</code>. Follow the
-<a href="../../docs/drift-and-prune/#pruning">pruning rules</a> rather than
+<a data-analytics-event="docs_open" href="../../docs/drift-and-prune/#pruning">pruning rules</a> rather than
 assuming every object outside the current chart should disappear.</p>
 <h2 id="alert-on-persistent-drift-and-observation-lag">Alert on persistent drift and observation lag</h2>
 <p><code>paprika_out_of_sync</code> and <code>paprika_prunable</code> are gauges of current resource
 counts. <code>paprika_prune_total</code> is a counter of prune activity. They describe
 different things: resources needing attention, candidates for cleanup, and
-deletions performed. The <a href="../../docs/metrics/">metrics reference</a>
+deletions performed. The <a data-analytics-event="docs_open" href="../../docs/metrics/">metrics reference</a>
 lists their labels and control-plane health signals.</p>
 <p>For an illustrative Prometheus alert, this expression selects nonzero drift
 for the example Application:</p>
@@ -163,13 +166,13 @@ for the example Application:</p>
 <p>Choose the alert's <code>for</code> duration around your reconciliation cadence and
 acceptable rollout time. Monitor reconciliation freshness as well: an absent
 scrape or stalled controller cannot confirm that a workload is in sync.</p>
-<p>For a first investigation, keep the <a href="../../docs/drift-and-prune/">drift and prune guide</a>
-beside the <a href="../../docs/metrics/">metrics reference</a>. They provide
+<p>For a first investigation, keep the <a data-analytics-event="docs_open" href="../../docs/drift-and-prune/">drift and prune guide</a>
+beside the <a data-analytics-event="docs_open" href="../../docs/metrics/">metrics reference</a>. They provide
 the resource classifications and exact instruments needed to turn the two
 signals into an actionable diagnosis.</p>
 </div>
 </article>
-<nav class="article-next" aria-label="More articles"><a href="../../blog/"><span>Browse</span><strong>All engineering articles</strong></a><a href="../../blog/promoting-pinned-revisions/" rel="next"><span>Next article</span><strong>Promoting a tested Git revision across Kubernetes environments</strong></a></nav>
+<nav class="article-next" aria-label="More articles"><a data-analytics-event="blog_open" href="../../blog/"><span>Browse</span><strong>All engineering articles</strong></a><a data-analytics-event="blog_open" href="../../blog/promoting-pinned-revisions/" rel="next"><span>Next article</span><strong>Promoting a tested Git revision across Kubernetes environments</strong></a></nav>
 </main></div>
-<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../../docs/">Documentation</a><a data-analytics-event="blog_open" href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
 </body></html>

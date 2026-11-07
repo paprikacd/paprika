@@ -29,10 +29,13 @@
 <link rel="stylesheet" href="../../content.css?v=public-content-1"/>
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BlogPosting","headline":"Build and verify observability dashboards through MCP","description":"Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.","url":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/","mainEntityOfPage":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","datePublished":"2026-11-07","articleSection":"Observability","isPartOf":{"@type":"Blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Build and verify observability dashboards through MCP","item":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/"}]}]}</script>
 <script src="../../content.js?v=public-content-1" defer></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="../../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
 </head><body class="content-page">
 <a href="#main-content" class="skip-link">Skip to main content</a>
-<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
-<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observability</span></li></ol></nav></div>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="blog_open" href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observability</span></li></ol></nav></div>
 <div class="article-layout article-layout--blog shell">
 
 <aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#connect-the-observability-surface">Connect the observability surface</a></li><li class="toc-level-2"><a href="#discover-real-providers-and-measurements">Discover real providers and measurements</a></li><li class="toc-level-2"><a href="#reuse-saved-queries-before-creating-new-ones">Reuse saved queries before creating new ones</a></li><li class="toc-level-2"><a href="#protect-edits-made-by-other-people">Protect edits made by other people</a></li><li class="toc-level-2"><a href="#execute-the-saved-dashboard">Execute the saved dashboard</a></li><li class="toc-level-2"><a href="#inspect-the-rendered-dashboard">Inspect the rendered dashboard</a></li></ol></nav></details></aside>
@@ -45,7 +48,7 @@ neither on its own.</p>
 Insights document authoring through MCP. You can ask an agent to reuse real
 saved queries, compose a dashboard and inspect the result. The reliable
 sequence is to discover, query, save, read back and render. The
-<a href="../../docs/observe-plugin/">Observe plugin guide</a> documents
+<a data-analytics-event="docs_open" href="../../docs/observe-plugin/">Observe plugin guide</a> documents
 the tools and permissions behind that sequence.</p>
 <h2 id="connect-the-observability-surface">Connect the observability surface</h2>
 <p>Paprika's fleet MCP endpoint is <code>/mcp</code>; Observe uses <code>/observe/mcp</code> with a
@@ -55,7 +58,7 @@ Creating or changing Insights documents additionally requires explicit
 <code>paprika:insights:write</code> consent and the user's Insights write permission.
 Refreshing an existing read-only token does not add authoring access.</p>
 <p>Complete the connection through the client's native OAuth flow. The
-<a href="../../docs/observe-plugin/">packaged Observe plugin</a> targets
+<a data-analytics-event="docs_open" href="../../docs/observe-plugin/">packaged Observe plugin</a> targets
 the project-hosted endpoint; a self-hosted installation needs its own
 verified server URL. Installation and authentication are separate steps.
 Provider credentials remain configured at the server; they do not belong in
@@ -71,7 +74,7 @@ uses PromQL, Loki uses LogQL, and Tempo uses TraceQL. Test a small query over
 an explicit interval and inspect the actual samples. A provider reporting
 <code>OK</code> establishes a reachability observation, not that a particular metric
 exists or that a service meets its SLO. The
-<a href="../../docs/observability-gateway/">observability gateway guide</a>
+<a data-analytics-event="docs_open" href="../../docs/observability-gateway/">observability gateway guide</a>
 and <a href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika-observe/skills/paprika-observe/SKILL.md">Observe workflow</a>
 cover discovery and result interpretation.</p>
 <p>A useful request to an agent is specific about the decision the dashboard
@@ -97,7 +100,7 @@ dashboard that references it through <code>create_dashboard</code>.</p>
 service selector has no effect merely because its label resembles a query
 parameter. For imported examples, map each placeholder to a compatible
 provider and review the data requirements. The
-<a href="../../docs/dashboards/">dashboard examples guide</a>
+<a data-analytics-event="docs_open" href="../../docs/dashboards/">dashboard examples guide</a>
 describes this mapping; live query failures do not fall back to its sample
 fixtures.</p>
 <h2 id="protect-edits-made-by-other-people">Protect edits made by other people</h2>
@@ -140,7 +143,7 @@ defines those distinctions and the available response limits.</p>
 <p>When the deployment advertises <code>render_dashboard</code>, use it after querying to
 capture the actual Insights interface. The capability requires an optional
 private browser worker; installing the plugin alone does not enable it.
-The <a href="../../docs/observe-browser-renderer/">renderer guide</a>
+The <a data-analytics-event="docs_open" href="../../docs/observe-browser-renderer/">renderer guide</a>
 explains deployment and the revision checks attached to each capture.</p>
 <p>Check desktop and mobile layouts, both supported themes, and a focused
 widget's tooltip. Look for clipped units, unreadable legends, overflowing
@@ -154,7 +157,7 @@ again and inspect the new rendering. This leaves you with both usable
 telemetry and a dashboard someone can comfortably read.</p>
 </div>
 </article>
-<nav class="article-next" aria-label="More articles"><a href="../../blog/promoting-pinned-revisions/" rel="prev"><span>Previous article</span><strong>Promoting a tested Git revision across Kubernetes environments</strong></a><a href="../../docs/"><span>Keep exploring</span><strong>Read the documentation</strong></a></nav>
+<nav class="article-next" aria-label="More articles"><a data-analytics-event="blog_open" href="../../blog/promoting-pinned-revisions/" rel="prev"><span>Previous article</span><strong>Promoting a tested Git revision across Kubernetes environments</strong></a><a data-analytics-event="docs_open" href="../../docs/"><span>Keep exploring</span><strong>Read the documentation</strong></a></nav>
 </main></div>
-<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../../docs/">Documentation</a><a data-analytics-event="blog_open" href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
 </body></html>
