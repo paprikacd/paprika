@@ -249,18 +249,45 @@ describe("widget inspector", () => {
     },
   );
 
-  it("returns to Style when a host without tooltip widgets is selected", () => {
+  it("keeps Tooltips selected when switching to a reading-only inspector", () => {
     render(<WidgetEditor {...props()} />);
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
     choose("Visualization", /^Single value/);
     expect(
-      screen.queryByRole("tab", { name: "Tooltips" }),
+      screen.queryByRole("button", { name: "Add tooltip widget" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Style" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Tooltips" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     expect(screen.getByRole("switch", { name: "Show tooltips" })).toBeVisible();
+    expect(screen.getByLabelText("Tooltip heading")).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Inspector side" })).not.toBeInTheDocument();
+  });
+
+  it("offers trace visibility in Tooltips without embedded widgets or placement controls", () => {
+    const callbacks = props();
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "traces", providerId: "tempo", query: "{}" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configure tooltips" }));
+    expect(screen.getByRole("tab", { name: "Tooltips" })).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Add tooltip widget" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Inspector side" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Show tooltips" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "traces", providerId: "tempo", query: "{}", options: { showTooltip: false } }));
+  });
+
+  it("returns to Style if the next plugin does not declare tooltip support", () => {
+    const dispose = registerWidgetPlugin({ id: "no-inspector", label: "No inspector", description: "Test", dataKind: "metrics", render: () => null });
+    try {
+      render(<WidgetEditor {...props()} />);
+      fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
+      choose("Visualization", /^No inspector/);
+      expect(screen.queryByRole("tab", { name: "Tooltips" })).not.toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Style" })).toHaveAttribute("aria-selected", "true");
+    } finally {
+      dispose();
+    }
   });
 
   it("requires an explicit choice before a visualization change removes an event query", () => {
@@ -664,6 +691,8 @@ describe("widget inspector", () => {
       expect(
         screen.queryByRole("switch", { name: "Show tooltips" }),
       ).not.toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: "Tooltips" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Configure tooltips" })).not.toBeInTheDocument();
       expect(screen.getByLabelText("Background")).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
       expect(callbacks.onApply).toHaveBeenCalledWith(
@@ -1164,13 +1193,16 @@ it("edits baseline tooltip presentation for stats and preserves it on appearance
   const callbacks = props();
   render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat", unit: "s", options: { decimals: 1 } }} />);
   fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+  fireEvent.click(screen.getByRole("button", { name: "Configure tooltips" }));
   fireEvent.change(screen.getByLabelText("Tooltip heading"), { target: { value: "Checkout latency" } });
   fireEvent.change(screen.getByLabelText("Tooltip value label"), { target: { value: "p95" } });
   fireEvent.change(screen.getByLabelText("Tooltip decimal places"), { target: { value: "3" } });
   fireEvent.click(screen.getByRole("switch", { name: "Show unit in tooltip reading" }));
   fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
   expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up", unit: "s", options: expect.objectContaining({ decimals: 1, tooltipTitle: "Checkout latency", tooltipValueLabel: "p95", tooltipDecimals: 3, tooltipShowUnit: false }) }));
+  fireEvent.click(screen.getByRole("tab", { name: "Style" }));
   fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
   expect(screen.getByLabelText("Tooltip heading")).toHaveValue("Checkout latency");
   expect(screen.getByLabelText("Tooltip decimal places")).toHaveValue(3);
 });

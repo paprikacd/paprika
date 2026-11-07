@@ -135,7 +135,22 @@ async function check(name, action) {
   }
 }
 const tile = () => page.locator('[data-widget-id="selected-service"]')
+const widgetEditor = () => page.getByRole("region", { name: "Widget editor", exact: true })
 const explorer = () => page.getByRole("region", { name: "Data source explorer", exact: true }).last()
+async function openTooltipSettings() {
+  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await tile().getByRole("button", { name: `Edit ${dashboardEntry.document.widgets[0].title}`, exact: true }).click()
+  const editor = widgetEditor()
+  await editor.getByRole("tab", { name: "Style", exact: true }).click()
+  assert.equal(await editor.getByRole("switch", { name: "Show tooltips", exact: true }).count(), 0)
+  await editor.getByRole("button", { name: "Configure tooltips", exact: true }).click()
+  const tab = editor.getByRole("tab", { name: "Tooltips", exact: true })
+  assert.equal(await tab.getAttribute("aria-selected"), "true")
+  assert.equal(await tab.evaluate(element => element === document.activeElement), true)
+  assert.equal(await editor.getByRole("button", { name: "Add tooltip widget", exact: true }).count(), 0)
+  assert.equal(await editor.getByRole("combobox", { name: "Inspector side", exact: true }).count(), 0)
+  return editor
+}
 async function showReading(service, factor = 1, decimals = 2) {
   const value = readings[services.indexOf(service)] * factor
   const reading = tile().locator("[data-stat-reading] [data-metric-value]")
@@ -514,6 +529,33 @@ try {
     assert.equal(boards.length, 1); assert.equal(boards[0].title, dashboardEntry.document.title); assert.equal(boards[0].widgetCount, 1)
     return { queryETagMatchesUI: true, dashboardETagMatchesUI: true, metadataVisible: true }
   })
+  await check("A single-value tooltip has a dedicated workspace and saves back to the MCP-authored document", async () => {
+    await openBrowser(1512, dashboard.id)
+    const before = dashboardEntry
+    await showReading(services[0], 2)
+    const queryCount = queryResponses.length
+    const editor = await openTooltipSettings()
+    await editor.getByRole("textbox", { name: "Tooltip heading", exact: true }).fill("Service throughput")
+    await editor.getByRole("textbox", { name: "Tooltip value label", exact: true }).fill("Requests per second")
+    await editor.getByLabel("Tooltip decimal places", { exact: true }).fill("3")
+    await editor.getByRole("switch", { name: "Show tooltips", exact: true }).uncheck()
+    assert.equal(await editor.getByRole("textbox", { name: "Tooltip heading", exact: true }).count(), 0)
+    await editor.getByRole("switch", { name: "Show tooltips", exact: true }).check()
+    assert.equal(await editor.getByRole("textbox", { name: "Tooltip heading", exact: true }).inputValue(), "Service throughput")
+    assert.equal(await editor.getByLabel("Tooltip decimal places", { exact: true }).inputValue(), "3")
+    const expectedWidget = { ...before.document.widgets[0], options: { ...before.document.widgets[0].options, tooltipTitle: "Service throughput", tooltipValueLabel: "Requests per second", tooltipDecimals: 3 } }
+    await editor.getByRole("tab", { name: "Source", exact: true }).click()
+    assert.deepEqual(JSON.parse(await editor.getByRole("textbox", { name: "Widget JSON", exact: true }).inputValue()), expectedWidget)
+    await unchanged("dashboards", before)
+    await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
+    await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+    dashboardEntry = verifyDocumentResult(await tool("get_dashboard", { id: dashboard.id }), { ...before.document, widgets: [expectedWidget] })
+    assert.notEqual(dashboardEntry.etag, before.etag)
+    await unchanged("saved-queries", queryEntry)
+    await showReading(services[0], 2)
+    assert.equal(queryResponses.length, queryCount, "Tooltip presentation changes must reuse the current telemetry")
+    return { persistedThroughUI: true, mcpReadMatches: true, savedQueryUnchanged: true, originalQueryBindingsPreserved: true, noTelemetryRefetch: true }
+  })
   for (const width of [1512, 390]) {
     await openBrowser(width, dashboard.id)
     await page.getByRole("heading", { name: dashboardEntry.document.title, exact: true }).waitFor()
@@ -526,7 +568,30 @@ try {
       assert.equal((await api(`dashboards/${dashboard.id}`)).etag, dashboardEntry.etag)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
       await page.screenshot({ path: join(output, `authoring-${theme.toLowerCase()}-${width}.png`), fullPage: false })
-      return { before, after, savedDefaultUnchanged: true }
+      const history = tile().locator("[data-stat-sparkline]")
+      await history.focus(); await history.press("End"); await history.press("Enter")
+      const tooltip = page.getByRole("tooltip")
+      await tooltip.getByText("Service throughput", { exact: true }).waitFor()
+      await tooltip.getByText("Requests per second", { exact: true }).waitFor()
+      assert.equal(Number(await tooltip.locator("[data-metric-value]").getAttribute("data-metric-value")), after.value)
+      assert.equal((await tooltip.locator("[data-metric-value]").innerText()).replace(/\s+/g, ""), `${after.value.toFixed(3)}req/s`)
+      await tooltip.getByText("Source details", { exact: true }).click()
+      await tooltip.getByText(`${after.value} req/s`, { exact: true }).waitFor()
+      const bounds = await tooltip.boundingBox()
+      assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= page.viewportSize().height, "The authored tooltip must stay inside the viewport")
+      await page.screenshot({ path: join(output, `authored-tooltip-${theme.toLowerCase()}-${width}.png`), fullPage: false })
+      await history.press("Escape")
+      await tooltip.waitFor({ state: "hidden" })
+      const editor = await openTooltipSettings()
+      assert.equal(await editor.getByRole("textbox", { name: "Tooltip heading", exact: true }).inputValue(), "Service throughput")
+      assert.equal(await editor.getByLabel("Tooltip decimal places", { exact: true }).inputValue(), "3")
+      assert.equal(await editor.evaluate(element => element.scrollWidth <= element.clientWidth), true)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      await page.screenshot({ path: join(output, `tooltip-workspace-${theme.toLowerCase()}-${width}.png`), fullPage: false })
+      await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
+      await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+      await unchanged("dashboards", dashboardEntry)
+      return { before, after, savedDefaultUnchanged: true, tooltipPresentationRestored: true, exactSourceReadingPreserved: true, tooltipWorkspaceOverflow: false }
     })
   }
   await check("MCP-authored documents persist across a real service restart and browser reload", async () => {
