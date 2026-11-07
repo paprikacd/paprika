@@ -123,6 +123,3 @@
 @container rich-metric (max-width: 679px) {
   .metricContent[data-legend-display="table"] > .legendContainer { max-height: min(128px, 38cqh); }
 }
-@container rich-metric (min-width: 680px) {
-  .metricContent[data-legend-position="right"] > .legendContainer { max-height: none; }
-}

@@ -61,7 +61,10 @@ try {
     }
     await chart.scrollIntoViewIfNeeded();
     await chart.getByRole('button', { name: /Compare window for/ }).click();
-    await page.getByRole('dialog', { name: 'Compare a window' }).getByRole('button', { name: 'Zoom chart to window' }).click();
+    const comparison = page.getByRole('dialog', { name: 'Compare a window' });
+    assert.match(await comparison.getByRole('slider', { name: 'Window start' }).getAttribute('aria-valuetext'), /11:00:00/);
+    assert.match(await comparison.getByRole('slider', { name: 'Window end' }).getAttribute('aria-valuetext'), /12:00:00/);
+    await comparison.getByRole('button', { name: 'Zoom chart to window' }).click();
     await chart.getByRole('button', { name: 'Reset chart zoom' }).click();
     await chart.getByRole('button', { name: /Inspect chart data/ }).click();
     await page.getByRole('dialog').waitFor(); await page.keyboard.press('Escape');

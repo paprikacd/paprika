@@ -18,14 +18,15 @@ export const timeFormat = new Intl.DateTimeFormat("en", {
   minute: "2-digit",
   hour12: false,
 });
-export const dateTimeFormat = new Intl.DateTimeFormat("en", {
+export const dateTimeOptions: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
   hour12: false,
-});
+};
+export const dateTimeFormat = new Intl.DateTimeFormat("en", dateTimeOptions);
 const dateTickFormat = new Intl.DateTimeFormat("en", {
   month: "short",
   day: "numeric",

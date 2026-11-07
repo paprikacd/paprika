@@ -108,7 +108,7 @@ export function MetricPie({ widget, result, onContextChange, embedded }: WidgetR
 
 export function StatusHistory({ widget,result,onContextChange,embedded }: WidgetRendererProps) {
   const timeZone = useDashboardTimeZone()
-  const dateFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, dateStyle: "medium", timeStyle: "short" }), [timeZone])
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, dateStyle: "medium", timeStyle: "medium" }), [timeZone])
   // A city/zone stays accurate when the historical range crosses a DST change.
   const zoneLabel = timeZone.split("/").at(-1)!.replaceAll("_", " ")
   const config = historyConfig.parse(widget.config ?? {}), maxSeries = config.maxSeries ?? 12, maxPoints = config.maxPoints ?? 60

@@ -465,11 +465,14 @@ jobs:
           e2e/insights-tooltip-peers.e2e.mjs
           e2e/insights-compact-stat.e2e.mjs
           e2e/insights-status-history-axis.e2e.mjs
+          e2e/insights-dashboard-polish.e2e.mjs
           e2e/insights-variable-filter.e2e.mjs
           e2e/insights-repository-examples.e2e.mjs
           e2e/insights-record-charts.e2e.mjs
           e2e/insights-rich-charts.e2e.mjs
         working-directory: ui
+        env:
+          INSIGHTS_POLISH_OUTPUT: ${{ github.workspace }}/artifacts/insights/dashboard-polish
 
       - name: Generate reference dashboards through the UI
         timeout-minutes: 10
@@ -492,6 +495,7 @@ jobs:
             artifacts/insights/repository-examples/browser
             artifacts/insights/record-charts
             artifacts/insights/rich-charts
+            artifacts/insights/dashboard-polish
             artifacts/insights/reference-dashboards
           if-no-files-found: ignore
           retention-days: 14

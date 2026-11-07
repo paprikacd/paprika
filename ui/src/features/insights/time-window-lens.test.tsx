@@ -2,10 +2,25 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest"
 import { TimeWindowLens } from "./time-window-lens"
 import { DashboardWindowProvider } from "./dashboard-window"
+import { DashboardTimeZoneProvider } from "./dashboard-time-zone"
 
 const series = [{ name: "Requests", labels: {}, points: [{ timestamp: 1000, value: 4 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 10 }, { timestamp: 4000, value: 12 }] }]
 
 describe("time window lens", () => {
+  it("keeps comparison controls and previous samples in the dashboard timezone with seconds", async () => {
+    const start = Date.UTC(2026, 10, 7, 0, 0, 1), end = Date.UTC(2026, 10, 7, 0, 0, 59)
+    const current = [{ name: "Requests", labels: {}, points: [{ timestamp: start, value: 4 }, { timestamp: end, value: 12 }] }]
+    const previous = vi.fn(async () => ({ series: [{ name: "Requests", labels: {}, points: [{ timestamp: start - 2000, value: 2 }] }] }))
+    const { container } = render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><DashboardWindowProvider value={{ previous }}><TimeWindowLens title="Requests" series={current} unit="req/s" onZoom={() => {}} onReset={() => {}} /></DashboardWindowProvider></DashboardTimeZoneProvider>)
+    fireEvent.click(screen.getByRole("button", { name: /compare window/i }))
+    expect(screen.getByRole("slider", { name: "Window start" })).toHaveAttribute("aria-valuetext", expect.stringContaining("11:00:01"))
+    expect(screen.getByRole("slider", { name: "Window end" })).toHaveAttribute("aria-valuetext", expect.stringContaining("11:00:59"))
+    expect(container.querySelector('time[datetime="2026-11-07T00:00:01.000Z"]')).toHaveTextContent("11:00:01")
+    fireEvent.click(screen.getByRole("button", { name: "Compare previous period" }))
+    const result = await screen.findByRole("region", { name: "Previous period results" })
+    expect(result.querySelector('time[datetime="2026-11-06T23:59:59.000Z"]')).toHaveTextContent("10:59:59")
+  })
+
   it("compares recorded samples and applies an accessible selected window", () => {
     const onZoom = vi.fn()
     render(<TimeWindowLens title="Request rate" series={series} unit="req/s" onZoom={onZoom} onReset={() => {}} />)

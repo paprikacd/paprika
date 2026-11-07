@@ -5,6 +5,7 @@ import { WidgetVisualization } from "./charts";
 import { ChartCursorProvider } from "./chart-cursor";
 import { bandLabelWidth, dateTimeFormat, fullDateTimeFormat, timeFormat } from "./chart-data";
 import { DashboardWindowProvider } from "./dashboard-window";
+import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
 import type { QueryResult, Widget } from "./schema";
 import { EmbeddedWidgetProvider } from "./widget-presentation";
 
@@ -44,6 +45,16 @@ function cssRule(css: string, selector: string) {
 }
 
 describe("time-series gaps", () => {
+  it("uses the dashboard timezone in gap details and stale notices", () => {
+    const start = Date.UTC(2026, 10, 7);
+    const source = line("api", [[1, 5], [2, 6], [3, 7], [7, 8], [8, 9]]);
+    source.points = source.points.map(point => ({ ...point, timestamp: start + point.timestamp }));
+    const { container } = render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><DashboardWindowProvider value={{ rangeEnd: start + 20_000 }}><WidgetVisualization widget={widget} result={plot(source)} /></DashboardWindowProvider></DashboardTimeZoneProvider>);
+    expect(container.querySelector("[data-gap-list]")).toHaveTextContent("Nov 7, 11:00:03–Nov 7, 11:00:07");
+    expect(container.querySelector("[data-stale-tail]")).toHaveAccessibleName(expect.stringContaining("11:00:08"));
+    expect(screen.getByText("Latest sample Nov 7, 11:00:08, before the end of the range.")).toBeInTheDocument();
+  });
+
   it("ends the line at an inferred gap and hatches the interval between its observed neighbours", () => {
     const { container } = render(<WidgetVisualization widget={widget} result={gapped} />);
     const [before, after] = segments(chartNamed());

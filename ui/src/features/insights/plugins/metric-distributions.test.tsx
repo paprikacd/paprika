@@ -10,6 +10,13 @@ const widget: Widget={id:"distribution",title:"Service state",type:"plugin",plug
 const series=(name:string,values:(number|null)[]):NonNullable<QueryResult["series"]>[number]=>({name,labels:{service:name},points:values.map((value,index)=>({timestamp:Date.UTC(2026,9,27,0,index),value}))})
 
 describe("metric distributions",()=>{
+  it("distinguishes sub-minute history observations in accessible names",()=>{
+    const sample={name:"api",labels:{},points:[{timestamp:Date.UTC(2026,10,7,0,0,1),value:1},{timestamp:Date.UTC(2026,10,7,0,0,59),value:1}]}
+    const {container}=render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><StatusHistory widget={widget} result={{series:[sample]}} /></DashboardTimeZoneProvider>)
+    expect(container.querySelector('[data-history-key="0-0"]')?.getAttribute("aria-label")).toContain("11:00:01")
+    expect(container.querySelector('[data-history-key="0-1"]')?.getAttribute("aria-label")).toContain("11:00:59")
+  })
+
   it("uses the dashboard timezone for history ticks and accessible sample names",()=>{
     const sample=series("api",[1,2,1])
     const {container}=render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><StatusHistory widget={{...widget,config:{showTimeAxis:true}}} result={{series:[sample]}} /></DashboardTimeZoneProvider>)
