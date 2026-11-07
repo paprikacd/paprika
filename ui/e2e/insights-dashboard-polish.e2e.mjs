@@ -18,7 +18,7 @@ const dashboard = { schemaVersion: 1, id: 'polish-regression', title: 'Operation
   widget('trend-b', 'Service latency', 'timeseries', { x: 6, y: 0, w: 6, h: 5 }, { unit: 'ms', options: { decimals: 1 } }),
   widget('stack-wide', 'CPU by node', 'plugin', { x: 0, y: 5, w: 7, h: 4 }, { pluginId: 'stacked-timeseries', config: { legendDisplay: 'table', legendPosition: 'right', maxSeries: 8 } }),
   widget('stack-narrow', 'Memory by node', 'plugin', { x: 7, y: 5, w: 5, h: 4 }, { pluginId: 'stacked-timeseries', config: { legendDisplay: 'table', legendPosition: 'right', maxSeries: 8 } }),
-  widget('gauges', 'Memory / request', 'plugin', { x: 0, y: 9, w: 6, h: 6 }, { pluginId: 'threshold-gauge', config: { seriesMode: 'all', maxSeries: 8, display: 'linear' }, options: { min: 0, max: 200, decimals: 0 } }),
+  widget('gauges', 'Memory / request', 'plugin', { x: 0, y: 9, w: 6, h: 4 }, { pluginId: 'threshold-gauge', config: { seriesMode: 'all', maxSeries: 8, display: 'linear' }, options: { min: 0, max: 200, decimals: 2 } }),
   widget('history', 'Service availability', 'plugin', { x: 6, y: 9, w: 6, h: 6 }, { pluginId: 'status-history', config: { showTimeAxis: true, labelField: 'node', segmented: false }, options: { thresholds: [{ value: 0, color: '#b4473d', label: 'Unavailable' }, { value: 1, color: '#238269', label: 'Healthy' }] } }),
 ] };
 try {
@@ -35,7 +35,7 @@ try {
       let data = structuredClone(series);
       if (query === 'trend-a') data = data.slice(0, 2);
       if (query === 'trend-b') data = data.slice(0, 4);
-      if (query === 'gauges') data = data.map((entry, index) => ({ ...entry, name: `production-worker-long-identity-${index + 1}`, points: [{ timestamp: end, value: [558, 461, 298, 100, -12, null, 70, 140][index] }] }));
+      if (query === 'gauges') data = data.map((entry, index) => ({ ...entry, name: `production-worker-long-identity-${index + 1}`, points: [{ timestamp: end, value: [558.22, 461.49, 391.61, 100, -12, null, 70, 140][index] }] }));
       if (query === 'history') data = data.slice(0, 5).map(entry => ({ ...entry, points: entry.points.map((point, i) => ({ ...point, value: i === 20 ? null : 1 })) }));
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ series: data }) });
     });
@@ -80,10 +80,15 @@ try {
       return body.top >= bounds.top - 1 && body.bottom <= bounds.bottom + 1;
     }));
     assert.ok(rowsFit, 'Gauge labels and touch targets stay inside their own rows');
+    const readings = await gauges.locator('[data-gauge-number], [data-gauge-unit]').evaluateAll(nodes => nodes.map(node => {
+      const box = node.getBoundingClientRect(), range = document.createRange(); range.selectNodeContents(node);
+      return { text: node.textContent, left: box.left, right: box.right, glyphs: [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right })) };
+    }));
+    for (const reading of readings) assert.ok(reading.glyphs.every(glyph => glyph.left >= reading.left - .05 && glyph.right <= reading.right + .05), `${width}px ${theme}: exact gauge reading must not be ellipsized: ${JSON.stringify(reading)}`);
     assert.equal(await gauges.locator('[data-gauge-outside-scale="above"]').count(), 3);
     assert.equal(await gauges.locator('[data-gauge-outside-scale="below"]').count(), 1);
     assert.equal(await gauges.locator('[data-gauge-value="unknown"]').innerText(), 'No data');
-    await gauges.getByRole('button', { name: /identity-1: 558%/ }).click();
+    await gauges.getByRole('button', { name: /identity-1: 558.22%/ }).click();
     await tip.getByText('Above scale maximum: 200%', { exact: true }).waitFor();
     assert.match(await tip.innerText(), /Above scale maximum: 200%/);
     const box = await tip.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= width + 1, 'Pinned details fit viewport');
