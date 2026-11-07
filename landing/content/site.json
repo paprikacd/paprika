@@ -1,0 +1,142 @@
+{
+  "docs": [
+    {
+      "slug": "getting-started",
+      "title": "Install Paprika and deploy your first Application",
+      "description": "Set up the Paprika CLI and Kubernetes operator, create an Application, and inspect its first Release and workload health.",
+      "section": "Start",
+      "source": "docs/getting-started.md"
+    },
+    {
+      "slug": "concepts",
+      "title": "Paprika concepts and feature guide",
+      "description": "Understand Applications, Templates, Pipelines, Stages and Releases, then find the guide for your delivery or observability task.",
+      "section": "Start",
+      "source": "docs/features.md"
+    },
+    {
+      "slug": "cli",
+      "title": "Paprika CLI reference",
+      "description": "Install and authenticate the Paprika command-line client, inspect applications and releases, and work with delivery controls.",
+      "section": "Start",
+      "source": "docs/cli.md"
+    },
+    {
+      "slug": "pipelines",
+      "title": "Run Kubernetes delivery pipelines",
+      "description": "Configure container steps, dependencies, concurrency, retries and declared artifacts in Paprika Pipelines backed by Kubernetes Jobs.",
+      "section": "Deliver",
+      "source": "docs/guides/pipelines.md"
+    },
+    {
+      "slug": "environment-promotion",
+      "title": "Promote releases through dev, staging and production",
+      "description": "Connect environment-specific Applications with pinned Git revisions, upstream verification, candidate approval and explicit target settings.",
+      "section": "Deliver",
+      "source": "docs/guides/environment-promotion.md"
+    },
+    {
+      "slug": "canary",
+      "title": "Configure canary deployments",
+      "description": "Set canary steps and intervals, connect traffic routing, inspect rollout progress, and configure analysis for Kubernetes releases.",
+      "section": "Deliver",
+      "source": "docs/guides/canary.md"
+    },
+    {
+      "slug": "drift-and-prune",
+      "title": "Inspect Kubernetes drift and pruning",
+      "description": "Compare desired manifests with live resources, understand sync classifications, preview stale resources, and configure opt-in pruning.",
+      "section": "Deliver",
+      "source": "docs/guides/drift-and-prune.md"
+    },
+    {
+      "slug": "multi-cluster",
+      "title": "Manage delivery across Kubernetes clusters",
+      "description": "Register deployment targets, configure direct or satellite connections, and understand cluster inventory and application placement.",
+      "section": "Deliver",
+      "source": "docs/guides/multi-cluster.md"
+    },
+    {
+      "slug": "observability-gateway",
+      "title": "Connect the observability gateway",
+      "description": "Configure Paprika Observe providers and authenticated MCP access for querying metrics, logs, traces and saved dashboards.",
+      "section": "Observe",
+      "source": "docs/guides/observability-gateway.md"
+    },
+    {
+      "slug": "dashboards",
+      "title": "Use dashboard examples with real data",
+      "description": "Explore Paprika Insights examples, map their queries to connected providers, and inspect live results without a sample-data fallback.",
+      "section": "Observe",
+      "source": "docs/guides/dashboard-repository-examples.md"
+    },
+    {
+      "slug": "metrics",
+      "title": "Monitor Paprika metrics and alerts",
+      "description": "Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation.",
+      "section": "Observe",
+      "source": "docs/guides/metrics.md"
+    },
+    {
+      "slug": "observe-browser-renderer",
+      "title": "Render dashboards for visual verification",
+      "description": "Deploy the optional private browser worker and inspect saved dashboards at different viewport sizes without replacing live data checks.",
+      "section": "Observe",
+      "source": "docs/guides/observe-browser-renderer.md"
+    },
+    {
+      "slug": "mcp-client-setup",
+      "title": "Connect an MCP client to Paprika",
+      "description": "Configure Codex, Claude Code or another MCP client for your Paprika server and complete the native OAuth sign-in flow.",
+      "section": "Integrate",
+      "source": "docs/guides/mcp-client-setup.md"
+    },
+    {
+      "slug": "mcp-plugin",
+      "title": "Use the Paprika fleet plugin",
+      "description": "Install the Paprika plugin for Codex or Claude, inspect fleet and application state, and understand permissions for delivery actions.",
+      "section": "Integrate",
+      "source": "docs/guides/mcp-plugin.md"
+    },
+    {
+      "slug": "observe-plugin",
+      "title": "Install and use Paprika Observe",
+      "description": "Install the Observe plugin, connect with OAuth, discover telemetry providers, and create or update shared Insights dashboards.",
+      "section": "Integrate",
+      "source": "plugins/paprika-observe/README.md"
+    },
+    {
+      "slug": "api",
+      "title": "Paprika API reference",
+      "description": "Explore Paprika's Connect-RPC API for applications, releases, pipelines and related resources, with request and response examples.",
+      "section": "Integrate",
+      "source": "docs/api.md"
+    }
+  ],
+  "posts": [
+    {
+      "slug": "kubernetes-health-vs-drift",
+      "title": "Kubernetes health and drift answer different questions",
+      "description": "A healthy workload can still differ from Git. Learn how to read Kubernetes health, desired-state drift and prune candidates together.",
+      "category": "Operations",
+      "date": "2026-11-07",
+      "source": "landing/content/blog/kubernetes-health-vs-drift.md"
+    },
+    {
+      "slug": "promoting-pinned-revisions",
+      "title": "Promoting a tested Git revision across Kubernetes environments",
+      "description": "Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.",
+      "category": "Delivery",
+      "date": "2026-11-07",
+      "source": "landing/content/blog/promoting-pinned-revisions.md"
+    },
+    {
+      "slug": "building-dashboards-with-mcp",
+      "title": "Build and verify observability dashboards through MCP",
+      "description": "Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.",
+      "category": "Observability",
+      "date": "2026-11-07",
+      "source": "landing/content/blog/building-dashboards-with-mcp.md"
+    }
+  ]
+}

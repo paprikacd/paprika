@@ -77,3 +77,36 @@ The **Charts** landing chapter is the public home for the full interactive chart
 The landing chapter uses the existing technical-instrument palette, Barlow typography, thin navy/steel rules and visible focus treatment. Keep one lazy-loaded frame, a compact row of deep-linked representative studies, a direct full-screen link, and factual prose describing the synthetic fixture data. The complete chart/navigation experience belongs to the nested gallery. At narrow widths its own scrolling is expected; the full-screen link is the accessible escape hatch.
 
 **Product separation:** The authenticated Insights app is for connecting providers, building, saving and operating dashboards. Existing importable starter templates remain a builder function, not a marketing demo destination. Site links to the chart gallery must resolve on the GitHub Pages origin, not assume the authenticated console is hosted on the same domain.
+
+## Documentation and engineering articles
+
+The public website uses **Persuade** mode on the product landing and **Read** mode
+on `/docs/` and `/blog/`. These reading surfaces extend the existing Barlow,
+Barlow Condensed, paper, navy and steel system through `content.css`; do not
+copy the authenticated console's independent Insights theme into them.
+
+Keep product navigation short and expose Docs and Blog directly. The landing's
+task links lead to first-Application installation, environment promotion and
+real-data dashboard examples. Engineering article links come from the same
+manifest as the blog index, feed and sitemap.
+
+`content/site.json` selects canonical repository Markdown for publication.
+Documentation remains in `docs/` or the relevant plugin README. Blog articles
+live in `content/blog/`. `build-content.mjs` renders static pages with a clear
+title, readable line lengths, source links, section navigation and local links
+where a reference is published. Undisplayed implementation plans and private
+deployment runbooks must not be swept into the public navigation automatically.
+
+The guide layout keeps a quiet sidebar, a readable central article and a table
+of contents. On narrow screens, the contents disclosure precedes the article
+and the documentation index remains reachable from navigation. Code and tables
+scroll within their own region. Text, links and the complete directory work
+without JavaScript; search and code-copy controls enhance them. Search needs a
+clear action, results feedback, no-results guidance and a useful fetch-failure
+message. Preserve keyboard focus and do not animate reading content into view.
+
+Each public page has a canonical URL and social metadata; guides and articles
+have matching structured data and breadcrumbs. Use real publication dates and
+omit unknown update dates. The project site lives under `/paprika/`, so a robots
+file in that path cannot govern the host. The generated sitemap describes the
+actual public routes; it is not evidence of indexing or rankings.

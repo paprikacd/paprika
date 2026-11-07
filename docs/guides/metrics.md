@@ -5,19 +5,46 @@ them for monitoring and alerting.
 
 ## Accessing Metrics
 
-The controller-manager exposes metrics on port 8443 over HTTP (not HTTPS —
-the controller uses `--metrics-secure=false`):
+The controller-manager metrics port defaults to `8443`. The transport follows
+the Helm chart's `metrics.secure` value, not the port number:
+
+| Chart setting | Transport and access |
+| --- | --- |
+| `metrics.secure: true` (default) | HTTPS with authentication and authorization. The scraper needs permission to `get` the `/metrics` non-resource URL. |
+| `metrics.secure: false` | HTTP; the chart passes `--metrics-secure=false` to the controller. |
+
+Use the setting from your installed release. For HTTPS, configure the scraper's
+bearer credential and certificate trust; the chart creates a
+`<release>-metrics-reader` ClusterRole that can be bound to the scraper's ServiceAccount.
+A local port-forward does not bypass authorization.
+
+If Prometheus Operator is installed, `prometheus.enable: true` renders a
+ServiceMonitor whose port name and scheme follow `metrics.secure`. Review the
+[chart's ServiceMonitor template](../../charts/chart/templates/prometheus/controller-manager-metrics-monitor.yaml)
+for its certificate and bearer-token configuration, and the
+[metrics-reader role](../../charts/chart/templates/rbac/metrics-reader.yaml)
+for the permission it grants.
+
+### Local HTTP example
+
+The following example applies only to an installation explicitly configured
+with `metrics.secure: false`. It uses the release `paprika` in namespace
+`paprika-system`; substitute your own release and namespace. Keep this command
+running in one terminal:
 
 ```sh
-kubectl -n paprika-e2e port-forward \
-  svc/paprika-e2e-controller-manager-metrics-service 8443:8443 &
-
-curl -s http://localhost:8443/metrics
+kubectl -n paprika-system port-forward \
+  svc/paprika-controller-manager-metrics-service 8443:8443
 ```
 
-For Prometheus scraping, add a ServiceMonitor or PodMonitor targeting the
-`paprika-e2e-controller-manager-metrics-service` on port 8443 with scheme
-`http`.
+Then query it from another terminal:
+
+```sh
+curl --fail --silent --show-error http://localhost:8443/metrics
+```
+
+An HTTP ServiceMonitor or PodMonitor must also use the `http` scheme. Do not
+copy that scrape configuration to a release using secure metrics.
 
 ## Metric Reference
 

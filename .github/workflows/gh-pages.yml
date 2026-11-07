@@ -1,22 +1,28 @@
-name: Deploy Landing and Chart Showcase to GitHub Pages
+name: Deploy Paprika Website to GitHub Pages
 
 on:
   push:
     branches: [master]
     paths:
       - "landing/**"
+      - "docs/**"
+      - "plugins/paprika-observe/README.md"
       - "labs/widget-lab/**"
       - "ui/src/features/insights/**"
       - "hack/build-landing-with-charts.sh"
       - "hack/verify-landing-charts.mjs"
+      - "hack/verify-landing-content.mjs"
       - ".github/workflows/gh-pages.yml"
   pull_request:
     paths:
       - "landing/**"
+      - "docs/**"
+      - "plugins/paprika-observe/README.md"
       - "labs/widget-lab/**"
       - "ui/src/features/insights/**"
       - "hack/build-landing-with-charts.sh"
       - "hack/verify-landing-charts.mjs"
+      - "hack/verify-landing-content.mjs"
       - ".github/workflows/gh-pages.yml"
   repository_dispatch:
     types: [publish-pages]
@@ -30,7 +36,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Verify and publish landing and chart showcase
+    name: Verify and publish website, docs and charts
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -41,11 +47,30 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: labs/widget-lab/package-lock.json
+          cache-dependency-path: |
+            landing/package-lock.json
+            labs/widget-lab/package-lock.json
+      - name: Install content builder dependencies
+        run: npm ci --prefix landing --no-audit --no-fund
       - name: Install chart gallery dependencies
         run: npm ci --prefix labs/widget-lab --no-audit --no-fund
+      - name: Verify Markdown rendering and links
+        run: npm test --prefix landing
       - name: Assemble and verify public landing
         run: bash hack/build-landing-with-charts.sh "$RUNNER_TEMP/paprika-pages"
+      - name: Install browser for public-site checks
+        working-directory: landing
+        run: npx playwright install --with-deps chromium
+      - name: Verify reading, search and mobile navigation
+        run: node landing/verify-browser.mjs "$RUNNER_TEMP/paprika-pages" "$RUNNER_TEMP/paprika-browser"
+      - name: Save public-site browser evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: paprika-public-site-browser
+          path: ${{ runner.temp }}/paprika-browser
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Publish verified static site
         if: github.event_name != 'pull_request'
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
@@ -53,4 +78,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ${{ runner.temp }}/paprika-pages
           publish_branch: gh-pages
-          full_commit_message: "landing: publish Paprika charts and product content [skip ci]"
+          full_commit_message: "landing: publish Paprika website, guides and charts [skip ci]"
