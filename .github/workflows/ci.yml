@@ -487,6 +487,7 @@ jobs:
             artifacts/insights/dashboard-query
             artifacts/insights/observe-authoring
             artifacts/insights/render-worker
+            artifacts/insights/tooltip-peers
             artifacts/insights/variable-filter
             artifacts/insights/repository-examples/browser
             artifacts/insights/record-charts
