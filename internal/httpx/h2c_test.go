@@ -2,29 +2,22 @@ package httpx
 
 import (
 	"context"
-	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"strings"
 	"testing"
-	"time"
-
-	"golang.org/x/net/http2"
 )
 
-// h2cTransport mirrors the cleartext half of ConnectTransport: prior-knowledge
-// HTTP/2 over plain TCP.
-func h2cTransport() http.RoundTripper {
-	return &http2.Transport{
-		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network, addr)
-		},
-		ReadIdleTimeout: 30 * time.Second,
-		PingTimeout:     15 * time.Second,
-	}
+// h2cTransport uses a fresh production transport so tests can close their
+// connections without affecting other callers of the shared transport.
+func h2cTransport(t *testing.T) *http.Transport {
+	t.Helper()
+	transport := newConnectH2CTransport()
+	t.Cleanup(transport.CloseIdleConnections)
+	return transport
 }
 
 // newH2CTestServer starts a cleartext server configured like the real paprika
@@ -61,7 +54,7 @@ func get(t *testing.T, rt http.RoundTripper, url string) (proto string, header h
 // TestWithH2CServesCleartextHTTP2 confirms the server answers a
 // prior-knowledge h2c request, so gRPC/Connect clients can multiplex.
 func TestWithH2CServesCleartextHTTP2(t *testing.T) {
-	proto, header := get(t, h2cTransport(), newH2CTestServer(t).URL)
+	proto, header := get(t, h2cTransport(t), newH2CTestServer(t).URL)
 
 	if !strings.HasPrefix(proto, "HTTP/2") {
 		t.Fatalf("expected HTTP/2 response, got %s", proto)
@@ -79,6 +72,7 @@ func TestWithH2CPreservesHTTP1(t *testing.T) {
 		p.SetHTTP1(true)
 		return p
 	}()}
+	t.Cleanup(transport.CloseIdleConnections)
 
 	proto, _ := get(t, transport, newH2CTestServer(t).URL)
 
@@ -91,13 +85,21 @@ func TestWithH2CPreservesHTTP1(t *testing.T) {
 // connection — the property the connection cap relies on.
 func TestWithH2CMultiplexes(t *testing.T) {
 	ts := newH2CTestServer(t)
-	client := &http.Client{Transport: h2cTransport()}
+	transport := h2cTransport(t)
+	client := &http.Client{Transport: transport}
+	// Establish one connection before the burst so the assertion measures
+	// stream multiplexing, rather than concurrent initial connection attempts.
+	get(t, transport, ts.URL)
 
 	const streams = 8
 	done := make(chan error, streams)
+	connections := make(chan net.Conn, streams)
 	for range streams {
 		go func() {
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL, nil)
+			ctx := httptrace.WithClientTrace(context.Background(), &httptrace.ClientTrace{
+				GotConn: func(info httptrace.GotConnInfo) { connections <- info.Conn },
+			})
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
 			if err != nil {
 				done <- err
 				return
@@ -116,5 +118,12 @@ func TestWithH2CMultiplexes(t *testing.T) {
 		if err := <-done; err != nil {
 			t.Fatalf("concurrent h2 request failed: %v", err)
 		}
+	}
+	seen := make(map[net.Conn]bool)
+	for range streams {
+		seen[<-connections] = true
+	}
+	if len(seen) != 1 {
+		t.Fatalf("concurrent h2 streams used %d TCP connections, want 1", len(seen))
 	}
 }

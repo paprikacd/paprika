@@ -4,14 +4,10 @@
 package httpx
 
 import (
-	"context"
-	"crypto/tls"
 	"net"
 	"net/http"
 	"strings"
 	"time"
-
-	"golang.org/x/net/http2"
 )
 
 // MaxConcurrentStreams bounds the number of in-flight HTTP/2 streams per
@@ -40,14 +36,7 @@ func WithH2C(srv *http.Server) *http.Server {
 // fresh client per request (e.g. per-reconcile agent calls) still reuse the
 // pooled connections.
 var (
-	connectH2CTransport = &http2.Transport{
-		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network, addr)
-		},
-		ReadIdleTimeout: 30 * time.Second,
-		PingTimeout:     15 * time.Second,
-	}
+	connectH2CTransport = newConnectH2CTransport()
 	connectTLSTransport = &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -62,6 +51,24 @@ var (
 		ExpectContinueTimeout: time.Second,
 	}
 )
+
+func newConnectH2CTransport() *http.Transport {
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	return &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		// Keep HTTP/1 disabled: Connect bidirectional streams need
+		// prior-knowledge HTTP/2 for these internal cleartext endpoints.
+		Protocols: protocols,
+		HTTP2: &http.HTTP2Config{
+			SendPingTimeout: 30 * time.Second,
+			PingTimeout:     15 * time.Second,
+		},
+	}
+}
 
 // ConnectTransport picks the shared round-tripper for calls to another
 // paprika component (repo server, remote agent). Cleartext in-cluster URLs
