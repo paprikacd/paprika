@@ -525,7 +525,7 @@ export function TimeSeriesChart({
             style={{ left: position(Math.max(at, eventStart)), width: finish > at ? Math.max(0, position(Math.min(finish, eventEnd)) - position(Math.max(at, eventStart))) : undefined, top: eventTop, bottom: eventBottom }} />;
         })}
       </div>
-      {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer data-timeseries-footer>
+      {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer data-timeseries-footer role="group" aria-label="Chart legend and controls" tabIndex={previousData.length > 0 ? 0 : undefined}>
       {emptyCurrent && previousData.length > 0 && <span role="status" className={styles.notice}>No current observations in this window; the dashed lines show the preceding period.</span>}
       {gapsHidden && <span className={styles.notice}>Gaps not shown: the provider result was truncated</span>}
       {intervalCount > 0 && <details className={styles.gapDetails} data-gap-intervals onKeyDown={(event) => {

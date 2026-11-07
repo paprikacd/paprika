@@ -94,6 +94,45 @@ try {
     await page.screenshot({ path: join(output, `dashboard-${theme}-${width}.png`), fullPage: true });
     await context.close(); console.log(`PASS ${theme} ${width}px: plot budget, statistics scrolling, timezone, overflow, exact inspection, zoom and data actions`);
   }
+  for (const [width, height] of [[1400, 3], [1400, 4], [1600, 3]]) for (const theme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+    await context.addInitScript(theme => localStorage.setItem('paprika-insights-theme', theme), theme);
+    const page = await context.newPage(); lastPage = page;
+    const api = await installRichChartFixtureAPI(page, base);
+    api.documents.set('short-comparison', { ...dashboard, id: 'short-comparison', widgets: [widget('short-chart', 'Short comparison', 'timeseries', { x: 0, y: 0, w: 5, h: height })] });
+    await page.route(`${base}/api/insights/query`, route => {
+      const request = route.request().postDataJSON();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ series: [{ name: 'API', labels: { service: 'api' }, points: [{ timestamp: request.start * 1000, value: 1 }, { timestamp: request.end * 1000, value: 2 }] }] }) });
+    });
+    await page.goto(`${base}/dashboard/insights/?dashboard=short-comparison`, { waitUntil: 'networkidle' });
+    const chart = page.locator('[data-widget-id="short-chart"]');
+    await chart.getByRole('button', { name: 'Compare window for Short comparison' }).waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    assert.ok((await chart.locator('svg').first().boundingBox()).height >= 98, 'Short resting charts retain useful drawable height');
+    await chart.getByRole('button', { name: 'Compare window for Short comparison' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Compare a window' });
+    await dialog.getByRole('button', { name: 'Compare previous period' }).click();
+    await dialog.getByRole('button', { name: 'Overlay previous period' }).click();
+    const footer = chart.getByRole('group', { name: 'Chart legend and controls', exact: true });
+    await footer.getByRole('group', { name: 'Previous period overlay' }).waitFor();
+    const bounds = await footer.evaluate(el => {
+      const box = el.getBoundingClientRect(), tile = el.closest('[data-widget-id]').getBoundingClientRect();
+      return { left: box.left - tile.left, right: tile.right - box.right, bottom: tile.bottom - box.bottom, width: el.clientWidth, contentWidth: el.scrollWidth, plotHeight: el.previousElementSibling.getBoundingClientRect().height };
+    });
+    assert.ok(bounds.left >= -1 && bounds.right >= -1 && bounds.bottom >= -1 && bounds.contentWidth <= bounds.width + 1, `Comparison stays inside the panel: ${JSON.stringify(bounds)}`);
+    assert.ok(bounds.plotHeight >= 48, 'Comparison retains a visible plot');
+    await footer.focus(); await page.keyboard.press('End');
+    for (const button of await footer.locator('[data-chart-actions] button').all()) {
+      await button.focus();
+      const box = await button.boundingBox(), clip = await footer.boundingBox();
+      assert.ok(box.x >= clip.x - 1 && box.x + box.width <= clip.x + clip.width + 1 && box.y >= clip.y - 1 && box.y + box.height <= clip.y + clip.height + 1, 'Every comparison action remains visible on keyboard focus');
+    }
+    await page.screenshot({ path: join(output, `comparison-${theme}-${width}-h${height}.png`) });
+    await chart.getByRole('button', { name: 'Reset chart zoom' }).click();
+    assert.equal(await chart.getByRole('group', { name: 'Previous period overlay' }).count(), 0);
+    assert.deepEqual(api.failures, []);
+    await context.close(); console.log(`PASS ${theme} ${width}px h${height}: short plot budget, comparison bounds, keyboard controls and reset`);
+  }
 } catch (error) {
   console.error((await lastPage?.locator('body').innerText())?.slice(0, 4000));
   await lastPage?.screenshot({ path: join(output, 'failure.png') });

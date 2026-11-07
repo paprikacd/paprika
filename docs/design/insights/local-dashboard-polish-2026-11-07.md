@@ -54,6 +54,7 @@ Paprika Insights now has clearer KPI cards, more useful plotting space, readable
 - Focused Vitest suites passed for schema/editor, chart entrance, compact shell, responsive layout, metric distributions, gauges, and record charts. The final record-chart run passed all 17 tests.
 - Python seed validation: 13 tests passed. Go local harness validation: three tests passed, including session lifetime bounds.
 - Dashboard polish browser suite: six light/dark desktop/tablet/phone cases passed, using independent deterministic observations.
+- Release preparation added six short-panel prior-period comparison cases, with panel bounds, plot height, keyboard access and reset checks. All 21 reference-dashboard generation, persistence, desktop and mobile checks also passed. Short charts retain a shared footer row; selected comparison details scroll within the panel when space is limited.
 - Gauge layout: 12 cases; legend layout: eight cases; status-history axes: four cases; compact stat editing: four cases; compact live canvas: eight cases; live chart footer: four cases — all passed.
 - Record-chart browser suite passed desktop and mobile checks in both themes, with no page errors.
 - Live gallery browser suite: 16 desktop board/theme cases passed. Six main dashboards also passed 24 tablet/phone captures, followed by 12 final phone captures with disclosure checks.
