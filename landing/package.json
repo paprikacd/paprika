@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "node build-content.mjs",
-    "test": "node build-content.mjs --self-test",
+    "test": "node build-content.mjs --self-test && node --test analytics.test.mjs",
     "test:browser": "node verify-browser.mjs"
   },
   "dependencies": {

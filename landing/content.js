@@ -95,6 +95,7 @@
             const link = document.createElement('a');
             link.className = 'doc-link';
             link.href = entry.url;
+            link.dataset.analyticsEvent = new URL(entry.url).pathname === '/paprika/docs/getting-started/' ? 'get_started' : 'docs_open';
             link.append(textElement('h3', entry.title), textElement('p', entry.description), textElement('span', entry.section, 'search-result-section'));
             li.append(link);
             list.append(li);
@@ -144,6 +145,7 @@
       // Typing changes the displayed draft; submitting creates a navigable search.
       commitQuery(input.value.trim());
       runSearch();
+      if (input.value.trim()) window.dispatchEvent(new CustomEvent('paprika:analytics', { detail: { name: 'docs_search' } }));
     });
     input.addEventListener('input', () => { if (!composing) scheduleSearch(); });
     input.addEventListener('compositionstart', () => { composing = true; window.clearTimeout(inputTimer); revision += 1; });
@@ -191,6 +193,7 @@
         if (attempt !== current) return;
         button.textContent = 'Copied';
         feedback.textContent = `Code example ${index + 1} copied.`;
+        window.dispatchEvent(new CustomEvent('paprika:analytics', { detail: { name: 'code_copy' } }));
       } catch {
         if (attempt !== current) return;
         button.textContent = 'Copy code';

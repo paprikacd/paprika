@@ -50,6 +50,49 @@ export function readManifest(path = join(landingRoot, 'content/site.json')) {
   return validateManifest(JSON.parse(readFileSync(path, 'utf8')));
 }
 
+export function readAnalyticsConfig(path = join(landingRoot, 'content/analytics.json')) {
+  return validateAnalyticsConfig(JSON.parse(readFileSync(path, 'utf8')));
+}
+
+export function validateAnalyticsConfig(config) {
+  assert.equal(config.provider, 'flaggr', 'The public site uses Flaggr analytics');
+  assert.ok(config.siteId === null || (typeof config.siteId === 'string' && /^site_[A-Za-z0-9_-]{1,123}$/.test(config.siteId)),
+    'Use the public site_ identifier issued by Flaggr, never an API or MCP credential');
+  for (const key of ['projectId', 'serviceId']) {
+    assert.ok(config[key] === null || (typeof config[key] === 'string' && config[key].length > 0 && config[key].length <= 128), `Invalid Flaggr ${key}`);
+  }
+  return config;
+}
+
+/** Stable intent labels only; never derive conversion names from visible text. */
+export function annotateAnalyticsLinks(html, route) {
+  return html.replace(/<a\b[^>]*>/gi, (tag) => {
+    if (/\bdata-analytics-event=/.test(tag)) return tag;
+    const href = tag.match(/\bhref="([^"]+)"/)?.[1]?.replaceAll('&amp;', '&');
+    if (!href || (href.startsWith('#') && href !== '#get-started')) return tag;
+    let target;
+    try { target = new URL(href, publicURL(route)); } catch { return tag; }
+    let event;
+    if (target.origin === 'https://github.com' && /^\/paprikacd\/paprika\/releases\/download\/[^/]+\/paprika_[^/]+\.(?:tar\.gz|zip)$/.test(target.pathname)) event = 'cli_download';
+    if (target.origin === new URL(siteURL).origin) {
+      if (target.pathname === '/paprika/docs/getting-started/' || (target.pathname === '/paprika/' && target.hash === '#get-started')) event = 'get_started';
+      else if (target.pathname === '/paprika/tour.html') event = 'demo_open';
+      else if (target.pathname.startsWith('/paprika/docs/')) event = 'docs_open';
+      else if (target.pathname.startsWith('/paprika/blog/')) event = 'blog_open';
+    }
+    return event ? tag.replace(/^<a\b/i, `<a data-analytics-event="${event}"`) : tag;
+  });
+}
+
+export function instrumentPage(html, route, config) {
+  const clean = annotateAnalyticsLinks(html.replace(/<!-- paprika-analytics:start -->[\s\S]*?<!-- paprika-analytics:end -->\n?/g, ''), route);
+  if (!config.siteId) return clean;
+  const prefix = route === '404.html' ? '/paprika/' : route.endsWith('.html') ? './' : assetPrefix(route);
+  const script = `<!-- paprika-analytics:start -->\n<script id="paprika-analytics" defer src="${prefix}analytics.js?v=flaggr-1" data-site-id="${config.siteId}"></script>\n<!-- paprika-analytics:end -->\n`;
+  assert.ok(clean.includes('</head>'), `Missing head in ${route || '/'}`);
+  return clean.replace('</head>', `${script}</head>`);
+}
+
 export function validateManifest(manifest) {
   const routes = new Set();
   const sources = new Set();
@@ -356,6 +399,7 @@ function featuredPosts(manifest) {
 export function buildContent(output) {
   const destination = stagingDestination(output);
   const manifest = readManifest();
+  const analytics = readAnalyticsConfig();
   const items = [...manifest.docs, ...manifest.posts];
   const sourceRoutes = new Map(items.map((item) => [item.source, item.route]));
   const assets = new Map();
@@ -387,6 +431,12 @@ export function buildContent(output) {
     const content = readFileSync(homepage, 'utf8');
     writeFileSync(homepage, content.replace(/<!-- featured-posts:start -->[\s\S]*?<!-- featured-posts:end -->/, `<!-- featured-posts:start -->\n${featuredPosts(manifest)}\n<!-- featured-posts:end -->`));
   }
+  for (const route of [...routes, '404.html']) {
+    const path = join(destination, route.endsWith('.html') ? route : `${route}index.html`);
+    if (existsSync(path)) writeFileSync(path, instrumentPage(readFileSync(path, 'utf8'), route, analytics));
+  }
+  if (analytics.siteId) copyFileSync(join(landingRoot, 'analytics.js'), join(destination, 'analytics.js'));
+  console.log(analytics.siteId ? 'Flaggr analytics configured with a public site identifier.' : 'Flaggr analytics disabled: register the site through Flaggr MCP and set content/analytics.json.');
   console.log(`Built ${manifest.docs.length} documentation pages, ${manifest.posts.length} articles, two indexes, RSS, search and ${routes.length} sitemap URLs.`);
 }
 
@@ -419,6 +469,20 @@ export function selfTest() {
   assert.ok(productLink.html.includes('on your Paprika server:'));
   assert.ok(!productLink.html.includes('href="/dashboard/'));
   assert.equal(escapeHTML('"<&>'), '&quot;&lt;&amp;&gt;');
+  const inactive = { provider: 'flaggr', siteId: null, projectId: null, serviceId: null };
+  const configured = { ...inactive, siteId: 'site_test_fixture_0001' };
+  assert.deepEqual(validateAnalyticsConfig(inactive), inactive);
+  assert.throws(() => validateAnalyticsConfig({ ...inactive, siteId: 'mcp_do_not_publish_a_credential' }), /public site_/);
+  assert.throws(() => validateAnalyticsConfig({ ...inactive, siteId: 'site_bad"><script>' }), /public site_/);
+  const html = '<html><head></head><body><a href="../docs/getting-started/">Start</a><a href="#heading">Contents</a></body></html>';
+  const tagged = instrumentPage(html, 'blog/', configured);
+  assert.equal((tagged.match(/id="paprika-analytics"/g) || []).length, 1);
+  assert.ok(tagged.includes('src="../analytics.js?v=flaggr-1"'));
+  assert.ok(tagged.includes('data-analytics-event="get_started"'));
+  assert.ok(tagged.includes('<a href="#heading">'));
+  assert.ok(!annotateAnalyticsLinks('<a href="https://github.com/paprikacd/paprika/releases/download/v0.4.7/checksums.txt">Checksums</a>', '').includes('cli_download'));
+  assert.equal(instrumentPage(tagged, 'blog/', configured), tagged, 'Rebuilding must not duplicate analytics');
+  assert.ok(!instrumentPage(tagged, 'blog/', inactive).includes('id="paprika-analytics"'), 'Disabling must remove an older configured loader');
   console.log('Passed content builder checks: Markdown safety, GitHub anchors, source links, traversal, fenced code and tables.');
 }
 

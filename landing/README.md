@@ -77,3 +77,69 @@ The next editorial topics should follow real questions and source evidence:
 canary analysis that fails closed, connecting existing telemetry backends, and
 Kubernetes drift normalization. Validate those topics against search data once
 it is available; the initial articles are not based on keyword-volume estimates.
+
+## Flaggr browser analytics
+
+The adapter in `analytics.js` loads Flaggr's pinned browser collector only when
+`content/analytics.json` contains a real public `site_…` identifier. A null ID
+keeps collection disabled. It must remain null until the site has been created
+or located through an authenticated Flaggr connection; do not insert an example
+ID, a project ID, an API token, or an MCP credential.
+
+Connect the hosted MCP endpoint at <https://flaggr.dev/mcp> with native OAuth,
+following <https://flaggr.dev/connect>. Read the connection, projects, services
+and sites before creating anything. Reuse the Paprika site if it exists, or
+create a dedicated **Paprika public website** site for
+`https://paprikacd.github.io/paprika/` in the appropriate project and service,
+with environment `production`. Save its returned `siteId`, `projectId` and
+`serviceId` in the configuration. Only the public site ID is emitted in HTML.
+
+The adapter runs only on the exact production origin under `/paprika/`, in a
+top-level window. Local previews, other hosts, embedded chart demos and Do Not
+Track requests do not load the collector. The pinned collector uses Subresource
+Integrity, loads asynchronously and cannot hold up navigation. A failed load
+drops its bounded pending event queue after ten seconds.
+
+Flaggr owns automatic pageviews, Web Vitals, browser error and scroll reporting.
+Its current collector records page URLs and referrers, including ordinary query
+parameters such as documentation `?q=` searches. The conversion adapter passes
+only fixed event names, but that does **not** make the collector path-only.
+Automatic DOM click collection is disabled. No user identity or account token
+is supplied by this integration.
+
+| Event | Meaning |
+| --- | --- |
+| `get_started` | Follow an installation entry point |
+| `cli_download` | Click a CLI archive download; checksum links do not count |
+| `docs_open` | Follow a documentation link |
+| `demo_open` | Open the console tour |
+| `blog_open` | Follow an engineering blog link |
+| `docs_search` | Submit a nonempty documentation search |
+| `code_copy` | Successfully copy a guide example or CLI installation command |
+| `mcp_copy` | Successfully copy an MCP/Observe setup command |
+
+These events measure website interactions. A download click or copied command
+does not prove that someone installed Paprika.
+
+After enabling the configuration, run the normal build and checks, then verify
+the deployed collector loads with its expected integrity and a real browser
+request to `https://ingest.flaggr.dev/e` reports accepted events. Confirm them
+with `list_recent_browser_events` using the observed site/project IDs. HTTP 202
+alone is not sufficient: rejected or filtered batches can accept zero events.
+Do not send fabricated visits from a command-line HTTP client.
+
+### Monitoring through MCP
+
+Use passive reads: `get_browser_analytics_overview`, `get_web_vitals`,
+`list_browser_issues`, `query_browser_segments`, `list_recent_browser_events`
+and `get_site_health`. Monitor the dedicated site in production, retaining the
+time range and sample counts. Compare page traffic and conversions across
+equivalent periods. Flaggr's visitor count represents anonymous tab sessions,
+not distinct people; missing or delayed data is not a healthy zero.
+
+Initial checks should cover ingestion freshness, browser error changes, p75
+Web Vitals with sufficient samples, and installation/download/documentation
+interactions. An empty new site needs a baseline before traffic-drop alerts
+are meaningful. Do not use `check_site_guardrails` for passive monitoring: that
+tool can execute mitigation. Configure any automatic rollout or mitigation
+separately from analytics monitoring.
