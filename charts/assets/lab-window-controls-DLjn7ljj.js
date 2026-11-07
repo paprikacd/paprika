@@ -1,1 +1,0 @@
-import{bb as r,j as o,bc as e}from"./index-DRNsfdAX.js";function l({state:s,description:n}){const a=r(s);return o.jsxs("div",{className:"lab-window-controls",children:[o.jsx(e,{state:s,selection:a}),n&&o.jsx("p",{className:"lab-window-scope",children:n})]})}export{l as L};
