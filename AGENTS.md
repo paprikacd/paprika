@@ -119,6 +119,31 @@ regressed after enabling five percentage stat bars with \`min/max\` on
 short KPI cards alongside sparklines and lengthy descriptions. Removing
 the redundant elements restored a simpler semantic presentation.
 
+## Core fleet console: adapt demo quality without synthetic data
+
+The production fleet overview, rollouts, clusters and observability screens
+are separate from the Insights builder and the Widget Lab reference artboards.
+Promote the demos' hierarchy, measured spacing, chart anatomy and useful
+interactions into maintained core owners, not into parallel fixtures.
+
+The main console uses Tailwind/Blueprint and a light-only shell; Insights
+uses independently scoped Gamma light/dark/compact tokens. Never blindly
+copy demo CSS or synthetic observations into the core shell. Reuse existing
+status-tone, data-state, navigation and auth components. Only add a sparkline
+when a real, time-indexed signal exists. Avoid decorative percent bars.
+
+GetSystemStatus returns whole-fleet totals/health/attention; its request
+does not accept the current fleet URL filters. QueryApplications does apply
+the URL scope. Label server status totals as whole-fleet, never as per-project
+or filtered values; missing responses remain unavailable rather than zero.
+
+For each main-console adaptation, test 1440px desktop and 390px mobile,
+capture Playwright screenshots, verify overflow/reading density/selection,
+and keep actual-data semantics independent from style. A successful unit
+test or a sample screenshot cannot establish live deployment or demo parity.
+The first production adaptation is core overview PR #193, which adds a
+whole-fleet instrument strip and measured board-header styling.
+
 ## Constraints & Preferences
 
 - OTel SDK with Prometheus exporter for metrics (not direct Prometheus client
