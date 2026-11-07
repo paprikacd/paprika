@@ -72,7 +72,6 @@
   .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] .item { min-height: 19px; }
   .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] .body {
     gap: 4px;
-    font-size: 13px;
   }
   .bankContainer[data-gauge-bank-layout="rows"] .bank[data-gauge-bank-orientation="horizontal"] .label {
     line-height: 1.15;
