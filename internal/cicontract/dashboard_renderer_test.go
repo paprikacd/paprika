@@ -40,4 +40,12 @@ func TestDashboardRendererDeploymentContract(t *testing.T) {
 	if !strings.Contains(scalarString(validation["run"]), `^ghcr\.io/paprikacd/paprika-render-worker@sha256:[0-9a-f]{64}$`) {
 		t.Fatal("reject untrusted renderer image references before privileged deployment")
 	}
+	health := requireNamedStep(t, vke, "Verify dashboard renderer", "deploy-vke")
+	if !stepFailureEnforcing(health) || health["timeout-minutes"] != 2 {
+		t.Fatal("renderer health verification must fail the deployment and have a bounded timeout")
+	}
+	healthRun := scalarString(health["run"])
+	if !strings.Contains(healthRun, `bash hack/check-dashboard-renderer-health.sh "${VKE_NAMESPACE}" "${HELM_RELEASE}"`) || strings.Contains(healthRun, " exec ") {
+		t.Fatal("renderer verification must use the existing port-forward permission, not pod exec")
+	}
 }

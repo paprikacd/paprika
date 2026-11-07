@@ -252,11 +252,10 @@ jobs:
           kubectl get pods -n "${VKE_NAMESPACE}" -o wide
 
       - name: Verify dashboard renderer
+        timeout-minutes: 2
         run: |
           if jq -e '.observabilityGateway.renderWorker.enabled' "${RUNNER_TEMP}/dashboard-renderer-values.json" >/dev/null; then
-            kubectl -n "${VKE_NAMESPACE}" exec "deploy/${HELM_RELEASE}-observability-gateway" \
-              -c dashboard-renderer -- node -e \
-              'fetch("http://127.0.0.1:9081/healthz").then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))'
+            bash hack/check-dashboard-renderer-health.sh "${VKE_NAMESPACE}" "${HELM_RELEASE}"
             jq -r '.observabilityGateway.renderWorker.image' "${RUNNER_TEMP}/dashboard-renderer-values.json"
           fi
 
