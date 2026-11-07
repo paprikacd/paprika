@@ -450,6 +450,9 @@ func registerObservabilityInsights(ctx context.Context, registry *mcp.Registry, 
 	if err != nil {
 		return nil, fmt.Errorf("configure Insights authoring client: %w", err)
 	}
+	if err := authoring.ConfigureDashboardRenderer(os.Getenv("PAPRIKA_OBSERVE_RENDER_URL"), os.Getenv("PAPRIKA_OBSERVE_RENDER_SECRET")); err != nil {
+		return nil, fmt.Errorf("configure dashboard browser renderer: %w", err)
+	}
 	if err := observabilitygateway.RegisterInsightsTools(registry, authoring, usage); err != nil {
 		return nil, fmt.Errorf("configure Insights authoring tools: %w", err)
 	}

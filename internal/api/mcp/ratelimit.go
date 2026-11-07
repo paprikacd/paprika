@@ -1,89 +1,147 @@
 package mcp
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
 )
 
-// The MCP endpoint has no upstream protection between a caller's bearer
-// token and a tools/call loop: the listener's --api-max-conns caps socket
-// exhaustion but says nothing about request rate per credential. An agent
-// that spins — or a leaked token scripted into a loop — could otherwise
-// drive the Connect handlers (RBAC checks, informer reads, audit writes) at
-// unbounded QPS on behalf of one subject. This limiter bounds requests per
-// authenticated subject; it deliberately sits at the HTTP layer (post-auth,
-// pre-dispatch) so a limited request never reaches tool invocation.
+// The MCP endpoint protects per-principal request rates independently from
+// the bounded provider execution queues. Short bursts can wait for admission,
+// but a runaway caller cannot retain unlimited HTTP connections.
 const (
-	// mcpRatePerSecond is generous for interactive agent use (~15 calls/s
-	// was the observed aggregate under a 3-worker load test) while capping
-	// runaway loops well below what saturates the apiserver.
 	mcpRatePerSecond = 50
 	mcpRateBurst     = 100
 
-	// mcpLimiterIdleTTL evicts subjects that haven't sent a request
-	// recently; the limiter map would otherwise grow one entry per bearer
-	// subject the server has ever seen.
-	mcpLimiterIdleTTL = 10 * time.Minute
-
-	// mcpLimiterSweepAt is the map size that triggers an eviction pass —
-	// pruning on every Allow would be O(subjects) per request.
-	mcpLimiterSweepAt = 256
+	mcpRateQueueWait         = 2 * time.Second
+	mcpRateQueueLimit        = 64
+	mcpRateQueuePerPrincipal = 8
+	mcpLimiterIdleTTL        = 10 * time.Minute
+	mcpLimiterSweepAt        = 256
 )
+
+var errRateQueueCapacity = errors.New("MCP request rate queue is full or the wait would exceed its budget")
 
 type limiterEntry struct {
 	lim      *rate.Limiter
 	lastSeen time.Time
+	queued   int
 }
 
-// principalRateLimiter is a small mutex-guarded map of per-subject token
-// buckets. It trades exactness under extreme subject cardinality for
-// simplicity: entries are created lazily and swept in bulk when the map
-// exceeds mcpLimiterSweepAt, so memory stays proportional to active
-// callers rather than all-time callers.
+// principalRateLimiter keeps independent token buckets per authenticated
+// subject. Admission reservations are FIFO within each subject, and queued
+// waiters retain a bounded number of handler goroutines for a bounded time.
+// The accounting is protected by mu; sleeping never holds the mutex.
 type principalRateLimiter struct {
-	mu    sync.Mutex
-	now   func() time.Time // injected for tests
-	lims  map[string]*limiterEntry
-	per   rate.Limit
-	burst int
+	mu            sync.Mutex
+	now           func() time.Time // injected for idle-eviction tests
+	lims          map[string]*limiterEntry
+	per           rate.Limit
+	burst         int
+	waiting       int
+	maxWaiting    int
+	maxPerSubject int
+	maxWait       time.Duration
 }
 
 func newPrincipalRateLimiter() *principalRateLimiter {
 	return &principalRateLimiter{
-		now:   time.Now,
-		lims:  map[string]*limiterEntry{},
-		per:   rate.Limit(mcpRatePerSecond),
-		burst: mcpRateBurst,
+		now:           time.Now,
+		lims:          map[string]*limiterEntry{},
+		per:           rate.Limit(mcpRatePerSecond),
+		burst:         mcpRateBurst,
+		maxWaiting:    mcpRateQueueLimit,
+		maxPerSubject: mcpRateQueuePerPrincipal,
+		maxWait:       mcpRateQueueWait,
 	}
 }
 
-// Allow reports whether the subject may send this request, charging one
-// token when permitted. An empty subject (unauthenticated callers never
-// reach this — it runs post-Authenticate) is treated as its own bucket.
-func (l *principalRateLimiter) Allow(subject string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
+func (l *principalRateLimiter) entryLocked(subject string) *limiterEntry {
 	if len(l.lims) >= mcpLimiterSweepAt {
 		l.sweepLocked(l.now())
 	}
-	e, ok := l.lims[subject]
-	if !ok {
-		e = &limiterEntry{lim: rate.NewLimiter(l.per, l.burst)}
-		l.lims[subject] = e
+	entry := l.lims[subject]
+	if entry == nil {
+		entry = &limiterEntry{lim: rate.NewLimiter(l.per, l.burst)}
+		l.lims[subject] = entry
 	}
-	e.lastSeen = l.now()
-	return e.lim.Allow()
+	entry.lastSeen = l.now()
+	return entry
 }
 
-// sweepLocked drops entries idle longer than mcpLimiterIdleTTL. Called only
-// when the map is oversized, so its O(n) cost amortizes against admission
-// volume.
+// Allow remains an immediate admission primitive for callers explicitly
+// requiring fail-fast behavior. MCP HTTP requests use Wait instead.
+func (l *principalRateLimiter) Allow(subject string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.entryLocked(subject).lim.Allow()
+}
+
+// Wait reserves one token in the principal's token bucket and holds the
+// connection for a short, bounded delay instead of immediately returning 429.
+// A canceled request returns its reservation and releases its queue count.
+// There is no background worker, detached execution or post-disconnect work.
+func (l *principalRateLimiter) Wait(ctx context.Context, subject string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("MCP rate admission: %w", err)
+	}
+	entry, reservation, delay, err := l.reserve(subject)
+	if err != nil {
+		return err
+	}
+	if delay > 0 {
+		defer func() {
+			l.mu.Lock()
+			l.waiting--
+			entry.queued--
+			l.mu.Unlock()
+		}()
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		reservation.Cancel()
+		return fmt.Errorf("MCP rate admission: %w", err)
+	}
+	return nil
+}
+
+// reserve accounts for the token and any queue position atomically. The caller
+// waits without holding mu and releases its queue count when that wait ends.
+func (l *principalRateLimiter) reserve(subject string) (*limiterEntry, *rate.Reservation, time.Duration, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry := l.entryLocked(subject)
+	reservation := entry.lim.Reserve()
+	if !reservation.OK() {
+		return nil, nil, 0, errRateQueueCapacity
+	}
+	delay := reservation.Delay()
+	if delay > l.maxWait || (delay > 0 &&
+		(l.waiting >= l.maxWaiting || entry.queued >= l.maxPerSubject)) {
+		reservation.Cancel()
+		return nil, nil, 0, errRateQueueCapacity
+	}
+	if delay > 0 {
+		l.waiting++
+		entry.queued++
+	}
+	return entry, reservation, delay, nil
+}
+
+// sweepLocked drops only entries that are idle and have no queued waiters.
+// It runs only after the subject map reaches a threshold, amortizing its cost.
 func (l *principalRateLimiter) sweepLocked(now time.Time) {
-	for subject, e := range l.lims {
-		if now.Sub(e.lastSeen) > mcpLimiterIdleTTL {
+	for subject, entry := range l.lims {
+		if entry.queued == 0 && now.Sub(entry.lastSeen) > mcpLimiterIdleTTL {
 			delete(l.lims, subject)
 		}
 	}

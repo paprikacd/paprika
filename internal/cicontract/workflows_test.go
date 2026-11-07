@@ -438,8 +438,12 @@ func assertJobTimeout(t *testing.T, workflowName, jobID string, job map[string]a
 func assertExactImageReferenceInput(t *testing.T, trigger map[string]any, context string) {
 	t.Helper()
 	inputs := requireMappingValue(t, trigger, "inputs", context)
-	if got := sortedKeys(inputs); !exactly(got, "image_ref") {
-		t.Errorf("%s inputs = %v, want exactly [image_ref]", context, got)
+	if got := sortedKeys(inputs); !sameStrings(got, []string{"image_ref", "render_worker_image_ref"}) {
+		t.Errorf("%s inputs = %v, want exactly [image_ref render_worker_image_ref]", context, got)
+	}
+	renderer := requireMappingValue(t, inputs, "render_worker_image_ref", context+" inputs")
+	if scalarString(renderer["type"]) != "string" || renderer["required"] != false {
+		t.Errorf("%s renderer digest input must be optional so manual deployments can retain the existing worker", context)
 	}
 	imageReference := requireMappingValue(t, inputs, "image_ref", context+" inputs")
 	description := strings.ToLower(scalarString(imageReference["description"]))
@@ -532,8 +536,8 @@ func testPublication(t *testing.T) {
 		t.Errorf("ci.yml publish job must have packages: write permission")
 	}
 
-	buildPush, ok := findFailureEnforcingUsesStep(publish, "docker/build-push-action@")
-	if !ok {
+	buildPush := requireNamedStep(t, publish, "Build and push", "ci.yml publish job")
+	if !strings.HasPrefix(scalarString(buildPush["uses"]), "docker/build-push-action@") || !stepFailureEnforcing(buildPush) {
 		t.Fatal("ci.yml publish job must contain an unconditional docker/build-push-action step that enforces failure")
 	}
 	if id := scalarString(buildPush["id"]); id != "build-push" {
@@ -1863,21 +1867,6 @@ func containsActiveShellLine(script, want string) bool {
 		}
 	}
 	return false
-}
-
-func findFailureEnforcingUsesStep(job map[string]any, actionPrefix string) (map[string]any, bool) {
-	var matched map[string]any
-	for _, value := range anyList(job["steps"]) {
-		step, ok := value.(map[string]any)
-		if !ok || !strings.HasPrefix(scalarString(step["uses"]), actionPrefix) {
-			continue
-		}
-		if !stepFailureEnforcing(step) {
-			return nil, false
-		}
-		matched = step
-	}
-	return matched, matched != nil
 }
 
 func stepFailureEnforcing(step map[string]any) bool {

@@ -159,7 +159,7 @@ A stale edit returns 412. Clients that omit preconditions choose last-write-wins
 
 Query limits: 31 days; at least 1-second step; at most 5,000 points per series,
 100 series, 100,000 total points, 100 traces, 8 MiB upstream response, 20-second
-timeout, and 16 simultaneous queries. Provider results exceeding count limits
+timeout, 16 simultaneous query executions and a bounded 64-request queue with up to 2 seconds of cancellable waiting. Overflow still returns 429 with Retry-After; the gateway separately limits concurrent queries globally and per provider. Provider results exceeding count limits
 set `truncated:true`; invalid requests fail before contacting a provider.
 Client cancellation propagates to providers.
 Native warnings and explicit partial-result markers also set `truncated:true`

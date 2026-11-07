@@ -342,3 +342,23 @@ has returned HTTP 429 for concurrent agent requests. Prefer a single
 follow-ups with bounded inputs; honour `Retry-After`. Do not assume the
 repo's pending queue/bulkhead changes have been deployed. Keep the live
 execution evidence, source identity and saved dashboard ETag separate.
+
+
+## Browser screenshot inspection (opt-in)
+
+The `render_dashboard` tool is available only when the operator has
+deployed the isolated browser renderer and opted it into the gateway.
+Use it **after** `query_dashboard` to see the actual React/Chromium output,
+with viewport 1512, 768 or 390 and appearance `light` or `dark`.
+For tooltip review, pass a canonical `focus_widget` ID from
+`get_dashboard`. The resulting `image/png` is a true browser screenshot,
+not a chart reconstructed from compact MCP summaries. No arbitrary URL
+or browser navigation is accepted. Images carry a source ETag; rerender
+after exact-ETag patches rather than assuming the UI matches old data.
+
+If this tool is not advertised, do not claim screenshot capture occurred.
+The main container has no Chromium. See the opt-in renderer runbook in
+`docs/guides/observe-browser-renderer.md`. Report the missing deployment
+rather than inventing an image. A screenshot helps inspect spacing,
+legends, overlap and tooltip placement; structured `query_dashboard`
+continues to establish observed values and missing/partial data.

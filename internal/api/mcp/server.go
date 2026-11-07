@@ -608,9 +608,15 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = auth.WithPrincipal(ctx, principal)
 
-	if !s.rateLimit.Allow(principal.Subject) {
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	// Allow a brief, bounded queue wait for bursts. Every waiting request
+	// retains its caller's cancellation; no work runs after disconnect.
+	if err := s.rateLimit.Wait(ctx, principal.Subject); err != nil {
+		if errors.Is(err, errRateQueueCapacity) {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "rate limit queue is full; retry shortly", http.StatusTooManyRequests)
+			return
+		}
+		http.Error(w, "request canceled while queued", http.StatusRequestTimeout)
 		return
 	}
 
