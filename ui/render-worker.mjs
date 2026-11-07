@@ -122,6 +122,14 @@ async function render(params, bearer, origin, signal, etag) {
           await route.abort("blockedbyclient").catch(()=>{})
           return
         }
+        if(new URL(target).pathname==="/api/insights/query" && response.ok()) {
+          const result=await response.json()
+          if(typeof result?.error==="string" && result.error.trim()) {
+            fail(new RenderError("dashboard data request failed"))
+            await route.abort("failed").catch(()=>{})
+            return
+          }
+        }
         await route.fulfill({response})
       } catch {
         fail(new RenderError("dashboard request failed"))
@@ -142,6 +150,11 @@ async function render(params, bearer, origin, signal, etag) {
     await page.goto(origin+path,{waitUntil:"domcontentloaded",timeout:maxTime})
     await page.getByTestId("dashboard-canvas").waitFor({state:"visible",timeout:maxTime})
     const tiles=page.locator("[data-widget-id]")
+    const rejectWidgetErrors=async target=>{
+      // An authorized dashboard can reference a provider the viewer cannot
+      // read. That is rendered as an alert without making a failing HTTP call.
+      if(await target.locator('[role="alert"]:visible').count()) throw new RenderError("dashboard widget data unavailable")
+    }
     await tiles.first().waitFor({state:"visible",timeout:maxTime})
     const count=await tiles.count()
     if (count<1 || count>48) throw Error("dashboard canvas has no bounded widgets")
@@ -155,16 +168,33 @@ async function render(params, bearer, origin, signal, etag) {
         return tile && !tile.querySelector('[aria-label="Widget waiting to load"],[aria-busy="true"]')
       },await tile.getAttribute("data-widget-id"),{timeout:maxTime})
       if(failure)throw failure
+      await rejectWidgetErrors(tile)
     }
     if (params.focusWidget) {
       const panel=page.locator('[data-widget-id="'+params.focusWidget+'"]')
       if (await panel.count()!==1) throw Error("focused widget is not visible")
       await panel.scrollIntoViewIfNeeded()
-      const target=panel.locator('svg[role="img"],svg[role="group"],[data-metric-value]').first()
-      if (await target.count()) await target.hover({timeout:3000})
+      const target=panel.locator('[data-stat-sparkline][tabindex="0"],svg[role="img"][tabindex="0"],svg[role="group"][tabindex="0"]').first()
+      if(await target.count()!==1) throw new RenderError("focused widget has no inspectable chart")
+      // Keyboard inspection selects a recorded sample independently of where
+      // its plotted line happens to sit. Blind central hover may hit no data.
+      await target.focus()
+      await target.press("End")
+      await target.press("Enter")
+      await page.waitForFunction(element=>{
+        const ids=(element.getAttribute("aria-describedby")??"").split(/\s+/)
+        return ids.some(id=>{
+          const inspector=document.getElementById(id)
+          if(!inspector || !["tooltip","region"].includes(inspector.getAttribute("role")))return false
+          const bounds=inspector.getBoundingClientRect()
+          return bounds.width>0 && bounds.height>0 && getComputedStyle(inspector).visibility==="visible" &&
+            !!inspector.querySelector("[data-observation-value],[data-metric-value],[data-observation-state]")
+        })
+      },await target.elementHandle(),{timeout:3000})
     } else await page.evaluate(()=>window.scrollTo(0,0))
     await page.evaluate(()=>document.fonts.ready)
     if(failure)throw failure
+    await rejectWidgetErrors(page.getByTestId("dashboard-canvas"))
     signal.throwIfAborted()
     if(observedETag!==etag)throw new RenderError("dashboard revision was not observed",409)
     if(!params.focusWidget && await page.evaluate(()=>Math.max(document.documentElement.scrollHeight,document.body.scrollHeight))>12000) {
@@ -172,6 +202,7 @@ async function render(params, bearer, origin, signal, etag) {
     }
     const png=await page.screenshot({type:"png",fullPage:!params.focusWidget,animations:"disabled",timeout:maxTime})
     if(failure)throw failure
+    await rejectWidgetErrors(page.getByTestId("dashboard-canvas"))
     if (png.length>maxBytes || png.readUInt32BE(20)>12000) throw new RenderError("screenshot exceeds bounds",413)
     return png
   } catch(error) {

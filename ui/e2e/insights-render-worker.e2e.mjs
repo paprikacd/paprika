@@ -48,7 +48,7 @@ async function verifyResponseIsolation() {
   const token="redirect-isolation-test-token"
   let sourceAuthorization,redirectWorker
   const revision='"'+"0".repeat(64)+'"'
-  let conditionalReads=0,conditionalMatched=false
+  let conditionalReads=0,conditionalMatched=false,queryErrorRead=false
   const sourceRequests=[]
   const source=createServer((req,res)=>{
     sourceRequests.push({method:req.method,path:req.url})
@@ -59,10 +59,17 @@ async function verifyResponseIsolation() {
       conditionalReads++
       conditionalMatched=req.headers["if-none-match"]===revision && req.headers.authorization==="Bearer "+token
       res.writeHead(conditionalReads===1?200:304,{"Content-Type":"application/json","Cache-Control":"no-store",ETag:revision}).end(conditionalReads===1?'{"id":"conditional-test"}':undefined)
+    } else if(req.url==="/api/insights/dashboards/query-error-test") {
+      res.writeHead(200,{"Content-Type":"application/json",ETag:revision}).end('{"id":"query-error-test"}')
+    } else if(req.url==="/api/insights/query" && req.method==="POST") {
+      queryErrorRead=req.headers.authorization==="Bearer "+token
+      res.writeHead(200,{"Content-Type":"application/json"}).end('{"error":"fixture provider query failed"}')
     } else {
-      const conditional=new URL(req.url,"http://fixture").searchParams.get("dashboard")==="conditional-test"
-      const load=conditional
+      const id=new URL(req.url,"http://fixture").searchParams.get("dashboard")
+      const load=id==="conditional-test"
         ? `fetch("/api/insights/dashboards/conditional-test").then(()=>fetch("/api/insights/dashboards/conditional-test",{headers:{"If-None-Match":${JSON.stringify(revision)}}})).then(response=>{if(response.status!==304)throw Error("conditional read did not return304")})`
+        : id==="query-error-test"
+        ? 'fetch("/api/insights/dashboards/query-error-test").then(()=>fetch("/api/insights/query",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).catch(()=>{})'
         : 'fetch("/api/insights/dashboards/redirect-test").catch(()=>{})'
       res.writeHead(200,{"Content-Type":"text/html"}).end('<main data-testid="dashboard-canvas"><div data-widget-id="response"><span aria-busy="true">Response policy fixture</span></div></main><script>'+load+'.finally(()=>document.querySelector("[aria-busy]").removeAttribute("aria-busy"))</script>')
     }
@@ -88,6 +95,10 @@ async function verifyResponseIsolation() {
     assert.equal(conditionalMatched,true,"revalidation must retain its conditional header and scoped credential")
     await conditional.arrayBuffer()
     console.log("PASS browser conditional document read:304 retains the observed revision")
+    const queryError=await capture("query-error-test")
+    assert.equal(queryError.status,422,"HTTP200 provider error envelopes must fail before producing an image")
+    assert.equal(queryErrorRead,true,"the failing query must use the scoped credential")
+    console.log("PASS browser provider error envelope is rejected despite HTTP200")
   } finally {
     for(const server of [redirectWorker,source,sink])if(server?.listening) {
       server.closeAllConnections();await new Promise(resolve=>server.close(resolve))
@@ -143,11 +154,12 @@ try {
   const stale=await render({id:dashboard.id},'"'+"0".repeat(64)+'"')
   assert.equal(stale.status,409,"the worker must reject a different displayed revision")
   const denied=await render({id:dashboard.id},created.etag,fixture.deniedToken)
-  assert.notEqual(denied.status,200,"missing provider access must not yield a purportedly successful render")
+  if(denied.status===200) await writeFile(join(output,"unexpected-provider-denial.png"),Buffer.from(await denied.arrayBuffer()))
+  assert.equal(denied.status,422,"missing provider access must explicitly fail without waiting for the render deadline")
   const after=await tool("get_dashboard",{id:dashboard.id},fixture.mcpViewerToken)
   assert.equal(after.etag,created.etag)
   assert.deepEqual(after.document,created.document,"screenshot inspection must not mutate saved documents")
-  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,redirectIsolationVerified:true,conditionalReadVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true},null,2))
+  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,redirectIsolationVerified:true,conditionalReadVerified:true,queryErrorRejected:true,focusedInspectionVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true},null,2))
   console.log("PASS focused inspection, revision conflict, provider denial and read-only document preservation")
 } finally {
   await closeRenderBrowser()

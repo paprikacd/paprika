@@ -38,6 +38,10 @@ Browser screenshots are capped at 4 MiB, 20 seconds and two simultaneous jobs.
 Timeouts and client disconnects release capacity, including requests with a
 stalled body or browser startup. Deferred widgets must finish loading before
 capture; a loading skeleton is not accepted as a completed screenshot.
+Visible widget errors and provider query error envelopes also fail the capture.
+With `focus_widget`, the worker selects a recorded observation in an interactive
+chart and pins its inspector before capture. A widget without available chart
+inspection returns an error instead of an ordinary unfocused screenshot.
 
 The required browser CI job runs `ui/e2e/insights-render-worker.e2e.mjs`
 against the authenticated Insights UI with deterministic telemetry. It captures
