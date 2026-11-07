@@ -37,6 +37,7 @@ var pinnedActionRevisions = map[string]string{
 	"actions/upload-artifact":            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
 	"actions/setup-go":                   "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
 	"actions/setup-node":                 "820762786026740c76f36085b0efc47a31fe5020",
+	"hashicorp/setup-terraform":          "dfe3c3f87815947d99a8997f908cb6525fc44e9e",
 	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
 	"docker/build-push-action":           "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
 	"docker/login-action":                "abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
@@ -105,13 +106,14 @@ func testCanonicalCIValidation(t *testing.T) {
 		t.Errorf("ci.yml push.branches = %v, want exactly [master]", branches)
 	}
 
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "fleet-scale", "cluster-integration", "publish"} {
+	for _, jobID := range []string{"terraform", "go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "fleet-scale", "cluster-integration", "publish"} {
 		if _, ok := workflow.jobs[jobID]; !ok {
 			t.Errorf("ci.yml is missing required job ID %q", jobID)
 		}
 	}
 
 	contracts := []validationJobContract{
+		{id: "terraform", commands: []string{"bash hack/test-terraform.sh"}},
 		{id: "go-test", commands: []string{
 			"make test-race",
 			"bash hack/test-check-vke-pod-conditions.sh",
@@ -176,7 +178,7 @@ func testCanonicalCIActionPins(t *testing.T) {
 
 func testCanonicalCIJobTimeouts(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "cluster-integration", "publish"} {
+	for _, jobID := range []string{"terraform", "go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "cluster-integration", "publish"} {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		timeout, ok := job["timeout-minutes"].(int)
 		if !ok || timeout < 5 || timeout > 30 {
@@ -196,7 +198,7 @@ func testCanonicalCICuttlefishRouting(t *testing.T) {
 		nodeCache        = `runner.environment == 'github-hosted' && 'npm' || ''`
 	)
 	workflow := loadWorkflow(t, "ci.yml")
-	portable := []string{"go-test", "go-lint", "ui", "mcp-console", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke"}
+	portable := []string{"terraform", "go-test", "go-lint", "ui", "mcp-console", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke"}
 	for _, jobID := range portable {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		if got := normalizeExpression(scalarString(job["runs-on"])); got != cuttlefishRunsOn {
