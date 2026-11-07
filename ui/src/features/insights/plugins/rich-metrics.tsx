@@ -43,7 +43,6 @@ const hoverHistogramLimit = 12;
 /** Bar-mode caps are fixed-size and never encode a value. One per incomplete column, a gap above the partial stack. */
 const capHeight = 6, capGap = 1, capHeadroom = 7;
 const stamp = (timestamp: number) => new Date(timestamp).toISOString();
-const localEventTime = (timestamp: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(timestamp));
 const number = (value: number) => Number.isFinite(value) ? Number(value.toFixed(3)) : 0;
 
 interface Observation {
@@ -436,6 +435,7 @@ function segments(cells: MetricCell[]) {
 function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const timeZone = useDashboardTimeZone();
   const timestampFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
+  const eventTimeFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }), [timeZone]);
   const { widget, result, directional } = props;
   const config = useMemo(() => directional ? directionalConfigSchema.parse(widget.config ?? {}) : stackedConfigSchema.parse(widget.config ?? {}), [directional, widget.config]);
   const signature = JSON.stringify([widget.id, config, widget.unit, widget.options, directional]);
@@ -662,7 +662,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
       <TimeWindowLens title={widget.title} series={fullSeries} unit={widget.unit} decimals={widget.options?.decimals} zoom={zoom} onZoom={window => setSelection({ source: result, window })} onOverlay={(window, previous) => setSelection({ source: result, window, previous })} onReset={() => setSelection(undefined)} canOverlay={canOverlay} overlayUnavailable={directional ? undefined : "A previous stacked boundary requires every displayed series to match uniquely and contain recorded values."} />
       {prior.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={prior.map(entry => entry.original)} buttonText="Inspect prior data" />}
     </div>}
-    {annotations.length > 0 && !props.embedded && !embeddedChart && <details className={styles.annotationEvents} role="group" aria-label="Chart events"><summary>{annotations.length} {annotations.length === 1 ? "event" : "events"} in view</summary><ul>{annotations.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={styles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.at).toISOString()}>{localEventTime(event.at)}</time>{event.endAt !== undefined && <time dateTime={new Date(event.endAt).toISOString()}>to {localEventTime(event.endAt)}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
+    {annotations.length > 0 && !props.embedded && !embeddedChart && <details className={styles.annotationEvents} role="group" aria-label="Chart events"><summary>{annotations.length} {annotations.length === 1 ? "event" : "events"} in view</summary><ul>{annotations.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={styles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.at).toISOString()}>{eventTimeFormat.format(new Date(event.at))}</time>{event.endAt !== undefined && <time dateTime={new Date(event.endAt).toISOString()}>to {eventTimeFormat.format(new Date(event.endAt))}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && inView.length > queried.length && <p>{inView.length - queried.length} additional events in view omitted.</p>}

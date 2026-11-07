@@ -6,6 +6,7 @@ import { StackedTimeseries, registerRichMetricPlugins } from "./rich-metrics";
 import { stackedConfigSchema } from "./rich-metrics-data";
 import type { QueryResult, Widget } from "../schema";
 import { AnnotationEventsProvider } from "../annotation-events";
+import { DashboardTimeZoneProvider } from "../dashboard-time-zone";
 
 afterEach(cleanup);
 const widget: Widget = { id: "metric", title: "CPU", type: "plugin", pluginId: "stacked-timeseries", dataKind: "metrics", providerId: "metrics", query: "cpu", unit: "%", layout: { x: 0, y: 0, w: 6, h: 4 } };
@@ -40,6 +41,23 @@ describe("metric event annotations", () => {
     expect(within(events).queryByText("Outside")).not.toBeInTheDocument();
     fireEvent.focus(screen.getByRole("group", { name: /CPU\. Stacked/ }));
     expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+  });
+
+  it("uses the dashboard timezone for both ends of recorded events", () => {
+    const events = [{ timestamp: new Date(1000).toISOString(), endTimestamp: new Date(2000).toISOString(), label: "Deploy" }];
+    const annotated = { ...widget, annotationSource: { queryRef: { id: "events" }, timestampColumn: "date", endColumn: "end", labelColumn: "label" } };
+    const view = (timeZone: string) => <DashboardTimeZoneProvider timeZone={timeZone}><AnnotationEventsProvider state={{ events }}><StackedTimeseries widget={annotated} result={result} /></AnnotationEventsProvider></DashboardTimeZoneProvider>;
+    const { rerender } = render(view("Pacific/Honolulu"));
+    for (const zone of ["Pacific/Honolulu", "UTC"]) {
+      rerender(view(zone));
+      const times = screen.getByRole("group", { name: "Chart events" }).querySelectorAll("time");
+      expect(times).toHaveLength(2);
+      for (const [index, time] of [...times].entries()) {
+        const instant = new Date((index + 1) * 1000);
+        expect(time).toHaveAttribute("datetime", instant.toISOString());
+        expect(time).toHaveTextContent(new Intl.DateTimeFormat(undefined, { timeZone: zone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(instant));
+      }
+    }
   });
 
   it("offers guided event editing while preserving other chart configuration", () => {
