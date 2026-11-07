@@ -17,10 +17,12 @@ test('embedded JSON-LD cannot terminate its script and preserves editorial text'
 test('publication dates require a real calendar date, time and explicit UTC zone', () => {
   const post = { slug: 'test', title: 'Test', description: 'Test publication date',
     category: 'Delivery', source: 'landing/content/blog/promoting-pinned-revisions.md' };
+  const docs = [{ slug: 'start', title: 'Test guide', description: 'Test guide',
+    section: 'Start', source: 'docs/getting-started.md' }];
   for (const date of ['2026-11-07', '2026-11-07T06:57:52', '2026-02-30T06:57:52Z', '2026-11-07T25:00:00Z']) {
-    assert.throws(() => validateManifest({ docs: [], posts: [{ ...post, date }] }), /publication/);
+    assert.throws(() => validateManifest({ docs, posts: [{ ...post, date }] }), /publication/);
   }
-  assert.equal(validateManifest({ docs: [], posts: [{ ...post, date: '2026-11-07T06:57:52Z' }] }).posts[0].date,
+  assert.equal(validateManifest({ docs, posts: [{ ...post, date: '2026-11-07T06:57:52Z' }] }).posts[0].date,
     '2026-11-07T06:57:52Z');
 });
 
