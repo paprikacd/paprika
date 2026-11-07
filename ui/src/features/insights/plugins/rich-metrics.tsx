@@ -1,5 +1,6 @@
 "use client";
 
+import type { Widget } from "../schema";
 import { resolveSeriesColor } from "../series-colors";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { Pin, X } from "lucide-react";
@@ -21,6 +22,7 @@ import { heatmapColumnAt, heatmapColumnLimit, heatmapColumns, heatmapDensityLeve
 import heatmapStyles from "./distribution-heatmap.module.css";
 import { buildDistribution, buildMetricPlot, directionalConfigSchema, distributionConfigSchema, stackedConfigSchema, MetricDataError, type DistributionConfig, type DistributionData, type MetricCell, type MetricSeries } from "./rich-metrics-data";
 import styles from "./rich-metrics.module.css";
+import tooltipStyles from "../chart-styles.module.css";
 
 const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 const densityPalette = ["var(--gamma-density-0, #dce9f0)", "var(--gamma-density-1, #98bfd7)", "var(--gamma-density-2, #509bbf)", "var(--gamma-density-3, #35a7a2)", "var(--gamma-density-4, #c1bf5d)", "var(--gamma-density-5, #d78642)", "var(--gamma-danger, #b4473d)"];
@@ -30,7 +32,7 @@ const number = (value: number) => Number.isFinite(value) ? Number(value.toFixed(
 
 interface Observation {
   row: number; column: number; value: number | null; timestamp: number;
-  series: MetricSeries; name: string; unit: string; color: string; note?: string;
+  series: MetricSeries; name: string; unit: string; color: string; note?: string; bucket?: string;
 }
 
 function useSize() {
@@ -135,11 +137,13 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave, enterPanel, focusPanel };
 }
 
-function Inspector({ observation, peers, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
+function Inspector({ widget, observation, peers, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; pinned: boolean; decimals?: number; onPin: () => void; onClose: () => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
   return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
     <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={onClose}><X size={14} /></GammaButton></div>
     <div className={styles.inspectorDetails}>
-      <MetricDetails series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned} />
+      <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}>
+        {observation.bucket && <span className={tooltipStyles.tooltipEyebrow}>Selected bucket: {observation.bucket}</span>}
+      </MetricDetails>
     </div>
     {peers && peers.length > 1 && <ul aria-label="Series at selected time" className={styles.inspectorPeers}>
       {peers.map((peer, index) => <li key={index} data-series-index={index} data-series-name={peer.name} data-series-value={peer.value === null ? "missing" : peer.value}><i aria-hidden="true" style={{ background: peer.color }} /><LegendName name={peer.name} display={peer.display} /><b>{peer.value === null ? "No observation" : formatMetric(peer.value, observation.unit, false, decimals)}</b></li>)}
@@ -251,7 +255,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const cursorTime = inspection.enabled && sharedCursor && sharedCursor.timestamp >= timeStart && sharedCursor.timestamp <= timeStart + timeSpan ? sharedCursor.timestamp : undefined;
   const observation = (row: number, column: number): Observation => {
     const bucket = data.rows[row], cell = bucket.cells[column], name = cellLabel(bucket.lower, bucket.upper, unit);
-    return { row, column, ...cell, name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note: "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit." };
+    return { row, column, ...cell, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.cells }, note: "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit." };
   };
   const locate = (event: PointerEvent<SVGSVGElement>) => {
     const point = coordinates(event, width, height);
@@ -293,7 +297,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         {cursorTime !== undefined && <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
         {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], timeSpan)}</text>)}
       </svg>
-      {inspection.active && inspection.detailsEnabled && anchor && <Inspector id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
+      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
     <div className={styles.heatmapFooter}>
     {widget.options?.showLegend !== false && <div className={heatmapStyles.legend} aria-label={`Color encodes bucket ${densityUnit}`}><span>0</span><div className={heatmapStyles.ramp}>{densityPalette.map(color => <i key={color} style={{ background: color }} />)}</div><span>{densityMaximumLabel(data.max, densityUnit, widget.options?.decimals)}</span>{config.colorScale === "logarithmic" && <span title={data.minPositive === null ? "No positive bucket observations" : `Lowest positive observation: ${data.minPositive} ${densityUnit}`}>Logarithmic · zero separate{data.minPositive !== null && ` · min ≈${data.minPositive.toPrecision(3)}`}</span>}<span className={heatmapStyles.missing}>Missing</span></div>}
@@ -431,7 +435,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         {cursorTime !== undefined && <line x1={x(cursorTime)} x2={x(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
         {showAxis && timeTicks(displayTimes, plotWidth).map(index => <text key={index} x={x(displayTimes[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === displayTimes.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(displayTimes[index], span)}</text>)}
       </svg>}
-      {inspection.active && inspection.detailsEnabled && anchor && <Inspector id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} peers={data.tracks.map((track, index) => ({ name: track.name, display: displayLabels[index], color: color(index), value: track.cells[inspection.active!.observation.column].value }))} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
+      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} peers={data.tracks.map((track, index) => ({ name: track.name, display: displayLabels[index], color: color(index), value: track.cells[inspection.active!.observation.column].value }))} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
     {widget.options?.showLegend !== false && <SeriesLegend table={tableLegend} revision={legendRevision}>{tableLegend ? <table className={styles.legendTable}>
       <caption>Raw returned observations. Current is the latest sample, including missing values. Mean is the arithmetic mean of finite samples; max is the largest finite sample. Statistics use all returned samples before display sampling.</caption>

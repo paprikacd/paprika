@@ -416,6 +416,22 @@
               "showTooltip": {
                 "type": "boolean"
               },
+              "tooltipTitle": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "tooltipValueLabel": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "tooltipShowUnit": {
+                "type": "boolean"
+              },
+              "tooltipDecimals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8
+              },
               "tooltipView": {
                 "type": "object",
                 "properties": {

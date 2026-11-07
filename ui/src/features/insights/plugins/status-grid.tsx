@@ -108,7 +108,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
     </div>
     {current && active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss}
       onEnter={() => { interaction.current.panel = true; clearHide(); }} onLeave={() => { interaction.current.panel = false; scheduleHide(); }}>
-      <MetricDetails series={current.entry} index={current.index} point={current.point} unit={widget.unit} decimals={widget.options?.decimals} description="Latest sample">
+      <MetricDetails widget={widget} series={current.entry} index={current.index} point={current.point} unit={widget.unit} decimals={widget.options?.decimals} description="Latest sample">
         <span>{current.value === undefined ? "Unknown" : current.threshold?.label ?? "Observed"}</span>
       </MetricDetails>
       <div className={styles.tooltipHint}>{active.pinned ? "Pinned · tap again to close" : "Click or tap to keep open"} · Esc to close</div>

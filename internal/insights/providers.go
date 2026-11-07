@@ -89,7 +89,7 @@ func newProvider(config *ProviderConfig) (*providerClient, error) {
 	}, nil
 }
 
-func validateQuery(q Query) error {
+func validateQuery(q *Query) error {
 	if q.Kind != "metrics" && q.Kind != "traces" && q.Kind != "records" {
 		return errors.New("query kind must be metrics, traces or records")
 	}
@@ -104,7 +104,7 @@ func validateQuery(q Query) error {
 
 func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 
-func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error) {
+func (p *providerClient) query(ctx context.Context, q *Query) (QueryResult, error) {
 	if !p.public.supports(q.Kind) {
 		return QueryResult{}, errors.New("provider does not support this query kind")
 	}
@@ -112,15 +112,23 @@ func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error
 		return QueryResult{}, errors.New("trace detail is not available for this provider type")
 	}
 	if p.remote != nil {
-		body, err := p.remote.query(ctx, q)
-		if err != nil {
-			return QueryResult{}, err
-		}
-		if q.TraceID != "" {
-			return decodeTempoDetail(body, q.TraceID)
-		}
-		return decodeObserveQuery(q.Kind, body)
+		return p.queryRemote(ctx, q)
 	}
+	return p.queryLocal(ctx, q)
+}
+
+func (p *providerClient) queryRemote(ctx context.Context, q *Query) (QueryResult, error) {
+	body, err := p.remote.query(ctx, q)
+	if err != nil {
+		return QueryResult{}, err
+	}
+	if q.TraceID != "" {
+		return decodeTempoDetail(body, q.TraceID)
+	}
+	return decodeObserveQuery(q.Kind, body)
+}
+
+func providerQueryParameters(q *Query) (string, url.Values) {
 	params := url.Values{"start": {strconv.FormatFloat(q.Start, 'f', -1, 64)}, "end": {strconv.FormatFloat(q.End, 'f', -1, 64)}}
 	path := "/api/v1/query_range"
 	if q.Kind == "metrics" {
@@ -144,9 +152,13 @@ func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error
 			params.Set("end", strconv.FormatInt(int64(q.End), 10))
 		}
 	}
+	return path, params
+}
+
+func (p *providerClient) queryLocal(ctx context.Context, q *Query) (QueryResult, error) {
+	path, params := providerQueryParameters(q)
 	body, err := p.fetch(ctx, path, params, maxResponseBytes)
-	var httpErr *providerHTTPError
-	fallback := errors.As(err, &httpErr) && httpErr.status == http.StatusBadRequest && q.Kind == "traces" && q.TraceID == "" && ctx.Err() == nil
+	fallback := retryTempoSearchLimit(ctx, q, err)
 	if fallback {
 		// Some Tempo installations reject a search limit above their own cap.
 		// Retry at our normal bound. A full fallback page is potentially partial.
@@ -167,6 +179,11 @@ func (p *providerClient) query(ctx context.Context, q Query) (QueryResult, error
 		result.Truncated = true
 	}
 	return result, err
+}
+
+func retryTempoSearchLimit(ctx context.Context, q *Query, err error) bool {
+	var httpErr *providerHTTPError
+	return errors.As(err, &httpErr) && httpErr.status == http.StatusBadRequest && q.Kind == "traces" && q.TraceID == "" && ctx.Err() == nil
 }
 
 func decodeObserveQuery(kind string, body []byte) (QueryResult, error) {
@@ -345,7 +362,7 @@ func providerTransport() (*http.Transport, error) {
 	return base.Clone(), nil
 }
 
-func validateQueryRange(q Query) error {
+func validateQueryRange(q *Query) error {
 	if !finite(q.Start) || !finite(q.End) || q.Start <= 0 || q.End <= q.Start || q.End-q.Start > 31*24*60*60 {
 		return errors.New("query requires an increasing Unix-second range of at most 31 days")
 	}

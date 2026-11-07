@@ -53,9 +53,44 @@ describe("dashboard appearance", () => {
     stop(); root.remove(); panel.remove();
   });
 
+  it("refreshes portal tokens on density and desktop changes, then cleans up", async () => {
+    const root = document.createElement("div"), panel = document.createElement("div");
+    root.dataset.insightsTheme = "dark";
+    document.body.append(root, panel);
+    let desktop = true;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => {
+      expect(query).toBe("(min-width: 1024px)");
+      return { addEventListener: (_: string, listener: () => void) => listeners.add(listener), removeEventListener: (_: string, listener: () => void) => listeners.delete(listener) };
+    });
+    // jsdom does not evaluate media queries. No style mutation here: that
+    // would mask a missing density or breakpoint event in the adapter.
+    const computed = vi.spyOn(window, "getComputedStyle").mockImplementation(() => ({
+      length: 1, item: () => "--gamma-bg",
+      getPropertyValue: (name: string) => name === "--gamma-bg" ? (desktop && root.dataset.density === "compact" ? "#0b1b22" : "#182127") : "dark",
+    }) as unknown as CSSStyleDeclaration);
+    const stop = inheritGammaTheme(root, panel);
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#182127");
+    root.dataset.density = "compact";
+    await act(async () => { await Promise.resolve(); });
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#0b1b22");
+    desktop = false;
+    act(() => listeners.forEach(listener => listener()));
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#182127");
+    desktop = true;
+    act(() => listeners.forEach(listener => listener()));
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#0b1b22");
+    stop();
+    expect(listeners.size).toBe(0);
+    root.dataset.density = "standard";
+    await act(async () => { await Promise.resolve(); });
+    expect(panel.style.getPropertyValue("--gamma-bg")).toBe("#0b1b22");
+    computed.mockRestore(); root.remove(); panel.remove();
+  });
+
   it("keeps normal and muted copy legible on every light/dark surface", () => {
     const css = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
-    for (const block of [css.split('.scope[data-insights-theme="dark"]')[0], css.split('.scope[data-insights-theme="dark"]')[1].split("}")[0]]) {
+    for (const block of [css.split('.scope[data-insights-theme="dark"]')[0], css.split('.scope[data-insights-theme="dark"]')[1].split("}")[0], css.split('.scope[data-insights-theme="dark"][data-density="compact"]')[1].split("}")[0]]) {
       const tokens = Object.fromEntries([...block.matchAll(/(--gamma-[\w-]+):\s*(#[\da-f]{6})/g)].map((match) => [match[1], match[2]]));
       for (const surface of ["bg", "surface", "surface-2", "page", "sidebar"])
         for (const ink of ["ink", "muted"])

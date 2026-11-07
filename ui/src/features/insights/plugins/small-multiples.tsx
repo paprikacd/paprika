@@ -107,7 +107,7 @@ function SmallMultiple({ entry, index, displayName, domain, widget, result, maxP
     </svg>
     <div className={styles.xAxis} aria-hidden="true"><span>{formatTimeTick(domain.start, domain.end - domain.start)}</span><span>{formatTimeTick(domain.end, domain.end - domain.start)}</span></div></div>
     {detailsEnabled && current && selected && <ObservationTooltip id={id} anchor={current.anchor} avoidWidget pinned={current.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clear(); }} onLeave={() => { interaction.current.panel = false; leave(); }}>
-      <MetricDetails series={entry} index={index} point={selected} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample" />
+      <MetricDetails widget={widget} series={entry} index={index} point={selected} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample" />
       <span className={styles.hint}>{current.pinned ? "Pinned · press Enter to close" : "Click or press Enter to keep open"} · Esc to close</span>
     </ObservationTooltip>}
   </section>;

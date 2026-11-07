@@ -12,6 +12,13 @@ export function inheritGammaTheme(anchor: Element, panel: HTMLElement) {
   };
   copy();
   const observer = scope && typeof MutationObserver !== "undefined" ? new MutationObserver(copy) : undefined;
-  observer?.observe(scope!, { attributes: true, attributeFilter: ["data-insights-theme", "style", "class"] });
-  return () => observer?.disconnect();
+  observer?.observe(scope!, { attributes: true, attributeFilter: ["data-insights-theme", "data-density", "style", "class"] });
+  // Only refresh tokens at the compact desktop boundary; positioning remains
+  // owned by useFloatingPanel / the chart tooltip lifecycle.
+  const desktop = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 1024px)") : undefined;
+  desktop?.addEventListener("change", copy);
+  return () => {
+    observer?.disconnect();
+    desktop?.removeEventListener("change", copy);
+  };
 }

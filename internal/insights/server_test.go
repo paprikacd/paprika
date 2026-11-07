@@ -299,7 +299,7 @@ func TestProviderCancellationPropagates(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := p.query(ctx, Query{Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 30})
+		_, err := p.query(ctx, &Query{Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 30})
 		done <- err
 	}()
 	<-started

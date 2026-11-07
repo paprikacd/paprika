@@ -166,12 +166,12 @@ function GaugeTrack({ widget, config, value, title }: {
   </div>;
 }
 
-function GaugeLegend({ widget, config }: Pick<WidgetRendererProps, "widget"> & { config: GaugeConfig }) {
+function GaugeLegend({ widget, config, compactRows = false }: Pick<WidgetRendererProps, "widget"> & { config: GaugeConfig; compactRows?: boolean }) {
   if (widget.options?.showLegend === false) return null;
   const { min, max } = gaugeBounds(widget);
   const markers = config.showThresholds === false ? [] : (widget.options?.thresholds ?? []).filter(item => item.value > min && item.value < max);
-  return <div className={meterStyles.legend} data-gauge-legend>
-    <div className={meterStyles.bounds}><span>{formatMetric(min, widget.unit, false, widget.options?.decimals)}</span><span>{formatMetric(max, widget.unit, false, widget.options?.decimals)}</span></div>
+  return <div className={meterStyles.legend} data-gauge-legend data-gauge-legend-layout={compactRows ? "rows" : undefined}>
+    <div className={meterStyles.bounds}>{compactRows ? <span>Scale {formatMetric(min, widget.unit, false, widget.options?.decimals)} – {formatMetric(max, widget.unit, false, widget.options?.decimals)}</span> : <><span>{formatMetric(min, widget.unit, false, widget.options?.decimals)}</span><span>{formatMetric(max, widget.unit, false, widget.options?.decimals)}</span></>}</div>
     {markers.length > 0 && <div className={meterStyles.thresholds} aria-label="Threshold limits">{markers.map(marker => <span key={marker.value}><i aria-hidden="true" style={{ background: marker.color }} />{marker.label ?? "Threshold"} {formatMetric(marker.value, widget.unit, false, widget.options?.decimals)}</span>)}</div>}
   </div>;
 }
@@ -220,14 +220,15 @@ function GaugeBank(props: WidgetRendererProps & { config: GaugeConfig; series: G
     const value = latestGaugePoint(series)?.value;
     return typeof value === "number" && Number.isFinite(value) ? formatMetric(value, props.widget.unit, false, props.widget.options?.decimals).length + 1 : 7;
   })));
-  return <div className={meterStyles.bankContainer}>
+  const compactRows = config.display !== "radial" && orientation === "horizontal";
+  return <div className={meterStyles.bankContainer} data-gauge-bank-layout={compactRows ? "rows" : undefined}>
     <div ref={bank} className={meterStyles.bank} role="region" aria-label={`${props.widget.title} gauges`} tabIndex={props.embedded || parentEmbedded ? undefined : 0} aria-describedby={overflow ? hint : undefined}
       data-gauge-columns={columns} data-gauge-bank-display={config.display ?? "linear"} data-gauge-bank-orientation={config.display === "radial" ? undefined : orientation}
       style={{ "--gauge-columns": columns, "--gauge-reading-width": `${readingWidth}ch` } as CSSProperties}>
       {selected.map((entry, index) => <GaugeItem key={index} {...props} config={config} series={entry} index={index} displayLabel={displayLabels[index]} bank />)}
     </div>
     {overflow && <p ref={hintElement} className={meterStyles.bankHint} id={hint} data-gauge-overflow-hint>Scroll to see all gauges <span aria-hidden="true">↕</span></p>}
-    <GaugeLegend widget={props.widget} config={config} />
+    <GaugeLegend widget={props.widget} config={config} compactRows={compactRows} />
     {(omitted > 0 || props.result.truncated) && <p className={meterStyles.bankNotice} role="status">
       {omitted > 0 && <span>Showing {selected.length} of {series.length} series</span>}
       {props.result.truncated && <span>Partial source response</span>}
@@ -258,7 +259,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     className={`${styles.gaugeSelection} ${display === "radial" ? meterStyles.radialReading : meterStyles.reading}`}
     revision={result}
     onSelect={interactive && onContextChange ? () => onContextChange(metricContext(series, index, true)) : undefined}
-    details={<MetricDetails series={series} index={index} point={point} unit={widget.unit} decimals={options.decimals} description="Latest sample">
+    details={<MetricDetails widget={widget} series={series} index={index} point={point} unit={widget.unit} decimals={options.decimals} description="Latest sample">
       <span className={styles.tooltipStatus}>{threshold && <i data-gauge-threshold-swatch aria-hidden="true" style={{ background: threshold.color }} />}{value === undefined ? "Unknown" : threshold?.label ?? "Observed value"}</span>
       {band && <span className={styles.tooltipRange}>{band}</span>}
       <span className={styles.tooltipRange}>Scale: {min} to {max}{widget.unit ? ` ${widget.unit}` : ""}</span>

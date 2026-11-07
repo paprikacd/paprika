@@ -35,3 +35,11 @@
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 10px; height: 8px; border-radius: 1px; flex-shrink: 0; }
 .legend :is(.unknown, .mixed) { border: 1px solid var(--gamma-border); }
+
+@media (min-width: 1024px) and (pointer: fine) {
+  :global([data-insights-theme="dark"][data-density="compact"]) .lanes.lanes {
+    min-height: 0;
+    grid-auto-rows: 24px;
+    align-content: start;
+  }
+}

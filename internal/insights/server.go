@@ -133,7 +133,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid query request")
 		return
 	}
-	if err := validateQuery(q); err != nil {
+	if err := validateQuery(&q); err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
@@ -146,7 +146,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "provider does not support this query kind")
 		return
 	}
-	result, _, err := s.runProviderQuery(r.Context(), p, q)
+	result, _, err := s.runProviderQuery(r.Context(), p, &q)
 	if errors.Is(err, errQueryCapacity) {
 		w.Header().Set("Retry-After", "1")
 		writeError(w, 429, "too many active queries; retry shortly")
@@ -163,7 +163,7 @@ var errQueryCapacity = errors.New("query execution capacity reached")
 
 // The dashboard reader and ordinary widget queries share execution admission
 // and instrumentation. The boolean records whether provider I/O actually began.
-func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q Query) (QueryResult, bool, error) {
+func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return QueryResult{}, false, fmt.Errorf("query context: %w", err)
 	}

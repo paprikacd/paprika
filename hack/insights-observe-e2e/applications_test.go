@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	observev1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+
+	observev1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
 )
 
 func TestApplicationFixtureAnonymousAndCredentialedProviders(t *testing.T) {

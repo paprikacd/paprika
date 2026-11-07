@@ -92,7 +92,19 @@ func TestSingleRowOnlyForStats(t *testing.T) {
 		if err := json.Unmarshal(document, &raw); err != nil {
 			t.Fatal(err)
 		}
-		raw["widgets"].([]any)[0].(map[string]any)["layout"].(map[string]any)["h"] = 1
+		widgets, ok := raw["widgets"].([]any)
+		if !ok || len(widgets) == 0 {
+			t.Fatal("fixture widgets missing")
+		}
+		widget, ok := widgets[0].(map[string]any)
+		if !ok {
+			t.Fatal("fixture widget is not an object")
+		}
+		layout, ok := widget["layout"].(map[string]any)
+		if !ok {
+			t.Fatal("fixture layout is not an object")
+		}
+		layout["h"] = 1
 		encoded, err := json.Marshal(raw)
 		if err != nil {
 			t.Fatal(err)

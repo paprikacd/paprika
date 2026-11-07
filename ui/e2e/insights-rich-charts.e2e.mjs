@@ -8,6 +8,7 @@ import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
 import { chartFixtures } from "./fixtures/rich-chart-data.ts"
+import { widgetRendered } from "./widget-readiness.ts"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const base = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -47,15 +48,20 @@ async function check(name, action) {
 async function ready(widget) {
   const element = tile(widget.id)
   await element.scrollIntoViewIfNeeded()
-  await element.getByRole("status", { name: "Loading widget" }).waitFor({ state: "hidden" })
-  await until(async () => !(await element.locator('[aria-busy="true"]').count()) && !/Querying data source|No data in this time range/.test(await element.innerText()), `${widget.title} did not finish querying`)
+  // Scrolling enables deferred queries. Read pending state and mandatory chart
+  // markers in one DOM snapshot, not separate awaits across a loading commit.
+  await until(async () => widgetRendered(widget, await element.evaluate((node, widget) => ({
+    busy: !!node.querySelector('[aria-busy="true"]'),
+    loading: !!node.querySelector('[role="status"][aria-label="Loading widget"]'),
+    text: node.innerText,
+    values: node.querySelectorAll("[data-metric-value]").length,
+    buckets: node.querySelectorAll("rect[data-bucket-value]").length,
+    series: node.querySelectorAll("g[data-series]").length,
+    operationalCharts: node.querySelectorAll(`[data-operational-chart="${widget.pluginId}"]`).length,
+    gauges: node.querySelectorAll(`[data-gauge-display="${widget.config?.display}"]`).length,
+  }), widget)), `${widget.title} did not finish querying and render its required chart`)
   assert.deepEqual(await element.getByRole("alert").allTextContents(), [], `${widget.title} has a render/query error`)
   assert.ok((await element.innerText()).trim().length > widget.title.length, `${widget.title} has no rendered content`)
-  if (widget.type === "stat") await until(async () => await element.locator("[data-metric-value]").count() === 1, `${widget.title} has no observed value`)
-  if (widget.pluginId === "distribution-heatmap") await until(async () => await element.locator("rect[data-bucket-value]").count() > 20, "Histogram buckets must render observations")
-  if (widget.pluginId === "stacked-timeseries" || widget.pluginId === "directional-traffic") assert.ok(await element.locator("g[data-series]").count() >= 2, `${widget.title} requires multiple plotted contributions`)
-  if (["connection-map", "pipeline-topology", "incident-calendar"].includes(widget.pluginId)) assert.equal(await element.locator(`[data-operational-chart="${widget.pluginId}"]`).count(), 1)
-  if (widget.pluginId === "threshold-gauge") assert.equal(await element.locator(`[data-gauge-display="${widget.config.display}"]`).count(), 1)
   if (["distribution-heatmap", "stacked-timeseries", "directional-traffic"].includes(widget.pluginId)) {
     await until(async () => element.locator("text[data-value-axis]").evaluateAll(labels => labels.length > 0 && labels.every(label => {
       const text = label.getBoundingClientRect(), plot = label.ownerSVGElement.getBoundingClientRect()
@@ -91,10 +97,22 @@ async function open(study) {
   assert.ok(current, `The HTTP fixture must seed ${study.title}`)
   return current
 }
+async function ensureConnectionsOpen(chart) {
+  if (await chart.locator('[data-operational-chart="pipeline-topology"]').count()) {
+    // Connection values live in a user-operated disclosure; stage counts and
+    // names alone cannot prove that the shared filter changed the records.
+    const summary = chart.locator("summary").filter({ hasText: /^Connections · \d+$/ })
+    if (!await summary.evaluate(node => node.parentElement.open)) await summary.click()
+    await chart.getByRole("region", { name: "Connection observations", exact: true }).waitFor()
+  }
+}
 async function chartSnapshot(id) {
-  return tile(id).evaluate(element => ({
+  const chart = tile(id)
+  await ensureConnectionsOpen(chart)
+  return chart.evaluate(element => ({
     text: element.innerText,
     cells: [...element.querySelectorAll("[data-bucket-value]")].map(cell => cell.getAttribute("data-bucket-value")),
+    connections: [...element.querySelectorAll('button[aria-label^="Inspect connection "]')].map(button => button.getAttribute("aria-label")),
   }))
 }
 async function inspectMetric(id) {
@@ -104,9 +122,20 @@ async function inspectMetric(id) {
   await plot.focus()
   const details = page.getByRole("region", { name: "Observation details", exact: true })
   await details.waitFor()
+  const assertOutsideWhenAvailable = async label => {
+    await until(async () => await details.getAttribute("data-tooltip-pointer") !== "true", `${label} must use anchored placement`)
+    const outside = await details.getAttribute("data-tooltip-overlap") !== "true"
+    if (outside) {
+      const panel = await details.boundingBox(), card = await element.boundingBox()
+      assert.ok(panel.x + panel.width <= card.x + .5 || panel.x >= card.x + card.width - .5 || panel.y + panel.height <= card.y + .5 || panel.y >= card.y + card.height - .5, `${label} must stay outside the widget when space is available`)
+    }
+    return outside
+  }
   await plot.press("ArrowLeft")
+  await assertOutsideWhenAvailable("Keyboard inspection")
   await plot.press("Enter")
   await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
+  await assertOutsideWhenAvailable("Pinned keyboard inspection")
   await page.mouse.move(1, 1)
   assert.equal(await details.isVisible(), true, "Pinned observation must survive pointer exit")
   await plot.press("Escape")
@@ -120,14 +149,44 @@ async function inspectMetric(id) {
   await until(async () => await details.locator("time").getAttribute("datetime") !== firstTime, "Pointer traversal must update the actual inspected observation")
   const observed = { timestamp: await details.locator("time").getAttribute("datetime"), value: await details.locator("[data-metric-value]").getAttribute("data-metric-value") }
   const inspection = await details.boundingBox(), viewport = page.viewportSize()
-  assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1 && inspection.y >= 0 && inspection.y + inspection.height <= viewport.height + 1, "Metric inspection must fit the viewport")
+  const fitsViewport = inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1 && inspection.y >= 0 && inspection.y + inspection.height <= viewport.height + 1
+  // Capture the failed geometry before throwing; do not wait for it to settle
+  // or change the assertion. Dev and static-export CSS/effect timing may differ.
+  const geometry = fitsViewport ? undefined : await details.evaluate(node => {
+    const describe = element => {
+      const style = getComputedStyle(element), rect = element.getBoundingClientRect()
+      return {
+        tag: element.tagName, id: element.id, className: element.getAttribute("class"), inline: element.getAttribute("style"),
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        offset: { left: element.offsetLeft, top: element.offsetTop, width: element.offsetWidth, height: element.offsetHeight, parent: element.offsetParent?.tagName },
+        computed: Object.fromEntries(["position", "left", "top", "right", "bottom", "width", "height", "max-height", "transform", "translate", "scale", "zoom", "transition", "animation", "contain", "filter", "perspective", "will-change"].map(name => [name, style.getPropertyValue(name)])),
+      }
+    }
+    const ancestors = []
+    for (let parent = node.parentElement; parent; parent = parent.parentElement) ancestors.push(describe(parent))
+    return { panel: describe(node), ancestors, placement: node.getAttribute("data-placement"), innerViewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, visualViewport: window.visualViewport && { width: visualViewport.width, height: visualViewport.height, left: visualViewport.offsetLeft, top: visualViewport.offsetTop, scale: visualViewport.scale } }
+  })
+  const pointerGeometry = fitsViewport ? undefined : { originalPlot: bounds, currentPlot: await plot.boundingBox(), intendedPointer: { x: bounds.x + bounds.width * .72, y: bounds.y + bounds.height * .45 } }
+  assert.ok(fitsViewport, `Metric inspection must fit the viewport: ${JSON.stringify({inspection,viewport,observed,geometry,pointerGeometry})}`)
+  const pointerPreview = await details.getAttribute("data-tooltip-pointer") === "true"
   const overlapping = await details.getAttribute("data-tooltip-overlap") === "true"
   const coveringNeighbor = await details.getAttribute("data-tooltip-overlaps-other-widget") === "true"
-  if (!overlapping) {
-    const card = await element.boundingBox()
-    assert.ok(inspection.x + inspection.width <= card.x + .5 || inspection.x >= card.x + card.width - .5 || inspection.y + inspection.height <= card.y + .5 || inspection.y >= card.y + card.height - .5, "The inspector must stay outside the widget when space is available")
+  const coveringControls = await details.getAttribute("data-tooltip-overlaps-controls") === "true"
+  if (pointerPreview) {
+    const point = { x: bounds.x + bounds.width * .72, y: bounds.y + bounds.height * .45 }
+    const clearGap = Math.max(inspection.x - point.x, point.x - inspection.x - inspection.width, inspection.y - point.y, point.y - inspection.y - inspection.height)
+    assert.ok(clearGap >= 15.5, "Pointer preview must leave the cursor uncovered with a 16px gap")
+    assert.equal(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "Pointer previews must not intercept chart interaction")
+    assert.equal(await plot.evaluate((node, point) => node.contains(document.elementFromPoint(point.x, point.y)), point), true, "The chart must receive input at the inspection pointer")
+    assert.equal(await details.evaluate(node => {
+      const box = node.getBoundingClientRect(), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return !!hit && !node.contains(hit)
+    }), true, "Pointer input must pass through the preview surface")
+  } else {
+    await assertOutsideWhenAvailable("Anchored hover inspection")
   }
-  if (!overlapping && !coveringNeighbor) {
+  const hoverTransfer = !pointerPreview && !overlapping && !coveringNeighbor && !coveringControls
+  if (hoverTransfer) {
     await details.hover()
     await page.waitForTimeout(220)
     assert.equal(await details.isVisible(), true, "Hover transfer to the external inspector must keep it open")
@@ -135,7 +194,7 @@ async function inspectMetric(id) {
     await details.getByRole("button", { name: "Pin observation", exact: true }).click()
     await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
   } else {
-    assert.equal(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "An unpinned inspector covering a chart must not intercept pointer movement")
+    assert.equal(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "A pointer preview or overlapping inspector must not intercept pointer movement")
     if (coveringNeighbor) {
       const passesThrough = await details.evaluate((node, id) => {
         const panel = node.getBoundingClientRect(), owner = document.querySelector(`[data-widget-id="${id}"]`)
@@ -152,6 +211,7 @@ async function inspectMetric(id) {
     await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
     assert.notEqual(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "Pinned content must be interactive")
   }
+  const pinnedOutsideWidget = await assertOutsideWhenAvailable("Pinned pointer inspection")
   if (id === "flow") {
     const theme = await page.locator("[data-insights-theme]").first().getAttribute("data-insights-theme")
     await page.screenshot({ path: join(output, `external-tooltip-${theme}-${viewport.width}.png`), fullPage: false, animations: "disabled" })
@@ -169,7 +229,7 @@ async function inspectMetric(id) {
   }
   await page.keyboard.press("Escape")
   await details.waitFor({ state: "hidden" })
-  return { keyboard: true, pinned: true, pointerTraversal: true, hoverTransfer: !overlapping && !coveringNeighbor, fallbackPassThrough: overlapping || coveringNeighbor, outsideWidget: !overlapping, scrollPlacement: true }
+  return { keyboard: true, pinned: true, pointerTraversal: true, pointerPreview, hoverTransfer, fallbackPassThrough: !hoverTransfer, outsideWidget: pinnedOutsideWidget, scrollPlacement: true }
 }
 async function inspectScrollableMetric() {
   // Exercise an actual narrow, touch-capable viewport, including coarse pointer styling.
@@ -189,6 +249,22 @@ async function inspectScrollableMetric() {
   const longLabels = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`resource_${index}`, `cluster/omega/namespace/observability/deployment/ingestion-worker-${index}/instance/long-label-regression`]))
   // Enrich only this HTTP fixture for the scroll test; never alter renderer DOM or styles.
   fixture.series = original.map(source => ({ ...source, name: `{namespace="observability", pod="paprika-insights-observability-probe-8f7d6d97d8-12345", container="${source.name}"}`, labels: { ...source.labels, ...longLabels }, base: expectedValue, variation: 0, trend: 0, gaps: undefined }))
+  const scrollDiagnostics = []
+  const captureScroll = async (phase) => {
+    const state = await page.evaluate(() => {
+      const panel = document.querySelector('[role="region"][aria-label="Observation details"]')
+      const identify = node => node instanceof Element ? { tag: node.tagName, id: node.id, role: node.getAttribute("role"), label: node.getAttribute("aria-label"), tabIndex: node.tabIndex, connected: node.isConnected } : null
+      const style = panel && getComputedStyle(panel), bounds = panel?.getBoundingClientRect()
+      return { panel: identify(panel), active: identify(document.activeElement), panelFocused: document.activeElement === panel,
+        scrollTop: panel?.scrollTop, clientHeight: panel?.clientHeight, scrollHeight: panel?.scrollHeight,
+        bounds: bounds && { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        style: style && { overflowY: style.overflowY, maxHeight: style.maxHeight, scrollBehavior: style.scrollBehavior, overscrollBehaviorY: style.overscrollBehaviorY, pointerEvents: style.pointerEvents },
+        page: { x: scrollX, y: scrollY, width: innerWidth, height: innerHeight, visualWidth: visualViewport?.width, visualHeight: visualViewport?.height },
+        reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches, coarsePointer: matchMedia("(pointer: coarse)").matches,
+        keyEvents: window.__paprikaInspectorKeyDiagnostics ?? [] }
+    })
+    scrollDiagnostics.push({ phase, ...state })
+  }
   try {
     await open(studies[2])
     const element = await ready(widget), plot = element.locator('svg[role="group"]').first()
@@ -223,7 +299,19 @@ async function inspectScrollableMetric() {
     await details.getByText(/paprika-insights-observability-probe-8f7d6d97d8-12345/, { exact: false }).first().waitFor({ state: "attached" })
     const documentScroll = () => page.evaluate(() => ({ x: scrollX, y: scrollY }))
     const initialPage = await documentScroll()
+    await captureScroll("before PageDown")
+    // Test-only event observation; do not alter focus, scrolling or dispatch.
+    await page.evaluate(() => {
+      window.__paprikaInspectorKeyDiagnostics = []
+      document.addEventListener("keydown", event => {
+        const target = event.target
+        queueMicrotask(() => window.__paprikaInspectorKeyDiagnostics.push({ key: event.key, defaultPrevented: event.defaultPrevented,
+          targetTag: target?.tagName, targetRole: target?.getAttribute?.("role"), targetLabel: target?.getAttribute?.("aria-label"),
+          targetStillFocused: target === document.activeElement, scrollTop: target?.scrollTop, clientHeight: target?.clientHeight, scrollHeight: target?.scrollHeight }))
+      }, { capture: true, once: true })
+    })
     await page.keyboard.press("PageDown")
+    await captureScroll("immediately after PageDown")
     await until(async () => await details.evaluate(node => node.scrollTop) > 0, "PageDown must scroll the focused inspector")
     const afterPageDown = await details.evaluate(node => node.scrollTop)
     assert.deepEqual(await documentScroll(), initialPage, "PageDown must not scroll the dashboard")
@@ -250,6 +338,11 @@ async function inspectScrollableMetric() {
     assert.equal(await plot.evaluate(node => document.activeElement === node), true, "Escape must return focus to the chart without reopening its inspector")
     assert.deepEqual(fixtureAPI.failures, [], "No mobile fixture contract failures")
     return { mobileWidth: 390, coarsePointer: true, savedQuery: widget.queryRef.id, exactValue: expectedValue, labelCount: Object.keys(longLabels).length, initialHoverVisible: true, initiallyPinnedVisible: true, tabFocus: true, afterPageDown, bottom, wheelContainedBothBoundaries: true, escapeClosed: true, focusRestored: true }
+  } catch (error) {
+    await captureScroll("failure").catch(diagnosticError => scrollDiagnostics.push({ diagnosticError: diagnosticError.message }))
+    await page.screenshot({ path: join(output, "long-inspector-mobile-failure.png"), fullPage: false, animations: "disabled" }).catch(() => {})
+    await writeFile(join(output, "long-inspector-mobile-failure.json"), JSON.stringify({ error: error.stack, url: page.url(), viewport: page.viewportSize(), scrollDiagnostics }, null, 2))
+    throw error
   } finally { fixture.series = original; await mobile.close(); page = previousPage; fixtureAPI = previousFixtureAPI }
 }
 async function inspectCompactProviderLabels() {
@@ -344,6 +437,9 @@ async function inspectCompactProviderLabels() {
 async function inspectRecord(id, name) {
   const element = tile(id)
   await element.scrollIntoViewIfNeeded()
+  // Query replacement can remount the renderer and close native disclosures.
+  // Reopen through the current locator rather than relying on a prior snapshot.
+  await ensureConnectionsOpen(element)
   const mark = element.getByRole("button", { name }).first()
   await mark.focus()
   const details = page.getByRole("tooltip")
@@ -419,10 +515,15 @@ try {
         await tile(first.id).scrollIntoViewIfNeeded()
         const before = await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value")
         const priorSecondary = await chartSnapshot(study.secondary)
+        if (study.id === "collection-control") assert.ok(priorSecondary.connections.includes("Inspect connection Sources to Collector: 124,820.00 obs/s"), "Production pipeline must show its exact fixture connection value")
         await selectGammaOption(page, scopeControl(variable), variable.options[1])
         await until(async () => await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value") !== before, "Shared filter did not update the single value")
         await ready(board.widgets.find(widget => widget.id === study.secondary))
         await until(async () => JSON.stringify(await chartSnapshot(study.secondary)) !== JSON.stringify(priorSecondary), "Shared filter did not update the dependent chart or records")
+        if (study.id === "collection-control") {
+          await until(async () => (await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 79,884.80 obs/s"), "Staging pipeline must show its exact scoped fixture connection value")
+          assert.equal((await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 124,820.00 obs/s"), false, "The stale production connection must not remain after switching scope")
+        }
         for (const widget of board.widgets) {
           await ready(widget)
           const saved = byId.get(widget.queryRef.id)

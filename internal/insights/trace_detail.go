@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -17,23 +18,24 @@ type tempoAttribute struct {
 		Int    json.RawMessage `json:"intValue"`
 	} `json:"value"`
 }
+type tempoSpan struct {
+	TraceID    string           `json:"traceId"`
+	SpanID     string           `json:"spanId"`
+	Parent     string           `json:"parentSpanId"`
+	Name       string           `json:"name"`
+	Attributes []tempoAttribute `json:"attributes"`
+	Start      string           `json:"startTimeUnixNano"`
+	End        string           `json:"endTimeUnixNano"`
+	Status     struct {
+		Code json.RawMessage `json:"code"`
+	} `json:"status"`
+}
 type tempoBatch struct {
 	Resource struct {
 		Attributes []tempoAttribute `json:"attributes"`
 	} `json:"resource"`
 	Scopes []struct {
-		Spans []struct {
-			TraceID    string           `json:"traceId"`
-			SpanID     string           `json:"spanId"`
-			Parent     string           `json:"parentSpanId"`
-			Name       string           `json:"name"`
-			Attributes []tempoAttribute `json:"attributes"`
-			Start      string           `json:"startTimeUnixNano"`
-			End        string           `json:"endTimeUnixNano"`
-			Status     struct {
-				Code json.RawMessage `json:"code"`
-			} `json:"status"`
-		} `json:"spans"`
+		Spans []tempoSpan `json:"spans"`
 	} `json:"scopeSpans"`
 }
 
@@ -75,40 +77,37 @@ func safeDimensionText(key, value string) bool {
 	case "network.transport":
 		allowed = []string{"tcp", "udp", "pipe", "unix", "quic"}
 	}
-	for _, candidate := range allowed {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, value)
 }
 
-func safeSpanAttributes(input []tempoAttribute) ([]TraceAttribute, int) {
+func safeSpanAttributeValue(attribute *tempoAttribute) (string, bool) {
+	value := attribute.Value.String
+	switch attribute.Key {
+	case "http.response.status_code", "http.status_code", "rpc.grpc.status_code":
+		if len(attribute.Value.Int) > 0 {
+			value = strings.Trim(string(attribute.Value.Int), `"`)
+		}
+		code, err := strconv.Atoi(value)
+		valid := code >= 100 && code <= 599
+		if attribute.Key == "rpc.grpc.status_code" {
+			valid = code >= 0 && code <= 16
+		}
+		return strconv.Itoa(code), err == nil && valid
+	default:
+		return value, safeDimensionText(attribute.Key, value)
+	}
+}
+
+func safeSpanAttributes(input []tempoAttribute) (output []TraceAttribute, omitted int) {
 	const maxAttributes = 8
-	var output []TraceAttribute
 	seen := make(map[string]bool)
-	omitted := 0
 	for _, attribute := range input {
 		if !safeSpanDimensions[attribute.Key] || seen[attribute.Key] || len(output) == maxAttributes {
 			omitted++
 			continue
 		}
-		value := attribute.Value.String
-		if attribute.Key == "http.response.status_code" || attribute.Key == "http.status_code" || attribute.Key == "rpc.grpc.status_code" {
-			if len(attribute.Value.Int) > 0 {
-				value = strings.Trim(string(attribute.Value.Int), `"`)
-			}
-			code, err := strconv.Atoi(value)
-			valid := code >= 100 && code <= 599
-			if attribute.Key == "rpc.grpc.status_code" {
-				valid = code >= 0 && code <= 16
-			}
-			if err != nil || !valid {
-				omitted++
-				continue
-			}
-			value = strconv.Itoa(code)
-		} else if !safeDimensionText(attribute.Key, value) {
+		value, valid := safeSpanAttributeValue(&attribute)
+		if !valid {
 			omitted++
 			continue
 		}
@@ -137,6 +136,69 @@ func traceText(value string) string {
 	return value
 }
 
+func tempoService(batch *tempoBatch) string {
+	for _, attribute := range batch.Resource.Attributes {
+		if attribute.Key == "service.name" {
+			return traceText(attribute.Value.String)
+		}
+	}
+	return ""
+}
+
+func tempoSpanStatus(code json.RawMessage) string {
+	switch string(code) {
+	case `"STATUS_CODE_OK"`, `1`:
+		return "ok"
+	case `"STATUS_CODE_ERROR"`, `2`:
+		return "error"
+	default:
+		return "unknown"
+	}
+}
+
+func normalizeTempoSpan(span *tempoSpan, requested string) (TraceSpan, error) {
+	traceID, valid := tempoID(span.TraceID, 16)
+	id, idValid := tempoID(span.SpanID, 8)
+	parent, parentValid := "", true
+	if span.Parent != "" {
+		parent, parentValid = tempoID(span.Parent, 8)
+	}
+	start, startErr := strconv.ParseUint(span.Start, 10, 64)
+	end, endErr := strconv.ParseUint(span.End, 10, 64)
+	if !valid || !strings.EqualFold(traceID, requested) || !idValid || !parentValid {
+		return TraceSpan{}, errUpstream
+	}
+	if startErr != nil || endErr != nil || end < start {
+		return TraceSpan{}, errUpstream
+	}
+	return TraceSpan{SpanID: id, ParentSpanID: parent, StartTime: float64(start) / 1e6, DurationMs: float64(end-start) / 1e6}, nil
+}
+
+func appendTempoBatch(result *QueryResult, batch *tempoBatch, requested string, seen map[string]bool) error {
+	service := tempoService(batch)
+	for i := range batch.Scopes {
+		scope := &batch.Scopes[i]
+		for j := range scope.Spans {
+			raw := &scope.Spans[j]
+			span, err := normalizeTempoSpan(raw, requested)
+			if err != nil || seen[span.SpanID] {
+				return errUpstream
+			}
+			seen[span.SpanID] = true
+			if len(result.Spans) >= maxTraceSpans {
+				result.Truncated = true
+				continue
+			}
+			span.Service = service
+			span.Operation = traceText(raw.Name)
+			span.Status = tempoSpanStatus(raw.Status.Code)
+			span.Attributes, span.AttributesOmitted = safeSpanAttributes(raw.Attributes)
+			result.Spans = append(result.Spans, span)
+		}
+	}
+	return nil
+}
+
 func decodeTempoDetail(body []byte, requested string) (QueryResult, error) {
 	var response struct {
 		Batches   []tempoBatch `json:"batches"`
@@ -145,50 +207,16 @@ func decodeTempoDetail(body []byte, requested string) (QueryResult, error) {
 	if json.Unmarshal(body, &response) != nil {
 		return QueryResult{}, errUpstream
 	}
-	batches := append(response.Batches, response.Resources...)
-	if batches == nil {
+	response.Batches = append(response.Batches, response.Resources...)
+	if response.Batches == nil {
 		return QueryResult{}, errUpstream
 	}
-	spans := make([]TraceSpan, 0)
+	result := QueryResult{Spans: make([]TraceSpan, 0)}
 	seen := make(map[string]bool)
-	truncated := false
-	for _, batch := range batches {
-		service := ""
-		for _, attribute := range batch.Resource.Attributes {
-			if attribute.Key == "service.name" {
-				service = traceText(attribute.Value.String)
-				break
-			}
-		}
-		for _, scope := range batch.Scopes {
-			for _, span := range scope.Spans {
-				traceID, valid := tempoID(span.TraceID, 16)
-				id, idValid := tempoID(span.SpanID, 8)
-				parent, parentValid := "", true
-				if span.Parent != "" {
-					parent, parentValid = tempoID(span.Parent, 8)
-				}
-				start, startErr := strconv.ParseUint(span.Start, 10, 64)
-				end, endErr := strconv.ParseUint(span.End, 10, 64)
-				if !valid || traceID != strings.ToLower(requested) || !idValid || !parentValid || startErr != nil || endErr != nil || end < start || seen[id] {
-					return QueryResult{}, errUpstream
-				}
-				seen[id] = true
-				if len(spans) >= maxTraceSpans {
-					truncated = true
-					continue
-				}
-				status := "unknown"
-				switch string(span.Status.Code) {
-				case `"STATUS_CODE_OK"`, `1`:
-					status = "ok"
-				case `"STATUS_CODE_ERROR"`, `2`:
-					status = "error"
-				}
-				attributes, omitted := safeSpanAttributes(span.Attributes)
-				spans = append(spans, TraceSpan{SpanID: id, ParentSpanID: parent, Service: service, Operation: traceText(span.Name), StartTime: float64(start) / 1e6, DurationMs: float64(end-start) / 1e6, Status: status, Attributes: attributes, AttributesOmitted: omitted})
-			}
+	for i := range response.Batches {
+		if err := appendTempoBatch(&result, &response.Batches[i], requested, seen); err != nil {
+			return QueryResult{}, err
 		}
 	}
-	return QueryResult{Spans: spans, Truncated: truncated}, nil
+	return result, nil
 }

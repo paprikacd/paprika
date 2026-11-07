@@ -68,7 +68,7 @@ describe("optional single-value history", () => {
       />,
     );
     expect(
-      screen.getByRole("img", { name: "History for api" }),
+      screen.getByRole("img", { name: "History for Requests" }),
     ).toBeInTheDocument();
     expect(
       container.querySelector('[data-metric-value="0"]'),
@@ -80,7 +80,7 @@ describe("optional single-value history", () => {
     const summary = container.querySelector("[data-stat-summary]");
     expect(summary).toHaveAttribute("data-sparkline-placement", "side");
     expect(summary?.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
-    expect(screen.getByRole("img", { name: "History for api" })).toHaveAttribute("data-sample-count", "5");
+    expect(screen.getByRole("img", { name: "History for Requests" })).toHaveAttribute("data-sample-count", "5");
   });
 
   it("renders the actual latest value against its explicit bar scale and thresholds", () => {
@@ -112,7 +112,7 @@ describe("optional single-value history", () => {
         result={{ series: [series, other] }}
       />,
     );
-    const svg = screen.getByRole("img", { name: "History for api" });
+    const svg = screen.getByRole("img", { name: "History for Requests" });
     expect(svg).toHaveAttribute("data-history-start", "1000");
     expect(svg).toHaveAttribute("data-history-end", "5000");
     expect(svg).toHaveAttribute("data-history-min", "-7.25");
@@ -145,7 +145,7 @@ describe("optional single-value history", () => {
     ).toBeInTheDocument();
     expect(svg).toHaveStyle({ color: "#336699" });
     expect(svg.querySelectorAll("text")).toHaveLength(0);
-    expect(svg).not.toHaveAttribute("tabindex");
+    expect(svg).toHaveAttribute("tabindex", "0");
     expect(
       container.querySelector('[data-metric-value="0"]'),
     ).toBeInTheDocument();
@@ -344,4 +344,29 @@ describe("optional single-value history", () => {
     ).toHaveAttribute("data-history-max", "10");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+});
+
+it("keeps a one-track background stat's saved geometry, precise value, unit and missing-tail disclosure", () => {
+  const compact: Widget = { ...widget, layout: { x: 3, y: 0, w: 3, h: 1 }, options: { showSparkline: true, sparklinePlacement: "background" } };
+  const before = JSON.stringify(compact);
+  const { container, rerender } = render(<WidgetVisualization widget={compact} result={{ series: [series] }} />);
+  expect(container.querySelector("[data-stat-summary]")).toHaveAttribute("data-sparkline-placement", "background");
+  expect(container.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
+  expect(screen.getByRole("button", { name: "Inspect value for Requests" })).toBeEnabled();
+  expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+  expect(screen.getByRole("img")).toHaveAccessibleDescription(/1970-01-01T00:00:04.000Z/);
+  rerender(<WidgetVisualization widget={compact} result={{ series: [{ ...series, points: [{ timestamp: 5000, value: null }] }] }} />);
+  expect(container.querySelector("[data-metric-value]")).toBeNull();
+  expect(container.querySelector("[data-widget-state-frame]")).toHaveTextContent("No data in this time range");
+  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  expect(JSON.stringify(compact)).toBe(before);
+});
+
+ it("measures compact failed-query and loading states without losing retry", () => {
+  const retry = vi.fn();
+  const { container, rerender } = render(<WidgetVisualization widget={widget} error="Fixture failure" onRetry={retry} />);
+  expect(container.querySelector("[data-widget-state-frame]")).toHaveTextContent("Query failed");
+  expect(screen.getByRole("button", { name: "Retry query for Requests" })).toBeEnabled();
+  rerender(<WidgetVisualization widget={widget} loading />);
+  expect(container.querySelector("[data-widget-state-frame]")).toContainElement(screen.getByRole("status", { name: "Loading widget" }));
 });

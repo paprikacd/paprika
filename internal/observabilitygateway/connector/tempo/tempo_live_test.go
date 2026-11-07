@@ -7,8 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/stretchr/testify/require"
+
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
 
 // Optional real Tempo check. Run only against the isolated synthetic gallery

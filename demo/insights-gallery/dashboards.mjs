@@ -201,7 +201,7 @@ export function galleryDocuments(providers) {
       dashboard.widgets.find(widget => widget.id === "flow").config.symmetricAxis = true;
       dashboard.widgets.find(widget => widget.id === "outcomes").config.seriesColors = [{ label: "outcome", value: "allowed", color: "#00cee2" }, { label: "outcome", value: "challenged", color: "#ffb128" }, { label: "outcome", value: "blocked", color: "#f4523c" }];
       const risks = dashboard.widgets.find(widget => widget.id === "risks");
-      risks.title = "Risk by source";
+      risks.title = "Risk by source · snapshot";
       risks.description = "Seed-time source risk snapshot. Trends show up to the latest 240 observations in the selected range.";
       risks.config = { columns: ["source", "country", "trend", "risk", "status"], pageSize: 5, density: "compact", showSearch: false, showRowNumbers: true, cellStyles: [{ column: "trend", display: "sparkline", thresholdColumn: "risk" }, { column: "risk", display: "bar-segments", min: 0, max: 100, segments: 6, barColorMode: "value" }, { column: "status", display: "status-badge", mappings: [{ value: "Blocking", color: "#ef5a46" }, { value: "Challenging", color: "#f4b333" }, { value: "Monitoring", color: "#7992a1" }, { value: "Allowed", color: "#13c8a1" }] }] };
       risks.options = { ...risks.options, thresholds: [{ value: 0, color: "#13c8a1", label: "Low" }, { value: 40, color: "#f4b333", label: "Elevated" }, { value: 70, color: "#ef5a46", label: "High" }] };
@@ -273,7 +273,7 @@ export function galleryDocuments(providers) {
       Object.assign(calendar, { title: "Incident severity by day · UTC", query: incidentSeverity, unit: "", queryRef: { id: "local-reliability-severity", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, config: { ...calendar.config, value: "value", status: "status", label: "label", aggregation: "max", colorMode: "thresholds" }, options: { ...calendar.options, thresholds: [{ value: 1, color: "#eab640", label: "Warning" }, { value: 2, color: "#e8554e", label: "Critical" }] }, layout: { x: 8, y: 9, w: 4, h: 5 } });
       const incidentsList = dashboard.widgets.find(widget => widget.id === "incidents-list");
       incidentsList.title = "Recent incidents"; incidentsList.layout = { x: 0, y: 14, w: 12, h: 4 };
-      incidentsList.config = { ...incidentsList.config, columns: ["date", "service", "label", "value", "state"], timeSelection: { start: "date", duration: "value", durationUnit: "minutes", paddingSeconds: 300 } };
+      incidentsList.config = { ...incidentsList.config, density: "compact", showSearch: false, columns: ["date", "service", "label", "value", "state"], timeSelection: { start: "date", duration: "value", durationUnit: "minutes", paddingSeconds: 300 } };
       const serviceTrace = dashboards.find(item => item.id === "local-gallery-service-pulse").widgets.find(item => item.id === "traces");
       dashboard.widgets.push({ ...structuredClone(serviceTrace), id: "incident-traces", title: "Traces in selected window", layout: { x: 0, y: 18, w: 12, h: 6 } });
       dashboard.description += " Availability and budget describe recorded synthetic 30-day probe samples against a 99.9% target; burn rates describe request errors. The table is a separately seeded synthetic probe set.";
@@ -292,6 +292,9 @@ export function galleryDocuments(providers) {
         { label: "signal", value: "logs", color: "#16c9c6" },
       ] };
       const freshness = dashboard.widgets.find(widget => widget.id === "source-freshness");
+      // This demo's five-row gauge needs less height than the original bar
+      // composition. Change only newly generated demo documents, not saved views.
+      freshness.layout = { ...freshness.layout, h: 5 };
       Object.assign(freshness, { title: "Freshness by source", type: "plugin", pluginId: "threshold-gauge", dataKind: "metrics", config: { display: "linear", orientation: "horizontal", seriesMode: "all", maxSeries: 5, showThresholds: true, showStatus: true }, options: { min: 0, max: 60, decimals: 2, showLegend: true, showTooltip: true, thresholds: [{ value: 0, color: "#12cba1", label: "OK" }, { value: 30, color: "#f1b841", label: "Delayed" }, { value: 60, color: "#e95352", label: "Critical" }] } });
       const states = dashboard.widgets.find(widget => widget.id === "job-states");
       states.title = "Job execution history · sampled states";
@@ -320,6 +323,26 @@ export function galleryDocuments(providers) {
     for (const widget of dashboard.widgets) {
       if (widget.type === "stat" && widget.layout.y === 0 && widget.layout.h === 3) widget.layout.h = 1;
       else if (widget.layout.y > 0) widget.layout.y -= 2;
+    }
+    // Keep reference rows contiguous after the common stat-row compaction.
+    // These placements affect newly generated demos only, never saved dashboards.
+    const referenceRows = key === "edge-watch" ? [
+      [["flow", "destinations"], 1, 5],
+      [["locations", "outcomes", "risks"], 6, 4],
+      [["blocked-requests"], 10, 4],
+      [["geo-density", "geo-honeycomb"], 14, 6],
+      [["geo-selected-detail"], 20, 3],
+    ] : key === "reliability-room" ? [
+      [["burn", "services-attention"], 1, 5],
+      [["service-timeline", "calendar"], 6, 4],
+      [["incidents-list"], 10, 4],
+      [["incident-traces"], 14, 6],
+    ] : [];
+    for (const [ids, y, h] of referenceRows) {
+      for (const id of ids) {
+        const widget = dashboard.widgets.find(item => item.id === id);
+        widget.layout = { ...widget.layout, y, h };
+      }
     }
     dashboards.push(dashboard);
   }

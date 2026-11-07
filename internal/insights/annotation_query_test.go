@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/benebsworth/paprika/internal/dataframe"
 	"github.com/stretchr/testify/require"
+
+	"github.com/benebsworth/paprika/internal/dataframe"
 )
 
 func TestAnnotationSourceAcceptsTimeBasedVisualizations(t *testing.T) {
@@ -98,8 +99,14 @@ func TestDashboardBundlesAnnotationQueryAndProtectsItsRevision(t *testing.T) {
 	require.Equal(t, 1, eventCalls)
 	var edited map[string]any
 	require.NoError(t, json.Unmarshal(dashboardRaw, &edited))
-	editedWidget := edited["widgets"].([]any)[0].(map[string]any)
-	editedWidget["annotationSource"].(map[string]any)["labelColumn"] = "missing_column"
+	editedWidgets, ok := edited["widgets"].([]any)
+	require.True(t, ok, "widgets must be an array")
+	require.NotEmpty(t, editedWidgets)
+	editedWidget, ok := editedWidgets[0].(map[string]any)
+	require.True(t, ok, "widget must be an object")
+	annotationSource, ok := editedWidget["annotationSource"].(map[string]any)
+	require.True(t, ok, "annotation source must be an object")
+	annotationSource["labelColumn"] = "missing_column"
 	changed := mustMarshalAnnotationResult(t, edited)
 	_, err := s.store.Put("overview", changed, dashboardETag, "")
 	require.NoError(t, err)

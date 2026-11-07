@@ -48,3 +48,28 @@
 .overlapPicker p { margin: 4px 0 6px; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; }
 .overlapList { max-height: 140px; overflow: auto; border: 1px solid var(--gamma-border); }
 .overlapList:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
+
+/* Reference desktop reading density. Keep the entire month visible instead
+   of masking overflow; coarse-pointer calendars retain their 44px targets. */
+@media (min-width: 1024px) and (pointer: fine) {
+  :global([data-insights-theme="dark"][data-density="compact"]) .wrapper[data-operational-chart="incident-calendar"] .caption {
+    padding-bottom: 2px;
+    font-size: 10px;
+    line-height: 14px;
+  }
+  :global([data-insights-theme="dark"][data-density="compact"]) .month h4 { margin-bottom: 2px; line-height: 16px; }
+  :global([data-insights-theme="dark"][data-density="compact"]) .weekdays { margin-bottom: 2px; line-height: 12px; }
+  :global([data-insights-theme="dark"][data-density="compact"]) :is(.days, .weekdays) { gap: 2px; }
+  :global([data-insights-theme="dark"][data-density="compact"]) .day {
+    min-height: 24px;
+    height: 24px;
+    border-width: 0;
+    outline: 1px solid var(--gamma-chart-grid, var(--gamma-border));
+    outline-offset: -1px;
+  }
+  :global([data-insights-theme="dark"][data-density="compact"]) .day[data-observed="false"] { outline-style: dashed; }
+  :global([data-insights-theme="dark"][data-density="compact"]) .day[data-threshold] { outline-color: var(--day-color); }
+  :global([data-insights-theme="dark"][data-density="compact"]) .day[data-unknown="true"] { outline-color: var(--gamma-muted); }
+  :global([data-insights-theme="dark"][data-density="compact"]) .dayTrigger { min-height: 24px!important; padding: 0 2px!important; line-height: 20px!important; }
+  :global([data-insights-theme="dark"][data-density="compact"]) .calendarLegend { padding-top: 4px; gap: 2px 12px; line-height: 12px; }
+}

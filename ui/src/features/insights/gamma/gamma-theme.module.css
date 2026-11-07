@@ -100,6 +100,42 @@
   --gamma-shadow-high: 0 8px 24px rgb(0 0 0 / 32%);
   --gamma-focus-ring: 0 0 0 3px rgb(231 141 107 / 26%);
 }
+/* The supplied Edge Watch / Reliability Room direction is an opt-in reading
+   density, not a replacement for the standard or light workspace. */
+@media (min-width: 1024px) {
+  .scope[data-insights-theme="dark"][data-density="compact"] {
+    --gamma-bg: #0b1b22;
+    --gamma-surface: #10232b;
+    --gamma-surface-2: #182f39;
+    --gamma-page: #07141b;
+    --gamma-sidebar: #091920;
+    --gamma-ink: #e7f0f5;
+    --gamma-muted: #a9becd;
+    --gamma-border: #243d49;
+    --gamma-accent: #20c8dc;
+    --gamma-accent-text: #60dbea;
+    --gamma-accent-ink: #071a20;
+    --gamma-accent-soft: #10343e;
+    --gamma-chart-1: #20c8dc;
+    --gamma-chart-2: #a78af2;
+    --gamma-chart-3: #27cda9;
+    --gamma-chart-4: #f2b84b;
+    --gamma-chart-5: #f47b6a;
+    --gamma-chart-6: #83bcfa;
+    --gamma-chart-7: #b6d57d;
+    --gamma-chart-8: #e6a0cf;
+    --gamma-chart-grid: #1c3440;
+    --gamma-chart-axis: #a9becd;
+    --gamma-density-0: #163442;
+    --gamma-density-1: #235369;
+    --gamma-density-2: #247a95;
+    --gamma-density-3: #20b8c5;
+    --gamma-density-4: #b3ca67;
+    --gamma-density-5: #f2b84b;
+    --gamma-focus-ring: 0 0 0 3px rgb(32 200 220 / 30%);
+  }
+}
+
 .scope,
 .scope *,
 .scope *::before,

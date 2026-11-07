@@ -139,7 +139,8 @@ func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQuer
 	if json.Unmarshal(raw, &dashboard) != nil {
 		return errors.New("invalid stored dashboard")
 	}
-	for _, widget := range dashboard.Widgets {
+	for i := range dashboard.Widgets {
+		widget := &dashboard.Widgets[i]
 		if err := check(widget.QueryRef, dashboard.Title, widget.Title, "query"); err != nil {
 			return err
 		}

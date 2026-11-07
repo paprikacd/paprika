@@ -55,12 +55,14 @@ function Canvas({
   current = widget,
   dashboardId = "overview",
   active = true,
+  referenceCompact = false,
   onDrilldown = vi.fn(),
   onSelection,
 }: {
   current?: Widget;
   dashboardId?: string;
   active?: boolean;
+  referenceCompact?: boolean;
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
 }) {
@@ -76,6 +78,7 @@ function Canvas({
     <DashboardCanvas
       dashboard={dashboard}
       active={active}
+      referenceCompact={referenceCompact}
       providers={[
         {
           id: "prom",
@@ -663,4 +666,31 @@ it("adapts custom-dark widget headings and descriptions while retaining explicit
   expect(screen.getByRole("heading", { name: "Requests" })).toHaveStyle({
     color: "#ffcc88",
   });
+});
+
+
+it("keeps risk provenance in reachable details only in the compact reference view", () => {
+  const risk: Widget = {
+    ...widget, type: "plugin", pluginId: "record-table", dataKind: "records",
+    title: "Risk by source · snapshot", description: "Seed-time source risk snapshot. Trends show up to the latest 240 observations in the selected range.",
+    config: { cellStyles: [
+      { column: "trend", display: "sparkline" },
+      { column: "risk", display: "bar-segments", min: 0, max: 100 },
+      { column: "status", display: "status-badge" },
+    ] },
+  };
+  const { rerender } = render(<Canvas current={risk} referenceCompact />);
+  const summary = screen.getByText("Details");
+  expect(summary).toHaveAttribute("aria-label", "Details for Risk by source · snapshot");
+  const details = summary.closest("details")!;
+  expect(details).not.toHaveAttribute("open");
+  fireEvent.click(summary);
+  expect(details).toHaveAttribute("open");
+  expect(within(details).getByText(risk.description!)).toBeVisible();
+  rerender(<Canvas current={risk} />);
+  expect(screen.queryByText("Details")).not.toBeInTheDocument();
+  expect(screen.getByText(risk.description!)).toBeVisible();
+  rerender(<Canvas current={{ ...risk, config: { cellStyles: [{ column: "trend", display: "sparkline" }] } }} referenceCompact />);
+  expect(screen.queryByText("Details")).not.toBeInTheDocument();
+  expect(screen.getByText(risk.description!)).toBeVisible();
 });

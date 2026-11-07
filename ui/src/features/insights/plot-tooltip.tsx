@@ -14,11 +14,12 @@ import type {
   ChartTooltipExtension,
   ChartValue,
 } from "@tanstack/charts";
-import { MetricDetails, ObservationTooltip } from "./chart-renderers";
+import { MetricDetails } from "./metric-tooltip-content";
+import { ObservationTooltip } from "./observation-tooltip";
+import { installTooltipPointerTracking } from "./tooltip-pointer";
 import { TooltipSubWidget } from "./tooltip-widgets";
 import { TooltipInstructions } from "./tooltip-instructions";
-import { formatMetricDetails, fullDateTimeFormat, seriesName, type Point, type Series } from "./chart-data";
-import { validTimestamp } from "./widget-context";
+import { formatMetricDetails, seriesName, type Point, type Series } from "./chart-data";
 import type { Widget } from "./schema";
 import styles from "./chart-styles.module.css";
 import { useChartCursorPublisher } from "./chart-cursor";
@@ -74,11 +75,12 @@ export function usePlotTooltip(
   onContextChange?: (context: DrilldownContext) => void,
 ) {
   const id = useId();
+  useEffect(() => enabled ? installTooltipPointerTracking() : undefined, [enabled]);
   const cursor = useChartCursorPublisher();
   const openDrilldown = useWidgetDrilldown();
   const revision = useMemo(
-    () => ({ series, view: widget.options?.tooltipView, unit: widget.unit, color: widget.color, seriesColors: widget.options?.seriesColors }),
-    [series, widget.options?.tooltipView, widget.unit, widget.color, widget.options?.seriesColors],
+    () => ({ series, view: widget.options?.tooltipView, unit: widget.unit, color: widget.color, seriesColors: widget.options?.seriesColors, options: widget.options, title: widget.title }),
+    [series, widget.options, widget.title, widget.unit, widget.color],
   );
   const scene = useRef<PlotScene | null>(null);
   const armedRevision = useRef<unknown>(null);
@@ -262,41 +264,22 @@ export function usePlotTooltip(
             data-observation-timestamp={String(point.timestamp)}
             data-observation-series={entry.name}
           >
-            {widget.type === "timeseries" ? <>
-              <div className={styles.plotTooltipTime}>
-                <span>Selected observation</span>
-                {validTimestamp(point.timestamp)
-                  ? <time dateTime={new Date(point.timestamp).toISOString()}>{fullDateTimeFormat.format(new Date(point.timestamp))}</time>
-                  : <span>No valid timestamp</span>}
-              </div>
-              <div className={styles.plotTooltipValues}>
-                <ul>
-                  <li className={styles.plotTooltipSelected}>
-                    <i aria-hidden="true" style={{ background: current.point.color || widget.color }} />
-                    <span title={seriesName(entry, current.point.datum.seriesIndex)}>{seriesName(entry, current.point.datum.seriesIndex)}</span>
-                    <strong data-metric-value={typeof point.value === "number" && Number.isFinite(point.value) ? String(point.value) : undefined}>
-                      {typeof point.value === "number" && Number.isFinite(point.value) ? formatMetricDetails(point.value, widget.unit, widget.options?.decimals) : "No data"}
-                    </strong>
-                  </li>
-                  {(showAllPeers ? peersAtTime : peersAtTime.slice(0, 5)).map(candidate => {
-                    const peer = series[candidate.datum.seriesIndex];
-                    const name = seriesName(peer, candidate.datum.seriesIndex);
-                    return <li key={candidate.datum.seriesIndex} data-peer-series={name} data-peer-value={candidate.datum.value} data-peer-timestamp={candidate.datum.timestamp}>
-                      <i aria-hidden="true" style={{ background: candidate.color }} />
-                      <span title={name}>{name}</span>
-                      <strong>{formatMetricDetails(candidate.datum.value!, widget.unit, widget.options?.decimals)}</strong>
-                    </li>;
-                  })}
-                </ul>
-                {peersAtTime.length > 0 && <span className={styles.plotTooltipCaption}>Other plotted series at this time</span>}
-                {peersAtTime.length > 5 && <button type="button" className={styles.plotTooltipExpand} aria-expanded={showAllPeers} onClick={() => setShowAllPeers(value => !value)}>
-                  {showAllPeers ? "Show fewer plotted series" : `Show ${peersAtTime.length - 5} more plotted series`}
-                </button>}
-              </div>
-              {!!Object.keys(entry.labels).length && <div className={styles.tooltipLabels}>
-                <dl>{Object.entries(entry.labels).map(([key, value]) => <div key={key}><dt>{key}: </dt><dd>{value}</dd></div>)}</dl>
-              </div>}
-            </> : <MetricDetails series={entry} index={current.point.datum.seriesIndex} point={point} unit={widget.unit} decimals={widget.options?.decimals} description="Latest valid sample" />}
+            <MetricDetails widget={widget} series={entry} index={current.point.datum.seriesIndex} point={point} unit={widget.unit} decimals={widget.options?.decimals} description="Selected observation" timestampFirst />
+            {widget.type === "timeseries" && peersAtTime.length > 0 && <div className={styles.plotTooltipValues}>
+              <span className={styles.plotTooltipCaption}>Other plotted series at this time</span>
+              <ul>{(showAllPeers ? peersAtTime : peersAtTime.slice(0, 5)).map(candidate => {
+                const peer = series[candidate.datum.seriesIndex];
+                const name = seriesName(peer, candidate.datum.seriesIndex);
+                return <li key={candidate.datum.seriesIndex} data-peer-series={name} data-peer-value={candidate.datum.value} data-peer-timestamp={candidate.datum.timestamp}>
+                  <i aria-hidden="true" style={{ background: candidate.color }} />
+                  <details className={styles.tooltipSource}><summary>Series {candidate.datum.seriesIndex + 1}</summary><span className={styles.tooltipSourceIdentity}>{name}</span></details>
+                  <strong>{formatMetricDetails(candidate.datum.value!, widget.options?.tooltipShowUnit === false ? "" : widget.unit, widget.options?.tooltipDecimals ?? widget.options?.decimals)}</strong>
+                </li>;
+              })}</ul>
+              {peersAtTime.length > 5 && <button type="button" className={styles.plotTooltipExpand} aria-expanded={showAllPeers} onClick={() => setShowAllPeers(value => !value)}>
+                {showAllPeers ? "Show fewer plotted series" : `Show ${peersAtTime.length - 5} more plotted series`}
+              </button>}
+            </div>}
             {current.pinned && widget.type === "timeseries" && !!widget.drilldowns?.length && (openDrilldown || onContextChange) && <div className={styles.tooltipActions}>
               {openDrilldown && widget.drilldowns.map(link => {
                 const selected = { series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp };

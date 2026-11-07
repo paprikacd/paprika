@@ -39,7 +39,7 @@ import {
 } from "./widget-context";
 import { dashboardRange } from "./time-range";
 import { widgetTextColor } from "./appearance";
-import { canvasLayout, canvasMode, denseCanvasLayout, type CanvasMode } from "./responsive-layout";
+import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, type CanvasMode } from "./responsive-layout";
 import styles from "./insights.module.css";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -48,6 +48,7 @@ import { useSavedQueryLibrary } from "./saved-query-context";
 import { GammaSelect } from "./gamma/select";
 import { GammaActionMenu } from "./gamma/action-menu";
 import contextStyles from "./widget-context.module.css";
+import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
 
 const STAT_ICONS = {
@@ -73,6 +74,8 @@ const Tile = memo(function Tile({
   end,
   editing,
   draggable,
+  naturalHeight = false,
+  referenceCompact = false,
   selected,
   onSelect,
   onDrilldown,
@@ -88,6 +91,8 @@ const Tile = memo(function Tile({
   end: number;
   editing: boolean;
   draggable: boolean;
+  naturalHeight?: boolean;
+  referenceCompact?: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
@@ -95,6 +100,10 @@ const Tile = memo(function Tile({
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
   onTimeRange?: (window: ObservationWindow) => void;
 }) {
+  const recordCellStyles = widget.config?.cellStyles;
+  const compactRecordDescription = referenceCompact && widget.type === "plugin" && widget.pluginId === "record-table" &&
+    Array.isArray(recordCellStyles) && ["sparkline", "bar-segments", "status-badge"].every(display =>
+      recordCellStyles.some(style => typeof style === "object" && style !== null && "display" in style && style.display === display));
   const element = useRef<HTMLDivElement>(null);
   const library = useSavedQueryLibrary();
   const savedQueryLoading = !!widget.queryRef && !!library.loading;
@@ -212,6 +221,7 @@ const Tile = memo(function Tile({
     <article
       ref={element}
       className={`${styles.tile} ${selected ? styles.selectedTile : ""}`}
+      data-intrinsic-stat={naturalHeight || undefined}
       data-widget-id={widget.id}
       data-widget-type={widget.type}
       data-widget-sparkline={widget.type === "stat" && widget.options?.showSparkline || undefined}
@@ -239,11 +249,14 @@ const Tile = memo(function Tile({
             <Grip size={14} />
           </span>
         )}
-        <div className={styles.tileTitle}>
+        <div className={`${styles.tileTitle}${compactRecordDescription ? ` ${recordStyles.compactRecordTitle}` : ""}`}>
           <h3 style={{ color: textColor }}>{widget.title}</h3>
-          {widget.description && (
-            <p style={{ color: textColor }}>{widget.description}</p>
-          )}
+          {widget.description && (compactRecordDescription ? (
+            <details className={recordStyles.compactRecordDescription}>
+              <summary aria-label={`Details for ${widget.title}`}>Details</summary>
+              <span style={{ color: textColor }}>{widget.description}</span>
+            </details>
+          ) : <p style={{ color: textColor }}>{widget.description}</p>)}
         </div>
         {!!links.length && onDrilldown && (
           <GammaActionMenu
@@ -316,6 +329,7 @@ const Tile = memo(function Tile({
         {active && (
           <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><WidgetVisualization
             widget={widget}
+            naturalHeight={naturalHeight}
             result={savedQueryLoading ? undefined : data}
             loading={savedQueryLoading || loading || (visible && awaitingFirstResult)}
             deferred={!savedQueryLoading && !visible && awaitingFirstResult}
@@ -345,6 +359,7 @@ export function DashboardCanvas({
   end,
   editing,
   dense = false,
+  referenceCompact = false,
   selected,
   onSelect,
   onLayout,
@@ -362,6 +377,7 @@ export function DashboardCanvas({
   end: number;
   editing: boolean;
   dense?: boolean;
+  referenceCompact?: boolean;
   selected?: string;
   onSelect: (id: string) => void;
   onLayout: (layout: Layout) => void;
@@ -379,8 +395,8 @@ export function DashboardCanvas({
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
   const draggable = editing && mode === "wide";
   const layout = useMemo(
-    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode) : canvasLayout(dashboard.widgets, mode),
-    [dashboard.widgets, mode, dense, editing],
+    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact) : canvasLayout(dashboard.widgets, mode, width),
+    [dashboard.widgets, mode, width, dense, editing, referenceCompact],
   );
   const orderedWidgets = useMemo(() => {
     const byId = new Map(
@@ -389,6 +405,38 @@ export function DashboardCanvas({
     return layout.map((item) => byId.get(item.i)!);
   }, [dashboard.widgets, layout]);
   const range = dashboardRange(dashboard, end);
+  const stackedView = mode === "stacked" && !editing;
+  const tiles = orderedWidgets.map((widget, index) => (
+              <div key={widget.id} style={stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
+                <Tile
+                  key={`${dashboard.id}:${widget.id}`}
+                  widget={widget}
+                  active={active}
+                  provider={providers.find(
+                    (provider) =>
+                      provider.id ===
+                      (widget.queryRef
+                        ? library.queries.find(
+                            (entry) => entry.id === widget.queryRef!.id,
+                          )?.providerId
+                        : widget.providerId),
+                  )}
+                  fetcher={fetcher}
+                  start={range.start}
+                  end={range.end}
+                  naturalHeight={stackedView && intrinsicStat(widget)}
+                  referenceCompact={referenceCompact && !editing}
+                  editing={editing}
+                  draggable={draggable}
+                  selected={selected === widget.id}
+                  onSelect={onSelect}
+                  onDrilldown={onDrilldown}
+                  onSelection={onSelection}
+                  onQueryFields={onQueryFields}
+                  onTimeRange={onTimeRange}
+                />
+              </div>
+            ));
   return (
     <TooltipQueryProvider
       fetcher={tooltipFetcher}
@@ -405,7 +453,7 @@ export function DashboardCanvas({
         data-density={dense && !editing && mode === "wide" ? "compact" : "standard"}
       >
         <ChartCursorProvider key={dashboard.id}>
-        {mounted && (
+        {mounted && (stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout
             width={width}
             layout={layout}
@@ -428,37 +476,9 @@ export function DashboardCanvas({
               if (draggable) onLayout(next);
             }}
           >
-            {orderedWidgets.map((widget) => (
-              <div key={widget.id}>
-                <Tile
-                  key={`${dashboard.id}:${widget.id}`}
-                  widget={widget}
-                  active={active}
-                  provider={providers.find(
-                    (provider) =>
-                      provider.id ===
-                      (widget.queryRef
-                        ? library.queries.find(
-                            (entry) => entry.id === widget.queryRef!.id,
-                          )?.providerId
-                        : widget.providerId),
-                  )}
-                  fetcher={fetcher}
-                  start={range.start}
-                  end={range.end}
-                  editing={editing}
-                  draggable={draggable}
-                  selected={selected === widget.id}
-                  onSelect={onSelect}
-                  onDrilldown={onDrilldown}
-                  onSelection={onSelection}
-                  onQueryFields={onQueryFields}
-                  onTimeRange={onTimeRange}
-                />
-              </div>
-            ))}
+            {tiles}
           </ReactGridLayout>
-        )}
+        ))}
         </ChartCursorProvider>
       </div>
     </TooltipQueryProvider>

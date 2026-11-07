@@ -496,7 +496,7 @@ describe("point and row tooltip hosts", () => {
     expect(timestamp).toHaveAttribute("datetime", "1970-01-01T00:00:01.000Z");
     expect(timestamp!.compareDocumentPosition(selected!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(selected!.compareDocumentPosition(peer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(peer!.compareDocumentPosition(labels!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(labels?.closest("details")).not.toHaveAttribute("open");
     expect(labels).toHaveTextContent("service: api");
   });
 

@@ -37,6 +37,7 @@ export interface WidgetVisualizationProps {
   widget: Widget;
   result?: QueryResult;
   loading?: boolean;
+  naturalHeight?: boolean;
   deferred?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -101,10 +102,16 @@ function RegisteredRenderer({
   );
 }
 
+// State renderers need the same measured container as populated charts.
+function WidgetStateFrame({ children }: { children: ReactNode }) {
+  return <div className={styles.visualization} data-widget-state-frame="">{children}</div>;
+}
+
 export const WidgetVisualization = memo(function WidgetVisualization({
   widget,
   result,
   loading,
+  naturalHeight = false,
   deferred,
   error,
   onRetry,
@@ -119,33 +126,33 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   );
   if (!definition)
     return (
-      <div className={`${styles.state} ${styles.error}`} role="alert">
+      <WidgetStateFrame><div className={`${styles.state} ${styles.error}`} role="alert">
         <strong>Widget plugin unavailable</strong>
         <p>
           Install the trusted “{widget.pluginId}” plugin in this Paprika host.
         </p>
-      </div>
+      </div></WidgetStateFrame>
     );
   if (error)
     return (
-      <div className={`${styles.state} ${styles.error}`} role="alert">
+      <WidgetStateFrame><div className={`${styles.state} ${styles.error}`} role="alert">
         <strong>Query failed</strong>
         <p>{error}</p>
         {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}
-      </div>
+      </div></WidgetStateFrame>
     );
   if (deferred && !result)
     return (
-      <div className={styles.state} role="status" aria-label="Widget waiting to load">
+      <WidgetStateFrame><div className={styles.state} role="status" aria-label="Widget waiting to load">
         <span>Waiting to load…</span>
-      </div>
+      </div></WidgetStateFrame>
     );
   if (loading && !result)
     return (
-      <div className={styles.state} role="status" aria-label="Loading widget">
+      <WidgetStateFrame><div className={styles.state} role="status" aria-label="Loading widget">
         <span className={styles.loading} />
         <span>Querying data source…</span>
-      </div>
+      </div></WidgetStateFrame>
     );
   const series = result?.series ?? [];
   const textColor = widgetTextColor(widget.options);
@@ -158,10 +165,10 @@ export const WidgetVisualization = memo(function WidgetVisualization({
           ? !series.length
           : !series.some((entry) => latestPoint(entry))))
   )
-    return <EmptyState partial={!!(result?.truncated || result?.records?.truncated)} />;
+    return <WidgetStateFrame><EmptyState partial={!!(result?.truncated || result?.records?.truncated)} /></WidgetStateFrame>;
   return (
     <div
-      className={`${styles.visualization} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
+      className={`${styles.visualization} ${naturalHeight ? styles.intrinsicStat : ""} ${configStyles.visualization} ${textColor ? configStyles.customText : ""}`}
       style={
         {
           background: widget.options?.background,
