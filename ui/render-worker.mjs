@@ -9,8 +9,32 @@ const maxBytes = 4 << 20
 const maxTime = 20000
 let browserPromise
 
-class RenderError extends Error {
-  constructor(message, status = 422) { super(message); this.status = status }
+const failureCategories=new Set([
+  "render_failed","request_invalid","request_bounds","render_deadline",
+  "browser_start","browser_context","ui_navigation","ui_readiness",
+  "widget_readiness","widget_error","focus_unavailable","network_error",
+  "redirect_rejected","insights_http","query_error","script_error",
+  "revision_conflict","screenshot_bounds","screenshot_failed",
+])
+
+export class RenderError extends Error {
+  constructor(category, status = 422, upstreamStatus) {
+    super("dashboard rendering failed")
+    this.category=failureCategories.has(category)?category:"render_failed"
+    this.status=status
+    this.upstreamStatus=upstreamStatus
+  }
+}
+
+function renderFailure(error,aborted) {
+  const known=error instanceof RenderError
+  const category=aborted?"render_deadline":known&&failureCategories.has(error.category)?error.category:"render_failed"
+  const status=aborted?504:known&&Number.isInteger(error.status)&&error.status>=400&&error.status<=599?error.status:422
+  const headers={"X-Paprika-Render-Failure":category}
+  if(known && Number.isInteger(error.upstreamStatus) && error.upstreamStatus>=100 && error.upstreamStatus<=599) {
+    headers["X-Paprika-Render-Upstream-Status"]=String(error.upstreamStatus)
+  }
+  return {status,headers}
 }
 
 export function parseRenderRequest(v) {
@@ -39,6 +63,11 @@ export function allowedRequest(url, method, origin) {
     u.pathname==="/auth/config" ||
     u.pathname==="/favicon.ico" ||
     u.pathname==="/icon.png")
+}
+
+function supportsCapacityRetry(path,method) {
+  return method==="POST" && path==="/api/insights/query" ||
+    method==="GET" && /^\/api\/insights\/(dashboards|saved-queries)(\/[a-zA-Z0-9_-]+)?$/.test(path)
 }
 
 function trusted(actual, expected) {
@@ -72,7 +101,7 @@ function readBody(req,signal) {
     const abort=()=>error(signal.reason)
     const data=chunk=>{
       size+=chunk.length
-      if(size>2048){error(new RenderError("payload exceeds limit",413));req.resume();return}
+      if(size>2048){error(new RenderError("request_bounds",413));req.resume();return}
       chunks.push(chunk)
     }
     const end=()=>{cleanup();resolve(Buffer.concat(chunks).toString("utf8"))}
@@ -84,13 +113,14 @@ function readBody(req,signal) {
 
 async function render(params, bearer, origin, signal, etag) {
   signal.throwIfAborted()
-  browserPromise ??= chromium.launch({headless:true,timeout:8000,args:["--no-sandbox"]}).catch(e=>{browserPromise=undefined;throw e})
+  browserPromise ??= chromium.launch({headless:true,timeout:8000,args:["--no-sandbox"]}).catch(()=>{browserPromise=undefined;throw new RenderError("browser_start")})
   const b=await abortable(browserPromise,signal)
   const context=await abortable(b.newContext({viewport:{width:params.width,height:980},colorScheme:params.theme,
     timezoneId:"Australia/Melbourne",reducedMotion:"reduce",deviceScaleFactor:1,serviceWorkers:"block"}),signal,c=>c.close().catch(()=>{}))
+    .catch(()=>{throw new RenderError("browser_context")})
   const abort=()=>{void context.close().catch(()=>{})}
   signal.addEventListener("abort",abort,{once:true})
-  let failure,observedETag
+  let failure,observedETag,phase="browser_context"
   const fail=error=>{
     failure??=error
     // A known failed render must not sit in a UI readiness wait until the
@@ -118,46 +148,53 @@ async function render(params, bearer, origin, signal, etag) {
         // Insights uses conditional reads during its regular document refresh.
         // 304 carries no navigation and must retain the UI's cached document.
         if(response.status()>=300 && response.status()<400 && response.status()!==304) {
-          fail(new RenderError("dashboard request redirected"))
+          fail(new RenderError("redirect_rejected",422,response.status()))
           await route.abort("blockedbyclient").catch(()=>{})
           return
         }
         if(new URL(target).pathname==="/api/insights/query" && response.ok()) {
           const result=await response.json()
           if(typeof result?.error==="string" && result.error.trim()) {
-            fail(new RenderError("dashboard data request failed"))
+            fail(new RenderError("query_error",422,response.status()))
             await route.abort("failed").catch(()=>{})
             return
           }
         }
         await route.fulfill({response})
       } catch {
-        fail(new RenderError("dashboard request failed"))
+        fail(new RenderError("network_error"))
         await route.abort("failed").catch(()=>{})
       }
     })
     await page.routeWebSocket("**/*",ws=>ws.close())
-    page.on("pageerror",()=>{fail(new RenderError("dashboard script failed"))})
+    page.on("pageerror",()=>{fail(new RenderError("script_error"))})
     page.on("response",response=>{
       const path=new URL(response.url()).pathname
-      if (path.startsWith("/api/insights/") && response.status()>=400) fail(new RenderError("dashboard data request failed"))
+      // The canonical client retries explicit capacity rejection on these
+      // read paths. Let it finish its bounded retry; persistent failures still
+      // fail the widget/error/deadline checks below, never produce a PNG.
+      const retry=response.status()===429 && supportsCapacityRetry(path,response.request().method())
+      if (path.startsWith("/api/insights/") && response.status()>=400 && !retry) fail(new RenderError("insights_http",422,response.status()))
       if(path==="/api/insights/dashboards/"+params.id && response.request().method()==="GET" && response.ok()) {
         observedETag=response.headers()["x-paprika-document-etag"]??response.headers().etag
-        if(observedETag!==etag)fail(new RenderError("dashboard changed during rendering",409))
+        if(observedETag!==etag)fail(new RenderError("revision_conflict",409))
       }
     })
     const path="/dashboard/insights/?dashboard="+encodeURIComponent(params.id)
+    phase="ui_navigation"
     await page.goto(origin+path,{waitUntil:"domcontentloaded",timeout:maxTime})
+    phase="ui_readiness"
     await page.getByTestId("dashboard-canvas").waitFor({state:"visible",timeout:maxTime})
     const tiles=page.locator("[data-widget-id]")
     const rejectWidgetErrors=async target=>{
       // An authorized dashboard can reference a provider the viewer cannot
       // read. That is rendered as an alert without making a failing HTTP call.
-      if(await target.locator('[role="alert"]:visible').count()) throw new RenderError("dashboard widget data unavailable")
+      if(await target.locator('[role="alert"]:visible').count()) throw new RenderError("widget_error")
     }
     await tiles.first().waitFor({state:"visible",timeout:maxTime})
     const count=await tiles.count()
     if (count<1 || count>48) throw Error("dashboard canvas has no bounded widgets")
+    phase="widget_readiness"
     for (let i=0;i<count;i++) {
       const tile=tiles.nth(i)
       await tile.scrollIntoViewIfNeeded()
@@ -171,11 +208,12 @@ async function render(params, bearer, origin, signal, etag) {
       await rejectWidgetErrors(tile)
     }
     if (params.focusWidget) {
+      phase="focus_unavailable"
       const panel=page.locator('[data-widget-id="'+params.focusWidget+'"]')
       if (await panel.count()!==1) throw Error("focused widget is not visible")
       await panel.scrollIntoViewIfNeeded()
       const target=panel.locator('[data-stat-sparkline][tabindex="0"],svg[role="img"][tabindex="0"],svg[role="group"][tabindex="0"]').first()
-      if(await target.count()!==1) throw new RenderError("focused widget has no inspectable chart")
+      if(await target.count()!==1) throw new RenderError("focus_unavailable")
       // Keyboard inspection selects a recorded sample independently of where
       // its plotted line happens to sit. Blind central hover may hit no data.
       await target.focus()
@@ -196,17 +234,18 @@ async function render(params, bearer, origin, signal, etag) {
     if(failure)throw failure
     await rejectWidgetErrors(page.getByTestId("dashboard-canvas"))
     signal.throwIfAborted()
-    if(observedETag!==etag)throw new RenderError("dashboard revision was not observed",409)
+    if(observedETag!==etag)throw new RenderError("revision_conflict",409)
     if(!params.focusWidget && await page.evaluate(()=>Math.max(document.documentElement.scrollHeight,document.body.scrollHeight))>12000) {
-      throw new RenderError("screenshot exceeds bounds",413)
+      throw new RenderError("screenshot_bounds",413)
     }
+    phase="screenshot_failed"
     const png=await page.screenshot({type:"png",fullPage:!params.focusWidget,animations:"disabled",timeout:maxTime})
     if(failure)throw failure
     await rejectWidgetErrors(page.getByTestId("dashboard-canvas"))
-    if (png.length>maxBytes || png.readUInt32BE(20)>12000) throw new RenderError("screenshot exceeds bounds",413)
+    if (png.length>maxBytes || png.readUInt32BE(20)>12000) throw new RenderError("screenshot_bounds",413)
     return png
   } catch(error) {
-    throw failure??error
+    throw failure??(error instanceof RenderError?error:new RenderError(phase))
   } finally {
     signal.removeEventListener("abort",abort)
     await context.close().catch(()=>{})
@@ -235,12 +274,17 @@ export function createRenderServer({secret,uiOrigin,renderPage=render,timeoutMs=
     const disconnected=()=>{if (!res.writableEnded) aborter.abort()}
     res.once("close",disconnected)
     try {
-      const payload=parseRenderRequest(JSON.parse(await readBody(req,aborter.signal)))
+      let payload
+      try { payload=parseRenderRequest(JSON.parse(await readBody(req,aborter.signal))) }
+      catch(error) { throw error instanceof RenderError?error:new RenderError("request_invalid") }
       const png=await renderPage(payload,req.headers.authorization.slice(7),root.origin,aborter.signal,etag)
       aborter.signal.throwIfAborted()
       res.writeHead(200,{"Content-Type":"image/png","Content-Length":png.length,"X-Paprika-Dashboard-ETag":etag}).end(png)
     } catch(error) {
-      if (!res.headersSent && !res.destroyed) res.writeHead(aborter.signal.aborted?504:error.status??422).end()
+      if (!res.headersSent && !res.destroyed) {
+        const failure=renderFailure(error,aborter.signal.aborted)
+        res.writeHead(failure.status,failure.headers).end()
+      }
     } finally {
       clearTimeout(timeout)
       res.off("close",disconnected)

@@ -77,6 +77,12 @@
   margin: 0 8px 0 0;
   mask-image: none;
 }
+/* A separate trend lane carries data rather than a backdrop. Keep its marks
+   at the authored color so light-theme sparklines do not fade into the card. */
+.withSparkline[data-sparkline-placement="side"] .plot [data-stat-trend],
+.withSparkline[data-sparkline-placement="side"] .plot [data-stat-point] {
+  stroke-opacity: 1;
+}
 @container insight-widget (max-width: 220px) {
   .withSparkline[data-sparkline-placement="side"] { gap: 4px; grid-template-columns: minmax(0, auto) minmax(28px, 1fr); }
 }

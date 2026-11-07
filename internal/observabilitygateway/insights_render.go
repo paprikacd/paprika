@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -161,18 +162,27 @@ func (c *InsightsAuthoringClient) renderDashboard(ctx context.Context, args dash
 	req.Header.Set("Content-Type", "application/json")
 	response, err := c.renderer.client.Do(req) // #nosec G704 -- Operator-configured, fixed loopback-only URL.
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser renderer unavailable"))
+		return dashboardRenderFailureResult("renderer_transport", 0, 0, nil), nil
 	}
 	data, err := readDashboardRenderResponse(response)
 	if err != nil {
+		var failure *dashboardRenderFailure
+		if errors.As(err, &failure) {
+			return dashboardRenderFailureResult(failure.category, failure.status, failure.upstreamStatus, nil), nil
+		}
 		return nil, err
 	}
 	if response.Header.Get("X-Paprika-Dashboard-ETag") != doc.ETag {
 		return nil, connect.NewError(connect.CodeAborted, errors.New("dashboard changed during browser capture; render again"))
 	}
 	config, err := png.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width != args.Width || config.Height < 1 || config.Height > 12000 {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("invalid browser screenshot"))
+	if err != nil {
+		return dashboardRenderFailureResult("png_decode_failed", response.StatusCode, 0, nil), nil
+	}
+	if config.Width != args.Width || config.Height < 1 || config.Height > 12000 {
+		return dashboardRenderFailureResult("png_dimensions_mismatch", response.StatusCode, 0, map[string]int{
+			"expectedWidth": args.Width, "actualWidth": config.Width, "actualHeight": config.Height,
+		}), nil
 	}
 	return &sdkmcp.CallToolResult{
 		StructuredContent: map[string]any{"id": args.ID, "etag": doc.ETag, "width": config.Width, "height": config.Height, "theme": args.Theme, "source": "browser", "mimeType": "image/png"},
@@ -187,16 +197,86 @@ func readDashboardRenderResponse(response *http.Response) ([]byte, error) {
 	data, readErr := io.ReadAll(io.LimitReader(response.Body, dashboardRenderMaxPNG+1))
 	closeErr := response.Body.Close()
 	if readErr != nil || closeErr != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser screenshot could not be read"))
+		return nil, &dashboardRenderFailure{category: "renderer_response_read", status: response.StatusCode}
 	}
 	if response.StatusCode == http.StatusConflict {
 		return nil, connect.NewError(connect.CodeAborted, errors.New("dashboard changed during browser capture; render again"))
 	}
-	if response.StatusCode != http.StatusOK || !strings.HasPrefix(response.Header.Get("Content-Type"), "image/png") {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("browser screenshot was not produced"))
+	if response.StatusCode != http.StatusOK {
+		return nil, &dashboardRenderFailure{
+			category: dashboardRenderFailureCategory(response.Header), status: response.StatusCode,
+			upstreamStatus: dashboardRenderUpstreamStatus(response.Header),
+		}
+	}
+	if !strings.HasPrefix(response.Header.Get("Content-Type"), "image/png") {
+		return nil, &dashboardRenderFailure{category: "renderer_content_type", status: response.StatusCode}
 	}
 	if len(data) > dashboardRenderMaxPNG {
 		return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("dashboard screenshot exceeds 4 MiB"))
 	}
 	return data, nil
+}
+
+type dashboardRenderFailure struct {
+	category       string
+	status         int
+	upstreamStatus int
+}
+
+func (*dashboardRenderFailure) Error() string { return "browser screenshot was not produced" }
+
+// Only these worker-defined codes cross the authenticated MCP boundary. Never
+// copy worker bodies, arbitrary headers, URLs, or browser exception messages.
+var dashboardRenderWorkerFailures = map[string]struct{}{
+	"render_failed": {}, "request_invalid": {}, "request_bounds": {}, "render_deadline": {},
+	"browser_start": {}, "browser_context": {}, "ui_navigation": {}, "ui_readiness": {},
+	"widget_readiness": {}, "widget_error": {}, "focus_unavailable": {},
+	"network_error": {}, "redirect_rejected": {}, "insights_http": {}, "query_error": {},
+	"script_error": {}, "revision_conflict": {}, "screenshot_bounds": {}, "screenshot_failed": {},
+}
+
+func dashboardRenderFailureCategory(headers http.Header) string {
+	values := headers.Values("X-Paprika-Render-Failure")
+	if len(values) == 1 {
+		if _, allowed := dashboardRenderWorkerFailures[values[0]]; allowed {
+			return values[0]
+		}
+	}
+	return "renderer_failure"
+}
+
+func dashboardRenderUpstreamStatus(headers http.Header) int {
+	values := headers.Values("X-Paprika-Render-Upstream-Status")
+	if len(values) != 1 || len(values[0]) != 3 {
+		return 0
+	}
+	status, err := strconv.Atoi(values[0])
+	if err != nil || status < 100 || status > 599 {
+		return 0
+	}
+	return status
+}
+
+func dashboardRenderFailureResult(category string, status, upstreamStatus int, dimensions map[string]int) *sdkmcp.CallToolResult {
+	details := map[string]any{"code": connect.CodeUnavailable.String(), "category": category}
+	message := "Dashboard browser capture failed: " + category + "."
+	if status != 0 {
+		details["httpStatus"] = status
+		message += fmt.Sprintf(" Renderer HTTP status: %d.", status)
+	}
+	if upstreamStatus != 0 {
+		details["upstreamStatus"] = upstreamStatus
+		message += fmt.Sprintf(" Upstream HTTP status: %d.", upstreamStatus)
+	}
+	for name, value := range dimensions {
+		details[name] = value
+	}
+	if dimensions != nil {
+		message += fmt.Sprintf(" Expected width: %d. PNG dimensions: %d by %d.",
+			dimensions["expectedWidth"], dimensions["actualWidth"], dimensions["actualHeight"])
+	}
+	return &sdkmcp.CallToolResult{
+		IsError: true, StructuredContent: map[string]any{"error": details},
+		Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: message}},
+	}
 }

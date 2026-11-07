@@ -462,6 +462,7 @@ jobs:
           e2e/insights-dashboard-query.e2e.mjs
           e2e/insights-observe-authoring.e2e.mjs
           e2e/insights-render-worker.e2e.mjs
+          e2e/insights-tooltip-peers.e2e.mjs
           e2e/insights-compact-stat.e2e.mjs
           e2e/insights-status-history-axis.e2e.mjs
           e2e/insights-variable-filter.e2e.mjs
@@ -486,6 +487,7 @@ jobs:
             artifacts/insights/dashboard-query
             artifacts/insights/observe-authoring
             artifacts/insights/render-worker
+            artifacts/insights/tooltip-peers
             artifacts/insights/variable-filter
             artifacts/insights/repository-examples/browser
             artifacts/insights/record-charts
