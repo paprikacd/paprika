@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Install Paprika and deploy your first Application · Paprika docs</title>
+<meta name="description" content="Set up the Paprika CLI and Kubernetes operator, create an Application, and inspect its first Release and workload health."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/getting-started/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Install Paprika and deploy your first Application · Paprika docs"/>
+<meta property="og:description" content="Set up the Paprika CLI and Kubernetes operator, create an Application, and inspect its first Release and workload health."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/getting-started/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Install Paprika and deploy your first Application · Paprika docs"/>
+<meta name="twitter:description" content="Set up the Paprika CLI and Kubernetes operator, create an Application, and inspect its first Release and workload health."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Install Paprika and deploy your first Application","description":"Set up the Paprika CLI and Kubernetes operator, create an Application, and inspect its first Release and workload health.","url":"https://paprikacd.github.io/paprika/docs/getting-started/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/getting-started/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Install Paprika and deploy your first Application","item":"https://paprikacd.github.io/paprika/docs/getting-started/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Start</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/" aria-current="page">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#install-the-cli">Install the CLI</a></li><li class="toc-level-2"><a href="#prerequisites">Prerequisites</a></li><li class="toc-level-2"><a href="#install-the-operator">Install the operator</a></li><li class="toc-level-3"><a href="#install-a-published-release">Install a published release</a></li><li class="toc-level-3"><a href="#build-and-install-the-current-source">Build and install the current source</a></li><li class="toc-level-2"><a href="#creating-your-first-application">Creating Your First Application</a></li><li class="toc-level-3"><a href="#what-happens">What Happens</a></li><li class="toc-level-3"><a href="#open-the-console">Open the console</a></li><li class="toc-level-2"><a href="#understanding-the-crds">Understanding the CRDs</a></li><li class="toc-level-2"><a href="#multi-cluster-deployment">Multi-Cluster Deployment</a></li><li class="toc-level-2"><a href="#canary-deployments">Canary Deployments</a></li><li class="toc-level-2"><a href="#monitoring">Monitoring</a></li><li class="toc-level-3"><a href="#operator-logs">Operator Logs</a></li><li class="toc-level-3"><a href="#prometheus-metrics">Prometheus Metrics</a></li><li class="toc-level-2"><a href="#cleanup">Cleanup</a></li><li class="toc-level-2"><a href="#next-steps">Next Steps</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="install-paprika-and-deploy-your-first-application">Install Paprika and deploy your first Application</h1><p class="article-description">Set up the Paprika CLI and Kubernetes operator, create an Application, and inspect its first Release and workload health.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/getting-started.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Install the Kubernetes operator, create an Application, then follow its Release
+and workload health. Use a non-production cluster for this first run. The
+examples use the Helm release <code>paprika</code> in the <code>paprika-system</code> namespace.</p>
+<p>The CLI is optional for this walkthrough: <code>kubectl</code> is enough to create and
+inspect the Application. Installing the CLI alone does not install the operator.</p>
+<h2 id="install-the-cli">Install the CLI</h2>
+<p>The release installer supports Darwin (macOS) and Linux on <code>amd64</code> and <code>arm64</code>:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 1"><code class="language-sh">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
+</code></pre></div>
+<p>It downloads the archive from the canonical GitHub release and verifies its
+checksum before installation. Audit the
+<a href="https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt">latest published checksums</a>.
+For a reproducible install, pin <code>PAPRIKA_VERSION</code>; the corresponding checksum
+file uses this exact URL pattern:</p>
+<p><code>https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</code></p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh
+</code></pre></div>
+<p>The installer does not invoke <code>sudo</code>. It chooses a writable directory on your
+<code>PATH</code> when possible and falls back to <code>~/.local/bin</code> with an exact <code>PATH</code> note.
+Set <code>PAPRIKA_INSTALL_DIR</code> to choose a different writable destination:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR=&quot;$HOME/.local/bin&quot; sh
+</code></pre></div>
+<p>Homebrew is not yet supported. For a source install, clone the repository and
+build the CLI directly:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 4"><code class="language-sh">git clone https://github.com/paprikacd/paprika.git
+cd paprika
+go build -o ./bin/paprika ./cmd/paprika
+</code></pre></div>
+<p>For that source build, invoke <code>./bin/paprika</code> or add its directory to <code>PATH</code>
+before using the commands below.</p>
+<p>For the project-hosted API only, log in and inspect its status. For your own installation, use your server address and configured authentication:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 5"><code class="language-sh">paprika login --server https://paprika.benebsworth.com
+paprika status
+</code></pre></div>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>Kubernetes cluster (v1.29+ recommended)</li>
+<li><code>kubectl</code> configured for that cluster and Helm with OCI support</li>
+<li>Cluster access to pull the operator and demo workload images</li>
+<li><a href="https://cert-manager.io/docs/installation/">cert-manager</a> only when enabling admission webhooks</li>
+</ul>
+<h2 id="install-the-operator">Install the operator</h2>
+<p>Choose a published release or build the current source. The source documentation
+tracks <code>master</code>; newer features can require a newer operator than a pinned release.</p>
+<h3 id="install-a-published-release">Install a published release</h3>
+<p>This example pins the <a href="https://github.com/paprikacd/paprika/releases/tag/v0.4.7">0.4.7 release</a>
+and uses its published OCI chart and server image. That server image supports
+<code>linux/amd64</code> nodes; the CLI's separate <code>arm64</code> downloads do not imply an ARM
+server image. This route does not require local Go, Docker, or a registry push.</p>
+<p>Set the image repository explicitly: the chart's source default is the
+placeholder <code>controller</code>, including in this release. Keep the chart version and
+server image version together.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 6"><code class="language-sh">kubectl config current-context
+helm install paprika oci://ghcr.io/paprikacd/charts/paprika \
+  --version 0.4.7 \
+  --namespace paprika-system \
+  --create-namespace \
+  --set manager.image.repository=ghcr.io/paprikacd/paprika \
+  --set manager.image.tag=0.4.7 \
+  --wait --timeout 5m
+kubectl get pods -n paprika-system
+</code></pre></div>
+<h3 id="build-and-install-the-current-source">Build and install the current source</h3>
+<p>Use this route when evaluating changes on <code>master</code>. It additionally requires
+Git, Make, Go 1.26+, Docker, and a registry that you can push to and your cluster
+can pull from. Build an image for the cluster's node architecture and pass the
+same image tag to the chart.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 7"><code class="language-sh">git clone https://github.com/paprikacd/paprika.git
+cd paprika
+kubectl config current-context
+
+# Replace these placeholders with your registry and immutable tag.
+make docker-build docker-push IMG=YOUR_REGISTRY/paprika:YOUR_TAG
+make helm-deploy IMG=YOUR_REGISTRY/paprika:YOUR_TAG
+kubectl get pods -n paprika-system
+</code></pre></div>
+<p>When your build machine and cluster use different architectures, set
+<code>DOCKER_DEFAULT_PLATFORM</code> for the build, for example
+<code>DOCKER_DEFAULT_PLATFORM=linux/amd64 make docker-build docker-push IMG=YOUR_REGISTRY/paprika:YOUR_TAG</code>
+for an amd64 cluster.</p>
+<p>Both routes use the chart's default single-pod configuration and install Paprika
+CRDs. Its default webhooks and cert-manager integration
+are disabled; enable both only after installing cert-manager and reviewing the
+<a href="https://github.com/paprikacd/paprika/blob/master/charts/chart/values.yaml">chart values</a>. For a local controller development
+loop instead, follow <a href="https://github.com/paprikacd/paprika/blob/master/CONTRIBUTING.md">CONTRIBUTING.md</a> and check the active
+Kubernetes context first.</p>
+<h2 id="creating-your-first-application">Creating Your First Application</h2>
+<p>An <code>Application</code> is the top-level resource that models a deployment. Save this
+manifest as <code>application.yaml</code>. It uses the demo Helm chart bundled inside
+Paprika's operator image, with one replica and a rolling deployment. The chart
+path is inside the container, not a directory on your laptop.</p>
+<p>The demo workload uses <code>nginxinc/nginx-unprivileged:alpine</code>. Your cluster must be
+able to pull that image. The bundled chart avoids depending on an old external
+Helm chart version for the first walkthrough.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 8"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: paprika-system
+spec:
+  source:
+    type: helm
+    chart:
+      path: /charts/demo-app
+  stages:
+    - name: dev
+      ring: 1
+  strategy: Rolling
+  syncPolicy: Auto
+  parameters:
+    replicaCount: &quot;1&quot;
+</code></pre></div>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 9"><code class="language-sh">kubectl config current-context
+kubectl apply -f application.yaml
+</code></pre></div>
+<h3 id="what-happens">What Happens</h3>
+<p>When you create the Application, paprika's controllers automatically:</p>
+<ol>
+<li><strong>Template Created</strong> — A <code>Template</code> resource is created from the <code>source</code> field</li>
+<li><strong>Stage Created</strong> — A <code>Stage</code> resource is created for each entry in <code>stages</code></li>
+<li><strong>Release Created</strong> — A <code>Release</code> is created to promote the rendered manifests</li>
+<li><strong>Manifests Rendered</strong> — The Helm chart is rendered using the Helm SDK</li>
+<li><strong>Manifests Applied</strong> — Rendered resources are applied to the cluster</li>
+<li><strong>Health Verified</strong> — The operator monitors resource health</li>
+</ol>
+<p>Check status:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 10"><code class="language-sh">kubectl get application my-app -n paprika-system -o yaml
+kubectl get releases,stages,templates -n paprika-system
+kubectl get deployments,services -n paprika-system \
+  -l app.paprika.io/name=my-app
+</code></pre></div>
+<p>Inspect <code>status.phase</code>, conditions, and the related Release. Health describes
+the observed workload; sync describes whether live resources match the rendered
+desired state. An accepted manifest alone does not confirm deployment. If the
+Application is not progressing, inspect its conditions and the operator logs
+before applying another change.</p>
+<h3 id="open-the-console">Open the console</h3>
+<p>For the default single-pod installation above, forward the local API/UI service:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 11"><code class="language-sh">kubectl -n paprika-system port-forward \
+  svc/paprika-manager-api-service 3000:3000
+</code></pre></div>
+<p>Open <a href="http://localhost:3000">the local console</a> and inspect <code>my-app</code>. Keep the
+port-forward running while using it. The default install has no public ingress;
+configure <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/auth.md">authentication</a> before exposing the API or console to
+other networks. Insights and the Observe gateway have separate setup guides and
+are not enabled by this operator-only walkthrough.</p>
+<p>For the complete Paprika-managed DeepHost example, including Git source
+resolution, chart rendering, cluster-scoped RBAC, health-gated promotion, and
+the DeepHost runtime/request path, see the <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/deephost.md">DeepHost Integration guide</a>.</p>
+<h2 id="understanding-the-crds">Understanding the CRDs</h2>
+<p>The Application controller creates the supporting records for the first
+walkthrough; you do not need to create each one separately.</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>What it records</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Application</code></td>
+<td>Source, delivery settings, target stages, and observed application state.</td>
+</tr>
+<tr>
+<td><code>Template</code></td>
+<td>The source used to render Kubernetes manifests.</td>
+</tr>
+<tr>
+<td><code>Stage</code></td>
+<td>A deployment target, strategy, and configured verification or approval gates.</td>
+</tr>
+<tr>
+<td><code>Release</code></td>
+<td>A particular delivery attempt and its progress through apply and verification.</td>
+</tr>
+<tr>
+<td><code>Pipeline</code></td>
+<td>Optional container steps run as Kubernetes Jobs.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Use the <a href="../../docs/concepts/">feature and concept guide</a> for the wider resource model
+and the <a href="https://github.com/paprikacd/paprika/tree/master/api/pipelines/v1alpha1">API types</a> for field definitions. For
+separate environment Applications that promote one tested Git commit, follow
+the <a href="../../docs/environment-promotion/">environment promotion guide</a>.</p>
+<h2 id="multi-cluster-deployment">Multi-Cluster Deployment</h2>
+<p>The first example deploys to the operator's cluster. To deploy elsewhere,
+register a target and choose the appropriate direct or satellite connection.
+The <a href="../../docs/multi-cluster/">multi-cluster guide</a> covers credentials, target
+selection, permissions, and the distinction between observed inventory and
+managed deployments.</p>
+<h2 id="canary-deployments">Canary Deployments</h2>
+<p>Configure traffic routing before changing the first example to <code>Canary</code>.
+Paprika supports standalone Stage traffic routers for Istio and Gateway API,
+or charts that render the injected <code>canaryWeight</code> into their routing resources.
+Application inline stages do not accept <code>trafficRouter</code>.</p>
+<p>Canary steps are integer percentages, such as <code>[5, 25, 50, 100]</code>. The
+<a href="../../docs/canary/">canary guide</a> contains the supported resource shapes, step
+timing, analysis checks, and rollback settings. Use those examples with a
+chart and traffic backend that implement the intended weight changes.</p>
+<h2 id="monitoring">Monitoring</h2>
+<h3 id="operator-logs">Operator Logs</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 12"><code class="language-sh">kubectl logs -n paprika-system deployment/paprika-controller-manager -c manager -f
+</code></pre></div>
+<h3 id="prometheus-metrics">Prometheus Metrics</h3>
+<p>The controller metrics port defaults to <code>8443</code>. Transport and access depend on
+the installed chart values: <code>metrics.secure: true</code> is the default and uses HTTPS
+with authentication and authorization; <code>metrics.secure: false</code> explicitly
+selects HTTP. A port-forward does not bypass metrics authorization.</p>
+<p>Key metrics:</p>
+<ul>
+<li><code>paprika_out_of_sync{app, namespace}</code> — Current out-of-sync resource count (gauge). Alert on &gt; 0 for &gt; 5 minutes.</li>
+<li><code>paprika_prunable{app, namespace}</code> — Current prunable resource count (gauge). Alert on &gt; 0 for &gt; 10 minutes.</li>
+<li><code>paprika_prune_total{app, namespace, kind}</code> — Resources pruned per apply (counter). Alert on unexpected spikes.</li>
+<li><code>paprika_reconcile_total{controller, result}</code> — Reconciliation count</li>
+<li><code>paprika_reconcile_duration_seconds</code> — Reconciliation duration histogram</li>
+<li><code>paprika_release_phase_total</code> — Release phase transitions</li>
+<li><code>paprika_application_phase_total</code> — Application phase transitions</li>
+<li><code>paprika_pipeline_phase_total</code> — Pipeline phase transitions</li>
+</ul>
+<p>For transport-specific scraping guidance, the metric reference, and alerting rules, see the
+<a href="../../docs/metrics/">Metrics and Alerting guide</a>.</p>
+<h2 id="cleanup">Cleanup</h2>
+<p>Delete the test Application while its operator and target credentials are still
+available. Use background cascading so Release cleanup can finish with its
+Stage routing intact:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 13"><code class="language-sh">kubectl config current-context
+kubectl delete application my-app -n paprika-system \
+  --cascade=background --wait=true --timeout=120s
+kubectl get releases -n paprika-system
+</code></pre></div>
+<p>Wait for this Application's Releases and deployed workloads to be removed.
+If deletion times out, inspect its finalizers and operator logs before
+uninstalling the controller. When the release is no longer managing any
+Applications you want to keep, remove the operator installed by this guide:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 14"><code class="language-sh">kubectl config current-context
+helm uninstall paprika --namespace paprika-system
+</code></pre></div>
+<p>The chart retains its CRDs. Removing a CRD deletes its custom resources across
+the cluster, so CRD removal is a separate cluster-wide teardown step, not part
+of deleting this demo.</p>
+<h2 id="next-steps">Next Steps</h2>
+<ul>
+<li>Read the <a href="https://github.com/paprikacd/paprika/blob/master/README.md#architecture">architecture overview</a> to understand the system design</li>
+<li>Review the <a href="https://github.com/paprikacd/paprika/tree/master/config/samples">sample manifests</a> for more examples</li>
+<li>Explore the <a href="https://github.com/paprikacd/paprika/tree/master/api/pipelines/v1alpha1">API types</a> for all available fields</li>
+<li>Configure <a href="../../docs/environment-promotion/">environment promotion</a> or <a href="../../docs/pipelines/">Pipeline steps</a></li>
+<li><a href="../../docs/mcp-plugin/">Install the Paprika plugin in Codex or Claude</a> to inspect app health, debug failures, and manage delivery from chat</li>
+<li>Learn about <a href="../../docs/drift-and-prune/">drift detection and pruning</a></li>
+<li>Set up <a href="../../docs/metrics/">metrics and alerting</a></li>
+<li>Connect <a href="../../docs/observe-plugin/">Paprika Observe</a> and explore <a href="../../docs/dashboards/">dashboard examples</a></li>
+<li>Read the <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">operations guide</a> for build, deploy, and debug workflows</li>
+</ul>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/"><span>Browse</span><strong>All documentation</strong></a><a href="../../docs/concepts/" rel="next"><span>Next guide</span><strong>Paprika concepts and feature guide</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

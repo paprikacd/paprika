@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Promoting a tested Git revision across Kubernetes environments · Paprika engineering</title>
+<meta name="description" content="Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="article"/>
+<meta property="og:title" content="Promoting a tested Git revision across Kubernetes environments · Paprika engineering"/>
+<meta property="og:description" content="Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+<meta property="article:published_time" content="2026-11-07"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Promoting a tested Git revision across Kubernetes environments · Paprika engineering"/>
+<meta name="twitter:description" content="Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BlogPosting","headline":"Promoting a tested Git revision across Kubernetes environments","description":"Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.","url":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/","mainEntityOfPage":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","datePublished":"2026-11-07","articleSection":"Delivery","isPartOf":{"@type":"Blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Promoting a tested Git revision across Kubernetes environments","item":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Delivery</span></li></ol></nav></div>
+<div class="article-layout article-layout--blog shell">
+
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#give-each-environment-its-own-application">Give each environment its own Application</a></li><li class="toc-level-2"><a href="#pin-source-identity-and-preserve-target-configuration">Pin source identity and preserve target configuration</a></li><li class="toc-level-2"><a href="#put-checks-on-the-environment-they-actually-test">Put checks on the environment they actually test</a></li><li class="toc-level-2"><a href="#review-the-candidate-before-approving-it">Review the candidate before approving it</a></li><li class="toc-level-2"><a href="#pin-container-images-as-well">Pin container images as well</a></li><li class="toc-level-2"><a href="#verify-the-deployed-target">Verify the deployed target</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="promoting-a-tested-git-revision-across-kubernetes-environments">Promoting a tested Git revision across Kubernetes environments</h1><p class="article-description">Follow one Git revision from dev to production while keeping environment configuration, verification and release approval explicit.</p><div class="article-meta"><span>By Paprika maintainers</span><time datetime="2026-11-07">7 November 2026</time><span>4 min read</span><a href="https://github.com/paprikacd/paprika/blob/master/landing/content/blog/promoting-pinned-revisions.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Staging has passed its checks. Production is about to deploy. The question
+to answer is precise: which revision will production receive?</p>
+<p>Resolving a moving branch again can select a commit that staging has never
+run. Paprika's Git promotion flow selects the exact revision from a completed
+upstream Release. Each environment keeps its own Application and deployment
+settings, while the source revision connects the chain. The
+<a href="../../docs/environment-promotion/">environment promotion guide</a>
+defines this behaviour and provides the complete manifest.</p>
+<h2 id="give-each-environment-its-own-application">Give each environment its own Application</h2>
+<p>A dev-to-production chain uses separate Applications for dev, staging and
+production. Their records live on the management cluster. Each Application
+selects its workload target through its Stage; that target can be a different
+namespace or cluster.</p>
+<p>This separation makes two decisions explicit:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Question it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spec.trigger</code></td>
+<td>Where does the next deployment candidate come from?</td>
+</tr>
+<tr>
+<td><code>spec.syncPolicy</code></td>
+<td>Can the selected candidate deploy automatically?</td>
+</tr>
+</tbody>
+</table></div>
+<p>For the common three-environment flow, dev uses a <code>GitOps</code> trigger and
+automatic sync. Staging uses <code>Promotion</code> and automatic sync. Production uses
+<code>Promotion</code> and manual sync. A <code>Manual</code> trigger has a different meaning:
+source-driven candidate selection on a sync request. It does not express an
+approval bound to staging's release.</p>
+<p>Here is an illustrative fragment of a production Application spec. It needs
+the source and Stage configuration from your complete Application:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 1"><code class="language-yaml">spec:
+  trigger:
+    type: Promotion
+    from:
+      name: checkout
+      namespace: pipeline-stg
+  syncPolicy: Manual
+</code></pre></div>
+<p><code>from.namespace</code> identifies the upstream Application's management namespace,
+not a namespace on a remote target cluster. See the
+<a href="../../docs/environment-promotion/#choose-a-trigger-for-each-environment">trigger rules</a>
+before adapting this fragment.</p>
+<h2 id="pin-source-identity-and-preserve-target-configuration">Pin source identity and preserve target configuration</h2>
+<p>In Git promotion, upstream and downstream Applications resolve to the same
+repository. The downstream render uses the completed upstream Release's
+commit SHA. Its own chart path, values, parameters and target namespace still
+apply. A new push to the repository cannot, by itself, supply a new candidate
+to a Promotion Application.</p>
+<p>This is useful when dev runs one replica and production runs several, or
+when environments have different ingress and secret references. Those
+differences remain declared in the target Application. They are not copied
+from the upstream environment.</p>
+<p>Keep the selected commit reachable in the repository. A pinned identifier
+does not help a later render if the repository can no longer serve the
+commit. Review all environment-specific paths at that revision, too: a
+commit that contains the dev chart path must also contain the path production
+will render. These are prerequisites in the
+<a href="../../docs/environment-promotion/#complete-example">complete example</a>.</p>
+<h2 id="put-checks-on-the-environment-they-actually-test">Put checks on the environment they actually test</h2>
+<p>Promotion has a before-and-after boundary. <code>trigger.tests</code> runs a verification
+Pipeline against the upstream environment before the downstream Release is
+admitted. The Pipeline record belongs to the downstream Application's
+namespace, but its Jobs execute on the management cluster in the operator's
+configured execution namespace.</p>
+<p>A test must therefore reach the upstream endpoint from that execution
+location. A remote cluster's internal service DNS name is not generally
+reachable there. Choose an endpoint with the intended network path, or use
+a target-side hook when a check needs to run inside the workload cluster.
+The <a href="../../docs/environment-promotion/#tests-before-promotion-and-verification-after-deployment">verification guide</a>
+describes both placements.</p>
+<p>Checks of the newly deployed target belong in <code>stages[].gates</code> or the
+appropriate target-side verification flow. Testing dev successfully cannot
+establish that production's ingress, credentials or dependencies work.</p>
+<p>For source-based verification, explicitly fetch and check out
+<code>PAPRIKA_PROMOTION_REVISION</code> in a container with the required tools. The
+workflow engine does not automatically check out <code>tests.sources</code>. A test
+that silently uses a default branch would undo the revision discipline you
+are trying to establish.</p>
+<h2 id="review-the-candidate-before-approving-it">Review the candidate before approving it</h2>
+<p>Read promotion status on the production Application. This command assumes
+the names from the example chain:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">kubectl -n pipeline-prod get application checkout -o json | jq &#39;{
+  acceptedRelease: .status.releaseRef,
+  promotion: .status.promotion,
+  conditions: .status.conditions
+}&#39;
+</code></pre></div>
+<p>Review the upstream Application and Release identities, the selected Git
+revision, the verification Pipeline and its results. Production approval is
+bound to the candidate's upstream Release UID. A generic sync request does
+not approve an unreviewed upstream version.</p>
+<p>Changing the candidate or its deployment and verification settings can
+invalidate that approval. While a candidate waits or fails verification, the
+accepted downstream release remains in place. Failed verification is latched;
+an explicit candidate retry follows the documented retry flow and requires
+fresh approval where manual sync applies. Use the
+<a href="../../docs/environment-promotion/">approval and retry instructions</a>
+for the exact annotations and status checks.</p>
+<h2 id="pin-container-images-as-well">Pin container images as well</h2>
+<p>A Git SHA identifies source content. It does not make a mutable container
+tag immutable. Two environments rendering the same chart revision can still
+pull different image bytes if the chart uses a tag that has moved.</p>
+<p>For reproducible application images, commit digest-pinned references into
+the promoted source or deliberately manage explicit per-environment image
+parameters. Git promotion does not automatically transfer an image built by
+<code>spec.build</code> or a declared Pipeline artifact. The
+<a href="../../docs/environment-promotion/#keep-environment-configuration-explicit">configuration boundary</a>
+is part of the contract, not an implementation detail to infer away.</p>
+<h2 id="verify-the-deployed-target">Verify the deployed target</h2>
+<p>After admission, inspect the new Release, target resources and fresh health
+and sync observations. The selected SHA establishes what was rendered;
+the target's observations establish what happened after deployment.</p>
+<p>Start with the <a href="https://github.com/paprikacd/paprika/blob/master/config/samples/pipelines_v1alpha1_environment_promotion.yaml">complete promotion manifest</a>,
+adapt its repository, paths, clusters and endpoints, and follow the
+<a href="../../docs/environment-promotion/">environment promotion guide</a>
+on a test installation. Keep the revision, environment settings, verification
+result and approved candidate together when reviewing each promotion.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More articles"><a href="../../blog/kubernetes-health-vs-drift/" rel="prev"><span>Previous article</span><strong>Kubernetes health and drift answer different questions</strong></a><a href="../../blog/building-dashboards-with-mcp/" rel="next"><span>Next article</span><strong>Build and verify observability dashboards through MCP</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

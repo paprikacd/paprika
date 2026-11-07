@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Promote releases through dev, staging and production · Paprika docs</title>
+<meta name="description" content="Connect environment-specific Applications with pinned Git revisions, upstream verification, candidate approval and explicit target settings."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/environment-promotion/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Promote releases through dev, staging and production · Paprika docs"/>
+<meta property="og:description" content="Connect environment-specific Applications with pinned Git revisions, upstream verification, candidate approval and explicit target settings."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/environment-promotion/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Promote releases through dev, staging and production · Paprika docs"/>
+<meta name="twitter:description" content="Connect environment-specific Applications with pinned Git revisions, upstream verification, candidate approval and explicit target settings."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Promote releases through dev, staging and production","description":"Connect environment-specific Applications with pinned Git revisions, upstream verification, candidate approval and explicit target settings.","url":"https://paprikacd.github.io/paprika/docs/environment-promotion/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/environment-promotion/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Promote releases through dev, staging and production","item":"https://paprikacd.github.io/paprika/docs/environment-promotion/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Deliver</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/" aria-current="page">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#choose-a-trigger-for-each-environment">Choose a Trigger for Each Environment</a></li><li class="toc-level-2"><a href="#tests-before-promotion-and-verification-after-deployment">Tests Before Promotion and Verification After Deployment</a></li><li class="toc-level-2"><a href="#complete-example">Complete Example</a></li><li class="toc-level-2"><a href="#keep-environment-configuration-explicit">Keep Environment Configuration Explicit</a></li><li class="toc-level-2"><a href="#promote-independently-rendered-inline-artifacts">Promote Independently Rendered Inline Artifacts</a></li><li class="toc-level-2"><a href="#focused-kind-validation">Focused Kind Validation</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="dev--staging--production-promotion">Promote releases through dev, staging and production</h1><p class="article-description">Connect environment-specific Applications with pinned Git revisions, upstream verification, candidate approval and explicit target settings.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/environment-promotion.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Use a separate <code>Application</code> for each environment, then connect them through
+<code>spec.trigger.from</code>. Dev discovers changes through GitOps. Staging takes a
+completed dev release, runs tests against dev, and deploys that release's Git
+commit to its own cluster. Production takes a completed staging release and
+waits for approval before deploying the same commit.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">text</span></div><pre tabindex="0" aria-label="text code example 1"><code class="language-text">Git change → dev Application → dev health + tests
+                           → stg Application → stg health + approval
+                                             → prod Application
+</code></pre></div>
+<p>All three Application records live on the Paprika management cluster. Each
+Application has exactly one stage, whose <code>cluster</code> reference determines its
+deployment target. The Applications can live in different management
+namespaces and deploy to different workload namespaces or clusters. An
+Application reference identifies another management-cluster Application;
+it does not address a CR installed on a remote cluster.</p>
+<h2 id="choose-a-trigger-for-each-environment">Choose a Trigger for Each Environment</h2>
+<p><code>spec.trigger</code> controls how Paprika selects a deployment candidate.
+<code>spec.syncPolicy</code> controls whether the selected candidate can deploy
+automatically.</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Candidate selection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GitOps</code></td>
+<td>Discover changes from the configured source.</td>
+</tr>
+<tr>
+<td><code>Promotion</code></td>
+<td>Select the exact Git SHA from the referenced Application's completed release after upstream health, sync, and verification pass.</td>
+</tr>
+<tr>
+<td><code>Manual</code></td>
+<td>Discover a source candidate when an operator requests a sync.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Omitting <code>spec.trigger</code> retains existing Application behavior. A promotion
+chain uses <code>GitOps</code> plus <code>syncPolicy: Auto</code> in dev, <code>Promotion</code> plus
+<code>syncPolicy: Auto</code> in staging, and <code>Promotion</code> plus <code>syncPolicy: Manual</code> in
+production. Using <code>Manual</code> as the trigger chooses source-driven manual
+deployment; use <code>Promotion</code> with manual sync policy when approval must remain
+bound to an upstream release.</p>
+<p>For a Promotion trigger, <code>from.name</code> is required. <code>from.namespace</code> defaults to
+the downstream Application's namespace. Specify it explicitly for a reference
+across namespaces:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 2"><code class="language-yaml">trigger:
+  type: Promotion
+  from:
+    name: checkout
+    namespace: pipeline-dev
+</code></pre></div>
+<p>Git promotion uses <code>source.type: git</code>. The upstream and downstream
+Applications must resolve to the same repository. They can use different
+paths, inline Helm values, parameters, and target namespaces. Every downstream
+render pins the upstream completed release's immutable commit SHA instead of
+resolving its configured branch again. Keep that commit reachable in the
+repository until dependent releases no longer need it.</p>
+<p>Git pushes alone do not deploy a Promotion Application. A new candidate must
+come from its upstream Application, and upstream progress or failed health,
+sync, tests, or gates blocks that candidate. Drift detection and configured
+self-healing operate against the accepted release's source identity, so a
+repair does not silently deploy a newer branch head.</p>
+<p>Paprika retains the accepted deployment settings in
+<code>status.acceptedDeployment</code>. Changes to a downstream source path, values,
+parameters, or cluster start fresh verification of the same completed upstream
+release; a new upstream release is not required. The accepted settings remain
+active until that verification and deployment admission succeed. An approved
+candidate waiting on a sync window cannot redirect repairs of the existing release.
+Editing a pending candidate's settings invalidates verification and expires
+its manual approval, so review and approve the revised settings again.
+Target edits receive a fresh verification Pipeline and observation window,
+including when returning to previously used settings. The prior verification
+Pipeline and its Jobs must stop first. These automatic attempts do not consume
+the explicit retry budget, and a failed candidate still requires an explicit retry.</p>
+<p>Configured health checks must be Healthy, match their current configuration, and
+have run after deployment completed. Promotion accepts a result for less than two
+observation periods (with a one-second minimum period), allowing the next scheduled
+probe to finish and publish its result. A newer unhealthy result blocks immediately;
+missing, future-dated, changed, or expired evidence resets the observation window.
+This also applies to SLO checks without changing their sampling schedule.</p>
+<p>Promotion requires a recent desired/live resource observation tied to the
+exact upstream Release UID and revision. Custom health checks and analyses
+must also pass after that deployment became Healthy. Missing or stale target
+observations block promotion, including agent-only clusters without a direct
+read transport.</p>
+<p>Configured step retries run within the verification Pipeline. Once tests or an
+upstream gate fail, that candidate stays failed; the currently accepted downstream
+release remains in place. A different completed upstream release starts a fresh
+candidate. To explicitly retry a failed candidate before admission, review the
+current upstream Release UID and target settings, then supply a fresh UUID:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh">paprika_candidate_uid=&quot;$(kubectl -n pipeline-stg get application checkout \
+  -o jsonpath=&#39;{.status.promotion.sourceReleaseUID}&#39;)&quot;
+paprika_retry_token=&quot;$(uuidgen | tr &#39;[:upper:]&#39; &#39;[:lower:]&#39;)&quot;
+kubectl config current-context
+kubectl -n pipeline-stg annotate application checkout \
+  &quot;paprika.io/promotion-retry=$paprika_candidate_uid:$paprika_retry_token&quot; --overwrite
+</code></pre></div>
+<p>The retry requires the same current upstream Application and Release UIDs and
+fresh healthy, synced source evidence. It expires the old approval and window,
+records <code>status.promotion.verificationAttempt</code>, and creates a new verification
+Pipeline and Jobs bound to the current target settings. The annotation is consumed;
+replaying its token cannot reopen that attempt. Manual approval must be supplied
+again after the new tests and gates pass. A manual sync cannot retry a rejected
+candidate. An already admitted Release uses manual sync to repair its accepted
+deployment instead of this verification retry.</p>
+<p>Paprika remembers all consumed retry UUIDs for the candidate, including retries
+without a test Pipeline. Replaying any consumed UUID cannot reopen verification.
+Each candidate permits at most 32 explicit retries; history is never discarded
+to make room. A new upstream Release starts a new candidate and retry history.</p>
+<p><code>RetryStep</code> applies to observed Failed Pipelines. It resets the
+requested failed or skipped step and its descendants, including their
+timestamps and log references, and restores their configured retry budgets. It
+preserves successful prerequisites and unrelated terminal results. Retrying a
+step in the old promotion Pipeline does not retry its rejected candidate: use the
+Application annotation to obtain a fresh verification attempt.</p>
+<p>Before reopening execution, the API checks prior Jobs in the configured operator
+execution namespace. Every prior Job must have a terminal Complete or Failed
+condition, no active Pods, and no pending deletion. Missing Job access or unknown
+execution namespace blocks retry. Cancelled Pipelines and cancelled steps require
+a new Pipeline, since cancellation does not establish that the old execution has
+stopped.
+The Application promotion retry performs the same check for its previous
+verification Pipeline before creating a fresh attempt.</p>
+<p>For cleanup, delete Applications with the default background cascade and wait
+for their Releases to disappear before deleting their namespaces or cluster
+credentials. An Application finalizer keeps its Stages available while Release
+cleanup removes deployed workloads. Foreground cascades and namespace deletion
+can remove Stage routing independently and leave Release cleanup waiting; durable
+target routing in Releases is not yet recorded.</p>
+<h2 id="tests-before-promotion-and-verification-after-deployment">Tests Before Promotion and Verification After Deployment</h2>
+<p>Put tests that qualify the upstream environment under <code>trigger.tests</code>. This
+uses the same step definition as <code>spec.build</code>: container <code>image</code>, shell
+<code>script</code>, step <code>depends</code>, <code>timeout</code> in seconds, and retry count. Paprika creates
+a verification Pipeline for each upstream release. The Pipeline CR lives in
+the downstream Application's namespace. Its Jobs run on the management cluster
+in the operator's configured execution namespace, which can differ from the
+Application namespace.</p>
+<p>For staging, these tests run against dev before staging receives a release:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 4"><code class="language-yaml">trigger:
+  type: Promotion
+  from:
+    name: checkout
+    namespace: pipeline-dev
+  tests:
+    maxParallel: 1
+    steps:
+      - name: dev-smoke
+        image: curlimages/curl:8.12.1
+        script: |
+          set -eu
+          printf &#39;Verifying %s/%s release %s at %s\n&#39; \
+            &quot;$PAPRIKA_PROMOTION_SOURCE_NAMESPACE&quot; \
+            &quot;$PAPRIKA_PROMOTION_SOURCE_APPLICATION&quot; \
+            &quot;$PAPRIKA_PROMOTION_SOURCE_RELEASE&quot; \
+            &quot;$PAPRIKA_PROMOTION_REVISION&quot;
+          curl --fail --silent --show-error --max-time 10 \
+            https://checkout-dev.example.com/healthz
+        timeout: 60
+        retry: 2
+</code></pre></div>
+<p>Each verification step receives these environment variables:</p>
+<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PAPRIKA_PROMOTION_REVISION</code></td>
+<td>Exact upstream release Git commit SHA.</td>
+</tr>
+<tr>
+<td><code>PAPRIKA_PROMOTION_SOURCE_APPLICATION</code></td>
+<td>Upstream Application name.</td>
+</tr>
+<tr>
+<td><code>PAPRIKA_PROMOTION_SOURCE_NAMESPACE</code></td>
+<td>Upstream Application's management-cluster namespace.</td>
+</tr>
+<tr>
+<td><code>PAPRIKA_PROMOTION_SOURCE_RELEASE</code></td>
+<td>Upstream Release name.</td>
+</tr>
+<tr>
+<td><code>PAPRIKA_PROMOTION_ATTEMPT</code></td>
+<td>Explicit retry UUID; absent for the initial attempt.</td>
+</tr>
+</tbody>
+</table></div>
+<p>These describe the candidate and contain no credentials. The workflow engine
+currently does not check out <code>tests.sources</code>. Probe the deployed upstream
+environment, as this example does, or have the test script explicitly clone
+the repository and check out <code>PAPRIKA_PROMOTION_REVISION</code>. Choose a container
+image with Git and the required test tools when running source-based tests.</p>
+<p>Use <code>trigger.gates</code> for controller-executed checks of the upstream environment.
+<code>smoke-test</code> performs an HTTP GET without following redirects and requires a 2xx
+response; <code>timeout</code> is its request timeout in seconds. It does not validate the
+response body or authenticate a user. An upstream <code>duration</code> requires <code>timeout</code>
+seconds of uninterrupted sampled source readiness: an observed unhealthy, missing
+or stale source resets its window. An approved candidate waiting for a sync window
+retains its authorization, but must earn a fresh duration window after an upstream
+readiness interruption before admission. Observations are sampled at reconcile and
+health-check intervals; this does not prove the absence of outages between samples.
+A deployment-stage <code>duration</code> remains a fixed delay. These
+checks must be reachable from the management cluster. A remote cluster's
+<code>*.svc.cluster.local</code> address normally cannot be used from the management
+cluster; use an appropriate reachable endpoint.</p>
+<p>After deployment, the target Application retains its normal stage strategy,
+canary analysis, approval gates, and verification gates. Put checks of the
+newly deployed environment in <code>stages[].gates</code>. For tests that must execute
+inside the target cluster, include a Job annotated
+<code>argocd.argoproj.io/hook: PostSync</code> in its source manifests. PostSync hook Jobs
+run through the target stage's deployment transport, and a failed hook prevents
+that release from qualifying for downstream promotion. See
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">operations</a> for hook behavior and
+<a href="../../docs/multi-cluster/">multi-cluster orchestration</a> for target transport support.</p>
+<h2 id="complete-example">Complete Example</h2>
+<p>The <a href="https://github.com/paprikacd/paprika/blob/master/config/samples/pipelines_v1alpha1_environment_promotion.yaml">sample manifest</a>
+defines <code>checkout</code> Applications in <code>pipeline-dev</code>, <code>pipeline-stg</code>, and
+<code>pipeline-prod</code>. Each has one inline stage referencing its own Cluster:
+<code>dev-cluster</code>, <code>stg-cluster</code>, and <code>prod-cluster</code> in <code>paprika-system</code>.
+Paprika creates the corresponding Stage and Release resources; no separate
+Stage manifest is needed.</p>
+<p>Before applying it:</p>
+<ul>
+<li>Install CRDs and a controller containing Application trigger support.</li>
+<li>Register the three Cluster resources. For remote clusters, provide direct
+deployment credentials with the permissions needed by the application and
+hooks. See <a href="../../docs/multi-cluster/">multi-cluster orchestration</a>.</li>
+<li>Provision the workload namespaces <code>checkout-dev</code>, <code>checkout-stg</code>, and
+<code>checkout-prod</code> on their respective target clusters.</li>
+<li>Replace the sample repository and paths with Helm charts in one repository.
+Ensure all three paths exist at each commit that dev can promote.</li>
+<li>Replace the example HTTP endpoints with endpoints reachable by the
+management cluster, and supply namespace-local Git credentials if needed.</li>
+</ul>
+<p>Render or review the customized manifests, then apply them to the intended
+management cluster. Confirm the context before the write and inspect its
+result:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 5"><code class="language-sh">kubectl config current-context
+kubectl apply -f config/samples/pipelines_v1alpha1_environment_promotion.yaml
+kubectl get application -n pipeline-dev checkout -o yaml
+kubectl get application -n pipeline-stg checkout -o yaml
+kubectl get application -n pipeline-prod checkout -o yaml
+</code></pre></div>
+<p>Dev deploys from its Git branch. When dev's release completes and is healthy
+and synced, staging verifies it and deploys that commit. Production verifies
+the completed staging candidate and waits for approval.</p>
+<p>Inspect promotion state and the test Pipeline:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 6"><code class="language-sh">kubectl -n pipeline-stg get application checkout -o json \
+  | jq &#39;{phase: .status.phase, health: .status.health, promotion: .status.promotion}&#39;
+kubectl -n pipeline-stg get pipelines
+kubectl -n pipeline-prod get application checkout -o json \
+  | jq &#39;.status.promotion&#39;
+</code></pre></div>
+<p>Inspect test Jobs and their logs in the operator's configured execution
+namespace; listing Pods in <code>pipeline-stg</code> will not find Jobs that execute in a
+different namespace.</p>
+<p>Promotion status records the upstream Application and Release identities, the
+Git revision, verification Pipeline reference, phase, and diagnostic message.
+Use the candidate's <code>sourceReleaseUID</code> to approve production after reviewing
+the upstream release and verification results:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 7"><code class="language-sh">paprika_candidate_uid=&quot;$(kubectl -n pipeline-prod get application checkout \
+  -o jsonpath=&#39;{.status.promotion.sourceReleaseUID}&#39;)&quot;
+test -n &quot;$paprika_candidate_uid&quot;
+kubectl config current-context
+kubectl -n pipeline-prod annotate application checkout \
+  &quot;paprika.io/promote=$paprika_candidate_uid&quot; --overwrite
+kubectl -n pipeline-prod get application checkout -o yaml
+</code></pre></div>
+<p>The annotation approves only that upstream Release UID. A replacement
+candidate needs its own approval; a generic sync annotation does not approve
+an unreviewed upstream version. Once verified, an unchanged candidate and target
+specification retain authorization across temporary upstream health holds;
+deployment stays blocked until upstream readiness recovers. Replacing the
+upstream Application or Release UID, or changing the deployment or verification
+specification, revokes that authorization and requires fresh approval.
+Promotion verification and the target's native release approval gates still
+apply.</p>
+<h2 id="keep-environment-configuration-explicit">Keep Environment Configuration Explicit</h2>
+<p>Promotion carries a Git revision, not upstream Helm overrides or build output.
+Each downstream Application keeps its own <code>source.path</code>, <code>source.valuesFile</code>,
+<code>source.targetNamespace</code>, <code>parameters</code>, and stage parameters. This allows
+environment-specific replica counts, secrets, ingress, and delivery strategy
+without copying dev settings into production.</p>
+<p>Commit shared immutable image digests into the promoted Git source, or supply
+explicit per-environment image parameters. Promoting a Git SHA does not
+automatically promote an image built by <code>spec.build</code> or a Pipeline artifact,
+and a mutable image tag can refer to different bytes in each environment even
+when the Git revision is identical.</p>
+<h2 id="promote-independently-rendered-inline-artifacts">Promote Independently Rendered Inline Artifacts</h2>
+<p>CI publishers can retain immutable manifest bundles and tenant-specific rendering.
+Both Applications declare <code>source.type: inline</code> with their own namespace-local
+ConfigMap and the same explicit artifact identity:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 8"><code class="language-yaml">source:
+  type: inline
+  targetNamespace: sfh-vocus-dev
+  inline:
+    configMapRef: sfh-vocus-dev-bundle-&lt;payload-hash&gt;-&lt;revision&gt;
+    manifestHash: &lt;sha256-of-this-environment-manifests.yaml-bytes&gt;
+    artifact:
+      repository: https://github.com/example/sfh.git
+      revision: 0123456789abcdef0123456789abcdef01234567
+      images:
+        backend: ghcr.io/example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        frontend: ghcr.io/example/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+trigger:
+  type: Promotion
+  from:
+    name: sfh-next-dev
+    namespace: sfh-next
+syncPolicy: Auto
+</code></pre></div>
+<p>Every snapshot must set <code>immutable: true</code> and contain <code>data.manifests.yaml</code>.
+Manage these Applications with full Kubernetes manifests or a publisher that
+preserves the complete contract. The legacy <code>paprika apply</code> / <code>ApplyBundle</code> path
+cannot represent promotion or artifact declarations and refuses to replace an
+Application with either desired or accepted promotion/artifact intent. Inspect
+the full Kubernetes Application when reviewing artifact and promotion status.</p>
+<p><code>source.inline.manifestHash</code> is required with artifact provenance and must equal
+the exact SHA256 of that environment's manifest bytes. Unlike the shared artifact
+identity, this hash differs between environments. It binds pending verification
+and approval to the full reviewed tenant configuration. Replacing a same-name
+ConfigMap with different bytes is rejected even before admission; declaring a new
+hash is a spec change and requires fresh manual approval.
+Paprika requires the same logical repository, exact 40-character source/image
+commit and full digest-pinned application image map in both environments. The
+repository obeys the AppProject's source allow/deny lists; it is provenance and
+is not fetched by the controller. Git and inline source modes cannot be mixed
+within one promotion edge.</p>
+<p>Each image map key names a primary application component. Its Deployment,
+StatefulSet, DaemonSet, Rollout or Pod must carry
+<code>app.kubernetes.io/component: &lt;key&gt;</code> and contain a regular container named
+<code>&lt;key&gt;</code> using that exact image reference. A correctly pinned migration Job cannot
+substitute for a missing or differently versioned API deployment. All containers
+and init containers reusing a declared application image repository must use the
+same declared reference, including migrations. Dependency images from other
+repositories may vary by tenant. Duplicate Kubernetes identities are rejected,
+including served-version and implicit-namespace aliases, so a later YAML document
+cannot replace an already validated primary component.</p>
+<p>An external upstream publisher creates its ordinary owned Release, adding the
+same <code>artifact</code> under <code>spec.manifestSource</code> and these annotations. Its source-hash
+annotation must equal its Application's declared <code>manifestHash</code>:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 9"><code class="language-yaml">metadata:
+  annotations:
+    paprika.io/source-revision: 0123456789abcdef0123456789abcdef01234567
+    paprika.io/source-hash: &lt;sha256-of-exact-manifests.yaml-bytes&gt;
+spec:
+  manifestSource:
+    configMapRef: upstream-immutable-bundle
+    artifact: # same repository/revision/images object as the upstream source
+</code></pre></div>
+<p>The publisher selects its owned ReleaseRef through its normal publication flow;
+Paprika derives source revision and deployment observations after verifying this
+binding. Never backfill provenance onto an old Complete Release to qualify it.
+Create a new Release and a distinct snapshot when adopting artifact metadata.
+Existing inline Applications without artifact declarations keep their current
+external publication behavior and cannot qualify for artifact promotion.</p>
+<p>The downstream publisher stages only its own immutable ConfigMap and Application.
+The snapshot may remain owned by the downstream Application. Paprika runs the
+configured upstream tests/gates, applies any required exact-UID approval, then
+creates the downstream Release referencing the downstream snapshot. It never
+copies upstream manifests, environment values, domains, credentials or databases.
+Pending snapshot ownership also keeps these control-plane inputs out of workload
+drift and prune observations.</p>
+<p>Publishers can stage source and target sequentially. A repository, revision or
+image-map mismatch waits without accepting the incoming candidate. Once the
+matching target bundle arrives, that upstream UID can verify normally. Accepted
+deployment settings and exact payload hashes stay frozen while later desired
+bundles wait. Deleting and recreating a same-name immutable ConfigMap cannot
+silently change a release: both applying and healthy drift reads check its frozen
+payload hash. Verification failure still latches that selected candidate as in
+Git promotion.</p>
+<h2 id="focused-kind-validation">Focused Kind Validation</h2>
+<p>The <a href="https://github.com/paprikacd/paprika/blob/master/test/e2e/promotion_test.go">ApplicationPromotion E2E spec</a> exercises
+the dev → staging → production chain against a real Git HTTP backend and an
+additional Kind deployment target. Use the dedicated <code>paprika-test-e2e</code>
+management cluster and <code>paprika-promotion-target</code> workload cluster.
+Docker, Kind, kubectl, Go, and
+Helm must be installed; run these commands from the repository root.</p>
+<p>It covers cross-namespace and cross-cluster promotion, real verification Jobs,
+HTTP gates, fresh candidate-specific approval for each new upstream release,
+failed verification, and pinned downstream renders as Git advances. It also
+verifies normal background Application deletion drains remote Releases and
+workloads while Stage routing and cluster credentials remain available.</p>
+<p>The suite installs cert-manager when absent so admission webhooks are tested.
+It also deploys and later removes Paprika and its CRDs on the management
+cluster. Keep these clusters dedicated to tests. Existing Kind clusters are
+reused, so no cluster creation is needed on a second run.</p>
+<p>Use separate temporary kubeconfigs for the two clusters. The target's internal
+kubeconfig addresses its control-plane container from the management cluster;
+the host kubeconfig addresses the published API port for test assertions:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 10"><code class="language-sh">(
+  set -eu
+  paprika_promotion_work=&quot;$(mktemp -d)&quot;
+  chmod 700 &quot;$paprika_promotion_work&quot;
+  trap &#39;rm -rf &quot;$paprika_promotion_work&quot;&#39; EXIT
+  export KUBECONFIG=&quot;$paprika_promotion_work/management.yaml&quot;
+
+  paprika_kind_clusters=&quot;$(kind get clusters)&quot;
+  if ! printf &#39;%s\n&#39; &quot;$paprika_kind_clusters&quot; | rg -qx paprika-test-e2e; then
+    kind create cluster --name paprika-test-e2e --kubeconfig &quot;$KUBECONFIG&quot;
+  else
+    kind get kubeconfig --name paprika-test-e2e &gt; &quot;$KUBECONFIG&quot;
+  fi
+  kubectl config current-context
+  test &quot;$(kubectl config current-context)&quot; = kind-paprika-test-e2e
+
+  if ! printf &#39;%s\n&#39; &quot;$paprika_kind_clusters&quot; | rg -qx paprika-promotion-target; then
+    kind create cluster --name paprika-promotion-target \
+      --kubeconfig &quot;$paprika_promotion_work/target-host.yaml&quot;
+  else
+    kind get kubeconfig --name paprika-promotion-target \
+      &gt; &quot;$paprika_promotion_work/target-host.yaml&quot;
+  fi
+  kind get kubeconfig --name paprika-promotion-target --internal \
+    &gt; &quot;$paprika_promotion_work/target-internal.yaml&quot;
+  chmod 600 &quot;$paprika_promotion_work/&quot;*.yaml
+  kubectl --kubeconfig &quot;$paprika_promotion_work/target-host.yaml&quot; config current-context
+  test &quot;$(kubectl --kubeconfig &quot;$paprika_promotion_work/target-host.yaml&quot; config current-context)&quot; \
+    = kind-paprika-promotion-target
+
+  # Match the native Kind node architecture; VKE images remain linux/amd64.
+  paprika_e2e_arch=&quot;$(kubectl get nodes \
+    -o jsonpath=&#39;{.items[0].status.nodeInfo.architecture}&#39;)&quot;
+  paprika_e2e_platform=&quot;linux/$paprika_e2e_arch&quot;
+  paprika_e2e_image=&quot;paprika-local:promotion-$(date -u +%Y%m%dT%H%M%SZ)&quot;
+  docker buildx build -f Dockerfile.fast --platform &quot;$paprika_e2e_platform&quot; \
+    --load -t &quot;$paprika_e2e_image&quot; \
+    --build-arg VERSION=&quot;$(git describe --tags --always --dirty)&quot; \
+    --build-arg GIT_COMMIT=&quot;$(git rev-parse HEAD)&quot; \
+    --build-arg BUILD_DATE=&quot;$(date -u +%Y-%m-%dT%H:%M:%SZ)&quot; .
+
+  # Export only the node&#39;s platform; Docker Desktop image indexes can contain
+  # attestations or other platforms that Kind&#39;s containerd import cannot find.
+  docker save --platform &quot;$paprika_e2e_platform&quot; &quot;$paprika_e2e_image&quot; \
+    -o &quot;$paprika_promotion_work/manager.tar&quot;
+  kind load image-archive &quot;$paprika_promotion_work/manager.tar&quot; \
+    --name paprika-test-e2e
+
+  # The fixture deploys the demo workload to both clusters and runs tests in Alpine.
+  docker buildx build --platform &quot;$paprika_e2e_platform&quot; --load \
+    -t localhost/paprika-demo:latest -f demo/Dockerfile demo
+  docker save --platform &quot;$paprika_e2e_platform&quot; localhost/paprika-demo:latest \
+    -o &quot;$paprika_promotion_work/demo.tar&quot;
+  kind load image-archive &quot;$paprika_promotion_work/demo.tar&quot; --name paprika-test-e2e
+  kind load image-archive &quot;$paprika_promotion_work/demo.tar&quot; --name paprika-promotion-target
+  docker pull --platform &quot;$paprika_e2e_platform&quot; alpine:3.19
+  docker save --platform &quot;$paprika_e2e_platform&quot; alpine:3.19 \
+    -o &quot;$paprika_promotion_work/alpine.tar&quot;
+  kind load image-archive &quot;$paprika_promotion_work/alpine.tar&quot; --name paprika-test-e2e
+  docker pull --platform &quot;$paprika_e2e_platform&quot; castlemilk/git-http-backend
+
+  E2E_MANAGER_IMAGE=&quot;$paprika_e2e_image&quot; \
+  E2E_EXPECTED_CONTEXT=kind-paprika-test-e2e \
+  E2E_TARGET_EXPECTED_CONTEXT=kind-paprika-promotion-target \
+  E2E_SKIP_IMAGE_BUILD=true E2E_SKIP_IMAGE_LOAD=true \
+  E2E_SKIP_METRICS_SERVER=true \
+  E2E_PROMOTION_REMOTE_KUBECONFIG=&quot;$paprika_promotion_work/target-internal.yaml&quot; \
+  E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG=&quot;$paprika_promotion_work/target-host.yaml&quot; \
+  go test -tags=e2e ./test/e2e/ -run &#39;^TestE2E$&#39; -count=1 \
+    -v -ginkgo.v -ginkgo.focus=ApplicationPromotion -ginkgo.fail-on-empty \
+    -timeout=30m
+)
+</code></pre></div>
+<p>The fixture imports the Git backend through a platform-limited image archive.
+Verification Jobs run on the management cluster in <code>alpine:3.19</code>. The demo
+image must be loaded into both clusters. The image skip flags avoid rebuilding
+the full UI image and repeating the suite's image imports after the explicit
+platform-limited imports above. The suite still installs the current generated
+CRDs and deploys the selected <code>E2E_MANAGER_IMAGE</code>, so the focused run verifies
+the code under development. Metrics-server is optional for this focused spec;
+remove <code>E2E_SKIP_METRICS_SERVER=true</code> when running specs that require metrics.</p>
+<p>Both target kubeconfig variables are needed on Docker Desktop: the internal
+address is reachable by Paprika's controller, while the host address is
+reachable by the test process. Supplying only
+<code>E2E_PROMOTION_REMOTE_KUBECONFIG</code> makes the fixture also use that file for host
+CLI operations, which is suitable only when that endpoint is reachable from
+both places. The context guard refuses mutations outside the dedicated Kind
+contexts, including <code>kind-deephost</code>.</p>
+<p>The fixture reaches remote staging and production probes through the target
+node's InternalIP and NodePorts 30587 and 30588 on the shared Docker Kind
+network. If that staging address requires a different route in your local
+setup, set <code>E2E_PROMOTION_REMOTE_PROBE_URL</code> to an equivalent endpoint reachable
+by the management cluster.</p>
+<p>The fixture removes its resources, and the suite removes Paprika from the
+management cluster. Pre-existing clusters remain available for another run;
+delete only these dedicated clusters when they are no longer needed:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 11"><code class="language-sh">kind delete cluster --name paprika-promotion-target
+kind delete cluster --name paprika-test-e2e
+</code></pre></div>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/pipelines/" rel="prev"><span>Previous guide</span><strong>Run Kubernetes delivery pipelines</strong></a><a href="../../docs/canary/" rel="next"><span>Next guide</span><strong>Configure canary deployments</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

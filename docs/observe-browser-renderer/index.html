@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Render dashboards for visual verification · Paprika docs</title>
+<meta name="description" content="Deploy the optional private browser worker and inspect saved dashboards at different viewport sizes without replacing live data checks."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/observe-browser-renderer/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Render dashboards for visual verification · Paprika docs"/>
+<meta property="og:description" content="Deploy the optional private browser worker and inspect saved dashboards at different viewport sizes without replacing live data checks."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/observe-browser-renderer/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Render dashboards for visual verification · Paprika docs"/>
+<meta name="twitter:description" content="Deploy the optional private browser worker and inspect saved dashboards at different viewport sizes without replacing live data checks."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Render dashboards for visual verification","description":"Deploy the optional private browser worker and inspect saved dashboards at different viewport sizes without replacing live data checks.","url":"https://paprikacd.github.io/paprika/docs/observe-browser-renderer/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/observe-browser-renderer/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Render dashboards for visual verification","item":"https://paprikacd.github.io/paprika/docs/observe-browser-renderer/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observe</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/" aria-current="page">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#trusted-publication-and-vke-deployment">Trusted publication and VKE deployment</a></li><li class="toc-level-2"><a href="#helm-activation-after-real-browser-verification">Helm activation (after real-browser verification)</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="optional-paprika-observe-browser-renderer">Render dashboards for visual verification</h1><p class="article-description">Deploy the optional private browser worker and inspect saved dashboards at different viewport sizes without replacing live data checks.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/observe-browser-renderer.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>The <code>render_dashboard</code> MCP tool can return a <strong>real Chromium/Playwright PNG</strong>
+with <code>image/png</code> content when an isolated render worker is configured.
+It captures the actual Insights UI in a <strong>loopback-only sidecar of the
+observability gateway Pod</strong>. Chart installations leave it disabled by default;
+the trusted master publication and VKE deployment workflow enables the tested
+worker using the exact published image digest.</p>
+<p>Build the opt-in image with:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 1"><code class="language-sh">docker build -f ui/Dockerfile.render-worker -t ghcr.io/paprikacd/paprika-render-worker:&lt;revision&gt; .
+node --test ui/render-worker.test.mjs
+</code></pre></div>
+<p>Gateway config:</p>
+<ul>
+<li><code>PAPRIKA_OBSERVE_RENDER_URL=http://127.0.0.1:9081/render</code></li>
+<li><code>PAPRIKA_OBSERVE_RENDER_SECRET</code> from a Kubernetes secret (32+ bytes)</li>
+</ul>
+<p>Renderer config:</p>
+<ul>
+<li><code>PAPRIKA_RENDER_SECRET</code>: same secret (never log or store in Git)</li>
+<li><code>PAPRIKA_RENDER_UI_ORIGIN</code>: the trusted internal Paprika UI origin,
+e.g. <code>http://paprika-e2e-api-server:3000</code></li>
+</ul>
+<p>No external Service or Ingress should expose port 9081. The MCP gateway
+validates the dashboard through the human-authorized Insights API first,
+then mints a short-lived delegated token. The worker accepts only a fixed
+dashboard ID and viewport, blocks arbitrary browser destinations, denies
+mutating API requests and wipes its ephemeral browser context after capture.
+All HTTP redirects are rejected before following them, including redirects
+from an otherwise permitted API path. The gateway sends the authorized
+dashboard ETag, and the worker checks the revision actually read by the UI
+before returning the PNG. A changed or unobserved revision is rejected.
+Browser screenshots are capped at 4 MiB, 20 seconds and two simultaneous jobs.
+Timeouts and client disconnects release capacity, including requests with a
+stalled body or browser startup. Deferred widgets must finish loading before
+capture; a loading skeleton is not accepted as a completed screenshot.
+Visible widget errors and provider query error envelopes also fail the capture.
+With <code>focus_widget</code>, the worker selects a recorded observation in an interactive
+chart and pins its inspector before capture. A widget without available chart
+inspection returns an error instead of an ordinary unfocused screenshot.</p>
+<p>The required browser CI job runs <code>ui/e2e/insights-render-worker.e2e.mjs</code>
+against the authenticated Insights UI with deterministic telemetry. It captures
+desktop (1512) and mobile (390) in both themes, focused plot inspection,
+redirect isolation, revision conflicts and provider denial, and verifies that
+rendering leaves the saved document unchanged. PNGs and revision evidence are
+uploaded under <code>artifacts/insights/render-worker</code>. Those fixtures verify the
+renderer; production appearance still requires a live <code>render_dashboard</code> call.
+The tool is registered only when the sidecar configuration is present. Use
+<code>query_dashboard</code> alongside the image to verify values, missing telemetry and
+freshness separately.</p>
+<h2 id="trusted-publication-and-vke-deployment">Trusted publication and VKE deployment</h2>
+<p>After the required checks pass on a trusted master push, the existing publish
+job builds both the application and <code>ui/Dockerfile.render-worker</code>. It passes
+each immutable GHCR digest to the VKE reusable workflow. That workflow validates
+the renderer reference before privileged operations, then calls
+<code>hack/prepare-dashboard-renderer.sh</code> in the verified <code>vke</code> context.</p>
+<p>The helper creates a dedicated random shared Secret only if it is absent,
+validates an existing Secret without printing its contents, and writes temporary
+Helm values containing only the digest, Secret reference and internal UI origin.
+The chart grants the gateway Pod egress to this release's API server on TCP 3000.
+After the normal rollout checks, deployment verifies the worker's loopback
+health endpoint inside the gateway Pod. Publication and health do not replace
+the final authenticated screenshot check.</p>
+<p>Manual application deployments may omit <code>render_worker_image_ref</code>; the helper
+preserves an already deployed immutable worker image. If no worker is deployed,
+that manual path leaves it disabled. It never substitutes an unpinned tag.</p>
+<h2 id="helm-activation-after-real-browser-verification">Helm activation (after real-browser verification)</h2>
+<p>An optional chart field <code>observabilityGateway.renderWorker</code> renders the
+loopback Chromium sidecar, enables the Go MCP tool and injects a pre-existing
+Kubernetes Secret into both containers. It stays <strong>disabled by default</strong>.
+Enable only with a tested, immutable GHCR image digest, a private Secret and
+the internal UI origin. The gateway Pod's network policy must permit egress
+to the selected Paprika API-server UI Service on TCP 3000. Run
+<code>helm template</code> and inspect the Pod SecurityContext/egress rules before
+deployment; never disable network policy or reuse OAuth signing secrets
+as the renderer shared secret.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 2"><code class="language-yaml">observabilityGateway:
+  renderWorker:
+    enabled: true
+    image: ghcr.io/paprikacd/paprika-render-worker@sha256:&lt;verified-image-digest&gt;
+    uiOrigin: http://paprika-e2e-api-server:3000
+    secretName: paprika-dashboard-renderer
+    secretKey: secret
+</code></pre></div>
+<p>For installations outside the trusted VKE workflow, publish the worker image
+and provision the dedicated Secret before enabling these values. The Helm chart
+itself does not create the shared Secret. Verify the deployed digest and run an
+authenticated screenshot check after rollout.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/metrics/" rel="prev"><span>Previous guide</span><strong>Monitor Paprika metrics and alerts</strong></a><a href="../../blog/"><span>Keep exploring</span><strong>Read the engineering blog</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

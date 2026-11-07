@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Inspect Kubernetes drift and pruning · Paprika docs</title>
+<meta name="description" content="Compare desired manifests with live resources, understand sync classifications, preview stale resources, and configure opt-in pruning."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/drift-and-prune/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Inspect Kubernetes drift and pruning · Paprika docs"/>
+<meta property="og:description" content="Compare desired manifests with live resources, understand sync classifications, preview stale resources, and configure opt-in pruning."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/drift-and-prune/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Inspect Kubernetes drift and pruning · Paprika docs"/>
+<meta name="twitter:description" content="Compare desired manifests with live resources, understand sync classifications, preview stale resources, and configure opt-in pruning."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Inspect Kubernetes drift and pruning","description":"Compare desired manifests with live resources, understand sync classifications, preview stale resources, and configure opt-in pruning.","url":"https://paprikacd.github.io/paprika/docs/drift-and-prune/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/drift-and-prune/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Inspect Kubernetes drift and pruning","item":"https://paprikacd.github.io/paprika/docs/drift-and-prune/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Deliver</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/" aria-current="page">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#how-drift-detection-works">How Drift Detection Works</a></li><li class="toc-level-3"><a href="#false-positive-prevention">False Positive Prevention</a></li><li class="toc-level-2"><a href="#resource-classification">Resource Classification</a></li><li class="toc-level-2"><a href="#pruning">Pruning</a></li><li class="toc-level-3"><a href="#enabling-prune">Enabling Prune</a></li><li class="toc-level-3"><a href="#what-gets-pruned">What Gets Pruned</a></li><li class="toc-level-3"><a href="#what-never-gets-pruned">What Never Gets Pruned</a></li><li class="toc-level-3"><a href="#cluster-scoped-prune">Cluster-Scoped Prune</a></li><li class="toc-level-3"><a href="#prune-preview">Prune Preview</a></li><li class="toc-level-3"><a href="#prune-protection">Prune Protection</a></li><li class="toc-level-2"><a href="#monitoring-drift">Monitoring Drift</a></li><li class="toc-level-3"><a href="#metrics">Metrics</a></li><li class="toc-level-3"><a href="#recommended-alerts">Recommended Alerts</a></li><li class="toc-level-2"><a href="#troubleshooting-drift">Troubleshooting Drift</a></li><li class="toc-level-3"><a href="#outofsync-but-the-resource-looks-identical">&quot;OutOfSync but the resource looks identical&quot;</a></li><li class="toc-level-3"><a href="#pruned-but-the-resource-should-exist">&quot;Pruned but the resource should exist&quot;</a></li><li class="toc-level-3"><a href="#missing-but-the-resource-exists">&quot;Missing but the resource exists&quot;</a></li><li class="toc-level-2"><a href="#architecture-details">Architecture Details</a></li><li class="toc-level-3"><a href="#diff-engine">Diff Engine</a></li><li class="toc-level-3"><a href="#prune">Prune</a></li><li class="toc-level-3"><a href="#key-formats">Key Formats</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="drift-detection-and-pruning">Inspect Kubernetes drift and pruning</h1><p class="article-description">Compare desired manifests with live resources, understand sync classifications, preview stale resources, and configure opt-in pruning.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/drift-and-prune.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>How Paprika detects configuration drift and garbage-collects stale resources.</p>
+<h2 id="how-drift-detection-works">How Drift Detection Works</h2>
+<p>Paprika periodically compares the desired state (rendered manifests from the
+Application's source) against the live state (resources actually running in
+the cluster). The comparison uses the <code>ScalableDiffEngine</code>, which:</p>
+<ol>
+<li><strong>Parses desired manifests</strong> from the Application's rendered Helm chart or
+Git source into unstructured Kubernetes objects.</li>
+<li><strong>Resolves GVRs</strong> for each desired object using a three-tier strategy:
+<ul>
+<li>Static <code>knownGVRs</code> fast path for well-known types (no network call)</li>
+<li>Discovery API with per-group-version caching (handles CRDs with
+non-standard plurals)</li>
+<li>Pluralization fallback when discovery is unavailable</li>
+</ul>
+</li>
+<li><strong>Fetches live resources</strong> by listing each GVR in the desired set, filtered
+by Paprika management labels (<code>app.paprika.io/managed-by=paprika</code>,
+<code>app.paprika.io/name=&lt;app&gt;</code>).</li>
+<li><strong>Classifies each resource</strong> as Synced, OutOfSync (Modified), Missing
+(Added), or Pruned (Deleted) using an apiVersion-qualified resource key
+(<code>apiVersion/Kind/namespace/name</code>).</li>
+<li><strong>Compares spec fields</strong> desired-centrically: every key in the desired
+spec must be present and equal in the live spec. Extra live keys
+(Kubernetes defaults, controller-injected fields) are ignored.</li>
+</ol>
+<h3 id="false-positive-prevention">False Positive Prevention</h3>
+<p>The diff engine handles several Kubernetes-specific edge cases to avoid false
+drift reports:</p>
+<ul>
+<li><strong>Null values</strong>: A declared <code>null</code> in a manifest (e.g. <code>env value: null</code>)
+means &quot;field absent&quot;. Server-side apply drops the key from the stored
+object, so a live object whose key is missing matches a declared null.</li>
+<li><strong>Empty-string env values</strong>: An env entry with <code>value: &quot;&quot;</code> that live omits
+is treated as equal.</li>
+<li><strong>Probe defaults</strong>: <code>initialDelaySeconds: 0</code> omitted by the API server
+under liveness/readiness/startup probes is treated as equal.</li>
+<li><strong>Resource quantities</strong>: <code>500m</code> and <code>0.5</code> are compared as quantities, not
+strings.</li>
+<li><strong>API group collisions</strong>: Knative Service and core Service with the same
+name are distinguished by apiVersion-qualified keys, not bare Kind.</li>
+<li><strong>Generated children</strong>: Live resources owned by kinds absent from the
+desired set (e.g. a Knative Route's ExternalName Service) are excluded
+from prune classification.</li>
+<li><strong>Server-managed annotations</strong>: <code>deployment.kubernetes.io/*</code>,
+<code>kubectl.kubernetes.io/*</code>, <code>meta.helm.sh/*</code>, and similar prefixes are
+stripped before comparison.</li>
+</ul>
+<h2 id="resource-classification">Resource Classification</h2>
+<p>Each resource in the diff gets one of four classifications:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>Counted in outOfSync?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Synced</strong></td>
+<td>Desired and live match</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>OutOfSync</strong></td>
+<td>Desired and live differ (Modified)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><strong>Missing</strong></td>
+<td>Desired but not live (Added)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><strong>Pruned</strong></td>
+<td>Live but not desired (Deleted)</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table></div>
+<p>The <code>outOfSync</code> count is the total of OutOfSync + Missing + Pruned resources.</p>
+<h2 id="pruning">Pruning</h2>
+<p>Pruning deletes live resources that are no longer in the desired manifest
+set. It is <strong>opt-in</strong> and runs after every successful release apply.</p>
+<h3 id="enabling-prune">Enabling Prune</h3>
+<p>Set <code>syncOptions.prune: true</code> on the Application:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 1"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+spec:
+  syncOptions:
+    prune: true
+</code></pre></div>
+<p>The Release inherits this from the Application's <code>spec.syncOptions</code>.</p>
+<h3 id="what-gets-pruned">What Gets Pruned</h3>
+<p>A resource is pruned only if ALL of these are true:</p>
+<ol>
+<li>It carries the Paprika management labels (<code>app.paprika.io/managed-by=paprika</code>,
+<code>app.paprika.io/name=&lt;app&gt;</code>)</li>
+<li>It is <strong>ownerless</strong> (no <code>ownerReferences</code>)</li>
+<li>It is <strong>not in the desired manifest set</strong> (no matching
+apiVersion-qualified key)</li>
+<li>It is <strong>not annotated</strong> with <code>paprika.io/prune: &quot;false&quot;</code></li>
+<li>It is <strong>namespaced</strong> (cluster-scoped resources are only pruned if
+explicitly allowed)</li>
+</ol>
+<p>The candidate set is the union of the kinds in the new manifest set and the
+managed-kind table that release cleanup already uses. Without that second half,
+an application that stops rendering its last Service never lists Services, so
+the Service it left behind survives every later prune. The extra lists are what
+collect a kind that has left the bundle entirely.</p>
+<h3 id="what-never-gets-pruned">What Never Gets Pruned</h3>
+<ul>
+<li>Resources with <code>ownerReferences</code> (controller-generated children)</li>
+<li>Resources annotated <code>paprika.io/prune: &quot;false&quot;</code></li>
+<li>Namespaces, CRDs, and other critical cluster-scoped resources</li>
+<li>Resources that are in the desired manifest set</li>
+</ul>
+<h3 id="cluster-scoped-prune">Cluster-Scoped Prune</h3>
+<p>By default, only ClusterRole and ClusterRoleBinding are eligible for
+cluster-scoped pruning. Override with <code>syncOptions.pruneClusterScopedKinds</code>:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 2"><code class="language-yaml">spec:
+  syncOptions:
+    prune: true
+    pruneClusterScopedKinds:
+      - ClusterRole
+      - ClusterRoleBinding
+</code></pre></div>
+<p>Namespaces and CRDs are never pruned regardless of this setting.</p>
+<h3 id="prune-preview">Prune Preview</h3>
+<p>Before enabling prune, review what would be deleted:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh">kubectl get application &lt;app&gt; -n &lt;ns&gt; -o json | jq &#39;.status.prunableResources&#39;
+</code></pre></div>
+<p>This lists live resources that would be pruned on the next apply. Nothing is
+deleted unless prune is enabled.</p>
+<h3 id="prune-protection">Prune Protection</h3>
+<p>Annotate individual resources to protect them from pruning:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 4"><code class="language-sh">kubectl annotate &lt;kind&gt; &lt;name&gt; -n &lt;ns&gt; paprika.io/prune=&quot;false&quot;
+</code></pre></div>
+<p>This is useful for:</p>
+<ul>
+<li>Shared resources that multiple apps reference</li>
+<li>Manually-created resources that happen to carry paprika labels</li>
+<li>Resources that should persist even if removed from the chart</li>
+</ul>
+<h2 id="monitoring-drift">Monitoring Drift</h2>
+<h3 id="metrics">Metrics</h3>
+<p>This local scrape example assumes a release named <code>paprika-e2e</code> in the
+<code>paprika-e2e</code> namespace with <code>metrics.secure: false</code> explicitly configured.
+Substitute your release and namespace. The chart defaults to authenticated
+HTTPS; follow the <a href="../../docs/metrics/#accessing-metrics">metrics access guide</a> for
+the transport and credentials matching your installation.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 5"><code class="language-sh">kubectl -n paprika-e2e port-forward \
+  svc/paprika-e2e-controller-manager-metrics-service 8443:8443 &amp;
+
+# Current drift count per app
+curl -s http://localhost:8443/metrics | grep paprika_out_of_sync
+
+# Current prunable count per app
+curl -s http://localhost:8443/metrics | grep paprika_prunable
+
+# Prune activity
+curl -s http://localhost:8443/metrics | grep paprika_prune_total
+</code></pre></div>
+<h3 id="recommended-alerts">Recommended Alerts</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 6"><code class="language-yaml"># Alert when drift persists for more than 5 minutes
+- alert: PaprikaDriftDetected
+  expr: paprika_out_of_sync &gt; 0
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: &quot;Application {{ $labels.app }} has {{ $value }} out-of-sync resources&quot;
+
+# Alert when prunable resources accumulate
+- alert: PaprikaPrunableAccumulation
+  expr: paprika_prunable &gt; 0
+  for: 10m
+  labels:
+    severity: info
+  annotations:
+    summary: &quot;Application {{ $labels.app }} has {{ $value }} prunable resources&quot;
+
+# Alert on unexpected prune activity
+- alert: PaprikaUnexpectedPrune
+  expr: increase(paprika_prune_total[5m]) &gt; 5
+  labels:
+    severity: warning
+  annotations:
+    summary: &quot;Application {{ $labels.app }} pruned {{ $value }} resources in 5m&quot;
+</code></pre></div>
+<h2 id="troubleshooting-drift">Troubleshooting Drift</h2>
+<h3 id="outofsync-but-the-resource-looks-identical">&quot;OutOfSync but the resource looks identical&quot;</h3>
+<p>Check for Kubernetes-defaulted fields that differ from the desired manifest:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 7"><code class="language-sh"># Compare desired (from release snapshot) vs live
+kubectl get &lt;kind&gt; &lt;name&gt; -n &lt;ns&gt; -o json | jq &#39;.spec&#39;
+</code></pre></div>
+<p>Common causes:</p>
+<ul>
+<li><code>env value: null</code> in the chart (fixed in current version)</li>
+<li><code>initialDelaySeconds: 0</code> on probes (fixed)</li>
+<li>Resource quantity formatting (<code>500m</code> vs <code>0.5</code>) (fixed)</li>
+<li>API group collisions (Knative Service vs core Service) (fixed)</li>
+</ul>
+<h3 id="pruned-but-the-resource-should-exist">&quot;Pruned but the resource should exist&quot;</h3>
+<p>Check if the resource was removed from the chart:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 8"><code class="language-sh"># Check the release&#39;s manifest snapshot
+kubectl get configmap &lt;snapshot-name&gt; -n &lt;ns&gt; -o json | jq -r &#39;.data[&quot;manifests.yaml&quot;]&#39; | grep &lt;name&gt;
+</code></pre></div>
+<p>If the resource should persist, annotate it with <code>paprika.io/prune: &quot;false&quot;</code>.</p>
+<h3 id="missing-but-the-resource-exists">&quot;Missing but the resource exists&quot;</h3>
+<p>Check for API group collisions — the desired object might resolve to the
+wrong GVR. The <code>CachedGVRResolver</code> should handle this; if it persists, check
+the controller logs for GVR resolution errors.</p>
+<h2 id="architecture-details">Architecture Details</h2>
+<h3 id="diff-engine">Diff Engine</h3>
+<ul>
+<li><code>ScalableDiffEngine</code> (<code>internal/engine/scalable_diff.go</code>): label-selector
+diff computation, apiVersion-qualified resource keys, generated-child
+exclusion, cluster-scoped GVR handling.</li>
+<li><code>DiffEngine</code> (<code>internal/engine/diff.go</code>): basic diff engine (namespace-wide
+scan), resourceEqual, specContains, mapContains — null-as-absent handling,
+Kubernetes default omission.</li>
+<li><code>CachedGVRResolver</code> (<code>internal/engine/gvr_resolver.go</code>): discovery API with
+caching, knownGVRs fast path, pluralization fallback.</li>
+</ul>
+<h3 id="prune">Prune</h3>
+<ul>
+<li><code>pruneStaleResources</code> (<code>internal/controller/pipelines/release_controller.go</code>):
+runs after successful applyAllDocuments, lists live resources by GVR with
+paprika labels, deletes ownerless resources not in the desired set.</li>
+</ul>
+<h3 id="key-formats">Key Formats</h3>
+<ul>
+<li><strong>Resource key</strong>: <code>apiVersion/Kind/namespace/name</code> (e.g.
+<code>serving.knative.dev/v1/Service/deephost/deephost-hydra</code>)</li>
+<li><strong>Desired key</strong>: built from parsed manifests with the same format, using
+the release namespace as fallback for namespaced resources</li>
+<li><strong>Live key</strong>: built from listed live objects with the same format</li>
+</ul>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/canary/" rel="prev"><span>Previous guide</span><strong>Configure canary deployments</strong></a><a href="../../docs/multi-cluster/" rel="next"><span>Next guide</span><strong>Manage delivery across Kubernetes clusters</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

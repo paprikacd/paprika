@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Build and verify observability dashboards through MCP · Paprika engineering</title>
+<meta name="description" content="Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="article"/>
+<meta property="og:title" content="Build and verify observability dashboards through MCP · Paprika engineering"/>
+<meta property="og:description" content="Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+<meta property="article:published_time" content="2026-11-07"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Build and verify observability dashboards through MCP · Paprika engineering"/>
+<meta name="twitter:description" content="Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BlogPosting","headline":"Build and verify observability dashboards through MCP","description":"Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.","url":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/","mainEntityOfPage":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","datePublished":"2026-11-07","articleSection":"Observability","isPartOf":{"@type":"Blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Build and verify observability dashboards through MCP","item":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/" aria-current="page">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observability</span></li></ol></nav></div>
+<div class="article-layout article-layout--blog shell">
+
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#connect-the-observability-surface">Connect the observability surface</a></li><li class="toc-level-2"><a href="#discover-real-providers-and-measurements">Discover real providers and measurements</a></li><li class="toc-level-2"><a href="#reuse-saved-queries-before-creating-new-ones">Reuse saved queries before creating new ones</a></li><li class="toc-level-2"><a href="#protect-edits-made-by-other-people">Protect edits made by other people</a></li><li class="toc-level-2"><a href="#execute-the-saved-dashboard">Execute the saved dashboard</a></li><li class="toc-level-2"><a href="#inspect-the-rendered-dashboard">Inspect the rendered dashboard</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="build-and-verify-observability-dashboards-through-mcp">Build and verify observability dashboards through MCP</h1><p class="article-description">Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.</p><div class="article-meta"><span>By Paprika maintainers</span><time datetime="2026-11-07">7 November 2026</time><span>4 min read</span><a href="https://github.com/paprikacd/paprika/blob/master/landing/content/blog/building-dashboards-with-mcp.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>A dashboard created by an agent is useful when its queries return the right
+signals and its panels make those signals readable. Saving valid JSON proves
+neither on its own.</p>
+<p>Paprika Observe exposes provider discovery, bounded telemetry reads and
+Insights document authoring through MCP. You can ask an agent to reuse real
+saved queries, compose a dashboard and inspect the result. The reliable
+sequence is to discover, query, save, read back and render. The
+<a href="../../docs/observe-plugin/">Observe plugin guide</a> documents
+the tools and permissions behind that sequence.</p>
+<h2 id="connect-the-observability-surface">Connect the observability surface</h2>
+<p>Paprika's fleet MCP endpoint is <code>/mcp</code>; Observe uses <code>/observe/mcp</code> with a
+separate token audience. Reading telemetry and dashboards requires
+<code>paprika:observe</code> plus the applicable Insights and provider permissions.
+Creating or changing Insights documents additionally requires explicit
+<code>paprika:insights:write</code> consent and the user's Insights write permission.
+Refreshing an existing read-only token does not add authoring access.</p>
+<p>Complete the connection through the client's native OAuth flow. The
+<a href="../../docs/observe-plugin/">packaged Observe plugin</a> targets
+the project-hosted endpoint; a self-hosted installation needs its own
+verified server URL. Installation and authentication are separate steps.
+Provider credentials remain configured at the server; they do not belong in
+a dashboard or an agent prompt.</p>
+<h2 id="discover-real-providers-and-measurements">Discover real providers and measurements</h2>
+<p>Begin with <code>list_observability_providers</code> to inspect the available telemetry
+providers. For document authoring, also call <code>list_insights_providers</code> and
+use its returned provider IDs. Do not construct an Insights ID from a
+<code>namespace/name</code> reference: the two APIs expose different identities.</p>
+<p>For a new metrics query, discover the metric names, labels and metadata before
+writing the expression. Query languages are provider-specific: Prometheus
+uses PromQL, Loki uses LogQL, and Tempo uses TraceQL. Test a small query over
+an explicit interval and inspect the actual samples. A provider reporting
+<code>OK</code> establishes a reachability observation, not that a particular metric
+exists or that a service meets its SLO. The
+<a href="../../docs/observability-gateway/">observability gateway guide</a>
+and <a href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika-observe/skills/paprika-observe/SKILL.md">Observe workflow</a>
+cover discovery and result interpretation.</p>
+<p>A useful request to an agent is specific about the decision the dashboard
+should support:</p>
+<blockquote>
+<p>Build a service overview using my existing providers and saved queries.
+Show request rate, error ratio and latency for a selectable service.
+Discover the available signals first. Keep missing data visible, and
+tell me if a requested measurement is unavailable.</p>
+</blockquote>
+<p>That prompt defines an investigation. It does not assume metric names or
+ask the agent to fill missing measurements with plausible values.</p>
+<h2 id="reuse-saved-queries-before-creating-new-ones">Reuse saved queries before creating new ones</h2>
+<p>Inspect existing dashboards with <code>list_dashboards</code> and <code>get_dashboard</code>, then
+use <code>list_saved_queries</code> and <code>get_saved_query</code> where needed. Reusing a known
+query preserves its provider, units, parameter definitions and existing
+interpretation.</p>
+<p>Before authoring, call <code>get_insights_schema</code> for <code>saved_query</code>, <code>widget</code> and
+<code>dashboard</code>. The deployed schema supplies the current fields and constraints.
+Create any new saved query with <code>create_saved_query</code> before creating the
+dashboard that references it through <code>create_dashboard</code>.</p>
+<p>Bind dashboard variables explicitly to the saved query's parameters. A
+service selector has no effect merely because its label resembles a query
+parameter. For imported examples, map each placeholder to a compatible
+provider and review the data requirements. The
+<a href="../../docs/dashboards/">dashboard examples guide</a>
+describes this mapping; live query failures do not fall back to its sample
+fixtures.</p>
+<h2 id="protect-edits-made-by-other-people">Protect edits made by other people</h2>
+<p>Read an existing document and retain its exact ETag before updating it.
+<code>patch_dashboard</code> supports targeted widget edits by stable ID, so a colour
+or layout change need not replace the entire document. <code>patch_saved_query</code>
+provides the corresponding query edit path.</p>
+<p>Patch semantics matter: nested objects merge, <code>null</code> removes a field, and
+arrays replace in full. A stale ETag means the document changed after your
+read. The authoring API rejects wildcard ETags; read the document again,
+resolve the conflict and submit the exact new ETag with your intended edit. See the
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/targeted-authoring.md">targeted authoring contract</a>
+for examples and immutable fields.</p>
+<h2 id="execute-the-saved-dashboard">Execute the saved dashboard</h2>
+<p>After saving, call <code>query_dashboard</code>. It resolves saved queries and parameter
+bindings, applies the selected interval and executes identical bound queries
+once. This illustrative call uses placeholder dashboard, widget and service
+identities; replace them with values discovered in your workspace:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 1"><code class="language-json">{
+  &quot;name&quot;: &quot;query_dashboard&quot;,
+  &quot;arguments&quot;: {
+    &quot;id&quot;: &quot;service-overview&quot;,
+    &quot;widget_ids&quot;: [&quot;request-rate&quot;],
+    &quot;variables&quot;: { &quot;service&quot;: &quot;checkout&quot; },
+    &quot;history_points&quot;: 12,
+    &quot;max_series&quot;: 3
+  }
+}
+</code></pre></div>
+<p>Inspect <code>structuredContent</code>, including widget errors, signal states,
+timestamps, missing samples and truncation. Compare the number of planned
+queries with those executed and deduplicated. The returned dashboard and
+saved-query ETags identify the document revisions used for that observation.</p>
+<p>The result's <code>state: &quot;ok&quot;</code> describes data availability. It is not a health
+verdict. An older finite reading is still old, an empty signal is not zero
+traffic, and a bounded trace sample is not a total request count. The
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/dashboard-query.md">dashboard query contract</a>
+defines those distinctions and the available response limits.</p>
+<h2 id="inspect-the-rendered-dashboard">Inspect the rendered dashboard</h2>
+<p>When the deployment advertises <code>render_dashboard</code>, use it after querying to
+capture the actual Insights interface. The capability requires an optional
+private browser worker; installing the plugin alone does not enable it.
+The <a href="../../docs/observe-browser-renderer/">renderer guide</a>
+explains deployment and the revision checks attached to each capture.</p>
+<p>Check desktop and mobile layouts, both supported themes, and a focused
+widget's tooltip. Look for clipped units, unreadable legends, overflowing
+inspectors and compact stat cards with internal scrollbars. A short KPI card
+usually needs a clear value and, if useful, one trend. Adding a percentage
+bar, a long description and a sparkline can crowd out the measurement.</p>
+<p>Keep query verification and visual verification as separate results. If the
+renderer is unavailable, open the saved dashboard in the browser and inspect
+it there. After a targeted presentation fix, read back the document, query
+again and inspect the new rendering. This leaves you with both usable
+telemetry and a dashboard someone can comfortably read.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More articles"><a href="../../blog/promoting-pinned-revisions/" rel="prev"><span>Previous article</span><strong>Promoting a tested Git revision across Kubernetes environments</strong></a><a href="../../docs/"><span>Keep exploring</span><strong>Read the documentation</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

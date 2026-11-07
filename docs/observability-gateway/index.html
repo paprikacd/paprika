@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Connect the observability gateway · Paprika docs</title>
+<meta name="description" content="Configure Paprika Observe providers and authenticated MCP access for querying metrics, logs, traces and saved dashboards."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/observability-gateway/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Connect the observability gateway · Paprika docs"/>
+<meta property="og:description" content="Configure Paprika Observe providers and authenticated MCP access for querying metrics, logs, traces and saved dashboards."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/observability-gateway/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Connect the observability gateway · Paprika docs"/>
+<meta name="twitter:description" content="Configure Paprika Observe providers and authenticated MCP access for querying metrics, logs, traces and saved dashboards."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Connect the observability gateway","description":"Configure Paprika Observe providers and authenticated MCP access for querying metrics, logs, traces and saved dashboards.","url":"https://paprikacd.github.io/paprika/docs/observability-gateway/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/observability-gateway/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Connect the observability gateway","item":"https://paprikacd.github.io/paprika/docs/observability-gateway/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observe</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/" aria-current="page">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#architecture">Architecture</a></li><li class="toc-level-2"><a href="#query-backpressure-and-provider-bulkheads">Query backpressure and provider bulkheads</a></li><li class="toc-level-2"><a href="#the-mcp-surface">The MCP surface</a></li><li class="toc-level-2"><a href="#configuring-providers">Configuring providers</a></li><li class="toc-level-3"><a href="#connector-specifics">Connector specifics</a></li><li class="toc-level-3"><a href="#perf-testing-with-the-mock-connector">Perf testing with the mock connector</a></li><li class="toc-level-3"><a href="#cloud-connectors-gcp-and-aws">Cloud connectors (GCP and AWS)</a></li><li class="toc-level-2"><a href="#enabling-the-gateway">Enabling the gateway</a></li><li class="toc-level-2"><a href="#autodiscovery-from-in-cluster-services">Autodiscovery from in-cluster Services</a></li><li class="toc-level-2"><a href="#provider-status">Provider status</a></li><li class="toc-level-2"><a href="#managing-providers-in-the-console">Managing providers in the console</a></li><li class="toc-level-2"><a href="#linking-providers-to-applications-future">Linking providers to Applications (future)</a></li><li class="toc-level-2"><a href="#files">Files</a></li><li class="toc-level-2"><a href="#dashboard-and-query-integration">Dashboard and query integration</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="observability-gateway">Connect the observability gateway</h1><p class="article-description">Configure Paprika Observe providers and authenticated MCP access for querying metrics, logs, traces and saved dashboards.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/observability-gateway.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>The observability gateway is Paprika's MCP surface for querying observability
+backends — <strong>logs, metrics, and traces</strong> — through pluggable connectors. It runs
+as its own microservice (its own Deployment in split mode, its own <code>--mode</code> in
+the shared binary) and exposes:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">Text</span></div><pre tabindex="0" aria-label="Text code example 1"><code>https://&lt;paprika-host&gt;/observe/mcp
+</code></pre></div>
+<p>on the same hostname and TLS identity as the console (<code>/mcp</code> keeps serving the
+fleet surface). Gateway tokens carry the <strong><code>paprika-observability</code></strong> audience and
+the <strong><code>paprika:observe</code></strong> scope for reads. When Insights is configured, the separate
+<strong><code>paprika:insights:write</code></strong> scope enables saved-query and dashboard authoring,
+subject to the user's Insights RBAC permissions. A token minted for the console
+or fleet MCP surface is not replayable here and vice versa — even though all
+surfaces share the deployment's HMAC token secret.</p>
+<p>For request budgets, scope boundaries, repeatable local checks, profiling and live
+acceptance, see <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/observability-validation.md">validation guidance</a>.</p>
+<h2 id="architecture">Architecture</h2>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">Text</span></div><pre tabindex="0" aria-label="Text code example 2"><code>Claude/Codex → https://paprika.example.com/observe/mcp     (HTTPRoute, /observe)
+                     │ h2c
+                     ▼
+       Deployment/&lt;release&gt;-observability-gateway
+                     │  mcp.Server (RoutePrefix /observe, ScopeObserve + optional authoring,
+                     │  console resource extensions disabled, own embedded
+                     │  consent page at /observe/consent)
+                     ▼
+       internal/observabilitygateway.Backend
+                     │  per call: get ObservabilityProvider CR
+                     │  (namespace/name) → resolve credentialsSecretRef
+                     ▼
+       connector.New(type).Query(...)  (stateless; config travels per-request)
+                     │
+                     ▼
+       prometheus / loki / tempo / otlp  (plain HTTP, no vendor SDKs)
+</code></pre></div>
+<ul>
+<li><code>internal/observabilitygateway/connector</code> — the connector framework:
+<code>Connector</code> interface (<code>Descriptor</code> / <code>ValidateConfig</code> /
+<code>Query</code>), a dup-rejecting <code>Registry</code>, signal/state/sentinel vocabulary that
+deliberately parallels <code>internal/clusterprovider</code> and <code>internal/dataprovider</code>
+(state strings OK/NotConfigured/NotAvailable/Error/Forbidden; sentinels
+<code>ErrForbidden</code> / <code>ErrNotConfigured</code> / <code>ErrUnsupported</code> / <code>ErrNotAvailable</code>).</li>
+<li>Connector errors never echo endpoints, credentials, or response bodies into
+tool results — users get fixed sentences, detail goes to the gateway log
+(clusterprovider sanitize discipline).</li>
+<li>Unsupported query shapes return a <code>StateNotAvailable</code> result plus an error
+wrapping <code>ErrUnsupported</code>; the backend returns the result and logs the error.</li>
+</ul>
+<h2 id="query-backpressure-and-provider-bulkheads">Query backpressure and provider bulkheads</h2>
+<p>Paprika Observe now admits short bursts through bounded queues instead of
+rejecting every query when execution is busy:</p>
+<ul>
+<li>MCP per-principal token buckets (50 requests/s, burst 100) permit up to 8
+queued requests per authenticated user and 64 globally, each waiting at most
+2 seconds. A canceled MCP call does not execute after disconnect.</li>
+<li>The observability backend permits <strong>4 concurrent queries globally</strong> and
+<strong>2 concurrent queries per provider</strong>, with at most 32 global waiters and 8
+per-provider waiters. Admission waits no longer than 5 seconds, while each
+execution retains its 30-second budget and any earlier caller deadline.</li>
+<li>Insights permits <strong>16 concurrent query executions</strong> and up to <strong>64 queued
+requests</strong> waiting at most 2 seconds. <code>query_dashboard</code> executes distinct
+saved queries once and propagates the request deadline to providers.</li>
+<li>Overfull queues still return an explicit capacity error (429 / resource
+exhausted); holding a connection indefinitely would consume worker memory,
+create head-of-line blocking and hide provider outages.</li>
+<li>All limits are per process. Multiple replicas do not provide a single global
+cluster-wide queue; shared ordering across pods requires a separate durable
+scheduler, which is not appropriate for synchronous MCP requests.</li>
+</ul>
+<p>Query results are returned synchronously. Queuing does not change OAuth scopes,
+provider RBAC, saved dashboard versions or query timeout/error semantics.</p>
+<h2 id="the-mcp-surface">The MCP surface</h2>
+<p>Fifteen provider tools, all read-only and requiring <code>paprika:observe</code>:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_observability_providers</code></td>
+<td>List <code>ObservabilityProvider</code> CRs (name, type, state)</td>
+</tr>
+<tr>
+<td><code>get_observability_provider</code></td>
+<td>One provider's descriptor (signals it supplies)</td>
+</tr>
+<tr>
+<td><code>query_logs</code></td>
+<td>LogQL query (loki/otlp connectors)</td>
+</tr>
+<tr>
+<td><code>query_metrics</code></td>
+<td>PromQL instant/range query (prometheus/otlp)</td>
+</tr>
+<tr>
+<td><code>query_traces</code></td>
+<td>TraceQL search or <code>trace_id</code> fetch (tempo/otlp)</td>
+</tr>
+<tr>
+<td><code>query_records</code></td>
+<td>Bounded typed rows from Shorted, Uptime or read-only PostgreSQL</td>
+</tr>
+<tr>
+<td><code>list_metric_names</code></td>
+<td>Enumerate a metrics provider's metric names (<code>prefix</code>/<code>limit</code> filters)</td>
+</tr>
+<tr>
+<td><code>list_metric_series</code></td>
+<td>Bounded metric series/label sets in a time range; supports approximate cardinality inspection</td>
+</tr>
+<tr>
+<td><code>list_label_names</code></td>
+<td>Label names — globally or on one <code>metric</code> (prometheus/loki/tempo tags)</td>
+</tr>
+<tr>
+<td><code>list_label_values</code></td>
+<td>One <code>label</code>'s values, optionally constrained to a <code>metric</code></td>
+</tr>
+<tr>
+<td><code>get_metric_metadata</code></td>
+<td>One metric's type/help/unit (prometheus <code>/api/v1/metadata</code>)</td>
+</tr>
+<tr>
+<td><code>list_trace_services</code></td>
+<td>Service names a tempo provider has spans for</td>
+</tr>
+<tr>
+<td><code>list_provider_types</code></td>
+<td>The provider-type catalog (library view)</td>
+</tr>
+<tr>
+<td><code>describe_provider_type</code></td>
+<td>One type's config schema + onboarding walkthrough</td>
+</tr>
+<tr>
+<td><code>validate_provider</code></td>
+<td>Offline syntax validation of prospective provider configuration</td>
+</tr>
+</tbody>
+</table></div>
+<p>Metric, label and trace-service exploration accepts optional RFC 3339 <code>start</code>
+and <code>end</code> bounds. Series enumeration defaults to the trailing thirty minutes;
+explicit windows are limited to 31 days. A bounded series sample is not a
+global active-series count. Insights consumes the supported Prometheus/Tempo
+tools through this MCP endpoint using the signed-in user's delegated access.</p>
+<p>Insights also uses <code>query_records</code> for application and SQL dashboards. These
+providers can project numeric columns through <code>query_metrics</code>; inventories do
+not become historical series unless the source supplies timestamps. See the
+<a href="../../docs/dashboards/">repository example library</a> and the
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/shorted-provider.md">Shorted</a>, <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/uptime-provider.md">Uptime</a> and
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/postgresql-provider.md">PostgreSQL</a> adapter contracts.</p>
+<p>When Insights is configured, the same MCP endpoint additionally exposes:</p>
+<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Required scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_insights_providers</code></td>
+<td><code>paprika:observe</code></td>
+<td>Discover provider IDs used in saved UI documents</td>
+</tr>
+<tr>
+<td><code>get_insights_schema</code></td>
+<td><code>paprika:observe</code></td>
+<td>Discover canonical dashboard, widget or saved-query JSON Schema and examples</td>
+</tr>
+<tr>
+<td><code>list_saved_queries</code>, <code>get_saved_query</code></td>
+<td><code>paprika:observe</code></td>
+<td>Read saved queries and their ETags</td>
+</tr>
+<tr>
+<td><code>list_dashboards</code>, <code>get_dashboard</code></td>
+<td><code>paprika:observe</code></td>
+<td>Read shared dashboards and their ETags</td>
+</tr>
+<tr>
+<td><code>query_dashboard</code></td>
+<td><code>paprika:observe</code></td>
+<td>Execute a saved dashboard and read compact, versioned live signals with optional variable overrides</td>
+</tr>
+<tr>
+<td><code>create_saved_query</code>, <code>create_dashboard</code></td>
+<td><code>paprika:observe</code> + <code>paprika:insights:write</code></td>
+<td>Create a new shared document without replacing an existing ID</td>
+</tr>
+<tr>
+<td><code>update_saved_query</code>, <code>update_dashboard</code></td>
+<td><code>paprika:observe</code> + <code>paprika:insights:write</code></td>
+<td>Update a document using the exact ETag from its latest read</td>
+</tr>
+<tr>
+<td><code>patch_saved_query</code>, <code>patch_dashboard</code></td>
+<td><code>paprika:observe</code> + <code>paprika:insights:write</code></td>
+<td>Edit selected fields and dashboard widgets by ID, atomically against the current ETag</td>
+</tr>
+</tbody>
+</table></div>
+<p>All document tools also enforce the user's global <code>insights</code> read/write RBAC.
+The authoring scope grants no fleet operations or provider configuration.
+Existing <code>paprika:observe</code> tokens remain read-only, including on refresh;
+authoring requires a fresh native OAuth grant that explicitly requests the new
+scope. An omitted-scope authorization request retains the read-only default.
+Create saved queries before dashboards that reference them, and preserve typed
+parameters and bindings. A stale update returns a conflict: reread the document
+and reconcile the intended edit instead of issuing a wildcard overwrite.</p>
+<p>Start authoring with <code>get_insights_schema</code> (<code>kind</code>: <code>dashboard</code>, <code>widget</code>, or
+<code>saved_query</code>). It returns the deployed Insights service's full JSON Schema,
+examples and semantic-validation notes. For small changes, prefer
+<code>patch_saved_query</code> or <code>patch_dashboard</code>: nested objects merge, <code>null</code> removes a
+field, and arrays replace in full. Dashboard widgets use <code>widget_edits</code> with
+<code>add</code>, <code>update</code> or <code>remove</code> operations addressed by stable widget ID. A batch is
+validated and persisted once; any invalid edit or ETag conflict leaves the
+document unchanged. See the <a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/targeted-authoring.md">targeted authoring contract</a>.</p>
+<p>The tools use the same persistent Insights service as the UI. Open workspaces
+refresh externally saved changes while protecting unsaved local drafts.
+Provider credentials and the Insights service token never enter tool responses.
+<code>query_dashboard</code> resolves the same saved-query bindings as the UI and executes
+identical panel queries once. Its structured result contains latest readings,
+range summaries, a bounded trace sample, document ETags and explicit
+missing/error/truncation states. History is opt-in; service overrides never
+modify saved defaults. Data availability is not a service-health verdict.
+See the <a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/dashboard-query.md">dashboard query contract</a> for
+limits, examples and interpretation.
+See the <a href="../../docs/observe-plugin/">Observe plugin</a> for connection
+and authoring guidance.</p>
+<p>The five exploration tools answer in the backend's own JSON envelope
+(<code>{&quot;status&quot;:&quot;success&quot;,&quot;data&quot;:[...]}</code> for prometheus/loki, <code>{&quot;tagNames&quot;:[...]}</code>
+/ <code>{&quot;tagValues&quot;:[...]}</code> for tempo) so a caller can explore a backend and then
+query what it found without learning a gateway dialect. Exploration is an
+optional connector capability (<code>connector.Explorer</code>) implemented per provider,
+each mapping the generic kinds onto its own native discovery mechanism:</p>
+<div class="table-scroll" role="region" aria-label="Table 3, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>metric_names</th>
+<th>label_names</th>
+<th>label_values</th>
+<th>metric_metadata</th>
+<th>trace_services</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>prometheus</td>
+<td><code>/api/v1/label/__name__/values</code> (+ prefix/limit)</td>
+<td>global <code>/api/v1/labels</code>, or per-metric via <code>/api/v1/series</code> union</td>
+<td>global or per-metric series union</td>
+<td><code>/api/v1/metadata</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>loki</td>
+<td>—</td>
+<td><code>/loki/api/v1/labels</code></td>
+<td><code>/loki/api/v1/label/x/values</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>tempo</td>
+<td>—</td>
+<td><code>/api/search/tags</code></td>
+<td><code>/api/search/tag/x/values</code></td>
+<td>—</td>
+<td><code>service.name</code> tag values</td>
+</tr>
+<tr>
+<td>aws-cloudwatch-metrics</td>
+<td><code>ListMetrics</code> (optional <code>namespace</code> arg; paginated)</td>
+<td>dimension-name union from ListMetrics</td>
+<td>dimension-value union for a label</td>
+<td>— (no metadata API)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>aws-cloudwatch-logs</td>
+<td><code>DescribeMetricFilters</code></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>aws-xray</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td><code>GetServiceGraph</code> (trailing 30 min)</td>
+</tr>
+<tr>
+<td>aws-cloudtrail</td>
+<td>—</td>
+<td>static LookupAttributes catalog</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>gcp-cloudmonitoring</td>
+<td><code>metricDescriptors.list</code> (<code>starts_with</code> prefix filter)</td>
+<td>descriptor <code>labels[].key</code> union</td>
+<td>— (values not enumerable)</td>
+<td>exact descriptor passthrough</td>
+<td>—</td>
+</tr>
+<tr>
+<td>gcp-cloudlogging</td>
+<td><code>logMetrics.list</code></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>vultr-monitoring</td>
+<td>static catalog (<code>account_bandwidth</code>, <code>instance_bandwidth_in/outgoing_bytes</code>)</td>
+<td>static <code>instance_id/label/region/status</code></td>
+<td>live <code>GET /v2/instances</code> union</td>
+<td>static type/help/unit per catalog metric</td>
+<td>—</td>
+</tr>
+<tr>
+<td>gcp-cloudtrace, otlp, mock*</td>
+<td>— → <code>StateNotAvailable</code></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>* mock implements every kind from a fixed synthetic catalog (e2e stays
+hermetic). A provider type answering <code>StateNotAvailable</code> returns a fixed
+sentence naming the missing capability — data, not an error. The optional
+<code>namespace</code> argument is read by the CloudWatch metrics connector only.</p>
+<p>Tool args take <code>provider</code> as <code>namespace/name</code>. <code>start</code>/<code>end</code> are RFC3339
+(default: last 30 minutes); <code>limit</code> defaults vary by connector.</p>
+<p>OAuth 2.1 + PKCE, RFC 7591 dynamic client registration, and RFC 9728/8414
+discovery all work exactly like the fleet MCP surface, under <code>/observe/*</code>:</p>
+<ul>
+<li><code>GET /.well-known...</code> — served at <code>/observe/.well-known/oauth-protected-resource</code>
+and <code>/observe/.well-known/oauth-authorization-server</code> (the 401 challenge's
+<code>resource_metadata</code> points there; the host-root well-knowns remain the
+console surface's).</li>
+<li>Consent: browsers are redirected to <code>/observe/consent</code>, a minimal
+self-contained page embedded in the gateway binary. Unifying it with the
+branded console consent page is follow-up work.</li>
+</ul>
+<h2 id="configuring-providers">Configuring providers</h2>
+<p><code>ObservabilityProvider</code> is a namespaced CR (group
+<code>observability.paprika.io</code>):</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 3"><code class="language-yaml">apiVersion: observability.paprika.io/v1alpha1
+kind: ObservabilityProvider
+metadata:
+  name: prometheus
+  namespace: paprika-e2e
+spec:
+  type: prometheus                     # prometheus | loki | tempo | otlp |
+                                       # gcp-cloudlogging | gcp-cloudmonitoring | gcp-cloudtrace |
+                                       # aws-cloudwatch-logs | aws-cloudwatch-metrics |
+                                       # aws-xray | aws-cloudtrail
+  config:
+    endpoint: http://kube-prometheus-stack-prometheus.monitoring:9090
+  # credentialsSecretRef:             # optional
+  #   name: grafana-cloud-token       # namespace/key optional (default: CR ns, &quot;credentials&quot;)
+</code></pre></div>
+<ul>
+<li><code>spec.config</code> is opaque per-connector JSON, validated at admission by the
+connector itself (webhook <code>rejectInlineCredentials</code> refuses literal
+token/password keys anywhere in the document; put credentials in a Secret).</li>
+<li><code>spec.credentialsSecretRef</code> document: nil = no auth; otherwise the secret
+<code>data[key]</code> is sent as <code>Authorization: Bearer &lt;value&gt;</code>, or HTTP Basic when it
+contains <code>user:password</code>.</li>
+<li>The referenced Secret must be labelled
+<code>observability.paprika.io/credentials=true</code>. The gateway's service account
+can read far more than provider credentials, and whoever writes a provider
+chooses both the Secret and the endpoint it is sent to, so only Secrets
+opted in by label are ever read; any other reference reports
+<code>NotConfigured</code>. <code>CreateObservabilityProvider</code> labels the Secret it creates;
+label Secrets you create yourself:
+<code>kubectl label secret &lt;name&gt; -n &lt;ns&gt; observability.paprika.io/credentials=true</code>.</li>
+<li>A Secret in another namespace (<code>credentialsSecretRef.namespace</code>) is read only
+for a caller authorized for providers in that namespace. The status prober
+acts for no caller, so such a provider reports <code>NotConfigured</code> in status
+while authorized queries still work.</li>
+<li><code>endpoint</code> (absolute http(s) URL) is the one universal config key; unknown
+keys fail validation (typo fail-fast). Optional keys:
+<ul>
+<li><code>headers</code> — map of extra request headers (≤16 entries, ≤4 KiB combined):
+vendor tenancy like Loki/Grafana/Mimir <code>X-Scope-OrgID</code>. Operator-declared
+headers win <code>Authorization</code> collisions (documented + tested).</li>
+<li><code>insecureSkipTLS</code> — bool, for self-signed in-cluster backends only (never
+off-cluster; per-config client so verified/unverified TLS sessions never
+share connection pools).</li>
+<li><code>step</code> — prometheus-only range-query step override (Go duration, &gt;0, ≤1h;
+otherwise derived as max(10s, span/250)).</li>
+</ul>
+</li>
+</ul>
+<h3 id="connector-specifics">Connector specifics</h3>
+<div class="table-scroll" role="region" aria-label="Table 4, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>type</th>
+<th>signals</th>
+<th>query behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prometheus</code></td>
+<td>metrics</td>
+<td>PromQL; range (start+end) → <code>/api/v1/query_range</code> with computed step, instant otherwise</td>
+</tr>
+<tr>
+<td><code>loki</code></td>
+<td>logs</td>
+<td>LogQL → <code>/loki/api/v1/query_range</code>; limit default 100, max 1000</td>
+</tr>
+<tr>
+<td><code>tempo</code></td>
+<td>traces</td>
+<td><code>trace_id</code> → <code>/api/traces/&lt;id&gt;</code>; TraceQL → <code>/api/search</code></td>
+</tr>
+<tr>
+<td><code>otlp</code></td>
+<td>logs, metrics, traces</td>
+<td>Generic OTLP/HTTP retrieval proxy: <code>GET &lt;endpoint&gt;/v1/{logs,metrics,traces}</code> with <code>trace_id</code>/<code>start</code>/<code>end</code>/<code>limit</code> params when set</td>
+</tr>
+<tr>
+<td><code>gcp-cloudlogging</code></td>
+<td>logs</td>
+<td>Query = Cloud Logging <a href="https://cloud.google.com/logging/docs/view/logging-query-language">advanced filter</a>; empty → probe (<code>entries:list</code>, 1 entry)</td>
+</tr>
+<tr>
+<td><code>gcp-cloudmonitoring</code></td>
+<td>metrics</td>
+<td>Query = <a href="https://cloud.google.com/monitoring/api/v3/filters">Monitoring filter</a>; window required (defaults to trailing hour); empty → probe (<code>metricDescriptors</code>, 1 row)</td>
+</tr>
+<tr>
+<td><code>gcp-cloudtrace</code></td>
+<td>traces</td>
+<td><code>trace_id</code> → one trace; Query = optional list filter; empty → probe (1 trace)</td>
+</tr>
+<tr>
+<td><code>aws-cloudwatch-logs</code></td>
+<td>logs</td>
+<td>Query = CloudWatch <a href="https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/FilterAndPatternSyntax.html">filter pattern</a> (empty = all events); config <code>logGroup</code> required; probe = 1 event</td>
+</tr>
+<tr>
+<td><code>aws-cloudwatch-metrics</code></td>
+<td>metrics</td>
+<td>Query = metric name in config <code>namespace</code> (required); period derived from window (clamped 60–3600s, Average/Sum/Maximum); empty → probe (<code>ListMetrics</code>)</td>
+</tr>
+<tr>
+<td><code>aws-xray</code></td>
+<td>traces</td>
+<td><code>trace_id</code> → <code>BatchGetTraces</code>; Query = X-Ray <a href="https://docs.aws.amazon.com/xray/latest/devguide/xray-console-filters.html">filter expression</a> (empty = all); probe = summaries, trailing 10 min</td>
+</tr>
+<tr>
+<td><code>aws-cloudtrail</code></td>
+<td>audit</td>
+<td>Query = comma-separated <code>Key=Value</code> lookup attributes (e.g. <code>EventName=RunInstances,EventCategory=Activity</code>), empty = all; limit ≤ 50; probe = 1 event</td>
+</tr>
+<tr>
+<td><code>mock</code></td>
+<td>metrics, logs, traces</td>
+<td>Synthetic in-process backend for load tests, demos and e2e — no network egress. Config knobs (all optional, bounded): <code>series</code>, <code>pointsPerSeries</code>, <code>labelsPerSeries</code>, <code>logEntries</code>, <code>traces</code>, <code>spansPerTrace</code> (payload shape), <code>latencyMs</code> (context-aware synthetic latency), <code>failEvery</code> (deterministic stable error subset — every Nth distinct query string), <code>seed</code> (deterministic generator seed; identical query + seed = identical data)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="perf-testing-with-the-mock-connector">Perf testing with the mock connector</h3>
+<p><code>hack/obsloadgen</code> drives the gateway's MCP surface with N concurrent clients
+(one self-signed <code>paprika-observability</code> token each — distinct subjects so
+the per-subject rate limiter binds no client but its own), and
+<code>task perf:obs-*</code> wraps the loop for the kind perf stack:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 4"><code class="language-sh">task perf:obs-seed COUNT=50        # seed varied mock providers (idempotent)
+task perf:obs-load SECS=60 CLIENTS=32 RPS=5
+task perf:obs-profile SECS=30      # combined load + pprof capture
+task perf:obs-metrics              # gateway /metrics + kubectl top
+</code></pre></div>
+<p><strong>Grafana Cloud</strong> uses the same three native connectors with the Grafana Cloud
+endpoint and an API token as <code>credentials</code>, e.g.:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 5"><code class="language-yaml">spec:
+  type: prometheus
+  config:
+    endpoint: https://prometheus-prod-01-us-west1.grafana.net/api/prom
+  credentialsSecretRef:
+    name: grafana-cloud   # Secret labelled observability.paprika.io/credentials=true
+</code></pre></div>
+<h3 id="cloud-connectors-gcp-and-aws">Cloud connectors (GCP and AWS)</h3>
+<p>The seven cloud connectors share the same CR shape; what changes is the
+credential document and the config keys:</p>
+<ul>
+<li><strong>AWS</strong> (<code>aws-cloudwatch-logs</code>, <code>aws-cloudwatch-metrics</code>, <code>aws-xray</code>,
+<code>aws-cloudtrail</code>) — <code>spec.credentialsSecretRef</code> holds the same snake_case
+JSON the EKS cluster provider accepts:
+<code>{&quot;access_key_id&quot;: &quot;...&quot;, &quot;secret_access_key&quot;: &quot;...&quot;, &quot;session_token&quot;: &quot;...&quot;}</code>.
+Omit the ref entirely to use the ambient SDK chain (IRSA / IMDS /
+environment). Config keys: <code>region</code> (required), plus the connector's
+required selector (<code>logGroup</code> for logs, <code>namespace</code> for metrics), plus
+optional <code>endpoint</code> (VPC endpoints / in-cluster emulators — the SDK
+sends to it verbatim) and <code>insecureSkipTLS</code>.</li>
+<li><strong>GCP</strong> (<code>gcp-cloudlogging</code>, <code>gcp-cloudmonitoring</code>, <code>gcp-cloudtrace</code>) —
+the secret holds a Google credential JSON restricted to <code>service_account</code>,
+<code>external_account</code> or <code>impersonated_service_account</code> (type-checked before
+loading, same as the GKE cluster provider); omit it for ambient identity
+(GKE Workload Identity / metadata server). Config keys: optional
+<code>projectId</code> (defaults to the credential's project), optional <code>endpoint</code>
+(private proxies / fakes — replaces the <code>*.googleapis.com</code> base),
+<code>insecureSkipTLS</code>.
+<ul>
+<li>Ambient identity is the gateway's own, so it is sent only to an <code>https</code>
+<code>*.googleapis.com</code> endpoint with TLS verification on. A provider with no
+credential Secret and any other <code>endpoint</code>, or <code>insecureSkipTLS</code>, reports
+<code>NotConfigured</code> and sends nothing; give such a provider its own
+credential Secret.</li>
+<li>In <code>external_account</code> and <code>impersonated_service_account</code> documents,
+<code>token_url</code>, <code>token_info_url</code> and <code>service_account_impersonation_url</code> must
+be <code>https</code> <code>*.googleapis.com</code> URLs, <code>universe_domain</code> must be empty or
+<code>googleapis.com</code>, and <code>credential_source.executable</code> is refused. These
+fields decide where x/oauth2 posts subject and access tokens; it does not
+validate them itself.</li>
+</ul>
+</li>
+</ul>
+<p>Empty connector queries are used internally for small health reads. Prospective
+<code>validate_provider</code> and the console's <strong>Validate configuration</strong> action only check
+syntax and never send credentials or make backend requests. Establish connectivity
+by querying an approved provider with explicit bounds.</p>
+<p>E2E coverage runs in kind: LocalStack serves CloudWatch Logs + Metrics
+(X-Ray and CloudTrail are license-gated there, so those two run against a
+canned nginx responder), and a JWT-issuing nginx fake serves the GCP REST
+shapes with a runtime-generated service-account key — see
+<code>test/e2e/observabilitycloud_test.go</code>.</p>
+<h2 id="enabling-the-gateway">Enabling the gateway</h2>
+<p>Check the installed release and source chart versions before upgrading the main
+release. When the installed chart is newer, use the separate
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/observability-addon.md">gateway-only Helm add-on</a> to preserve its controllers
+and resources. Its render-only helper emits three resources and keeps public
+routing disabled unless explicitly requested and approved.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 6"><code class="language-sh">helm upgrade paprika-e2e charts/chart/ \
+  --namespace paprika-e2e --values deploy/test-values.yaml \
+  --values deploy/omega-values.yaml \
+  --set observabilityGateway.enabled=true --wait --timeout 5m
+</code></pre></div>
+<p>Preconditions enforced at render time (<code>helm template</code> fails otherwise):
+<code>deploymentMode: split</code>, <code>auth.enabled</code>, a non-empty
+<code>PAPRIKA_AUTH_TOKEN_SECRET</code> via <code>observabilityGateway.extraEnv(From)</code>, and
+<code>mcp.publicURL</code>. A preconfigured OAuth client is optional for the gateway: leave
+both <code>mcp.oauth.clientId</code> and <code>mcp.oauth.redirectUris</code> empty for dynamic
+registration only, or provide both for an approved static client. Partial
+configuration is rejected. Rendering and DCR-only startup configure no persistent
+client; native OAuth sign-in and client-access approval are separate actions.
+The shared <code>mcp</code> configuration fields do not require <code>mcp.enabled</code>: that switch
+controls the independent fleet MCP surface and may remain disabled.
+Public exposure reuses the api-server's Gateway/hostname:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 7"><code class="language-yaml">observabilityGateway:
+  enabled: true
+  ingress:
+    enabled: true     # HTTPRoute: path prefix /observe → gateway Service
+</code></pre></div>
+<p>Verify:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 8"><code class="language-sh">curl -s https://paprika.benebsworth.com/.well-known/oauth-protected-resource/observe/mcp | jq .
+# { &quot;resource&quot;: &quot;https://paprika.benebsworth.com/observe/mcp&quot;,
+#   &quot;authorization_servers&quot;: [&quot;https://paprika.benebsworth.com/observe&quot;],
+#   &quot;scopes_supported&quot;: [&quot;paprika:observe&quot;, &quot;paprika:insights:write&quot;] }
+# The authoring scope is present only when Insights is configured.
+</code></pre></div>
+<p>For providers signed by a CA outside the system trust bundle, configure
+<code>observabilityGateway.additionalCACertificates</code> as a map of <code>.crt</code> or <code>.pem</code>
+filenames to public PEM CA certificates (one certificate per file). The chart
+creates a ConfigMap, mounts it read-only at
+<code>/etc/paprika/additional-ca-certificates</code>, and includes its contents in the
+gateway pod checksum so certificate updates roll out automatically. This is
+gateway-wide trust for all its connectors; include only CAs approved for that
+scope. Provider hostname verification remains enabled.</p>
+<p><code>SSL_CERT_DIR</code> includes <code>/etc/ssl/certs</code>, <code>/etc/pki/tls/certs</code>, and the added
+directory. The default system certificate file is unchanged. Do not also set
+<code>SSL_CERT_DIR</code> in <code>observabilityGateway.extraEnv</code>; the chart rejects ambiguous
+configuration. Private keys and provider credentials belong in their existing
+Secret references, never in this public certificate map. Omitting the map leaves
+the gateway's default trust configuration unchanged.</p>
+<h2 id="autodiscovery-from-in-cluster-services">Autodiscovery from in-cluster Services</h2>
+<p>Backends running in the same cluster can register themselves without anyone
+hand-writing provider YAML. The provider-discovery controller
+(<code>internal/controller/observe</code>) watches Services carrying the opt-in
+annotation and materializes each as an <code>ObservabilityProvider</code> CR in the
+Service's namespace. It runs in the observability gateway pod itself (a
+dedicated controller-runtime manager alongside the MCP server, single
+replica with leader election off), so discovery works even where only the
+observability microservice is installed; the pipeline manager also
+registers the reconciler, and dual-running converges safely:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 9"><code class="language-yaml">metadata:
+  annotations:
+    observability.paprika.io/discover: &quot;true&quot;
+</code></pre></div>
+<p>Type and endpoint are inferred from the Service: the connector type comes
+from the Service name (<code>prometheus</code>, <code>loki</code>, <code>tempo</code>, <code>otel</code> substrings — so
+<code>prometheus-operated</code>, <code>loki-gateway</code>, <code>tempo-query-frontend</code>, and
+<code>otel-collector</code> all just work), the port from each type's well-known port
+names (<code>http-web</code>/<code>web</code>/<code>http</code>, <code>http-metrics</code>, <code>otlp-http</code>, …) falling back
+to the first declared port, and the endpoint is
+<code>http://&lt;service&gt;.&lt;ns&gt;.svc:&lt;port&gt;</code>. Inference overrides:</p>
+<div class="table-scroll" role="region" aria-label="Table 5, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Annotation</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observability.paprika.io/type</code></td>
+<td>explicit connector type (<code>prometheus</code>/<code>loki</code>/<code>tempo</code>/<code>otlp</code>) when the name matches nothing</td>
+</tr>
+<tr>
+<td><code>observability.paprika.io/port</code></td>
+<td>explicit port number (invalid values hard-reject the Service)</td>
+</tr>
+<tr>
+<td><code>observability.paprika.io/path</code></td>
+<td>base path appended to the endpoint (e.g. Prometheus behind <code>/prometheus</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Ownership rules keep the CR-as-system-of-record invariant:</p>
+<ul>
+<li>Discovered CRs are labeled <code>observability.paprika.io/discovered: service</code>
+and owned by the Service — deleting the Service or removing the
+annotation garbage-collects the provider.</li>
+<li>The controller converges type/endpoint drift on labeled CRs but <strong>never
+touches a CR without the label</strong> — dropping the label from a discovered
+provider hands it to the operator permanently, and an operator-written CR
+of the same name is never deleted or modified.</li>
+<li>Discovered providers have no credentials (in-cluster backends are usually
+unauthenticated); edit the CR to add <code>credentialsSecretRef</code> (to a labelled
+Secret) and it still converges endpoint changes around your edit.</li>
+</ul>
+<p>Example — everything kube-prometheus-stack + loki + tempo need:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 10"><code class="language-sh">kubectl annotate svc prometheus-operated -n monitoring observability.paprika.io/discover=true
+kubectl annotate svc loki-gateway -n monitoring observability.paprika.io/discover=true
+kubectl annotate svc tempo-query-frontend -n tracing observability.paprika.io/discover=true
+kubectl get observabilityproviders -A
+</code></pre></div>
+<h2 id="provider-status">Provider status</h2>
+<p>The gateway is also the writer behind the provider board's STATE column: its
+status prober re-runs the catalog's per-type health probe — the cheapest read
+each backend accepts, the same probe the onboarding wizard's <strong>Test
+connection</strong> runs — against every registered provider on
+<code>--obs-provider-probe-interval</code> (chart <code>observabilityGateway.probeInterval</code>,
+default <code>5m</code>; <code>0</code> disables status writes) and patches the verdict onto each
+CR's <code>status</code>: <code>state</code> (<code>OK</code>/<code>NotConfigured</code>/<code>NotAvailable</code>/<code>Error</code>/
+<code>Forbidden</code>), a fixed-sentence <code>reason</code> that never carries credential or
+endpoint detail, <code>observedGeneration</code>, and a <code>Ready</code> condition mirroring the
+state. The probe resolves credentials through the same path a query does, so
+status shows what a query would experience right now; <code>kubectl get observabilityproviders</code> and the console's provider board read the same
+fields.</p>
+<h2 id="managing-providers-in-the-console">Managing providers in the console</h2>
+<p>The dashboard's <strong>Observability</strong> page (<code>/dashboard/observability/</code>, listed
+under <em>Sources</em> in the sidebar) renders three boards:</p>
+<ul>
+<li><strong>Provider library</strong> — every provider type the gateway can connect to
+(OSS + GCP + AWS), served from the gateway's catalog: vendor, category,
+signals, and a one-line summary per type.</li>
+<li><strong>Providers</strong> — every <code>ObservabilityProvider</code> (name, type, signals,
+endpoint, state, discovery provenance). Discovered providers carry a
+DISCOVERED pill; states map to the console's status tones.</li>
+<li><strong>Tool usage</strong> — per-tool call/error counters maintained by the gateway's
+usage tracker and served from its authenticated <code>/observe/api/usage</code>
+endpoint. The api-server proxies it over <code>GetObservabilityUsage</code> (minting
+a short-lived <code>paprika-observability</code> token per call); when the gateway is
+not deployed the board renders the canonical &quot;not configured&quot; sentence
+instead of zeros.</li>
+</ul>
+<p>Selecting <strong>Set up</strong> on a library card opens the onboarding wizard. Its
+<strong>Validate configuration</strong> action calls <code>ValidateObservabilityProvider</code> for offline
+syntax checks and does not establish backend access. <strong>Create provider</strong> is a
+separate administrative operation that creates the provider CR and, when explicitly
+supplied through the secure administration flow, its credential Secret. Creation
+requires the console's <code>write</code> action on <code>observabilityproviders</code> in the target
+namespace. Workload identity avoids a static credential document.</p>
+<p>The same data is available programmatically:
+<code>PaprikaService.ListObservabilityProviderTypes</code>,
+<code>GetObservabilityProviderType</code>, <code>ValidateObservabilityProvider</code>,
+<code>CreateObservabilityProvider</code>, <code>ListObservabilityProviders</code>, and
+<code>GetObservabilityUsage</code>. On the MCP surface, agents get <code>list_provider_types</code>,
+<code>describe_provider_type</code>, and <code>validate_provider</code> alongside the query tools.</p>
+<h2 id="linking-providers-to-applications-future">Linking providers to Applications (future)</h2>
+<p>The v1 CRD is deliberately shaped for a follow-up binding CR
+(<code>DataProviderBinding</code>-style scope precedence: application &gt; namespace &gt;
+cluster) that will attach providers to Applications so the console view layer
+and deployment pages can surface logs/metrics/traces per app. The gateway
+itself is agnostic to that: tools already accept any <code>namespace/name</code> provider.</p>
+<h2 id="files">Files</h2>
+<ul>
+<li><code>cmd/main_observability_gateway.go</code> — the <code>--mode=observability-gateway</code> runner</li>
+<li><code>internal/observabilitygateway/</code> — backend (CR + credential resolution), MCP tools, catalog/validate HTTP handlers, consent page, <code>New(providerType)</code> connector registry</li>
+<li><code>internal/observabilitygateway/connector/</code> — connector framework + registry</li>
+<li><code>internal/observabilitygateway/connector/{prometheus,loki,tempo,otlp}/</code> — the OSS connectors</li>
+<li><code>internal/observabilitygateway/connector/{awscommon,awscloudwatchlogs,awscloudwatchmetrics,awsxray,awscloudtrail}/</code> — AWS connectors (SDK v2, snake_case key JSON or ambient chain)</li>
+<li><code>internal/observabilitygateway/connector/{gcpcommon,gcpcloudlogging,gcpcloudmonitoring,gcpcloudtrace}/</code> — GCP connectors (x/oauth2 service-account/external_account/impersonated JSON or ambient, hand-rolled REST)</li>
+<li><code>internal/observabilitygateway/catalog/</code> — the provider-type library (metadata, config-field specs, onboarding steps, probes)</li>
+<li><code>internal/api/mcp/</code> — the shared MCP server (route prefix / audience / scope generalization lives here)</li>
+<li><code>api/observability/v1alpha1/</code> — the <code>ObservabilityProvider</code> CRD</li>
+<li><code>internal/webhook/observability/v1alpha1/</code> — admission validation</li>
+<li><code>charts/chart/templates/observability-gateway/</code> — Deployment/Service/HTTPRoute/HPA/VPA/PDB</li>
+</ul>
+<h2 id="dashboard-and-query-integration">Dashboard and query integration</h2>
+<p>Paprika Insights consumes the same authorized provider backend as the MCP tools.
+The gateway exposes <code>GET /observe/api/providers</code>, <code>POST /observe/api/query</code> and
+<code>POST /observe/api/explore</code> for this integration. These routes require an
+Observe-audience bearer token and <code>paprika:observe</code>, then enforce the caller's
+namespace RBAC before reading providers or credential Secrets. HTTP and MCP
+requests share the connector concurrency budget and bounded response limits.</p>
+<p>The query route accepts a canonical <code>namespace/name</code> provider, signal, native
+query, RFC3339 start/end, optional <code>stepSeconds</code>, limit and supported pagination
+fields. Windows are bounded to 31 days; metrics steps must be at least one
+second and produce at most 11,000 points. <code>query_metrics</code> accepts the equivalent
+<code>step_seconds</code> argument. Native response JSON and explicit provider outcome
+states are preserved. Exploration adds bounded metric series and Tempo tags,
+including truncation indicators, for label cardinality and editor completion.</p>
+<p>Insights only advertises Prometheus and Tempo adapters, maintains stable IDs
+from the full provider namespace/name, and normalizes results for existing
+widgets. Its API proxy mints a 30-second token for the authenticated human;
+it never queries as a shared service account. OAuth authorization and refresh
+also retain exact group membership. See the
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/README.md#shared-observability-mcp-providers">Insights integration guide</a>.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/"><span>Browse</span><strong>All documentation</strong></a><a href="../../docs/dashboards/" rel="next"><span>Next guide</span><strong>Use dashboard examples with real data</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

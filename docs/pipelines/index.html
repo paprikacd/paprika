@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Run Kubernetes delivery pipelines · Paprika docs</title>
+<meta name="description" content="Configure container steps, dependencies, concurrency, retries and declared artifacts in Paprika Pipelines backed by Kubernetes Jobs."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/pipelines/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Run Kubernetes delivery pipelines · Paprika docs"/>
+<meta property="og:description" content="Configure container steps, dependencies, concurrency, retries and declared artifacts in Paprika Pipelines backed by Kubernetes Jobs."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/pipelines/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Run Kubernetes delivery pipelines · Paprika docs"/>
+<meta name="twitter:description" content="Configure container steps, dependencies, concurrency, retries and declared artifacts in Paprika Pipelines backed by Kubernetes Jobs."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Run Kubernetes delivery pipelines","description":"Configure container steps, dependencies, concurrency, retries and declared artifacts in Paprika Pipelines backed by Kubernetes Jobs.","url":"https://paprikacd.github.io/paprika/docs/pipelines/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/pipelines/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Run Kubernetes delivery pipelines","item":"https://paprikacd.github.io/paprika/docs/pipelines/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Deliver</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/" aria-current="page">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#run-a-dependency-example">Run a dependency example</a></li><li class="toc-level-2"><a href="#step-fields-and-execution">Step fields and execution</a></li><li class="toc-level-2"><a href="#check-out-source-explicitly">Check out source explicitly</a></li><li class="toc-level-2"><a href="#artifacts">Artifacts</a></li><li class="toc-level-2"><a href="#inspect-jobs-and-logs">Inspect Jobs and logs</a></li><li class="toc-level-2"><a href="#add-a-build-to-an-application">Add a build to an Application</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="pipeline-workflows">Run Kubernetes delivery pipelines</h1><p class="article-description">Configure container steps, dependencies, concurrency, retries and declared artifacts in Paprika Pipelines backed by Kubernetes Jobs.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/pipelines.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Paprika's <code>Pipeline</code> CRD runs configured container steps as Kubernetes Jobs.
+Declare dependencies between steps, bound concurrent execution, and inspect
+each step's outcome. A Pipeline is optional for application delivery.</p>
+<p>The current executor creates an isolated Job for each step. It does not
+automatically check out <code>spec.sources</code>, share a filesystem between steps,
+inject build variables such as <code>GIT_SHA</code> or <code>TAG</code>, or upload files declared
+as artifacts. The examples below make source checkout and output handling
+explicit. These behaviours follow the
+<a href="https://github.com/paprikacd/paprika/blob/master/internal/engine/workflow.go">workflow executor</a>.</p>
+<p>For deployments across environments, see
+<a href="../../docs/environment-promotion/">Dev → Staging → Production Promotion</a>. Promotion
+connects separate Applications through <code>spec.trigger.from</code>; it selects a
+completed upstream revision and can run verification Pipelines before
+admitting a downstream Release.</p>
+<h2 id="run-a-dependency-example">Run a dependency example</h2>
+<p>This complete example checks Job execution, shell commands and a writable
+temporary directory. It does not test or deploy an application. The two
+checks depend on <code>prepare</code>; <code>finish</code> waits for both checks.</p>
+<p>Save it as <code>pipeline.yaml</code>. The namespace must already exist, and the
+controller and cluster must be able to pull the selected images.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 1"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: pipeline-demo
+  namespace: paprika-system
+spec:
+  maxParallel: 2
+  steps:
+    - name: prepare
+      image: alpine:3.19
+      script: |
+        set -eu
+        printf &#39;Starting dependency checks\n&#39;
+      timeout: 30
+    - name: check-shell
+      image: alpine:3.19
+      depends:
+        - prepare
+      script: |
+        set -eu
+        test &quot;$(printf &#39;%s&#39; ready)&quot; = ready
+      timeout: 30
+    - name: check-storage
+      image: alpine:3.19
+      depends:
+        - prepare
+      script: |
+        set -eu
+        paprika_step_dir=&quot;$(mktemp -d /tmp/paprika-check.XXXXXX)&quot;
+        trap &#39;rm -rf &quot;$paprika_step_dir&quot;&#39; EXIT
+        printf &#39;%s&#39; ready &gt; &quot;$paprika_step_dir/result&quot;
+        test &quot;$(cat &quot;$paprika_step_dir/result&quot;)&quot; = ready
+      timeout: 30
+    - name: finish
+      image: alpine:3.19
+      depends:
+        - check-shell
+        - check-storage
+      script: |
+        set -eu
+        printf &#39;Both dependency checks completed\n&#39;
+      timeout: 30
+</code></pre></div>
+<p>Review the selected cluster before applying the Pipeline:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">kubectl config current-context
+kubectl apply -f pipeline.yaml
+kubectl -n paprika-system get pipeline pipeline-demo -w
+</code></pre></div>
+<p>Inspect individual step outcomes:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh">kubectl -n paprika-system get pipeline pipeline-demo -o json \
+  | jq &#39;{phase: .status.phase, steps: .status.stepStatuses, artifacts: .status.artifactRefs}&#39;
+</code></pre></div>
+<h2 id="step-fields-and-execution">Step fields and execution</h2>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>Unique step name.</td>
+</tr>
+<tr>
+<td><code>image</code></td>
+<td>Container image containing the required shell and tools.</td>
+</tr>
+<tr>
+<td><code>script</code></td>
+<td>Commands executed through <code>sh -c</code>.</td>
+</tr>
+<tr>
+<td><code>depends</code></td>
+<td>Step names that must succeed before this step executes.</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>Job deadline in seconds; the executor uses 3,600 when unset or non-positive.</td>
+</tr>
+<tr>
+<td><code>retry</code></td>
+<td>Additional attempts after a step fails. Each attempt gets a new Job.</td>
+</tr>
+<tr>
+<td><code>outputs</code></td>
+<td>Declared output references for a standalone Pipeline step; see Artifacts below.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The executor resolves dependencies into batches and runs up to
+<code>maxParallel</code> steps concurrently within a batch. It defaults to 10 when
+<code>maxParallel</code> is unset or non-positive. Dependencies do not transfer files
+or environment variables. A failed prerequisite does not qualify a dependent
+step to run.</p>
+<p>Pipeline phases are <code>Running</code>, <code>Succeeded</code>, <code>Failed</code> and <code>Cancelled</code>. Step
+statuses additionally include <code>Pending</code> and <code>Skipped</code>; read the step list
+when diagnosing a run rather than relying on the Pipeline phase alone.
+The <a href="https://github.com/paprikacd/paprika/blob/master/api/pipelines/v1alpha1/pipeline_types.go">Pipeline API types</a>
+define these fields and states.</p>
+<p>Jobs run on the management cluster in the operator's configured execution
+namespace, which can differ from the Pipeline's namespace. The executor
+runs containers as non-root UID 1000 with privilege escalation disabled,
+all capabilities dropped and <code>RuntimeDefault</code> seccomp. Use images whose
+tools work under those settings. Write temporary files under a writable
+path such as <code>/tmp</code>; do not assume a root-owned image working directory is
+writable.</p>
+<h2 id="check-out-source-explicitly">Check out source explicitly</h2>
+<p><code>spec.sources</code> exists in the API, but the workflow executor does not consume
+it. Setting <code>sources[].secretRef</code> therefore does not provision a checkout or
+inject Git credentials. There is no automatic <code>/workspace/&lt;repository&gt;</code>
+directory.</p>
+<p>This example explicitly fetches a fixed public Paprika commit and runs its
+resource-health tests. It keeps checkout and tests in one Job and puts Go
+caches in a writable temporary directory. It requires outbound access to
+GitHub, the Go module proxy and any dependency endpoints used by that
+revision. Adapt the repository, revision and test command to your project;
+select a container image that includes Git and its required toolchain.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 4"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: paprika-health-tests
+  namespace: paprika-system
+spec:
+  maxParallel: 1
+  steps:
+    - name: test
+      image: golang:1.26.4
+      script: |
+        set -eu
+        paprika_revision=9f6e983269cee72fc7c88ed09cd5a0edc60a3ddb
+        paprika_source_dir=&quot;$(mktemp -d /tmp/paprika-source.XXXXXX)&quot;
+        trap &#39;rm -rf &quot;$paprika_source_dir&quot;&#39; EXIT
+        export GOCACHE=&quot;$paprika_source_dir/go-build&quot;
+        export GOMODCACHE=&quot;$paprika_source_dir/go-mod&quot;
+        git init &quot;$paprika_source_dir/source&quot;
+        cd &quot;$paprika_source_dir/source&quot;
+        git remote add origin https://github.com/paprikacd/paprika.git
+        git fetch --depth 1 origin &quot;$paprika_revision&quot;
+        git checkout --detach FETCH_HEAD
+        test &quot;$(git rev-parse HEAD)&quot; = &quot;$paprika_revision&quot;
+        go test ./internal/health -count=1
+      timeout: 900
+      retry: 1
+</code></pre></div>
+<p>The commit pins the source used by this example; it is not a moving
+recommendation for the latest Paprika release. Review the
+<a href="https://github.com/paprikacd/paprika/tree/9f6e983269cee72fc7c88ed09cd5a0edc60a3ddb">referenced source</a>
+when reproducing it. For a private repository, the execution environment
+needs an explicitly supported authentication mechanism; do not put tokens
+in the script or assume <code>sources[].secretRef</code> is connected to the Job.</p>
+<p>For promotion verification, Paprika supplies <code>PAPRIKA_PROMOTION_REVISION</code>
+and the source Application/Release identity to the verification scripts.
+Those are specific to the promotion flow, not generic build variables.
+See <a href="../../docs/environment-promotion/#tests-before-promotion-and-verification-after-deployment">promotion verification</a>
+for its supported inputs.</p>
+<h2 id="artifacts">Artifacts</h2>
+<p>Output declarations are references to artifacts that your configured tools
+must produce. The Pipeline controller creates corresponding <code>Artifact</code>
+records and reports their verification state in <code>status.artifactRefs</code>.
+Declaring an OCI path does not build or push a container image, and an
+<code>/out</code> file in one Job does not appear in another Job.</p>
+<p>The supported reference forms are:</p>
+<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Form</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>oci://&lt;registry&gt;/&lt;repository&gt;:&lt;tag&gt;</code></td>
+<td>An OCI artifact reference. Use a controlled immutable tag or digest for reproducibility.</td>
+</tr>
+<tr>
+<td><code>oci://&lt;registry&gt;/&lt;repository&gt;@sha256:&lt;digest&gt;</code></td>
+<td>A digest-pinned OCI artifact reference.</td>
+</tr>
+<tr>
+<td><code>configmap://&lt;name&gt;[/&lt;key&gt;]</code></td>
+<td>A ConfigMap reference handled by the artifact controller.</td>
+</tr>
+</tbody>
+</table></div>
+<p>For example, after a publishing step produces an image, declare its exact
+reference. This is a spec fragment; replace the repository and digest with
+the output of your own publishing process before use:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 5"><code class="language-yaml">spec:
+  artifacts:
+    - name: image
+      step: build-and-publish
+      path: oci://registry.example.com/team/checkout@sha256:&lt;actual-image-digest&gt;
+</code></pre></div>
+<p>The <code>path</code> field is stored as a literal reference. A string containing
+<code>$TAG</code> is not expanded from a step's shell environment. Supply the resolved
+reference when constructing the Pipeline, and inspect the resulting
+<code>Artifact</code> and <code>status.artifactRefs</code>. The
+<a href="https://github.com/paprikacd/paprika/blob/master/internal/controller/pipelines/pipeline_controller.go">Pipeline artifact reconciliation</a>
+is the source of truth for this behaviour.</p>
+<p>If another step needs a build output, explicitly publish it to an appropriate
+store and fetch it in that step, or keep the dependent commands together in
+one script. Authentication and permissions for those tools must be configured
+for the actual Job environment. The current <code>PipelineStep</code> API does not
+expose per-step environment or volume-mount fields.</p>
+<h2 id="inspect-jobs-and-logs">Inspect Jobs and logs</h2>
+<p>Use the configured execution namespace, not automatically the Pipeline
+namespace. In this example both happen to be <code>paprika-system</code>:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 6"><code class="language-sh">kubectl -n paprika-system get jobs \
+  -l paprika.io/pipeline=pipeline-demo,paprika.io/pipeline-namespace=paprika-system
+kubectl -n paprika-system get pods \
+  -l paprika.io/pipeline=pipeline-demo,paprika.io/pipeline-namespace=paprika-system
+</code></pre></div>
+<p>Select a returned Job name and read its logs:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 7"><code class="language-sh">kubectl -n paprika-system logs job/REPLACE_WITH_RETURNED_JOB_NAME
+</code></pre></div>
+<p>A retry creates a fresh Job. Inspect the attempt relevant to the failing
+step; several Jobs can share the same Pipeline and step labels.</p>
+<h2 id="add-a-build-to-an-application">Add a build to an Application</h2>
+<p>An Application's <code>spec.build</code> defines steps for its owned Pipeline. Include
+the complete source preparation in the script, as in the explicit checkout
+example above. Set <code>build.maxParallel</code> and <code>build.artifacts</code> when needed.
+Paprika records the owned Pipeline name in <code>status.pipelineRef</code> and checks
+its outcome during the Application lifecycle.</p>
+<p>There is no general <code>spec.pipeline</code> field on a Release for attaching an
+arbitrary existing Pipeline. Use the supported Application build or
+promotion verification configuration. The
+<a href="https://github.com/paprikacd/paprika/blob/master/internal/controller/pipelines/application_controller.go">Application controller</a>
+and <a href="https://github.com/paprikacd/paprika/blob/master/api/pipelines/v1alpha1/application_types.go">Application API</a>
+define that contract.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/"><span>Browse</span><strong>All documentation</strong></a><a href="../../docs/environment-promotion/" rel="next"><span>Next guide</span><strong>Promote releases through dev, staging and production</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

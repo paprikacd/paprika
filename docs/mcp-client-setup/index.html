@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Connect an MCP client to Paprika · Paprika docs</title>
+<meta name="description" content="Configure Codex, Claude Code or another MCP client for your Paprika server and complete the native OAuth sign-in flow."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/mcp-client-setup/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Connect an MCP client to Paprika · Paprika docs"/>
+<meta property="og:description" content="Configure Codex, Claude Code or another MCP client for your Paprika server and complete the native OAuth sign-in flow."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/mcp-client-setup/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Connect an MCP client to Paprika · Paprika docs"/>
+<meta name="twitter:description" content="Configure Codex, Claude Code or another MCP client for your Paprika server and complete the native OAuth sign-in flow."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Connect an MCP client to Paprika","description":"Configure Codex, Claude Code or another MCP client for your Paprika server and complete the native OAuth sign-in flow.","url":"https://paprikacd.github.io/paprika/docs/mcp-client-setup/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/mcp-client-setup/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Connect an MCP client to Paprika","item":"https://paprikacd.github.io/paprika/docs/mcp-client-setup/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Integrate</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/" aria-current="page">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#connect-your-client">Connect your client</a></li><li class="toc-level-3"><a href="#codex">Codex</a></li><li class="toc-level-3"><a href="#claude-code">Claude Code</a></li><li class="toc-level-3"><a href="#other-remote-mcp-clients">Other remote MCP clients</a></li><li class="toc-level-2"><a href="#use-the-shipped-skill-and-plugin">Use the shipped skill and plugin</a></li><li class="toc-level-2"><a href="#install-observe-as-a-plugin-without-a-manual-clone">Install Observe as a plugin without a manual clone</a></li><li class="toc-level-2"><a href="#choose-access-deliberately">Choose access deliberately</a></li><li class="toc-level-2"><a href="#requirements-for-a-self-hosted-endpoint">Requirements for a self-hosted endpoint</a></li><li class="toc-level-3"><a href="#registration-survives-a-server-replacement">Registration survives a server replacement</a></li><li class="toc-level-3"><a href="#persist-oauth-sessions-across-restarts">Persist OAuth sessions across restarts</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="connect-an-agent-to-paprika">Connect an MCP client to Paprika</h1><p class="article-description">Configure Codex, Claude Code or another MCP client for your Paprika server and complete the native OAuth sign-in flow.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/mcp-client-setup.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Paprika exposes fleet inspection and delivery tools through remote MCP over
+HTTP. An MCP client connects to an existing Paprika server; connecting does not
+install an operator or create a fleet.</p>
+<p>In this guide, <strong><code>https://paprika.example.com/mcp</code> is a placeholder</strong>. Replace it
+with the MCP endpoint supplied by the administrator of your Paprika installation.</p>
+<h2 id="connect-your-client">Connect your client</h2>
+<h3 id="codex">Codex</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 1"><code class="language-sh">codex mcp add paprika --url https://paprika.example.com/mcp
+codex mcp login paprika
+</code></pre></div>
+<p>Complete the native browser OAuth flow, review the requested scopes, then start
+a new chat. Ask for a read first: “Show fleet status and any unhealthy
+applications.”</p>
+<h3 id="claude-code">Claude Code</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">claude mcp add --scope user --transport http paprika https://paprika.example.com/mcp
+claude mcp login paprika
+</code></pre></div>
+<p>Complete the native browser OAuth flow and review the requested scopes before
+asking for fleet status.</p>
+<h3 id="other-remote-mcp-clients">Other remote MCP clients</h3>
+<p>Add a remote HTTP MCP server using your installation's <code>/mcp</code> endpoint. The
+client needs to support Paprika's OAuth 2.1 / PKCE flow. Follow its native sign-in
+and consent screens; do not paste access tokens into a chat or configuration
+snippet. A setup prompt you can adapt is:</p>
+<blockquote>
+<p>Connect this app to the remote MCP endpoint
+https://paprika.example.com/mcp. Use the app's native OAuth flow so I can sign
+in and review scopes. Do not ask me to paste tokens. After connecting, call
+fleet_status once and report the result.</p>
+</blockquote>
+<h2 id="use-the-shipped-skill-and-plugin">Use the shipped skill and plugin</h2>
+<p>The repository ships one <a href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika/skills/paprika/SKILL.md">Paprika skill</a>
+with practical sequences for fleet health, drift diagnosis, release and rollout
+inspection, pipeline runs, gates and controlled actions. The
+<a href="https://github.com/paprikacd/paprika/tree/master/plugins/paprika">Claude and Codex plugin manifests</a> bundle this skill with
+an MCP server definition.</p>
+<p>The shipped plugin currently targets <strong>Ben's hosted fleet</strong> at
+<code>https://paprika.benebsworth.com/mcp</code>. That endpoint requires access to that
+installation; it is not an endpoint for a newly created personal fleet. See the
+<a href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika/README.md">connector README</a> for its documented client
+commands. For Claude Code, a local repository checkout can load the plugin with:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh">claude --plugin-dir /absolute/path/to/paprika/plugins/paprika
+</code></pre></div>
+<p>For your own installation, use the direct MCP routes above. If adapting a local
+plugin copy, review both <a href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika/.mcp.json"><code>.mcp.json</code></a> and the
+skill's endpoint instructions so they point to the same intended server.</p>
+<h2 id="install-observe-as-a-plugin-without-a-manual-clone">Install Observe as a plugin without a manual clone</h2>
+<p>With Node.js 20+ and the selected agent CLI installed, use the GitHub-backed
+npx installer:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 4"><code class="language-sh">npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+# For Claude Code: use --client claude
+</code></pre></div>
+<p>This installs <code>paprika-observe@paprika</code> with its skill and registers the
+Paprika marketplace, instead of registering only a raw endpoint. Restart
+the client, finish native OAuth with <code>paprika:observe</code>, and call
+<code>list_observability_providers</code>. Saved-query and dashboard authoring needs
+a separate <code>paprika:insights:write</code> grant and Insights RBAC.</p>
+<p><strong>ChatGPT uses a different setup:</strong> register the HTTPS
+<code>/observe/mcp</code> endpoint as a custom MCP app and complete OAuth there.
+npx cannot register a ChatGPT app or grant access on the user's behalf.
+See the <a href="../../docs/observe-plugin/">Observe plugin guide</a>.</p>
+<h2 id="choose-access-deliberately">Choose access deliberately</h2>
+<ul>
+<li><strong><code>paprika:read</code></strong> permits inspection: fleet health and topology, applications,
+managed resources and logs, releases, rollouts, pipeline runs and clusters.
+Cost queries require a configured cost source.</li>
+<li><strong><code>paprika:write</code></strong> permits delivery actions such as sync, gate decisions,
+rollout controls, pipeline retry/skip/cancel and workload restart. It does
+<strong>not</strong> include read access; grant both scopes if both are needed.</li>
+</ul>
+<p>Read access never grants write access. To change granted scopes, use the
+client's native reconnect/consent flow. Rollback, rollout promotion that skips
+wait or analysis, abort, pipeline skip/cancel and workload restart require a
+second confirmation bound to the exact action arguments. Only confirm actions
+you intend to perform. See the <a href="https://github.com/paprikacd/paprika/blob/master/internal/api/mcp/scope.go">scope rules</a>,
+<a href="https://github.com/paprikacd/paprika/blob/master/internal/api/mcp/tools_write.go">action definitions</a> and
+<a href="https://github.com/paprikacd/paprika/blob/master/internal/api/mcp/confirm.go">confirmation implementation</a>.</p>
+<h2 id="requirements-for-a-self-hosted-endpoint">Requirements for a self-hosted endpoint</h2>
+<p>MCP is disabled by default. An administrator must configure an authenticated
+installation before client connection:</p>
+<ul>
+<li>Use <code>deploymentMode: split</code> and explicitly enable <code>mcp.enabled</code>.</li>
+<li>Enable <code>auth.enabled</code> and supply a non-empty <code>PAPRIKA_AUTH_TOKEN_SECRET</code> through
+the API server's environment or secret references.</li>
+<li>Set <code>mcp.publicURL</code> to the externally reachable <strong>base URL</strong>, for example
+<code>https://paprika.example.com</code>; clients use that URL with <code>/mcp</code> appended.</li>
+<li>Configure the required static <code>mcp.oauth.clientId</code> and non-empty
+<code>mcp.oauth.redirectUris</code> for the installation's first-party client. Runtime
+setup also requires a cache for authorization codes, refresh tokens and
+confirmations.</li>
+</ul>
+<p>These startup requirements coexist with dynamic client registration: supported
+connectors can register their own OAuth client through <code>/mcp/register</code>, with
+their own validated redirect URIs. They do not need to reuse the static
+first-party client ID. Registration accepts HTTPS redirects or loopback redirects
+for local clients.</p>
+<h3 id="registration-survives-a-server-replacement">Registration survives a server replacement</h3>
+<p>The Helm chart defaults <code>mcp.oauth.persistClients</code> to <code>true</code>. Each enabled MCP
+surface gets a separate, retained ConfigMap containing <strong>public client IDs and
+their exact redirect allowlists</strong>, bound to that surface's resource URL. The API
+server and observability gateway receive only <code>get</code>/<code>update</code> access to their
+named registry. Missing, inaccessible or differently bound storage fails startup;
+it never silently switches to an empty in-memory registry. Chart upgrades retain
+registered clients. Keep these ConfigMaps when restoring the installation, and
+review an issuer/resource migration explicitly rather than reusing registrations
+for a different origin or surface.</p>
+<p>Client registration does not grant account access. Console authentication,
+consent, scopes and PKCE remain required. Authorization codes, pending consent,
+refresh tokens and confirmations are <strong>not</strong> persisted in these ConfigMaps.</p>
+<p>For local/test installations, leaving both <code>--mcp-client-registry-configmap</code> and
+<code>--mcp-client-registry-namespace</code> unset retains process-local registration. Setting
+only one is invalid. In Helm, <code>mcp.oauth.persistClients: false</code> explicitly opts
+into that transient behavior.</p>
+<p>If a connector was registered before persistence was enabled and its metadata
+has already been lost, persistence cannot reconstruct it. Use the client's
+supported registration/reconnect flow to obtain a new registration. Do not
+whitelist an unknown client, broaden its redirect URI, disable PKCE or copy an
+access token into chat. A consent request rejected after successful Google
+sign-in may indicate a lost client registration rather than a failed login.
+Check the native connector and server diagnostics separately before retrying.</p>
+<p>The registry accepts at most 4,096 clients and a bounded data size below the
+ConfigMap limit. Exhaustion rejects new registrations without evicting existing
+clients. Investigate registration churn and review stale public metadata before
+any cleanup; do not delete the registry to clear a connection error.</p>
+<h3 id="persist-oauth-sessions-across-restarts">Persist OAuth sessions across restarts</h3>
+<p>Set <code>mcp.oauth.persistSessions: true</code> for fleet MCP and/or
+<code>observabilityGateway.persistSessions: true</code> for Observe. Each enabled surface
+gets its own retained Kubernetes Secret. The server stores pending authorizations, one-use
+codes, rotating refresh grants and short-lived confirmations there. Entries use
+hashed cache keys and AES-GCM encryption derived from the existing token-signing
+secret and the exact MCP resource URL. The Secret's Role grants only <code>get</code> and
+<code>update</code> on that Secret. Missing, inaccessible, misbound or undecryptable
+storage fails startup; it never silently falls back to process memory.</p>
+<p>Refresh token rotation replaces the old grant and stores the successor in one
+Kubernetes resource-version update. Concurrent refresh attempts have one winner;
+an ordinary storage outage returns a retryable error instead of telling clients
+to discard a valid grant. Storage is bounded, expired entries are cleared on
+writes, and temporary login traffic has its own smaller capacity limit so it
+cannot evict existing refresh grants.</p>
+<p>The Helm chart creates an empty Secret once as a retained pre-install/upgrade
+hook. Later upgrades leave its contents entirely to the running server; chart
+rendering never snapshots mutable grants into a Helm release or overwrites them
+with a stale copy. Back up the Secret and the token-signing secret together.
+Replacing the signing secret or changing the MCP resource URL invalidates the
+stored sessions and requires an intentional migration or fresh consent. Do not
+delete the Secret to troubleshoot authentication.</p>
+<p><strong>First enablement:</strong> grants held only in an already running process cannot be
+copied into the new store through the supported OAuth interface. Plan one fresh
+native connection for each affected client after switching from process-local
+storage. Existing access tokens can remain usable until they expire, so a
+successful tool call immediately after rollout alone does not prove that its
+refresh grant was migrated. Rollback to an in-memory build has the same
+limitation. Once a client has connected against persistent storage, its grant
+survives normal gateway and API-server replacements until its refresh lifetime
+expires. Do not extract or copy credentials from a host to bypass this step.</p>
+<p>For direct configuration, set both <code>--mcp-session-secret</code> and
+<code>--mcp-session-namespace</code>; omitting both retains the existing cache backend.
+This setting does not remove the chart's replica restrictions.</p>
+<p>Review the <a href="https://github.com/paprikacd/paprika/blob/master/charts/chart/values.yaml#L859">chart settings</a>,
+<a href="https://github.com/paprikacd/paprika/blob/master/charts/chart/templates/api-server/deployment.yaml">chart validation</a>,
+<a href="https://github.com/paprikacd/paprika/blob/master/cmd/main.go#L1200">runtime validation</a> and
+<a href="https://github.com/paprikacd/paprika/blob/master/internal/api/mcp/oauth.go#L112">OAuth registration implementation</a> when
+configuring the server. For operator installation, start with the
+<a href="../../docs/getting-started/">getting started guide</a>.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/"><span>Browse</span><strong>All documentation</strong></a><a href="../../docs/mcp-plugin/" rel="next"><span>Next guide</span><strong>Use the Paprika fleet plugin</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

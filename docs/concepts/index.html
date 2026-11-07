@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Paprika concepts and feature guide · Paprika docs</title>
+<meta name="description" content="Understand Applications, Templates, Pipelines, Stages and Releases, then find the guide for your delivery or observability task."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/concepts/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Paprika concepts and feature guide · Paprika docs"/>
+<meta property="og:description" content="Understand Applications, Templates, Pipelines, Stages and Releases, then find the guide for your delivery or observability task."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/concepts/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Paprika concepts and feature guide · Paprika docs"/>
+<meta name="twitter:description" content="Understand Applications, Templates, Pipelines, Stages and Releases, then find the guide for your delivery or observability task."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Paprika concepts and feature guide","description":"Understand Applications, Templates, Pipelines, Stages and Releases, then find the guide for your delivery or observability task.","url":"https://paprikacd.github.io/paprika/docs/concepts/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/concepts/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Paprika concepts and feature guide","item":"https://paprikacd.github.io/paprika/docs/concepts/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Start</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/" aria-current="page">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#choose-a-starting-point">Choose a starting point</a></li><li class="toc-level-2"><a href="#core-concepts">Core Concepts</a></li><li class="toc-level-2"><a href="#progressive-delivery">Progressive Delivery</a></li><li class="toc-level-2"><a href="#drift-and-lifecycle">Drift and Lifecycle</a></li><li class="toc-level-2"><a href="#observability">Observability</a></li><li class="toc-level-2"><a href="#interfaces">Interfaces</a></li><li class="toc-level-2"><a href="#security">Security</a></li><li class="toc-level-2"><a href="#next-steps">Next Steps</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="paprika-feature-overview">Paprika concepts and feature guide</h1><p class="article-description">Understand Applications, Templates, Pipelines, Stages and Releases, then find the guide for your delivery or observability task.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/features.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Paprika is an Apache 2.0 Kubernetes application delivery project with
+progressive rollouts, multi-cluster management and an observability workspace.
+Applications, Templates, Pipelines, Stages and Releases record the delivery
+lifecycle. The project is early-stage; use a non-production cluster for your
+first evaluation.</p>
+<h2 id="choose-a-starting-point">Choose a starting point</h2>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Your task</th>
+<th>Start here</th>
+<th>What to verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Deploy your first application</td>
+<td><a href="../../docs/getting-started/">Getting started</a></td>
+<td>Operator readiness, the created Release and workload health.</td>
+</tr>
+<tr>
+<td>Promote a tested revision</td>
+<td><a href="../../docs/environment-promotion/">Environment promotion</a></td>
+<td>Upstream revision, verification results, target settings and candidate approval.</td>
+</tr>
+<tr>
+<td>Investigate a changed or unhealthy workload</td>
+<td><a href="../../docs/drift-and-prune/">Drift and prune</a></td>
+<td>Desired/live differences and resource health are separate observations.</td>
+</tr>
+<tr>
+<td>Build a dashboard with your telemetry</td>
+<td><a href="../../docs/dashboards/">Dashboard examples</a></td>
+<td>Provider mappings, query bindings, fresh samples and the rendered layout.</td>
+</tr>
+<tr>
+<td>Connect an agent to delivery or observability</td>
+<td><a href="../../docs/mcp-plugin/">Fleet plugin</a> or <a href="../../docs/observe-plugin/">Observe plugin</a></td>
+<td>The selected endpoint, OAuth scopes and an actual authorized read.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The CLI is a client for an existing Paprika API. Installing it does not
+install the Kubernetes operator. Likewise, installing a plugin does not
+deploy its MCP server or complete OAuth sign-in. Follow the corresponding
+setup guide before running commands against a server.</p>
+<h2 id="core-concepts">Core Concepts</h2>
+<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Application CRD</strong></td>
+<td>Top-level resource that models a deployable application, its source, stages, sync policy, and health checks.</td>
+<td><a href="../../docs/getting-started/">Getting Started</a></td>
+</tr>
+<tr>
+<td><strong>Template Sources</strong></td>
+<td>Render manifests from Helm charts, Git repositories, S3 objects, OCI artifacts, or inline bundles.</td>
+<td><a href="../../docs/getting-started/">Getting Started</a>, <a href="../../docs/api/">API Reference</a></td>
+</tr>
+<tr>
+<td><strong>Pipelines</strong></td>
+<td>CI-style workflows defined as Kubernetes Jobs with steps, dependencies, artifacts, and retries.</td>
+<td><a href="../../docs/pipelines/">Pipeline Guide</a></td>
+</tr>
+<tr>
+<td><strong>Stages</strong></td>
+<td>Environment definitions (dev, staging, production) with ring numbers, cluster refs, canary config, and gates.</td>
+<td><a href="../../docs/getting-started/">Getting Started</a>, <a href="../../docs/canary/">Canary Guide</a></td>
+</tr>
+<tr>
+<td><strong>Releases</strong></td>
+<td>Promotion lifecycle through stages with verification and rollback support.</td>
+<td><a href="../../docs/getting-started/">Getting Started</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="progressive-delivery">Progressive Delivery</h2>
+<div class="table-scroll" role="region" aria-label="Table 3, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Canary</strong></td>
+<td>Weighted traffic shifting with configurable steps, intervals, and automated analysis.</td>
+<td><a href="../../docs/canary/">Canary Guide</a></td>
+</tr>
+<tr>
+<td><strong>Environment promotion</strong></td>
+<td>Select a completed upstream release's pinned revision, verify the upstream environment, and retain separate target settings and approval for each Application.</td>
+<td><a href="../../docs/environment-promotion/">Promotion Guide</a></td>
+</tr>
+<tr>
+<td><strong>Multi-cluster</strong></td>
+<td>Automatically onboard remote state through outbound satellites, merge shared app placements, and deploy through Stage-level cluster connections.</td>
+<td><a href="../../docs/multi-cluster/">Multi-cluster Guide</a></td>
+</tr>
+<tr>
+<td><strong>Gates</strong></td>
+<td>Automated smoke-test and duration gates plus manual approval gates.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/gates.md">Gates Guide</a></td>
+</tr>
+<tr>
+<td><strong>Health Checks</strong></td>
+<td>CEL-based and HTTP-probe health evaluations for applications and resources.</td>
+<td><a href="../../docs/getting-started/">Getting Started</a></td>
+</tr>
+<tr>
+<td><strong>DeepHost delivery</strong></td>
+<td>Git-sourced Helm delivery of a Kubernetes hosting platform with staged promotion, router health checks, rollback, and shared Envoy integration.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/deephost.md">DeepHost Integration</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="drift-and-lifecycle">Drift and Lifecycle</h2>
+<div class="table-scroll" role="region" aria-label="Table 4, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Drift Detection</strong></td>
+<td>Label-selector diff engine comparing desired manifests against live state with API-group-aware resource keys and Kubernetes-default omission.</td>
+<td><a href="../../docs/drift-and-prune/">Drift and Prune</a></td>
+</tr>
+<tr>
+<td><strong>Pruning</strong></td>
+<td>Opt-in garbage collection of stale resources after apply, with prune protection annotations and cluster-scoped kind allowlists.</td>
+<td><a href="../../docs/drift-and-prune/">Drift and Prune</a></td>
+</tr>
+<tr>
+<td><strong>Prune Preview</strong></td>
+<td><code>status.prunableResources</code> lists what would be pruned before enabling prune.</td>
+<td><a href="../../docs/drift-and-prune/">Drift and Prune</a></td>
+</tr>
+<tr>
+<td><strong>Sync Waves</strong></td>
+<td><code>paprika.io/sync-wave</code> (or Argo CD's <code>argocd.argoproj.io/sync-wave</code>) orders sync-phase resources into waves; each wave is health-gated before the next applies, bounded by <code>hookTimeoutSeconds</code>.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">Operations</a></td>
+</tr>
+<tr>
+<td><strong>Server-Side Validate</strong></td>
+<td><code>syncOptions.serverSideValidate</code> dry-run applies the rendered manifests through admission before workload mutation. A successful preflight does not make later multi-resource apply atomic.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">Operations</a></td>
+</tr>
+<tr>
+<td><strong>Selective Sync</strong></td>
+<td><code>SyncResources</code> re-applies only named resources of the current release, with dry-run selector validation and selective prune.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">Operations</a></td>
+</tr>
+<tr>
+<td><strong>ApplicationSet Rolling Sync</strong></td>
+<td><code>strategy.type: RollingSync</code> rolls template changes across generated apps in labeled, health-gated batches with <code>maxUpdate</code> budgets; <code>status.rollingSync</code> exposes the active step, pending apps, and the blocking app.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">Operations</a></td>
+</tr>
+<tr>
+<td><strong>Resource Patching</strong></td>
+<td><code>ApplyResourcePatch</code> patches app-managed resources with mandatory dry-run preview + unified diff; <code>restart_workload</code> MCP tool wraps it for rolling restarts. <code>IgnoreDriftedField</code> manages scoped ignore-difference rules.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">Operations</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="observability">Observability</h2>
+<div class="table-scroll" role="region" aria-label="Table 5, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Drift Metrics</strong></td>
+<td><code>paprika_out_of_sync</code> and <code>paprika_prunable</code> gauges updated on every diff evaluation.</td>
+<td><a href="../../docs/metrics/">Metrics and Alerting</a></td>
+</tr>
+<tr>
+<td><strong>Prune Metrics</strong></td>
+<td><code>paprika_prune_total</code> counter per application and kind.</td>
+<td><a href="../../docs/metrics/">Metrics and Alerting</a></td>
+</tr>
+<tr>
+<td><strong>OTel Metrics</strong></td>
+<td>Render, git, auth, SSE, and event metrics via OpenTelemetry with Prometheus export.</td>
+<td><a href="../../docs/metrics/">Metrics and Alerting</a></td>
+</tr>
+<tr>
+<td><strong>Observability Gateway</strong></td>
+<td>Second MCP surface at <code>/observe/mcp</code> for querying logs, metrics, and traces through pluggable <code>ObservabilityProvider</code> connectors (Prometheus, Loki, Tempo, OTLP), with its own <code>paprika:observe</code> scope and token audience.</td>
+<td><a href="../../docs/observability-gateway/">Observability Gateway</a></td>
+</tr>
+<tr>
+<td><strong>Insights dashboards</strong></td>
+<td>Compose widgets, reuse saved queries, bind dashboard variables, and import examples with explicit mappings to live providers.</td>
+<td><a href="../../docs/dashboards/">Dashboard Examples</a></td>
+</tr>
+<tr>
+<td><strong>Observe authoring</strong></td>
+<td>Create or update shared saved queries and dashboards through MCP with explicit <code>paprika:insights:write</code> consent, existing Insights write permission, and exact ETags for edits.</td>
+<td><a href="../../docs/observe-plugin/">Observe Plugin</a></td>
+</tr>
+<tr>
+<td><strong>Visual verification</strong></td>
+<td>Optional private browser worker captures actual saved dashboards and focused widget inspectors; use live queries separately to check values and freshness.</td>
+<td><a href="../../docs/observe-browser-renderer/">Browser Renderer</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="interfaces">Interfaces</h2>
+<div class="table-scroll" role="region" aria-label="Table 6, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dashboard</strong></td>
+<td>Built-in web UI served on port <code>3000</code> with live SSE updates.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/frontend.md">Dashboard Guide</a></td>
+</tr>
+<tr>
+<td><strong>CLI</strong></td>
+<td>Cobra-based <code>paprika</code> CLI for listing resources, syncing apps, and approving gates.</td>
+<td><a href="../../docs/cli/">CLI Guide</a></td>
+</tr>
+<tr>
+<td><strong>API</strong></td>
+<td>Connect-RPC service <code>paprika.v1.PaprikaService</code> for programmatic access.</td>
+<td><a href="../../docs/api/">API Reference</a></td>
+</tr>
+<tr>
+<td><strong>Codex and Claude plugin</strong></td>
+<td>Authenticated MCP tools for fleet inspection, app health, drift, workload logs, and delivery actions, with an interactive console and app mentions in supporting hosts.</td>
+<td><a href="../../docs/mcp-plugin/">Plugin Installation and Usage</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="security">Security</h2>
+<div class="table-scroll" role="region" aria-label="Table 7, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auth</strong></td>
+<td>Basic auth and OIDC bearer token authentication on the API/UI.</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/auth.md">Auth Guide</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="next-steps">Next Steps</h2>
+<ul>
+<li>New to Paprika? Start with <a href="../../docs/getting-started/">Getting Started</a>.</li>
+<li>Want to automate deployments? Read the <a href="../../docs/cli/">CLI</a> or <a href="../../docs/api/">API</a> guides.</li>
+<li>Working in Codex or Claude? <a href="../../docs/mcp-plugin/">Install and use the Paprika plugin</a>.</li>
+<li>Building dashboards through MCP? <a href="../../docs/observe-plugin/">Connect Paprika Observe</a>.</li>
+<li>Moving a tested revision between environments? Read <a href="../../docs/environment-promotion/">Environment Promotion</a>.</li>
+<li>Need progressive delivery? See <a href="../../docs/canary/">Canary</a> and <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/gates.md">Gates</a>.</li>
+<li>Running across clusters? See <a href="../../docs/multi-cluster/">Multi-cluster</a>.</li>
+<li>Delivering DeepHost? See <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/deephost.md">DeepHost Integration</a>.</li>
+<li>Managing drift and stale resources? See <a href="../../docs/drift-and-prune/">Drift and Prune</a>.</li>
+<li>Setting up monitoring? See <a href="../../docs/metrics/">Metrics and Alerting</a>.</li>
+<li>Building and deploying Paprika itself? See <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/operations.md">Operations</a>.</li>
+</ul>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/getting-started/" rel="prev"><span>Previous guide</span><strong>Install Paprika and deploy your first Application</strong></a><a href="../../docs/cli/" rel="next"><span>Next guide</span><strong>Paprika CLI reference</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

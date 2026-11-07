@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Paprika API reference · Paprika docs</title>
+<meta name="description" content="Explore Paprika&#39;s Connect-RPC API for applications, releases, pipelines and related resources, with request and response examples."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/api/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Paprika API reference · Paprika docs"/>
+<meta property="og:description" content="Explore Paprika&#39;s Connect-RPC API for applications, releases, pipelines and related resources, with request and response examples."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/api/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Paprika API reference · Paprika docs"/>
+<meta name="twitter:description" content="Explore Paprika&#39;s Connect-RPC API for applications, releases, pipelines and related resources, with request and response examples."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Paprika API reference","description":"Explore Paprika's Connect-RPC API for applications, releases, pipelines and related resources, with request and response examples.","url":"https://paprikacd.github.io/paprika/docs/api/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/api/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Paprika API reference","item":"https://paprikacd.github.io/paprika/docs/api/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Integrate</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/" aria-current="page">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#direct-connect-json-requests">Direct Connect JSON requests</a></li><li class="toc-level-2"><a href="#getsystemstatus">GetSystemStatus</a></li><li class="toc-level-3"><a href="#request">Request</a></li><li class="toc-level-3"><a href="#direct-json-example">Direct JSON example</a></li><li class="toc-level-3"><a href="#response">Response</a></li><li class="toc-level-2"><a href="#applybundle">ApplyBundle</a></li><li class="toc-level-3"><a href="#request-1">Request</a></li><li class="toc-level-3"><a href="#response-1">Response</a></li><li class="toc-level-3"><a href="#behavior">Behavior</a></li><li class="toc-level-3"><a href="#policy-result">Policy result</a></li><li class="toc-level-3"><a href="#example-curl-like-request">Example curl-like request</a></li><li class="toc-level-3"><a href="#example-response">Example response</a></li><li class="toc-level-2"><a href="#rollbackrelease">RollbackRelease</a></li><li class="toc-level-3"><a href="#request-2">Request</a></li><li class="toc-level-3"><a href="#response-2">Response</a></li><li class="toc-level-3"><a href="#behavior-1">Behavior</a></li><li class="toc-level-3"><a href="#example-curl-like-request-1">Example curl-like request</a></li><li class="toc-level-3"><a href="#example-response-1">Example response</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="connect-rpc-api">Paprika API reference</h1><p class="article-description">Explore Paprika&#39;s Connect-RPC API for applications, releases, pipelines and related resources, with request and response examples.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/api.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>This page documents direct Connect JSON access and selected Paprika RPCs. The
+full service definition is in <code>proto/paprika/v1/api.proto</code>.</p>
+<p>For access from Codex or Claude, see the <a href="../../docs/mcp-plugin/">Paprika plugin guide</a>.
+The <code>/mcp</code> endpoint exposes authenticated tools for app health, debugging, and
+delivery operations, with OAuth sign-in and the same application permissions as
+the API. The guide covers installation, example prompts, and MCP Apps support.</p>
+<p>A second, independent MCP surface lives at <code>/observe/mcp</code> (the observability
+gateway). The <code>paprika:observe</code> scope allows authorized reads of logs, metrics,
+traces, and Insights documents. Creating or editing saved queries and dashboards
+additionally requires explicit <code>paprika:insights:write</code> consent and the caller's
+Insights write permission. These document-authoring tools do not grant provider
+configuration or fleet delivery writes.
+See the <a href="../../docs/observability-gateway/">observability gateway guide</a>.</p>
+<h2 id="direct-connect-json-requests">Direct Connect JSON requests</h2>
+<p>Unary RPCs are available at
+<code>/{package}.{service}/{method}</code>. A direct JSON client must send both
+<code>Content-Type: application/json</code> and <code>Connect-Protocol-Version: 1</code>.
+When authentication is enabled, also send an <code>Authorization</code> header. For an
+OIDC session this is <code>Bearer &lt;ID token&gt;</code>; HTTP Basic credentials are accepted
+when Basic authentication is configured.</p>
+<p>The examples below assume the server and a bearer token are already in shell
+variables. Keep tokens out of source files, logs, and shared shell history.</p>
+<h2 id="getsystemstatus"><code>GetSystemStatus</code></h2>
+<p>Return one immutable, authorization-filtered application status snapshot. This
+is the RPC used by <code>paprika status</code>.</p>
+<h3 id="request">Request</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">protobuf</span></div><pre tabindex="0" aria-label="protobuf code example 1"><code class="language-protobuf">message GetSystemStatusRequest {
+  optional string namespace = 1;
+  uint32 attention_limit = 2;
+}
+</code></pre></div>
+<p>Omit <code>namespace</code> to include every namespace the principal is allowed to read;
+an explicitly empty namespace is invalid. <code>attention_limit</code> may be 0 through
+100. Zero or omission uses the server default of 20.</p>
+<h3 id="direct-json-example">Direct JSON example</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">curl --silent --show-error \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Connect-Protocol-Version: 1&quot; \
+  -H &quot;Authorization: Bearer ${PAPRIKA_TOKEN}&quot; \
+  --data &#39;{&quot;namespace&quot;:&quot;payments&quot;,&quot;attentionLimit&quot;:20}&#39; \
+  &quot;${PAPRIKA_SERVER}/paprika.v1.PaprikaService/GetSystemStatus&quot;
+</code></pre></div>
+<p>To request all authorized namespaces and the server's default attention limit,
+send an empty JSON object:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh">curl --silent --show-error \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Connect-Protocol-Version: 1&quot; \
+  -H &quot;Authorization: Bearer ${PAPRIKA_TOKEN}&quot; \
+  --data &#39;{}&#39; \
+  &quot;${PAPRIKA_SERVER}/paprika.v1.PaprikaService/GetSystemStatus&quot;
+</code></pre></div>
+<h3 id="response">Response</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">protobuf</span></div><pre tabindex="0" aria-label="protobuf code example 4"><code class="language-protobuf">message GetSystemStatusResponse {
+  uint64 index_generation = 1;
+  uint64 total = 2;
+  repeated FleetHealthBucket health = 3;
+  repeated FleetSyncBucket sync = 4;
+  uint64 attention_total = 5;
+  repeated ApplicationSummary attention = 6;
+  bool has_more_attention = 7;
+}
+</code></pre></div>
+<p><code>total</code>, every bucket count, <code>attention_total</code>, and the returned application
+names are derived only from projects on which the authenticated principal may
+<code>read</code> <code>applications</code>. Project authorization happens before aggregation, so an
+unauthorized application cannot influence even anonymous-looking totals. If
+the principal is authenticated but has no authorized projects, the RPC
+succeeds with a zero-valued view. <code>has_more_attention</code> is true when
+<code>attention_total</code> exceeds the number of returned attention records.</p>
+<p>Connect's protobuf JSON encoding represents 64-bit integer values as JSON
+strings and uses enum names such as <code>FLEET_HEALTH_HEALTHY</code>.</p>
+<p>An absent, invalid, or expired credential returns <code>Unauthenticated</code>. Other
+authorization failures return <code>PermissionDenied</code>; index startup or
+unavailability returns <code>Unavailable</code>.</p>
+<h2 id="applybundle"><code>ApplyBundle</code></h2>
+<p>Submit a rendered manifest bundle to create or update an Application, Stage, Release, and manifest snapshot.</p>
+<h3 id="request-1">Request</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">protobuf</span></div><pre tabindex="0" aria-label="protobuf code example 5"><code class="language-protobuf">message ApplyBundleRequest {
+  string namespace = 1;          // Target namespace (required)
+  string name = 2;               // Application name (required)
+  bytes manifests = 3;           // YAML bundle
+  repeated string skip_policies = 4;
+  map&lt;string, string&gt; policy_overrides = 5;  // policy name -&gt; &quot;enforce&quot; | &quot;warn&quot;
+  bool dry_run = 6;
+  string project = 7;            // AppProject name; defaults to &quot;default&quot;
+}
+</code></pre></div>
+<h3 id="response-1">Response</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">protobuf</span></div><pre tabindex="0" aria-label="protobuf code example 6"><code class="language-protobuf">message ApplyBundleResponse {
+  Application application = 1;
+  Release release = 2;
+  repeated PolicyResult policy_results = 3;
+  bool blocked = 4;
+  string block_reason = 5;
+}
+</code></pre></div>
+<h3 id="behavior">Behavior</h3>
+<ol>
+<li>The server ensures the target namespace exists.</li>
+<li>It parses the bundle, defaults missing namespaces, and injects <code>app.paprika.io/managed-by</code> and <code>app.paprika.io/name</code> labels.</li>
+<li>It resolves the <code>AppProject</code> (<code>default</code> if empty) and validates project boundaries when governance is enabled.</li>
+<li>It evaluates matching <code>Policy</code> CRDs, honoring <code>skip_policies</code> and <code>policy_overrides</code>.</li>
+<li>If any enforced policy fails, the response has <code>blocked: true</code>, <code>block_reason</code> is set, and no resources are created.</li>
+<li>If <code>dry_run</code> is true, the response contains the rendered Application/Release shapes and policy results but no resources are persisted.</li>
+<li>Otherwise, the server creates or updates the <code>Application</code>, creates a <code>Stage</code> named <code>{app}-default</code>, creates a unique <code>Release</code>, and stores the bundle in a snapshot <code>ConfigMap</code> named <code>{release}-manifests</code>.</li>
+</ol>
+<h3 id="policy-result">Policy result</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">protobuf</span></div><pre tabindex="0" aria-label="protobuf code example 7"><code class="language-protobuf">message PolicyResult {
+  string name = 1;
+  string severity = 2;   // &quot;critical&quot; | &quot;warning&quot;
+  string action = 3;     // &quot;enforce&quot; | &quot;warn&quot;
+  bool passed = 4;
+  string message = 5;
+}
+</code></pre></div>
+<h3 id="example-curl-like-request">Example curl-like request</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 8"><code class="language-sh">curl -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Connect-Protocol-Version: 1&quot; \
+  -H &quot;Authorization: Bearer ${PAPRIKA_TOKEN}&quot; \
+  --data &#39;{
+    &quot;namespace&quot;: &quot;production&quot;,
+    &quot;name&quot;: &quot;payments-api&quot;,
+    &quot;project&quot;: &quot;payments&quot;,
+    &quot;manifests&quot;: &quot;YXBpVmVy...&quot;,
+    &quot;skipPolicies&quot;: [],
+    &quot;policyOverrides&quot;: {&quot;require-labels&quot;: &quot;warn&quot;},
+    &quot;dryRun&quot;: false
+  }&#39; \
+  http://localhost:3000/paprika.v1.PaprikaService/ApplyBundle
+</code></pre></div>
+<h3 id="example-response">Example response</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 9"><code class="language-json">{
+  &quot;application&quot;: {
+    &quot;name&quot;: &quot;payments-api&quot;,
+    &quot;namespace&quot;: &quot;production&quot;,
+    &quot;phase&quot;: &quot;Promoting&quot;,
+    &quot;project&quot;: &quot;payments&quot;
+  },
+  &quot;release&quot;: {
+    &quot;name&quot;: &quot;payments-api-release-a1b2c3d4-1750000000&quot;,
+    &quot;namespace&quot;: &quot;production&quot;,
+    &quot;phase&quot;: &quot;Promoting&quot;,
+    &quot;target&quot;: &quot;payments-api-default&quot;
+  },
+  &quot;policyResults&quot;: [
+    {&quot;name&quot;: &quot;require-labels&quot;, &quot;severity&quot;: &quot;critical&quot;, &quot;action&quot;: &quot;enforce&quot;, &quot;passed&quot;: true, &quot;message&quot;: &quot;&quot;}
+  ],
+  &quot;blocked&quot;: false
+}
+</code></pre></div>
+<h2 id="rollbackrelease"><code>RollbackRelease</code></h2>
+<p>Request that a release be rolled back to the previous viable snapshot.</p>
+<h3 id="request-2">Request</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">protobuf</span></div><pre tabindex="0" aria-label="protobuf code example 10"><code class="language-protobuf">message RollbackReleaseRequest {
+  string namespace = 1;
+  string name = 2;       // Release name
+}
+</code></pre></div>
+<h3 id="response-2">Response</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">protobuf</span></div><pre tabindex="0" aria-label="protobuf code example 11"><code class="language-protobuf">message RollbackReleaseResponse {
+  Release release = 1;
+}
+</code></pre></div>
+<h3 id="behavior-1">Behavior</h3>
+<p>The server fetches the named <code>Release</code>, sets the annotation <code>paprika.io/rollback-requested: &quot;true&quot;</code>, and ensures <code>spec.onFailure.action</code> is set to <code>rollback</code>. The release controller observes the annotation and applies the previous release's manifest snapshot. The response returns the updated <code>Release</code> with the new annotation.</p>
+<h3 id="example-curl-like-request-1">Example curl-like request</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 12"><code class="language-sh">curl -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Connect-Protocol-Version: 1&quot; \
+  -H &quot;Authorization: Bearer ${PAPRIKA_TOKEN}&quot; \
+  --data &#39;{
+    &quot;namespace&quot;: &quot;production&quot;,
+    &quot;name&quot;: &quot;payments-api-release-a1b2c3d4-1750000000&quot;
+  }&#39; \
+  http://localhost:3000/paprika.v1.PaprikaService/RollbackRelease
+</code></pre></div>
+<h3 id="example-response-1">Example response</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 13"><code class="language-json">{
+  &quot;release&quot;: {
+    &quot;name&quot;: &quot;payments-api-release-a1b2c3d4-1750000000&quot;,
+    &quot;namespace&quot;: &quot;production&quot;,
+    &quot;phase&quot;: &quot;Failed&quot;,
+    &quot;rolledBackTo&quot;: &quot;payments-api-release-z9y8x7w6-1749900000&quot;
+  }
+}
+</code></pre></div>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/observe-plugin/" rel="prev"><span>Previous guide</span><strong>Install and use Paprika Observe</strong></a><a href="../../blog/"><span>Keep exploring</span><strong>Read the engineering blog</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

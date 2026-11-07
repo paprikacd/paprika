@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Install and use Paprika Observe · Paprika docs</title>
+<meta name="description" content="Install the Observe plugin, connect with OAuth, discover telemetry providers, and create or update shared Insights dashboards."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/observe-plugin/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Install and use Paprika Observe · Paprika docs"/>
+<meta property="og:description" content="Install the Observe plugin, connect with OAuth, discover telemetry providers, and create or update shared Insights dashboards."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/observe-plugin/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Install and use Paprika Observe · Paprika docs"/>
+<meta name="twitter:description" content="Install the Observe plugin, connect with OAuth, discover telemetry providers, and create or update shared Insights dashboards."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Install and use Paprika Observe","description":"Install the Observe plugin, connect with OAuth, discover telemetry providers, and create or update shared Insights dashboards.","url":"https://paprikacd.github.io/paprika/docs/observe-plugin/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/observe-plugin/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Install and use Paprika Observe","item":"https://paprikacd.github.io/paprika/docs/observe-plugin/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Integrate</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/" aria-current="page">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#one-command-install-codex--claude-code">One-command install (Codex / Claude Code)</a></li><li class="toc-level-2"><a href="#read-a-dashboard-query-bundle">Read a dashboard query bundle</a></li><li class="toc-level-2"><a href="#authoring-flow">Authoring flow</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="paprika-observe-plugin">Install and use Paprika Observe</h1><p class="article-description">Install the Observe plugin, connect with OAuth, discover telemetry providers, and create or update shared Insights dashboards.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/plugins/paprika-observe/README.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><h2 id="one-command-install-codex--claude-code">One-command install (Codex / Claude Code)</h2>
+<p>Requires Node.js 20+ and an installed Codex or Claude Code CLI. This GitHub-backed
+npx command installs the complete plugin and its skill, not just an MCP URL:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 1"><code class="language-sh">npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+# Or use --client claude, or --client both
+</code></pre></div>
+<p>The installer stages the marketplace at <code>~/.paprika/plugin-marketplace</code>, registers
+it with the selected client, and installs <code>paprika-observe@paprika</code>. Rerun the
+command to refresh the staged package; restart the client or refresh its plugin.
+It never copies OAuth tokens or silently registers a second direct MCP entry.</p>
+<p>Complete sign-in in your client. First grant <code>paprika:observe</code> for read-only
+telemetry and dashboards; for Insights authoring, reconnect with
+<code>paprika:observe,paprika:insights:write</code> and your existing Insights RBAC.
+Verify access with <code>list_observability_providers</code>, then <code>list_dashboards</code> and
+<code>query_dashboard</code>. Successful installation alone is not proof of connection.</p>
+<p><strong>ChatGPT:</strong> npx configures Codex or Claude Code; it cannot register a ChatGPT
+custom MCP app or initiate browser consent on the user's behalf. In ChatGPT,
+add <code>https://paprika.benebsworth.com/observe/mcp</code> as a custom MCP app and
+complete OAuth there. To bundle that registered app into a private ChatGPT
+plugin, use its actual app ID in <code>.app.json</code> and reference it from
+<code>extensions.com.openai.apps</code>; never guess that ID or copy another user's app
+binding into this public repository.</p>
+<p>An optional plugin for Paprika's separate observability gateway. It bundles
+provider discovery, bounded telemetry queries, dashboard query bundles, and
+saved-query/dashboard authoring.
+It does not add a connection to the existing fleet plugin automatically.</p>
+<p>The packaged endpoint is <code>https://paprika.benebsworth.com/observe/mcp</code>.
+Deployment and client access are separate: installing this source cannot
+deploy the gateway or establish which providers the server can access.
+For GKE or another origin, select the verified deployment URL and use the
+endpoint-only connection instructions in the <a href="../../docs/mcp-plugin/#observability-gateway">integration guide</a>.</p>
+<p>When the user explicitly requests installation, run from the repository root:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">codex plugin marketplace add .
+codex plugin add paprika-observe@paprika
+</code></pre></div>
+<p>Or in Claude Code:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh">claude plugin marketplace add .
+claude plugin install paprika-observe@paprika --scope user
+</code></pre></div>
+<p>Complete native OAuth for this connection with <code>paprika:observe</code> for reads and
+explicitly consent to <code>paprika:insights:write</code> to create or update saved queries
+and dashboards. Authoring also requires your existing Insights write permission.
+The server advertises the authoring scope only when Insights is configured.
+Existing read-only tokens stay read-only, including on refresh: update the
+plugin and reconnect through native OAuth to request the new scope. Clients
+using the compatibility manifest must request <code>paprika:insights:write</code> in their
+OAuth authorization flow; a request with no scope keeps the read-only default.
+Never copy fleet tokens, service-account keys, or provider credentials into a manifest.
+Then discover tools, call <code>list_observability_providers</code>, select an actual
+provider identity, and run a small discovery/query. Native client sign-in,
+real tool discovery, and real backend queries require independent validation.</p>
+<p>Validate package structure without installing or authenticating:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 4"><code class="language-sh">claude plugin validate --strict plugins/paprika-observe
+node --experimental-strip-types --test internal/api/mcp/ui/tests/observe-plugin.test.ts
+</code></pre></div>
+<p>Portable <code>mcp.json</code> uses <code>streamable-http</code> and the OpenAI per-server OAuth
+extension; compatibility <code>.mcp.json</code> uses <code>http</code>. The Codex and Claude overlays
+point to the compatibility file. No background hooks or credential scripts
+are included.</p>
+<h2 id="read-a-dashboard-query-bundle">Read a dashboard query bundle</h2>
+<p>For an existing dashboard, call <code>list_dashboards</code> to discover its ID, then
+<code>query_dashboard</code> to collect its live signals in one request:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 5"><code class="language-json">{
+  &quot;name&quot;: &quot;query_dashboard&quot;,
+  &quot;arguments&quot;: {
+    &quot;id&quot;: &quot;service-overview&quot;,
+    &quot;variables&quot;: { &quot;service&quot;: &quot;uptime-api&quot; }
+  }
+}
+</code></pre></div>
+<p>The gateway resolves the dashboard's saved queries and parameter bindings,
+applies one shared time range and filter set, and executes identical queries
+once. Its compact <code>structuredContent</code> includes widget-to-signal references,
+exact readings, units, timestamps, range summaries and a small trace sample.
+A short text synopsis presents the bundle without duplicating the full JSON.
+Missing data, failed queries and truncation remain explicit.</p>
+<p>This is read-only: it requires <code>paprika:observe</code> plus existing Insights/provider
+permissions, and never changes the dashboard's defaults. Clients do not need to
+fetch each saved query and execute it separately. To inspect a small trend, add
+<code>&quot;widget_ids&quot;: [&quot;request-rate&quot;]</code> and <code>&quot;history_points&quot;: 12</code>. The default uses
+the saved dashboard range; pass both <code>start</code> and <code>end</code> for a fixed interval.
+Tooltip-only queries still need a hovered observation. See the
+<a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/dashboard-query.md">dashboard query contract</a> for
+limits, result interpretation and live validation.</p>
+<h2 id="authoring-flow">Authoring flow</h2>
+<p>Discover <code>list_insights_providers</code> for the actual provider IDs used by the UI.
+Use <code>get_insights_schema</code> with <code>kind: dashboard</code>, <code>widget</code>, or <code>saved_query</code>
+for the deployed schema, examples and semantic constraints.
+Read existing documents with <code>list_saved_queries</code>, <code>get_saved_query</code>,
+<code>list_dashboards</code>, and <code>get_dashboard</code>. Create saved queries before dashboards
+that reference them, using <code>create_saved_query</code> and <code>create_dashboard</code>.
+Targeted edits use <code>patch_saved_query</code> and <code>patch_dashboard</code>: nested objects
+merge, <code>null</code> removes a field, and arrays replace. Dashboard <code>widget_edits</code>
+add, update or remove widgets by stable ID in one atomic save. Full-document
+replacements remain available through <code>update_saved_query</code> and
+<code>update_dashboard</code>. Every edit requires the exact ETag
+returned by the last read. A conflict requires a fresh read and review of both
+changes; do not retry an overwrite with a wildcard ETag. Query provider/kind
+identity and existing dashboard parameter bindings remain protected by the
+same service that handles UI edits.</p>
+<p>These tools edit the shared Insights documents. An open UI refreshes external
+changes while preserving unsaved local drafts. Returned dashboard links open
+the saved workspace. Authoring grants no fleet writes, provider configuration,
+credential management, or deletion tools.</p>
+<p>See the <a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/targeted-authoring.md">targeted authoring contract</a>
+for patch examples, immutable fields and limits.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/mcp-plugin/" rel="prev"><span>Previous guide</span><strong>Use the Paprika fleet plugin</strong></a><a href="../../docs/api/" rel="next"><span>Next guide</span><strong>Paprika API reference</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

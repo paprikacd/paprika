@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Configure canary deployments · Paprika docs</title>
+<meta name="description" content="Set canary steps and intervals, connect traffic routing, inspect rollout progress, and configure analysis for Kubernetes releases."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/canary/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Configure canary deployments · Paprika docs"/>
+<meta property="og:description" content="Set canary steps and intervals, connect traffic routing, inspect rollout progress, and configure analysis for Kubernetes releases."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/canary/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Configure canary deployments · Paprika docs"/>
+<meta name="twitter:description" content="Set canary steps and intervals, connect traffic routing, inspect rollout progress, and configure analysis for Kubernetes releases."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Configure canary deployments","description":"Set canary steps and intervals, connect traffic routing, inspect rollout progress, and configure analysis for Kubernetes releases.","url":"https://paprikacd.github.io/paprika/docs/canary/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/canary/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Configure canary deployments","item":"https://paprikacd.github.io/paprika/docs/canary/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Deliver</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/" aria-current="page">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#how-it-works">How It Works</a></li><li class="toc-level-2"><a href="#canary-configuration">Canary Configuration</a></li><li class="toc-level-2"><a href="#traffic-routers">Traffic Routers</a></li><li class="toc-level-3"><a href="#istio-virtualservice">Istio VirtualService</a></li><li class="toc-level-3"><a href="#gateway-api-httproute">Gateway API HTTPRoute</a></li><li class="toc-level-3"><a href="#chart-rendered-weights-no-trafficrouter">Chart-rendered weights (no trafficRouter)</a></li><li class="toc-level-2"><a href="#release-identity--what-spawns-a-release">Release Identity — what spawns a Release</a></li><li class="toc-level-2"><a href="#analysis-checks">Analysis Checks</a></li><li class="toc-level-3"><a href="#http-checks">HTTP checks</a></li><li class="toc-level-3"><a href="#pod-metric-checks">Pod metric checks</a></li><li class="toc-level-3"><a href="#results-and-observability">Results and observability</a></li><li class="toc-level-2"><a href="#full-example">Full Example</a></li><li class="toc-level-2"><a href="#rollback">Rollback</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="canary-deployments">Configure canary deployments</h1><p class="article-description">Set canary steps and intervals, connect traffic routing, inspect rollout progress, and configure analysis for Kubernetes releases.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/canary.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Paprika supports progressive canary rollouts by shifting traffic between stable and canary service backends in discrete steps. The operator integrates with Istio VirtualServices or Gateway API HTTPRoutes.</p>
+<h2 id="how-it-works">How It Works</h2>
+<ol>
+<li>A <code>Stage</code> defines <code>canary.steps</code> as a list of traffic weights (percentages).</li>
+<li>The operator shifts weight at each step — either by patching the configured
+traffic router, or by re-rendering the chart with the injected
+<code>canaryWeight</code> parameter (see &quot;Chart-rendered weights&quot; below).</li>
+<li>Step N waits <strong>N × <code>intervalSeconds</code></strong> after the previous step was applied
+— soaks get longer as traffic increases. A leading <code>0</code> step reproduces a
+&quot;stage behind 0% traffic&quot; soak: fallback serves 100% while the candidate
+converges.</li>
+<li>If <code>analysis</code> checks are configured, they must all pass before the next
+step; a failure marks the release <code>Failed</code> and (with
+<code>analysis.rollbackOnFail: true</code> or <code>onFailure.action: rollback</code>) restores
+the previous release's manifest snapshot.</li>
+<li>Each step is also gated on the rendered workloads converging
+(<code>progressDeadlineSeconds</code>) — an unpullable image or crashloop blocks
+advance and eventually fails the release.</li>
+<li>The final step (usually <code>100</code>) promotes the canary to full traffic.</li>
+</ol>
+<h2 id="canary-configuration">Canary Configuration</h2>
+<p>A canary config is defined on an <code>Application</code> (default) or on an individual <code>Stage</code> (override):</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 1"><code class="language-yaml">canary:
+  steps:
+    - 10
+    - 25
+    - 50
+    - 100
+  intervalSeconds: 120
+  analysis:
+    intervalSeconds: 30
+    rollbackOnFail: true
+    checks:
+      - type: http
+        url: http://my-app-canary/status
+        successThreshold: &quot;99&quot;
+        timeoutSeconds: 5
+        requestCount: 10
+</code></pre></div>
+<ul>
+<li><code>steps</code> — traffic weight percentages applied in order.</li>
+<li><code>intervalSeconds</code> — minimum wait between steps; prevents watch-event-driven fast-forward.</li>
+<li><code>analysis</code> — optional automated checks that run during the canary.</li>
+</ul>
+<h2 id="traffic-routers">Traffic Routers</h2>
+<h3 id="istio-virtualservice">Istio VirtualService</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 2"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: my-app-prod
+  namespace: paprika-system
+spec:
+  name: prod
+  ring: 3
+  templates:
+    - my-app-template
+  canary:
+    steps:
+      - 10
+      - 50
+      - 100
+    intervalSeconds: 120
+  trafficRouter:
+    provider: istio
+    istio:
+      virtualService: my-app-vs
+      routes:
+        - primary
+      hosts:
+        - my-app.example.com
+      stableService: my-app-stable
+      canaryService: my-app-canary
+</code></pre></div>
+<h3 id="gateway-api-httproute">Gateway API HTTPRoute</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 3"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: my-app-prod
+  namespace: paprika-system
+spec:
+  name: prod
+  ring: 3
+  templates:
+    - my-app-template
+  canary:
+    steps:
+      - 5
+      - 25
+      - 50
+      - 100
+    intervalSeconds: 60
+  trafficRouter:
+    provider: gateway-api
+    gatewayApi:
+      httpRoute: my-app-route
+      stableService: my-app-stable
+      canaryService: my-app-canary
+</code></pre></div>
+<p>If <code>stableService</code> or <code>canaryService</code> are omitted, the operator derives names from the release.</p>
+<h3 id="chart-rendered-weights-no-trafficrouter">Chart-rendered weights (no <code>trafficRouter</code>)</h3>
+<p><code>ApplicationPromotionStage</code> (the inline <code>spec.stages[]</code> on <code>Application</code>)
+cannot express <code>trafficRouter</code> — that field only exists on standalone Stage
+CRs. For Application-managed apps, render the weight into the chart instead:
+during canary steps Paprika injects <code>features.canary.enabled=true</code> and
+<code>canaryWeight=&lt;step&gt;</code> into the template render. If the chart maps
+<code>canaryWeight</code> into its HTTPRoute (or Service/ingress) backend weights, the
+entire ramp works with no router config. Gate the template on
+<code>features.canary.enabled</code> — the final promotion render omits it, so the
+steady-state render must produce <code>100/0</code>. See the flaggr-api chart for a
+working example (<code>deploy/kubernetes/chart/templates/httproute.yaml</code>).</p>
+<h2 id="release-identity--what-spawns-a-release">Release Identity — what spawns a Release</h2>
+<p>A release's identity is <code>sourceHash + sourceRevision + stage name + merged parameters</code>. Only changes to those inputs spawn a new release:</p>
+<ul>
+<li>Chart/source <strong>content</strong> changes spawn a release. Git source hashes are
+<code>&lt;commit&gt;:&lt;dirHash&gt;</code> and only the content segment is compared — commits
+outside the watched path do NOT churn releases.</li>
+<li>Parameter changes (e.g. an <code>image.digest</code> bump) spawn a release.</li>
+<li>Stage spec changes (steps, checks, intervals) do NOT — the materialized
+Stage CR updates in place and the next release picks them up.</li>
+<li>Reverting parameters to a previous combination collides with that older
+release's name: it is adopted and resynced (a fresh canary of the old
+release — self-heal semantics, not an instant switch).</li>
+</ul>
+<h2 id="analysis-checks">Analysis Checks</h2>
+<p>Analysis checks validate canary health before advancing to the next weight.</p>
+<h3 id="http-checks">HTTP checks</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 4"><code class="language-yaml">analysis:
+  checks:
+    - type: http
+      url: http://my-app-canary/metrics
+      method: GET
+      httpHeaders:
+        Accept: application/json
+      successThreshold: &quot;95&quot;
+      timeoutSeconds: 5
+      requestCount: 20
+</code></pre></div>
+<h3 id="pod-metric-checks">Pod metric checks</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 5"><code class="language-yaml">analysis:
+  checks:
+    - type: podMetrics
+      metric: restartRate
+      podSelector: app.kubernetes.io/name=my-api,app.kubernetes.io/component=api
+      threshold: &quot;3&quot;
+      windowSeconds: 300
+    - type: podMetrics
+      metric: errorRate
+      podSelector: app.kubernetes.io/name=my-api,app.kubernetes.io/component=api
+      threshold: &quot;0.01&quot;
+      windowSeconds: 300
+</code></pre></div>
+<ul>
+<li><code>podSelector</code> (label selector) is <strong>required</strong> — pods are listed in the
+namespace of the resource under analysis (release/rollout/analysisrun),
+not the operator namespace. Target the candidate pods specifically.</li>
+<li>Supported metrics: <code>errorRate</code>, <code>restartRate</code>. <code>latencyP99</code> is declared
+but has no metrics backend — it <strong>fails closed</strong> rather than silently
+passing, as do a missing <code>podSelector</code> and a selector matching zero pods.</li>
+<li>A <code>restartRate</code> check is a cheap way to catch crashlooping candidates
+that still answer HTTP health checks between restarts.</li>
+</ul>
+<h3 id="results-and-observability">Results and observability</h3>
+<p>Each analysis cycle persists a <code>CanaryAnalysis</code> status condition on the
+Release (e.g. <code>4/4 checks passed; failed: name: reason</code>), emits a
+<code>CanaryAnalysis</code> Kubernetes event (Warning on failure), and increments
+<code>paprika_analysis_check_total{release, namespace, check_type, result}</code>.
+Check <code>kubectl describe release &lt;name&gt;</code> / <code>.status.conditions</code> after a
+rollout to audit what actually ran.</p>
+<h2 id="full-example">Full Example</h2>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 6"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: paprika-system
+spec:
+  source:
+    type: helm
+    chart:
+      repo: https://charts.example.com
+      name: my-app
+      version: 1.2.3
+  strategy: Canary
+  syncPolicy: Auto
+  parameters:
+    image.tag: v1.2.3
+  stages:
+    - name: dev
+      ring: 1
+    - name: staging
+      ring: 2
+    - name: prod
+      ring: 3
+      canary:
+        steps:
+          - 10
+          - 50
+          - 100
+        intervalSeconds: 180
+        analysis:
+          intervalSeconds: 30
+          rollbackOnFail: true
+          checks:
+            - type: http
+              url: http://my-app-canary/health
+              successThreshold: &quot;99&quot;
+              timeoutSeconds: 5
+              requestCount: 10
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: my-app-prod
+  namespace: paprika-system
+spec:
+  name: prod
+  ring: 3
+  templates:
+    - my-app-template
+  trafficRouter:
+    provider: istio
+    istio:
+      virtualService: my-app-vs
+      stableService: my-app-stable
+      canaryService: my-app-canary
+</code></pre></div>
+<p>Apply and watch:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 7"><code class="language-sh">kubectl apply -f canary-app.yaml
+kubectl get application my-app -n paprika-system -w
+</code></pre></div>
+<p>The <code>status.canaryWeight</code> and <code>status.canaryStepIndex</code> fields show the current rollout state.</p>
+<h2 id="rollback">Rollback</h2>
+<p>Annotate a non-terminal release to roll it back (the application needs
+<code>onFailure.action: rollback</code> — or trigger automatically via
+<code>analysis.rollbackOnFail</code>):</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 8"><code class="language-sh">kubectl -n &lt;ns&gt; annotate releases.pipelines.paprika.io &lt;release&gt; \
+  paprika.io/rollback-requested=&quot;$(date +%s)&quot; --overwrite
+</code></pre></div>
+<p>What happens:</p>
+<ol>
+<li>The controller picks the newest <code>Complete</code> release, else the newest
+non-<code>Failed</code> release <strong>including <code>Superseded</code></strong> — a superseded
+release's <code>status.renderedManifestSnapshot</code> is its steady-state
+render, which is exactly what gets restored.</li>
+<li>That snapshot is re-applied (traffic returns to its steady state).</li>
+<li>The rolled-back release is marked <code>RolledBack</code> with
+<code>status.rolledBackTo</code> set, and its automatic retry budget is spent —
+the application cannot adopt and auto-resync it (which would
+resurrect the very canary being stopped).</li>
+<li>The application parks in <code>ReleaseRetriesExhausted</code> / <code>RolledBack</code>,
+still polling the source and watching release identity: a new commit
+or a parameter change starts a fresh release flow. A spec change that
+produces a different release identity is never held back by the cap.</li>
+<li><code>paprika.io/manual-sync</code> on the Application bypasses and resets the
+retry cap for deliberate operator retries.</li>
+</ol>
+<p>Always qualify the resource: <code>releases.pipelines.paprika.io</code> — a bare
+<code>kubectl get release</code> may resolve to a different CRD on clusters with
+multiple release kinds installed.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/environment-promotion/" rel="prev"><span>Previous guide</span><strong>Promote releases through dev, staging and production</strong></a><a href="../../docs/drift-and-prune/" rel="next"><span>Next guide</span><strong>Inspect Kubernetes drift and pruning</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

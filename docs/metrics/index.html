@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Monitor Paprika metrics and alerts · Paprika docs</title>
+<meta name="description" content="Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/metrics/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Monitor Paprika metrics and alerts · Paprika docs"/>
+<meta property="og:description" content="Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/metrics/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Monitor Paprika metrics and alerts · Paprika docs"/>
+<meta name="twitter:description" content="Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Monitor Paprika metrics and alerts","description":"Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation.","url":"https://paprikacd.github.io/paprika/docs/metrics/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/metrics/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Monitor Paprika metrics and alerts","item":"https://paprikacd.github.io/paprika/docs/metrics/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observe</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/" aria-current="page">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#accessing-metrics">Accessing Metrics</a></li><li class="toc-level-3"><a href="#local-http-example">Local HTTP example</a></li><li class="toc-level-2"><a href="#metric-reference">Metric Reference</a></li><li class="toc-level-3"><a href="#application-lifecycle">Application Lifecycle</a></li><li class="toc-level-3"><a href="#drift-and-sync">Drift and Sync</a></li><li class="toc-level-3"><a href="#reconciliation">Reconciliation</a></li><li class="toc-level-3"><a href="#sync-operations">Sync Operations</a></li><li class="toc-level-3"><a href="#control-plane-health">Control-Plane Health</a></li><li class="toc-level-3"><a href="#otel-instruments">OTel Instruments</a></li><li class="toc-level-3"><a href="#satellite-reporting">Satellite Reporting</a></li><li class="toc-level-3"><a href="#kubernetes-gauges">Kubernetes Gauges</a></li><li class="toc-level-3"><a href="#kubernetes-client-rest_client_">Kubernetes Client (rest_client_*)</a></li><li class="toc-level-2"><a href="#alerting-rules">Alerting Rules</a></li><li class="toc-level-3"><a href="#critical-alerts">Critical Alerts</a></li><li class="toc-level-3"><a href="#warning-alerts">Warning Alerts</a></li><li class="toc-level-3"><a href="#info-alerts">Info Alerts</a></li><li class="toc-level-2"><a href="#grafana-dashboards">Grafana Dashboards</a></li><li class="toc-level-3"><a href="#application-health-panel">Application Health Panel</a></li><li class="toc-level-3"><a href="#prune-activity-panel">Prune Activity Panel</a></li><li class="toc-level-3"><a href="#phase-transition-timeline">Phase Transition Timeline</a></li><li class="toc-level-2"><a href="#debugging-with-metrics">Debugging with Metrics</a></li><li class="toc-level-3"><a href="#is-my-app-drifting">&quot;Is my app drifting?&quot;</a></li><li class="toc-level-3"><a href="#is-prune-working">&quot;Is prune working?&quot;</a></li><li class="toc-level-3"><a href="#why-is-my-app-stuck">&quot;Why is my app stuck?&quot;</a></li><li class="toc-level-3"><a href="#how-long-do-syncs-take">&quot;How long do syncs take?&quot;</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="metrics-and-alerting">Monitor Paprika metrics and alerts</h1><p class="article-description">Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/metrics.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Prometheus metrics exposed by the Paprika controller-manager and how to use
+them for monitoring and alerting.</p>
+<h2 id="accessing-metrics">Accessing Metrics</h2>
+<p>The controller-manager metrics port defaults to <code>8443</code>. The transport follows
+the Helm chart's <code>metrics.secure</code> value, not the port number:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Chart setting</th>
+<th>Transport and access</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metrics.secure: true</code> (default)</td>
+<td>HTTPS with authentication and authorization. The scraper needs permission to <code>get</code> the <code>/metrics</code> non-resource URL.</td>
+</tr>
+<tr>
+<td><code>metrics.secure: false</code></td>
+<td>HTTP; the chart passes <code>--metrics-secure=false</code> to the controller.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Use the setting from your installed release. For HTTPS, configure the scraper's
+bearer credential and certificate trust; the chart creates a
+<code>&lt;release&gt;-metrics-reader</code> ClusterRole that can be bound to the scraper's ServiceAccount.
+A local port-forward does not bypass authorization.</p>
+<p>If Prometheus Operator is installed, <code>prometheus.enable: true</code> renders a
+ServiceMonitor whose port name and scheme follow <code>metrics.secure</code>. Review the
+<a href="https://github.com/paprikacd/paprika/blob/master/charts/chart/templates/prometheus/controller-manager-metrics-monitor.yaml">chart's ServiceMonitor template</a>
+for its certificate and bearer-token configuration, and the
+<a href="https://github.com/paprikacd/paprika/blob/master/charts/chart/templates/rbac/metrics-reader.yaml">metrics-reader role</a>
+for the permission it grants.</p>
+<h3 id="local-http-example">Local HTTP example</h3>
+<p>The following example applies only to an installation explicitly configured
+with <code>metrics.secure: false</code>. It uses the release <code>paprika</code> in namespace
+<code>paprika-system</code>; substitute your own release and namespace. Keep this command
+running in one terminal:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 1"><code class="language-sh">kubectl -n paprika-system port-forward \
+  svc/paprika-controller-manager-metrics-service 8443:8443
+</code></pre></div>
+<p>Then query it from another terminal:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">curl --fail --silent --show-error http://localhost:8443/metrics
+</code></pre></div>
+<p>An HTTP ServiceMonitor or PodMonitor must also use the <code>http</code> scheme. Do not
+copy that scrape configuration to a release using secure metrics.</p>
+<h2 id="metric-reference">Metric Reference</h2>
+<h3 id="application-lifecycle">Application Lifecycle</h3>
+<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_application_phase_total</code></td>
+<td>Counter</td>
+<td><code>application</code>, <code>namespace</code>, <code>phase</code></td>
+<td>Application phase transitions</td>
+</tr>
+<tr>
+<td><code>paprika_application_reconcile_duration_seconds</code></td>
+<td>Histogram</td>
+<td><code>application</code>, <code>namespace</code></td>
+<td>Application reconciliation duration</td>
+</tr>
+<tr>
+<td><code>paprika_release_phase_total</code></td>
+<td>Counter</td>
+<td><code>release</code>, <code>namespace</code>, <code>phase</code></td>
+<td>Release phase transitions</td>
+</tr>
+<tr>
+<td><code>paprika_pipeline_phase_total</code></td>
+<td>Counter</td>
+<td><code>pipeline</code>, <code>namespace</code>, <code>phase</code></td>
+<td>Pipeline phase transitions</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="drift-and-sync">Drift and Sync</h3>
+<div class="table-scroll" role="region" aria-label="Table 3, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_out_of_sync</code></td>
+<td>Gauge</td>
+<td><code>app</code>, <code>namespace</code></td>
+<td>Current out-of-sync resource count</td>
+</tr>
+<tr>
+<td><code>paprika_prunable</code></td>
+<td>Gauge</td>
+<td><code>app</code>, <code>namespace</code></td>
+<td>Current prunable resource count</td>
+</tr>
+<tr>
+<td><code>paprika_prune_total</code></td>
+<td>Counter</td>
+<td><code>app</code>, <code>namespace</code>, <code>kind</code></td>
+<td>Resources pruned per apply</td>
+</tr>
+</tbody>
+</table></div>
+<p>These are updated on every diff evaluation (every poll interval, default
+60s). The gauges reflect the CURRENT state; the counter accumulates over
+time.</p>
+<h3 id="reconciliation">Reconciliation</h3>
+<div class="table-scroll" role="region" aria-label="Table 4, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_reconcile_total</code></td>
+<td>Counter</td>
+<td><code>controller</code>, <code>result</code></td>
+<td>Controller reconciliation count</td>
+</tr>
+<tr>
+<td><code>paprika_reconcile_duration_seconds</code></td>
+<td>Histogram</td>
+<td><code>controller</code></td>
+<td>Controller reconciliation duration</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="sync-operations">Sync Operations</h3>
+<div class="table-scroll" role="region" aria-label="Table 5, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_sync_duration_seconds</code></td>
+<td>Histogram</td>
+<td><code>app</code></td>
+<td>Manifest apply duration</td>
+</tr>
+<tr>
+<td><code>paprika_sync_errors_total</code></td>
+<td>Counter</td>
+<td><code>app</code></td>
+<td>Manifest apply errors</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="control-plane-health">Control-Plane Health</h3>
+<p>These OTel instruments answer &quot;is Paprika itself healthy and keeping up?&quot;.
+They are exported by the controller-manager and are the raw data behind the
+<code>paprika health</code> CLI, the <code>get_system_health</code> MCP tool, and
+<code>PaprikaService.GetSystemHealth</code>.</p>
+<div class="table-scroll" role="region" aria-label="Table 6, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_controller_last_reconcile_timestamp_seconds</code></td>
+<td>Gauge</td>
+<td><code>controller</code>, <code>result</code></td>
+<td>Unix timestamp of the last reconcile attempt</td>
+</tr>
+<tr>
+<td><code>paprika_application_last_reconcile_timestamp_seconds</code></td>
+<td>Gauge</td>
+<td><code>application</code>, <code>namespace</code></td>
+<td>Unix timestamp of the last Application reconcile attempt</td>
+</tr>
+<tr>
+<td><code>paprika_application_reconcile_lag</code></td>
+<td>Gauge</td>
+<td><code>application</code>, <code>namespace</code></td>
+<td>Spec generations behind the controller's observed generation</td>
+</tr>
+<tr>
+<td><code>paprika_applications_stale</code></td>
+<td>Gauge</td>
+<td>—</td>
+<td>Applications whose observed generation is behind their spec generation</td>
+</tr>
+<tr>
+<td><code>paprika_applications_release_retries_exhausted</code></td>
+<td>Gauge</td>
+<td>—</td>
+<td>Applications holding the <code>ReleaseRetriesExhausted</code> condition</td>
+</tr>
+<tr>
+<td><code>paprika_releases_stuck</code></td>
+<td>Gauge</td>
+<td>—</td>
+<td>Non-terminal, non-gated releases older than 30 minutes</td>
+</tr>
+<tr>
+<td><code>paprika_fleet_index_degraded</code></td>
+<td>Gauge</td>
+<td>—</td>
+<td>1 when the fleet index health is degraded</td>
+</tr>
+</tbody>
+</table></div>
+<p>Useful queries:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 3"><code class="language-promql"># Controllers that have not completed a reconcile in five minutes.
+time() - max by (controller) (
+  paprika_controller_last_reconcile_timestamp_seconds{result=~&quot;success|requeue_after&quot;}
+) &gt; 300
+
+# Applications with unreconciled spec changes.
+max by (application, namespace) (paprika_application_reconcile_lag) &gt; 0
+
+# Workqueue backlog and oldest unfinished work (controller-runtime).
+max by (controller) (workqueue_depth) &gt; 0
+max by (controller) (workqueue_unfinished_work_seconds) &gt; 60
+max by (controller) (workqueue_longest_running_processor_seconds) &gt; 60
+
+# Releases that have not reached a terminal phase.
+paprika_releases_stuck &gt; 0
+</code></pre></div>
+<p><code>workqueue_*</code> and <code>controller_runtime_reconcile_*</code> are supplied by
+controller-runtime; the Paprika-specific gauges above add the per-application
+lag and release-liveness view that those generic metrics cannot express.</p>
+<h3 id="otel-instruments">OTel Instruments</h3>
+<p>These use the OTel API (<code>otel.Meter(&quot;paprika&quot;)</code>) and appear with the
+<code>otel_scope_name=&quot;paprika&quot;</code> label:</p>
+<div class="table-scroll" role="region" aria-label="Table 7, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_render_total</code></td>
+<td>Counter</td>
+<td>Template render operations</td>
+</tr>
+<tr>
+<td><code>paprika_render_errors_total</code></td>
+<td>Counter</td>
+<td>Template render errors</td>
+</tr>
+<tr>
+<td><code>paprika_render_duration_seconds</code></td>
+<td>Histogram</td>
+<td>Template render duration</td>
+</tr>
+<tr>
+<td><code>paprika_git_operations_total</code></td>
+<td>Counter</td>
+<td>Git source operations</td>
+</tr>
+<tr>
+<td><code>paprika_git_errors_total</code></td>
+<td>Counter</td>
+<td>Git source errors</td>
+</tr>
+<tr>
+<td><code>paprika_git_duration_seconds</code></td>
+<td>Histogram</td>
+<td>Git source operation duration</td>
+</tr>
+<tr>
+<td><code>paprika_auth_attempts_total</code></td>
+<td>Counter</td>
+<td>Authentication attempts</td>
+</tr>
+<tr>
+<td><code>paprika_auth_failures_total</code></td>
+<td>Counter</td>
+<td>Authentication failures</td>
+</tr>
+<tr>
+<td><code>paprika_authz_denials_total</code></td>
+<td>Counter</td>
+<td>Authorization denials</td>
+</tr>
+<tr>
+<td><code>paprika_sse_connections</code></td>
+<td>UpDownCounter</td>
+<td>Active SSE connections</td>
+</tr>
+<tr>
+<td><code>paprika_events_published_total</code></td>
+<td>Counter</td>
+<td>Events published</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="satellite-reporting">Satellite Reporting</h3>
+<p>The central API records these OTel instruments for outbound satellite reports.
+Prometheus translates the dotted names to underscores and adds its standard
+counter and unit suffixes.</p>
+<div class="table-scroll" role="region" aria-label="Table 8, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>OTel instrument</th>
+<th>Type</th>
+<th>Attributes</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika.satellite.reports</code></td>
+<td>Counter</td>
+<td><code>transport</code>, <code>outcome</code></td>
+<td>Reports by transport (<code>post</code>, <code>stream</code>) and outcome (<code>accepted</code>, <code>resync</code>, <code>rejected</code>)</td>
+</tr>
+<tr>
+<td><code>paprika.satellite.report.duration</code></td>
+<td>Histogram (seconds)</td>
+<td><code>transport</code>, <code>outcome</code></td>
+<td>Time to authenticate and persist a report</td>
+</tr>
+<tr>
+<td><code>paprika.satellite.report.bytes</code></td>
+<td>Histogram (bytes)</td>
+<td>none</td>
+<td>Uncompressed size of accepted reports</td>
+</tr>
+<tr>
+<td><code>paprika.satellite.link.events</code></td>
+<td>Counter</td>
+<td><code>event</code></td>
+<td>Link lifecycle: <code>attached</code>, <code>detached</code>, <code>refused</code></td>
+</tr>
+<tr>
+<td><code>paprika.satellite.tasks</code></td>
+<td>Counter</td>
+<td><code>action</code>, <code>outcome</code></td>
+<td>Dispatched tasks by outcome (<code>ok</code>, <code>failed</code>, <code>offline</code>, <code>error</code>)</td>
+</tr>
+<tr>
+<td><code>paprika.satellite.task.duration</code></td>
+<td>Histogram (seconds)</td>
+<td><code>action</code></td>
+<td>Round-trip duration of a dispatched task</td>
+</tr>
+<tr>
+<td><code>paprika.satellite.link.up</code></td>
+<td>Gauge</td>
+<td><code>namespace</code>, <code>cluster</code></td>
+<td>Present with value 1 while a cluster holds a link</td>
+</tr>
+<tr>
+<td><code>paprika.satellite.report.age</code></td>
+<td>Gauge (seconds)</td>
+<td><code>namespace</code>, <code>cluster</code></td>
+<td>Time since the last accepted report; absent before the first one</td>
+</tr>
+<tr>
+<td><code>paprika.satellite.applications</code></td>
+<td>Gauge</td>
+<td><code>namespace</code>, <code>cluster</code></td>
+<td>Applications in the last accepted report</td>
+</tr>
+</tbody>
+</table></div>
+<p>The two transports report separately because they fail separately: a link that
+stops accepting reports and a POST endpoint returning 401 are different
+incidents. <code>outcome=&quot;resync&quot;</code> is not a failure — the control plane is asking the
+satellite to open a new session.</p>
+<p>Report age is the signal that a satellite went quiet. The fleet view keeps
+serving the last accepted report, so nothing else in the process knows how old
+it is. <code>link.up</code> covers the case where the connection is gone but the age has
+not crossed the alert threshold yet; the series is absent when no link exists.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 4"><code class="language-promql"># A satellite that has not reported in five minutes.
+paprika_satellite_report_age_seconds &gt; 300
+# Link churn: more than three detaches in ten minutes.
+sum by (cluster) (increase(paprika_satellite_link_events_total{event=&quot;detached&quot;}[10m])) &gt; 3
+# Refused handshakes mean a credential or cluster-identity problem.
+increase(paprika_satellite_link_events_total{event=&quot;refused&quot;}[15m]) &gt; 0
+</code></pre></div>
+<p>Name suffixes follow the exporter's conventions: counters end in <code>_total</code> and
+gauges with unit <code>1</code> end in <code>_ratio</code>. See the
+<a href="../../docs/multi-cluster/">multi-cluster guide</a> for heartbeat and timeout settings.</p>
+<h3 id="kubernetes-gauges">Kubernetes Gauges</h3>
+<p>These are observable gauges populated from the K8s API on each scrape:</p>
+<div class="table-scroll" role="region" aria-label="Table 9, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_applications_active_ratio</code></td>
+<td>Gauge</td>
+<td>Number of active applications</td>
+</tr>
+<tr>
+<td><code>paprika_applications_by_phase_ratio</code></td>
+<td>Gauge</td>
+<td>Applications by phase</td>
+</tr>
+<tr>
+<td><code>paprika_releases_active_ratio</code></td>
+<td>Gauge</td>
+<td>Number of active releases</td>
+</tr>
+<tr>
+<td><code>paprika_releases_by_phase_ratio</code></td>
+<td>Gauge</td>
+<td>Releases by phase</td>
+</tr>
+</tbody>
+</table></div>
+<p>Note: The <code>_ratio</code> suffix is the OTel Prometheus exporter's convention for
+dimensionless (unit &quot;1&quot;) observable gauges. Not a bug.</p>
+<h3 id="kubernetes-client-rest_client_">Kubernetes Client (<code>rest_client_*</code>)</h3>
+<p>Client-go REST metrics are exposed on every component's <code>/metrics</code> endpoint,
+filtered to the <code>rest_client_</code> prefix from the component-base legacy registry:</p>
+<div class="table-scroll" role="region" aria-label="Table 10, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rest_client_requests_total</code></td>
+<td>Counter</td>
+<td>Requests by code/host/method</td>
+</tr>
+<tr>
+<td><code>rest_client_request_duration_seconds</code></td>
+<td>Histogram</td>
+<td>Per-request latency</td>
+</tr>
+<tr>
+<td><code>rest_client_rate_limiter_duration_seconds</code></td>
+<td>Histogram</td>
+<td><strong>Client-side throttle wait</strong> — sustained <code>sum/count</code> growth means QPS/Burst is the bottleneck</td>
+</tr>
+<tr>
+<td><code>rest_client_transport_cache_entries</code></td>
+<td>Gauge</td>
+<td>Shared transport pool size</td>
+</tr>
+</tbody>
+</table></div>
+<p>All Paprika REST configs are tuned to QPS=50 / Burst=100 (client-go defaults
+are 5/10, which throttles uncached calls under load).</p>
+<h2 id="alerting-rules">Alerting Rules</h2>
+<h3 id="critical-alerts">Critical Alerts</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 5"><code class="language-yaml">groups:
+  - name: paprika-critical
+    rules:
+      # Application stuck in a failure state
+      - alert: PaprikaApplicationDegraded
+        expr: paprika_application_phase_total{phase=&quot;Degraded&quot;} &gt; 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: &quot;Application {{ $labels.application }} is Degraded&quot;
+
+      # Release retries exhausted
+      - alert: PaprikaReleaseRetriesExhausted
+        expr: paprika_application_phase_total{phase=&quot;RolledBack&quot;} &gt; 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: &quot;Application {{ $labels.application }} release retries exhausted&quot;
+</code></pre></div>
+<h3 id="warning-alerts">Warning Alerts</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 6"><code class="language-yaml">groups:
+  - name: paprika-warning
+    rules:
+      # Drift detected and persisting
+      - alert: PaprikaDriftDetected
+        expr: paprika_out_of_sync &gt; 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;Application {{ $labels.app }} has {{ $value }} out-of-sync resources&quot;
+          description: &quot;Check kubectl get application {{ $labels.app }} -n {{ $labels.namespace }} -o json | jq &#39;[.status.resources[] | select(.status!=\&quot;Synced\&quot;)]&#39;&quot;
+
+      # Prunable resources accumulating
+      - alert: PaprikaPrunableAccumulation
+        expr: paprika_prunable &gt; 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;Application {{ $labels.app }} has {{ $value }} prunable resources&quot;
+          description: &quot;Enable syncOptions.prune or review status.prunableResources&quot;
+
+      # Unexpected prune activity
+      - alert: PaprikaUnexpectedPrune
+        expr: increase(paprika_prune_total[5m]) &gt; 5
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;Application {{ $labels.app }} pruned {{ $value }} resources in 5m&quot;
+
+      # Sync errors
+      - alert: PaprikaSyncErrors
+        expr: increase(paprika_sync_errors_total[5m]) &gt; 0
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;Application {{ $labels.app }} had sync errors in the last 5m&quot;
+
+      # Render errors
+      - alert: PaprikaRenderErrors
+        expr: increase(paprika_render_errors_total[5m]) &gt; 0
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;Template render errors in the last 5m&quot;
+
+      # Git source errors
+      - alert: PaprikaGitErrors
+        expr: increase(paprika_git_errors_total[5m]) &gt; 0
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;Git source errors in the last 5m&quot;
+</code></pre></div>
+<h3 id="info-alerts">Info Alerts</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 7"><code class="language-yaml">groups:
+  - name: paprika-info
+    rules:
+      # New application created
+      - alert: PaprikaNewApplication
+        expr: increase(paprika_application_phase_total{phase=&quot;Healthy&quot;}[1h]) &gt; 0
+        labels:
+          severity: info
+        annotations:
+          summary: &quot;Application {{ $labels.application }} became Healthy&quot;
+</code></pre></div>
+<h2 id="grafana-dashboards">Grafana Dashboards</h2>
+<h3 id="application-health-panel">Application Health Panel</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 8"><code class="language-json">{
+  &quot;title&quot;: &quot;Application Health&quot;,
+  &quot;targets&quot;: [
+    {
+      &quot;expr&quot;: &quot;paprika_out_of_sync&quot;,
+      &quot;legendFormat&quot;: &quot;{{ app }} ({{ namespace }})&quot;
+    }
+  ],
+  &quot;type&quot;: &quot;stat&quot;,
+  &quot;fieldConfig&quot;: {
+    &quot;defaults&quot;: {
+      &quot;thresholds&quot;: {
+        &quot;steps&quot;: [
+          {&quot;color&quot;: &quot;green&quot;, &quot;value&quot;: 0},
+          {&quot;color&quot;: &quot;yellow&quot;, &quot;value&quot;: 1},
+          {&quot;color&quot;: &quot;red&quot;, &quot;value&quot;: 5}
+        ]
+      }
+    }
+  }
+}
+</code></pre></div>
+<h3 id="prune-activity-panel">Prune Activity Panel</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 9"><code class="language-json">{
+  &quot;title&quot;: &quot;Prune Activity&quot;,
+  &quot;targets&quot;: [
+    {
+      &quot;expr&quot;: &quot;increase(paprika_prune_total[5m])&quot;,
+      &quot;legendFormat&quot;: &quot;{{ app }}/{{ kind }}&quot;
+    }
+  ],
+  &quot;type&quot;: &quot;timeseries&quot;
+}
+</code></pre></div>
+<h3 id="phase-transition-timeline">Phase Transition Timeline</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 10"><code class="language-json">{
+  &quot;title&quot;: &quot;Phase Transitions&quot;,
+  &quot;targets&quot;: [
+    {
+      &quot;expr&quot;: &quot;increase(paprika_application_phase_total[1h])&quot;,
+      &quot;legendFormat&quot;: &quot;{{ application }} → {{ phase }}&quot;
+    }
+  ],
+  &quot;type&quot;: &quot;timeseries&quot;
+}
+</code></pre></div>
+<h2 id="debugging-with-metrics">Debugging with Metrics</h2>
+<h3 id="is-my-app-drifting">&quot;Is my app drifting?&quot;</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 11"><code class="language-sh">curl -s http://localhost:8443/metrics | grep &#39;paprika_out_of_sync{app=&quot;&lt;app&gt;&quot;&#39;
+</code></pre></div>
+<p>If &gt; 0, check which resources are out of sync:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 12"><code class="language-sh">kubectl get application &lt;app&gt; -n &lt;ns&gt; -o json | \
+  jq &#39;[.status.resources[] | select(.status!=&quot;Synced&quot;)]&#39;
+</code></pre></div>
+<h3 id="is-prune-working">&quot;Is prune working?&quot;</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 13"><code class="language-sh">curl -s http://localhost:8443/metrics | grep &#39;paprika_prune_total&#39;
+</code></pre></div>
+<p>If the counter is 0 and you expect prunes, check that <code>syncOptions.prune</code> is
+enabled on the Application.</p>
+<h3 id="why-is-my-app-stuck">&quot;Why is my app stuck?&quot;</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 14"><code class="language-sh">curl -s http://localhost:8443/metrics | \
+  grep &#39;paprika_application_phase_total{application=&quot;&lt;app&gt;&quot;&#39;
+</code></pre></div>
+<p>Look for transitions to <code>Degraded</code>, <code>RolledBack</code>, or <code>Pending</code>. Then check
+the Application conditions:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 15"><code class="language-sh">kubectl get application &lt;app&gt; -n &lt;ns&gt; -o json | \
+  jq &#39;[.status.conditions[] | select(.status==&quot;True&quot;)]&#39;
+</code></pre></div>
+<h3 id="how-long-do-syncs-take">&quot;How long do syncs take?&quot;</h3>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 16"><code class="language-sh">curl -s http://localhost:8443/metrics | \
+  grep &#39;paprika_sync_duration_seconds&#39;
+</code></pre></div>
+<p>The histogram buckets show the distribution of apply durations per app.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/dashboards/" rel="prev"><span>Previous guide</span><strong>Use dashboard examples with real data</strong></a><a href="../../docs/observe-browser-renderer/" rel="next"><span>Next guide</span><strong>Render dashboards for visual verification</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

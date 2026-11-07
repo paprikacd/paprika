@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Use dashboard examples with real data · Paprika docs</title>
+<meta name="description" content="Explore Paprika Insights examples, map their queries to connected providers, and inspect live results without a sample-data fallback."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/dashboards/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Use dashboard examples with real data · Paprika docs"/>
+<meta property="og:description" content="Explore Paprika Insights examples, map their queries to connected providers, and inspect live results without a sample-data fallback."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/dashboards/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Use dashboard examples with real data · Paprika docs"/>
+<meta name="twitter:description" content="Explore Paprika Insights examples, map their queries to connected providers, and inspect live results without a sample-data fallback."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Use dashboard examples with real data","description":"Explore Paprika Insights examples, map their queries to connected providers, and inspect live results without a sample-data fallback.","url":"https://paprikacd.github.io/paprika/docs/dashboards/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/dashboards/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Use dashboard examples with real data","item":"https://paprikacd.github.io/paprika/docs/dashboards/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observe</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/" aria-current="page">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#explore-locally">Explore locally</a></li><li class="toc-level-2"><a href="#connect-live-data">Connect live data</a></li><li class="toc-level-2"><a href="#saved-queries-widgets-and-mcp">Saved queries, widgets and MCP</a></li><li class="toc-level-2"><a href="#verification">Verification</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="shorted-and-uptime-dashboard-examples">Use dashboard examples with real data</h1><p class="article-description">Explore Paprika Insights examples, map their queries to connected providers, and inspect live results without a sample-data fallback.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/dashboard-repository-examples.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Open <strong>Insights → Examples</strong> to browse the repository library. It contains the
+seven Shorted Grafana dashboards, Shorted's application dashboards, Uptime's
+Overview, SLO and Reliability dashboards, a Shorted widget collection and a
+Paprika signal-interaction example: 16 entries and 153 sample widgets in total.</p>
+<p>The gallery records source paths, revisions, query mappings and adaptation
+limits. The <a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/repository-examples/implementation-notes.md">coverage inventory</a>
+accounts for every source Grafana target and the application dashboard regions.
+These are native Paprika adaptations; source-specific controls and presentation
+differences are documented alongside each entry.</p>
+<h2 id="explore-locally">Explore locally</h2>
+<p>Open <code>/dashboard/insights/?example=1</code>. A fresh browser example workspace includes
+the whole library under <strong>Repository examples</strong>. Existing edited workspaces are
+preserved; use <strong>Examples</strong> to import another entry. Samples are explicitly
+labelled and use local fixture data without contacting providers.</p>
+<p>The housing examples include the source's authored historical data and formulas,
+with their original dates. Those are static source-backed examples, not live
+telemetry. Other sample data is illustrative.</p>
+<h2 id="connect-live-data">Connect live data</h2>
+<ol>
+<li>Configure the required provider on <strong>Observability</strong>, using the provider
+catalog's field and credential guidance. Existing Prometheus and Tempo
+providers remain usable.</li>
+<li>In the live Insights workspace, open <strong>Examples</strong>, choose a dashboard and
+review <strong>Adaptations and data requirements</strong>.</li>
+<li>Map every placeholder to a connected provider of the matching type. Review
+the dashboard and saved-query conflicts, then import. Imports preserve the
+normal Keep/Copy/Replace choices and ETag checks.</li>
+<li>Select dashboard variables and inspect the returned data. Empty, unavailable
+and partial results remain visible; no live query falls back to sample data.</li>
+</ol>
+<p>Application and database sources use these adapters:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Adapter and access</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Shorted RPC, market and news data</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/shorted-provider.md">Shorted</a>, with fixed read operations and optional public-source credentials</td>
+</tr>
+<tr>
+<td>Shorted admin dashboard</td>
+<td>Shorted with a separate authorized <code>adminToken</code>; fixed GET reads only</td>
+</tr>
+<tr>
+<td>Uptime application dashboards</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/uptime-provider.md">Uptime</a>, with organization membership and a bearer or Firebase refresh credential</td>
+</tr>
+<tr>
+<td>Shorted SQL dashboards</td>
+<td><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/postgresql-provider.md">PostgreSQL</a>, with a dedicated SELECT-only reader and verified TLS</td>
+</tr>
+</tbody>
+</table></div>
+<p>Selecting a provider does not provision source credentials or database grants.
+The PostgreSQL adapter rejects privileged writer/admin roles. A private database
+certificate authority must be trusted by the gateway runtime. Source metric
+names, tables and permissions must exist at the selected destination.</p>
+<h2 id="saved-queries-widgets-and-mcp">Saved queries, widgets and MCP</h2>
+<p>Application queries use a JSON operation editor. PostgreSQL uses a SQL editor
+with separate typed bindings; dashboard variables belong in the binding array,
+while SQL contains <code>$1</code>, <code>$2</code>, and so on. Record previews offer tables, cards,
+treemaps, matrices, line charts and bar charts with explicit column mappings.</p>
+<p>Bundles include all referenced saved queries and can be downloaded as portable
+JSON. Imported documents use the same storage as Paprika Observe MCP. Discover
+providers with <code>list_insights_providers</code>, inspect authoring shapes with
+<code>get_insights_schema</code>, and create or patch saved queries and dashboards with
+the existing authoring tools. Updates require the current ETag and synchronize
+with clean UI views without overwriting unsaved drafts.</p>
+<p>Use <code>query_records</code> to read a provider's typed rows. Use <code>query_dashboard</code> to
+collect a saved dashboard's bound queries once and receive compact signals.
+Record summaries include a bounded preview, the returned-row count, and
+separate provider/summary truncation indicators. A returned page count is not
+the source's total inventory count.</p>
+<h2 id="verification">Verification</h2>
+<p>Run the repository gallery browser suite against a local UI:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 1"><code class="language-sh">cd ui
+node e2e/run-insights.mjs e2e/insights-repository-examples.e2e.mjs
+</code></pre></div>
+<p>It renders every sample widget in light/dark modes, checks overflow and runtime
+errors, validates portable query closure, and verifies that sample mode makes
+no live provider requests. The application-records suite additionally runs the
+Observe → Insights → UI flow with a real isolated PostgreSQL database. Its
+required local database setting is documented in
+<code>ui/e2e/insights-application-records.e2e.mjs</code>.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/observability-gateway/" rel="prev"><span>Previous guide</span><strong>Connect the observability gateway</strong></a><a href="../../docs/metrics/" rel="next"><span>Next guide</span><strong>Monitor Paprika metrics and alerts</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

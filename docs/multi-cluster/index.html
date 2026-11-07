@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Manage delivery across Kubernetes clusters · Paprika docs</title>
+<meta name="description" content="Register deployment targets, configure direct or satellite connections, and understand cluster inventory and application placement."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/docs/multi-cluster/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Manage delivery across Kubernetes clusters · Paprika docs"/>
+<meta property="og:description" content="Register deployment targets, configure direct or satellite connections, and understand cluster inventory and application placement."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/docs/multi-cluster/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
+
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Manage delivery across Kubernetes clusters · Paprika docs"/>
+<meta name="twitter:description" content="Register deployment targets, configure direct or satellite connections, and understand cluster inventory and application placement."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
+<meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=public-content-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","headline":"Manage delivery across Kubernetes clusters","description":"Register deployment targets, configure direct or satellite connections, and understand cluster inventory and application placement.","url":"https://paprikacd.github.io/paprika/docs/multi-cluster/","mainEntityOfPage":"https://paprikacd.github.io/paprika/docs/multi-cluster/","author":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"publisher":{"@type":"Organization","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika"},"inLanguage":"en","image":"https://paprikacd.github.io/paprika/demo-applications.webp","isPartOf":{"@type":"WebSite","name":"Paprika documentation","url":"https://paprikacd.github.io/paprika/docs/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://paprikacd.github.io/paprika/docs/"},{"@type":"ListItem","position":3,"name":"Manage delivery across Kubernetes clusters","item":"https://paprikacd.github.io/paprika/docs/multi-cluster/"}]}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a href="../../docs/" aria-current="page">Docs</a><a href="../../charts/#charts">Charts</a><a href="../../blog/">Blog</a><a href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Deliver</span></li></ol></nav></div>
+<div class="article-layout shell">
+<aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a href="../../docs/canary/">Configure canary deployments</a></li><li><a href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a href="../../docs/multi-cluster/" aria-current="page">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a href="../../docs/metrics/">Monitor Paprika metrics and alerts</a></li><li><a href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#cluster-modes">Cluster Modes</a></li><li class="toc-level-3"><a href="#direct-access-to-gke-with-workload-identity">Direct access to GKE with Workload Identity</a></li><li class="toc-level-2"><a href="#satellite-onboarding">Satellite Onboarding</a></li><li class="toc-level-3"><a href="#management-policies">Management Policies</a></li><li class="toc-level-3"><a href="#autonomy-and-disconnection">Autonomy and Disconnection</a></li><li class="toc-level-3"><a href="#capacity-and-node-pools">Capacity and Node Pools</a></li><li class="toc-level-3"><a href="#stream-transport">Stream Transport</a></li><li class="toc-level-3"><a href="#state-transport-and-reconnects">State Transport and Reconnects</a></li><li class="toc-level-3"><a href="#application-identity-across-clusters">Application Identity Across Clusters</a></li><li class="toc-level-3"><a href="#private-cas-and-credential-rotation">Private CAs and Credential Rotation</a></li><li class="toc-level-3"><a href="#deployment-transport">Deployment Transport</a></li><li class="toc-level-2"><a href="#registering-a-cluster">Registering a Cluster</a></li><li class="toc-level-2"><a href="#kubeconfig-secret">Kubeconfig Secret</a></li><li class="toc-level-2"><a href="#permissions-the-remote-credential-needs">Permissions the Remote Credential Needs</a></li><li class="toc-level-2"><a href="#capacity-providers">Capacity Providers</a></li><li class="toc-level-3"><a href="#what-a-default-install-already-has">What a Default Install Already Has</a></li><li class="toc-level-3"><a href="#completing-the-meter">Completing the Meter</a></li><li class="toc-level-3"><a href="#scope-precedence">Scope Precedence</a></li><li class="toc-level-3"><a href="#pointing-capacity-at-prometheus-later">Pointing Capacity at Prometheus Later</a></li><li class="toc-level-2"><a href="#referencing-a-cluster-from-a-stage">Referencing a Cluster from a Stage</a></li><li class="toc-level-2"><a href="#full-example">Full Example</a></li><li class="toc-level-2"><a href="#rollouts-on-a-remote-cluster">Rollouts on a Remote Cluster</a></li><li class="toc-level-2"><a href="#fanning-out-with-an-applicationset">Fanning Out with an ApplicationSet</a></li><li class="toc-level-2"><a href="#fleet-scale-characteristics">Fleet Scale Characteristics</a></li><li class="toc-level-3"><a href="#observation-store">Observation Store</a></li><li class="toc-level-2"><a href="#cluster-health">Cluster Health</a></li><li class="toc-level-2"><a href="#the-in-cluster-registration">The In-Cluster Registration</a></li><li class="toc-level-2"><a href="#cloud-provider-enrichment">Cloud Provider Enrichment</a></li><li class="toc-level-3"><a href="#credentials-per-provider">Credentials per provider</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><h1 id="multi-cluster-orchestration">Manage delivery across Kubernetes clusters</h1><p class="article-description">Register deployment targets, configure direct or satellite connections, and understand cluster inventory and application placement.</p><div class="article-meta"><span>Maintained with the source</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/multi-cluster.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<div class="prose"><p>Paprika combines cluster registrations, application placement, and observed
+health into one fleet. A satellite in each remote cluster watches local state
+and sends compact reports to the central control plane over an outbound HTTPS
+connection. The first authorized report registers the cluster and adds its
+applications to the existing fleet views.</p>
+<p>Each <code>Stage</code> also references a <code>Cluster</code> resource that describes how the
+operator should connect to its deployment target.</p>
+<h2 id="cluster-modes">Cluster Modes</h2>
+<p>The <code>Cluster</code> CR supports three connection modes:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>in-cluster</code></td>
+<td>The operator runs inside the target cluster and uses its own service account.</td>
+</tr>
+<tr>
+<td><code>direct</code></td>
+<td>The operator connects to a remote API server using a kubeconfig stored in a Secret.</td>
+</tr>
+<tr>
+<td><code>agent</code></td>
+<td>A satellite reports observed state through an outbound connection. Deployment through the existing apply agent additionally requires a reachable agent endpoint.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="direct-access-to-gke-with-workload-identity">Direct access to GKE with Workload Identity</h3>
+<p>The Paprika manager image includes a client-go credential helper. It obtains
+short-lived Google application-default credentials from the manager pod's
+Workload Identity and does not require <code>gke-gcloud-auth-plugin</code> or a service
+account key. Bind the manager's Kubernetes service account to a dedicated Google
+service account, then grant that identity only the GKE discovery and target
+Kubernetes RBAC permissions needed for the registered cluster. Ensure the
+manager can reach the target API endpoint and that the kubeconfig contains its
+verified CA certificate. This is separate from <code>spec.provider</code> cloud inventory
+credentials and from satellite authentication.</p>
+<p>Place a kubeconfig in the direct Cluster's referenced Secret, with the usual
+cluster, CA, context and user entries. Its user authentication block is:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 1"><code class="language-yaml">exec:
+  apiVersion: client.authentication.k8s.io/v1
+  command: /manager
+  args: [gke-exec-credential]
+  interactiveMode: Never
+</code></pre></div>
+<p>Client-go refreshes the short-lived token before expiry. Restrict who can write
+the Cluster and its kubeconfig Secret: a kubeconfig exec entry is executable
+configuration in the manager pod, not merely a credential. Verify target RBAC,
+network reachability, remote reads and a migration hook before using the
+connection for production promotions. Satellite reports alone do not prove
+that this direct deployment transport works.</p>
+<p>For a live, read-only check from the manager pod, obtain the expected target
+endpoint and namespace UID independently from the cloud provider and target
+cluster, then run:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 2"><code class="language-sh">kubectl -n paprika-system exec deployment/paprika-controller-manager -c manager -- \
+  /manager fleet-direct-probe --cluster-namespace paprika-system \
+  --cluster-name vocus-prod --target-namespace sfh-vocus-prod \
+  --expected-server https://EXAMPLE.gke.goog --system-ca \
+  --expected-namespace-uid EXPECTED_UID
+</code></pre></div>
+<p>Use the actual manager deployment, Cluster name, target endpoint and namespace
+UID for the installation. The DNS endpoint mode uses the image's system CA
+roots; it refuses custom CA files, proxies and insecure TLS. For an endpoint
+using a pinned private CA, replace <code>--system-ca</code> with
+<code>--expected-ca-sha256</code> and the SHA-256 of its CA bytes. The command uses the
+registered kubeconfig and the same client-go configuration path as release
+reconciliation, reads the target namespace, and returns JSON containing the
+registration and Secret identities, the target namespace UID and observation
+time. It rejects a registration or Secret changed during the read. Its output
+does not include tokens, kubeconfig contents or credential errors. Compare the
+identities and resource versions with fresh management-cluster reads before
+using the result; successful observation does not authorize a deployment or
+prove write permissions, migration hooks or ongoing connectivity.</p>
+<h2 id="satellite-onboarding">Satellite Onboarding</h2>
+<p>Install the central chart and CRDs from a build containing satellite support.
+The API and operator serve <code>/api/satellite/report</code>; expose that route at the
+central API origin. Satellite authentication uses a token scoped to one cluster
+registration and is independent of browser or MCP authentication.</p>
+<p>For each physical cluster, choose a unique, stable central name. A satellite
+derives the physical cluster's identity from the <code>kube-system</code> namespace UID.
+The control plane pins that UID on the first report and rejects a different
+cluster using the same registration.</p>
+<p>Create one random token and provision it in both environments. The central
+Secret must be named <code>&lt;cluster-name&gt;-satellite-token</code> and carry the label
+<code>paprika.io/satellite-cluster: &lt;cluster-name&gt;</code>. The satellite chart references
+an existing local Secret; keep the token out of values files, command flags,
+and version control.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 3"><code class="language-sh"># Replace these values with the intended contexts and central API origin.
+PAPRIKA_CONTROL_CONTEXT=control-plane
+PAPRIKA_SATELLITE_CONTEXT=edge-eu
+PAPRIKA_CONTROL_NAMESPACE=paprika-system
+PAPRIKA_SATELLITE_NAMESPACE=paprika-satellite
+PAPRIKA_CLUSTER_NAME=edge-eu
+PAPRIKA_CONTROL_URL=https://paprika.example.com
+PAPRIKA_IMAGE_TAG=replace-with-immutable-build-tag
+
+paprika_satellite_tmp=&quot;$(mktemp -d)&quot;
+chmod 700 &quot;$paprika_satellite_tmp&quot;
+trap &#39;rm -rf &quot;$paprika_satellite_tmp&quot;&#39; EXIT
+openssl rand -hex 32 | tr -d &#39;\n&#39; &gt; &quot;$paprika_satellite_tmp/token&quot;
+chmod 600 &quot;$paprika_satellite_tmp/token&quot;
+
+kubectl config use-context &quot;$PAPRIKA_CONTROL_CONTEXT&quot;
+kubectl config current-context
+kubectl -n &quot;$PAPRIKA_CONTROL_NAMESPACE&quot; create secret generic \
+  &quot;$PAPRIKA_CLUSTER_NAME-satellite-token&quot; \
+  --from-file=&quot;token=$paprika_satellite_tmp/token&quot;
+kubectl -n &quot;$PAPRIKA_CONTROL_NAMESPACE&quot; get secret \
+  &quot;$PAPRIKA_CLUSTER_NAME-satellite-token&quot;
+
+kubectl config current-context
+kubectl -n &quot;$PAPRIKA_CONTROL_NAMESPACE&quot; label secret \
+  &quot;$PAPRIKA_CLUSTER_NAME-satellite-token&quot; \
+  &quot;paprika.io/satellite-cluster=$PAPRIKA_CLUSTER_NAME&quot;
+kubectl -n &quot;$PAPRIKA_CONTROL_NAMESPACE&quot; get secret \
+  &quot;$PAPRIKA_CLUSTER_NAME-satellite-token&quot; --show-labels
+
+kubectl config use-context &quot;$PAPRIKA_SATELLITE_CONTEXT&quot;
+kubectl config current-context
+kubectl create namespace &quot;$PAPRIKA_SATELLITE_NAMESPACE&quot;
+kubectl get namespace &quot;$PAPRIKA_SATELLITE_NAMESPACE&quot;
+
+kubectl config current-context
+kubectl -n &quot;$PAPRIKA_SATELLITE_NAMESPACE&quot; create secret generic \
+  paprika-satellite-token --from-file=&quot;token=$paprika_satellite_tmp/token&quot;
+kubectl -n &quot;$PAPRIKA_SATELLITE_NAMESPACE&quot; get secret paprika-satellite-token
+
+helm template paprika-satellite charts/satellite/ \
+  --namespace &quot;$PAPRIKA_SATELLITE_NAMESPACE&quot; \
+  --set &quot;controlPlaneURL=$PAPRIKA_CONTROL_URL&quot; \
+  --set &quot;cluster.name=$PAPRIKA_CLUSTER_NAME&quot; \
+  --set &quot;cluster.namespace=$PAPRIKA_CONTROL_NAMESPACE&quot; \
+  --set token.existingSecret=paprika-satellite-token \
+  --set &quot;image.tag=$PAPRIKA_IMAGE_TAG&quot;
+
+kubectl config current-context
+helm upgrade --install paprika-satellite charts/satellite/ \
+  --namespace &quot;$PAPRIKA_SATELLITE_NAMESPACE&quot; \
+  --set &quot;controlPlaneURL=$PAPRIKA_CONTROL_URL&quot; \
+  --set &quot;cluster.name=$PAPRIKA_CLUSTER_NAME&quot; \
+  --set &quot;cluster.namespace=$PAPRIKA_CONTROL_NAMESPACE&quot; \
+  --set token.existingSecret=paprika-satellite-token \
+  --set &quot;image.tag=$PAPRIKA_IMAGE_TAG&quot; \
+  --wait --timeout 5m
+kubectl -n &quot;$PAPRIKA_SATELLITE_NAMESPACE&quot; get deployments,pods
+
+kubectl --context &quot;$PAPRIKA_CONTROL_CONTEXT&quot; \
+  -n &quot;$PAPRIKA_CONTROL_NAMESPACE&quot; get cluster &quot;$PAPRIKA_CLUSTER_NAME&quot; -o yaml
+</code></pre></div>
+<p>If the satellite namespace already exists, omit its creation. No Paprika CRDs
+are required in the remote cluster: standard Deployments, StatefulSets, and
+DaemonSets supply application observations. When the remote cluster also has
+Paprika Applications, the satellite watches their status and uses those
+application identities.</p>
+<p>For a pre-existing agent registration, declare the satellite token explicitly:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 4"><code class="language-yaml">apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: edge-eu
+  namespace: paprika-system
+spec:
+  displayName: Edge Europe
+  mode: agent
+  satellite:
+    tokenSecretRef:
+      name: edge-eu-satellite-token
+      key: token
+</code></pre></div>
+<p>Newly onboarded clusters appear in the cluster board and their applications
+join fleet queries automatically. An existing <code>direct</code> registration can opt
+into reporting by adding <code>spec.satellite.tokenSecretRef</code>; its kubeconfig and
+deployment connection keep working. A newly onboarded <code>agent</code> Cluster can
+later use <code>mode: direct</code> with a <code>kubeconfigSecretRef</code> to enable central
+deployment orchestration while retaining its satellite observations.
+The <code>in-cluster</code> registration continues to use the control plane's own service
+account for inventory.</p>
+<h3 id="management-policies">Management Policies</h3>
+<p>A <code>Cluster</code> declares the ceiling of what Paprika may do to it, following
+Crossplane's <code>managementPolicies</code> vocabulary. The field is on the Cluster, not
+on the satellite block, because the ceiling applies to every transport: a
+<code>direct</code> kubeconfig and a satellite report are two ways to reach the same
+cluster, and a read-only cluster is read-only either way.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 5"><code class="language-yaml">apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: edge-eu
+  namespace: paprika-system
+spec:
+  mode: agent
+  managementPolicies: [Observe]        # observations only; nothing is written
+  satellite:
+    tokenSecretRef:
+      name: edge-eu-satellite-token
+      key: token
+</code></pre></div>
+<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Permits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Observe</code></td>
+<td>Reading inventory, drift, health and capacity. Never writes.</td>
+</tr>
+<tr>
+<td><code>Apply</code></td>
+<td>Creating and updating managed resources, including sync hooks.</td>
+</tr>
+<tr>
+<td><code>Prune</code></td>
+<td>Deleting managed resources dropped from the desired manifest set.</td>
+</tr>
+<tr>
+<td><code>Delete</code></td>
+<td>Deleting managed resources when a Release is deleted. Without it, release cleanup orphans the workloads.</td>
+</tr>
+<tr>
+<td><code>SelfHeal</code></td>
+<td>Re-applying drift and rolling back a degraded release without an operator asking.</td>
+</tr>
+<tr>
+<td><code>Rollout</code></td>
+<td>Shifting traffic through canary, blue-green, A/B and mirror strategies.</td>
+</tr>
+<tr>
+<td><code>*</code></td>
+<td>Every policy this build knows.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Three rules decide the effective set:</p>
+<ul>
+<li><strong>Unset means full management.</strong> A Cluster with no <code>managementPolicies</code> grants
+everything, so every existing registration keeps working.</li>
+<li><strong>An explicitly empty list grants nothing.</strong> <code>managementPolicies: []</code> is the
+way to say &quot;registered, but manage nothing&quot;; omitting the field is not.</li>
+<li><strong>A Stage narrows, never widens.</strong> <code>spec.stages[].managementPolicies</code> on an
+<code>Application</code>, and <code>spec.managementPolicies</code> on a standalone <code>Stage</code>, are
+intersected with the Cluster ceiling. A stage asking for <code>*</code> on an
+<code>Observe</code>-only cluster gets <code>Observe</code>.</li>
+</ul>
+<p>Two failures are deliberate. A policy read that fails for any reason other than
+&quot;no such registration&quot; is reported rather than degraded to full management —
+assuming a ceiling away on an API blip is exactly the write an observe-only
+cluster is meant to prevent. And a withheld action parks the work instead of
+failing it: the Release stays in <code>Promoting</code> with a <code>PromotionPolicyWithheld</code>
+condition naming the refused action, and rechecks every five minutes. Widening
+the ceiling lets it proceed without a retry.</p>
+<p><code>status.satellite.reportedPolicies</code> records the satellite's last reported local
+claim. <code>status.satellite.effectivePolicies</code> intersects that claim with the
+Cluster ceiling and expands <code>*</code>; it is unknown until the first report. The
+claim is an observation, not an authorization check or grant. The satellite's
+actual Kubernetes permissions still apply. A direct connection uses the Cluster and Stage ceilings
+separately, so it can have different permissions from an Observe-only satellite.
+A spec change recomputes the satellite's effective set from its last claim even
+while the satellite is disconnected.</p>
+<h3 id="autonomy-and-disconnection">Autonomy and Disconnection</h3>
+<p><code>spec.satellite.autonomy</code> records what the satellite is supposed to do while it
+cannot reach the control plane:</p>
+<div class="table-scroll" role="region" aria-label="Table 3, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>While connected</th>
+<th>While disconnected</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ObserveOnly</code></td>
+<td>Reports state; the control plane reconciles.</td>
+<td>Nothing converges until the link returns.</td>
+</tr>
+<tr>
+<td><code>Failover</code> (default)</td>
+<td>The control plane reconciles.</td>
+<td>The satellite takes over after <code>failoverTimeout</code> (default <code>2m</code>).</td>
+</tr>
+<tr>
+<td><code>Delegated</code></td>
+<td>The satellite reconciles; the control plane supplies desired state and observes.</td>
+<td>Nothing changes, because the satellite was already the reconciler.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A satellite reconciles what it was <em>told to apply</em>. Every bundle the control
+plane pushes down the link is applied and then remembered in a ConfigMap
+(<code>paprika-satellite-bundles</code>) in the satellite's own namespace, and the autonomy
+loop re-applies those bundles on an interval (<code>--satellite-autonomy-interval</code>,
+default <code>30s</code>). That is deliberately narrower than the control plane's release
+machinery: a satellite enforcing the last known-good bundle through an outage is
+useful, while a satellite reconciling a release history it cannot see would not
+be.</p>
+<p>The handover is one-directional and time-gated. <code>Failover</code> waits for
+<code>failoverTimeout</code> of failed deliveries before reconciling, so a control-plane
+restart does not produce two reconcilers at once. After local work, a reconnect
+reports <code>OverrideHeld</code> for two minutes before returning to <code>Connected</code>: the
+control plane needs to see that the cluster changed underneath it before the
+satellite claims to be a quiet follower again. <code>Delegated</code> is not an override
+case; a satellite acting there is the arrangement.</p>
+<p><code>status.satellite.operatingState</code> carries the result: <code>Connecting</code>, <code>Connected</code>,
+<code>Autonomous</code>, <code>OverrideHeld</code>, or <code>Disabled</code> for a disabled registration.</p>
+<p>The satellite's ServiceAccount needs write verbs for whatever its applications
+deploy. The chart grants reads plus the bundle store and nothing else, so an
+apply is refused until <code>rbac.extraClusterRoleRules</code> grants your kinds.</p>
+<h3 id="capacity-and-node-pools">Capacity and Node Pools</h3>
+<p>The satellite sums node <code>status.allocatable</code> and scheduled, non-terminal pod
+container requests on every report, and reads <code>metrics.k8s.io</code> when the cluster
+has it. The result lands in <code>status.satellite.capacity</code>; <code>usedKnown</code> says whether
+usage was actually measured, so a cluster without metrics-server reports
+requests and allocatable and marks usage unavailable rather than claiming idle.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 6"><code class="language-sh">kubectl -n paprika-system get cluster edge-eu -o json \
+  | jq &#39;.status.satellite.capacity, .status.satellite.nodePools&#39;
+</code></pre></div>
+<p>Node pools are derived from the provider's pool label (<code>vke.vultr.com/node-pool</code>,
+<code>cloud.google.com/gke-nodepool</code>, <code>eks.amazonaws.com/nodegroup</code>,
+<code>kubernetes.azure.com/agentpool</code>), falling back to
+<code>node.kubernetes.io/instance-type</code>. The provider type is detected from node
+<code>providerID</code> prefixes and copied into <code>status.provider.type</code>, so a cluster the
+control plane cannot dial still shows its pools. Provider-API enrichment —
+autoscaler bounds, plan sizes — still requires <code>spec.provider</code> credentials and a
+reachable API; <code>status.provider.state</code> stays <code>NotConfigured</code> until that happens.</p>
+<p>Capacity for an <code>agent</code>-mode cluster is served from the satellite report. A
+<code>direct</code> cluster keeps the live read even when it also reports through a
+satellite, because a live read is fresher than a heartbeat.</p>
+<h3 id="stream-transport">Stream Transport</h3>
+<p>Set <code>stream.enabled=true</code> on the satellite chart to keep one bidirectional
+Connect stream open instead of posting each report. Reports still travel in the
+same JSON document the POST transport sends, validated and fenced by the same
+code — the transport changes how the bytes arrive, never what the control plane
+accepts. The link is off by default because the POST path is what every existing
+satellite runs.</p>
+<p>The link's reason to exist is the reverse direction. With a live link, a release
+that targets an <code>agent</code>-mode cluster can apply its rendered bundle <em>down the
+satellite's own outbound connection</em>, so the cluster needs no inbound route and
+the control plane keeps no kubeconfig for it:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">text</span></div><pre tabindex="0" aria-label="text code example 7"><code class="language-text">control plane ──task: apply bundle──▶ satellite ──server-side apply──▶ cluster API
+              ◀──result: 12 applied──
+</code></pre></div>
+<p>The satellite runs the bundle through the same apply path as the inbound agent,
+so both transports produce the same result. A failed apply over a live link is
+reported and <strong>not</strong> retried through the agent endpoint: the cluster may have
+half the bundle applied, and a second attempt would race the satellite's own.</p>
+<p>Deployability is a runtime question, not a field. A registration with
+<code>mode: agent</code>, a <code>satellite</code> block and no inbound endpoint can observe but
+cannot apply until the link attaches. Target resolution asks the dispatcher for
+a live link and refuses the target when there is none; the release then fails
+with &quot;connect the satellite&quot; instead of trying an endpoint that was never going
+to answer.</p>
+<p>The link is an HTTP/2 bidirectional Connect stream, so it needs an HTTP/2
+server. A cleartext <code>http://</code> endpoint is accepted for loopback only (a sidecar
+or a local run), and the satellite speaks prior-knowledge h2c there. Go's
+transport does not attempt h2c on its own, so a plain <code>http://</code> client
+negotiates HTTP/1.1 and the stream never opens. The collector hands the sender a
+report rather than encoded bytes, because the two transports frame differently:
+the POST path sends gzip with <code>Content-Encoding</code>, the link puts the JSON
+document inside a protobuf message.</p>
+<p>In split mode the links live in the API server's pod and the reconciler runs in
+another, so the control plane needs a way to bridge them. Enable
+<code>satellite.internalDispatch.enabled</code> on the chart: it creates a shared token,
+has the API server serve <code>/internal/satellite/{links,dispatch}</code> on an in-cluster
+port, and points the controller at that address. The listener is a separate
+address rather than a path on the public API mux, because an apply endpoint
+reachable from the internet would let anyone holding the port push manifests
+into satellites. It refuses every request when no token is configured, and the
+controller fails at startup if it is given an address without one. Leaving the
+value off keeps split mode working exactly as before: agent clusters fall back
+to the inbound agent endpoint, which a satellite-only cluster does not have.</p>
+<p>One limit still applies: the link accepts only reports and applies. The
+resource-tree, log and live-diff reads that need a command channel are not wired
+to it yet.</p>
+<p>That limit has a consequence for deletion: the agent transport has no delete
+path, so deleting a Release that targeted one leaves its workloads running. The
+release object still deletes and logs which stage kept its resources. Blocking
+the finalizer instead would make such a release impossible to remove, and the
+workloads belong to the cluster either way.</p>
+<h3 id="state-transport-and-reconnects">State Transport and Reconnects</h3>
+<p>One satellite Deployment runs per cluster. Shared Kubernetes watches maintain
+a local cache for nodes, pods, namespaces, supported workloads, and optional
+Paprika Applications. The initial report contains a complete application
+snapshot; later reports send changed applications and deletion keys, with
+cluster inventory as an aggregate. Reports are batched every two seconds by
+default, gzip-compressed, and sent over a reusable HTTP connection. Idle
+clusters send a heartbeat every 30 seconds.</p>
+<p>Each report carries a session ID and sequence number. Retries preserve the
+same report identity, allowing the control plane to acknowledge duplicate
+delivery without repeating its effects. Reconnects begin with a fresh snapshot
+so deleted applications do not remain in the central view. The current protocol
+bounds each uncompressed report to 1 MiB and each cluster to 2,000 observed
+applications.</p>
+<p>Cluster reports persist in <code>Cluster.status.satellite</code>, so a control-plane
+restart reconstructs the view from Kubernetes. If heartbeats stop, observations
+remain visible with unknown health and sync state. The cluster becomes
+<code>Unhealthy</code> after the greater of three health-check intervals and
+<code>connectionTimeout</code> (90 seconds with defaults).
+If you increase the chart's <code>heartbeatInterval</code> beyond this window, also
+increase the central Cluster's <code>spec.healthCheck.interval</code> so idle clusters
+remain current between heartbeats.</p>
+<p>The chart uses a single replica and a <code>Recreate</code> deployment strategy to avoid
+overlapping reporters during upgrades. It exposes only the local probe port;
+the central control plane does not require inbound network access to the
+satellite. The service account grants <code>get</code>, <code>list</code>, and <code>watch</code> for the watched
+resources and <code>get</code> on <code>/version</code>. It does not need access to Secrets or
+permission to apply application manifests.</p>
+<h3 id="application-identity-across-clusters">Application Identity Across Clusters</h3>
+<p>Application identity defaults to namespace and application name. Instances of
+<code>production/payments</code> on multiple clusters become one logical application with
+one placement per cluster. <code>staging/payments</code> remains a separate application.
+The fleet retains each placement's health and connection state and aggregates
+the logical application using the least healthy placement and combined
+resource counts. Paprika Applications report their known drift; native
+workloads report unknown sync state because they have no Paprika desired-state
+comparison. Aggregate drift counts are shown where reported; the placement
+table shows health and connectivity.</p>
+<p>To group differently named instances within a namespace, set
+<code>app.paprika.io/identity</code> to the same valid DNS subdomain on their Paprika
+Applications or workloads:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 8"><code class="language-yaml">metadata:
+  name: payments-eu
+  namespace: production
+  labels:
+    app.paprika.io/identity: payments
+</code></pre></div>
+<p>Namespaced identity also applies to this explicit label; it cannot merge
+different namespaces. Observations must agree on their declared project before
+they can join one application. A central Application retains its release and
+control metadata while gaining remote placements. Applications discovered only
+through satellites are visible as observations and have no central mutation
+capabilities.</p>
+<h3 id="private-cas-and-credential-rotation">Private CAs and Credential Rotation</h3>
+<p>For a private HTTPS CA, create a ConfigMap containing <code>ca.crt</code> in the satellite
+namespace and set <code>ca.existingConfigMap</code> (and <code>ca.key</code> if necessary). The
+satellite adds that CA to its trust store. HTTPS is required for remote
+endpoints; plain HTTP is accepted only for loopback development.</p>
+<p>The mounted token is read for each report, so a Secret update can rotate it
+without restarting the satellite. Update the central token and then the local
+token; reports retry through the short mismatch window. Disabling the central
+Cluster or removing its central token Secret stops report authorization.</p>
+<h3 id="deployment-transport">Deployment Transport</h3>
+<p>Satellite reporting supplies fleet observation. Deploying to a remote target
+continues to use the existing <code>direct</code> kubeconfig connection or reachable
+<code>agent</code> apply endpoint. The registered Cluster's <code>spec.mode</code> is authoritative;
+a Stage reference cannot override it with a different mode. For direct
+deployment, the registration must provide <code>spec.kubeconfigSecretRef</code> pointing
+to a central Secret whose <code>kubeconfig</code> key contains the remote kubeconfig.
+Set <code>key: kubeconfig</code> explicitly. Install and grant that deployment transport
+the permissions required by its manifests separately from the read-only
+satellite. Satellite onboarding alone does not grant remote deployment
+permissions.</p>
+<p>For example, enable deployment on an onboarded cluster while retaining its
+satellite reports:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 9"><code class="language-yaml">apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: edge-eu
+  namespace: paprika-system
+spec:
+  displayName: Edge Europe
+  mode: direct
+  kubeconfigSecretRef:
+    name: edge-eu-kubeconfig
+    namespace: paprika-system
+    key: kubeconfig
+  satellite:
+    tokenSecretRef:
+      name: edge-eu-satellite-token
+      key: token
+</code></pre></div>
+<p>Remote hook lifecycles, <code>trafficRouter</code> changes, live <code>podMetrics</code> analysis,
+desired-resource drift checks, and Release resource cleanup use the Stage's target cluster and the same
+registered kubeconfig credentials as workload apply. The inbound agent
+transport supports manifest apply; these other operations require direct
+transport and report an explicit error when configured against an agent
+target.</p>
+<p>When the current deployment target cannot supply live resource reads, the
+Application records <code>DiffUnavailable</code>, marks health unknown and sync incomplete,
+and pauses drift-triggered self-healing. It retains last-known resource status
+until the target becomes readable again; a missing remote resource is never
+inferred from the control plane's local cluster. This is a property of the
+transport, not a reconcile failure: a satellite target logs the reason at debug
+level and reports it through the condition, so a fleet of satellite
+applications does not fill the log with a limitation that will not change until
+the target is registered as <code>direct</code>.</p>
+<p>Read and apply resolve separately for the same reason. Drift resolution asks for
+a read transport; apply resolution asks whether an apply can reach the target
+right now, including over a live satellite link. Answering the apply question
+first makes a briefly absent link look like a drift failure.</p>
+<p>The console follows the same rule. A resource tree, live manifest, event list
+or pod log is read from the cluster the application's active release deploys
+to, resolved through the release's stage to its <code>Cluster</code> registration. A
+<code>direct</code> cluster is read through one cached client per cluster. An <code>agent</code>
+cluster has no API the control plane may dial, so live children, node detail,
+logs and events are reported as unavailable rather than answered from the
+management cluster — the names usually exist on both, so reading the wrong one
+looks like success. The status-derived half of those views (managed resources,
+sync status, reported health) still renders.</p>
+<p>Release deletion keeps the cleanup finalizer when its Stage or target
+transport cannot be resolved. Preserve Stage and Cluster registrations and
+their credentials until Release deletion completes so cleanup can reach the
+resources on the correct cluster.</p>
+<h2 id="registering-a-cluster">Registering a Cluster</h2>
+<p>Create a <code>Cluster</code> resource:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 10"><code class="language-yaml">apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: prod-cluster
+  namespace: paprika-system
+spec:
+  displayName: Production
+  mode: direct
+  server: https://prod-cluster.example.com
+  kubeconfigSecretRef:
+    name: prod-kubeconfig
+    namespace: paprika-system
+    key: kubeconfig
+  healthCheck:
+    interval: 30s
+    timeout: 10s
+  connectionTimeout: 30s
+</code></pre></div>
+<p>For agent mode:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 11"><code class="language-yaml">apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: edge-cluster
+  namespace: paprika-system
+spec:
+  displayName: Edge
+  mode: agent
+  satellite:
+    tokenSecretRef:
+      name: edge-cluster-satellite-token
+      key: token
+</code></pre></div>
+<h2 id="kubeconfig-secret">Kubeconfig Secret</h2>
+<p>For <code>direct</code> mode, store a valid kubeconfig in a Secret:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 12"><code class="language-yaml">apiVersion: v1
+kind: Secret
+metadata:
+  name: prod-kubeconfig
+  namespace: paprika-system
+type: Opaque
+stringData:
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: prod-cluster
+        cluster:
+          server: https://prod-cluster.example.com
+          certificate-authority-data: &lt;base64-ca&gt;
+    users:
+      - name: prod-user
+        user:
+          token: &lt;token&gt;
+    contexts:
+      - name: prod
+        context:
+          cluster: prod-cluster
+          user: prod-user
+    current-context: prod
+</code></pre></div>
+<h2 id="permissions-the-remote-credential-needs">Permissions the Remote Credential Needs</h2>
+<p>The user in that kubeconfig is the identity Paprika acts as on the target
+cluster, so it needs the permissions for what Paprika does there. Beyond the
+access your applications' own manifests require, capacity meters read two more
+kinds, both read-only:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 13"><code class="language-yaml">apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: paprika-capacity-reader
+rules:
+  # KubernetesCapacity sums status.allocatable across nodes and container
+  # requests across pods. It never writes either, and never reads the node
+  # proxy or the eviction subresource.
+  - apiGroups: [&quot;&quot;]
+    resources: [&quot;nodes&quot;, &quot;pods&quot;]
+    verbs: [&quot;get&quot;, &quot;list&quot;, &quot;watch&quot;]
+</code></pre></div>
+<p>Bind it to the remote credential's subject with a ClusterRoleBinding. Without
+it, a capacity read reports <code>DATA_STATE_FORBIDDEN</code> for that cluster rather than
+failing the request — the meter goes dark, nothing else does. That state is
+distinct from <code>DATA_STATE_ERROR</code> on purpose: <code>FORBIDDEN</code> means the read reached
+the cluster and was refused, which is a grant you can make, while <code>ERROR</code> covers
+every other way a read fails. Whichever it is, the number beside it is zero:
+Paprika never renders a figure it cannot substantiate. Grant exactly these verbs
+on exactly these resources; <code>cluster-admin</code> is never the fix for a capacity
+permission error.</p>
+<p>For an in-cluster (<code>mode: in-cluster</code>) target the chart-managed manager role
+already carries them, so nothing extra is needed.</p>
+<h2 id="capacity-providers">Capacity Providers</h2>
+<p>Where a capacity number comes from is configuration, not code. Two custom
+resources describe it:</p>
+<ul>
+<li><strong><code>CapacityProvider</code></strong> names an implementation and configures it. The
+implementation is a registry key this build ships, not an arbitrary string —
+an unknown key is rejected at admission.</li>
+<li><strong><code>DataProviderBinding</code></strong> attaches a provider to a scope: <code>Namespace</code>,
+<code>Cluster</code>, <code>Project</code> or <code>Global</code>.</li>
+</ul>
+<p>Two implementations ship today:</p>
+<div class="table-scroll" role="region" aria-label="Table 4, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th><code>spec.provider</code></th>
+<th>Supplies</th>
+<th>Reads</th>
+<th>Configuration</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KubernetesCapacity</code></td>
+<td><code>allocatable</code>, <code>requested</code></td>
+<td>Nodes and Pods, core API</td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>MetricsServer</code></td>
+<td><code>used</code></td>
+<td><code>metrics.k8s.io</code></td>
+<td>none</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="what-a-default-install-already-has">What a Default Install Already Has</h3>
+<p>The chart ships a <code>KubernetesCapacity</code> provider bound at <code>Global</code> scope in the
+release namespace, so allocatable and requested capacity work with nothing to
+configure, plus a <code>MetricsServer</code> provider bound the same way so <code>used</code> populates
+wherever the metrics.k8s.io aggregated API exists. On clusters without
+metrics-server installed the provider reports <code>NOT_AVAILABLE</code> with a fixed
+reason — it never fails the read — and the meter completes itself if
+metrics-server is installed later. Turn the defaults off with
+<code>--set capacity.defaultProvider.enabled=false</code> and
+<code>--set capacity.metricsServer.enabled=false</code> if you would rather manage them
+yourself.</p>
+<h3 id="completing-the-meter">Completing the Meter</h3>
+<p>A scope may have more than one provider bound to it, and that is how a meter is
+completed rather than replaced: each provider's readings are merged, and a
+successful measurement is never overwritten by another provider's failure or by
+its &quot;I don't supply that field&quot;. <code>KubernetesCapacity</code> gives allocatable and
+requested; <code>MetricsServer</code> gives used; together they are one meter.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 14"><code class="language-yaml">apiVersion: providers.paprika.io/v1alpha1
+kind: CapacityProvider
+metadata:
+  name: metrics-server
+  namespace: paprika-system
+spec:
+  provider: MetricsServer
+---
+apiVersion: providers.paprika.io/v1alpha1
+kind: DataProviderBinding
+metadata:
+  name: metrics-server-global
+  namespace: paprika-system
+spec:
+  providerRef:
+    kind: CapacityProvider
+    name: metrics-server
+  scope:
+    kind: Global
+</code></pre></div>
+<p>Binding a <em>second</em> provider to one scope is supported. Binding the <em>same</em>
+provider to one scope twice is rejected — it says nothing the first binding does
+not.</p>
+<h3 id="scope-precedence">Scope Precedence</h3>
+<p>Bindings resolve most-specific-first, independently for each provider:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">Text</span></div><pre tabindex="0" aria-label="Text code example 15"><code>Namespace  &gt;  Cluster  &gt;  Project  &gt;  Global
+</code></pre></div>
+<p>So a <code>Global</code> binding is a fleet-wide floor, and a <code>Cluster</code>-scoped binding for
+the same provider overrides it for that cluster alone — you never have to remove
+the broad binding to special-case a narrow one.</p>
+<p>Two scope levels are guarded, because both can speak for someone else:</p>
+<ul>
+<li>A <code>Global</code> binding may only be created in the control plane's own namespace
+(the release namespace, which the deployments pass as <code>--operator-namespace</code>).
+It applies to the whole fleet, so a tenant-created one would repoint what
+every other tenant sees.</li>
+<li>A <code>Namespace</code> binding may only name the namespace it lives in. <code>Namespace</code> is
+the most specific level, so one naming another tenant's namespace would win
+the chain inside it.</li>
+</ul>
+<p><code>scope.selector</code> is present in the CRD but not yet honoured, and is rejected at
+admission rather than silently ignored. Name the scope with <code>scope.name</code>.</p>
+<h3 id="pointing-capacity-at-prometheus-later">Pointing Capacity at Prometheus Later</h3>
+<p>A <code>Prometheus</code> provider — capacity plus RED signals, over PromQL — is the next
+implementation planned, and it is why this is a binding model rather than a
+config flag. When it lands, moving one cluster onto it is a <code>CapacityProvider</code>
+naming it and a <code>Cluster</code>-scoped <code>DataProviderBinding</code>; the <code>Global</code>
+<code>KubernetesCapacity</code> binding stays where it is and keeps serving every other
+cluster. Nothing already bound changes meaning.</p>
+<p>Neither shipped implementation takes any configuration, and both reject a
+non-empty <code>spec.config</code> at admission rather than ignoring it, so a stale or
+typo'd config cannot pass unnoticed. Whatever an implementation does accept,
+a literal credential is never part of it: token- and password-shaped fields are
+refused at admission, at any nesting depth.</p>
+<h2 id="referencing-a-cluster-from-a-stage">Referencing a Cluster from a Stage</h2>
+<p>A <code>Stage</code> can reference the <code>Cluster</code> by name:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 16"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: my-app-prod
+  namespace: paprika-system
+spec:
+  name: prod
+  ring: 3
+  templates:
+    - my-app-template
+  cluster:
+    name: prod-cluster
+    namespace: paprika-system
+</code></pre></div>
+<p>The <code>cluster</code> block in <code>ApplicationPromotionStage</code> supports the same reference
+and can be used inline in an <code>Application</code>. Use one stage for each target:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 17"><code class="language-yaml">metadata:
+  name: payments
+  namespace: production
+spec:
+  stages:
+    - name: dev
+      ring: 1
+    - name: prod-eu
+      ring: 2
+      cluster:
+        name: edge-eu
+        namespace: paprika-system
+    - name: prod-au
+      ring: 3
+      cluster:
+        name: edge-au
+        namespace: paprika-system
+</code></pre></div>
+<p>Add these stages to the Application's source and delivery configuration.
+Paprika creates Stage resources named <code>payments-dev</code>, <code>payments-prod-eu</code>,
+and <code>payments-prod-au</code> in <code>production</code>.</p>
+<p>Only one ring deploys at a time, in ascending <code>ring</code> order, with declaration
+order breaking ties so a ring can hold parallel stages. <code>status.currentStage</code>
+records what is live now. When that stage's release completes and nothing it
+deployed is degraded, a stage with <code>autoPromote: true</code> starts the next ring as
+a new Release; the final ring simply rests. <code>autoPromote</code> is read from the ring
+being left, so a verified ring decides whether the next one may start without
+an operator.</p>
+<p>The next ring deploys the bundle the previous ring verified. For an inline
+application the manifest source lives on the Release rather than on the
+Application, so the promoted Release inherits it from the completed one instead
+of rebuilding from the Application, which has no manifests of its own to
+rebuild from.</p>
+<p>A new source revision restarts at the first ring: a commit made while the fleet
+sits on production still passes through the rings that verify it. A manual sync
+retries the ring an operator is looking at rather than restarting the pipeline.
+Multi-ring releases are named per stage (<code>payments-release-&lt;hash&gt;</code>), so each
+ring is its own Release object; single-ring applications keep their existing
+release name.</p>
+<p>The dev stage defaults to the
+control plane's in-cluster target; the two production stages resolve their
+respective registrations. Register <code>edge-eu</code> and <code>edge-au</code> with direct
+credentials to run the full deployment lifecycle on both clusters.</p>
+<h2 id="full-example">Full Example</h2>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 18"><code class="language-yaml">apiVersion: v1
+kind: Secret
+metadata:
+  name: prod-kubeconfig
+  namespace: paprika-system
+type: Opaque
+stringData:
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: prod
+        cluster:
+          server: https://prod.example.com
+          certificate-authority-data: LS0t...
+    users:
+      - name: deployer
+        user:
+          token: eyJhbG...
+    contexts:
+      - name: prod
+        context:
+          cluster: prod
+          user: deployer
+    current-context: prod
+---
+apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: prod
+  namespace: paprika-system
+spec:
+  displayName: Production
+  mode: direct
+  server: https://prod.example.com
+  kubeconfigSecretRef:
+    name: prod-kubeconfig
+    namespace: paprika-system
+    key: kubeconfig
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: paprika-system
+spec:
+  source:
+    type: helm
+    chart:
+      repo: https://charts.example.com
+      name: my-app
+      version: 1.2.3
+  strategy: Rolling
+  syncPolicy: Auto
+  stages:
+    - name: dev
+      ring: 1
+    - name: prod
+      ring: 2
+      cluster:
+        name: prod
+        namespace: paprika-system
+</code></pre></div>
+<h2 id="rollouts-on-a-remote-cluster">Rollouts on a Remote Cluster</h2>
+<p>A <code>Rollout</code> runs advanced strategies against one workload. By default that
+workload is on the control plane's own cluster; <code>spec.cluster</code> points the
+rollout at a registered cluster instead:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 19"><code class="language-yaml">apiVersion: rollouts.paprika.io/v1alpha1
+kind: Rollout
+metadata:
+  name: checkout
+  namespace: checkout
+spec:
+  cluster:
+    name: edge-eu
+    namespace: paprika-system
+  target:
+    kind: Deployment
+    name: checkout
+  strategy:
+    type: Rolling
+</code></pre></div>
+<p>The Rollout object stays on the control plane; the Deployment, ReplicaSets,
+Services and traffic routes it manages are read and written in the named
+cluster. An <code>agent</code> cluster is refused: a rollout reads and writes workloads it
+cannot reach through an outbound link, and running it against the control plane
+instead would report success while the real workload never moved.</p>
+<p>Progression for a remote rollout comes from its own requeues, not from watch
+events: the controller's <code>Owns</code> watches are on the control plane, so a
+ReplicaSet becoming ready in the remote cluster does not wake it early. The
+default requeue interval is the latency floor.</p>
+<h2 id="fanning-out-with-an-applicationset">Fanning Out with an ApplicationSet</h2>
+<p>An <code>ApplicationSet</code> with a <code>clusters</code> generator produces one Application per
+registered cluster, so a fleet addition is a registration rather than an edit
+to every application:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 20"><code class="language-yaml">apiVersion: pipelines.paprika.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: checkout
+  namespace: checkout
+spec:
+  generators:
+    - clusters:
+        namespace: paprika-system
+        selector:
+          matchLabels:
+            tier: production
+  template:
+    metadata:
+      labels:
+        region: &quot;{{.region}}&quot;
+        placement: &quot;{{.name}}&quot;
+    project: default
+    source:
+      type: git
+      repoURL: https://github.com/example/checkout
+      targetRevision: main
+      path: deploy
+    stages:
+      - name: &quot;{{.name}}&quot;
+        ring: 1
+        cluster:
+          name: &quot;{{.name}}&quot;
+          namespace: &quot;{{.namespace}}&quot;
+</code></pre></div>
+<p><code>namespace</code> is the namespace holding the registrations, which is usually the
+control plane's rather than the application's; it defaults to the
+ApplicationSet's own namespace. <code>selector</code> matches labels on the <code>Cluster</code>
+object or in its <code>spec.labels</code>. <code>names</code> lists registrations explicitly and
+resolves them the same way.</p>
+<p>Each registration contributes these parameters:</p>
+<div class="table-scroll" role="region" aria-label="Table 5, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>Cluster resource name, and the <code>cluster.name</code> a stage needs</td>
+</tr>
+<tr>
+<td><code>namespace</code></td>
+<td>Namespace holding the registration, for <code>cluster.namespace</code></td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>direct</code>, <code>agent</code>, or <code>in-cluster</code></td>
+</tr>
+<tr>
+<td><code>server</code></td>
+<td>API server URL when the registration sets one</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td>Detected cloud provider, when one was detected</td>
+</tr>
+<tr>
+<td><code>region</code>, <code>tier</code></td>
+<td>Convenience copies of those two labels</td>
+</tr>
+<tr>
+<td><code>label_&lt;key&gt;</code></td>
+<td>Every <code>spec.labels</code> entry, with characters outside <code>[A-Za-z0-9_]</code> replaced by <code>_</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Disabled clusters are skipped: generating an Application that can only fail
+fills the console with placements that will never converge. A name listed in
+<code>names</code> that has no registration still generates an Application, which then
+fails where an operator can see it.</p>
+<p>Generator parameters feed the Application name, so changing them (adding a
+generator parameter, moving a set to a selector) renames the generated
+Applications and replaces them. That is a real rollout, not a no-op.</p>
+<h2 id="fleet-scale-characteristics">Fleet Scale Characteristics</h2>
+<p>The satellite fleet view is rebuilt by merging every registration's observations
+into the local snapshot. Two measurements bound what that costs, taken from
+<code>internal/fleet</code> benchmarks (<code>go test ./internal/fleet -bench MergeSatellite</code>):</p>
+<div class="table-scroll" role="region" aria-label="Table 6, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Fleet shape</th>
+<th>Merge cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10 clusters x 20 apps, one shared app</td>
+<td>0.4 ms</td>
+</tr>
+<tr>
+<td>100 clusters x 20 apps, one shared app</td>
+<td>3.2 ms</td>
+</tr>
+<tr>
+<td>500 clusters x 20 apps, distinct apps</td>
+<td>64 ms, 80 MB allocated</td>
+</tr>
+</tbody>
+</table></div>
+<p>The merge runs on the query path: the first fleet query after any report that
+changes observations pays it, and every query after that is cached until the
+next change. On a live stack with 50 registrations x 20 applications, a <code>QueryFleetMap</code> at
+rest measured p50 5 ms / p95 7 ms, and a query immediately after a single status
+change measured p50 18 ms / p95 66 ms before the window existed. With coalescing
+in place, the same query under a 150-patch burst (50 registrations, three rounds
+applied in parallel) measured p50 5 ms / p95 23 ms / max 36 ms.</p>
+<p>Observation changes are coalesced at the satellite source into at most one
+published generation per 250 ms window, so the merge is bounded at roughly four
+per second regardless of how fast the fleet reports. The cost is that a reader
+can see a view up to 250 ms old, which is invisible in a dashboard and far
+cheaper than one rebuild per report. The window lives in the source rather than
+the reader on purpose: the reader's contract is that a changed generation is
+visible on the next call, and callers rely on it.</p>
+<p><code>ListClusters</code> with <code>includeCapacity</code> has a different cost profile: capacity is
+gathered per registration, so a fleet where many registrations cannot be dialled
+pays that fan-out. With 50 unreachable test registrations it measured p50 23 ms
+/ p95 232 ms, against 5 ms for the map query over the same fleet.</p>
+<h3 id="observation-store">Observation Store</h3>
+<p>The bottleneck at a thousand applications is the status object: every report
+rewrites <code>Cluster.status.satellite.applications</code>, which is ~300 KB at that size.
+<code>internal/obsstore</code> is the provider seam for moving those observations out of the
+Kubernetes API:</p>
+<div class="table-scroll" role="region" aria-label="Table 7, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th><code>--satellite-observation-store</code></th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kubernetes</code> (default)</td>
+<td><code>Cluster.status</code> is the store. Nothing changes.</td>
+</tr>
+<tr>
+<td><code>memory</code></td>
+<td>Observations go to an in-process store; useful for tests.</td>
+</tr>
+<tr>
+<td><code>redis</code></td>
+<td>Observations go to Redis (<code>--satellite-redis-addr</code>, optional <code>--satellite-redis-password-file</code>, <code>--satellite-redis-db</code>).</td>
+</tr>
+</tbody>
+</table></div>
+<p>The chart exposes the same choice:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 21"><code class="language-yaml">satellite:
+  observationStore:
+    provider: redis
+    redis:
+      addr: redis:6379
+      existingSecret: redis-auth   # optional; key `password`
+      db: 0
+</code></pre></div>
+<p>Selecting <code>redis</code> without an address fails the render rather than starting a
+control plane whose store can never connect. Selecting any provider other than
+<code>kubernetes</code> also requires <code>deploymentMode=split</code>: the fleet source is wired to
+the store in the split API server only, and enabling it in monolith mode would
+write observations to a store nothing reads, emptying the satellite view. The
+chart refuses that combination instead of producing it.</p>
+<p>One Redis key per cluster plus an index set, so a report rewrites only its own
+cluster's observation rather than contending on one shared value. Writes are
+best effort: the report is already durable in status, and failing the report
+when the store is down would make a store outage look like a satellite outage.</p>
+<p>The store records the report exactly as the satellite sent it, not a projected
+view. Projection rules change with the fleet model, and a store holding
+yesterday's projection would turn a rules rollout into a data migration.</p>
+<p>With a provider selected, the report baseline — the list a delta merges onto —
+is read from the store, the merged list is written back as a full observation,
+and <code>status.satellite</code> keeps only the summary fields plus session/sequence
+fencing. A store that cannot be read fails the report rather than merging
+against an unknown baseline.</p>
+<p>The sequence fence still reads status deliberately: session and sequence are
+small, so concurrency control never depends on the store being reachable.</p>
+<h2 id="cluster-health">Cluster Health</h2>
+<p>The cluster controller periodically health-checks registered clusters. Check status with:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">sh</span></div><pre tabindex="0" aria-label="sh code example 22"><code class="language-sh">kubectl get cluster -n paprika-system
+</code></pre></div>
+<p>Cluster health describes the latest connection or satellite report status.
+Deployment operations resolve the Stage's transport separately; a missing,
+disabled, unsupported, or failing transport stops the Release operation with
+an error.</p>
+<h2 id="the-in-cluster-registration">The In-Cluster Registration</h2>
+<p>The chart installs a <code>Cluster</code> with <code>mode: in-cluster</code> (named
+<code>&lt;release&gt;-in-cluster</code>) so the cluster the control plane runs in appears on
+the cluster board. A stage with no <code>cluster</code> ref deploys in-cluster, and the
+fleet index resolves that empty ref to this registration — which is what
+lets <code>list_clusters</code> count the applications that run there.</p>
+<p>On each health check the controller also gathers <strong>inventory</strong> — node and
+ready counts, pod counts, namespace count, distinct regions and zones, and
+kubelet versions — into <code>status.inventory</code>, and detects the cloud provider
+from node <code>providerID</code> prefixes (<code>vultr://</code>, <code>gce://</code>, <code>aws://</code>,
+<code>azure://</code>).</p>
+<p>Disable the self-registration with <code>--set cluster.self.enabled=false</code>.</p>
+<h2 id="cloud-provider-enrichment">Cloud Provider Enrichment</h2>
+<p><code>spec.provider</code> adds what the provider's own API knows: the managed
+cluster's provider-side ID and region, and node pools with plan names and
+autoscaler bounds — things Kubernetes node objects do not carry.</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 23"><code class="language-yaml">spec:
+  provider:
+    type: auto            # auto | vultr | gke | eks | aks
+    clusterId: &quot;&quot;         # provider&#39;s identifier: VKE UUID, EKS/GKE/AKS name
+    region: &quot;&quot;            # EKS region / GKE location / AKS location
+    project: &quot;&quot;           # GCP project, or Azure resource group
+    subscriptionId: &quot;&quot;    # Azure subscription (aks only)
+    credentialsSecretRef: # optional where ambient identity exists
+      name: cluster-cloud-creds
+      key: credentials    # default
+</code></pre></div>
+<p><code>type: auto</code> resolves the provider from node providerIDs. Even with no
+credential configured, <code>status.provider</code> reports the detected provider and
+node pools derived from node labels (<code>vke.vultr.com/node-pool</code>,
+<code>cloud.google.com/gke-nodepool</code>, <code>eks.amazonaws.com/nodegroup</code>,
+<code>kubernetes.azure.com/agentpool</code>), with state <code>NotConfigured</code>. API-enriched
+pools — autoscaler bounds included — only appear once the provider answers.</p>
+<p>Every pool also carries <code>allocatableCpuMillis</code> and <code>allocatableMemoryBytes</code>:
+the sum of its nodes' <code>status.allocatable</code>, i.e. the pool's real capacity for
+workloads. Provider APIs generally report pool shape (plan, autoscaler
+bounds) without live node counts or sizing — Vultr v2 returns <code>count: null</code> —
+so figures the provider does not report are filled from the node-derived set
+by name. A pool the provider reports but no node matches keeps its zeroes:
+provisioned but empty is real data, not a gap.</p>
+<h3 id="credentials-per-provider">Credentials per provider</h3>
+<p>The referenced Secret key holds a provider-specific document:</p>
+<div class="table-scroll" role="region" aria-label="Table 8, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Document</th>
+<th>Ambient alternative</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vultr</code></td>
+<td>the API key, as a plain string</td>
+<td>none — Vultr has no workload identity</td>
+</tr>
+<tr>
+<td><code>eks</code></td>
+<td>JSON <code>{&quot;access_key_id&quot;,&quot;secret_access_key&quot;,&quot;session_token&quot;}</code></td>
+<td>SDK default chain: IRSA, pod identity, node role</td>
+</tr>
+<tr>
+<td><code>gke</code></td>
+<td>Google credential JSON — a <strong>workload identity federation</strong> <code>external_account</code> config or a <code>service_account</code> key</td>
+<td>application default credentials (GKE workload identity)</td>
+</tr>
+<tr>
+<td><code>aks</code></td>
+<td>JSON <code>{&quot;tenant_id&quot;,&quot;client_id&quot;,&quot;client_secret&quot;}</code> or <code>{&quot;tenant_id&quot;,&quot;client_id&quot;,&quot;federated_token_file&quot;}</code></td>
+<td><code>AZURE_*</code> workload-identity environment</td>
+</tr>
+</tbody>
+</table></div>
+<p>The credential document's shape is checked before use: a Google document is
+only accepted as <code>service_account</code>, <code>external_account</code> or
+<code>impersonated_service_account</code>, and every provider failure maps to a state
+(<code>NotConfigured</code>, <code>Forbidden</code>, <code>NotAvailable</code>, <code>Error</code>) with a sanitized
+reason — credential material and endpoint details never appear in status.</p>
+<p>Matching rules when <code>clusterId</code> is empty: <code>vultr</code> and <code>eks</code> match the
+cluster whose published apiserver endpoint equals the one Paprika dials —
+which cannot work for <code>mode: in-cluster</code> (<code>kubernetes.default.svc</code> is never
+a published endpoint), so set <code>clusterId</code> for the self-registration.
+<code>gke</code>/<code>aks</code> always require <code>clusterId</code> (admission-enforced).</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More guides"><a href="../../docs/drift-and-prune/" rel="prev"><span>Previous guide</span><strong>Inspect Kubernetes drift and pruning</strong></a><a href="../../blog/"><span>Keep exploring</span><strong>Read the engineering blog</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="../../docs/">Documentation</a><a href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>
