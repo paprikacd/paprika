@@ -1,0 +1,9 @@
+# Opt-in sidecar. Keep Chromium out of the main Go gateway image.
+FROM mcr.microsoft.com/playwright:v1.61.1-noble
+WORKDIR /renderer
+RUN npm install --no-save --ignore-scripts playwright@1.61.1
+COPY ui/render-worker.mjs ./render-worker.mjs
+RUN chown -R pwuser:pwuser /renderer
+USER pwuser
+ENV NODE_ENV=production
+CMD ["node","render-worker.mjs"]

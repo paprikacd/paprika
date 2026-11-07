@@ -870,6 +870,22 @@ observabilityGateway:
   extraVolumes: []
   extraVolumeMounts: []
 
+  # Optional, isolated screenshot worker for read-only render_dashboard.
+  # Never enable before publishing and testing the pinned renderer image.
+  renderWorker:
+    enabled: false
+    image: "" # exact ghcr.io/paprikacd/paprika-render-worker@sha256:<digest>
+    uiOrigin: "" # trusted in-cluster Paprika API UI origin
+    secretName: "" # pre-existing K8s Secret, never checked into values
+    secretKey: secret
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
   hpa:
     enabled: false
     minReplicas: 1

@@ -67,6 +67,7 @@ jobs:
 
       - name: Test deployment helpers
         run: |
+          bash hack/test-dashboard-renderer.sh
           bash hack/test-check-vke-pod-conditions.sh
           bash hack/test-github-actions-oidc-token.sh
           bash hack/test-github-actions-vke-token.sh
@@ -124,6 +125,10 @@ jobs:
 
       - name: Test
         run: npm test
+        working-directory: ui
+
+      - name: Browser-render worker contract tests
+        run: node --test render-worker.test.mjs
         working-directory: ui
 
       - name: Lint
@@ -456,6 +461,7 @@ jobs:
           node e2e/run-insights.mjs
           e2e/insights-dashboard-query.e2e.mjs
           e2e/insights-observe-authoring.e2e.mjs
+          e2e/insights-render-worker.e2e.mjs
           e2e/insights-compact-stat.e2e.mjs
           e2e/insights-status-history-axis.e2e.mjs
           e2e/insights-variable-filter.e2e.mjs
@@ -479,6 +485,7 @@ jobs:
             ui/test-results
             artifacts/insights/dashboard-query
             artifacts/insights/observe-authoring
+            artifacts/insights/render-worker
             artifacts/insights/variable-filter
             artifacts/insights/repository-examples/browser
             artifacts/insights/record-charts
@@ -674,6 +681,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       digest: ${{ steps.build-push.outputs.digest }}
+      render_worker_digest: ${{ steps.render-worker.outputs.digest }}
     needs:
       - go-test
       - go-lint
@@ -726,6 +734,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Publish isolated dashboard renderer
+        id: render-worker
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ui/Dockerfile.render-worker
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/paprikacd/paprika-render-worker:sha-${{ github.sha }}
+          cache-from: type=gha,scope=dashboard-renderer
+          cache-to: type=gha,scope=dashboard-renderer,mode=max
+
   deploy-vke:
     name: Deploy published image to VKE
     needs: publish
@@ -736,6 +756,7 @@ jobs:
     uses: ./.github/workflows/deploy-vke.yml
     with:
       image_ref: ghcr.io/paprikacd/paprika@${{ needs.publish.outputs.digest }}
+      render_worker_image_ref: ghcr.io/paprikacd/paprika-render-worker@${{ needs.publish.outputs.render_worker_digest }}
     secrets:
       VKE_AUTH_TOKEN_SECRET: ${{ secrets.VKE_AUTH_TOKEN_SECRET }}
       VKE_BASIC_PASSWORD_HASH: ${{ secrets.VKE_BASIC_PASSWORD_HASH }}

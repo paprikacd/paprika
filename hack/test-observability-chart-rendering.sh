@@ -303,6 +303,42 @@ render --set observabilityGateway.additionalEgress=null --show-only templates/ne
 if grep -Eq 'port: 9090' "$work/default-policy.yaml"; then
   echo 'Unapproved nonstandard backend egress appeared' >&2; exit 1
 fi
+if grep -Eq 'PAPRIKA_OBSERVE_RENDER|name: dashboard-renderer' "$work/deployment.yaml" || grep -Eq 'port: 3000' "$work/default-policy.yaml"; then
+  echo 'Browser renderer or UI egress unexpectedly enabled by default' >&2; exit 1
+fi
+cat > "$work/renderer.yaml" <<'YAML'
+observabilityGateway:
+  renderWorker:
+    enabled: true
+    image: ghcr.io/paprikacd/paprika-render-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    secretName: dedicated-renderer-secret
+    secretKey: secret
+    uiOrigin: http://paprika-api-server.paprika-system.svc.cluster.local:3000
+YAML
+render -f "$work/renderer.yaml" --show-only templates/observability-gateway/deployment.yaml > "$work/renderer-deployment.yaml"
+render -f "$work/renderer.yaml" --show-only templates/networkpolicy/observability-gateway.yaml > "$work/renderer-policy.yaml"
+python3 - "$work" <<'PY'
+import pathlib, re, sys
+work = pathlib.Path(sys.argv[1])
+deployment = (work / 'renderer-deployment.yaml').read_text()
+policy = (work / 'renderer-policy.yaml').read_text()
+assert deployment.count('name: "dedicated-renderer-secret"') == 2, 'Gateway and worker must share only the dedicated Secret reference'
+assert 'value: http://127.0.0.1:9081/render' in deployment
+assert 'value: "http://paprika-api-server.paprika-system.svc.cluster.local:3000"' in deployment
+assert 'image: "ghcr.io/paprikacd/paprika-render-worker@sha256:' + 'b' * 64 + '"' in deployment
+worker = deployment.split('      - name: dashboard-renderer\n', 1)[1].split('      serviceAccountName:', 1)[0]
+for boundary in ('runAsNonRoot: true', 'runAsUser: 1000', 'readOnlyRootFilesystem: true', 'allowPrivilegeEscalation: false', 'drop: [ALL]', 'type: RuntimeDefault', 'mountPath: /tmp'):
+    assert boundary in worker, boundary
+assert 'containerPort:' not in worker and '\n        ports:' not in worker
+assert re.search(r'app.kubernetes.io/instance: paprika\n\s+app.kubernetes.io/component: api-server\n\s+ports:\n\s+- protocol: TCP\n\s+port: 3000', policy), 'Renderer egress must target only this release API server on its UI port'
+assert 'port: 9081' not in policy, 'Worker must remain loopback only'
+print('Browser renderer default, immutable image, Secret, isolation and exact UI egress checks passed.')
+PY
+for invalid in observabilityGateway.renderWorker.image=ghcr.io/paprikacd/paprika-render-worker:latest observabilityGateway.renderWorker.secretName=; do
+  if render -f "$work/renderer.yaml" --set "$invalid" > "$work/renderer-invalid.yaml" 2>&1; then
+    echo "Unsafe browser renderer configuration unexpectedly rendered: $invalid" >&2; exit 1
+  fi
+done
 for invalid in auth.enabled=false mcp.publicURL= deploymentMode=monolith observabilityGateway.replicas=2 observabilityGateway.hpa.enabled=true observabilityGateway.strategy.type=RollingUpdate; do
   if render -f "$work/dcr-only.yaml" --set "$invalid" > "$work/invalid.yaml" 2>&1; then
     echo "Unsafe gateway configuration unexpectedly rendered: $invalid" >&2; exit 1

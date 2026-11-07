@@ -38,12 +38,14 @@ type Server struct {
 	observe      *observeGateway
 	// Serialize persistent mutations across stores so reference checks and the
 	// corresponding deletion/type change observe a consistent snapshot.
-	mutations     sync.Mutex
-	tokenHash     [32]byte
-	insecureDev   bool
-	queries       chan struct{}
-	queryCount    metric.Int64Counter
-	queryDuration metric.Float64Histogram
+	mutations        sync.Mutex
+	tokenHash        [32]byte
+	insecureDev      bool
+	queries          chan struct{}
+	queryWaiting     chan struct{}
+	queryWaitTimeout time.Duration
+	queryCount       metric.Int64Counter
+	queryDuration    metric.Float64Histogram
 }
 
 func NewServer(config Config, store *Store) (*Server, error) {
@@ -65,7 +67,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16)}
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second}
 	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
 	if err != nil {
 		return nil, fmt.Errorf("create query counter: %w", err)
@@ -163,16 +165,52 @@ var errQueryCapacity = errors.New("query execution capacity reached")
 
 // The dashboard reader and ordinary widget queries share execution admission
 // and instrumentation. The boolean records whether provider I/O actually began.
-func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
+// acquireQuery waits briefly for a shared execution slot when Insights is
+// saturated. Both waiting and executing work have hard caps. A canceled caller
+// releases its queue position without starting a detached provider request.
+func (s *Server) acquireQuery(ctx context.Context) (func(), error) {
 	if err := ctx.Err(); err != nil {
-		return QueryResult{}, false, fmt.Errorf("query context: %w", err)
+		return nil, fmt.Errorf("query admission context: %w", err)
 	}
 	select {
 	case s.queries <- struct{}{}:
-		defer func() { <-s.queries }()
+		return s.acquiredQuery(ctx)
 	default:
-		return QueryResult{}, false, errQueryCapacity
 	}
+	select {
+	case s.queryWaiting <- struct{}{}:
+		defer func() { <-s.queryWaiting }()
+	default:
+		return nil, errQueryCapacity
+	}
+	timer := time.NewTimer(s.queryWaitTimeout)
+	defer timer.Stop()
+	select {
+	case s.queries <- struct{}{}:
+		return s.acquiredQuery(ctx)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("query admission context: %w", ctx.Err())
+	case <-timer.C:
+		return nil, errQueryCapacity
+	}
+}
+
+// acquiredQuery releases a newly acquired slot if its caller was canceled
+// concurrently with admission; otherwise ownership passes to the returned cleanup.
+func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		<-s.queries
+		return nil, fmt.Errorf("query admission context: %w", err)
+	}
+	return func() { <-s.queries }, nil
+}
+
+func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
+	release, err := s.acquireQuery(ctx)
+	if err != nil {
+		return QueryResult{}, false, err
+	}
+	defer release()
 	started := time.Now()
 	result, err := p.query(ctx, q)
 	if err != nil && ctx.Err() != nil {

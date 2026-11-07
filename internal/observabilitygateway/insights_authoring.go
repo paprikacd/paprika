@@ -31,6 +31,7 @@ type InsightsAuthoringClient struct {
 	secret    []byte
 	publicURL string
 	auditor   audit.Auditor
+	renderer  *dashboardPreviewRenderer
 }
 
 func NewInsightsAuthoringClient(handler http.Handler, secret []byte, publicURL string, auditor audit.Auditor) (*InsightsAuthoringClient, error) {

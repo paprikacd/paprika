@@ -46,6 +46,19 @@
 {{- if not .Values.mcp.publicURL }}
 {{- fail "observabilityGateway.enabled=true requires mcp.publicURL: the gateway's discovery metadata, token issuer, and consent redirects are all derived from it" }}
 {{- end }}
+{{- if .Values.observabilityGateway.renderWorker.enabled }}
+{{- if not (regexMatch "^ghcr\\.io/paprikacd/paprika-render-worker@sha256:[a-f0-9]{64}$" .Values.observabilityGateway.renderWorker.image) }}
+{{- fail "browser render worker must pin an immutable ghcr.io/paprikacd/paprika-render-worker@sha256 digest" }}
+{{- end }}
+{{- if or (not .Values.observabilityGateway.renderWorker.secretName) (not .Values.observabilityGateway.renderWorker.uiOrigin) }}
+{{- fail "browser render worker requires secretName and trusted in-cluster uiOrigin" }}
+{{- end }}
+{{- range .Values.observabilityGateway.extraEnv }}
+{{- if or (eq .name "PAPRIKA_OBSERVE_RENDER_URL") (eq .name "PAPRIKA_OBSERVE_RENDER_SECRET") }}
+{{- fail "do not override the chart-managed screenshot renderer environment in observabilityGateway.extraEnv" }}
+{{- end }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -220,6 +233,15 @@ spec:
         {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}
+        {{- if .Values.observabilityGateway.renderWorker.enabled }}
+        - name: PAPRIKA_OBSERVE_RENDER_URL
+          value: http://127.0.0.1:9081/render
+        - name: PAPRIKA_OBSERVE_RENDER_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.observabilityGateway.renderWorker.secretName | quote }}
+              key: {{ .Values.observabilityGateway.renderWorker.secretKey | quote }}
+        {{- end }}
         {{- if $gwCACertificates }}
         # Keep Go's Linux trust directories and its default certificate file.
         - name: SSL_CERT_DIR
@@ -248,13 +270,52 @@ spec:
         envFrom:
         {{- include "paprika.extraEnvFrom" . | nindent 8 }}
         {{- end }}
+      {{- if .Values.observabilityGateway.renderWorker.enabled }}
+      # Chromium is a separate, unexposed sidecar; the Go gateway keeps its
+      # small runtime image and communicates through loopback only.
+      - name: dashboard-renderer
+        image: {{ .Values.observabilityGateway.renderWorker.image | quote }}
+        imagePullPolicy: IfNotPresent
+        resources:
+          {{- toYaml .Values.observabilityGateway.renderWorker.resources | nindent 10 }}
+        env:
+        - name: PAPRIKA_RENDER_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.observabilityGateway.renderWorker.secretName | quote }}
+              key: {{ .Values.observabilityGateway.renderWorker.secretKey | quote }}
+        - name: PAPRIKA_RENDER_UI_ORIGIN
+          value: {{ .Values.observabilityGateway.renderWorker.uiOrigin | quote }}
+        - name: HOME
+          value: /tmp
+        - name: XDG_CACHE_HOME
+          value: /tmp
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          readOnlyRootFilesystem: true
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: dashboard-renderer-tmp
+          mountPath: /tmp
+      {{- end }}
       serviceAccountName: {{ .Values.observabilityGateway.serviceAccountName | default (include "paprika.serviceAccountName" .) }}
       {{- $pc := .Values.observabilityGateway.priorityClassName | default .Values.priorityClassName }}
       {{- if $pc }}
       priorityClassName: {{ $pc | quote }}
       {{- end }}
-      {{- if or .Values.observabilityGateway.extraVolumes .Values.mtls.enabled $gwCACertificates }}
+      {{- if or .Values.observabilityGateway.renderWorker.enabled .Values.observabilityGateway.extraVolumes .Values.mtls.enabled $gwCACertificates }}
       volumes:
+        {{- if .Values.observabilityGateway.renderWorker.enabled }}
+        - name: dashboard-renderer-tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        {{- end }}
         {{- with .Values.observabilityGateway.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

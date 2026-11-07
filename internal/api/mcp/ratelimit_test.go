@@ -51,7 +51,7 @@ func TestPrincipalRateLimiter_SweepEvictsIdle(t *testing.T) {
 
 func TestServeHTTP_RateLimited(t *testing.T) {
 	srv := newTestServer(t)
-	srv.rateLimit.per = 1
+	srv.rateLimit.per = 50
 	srv.rateLimit.burst = 1
 	token := bearerFor(t, ScopeRead)
 
@@ -67,7 +67,55 @@ func TestServeHTTP_RateLimited(t *testing.T) {
 	}
 
 	require.Equal(t, http.StatusOK, call().Code, "first request passes")
-	require.Equal(t, http.StatusTooManyRequests, call().Code, "over-limit request rejected")
+	started := time.Now()
+	require.Equal(t, http.StatusOK, call().Code, "brief burst waits rather than rejecting")
+	assert.GreaterOrEqual(t, time.Since(started), 10*time.Millisecond)
+
+	// A delay beyond the configured queue budget still returns an explicit
+	// Retry-After, rather than leaving the MCP request open indefinitely.
+	srv.rateLimit = newPrincipalRateLimiter()
+	srv.rateLimit.per = 1
+	srv.rateLimit.burst = 1
+	srv.rateLimit.maxWait = 10 * time.Millisecond
+	require.Equal(t, http.StatusOK, call().Code)
+	limited := call()
+	require.Equal(t, http.StatusTooManyRequests, limited.Code)
+	assert.Equal(t, "1", limited.Header().Get("Retry-After"))
+}
+
+func TestPrincipalRateLimiter_BoundedWaitAndCancellation(t *testing.T) {
+	limiter := newPrincipalRateLimiter()
+	limiter.per = 10
+	limiter.burst = 1
+	limiter.maxWait = 300 * time.Millisecond
+	limiter.maxPerSubject = 1
+	require.NoError(t, limiter.Wait(t.Context(), "alice"))
+	ctx, cancel := context.WithCancel(t.Context())
+	waitResult := make(chan error, 1)
+	go func() { waitResult <- limiter.Wait(ctx, "alice") }()
+	require.Eventually(t, func() bool {
+		limiter.mu.Lock()
+		defer limiter.mu.Unlock()
+		return limiter.waiting == 1
+	}, time.Second, time.Millisecond)
+	require.ErrorIs(t, limiter.Wait(t.Context(), "alice"), errRateQueueCapacity,
+		"a hot caller cannot accumulate unlimited waiters")
+	cancel()
+	require.ErrorIs(t, <-waitResult, context.Canceled)
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	require.Zero(t, limiter.waiting)
+	require.Zero(t, limiter.lims["alice"].queued)
+}
+
+func TestPrincipalRateLimiter_CanceledBeforeAdmission(t *testing.T) {
+	limiter := newPrincipalRateLimiter()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, limiter.Wait(ctx, "alice"), context.Canceled)
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	require.Empty(t, limiter.lims, "canceled callers should not allocate token buckets")
 }
 
 func TestServeHTTP_RejectsOversizedBody(t *testing.T) {

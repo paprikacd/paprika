@@ -7,6 +7,10 @@ on:
         description: 'Published Paprika image digest reference'
         required: true
         type: string
+      render_worker_image_ref:
+        description: 'Published dashboard renderer image digest; omit to retain the current worker'
+        required: false
+        type: string
     secrets:
       VKE_AUTH_TOKEN_SECRET:
         required: true
@@ -39,6 +43,7 @@ jobs:
     environment: vke-production
     env:
       IMAGE_REFERENCE: ${{ inputs.image_ref }}
+      RENDER_WORKER_IMAGE_REFERENCE: ${{ inputs.render_worker_image_ref }}
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,6 +55,10 @@ jobs:
         run: |
           if [[ ! "${IMAGE_REFERENCE}" =~ ^ghcr\.io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::image_ref must be ghcr.io/paprikacd/paprika@sha256 followed by exactly 64 lowercase hexadecimal characters"
+            exit 1
+          fi
+          if [[ -n "${RENDER_WORKER_IMAGE_REFERENCE}" && ! "${RENDER_WORKER_IMAGE_REFERENCE}" =~ ^ghcr\.io/paprikacd/paprika-render-worker@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::render_worker_image_ref must be an immutable Paprika dashboard renderer digest"
             exit 1
           fi
 
@@ -167,6 +176,12 @@ jobs:
             exit 1
           fi
 
+          # A separate random loopback secret never leaves Kubernetes and is
+          # reused on upgrades. Manual deployments preserve an existing worker.
+          bash hack/prepare-dashboard-renderer.sh \
+            "${VKE_NAMESPACE}" "${HELM_RELEASE}" \
+            "${RENDER_WORKER_IMAGE_REFERENCE}" "${RUNNER_TEMP}/dashboard-renderer-values.json"
+
           oidc_secret_result="$(
             printf '%s' "${VKE_OIDC_CLIENT_SECRET}" | \
               kubectl -n "${VKE_NAMESPACE}" create secret generic paprika-oidc \
@@ -203,6 +218,7 @@ jobs:
             --values "${TEST_VALUES}" \
             --values deploy/omega-values.yaml \
             --values "${INSIGHTS_VALUES}" \
+            --values "${RUNNER_TEMP}/dashboard-renderer-values.json" \
             --set-string manager.image.repository="${IMAGE_REFERENCE}" \
             --set-string apiServer.image.repository="${IMAGE_REFERENCE}" \
             --set-string repoServer.image.repository="${IMAGE_REFERENCE}" \
@@ -234,6 +250,15 @@ jobs:
       - name: Show pod status
         run: |
           kubectl get pods -n "${VKE_NAMESPACE}" -o wide
+
+      - name: Verify dashboard renderer
+        run: |
+          if jq -e '.observabilityGateway.renderWorker.enabled' "${RUNNER_TEMP}/dashboard-renderer-values.json" >/dev/null; then
+            kubectl -n "${VKE_NAMESPACE}" exec "deploy/${HELM_RELEASE}-observability-gateway" \
+              -c dashboard-renderer -- node -e \
+              'fetch("http://127.0.0.1:9081/healthz").then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))'
+            jq -r '.observabilityGateway.renderWorker.image' "${RUNNER_TEMP}/dashboard-renderer-values.json"
+          fi
 
       - name: Check pod conditions
         run: bash hack/check-vke-pod-conditions.sh

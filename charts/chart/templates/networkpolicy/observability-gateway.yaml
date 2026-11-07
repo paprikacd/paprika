@@ -89,6 +89,17 @@ spec:
         - protocol: TCP
           port: 8090
     {{- end }}
+    {{- if .Values.observabilityGateway.renderWorker.enabled }}
+    # Renderer only needs the existing authenticated Paprika UI/API listener.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: api-server
+      ports:
+        - protocol: TCP
+          port: 3000
+    {{- end }}
     {{- with .Values.observabilityGateway.additionalEgress }}
     # Explicit operator-approved peers/ports for in-cluster backends and
     # environment-specific DNS. Never open all backend ports by default.

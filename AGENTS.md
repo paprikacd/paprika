@@ -144,6 +144,28 @@ test or a sample screenshot cannot establish live deployment or demo parity.
 The first production adaptation is core overview PR #193, which adds a
 whole-fleet instrument strip and measured board-header styling.
 
+## Visual-feedback loop for MCP-authored dashboards
+
+A dashboard can pass `query_dashboard` while rendering poorly (clipped
+tooltips, unreadable axes, crowded cards or bad mobile reflow). After saving
+and querying real signals, prefer `render_dashboard` once a separate,
+authenticated Playwright worker has been explicitly deployed. It returns
+`image/png` image content alongside the document ETag, selected viewport
+and theme; it never invents chart data. Inspect desktop (1512px), tablet
+(768px) and mobile (390px), then tune the saved widget options with exact
+ETag / `patch_dashboard`, requery and rerender. Use `focus_widget` to inspect
+a selected chart with its interactive hover tooltip.
+
+This tool is opt-in: it is **not available** merely because the UI and
+gateway deployed, and `render_dashboard` is registered only when
+`PAPRIKA_OBSERVE_RENDER_URL` and `PAPRIKA_OBSERVE_RENDER_SECRET` are set
+and the private Chromium worker is running. See
+`docs/guides/observe-browser-renderer.md`. The production API image does
+not ship Chromium. Never send credentials in screenshot URLs, admit
+arbitrary external pages, enable unauthenticated captures or treat a
+screenshot as proof of current telemetry health. Keep using
+`query_dashboard` for data freshness, error and truncation checks.
+
 ## Constraints & Preferences
 
 - OTel SDK with Prometheus exporter for metrics (not direct Prometheus client
