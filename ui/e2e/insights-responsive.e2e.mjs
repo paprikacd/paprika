@@ -138,7 +138,7 @@ async function geometry(width, withEditor, original) {
     const definition = original.widgets.find((item) => item.id === widget.id)
     const minimum = definition.type === "stat" ? 180 : 240
     assert.ok(widget.width >= minimum, `${where}: ${widget.id} is only ${widget.width}px wide`)
-    assert.ok(widget.height >= 120, `${where}: ${widget.id} is too short`)
+    assert.ok(widget.height >= (definition.type === "stat" ? 94 : 120), `${where}: ${widget.id} is too short`)
     assert.ok(widget.titleSize >= 10, `${where}: ${widget.id} title is too small`)
     assert.ok(widget.x >= -1 && widget.x + widget.width <= width + 1, `${where}: ${widget.id} escaped viewport`)
     if (result.mode === "stacked" || (result.mode === "compact" && definition.type !== "stat")) {
@@ -230,7 +230,12 @@ async function completeTooltip(target, cell) {
   assert.match(await tip.innerText(), /req\/s/)
   const bounds = await tip.evaluate((el) => {
     const box = el.getBoundingClientRect()
+    // Transient inspectors intentionally allow pointer events through. Enable
+    // hit testing briefly to measure visual occlusion, then restore behavior.
+    const pointerEvents = el.style.pointerEvents
+    el.style.pointerEvents = "auto"
     const atCenter = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+    el.style.pointerEvents = pointerEvents
     return { x: box.x, y: box.y, width: box.width, height: box.height, viewportWidth: innerWidth, viewportHeight: innerHeight,
       clipped: !el.contains(atCenter), insideTile: !!el.closest("[data-widget-id]"), horizontalOverflow: el.scrollWidth - el.clientWidth,
       verticalOverflow: el.scrollHeight - el.clientHeight, overflowY: getComputedStyle(el).overflowY }

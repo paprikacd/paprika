@@ -138,10 +138,11 @@ try {
       await library.getByRole("button", { name: "Plugins", exact: true }).click()
       await library
         .getByRole("button", {
-          name: /Threshold gauge A value against healthy limits/,
+          name: /^Threshold gauge /,
         })
         .click()
       await editor().getByLabel("Title", { exact: true }).fill("Available capacity")
+      await editor().getByText("Advanced configuration", { exact: true }).click()
       await editor()
         .getByLabel(/^Plugin configuration/)
         .fill('{"label":"Worker availability"}')
@@ -219,11 +220,13 @@ try {
       const download = await downloadPromise
       const exported = JSON.parse(await readFile(await download.path(), "utf8"))
       assert.equal(exported.kind, "PaprikaDashboardLibrary")
-      assert.equal(exported.dashboards.length, 2)
+      const production = exported.dashboards.find(board => board.title === "Production overview")
+      assert.ok(production, "Export includes the edited dashboard")
+      assert.ok(exported.dashboards.some(board => board.title === "Staging overview"), "Export includes its duplicate")
       const imported = {
-        ...exported.dashboards[0],
+        ...production,
         title: "Imported production",
-        widgets: exported.dashboards[0].widgets.map((item) =>
+        widgets: production.widgets.map((item) =>
           item.providerId === "example-prometheus"
             ? { ...item, providerId: "production-metrics" }
             : item,
@@ -253,7 +256,7 @@ try {
         .click()
       const current = await document()
       assert.notEqual(current.id, imported.id)
-      assert.deepEqual(current.widgets, exported.dashboards[0].widgets)
+      assert.deepEqual(current.widgets, production.widgets)
       await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
       await manager().getByRole("button", { name: "Delete dashboard", exact: true }).click()
       await respondToGammaConfirmation(page, "Delete dashboard")
@@ -268,13 +271,16 @@ try {
     },
   )
   await check("Gamma editor, dashboard manager, and custom dates fit a mobile screen", async () => {
+    await page.getByRole("navigation", { name: "Dashboard library" }).getByRole("button", { name: "Production overview", exact: true }).click()
     await page.screenshot({ path: resolve(output, "dashboard-advanced-desktop.png"), fullPage: true })
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
+    await page.getByRole("button", { name: "Dashboard actions", exact: true }).click()
+    await page.getByRole("menuitem", { name: "Manage dashboards", exact: true }).click()
     await manager().waitFor()
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5000 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     await manager().getByRole("button", { name: "Close dashboard manager" }).click()
+    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
     await page.getByRole("button", { name: "Edit Service health", exact: true }).click()
     await editor().getByRole("tab", { name: "Style", exact: true }).click()
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
