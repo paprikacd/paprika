@@ -104,6 +104,7 @@ try {
     "e2e/insights-gauge-layout.e2e.mjs",
     "e2e/insights-compact-stat.e2e.mjs",
     "e2e/insights-legend-layout.e2e.mjs",
+    "e2e/insights-presentation.e2e.mjs",
     "e2e/insights-reference-dashboards.e2e.mjs",
     "e2e/insights-source-provenance.e2e.mjs",
     "e2e/insights-record-charts.e2e.mjs",

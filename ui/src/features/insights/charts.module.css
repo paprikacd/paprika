@@ -114,29 +114,6 @@
   .chartFooter > .notice,
   .chartFooter > .gapDetails { flex: 1 1 100%; margin-left: 0; }
 }
-/* Short desktop tiles use a single-row, keyboard-scrollable legend. A
-   wrapped legend can consume more than half a small timeseries plot. Keep
-   source names and readings available through labelled, horizontally
-   navigable items, rather than shrinking the recorded data area. */
-@container insight-widget (min-width: 400px) and (max-height: 240px) {
-  .chartFooter > .legend[data-series-count] {
-    flex-wrap: nowrap;
-    gap: 8px;
-    max-height: 32px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 3px 2px 1px;
-  }
-  .chartFooter > .legend[data-series-count] .legendItem {
-    flex: 1 0 110px;
-    max-width: none;
-    gap: 4px;
-  }
-  .chartFooter > .legend[data-series-count] .legendValue {
-    white-space: nowrap;
-    font-size: 10px;
-  }
-}
 .legendItem {
   display: flex;
   align-items: center;
@@ -675,16 +652,28 @@
    Series identities scroll without moving actions into the plot. */
 .chartFooter[data-timeseries-footer] { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 2px; }
 .chartFooter[data-timeseries-footer] > .legend[data-series-count] {
-  flex: 0 0 32px;
+  flex: 0 0 40px;
   width: 100%;
-  max-height: 32px;
+  max-height: 40px;
   flex-wrap: nowrap;
   gap: 16px;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 2px 0;
 }
-.chartFooter[data-timeseries-footer] .legendItem { flex: 1 0 150px; }
+/* Keep each identity above its reading so short percentile legends fit narrow
+   panels. Long names and exact readings retain an intentional scroll surface. */
+.chartFooter[data-timeseries-footer] .legendItem {
+  display: grid;
+  grid-template-columns: 14px max-content;
+  column-gap: 6px;
+  row-gap: 0;
+  flex: 1 0 auto;
+  min-width: 88px;
+  max-width: none;
+}
+.chartFooter[data-timeseries-footer] .legendName { grid-column: 2; max-width: 160px; }
+.chartFooter[data-timeseries-footer] .legendValue { grid-column: 2; white-space: nowrap; text-align: left; font-size: 11px; }
 .chartActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 12px; min-height: 28px; }
 .chartFooter[data-timeseries-footer] > :only-child { margin-left: 0; }
 .chartFooter[data-timeseries-footer] > .notice,
@@ -708,6 +697,8 @@
 @container insight-widget (min-width: 400px) and (max-height: 180px) {
   .chartFooter[data-timeseries-footer] { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
   .chartFooter[data-timeseries-footer] > .legend[data-series-count] { flex: 1 1 140px; width: auto; }
+  .chartFooter[data-timeseries-footer] .legendItem { display: flex; gap: 6px; }
+  .chartFooter[data-timeseries-footer] .legendValue { flex: none; }
   .chartFooter[data-timeseries-footer] > .chartActions { flex: 0 1 auto; min-width: 0; max-width: 100%; }
   .chartFooter[data-timeseries-footer] > .notice,
   .chartFooter[data-timeseries-footer] > .gapDetails { flex: 1 1 100%; }

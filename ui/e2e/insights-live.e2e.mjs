@@ -87,7 +87,7 @@ const providers = createServer((request, response) => {
   }
   if (url.pathname === "/tempo/api/search") {
     const start = BigInt(url.searchParams.get("end")) * 1_000_000_000n
-    json(response, 200, { traces: [{ traceID: "abc0123456789abcdef0123456789abcd", rootServiceName: "live-checkout", rootTraceName: "POST /live/orders", startTimeUnixNano: start.toString(), durationMs: 72.25 }] })
+    json(response, 200, { traces: [{ traceID: "abc0123456789abcdef0123456789abc", rootServiceName: "live-checkout", rootTraceName: "POST /live/orders", startTimeUnixNano: start.toString(), durationMs: 72.25 }] })
     return
   }
   json(response, 404, { error: "unexpected mock-provider route" })

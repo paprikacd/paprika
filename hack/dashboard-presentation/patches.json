@@ -1,0 +1,34 @@
+{
+  "service-overview": [
+    { "id": "request-rate", "patch": { "color": "#4F86B5" } },
+    { "id": "client-errors", "patch": { "color": "#AF7B3C" } },
+    { "id": "server-errors", "patch": { "color": "#BE6269" } },
+    { "id": "latency-p95", "patch": { "color": "#8375BC" } },
+    { "id": "request-trend", "patch": { "color": "#4F86B5", "options": { "lineWidth": 2.2, "showLegend": true } } },
+    { "id": "response-errors", "patch": { "description": null, "options": { "lineWidth": 2.2, "seriesColors": [
+      { "label": "status_class", "value": "4xx", "color": "#AF7B3C" },
+      { "label": "status_class", "value": "5xx", "color": "#BE6269" }
+    ] } } },
+    { "id": "latency-percentiles", "patch": { "description": null, "options": { "lineWidth": 2.2, "seriesColors": [
+      { "label": "quantile", "value": "p50", "color": "#4F86B5" },
+      { "label": "quantile", "value": "p95", "color": "#8375BC" },
+      { "label": "quantile", "value": "p99", "color": "#BE6269" }
+    ] } } }
+  ],
+  "omega-k8s-cluster-overview": [
+    { "id": "cpu-namespace", "patch": { "layout": { "x": 0, "y": 2, "w": 6, "h": 6 }, "config": { "legendPosition": "bottom" } } },
+    { "id": "memory-namespace", "patch": { "layout": { "x": 6, "y": 2, "w": 6, "h": 6 } } },
+    { "id": "node-cpu-percent", "patch": { "layout": { "y": 8 } } },
+    { "id": "node-memory-percent", "patch": { "layout": { "y": 8 } } },
+    { "id": "node-memory-pressure", "patch": { "layout": { "y": 12 } } },
+    { "id": "restarts-pod", "patch": { "layout": { "y": 12 } } }
+  ],
+  "omega-k8s-workload-resources": [
+    { "id": "cpu-pod", "patch": { "layout": { "x": 0, "y": 2, "w": 6, "h": 6 }, "config": { "legendPosition": "bottom" } } },
+    { "id": "memory-pod", "patch": { "layout": { "x": 6, "y": 2, "w": 6, "h": 6 } } },
+    { "id": "cpu-request-percent", "patch": { "layout": { "y": 8 } } },
+    { "id": "memory-request-percent", "patch": { "layout": { "y": 8 } } },
+    { "id": "pod-phase", "patch": { "layout": { "y": 12 } } },
+    { "id": "restarts-pod", "patch": { "layout": { "y": 12 } } }
+  ]
+}
