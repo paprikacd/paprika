@@ -40,6 +40,10 @@ try {
       await chart.scrollIntoViewIfNeeded();
       await chart.locator('svg').first().waitFor();
       await page.waitForTimeout(450);
+      const checkIdleRetention = theme === 'light' && width === 1512;
+      // Let the scheduler's five-second cache expire. Focus must retain the
+      // completed request independently when automatic refresh is disabled.
+      if (checkIdleRetention) await page.waitForTimeout(5_500);
       const beforeQueries = queries;
       await edit('Request latency');
       const editor = page.getByRole('region', { name: 'Widget editor', exact: true });
@@ -92,11 +96,16 @@ try {
       await editor.getByRole('button', { name: 'Back to dashboard', exact: true }).click();
       await page.getByRole('alertdialog', { name: 'Discard chart changes?' }).waitFor();
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      if (checkIdleRetention) await page.waitForTimeout(5_500);
       await editor.getByRole('button', { name: 'Discard', exact: true }).click();
       await page.getByRole('button', { name: 'Edit Request latency', exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: 'Edit Request latency', exact: true }).evaluate(element => element === document.activeElement), true, 'Return focus to the chart edit button');
       assert.equal(await page.locator('[data-widget-id]').count(), board.widgets.length);
       await chart.getByRole('heading', { name: 'Request latency', exact: true }).waitFor();
+      if (checkIdleRetention) {
+        await page.waitForTimeout(450);
+        assert.equal(queries, beforeQueries, 'Leaving focus after the scheduler cache expires reuses all unchanged chart results');
+      }
       // Applying is one dashboard history entry; saving is the separate durable action.
       await edit('Request latency');
       await editor.getByRole('textbox', { name: 'Title', exact: true }).fill('Latency applied');
@@ -126,6 +135,26 @@ try {
       }
       await editor.getByRole('button', { name: 'Discard', exact: true }).click();
       if (theme === 'light' && width === 1512) {
+        await edit('Latency applied');
+        await editor.getByRole('textbox', { name: 'Title', exact: true }).fill('Keep this chart draft');
+        await editor.getByRole('tab', { name: 'Tooltips', exact: true }).click();
+        await editor.getByRole('button', { name: 'Use saved query', exact: true }).click();
+        await editor.getByRole('button', { name: 'Manage saved queries', exact: true }).click();
+        const explorer = page.getByRole('region', { name: 'Data source explorer', exact: true }).first();
+        await explorer.waitFor();
+        const navigation = page.getByRole('complementary', { name: 'Insights navigation' });
+        for (const destination of [/^Examples\b/, /^Data sources\b/, /^Dashboard as code$/, /^New dashboard$/]) {
+          await navigation.getByRole('button', { name: destination }).click();
+          const confirmation = page.getByRole('alertdialog', { name: /Discard (?:chart|unsaved) changes\?/ });
+          await confirmation.waitFor();
+          await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+          assert.equal(await explorer.isVisible(), true, `Cancelling ${destination} keeps Explore and its underlying chart draft`);
+        }
+        await explorer.getByRole('button', { name: 'Dashboard', exact: true }).click();
+        assert.equal(await editor.getByRole('textbox', { name: 'Title', exact: true }).inputValue(), 'Keep this chart draft');
+        await history('Undo chart change');
+        assert.equal(await editor.getByRole('button', { name: 'Use saved query', exact: true }).isVisible(), true, 'Returning from Explore preserves chart undo history');
+        await editor.getByRole('button', { name: 'Discard', exact: true }).click();
         await edit('Latency applied');
         await editor.getByRole('textbox', { name: 'Title', exact: true }).fill('Copy draft');
         await editor.getByRole('tab', { name: 'Layout', exact: true }).click();

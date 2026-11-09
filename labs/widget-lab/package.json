@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "fixtures:profiles": "node scripts/build-profile-fixtures.mjs"
+    "fixtures:profiles": "node scripts/build-profile-fixtures.mjs",
+    "postinstall": "patch-package --patch-dir ../../ui/patches --error-on-fail"
   },
   "dependencies": {
     "@tanstack/charts": "1.1.0",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5",
     "happy-dom": "20.10.6",
+    "patch-package": "8.0.1",
     "typescript": "^5",
     "vite": "^7",
     "vitest": "^4.1.9"

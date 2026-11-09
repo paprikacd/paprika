@@ -547,14 +547,29 @@ export default function InsightsApp({
     setEditing(true)
   }, [])
   const askToDiscardChart = confirmation.ask
-  const leaveWidget = useCallback(async () => {
-    if (widgetDraftDirty && !await askToDiscardChart({
+  const navigateFromChart = useCallback((navigate: () => void) => {
+    if (!widgetDraftDirty) {
+      navigate()
+      return
+    }
+    void askToDiscardChart({
       title: "Discard chart changes?",
       description: "These chart settings have not been applied to the dashboard.",
       action: "Discard changes",
-    })) return
-    close()
-  }, [widgetDraftDirty, askToDiscardChart, close])
+    }).then(accepted => { if (accepted) navigate() })
+  }, [widgetDraftDirty, askToDiscardChart])
+  const leaveWidget = useCallback(() => navigateFromChart(close), [navigateFromChart, close])
+  function openBuilderPanel(next: Exclude<typeof panel, "widget">) {
+    // Explore keeps the focused chart mounted. Any other panel replaces it,
+    // so wait for its unapplied draft to be resolved before changing views.
+    navigateFromChart(() => {
+      close()
+      setExploring(false)
+      setPanel(next)
+      setMobileSidebar(false)
+      if (next === "ai") setEditing(true)
+    })
+  }
   useEffect(() => {
     if (!focusedWidget) return
     const keydown = (event: KeyboardEvent) => {
@@ -648,11 +663,15 @@ export default function InsightsApp({
       title: query.name, providerId: query.providerId,
       queryRef: { id: query.id, bindings: (query.parameters ?? []).map(parameter => ({ parameter: parameter.name, source: "variable" as const, variable: parameter.name })) },
     }
-    update({ ...dashboard, variables, widgets: [...dashboard.widgets, widget] })
-    setExploring(false)
-    setEditing(true)
-    selectWidget(widget.id)
-    setMessage("Saved query linked. Parameters use dashboard variables; review their values, then save the dashboard.")
+    // Keep validation synchronous for Explorer's error handling. Adding the
+    // validated widget waits until replacing the current chart is accepted.
+    navigateFromChart(() => {
+      update({ ...dashboard, variables, widgets: [...dashboard.widgets, widget] })
+      setExploring(false)
+      setEditing(true)
+      selectWidget(widget.id)
+      setMessage("Saved query linked. Parameters use dashboard variables; review their values, then save the dashboard.")
+    })
   }
   async function save() {
     if (!widgetDraftValid) {
@@ -850,7 +869,7 @@ export default function InsightsApp({
   async function createDashboard() {
     if (bundleImportActive.current) return
     const request = ++openRequest.current
-    if (dirty && !await confirmDiscard()) return
+    if ((dirty || widgetDraftDirty) && !await confirmDiscard()) return
     if (request !== openRequest.current) return
     const next = newDashboard()
     setExploring(false)
@@ -858,8 +877,8 @@ export default function InsightsApp({
     reset(next)
     setSaved("")
     setEditing(true)
+    close()
     setPanel("add")
-    setSelected(undefined)
     setMessage("")
     setMobileSidebar(false)
   }
@@ -1250,15 +1269,11 @@ export default function InsightsApp({
             className={styles.sideLink}
             title={compactShell ? "Data sources" : undefined}
             disabled={importingBundle}
-            onClick={() => {
-              setExploring(false)
-              setPanel("providers")
-              setMobileSidebar(false)
-            }}
+            onClick={() => openBuilderPanel("providers")}
           >
             <Database size={16} /> Data sources <span>{providers.length}</span>
           </GammaButton>
-          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onClick={() => { setExploring(false); setPanel("examples"); setMobileSidebar(false) }}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
+          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onClick={() => openBuilderPanel("examples")}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
           <div className={styles.sideSection}>
             <span className={styles.sideLabel}>YOUR DASHBOARDS</span>
             <GammaButton iconOnly size="sm" variant="quiet"
@@ -1286,7 +1301,12 @@ export default function InsightsApp({
               )}
               activeId={dashboard.id}
               search={search}
-              onOpen={(item) => { setExploring(false); setReturnTo(null); void openDashboard(item) }}
+              onOpen={async (item) => {
+                if (await openDashboard(item)) {
+                  setExploring(false)
+                  setReturnTo(null)
+                }
+              }}
               onMove={moveDashboard}
             />
           </div>
@@ -1309,11 +1329,7 @@ export default function InsightsApp({
             <GammaButton size="sm" variant="quiet"
               className={styles.sideLink}
               disabled={importingBundle}
-              onClick={() => {
-                setExploring(false)
-                setPanel("source")
-                setMobileSidebar(false)
-              }}
+              onClick={() => openBuilderPanel("source")}
             >
               <Braces size={15} /> Dashboard as code
             </GammaButton>
@@ -1362,7 +1378,7 @@ export default function InsightsApp({
               className={styles.iconButton}
               aria-label="About data sources"
               disabled={importingBundle}
-              onClick={() => { setExploring(false); setPanel("providers") }}
+              onClick={() => openBuilderPanel("providers")}
             >
               <CircleHelp size={17} />
             </GammaButton>
@@ -1401,25 +1417,22 @@ export default function InsightsApp({
               className={styles.iconButton}
               disabled={importingBundle}
               items={[
-                { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => setPanel(panel === "manage" ? null : "manage") },
-                { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => { setPanel(panel === "ai" ? null : "ai"); setEditing(true) } },
+                { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => openBuilderPanel(panel === "manage" ? null : "manage") },
+                { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => openBuilderPanel(panel === "ai" ? null : "ai") },
               ]}
             /> : <>
             <GammaButton size="sm" variant="secondary"
               className={styles.secondary}
               aria-label="Manage dashboards"
               disabled={importingBundle}
-              onClick={() => setPanel(panel === "manage" ? null : "manage")}
+              onClick={() => openBuilderPanel(panel === "manage" ? null : "manage")}
             >
               <Settings2 size={15} /> Manage
             </GammaButton>
             <GammaButton size="sm" variant="secondary"
               className={styles.secondary}
               disabled={importingBundle}
-              onClick={() => {
-                setPanel(panel === "ai" ? null : "ai")
-                setEditing(true)
-              }}
+              onClick={() => openBuilderPanel(panel === "ai" ? null : "ai")}
             >
               <Sparkles size={15} /> Build with AI
             </GammaButton>
@@ -1465,7 +1478,7 @@ export default function InsightsApp({
               className={panel === "source" ? styles.activeTool : ""}
               iconOnly={compactShell} aria-label={compactShell ? "Code" : undefined} title={compactShell ? "Dashboard as code" : undefined}
               disabled={importingBundle}
-              onClick={() => setPanel(panel === "source" ? null : "source")}
+              onClick={() => openBuilderPanel(panel === "source" ? null : "source")}
             >
               <Braces size={14} />{!compactShell && " Code"}
             </GammaButton>
@@ -1543,7 +1556,7 @@ export default function InsightsApp({
             {editing && (
               <GammaButton size="sm" variant="quiet"
                 className={styles.addButton}
-                onClick={() => setPanel(panel === "add" ? null : "add")}
+                onClick={() => openBuilderPanel(panel === "add" ? null : "add")}
                 disabled={importingBundle || dashboard.widgets.length >= MAX_WIDGETS}
               >
                 <Plus size={14} /> Add widget
@@ -1721,7 +1734,7 @@ export default function InsightsApp({
                     disabled={importingBundle}
                     onClick={() => {
                       setEditing(true)
-                      setPanel("add")
+                      openBuilderPanel("add")
                     }}
                   >
                     <Plus size={15} /> Add your first widget
@@ -1729,7 +1742,7 @@ export default function InsightsApp({
                   <GammaButton size="sm" variant="secondary"
                     className={styles.secondary}
                     disabled={importingBundle}
-                    onClick={() => setPanel("source")}
+                    onClick={() => openBuilderPanel("source")}
                   >
                     <FilePlus2 size={15} /> Import dashboard
                   </GammaButton>
@@ -1786,7 +1799,7 @@ export default function InsightsApp({
                 <WidgetLibrary
                   onAdd={addWidget}
                   onClose={close}
-                  onAI={() => setPanel("ai")}
+                  onAI={() => openBuilderPanel("ai")}
                   disabled={dashboard.widgets.length >= MAX_WIDGETS}
                 />
               )}

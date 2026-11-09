@@ -1,13 +1,18 @@
 "use client"
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { z } from "zod"
-import type { QueryRequest, QueryResult, Widget } from "./schema"
+import type { QueryResult, Widget } from "./schema"
+import { queryIdentity, type QueryFetcher } from "./query"
 
 type AnnotationSource = NonNullable<Widget["annotationSource"]>
 export type RecordedEvent = { timestamp: string; endTimestamp?: string; label: string; severity?: "info" | "warning" | "critical" }
 type AnnotationState = { events: RecordedEvent[]; error?: string; omitted?: number; truncated?: boolean; loading?: boolean }
-type Fetcher = (request: QueryRequest, signal: AbortSignal) => Promise<QueryResult>
+export interface RetainedAnnotationEvents { key: string; revision: QueryFetcher; value: AnnotationState }
+export interface AnnotationEventsRetention {
+  read: () => RetainedAnnotationEvents | undefined
+  write: (state: RetainedAnnotationEvents) => void
+}
 const AnnotationContext = createContext<AnnotationState>({ events: [] })
 const timestampText = z.iso.datetime({ offset: true })
 export const useAnnotationEvents = () => useContext(AnnotationContext)
@@ -45,23 +50,43 @@ export function recordedEvents(result: QueryResult, source: AnnotationSource, st
 }
 
 /** The host supplies its normal saved-query resolver and scheduler. */
-export function useRecordedEvents(source: AnnotationSource | undefined, fetcher: Fetcher, providerId: string, start: number, end: number, enabled: boolean): AnnotationState {
-  const key = JSON.stringify([source, providerId, start, end])
+export function useRecordedEvents(source: AnnotationSource | undefined, fetcher: QueryFetcher, providerId: string, start: number, end: number, enabled: boolean, retention?: AnnotationEventsRetention): AnnotationState {
+  const sourceKey = JSON.stringify([source, providerId, start, end])
   const prepared = useMemo(() => {
-    const [selected, provider, from, to] = JSON.parse(key) as [AnnotationSource | null, string, number, number]
+    const [selected, provider, from, to] = JSON.parse(sourceKey) as [AnnotationSource | null, string, number, number]
     return selected ? { selected, request: { providerId: provider, query: "event query", kind: "records" as const, queryRef: selected.queryRef, start: from, end: to, step: Math.max(1, Math.ceil((to - from) / 300)) } } : undefined
-  }, [key])
-  const [state, setState] = useState<{ key: string; fetcher: Fetcher; value: AnnotationState }>()
+  }, [sourceKey])
+  const identity = prepared ? queryIdentity(prepared.request, fetcher) : undefined
+  // Both the resolved records request and the source's column mapping own the
+  // derived events; changing either must never reveal another mapping's data.
+  const key = JSON.stringify([sourceKey, identity?.key])
+  const revision = identity?.revision
+  const fetcherRef = useRef(fetcher)
+  useLayoutEffect(() => { fetcherRef.current = fetcher }, [fetcher])
+  const retentionRef = useRef(retention)
+  useLayoutEffect(() => { retentionRef.current = retention }, [retention])
+  const [state, setState] = useState<RetainedAnnotationEvents | undefined>(() => retention?.read())
   useEffect(() => {
-    if (!enabled || !prepared) return
+    if (!enabled || !prepared || !revision) return
     const controller = new AbortController()
-    Promise.resolve().then(() => { controller.signal.throwIfAborted(); return fetcher(prepared.request, controller.signal) }).then(result => {
-      if (!controller.signal.aborted) setState({ key, fetcher, value: recordedEvents(result, prepared.selected, prepared.request.start, prepared.request.end) })
-    }).catch(error => {
-      if (!controller.signal.aborted) setState({ key, fetcher, value: { events: [], error: error instanceof Error ? error.message : "Event query failed." } })
-    })
+    const settle = (value: AnnotationState) => {
+      if (controller.signal.aborted) return
+      const next = { key, revision, value }
+      setState(next)
+      retentionRef.current?.write(next)
+    }
+    Promise.resolve().then(async () => {
+      controller.signal.throwIfAborted()
+      const retained = retentionRef.current?.read()
+      if (retained?.key === key && retained.revision === revision) {
+        setState(retained)
+        return
+      }
+      const result = await fetcherRef.current(prepared.request, controller.signal)
+      settle(recordedEvents(result, prepared.selected, prepared.request.start, prepared.request.end))
+    }).catch(error => settle({ events: [], error: error instanceof Error ? error.message : "Event query failed." }))
     return () => controller.abort()
-  }, [enabled, fetcher, key, prepared])
+  }, [enabled, revision, key, prepared])
   if (!source || !enabled) return { events: [] }
-  return state?.key === key && state.fetcher === fetcher ? state.value : { events: [], loading: true }
+  return state?.key === key && state.revision === revision ? state.value : { events: [], loading: true }
 }

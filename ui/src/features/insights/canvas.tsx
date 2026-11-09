@@ -30,7 +30,7 @@ import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-tim
 import { fullDateTimeOptions } from "./chart-data";
 import type { ObservationWindow } from "./time-window";
 import { TraceFetcherProvider } from "./trace-waterfall";
-import { AnnotationEventsProvider, useRecordedEvents } from "./annotation-events";
+import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
 import type {
   Dashboard,
   Drilldown,
@@ -93,17 +93,21 @@ export interface WidgetResultSnapshot {
  * What a canvas keeps for one widget between remounts: the last outcome it showed and whether its draw-in has played.
  * It lives with the canvas, so it ends with the page session and never reaches another user's session.
  */
-interface WidgetMemory { retained?: RetainedQuery; entered: boolean }
+interface WidgetMemory { retained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
 /** The query and draw-in records for one widget, backed by that widget's entry in the canvas memory. */
-function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; entrance: ChartEntranceSlot } {
+function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
   return {
     retention: {
       read: () => memory.get(key)?.retained,
-      write: (retained) => { memory.set(key, { retained, entered: memory.get(key)?.entered ?? false }); },
+      write: (retained) => { memory.set(key, { ...memory.get(key), retained, entered: memory.get(key)?.entered ?? false }); },
+    },
+    annotationRetention: {
+      read: () => memory.get(key)?.annotation,
+      write: (annotation) => { memory.set(key, { ...memory.get(key), annotation, entered: memory.get(key)?.entered ?? false }); },
     },
     entrance: {
       entered: () => memory.get(key)?.entered ?? false,
-      markEntered: () => { memory.set(key, { retained: memory.get(key)?.retained, entered: true }); },
+      markEntered: () => { memory.set(key, { ...memory.get(key), entered: true }); },
     },
   };
 }
@@ -199,7 +203,7 @@ const Tile = memo(function Tile({
   // response. Keep that distinction through the observer-to-effect handoff.
   const canQuery = !!widget.queryRef || (!!provider && !!widget.providerId && !!widget.query.trim());
   const awaitingFirstResult = active && canQuery && !data && !error;
-  const annotationData = useRecordedEvents(widget.annotationSource, fetcher, widget.providerId, start, end, active && engaged && !library.loading && !library.error);
+  const annotationData = useRecordedEvents(widget.annotationSource, fetcher, widget.providerId, start, end, active && engaged && !library.loading && !library.error, memoryOf.annotationRetention);
   const annotationState = widget.annotationSource && library.error ? { events: [], error: library.error } : annotationData;
   const fetchTrace = useCallback((traceId: string, signal: AbortSignal) => fetcher({
     providerId: widget.providerId, query: widget.query, kind: "traces", start, end,

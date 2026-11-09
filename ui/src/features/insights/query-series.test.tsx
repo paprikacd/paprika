@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import { createResolvedQueryFetcher, useWidgetQuery, type QueryFetcher, type QueryRetention, type RetainedQuery } from "./query";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createQueryScheduler, createResolvedQueryFetcher, useWidgetQuery, type QueryFetcher, type QueryRetention, type RetainedQuery } from "./query";
 import type { QueryRequest, QueryResult, Widget } from "./schema";
 
 const widget: Widget = {
@@ -28,7 +28,12 @@ function deferred<T>() {
 const withIdentity = (identity: string, revision: QueryFetcher, run: QueryFetcher = revision): QueryFetcher =>
   Object.assign((request: QueryRequest, signal: AbortSignal) => run(request, signal), { requestIdentity: () => identity, requestRevision: revision });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+function retainedSlot() {
+  let retained: RetainedQuery | undefined;
+  return { read: () => retained, write: (value: RetainedQuery) => { retained = value; } } satisfies QueryRetention;
+}
 
 describe("query series", () => {
   it("keeps the previous result visible while the same series reloads for a new window, marked as loading", async () => {
@@ -152,5 +157,127 @@ describe("query series", () => {
     await waitFor(() => expect(writes).toHaveLength(1));
     await act(async () => slow.resolve(first));
     expect(writes.map((write) => write.result)).toEqual([second]);
+  });
+
+  it("reuses presentation remounts past the scheduler TTL, including an initially offscreen return", async () => {
+    vi.useFakeTimers();
+    const provider = vi.fn().mockResolvedValue(first);
+    const scheduler = createQueryScheduler(provider);
+    const fetcher = () => createResolvedQueryFetcher(scheduler, request => request);
+    const retention = retainedSlot();
+    const before = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher: fetcher(), retention }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(before.result.current.data).toBe(first);
+    before.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+
+    const focused = renderHook(() => useWidgetQuery({ ...widget, title: "Preview", options: { lineWidth: 3 } }, { ...bounds, fetcher: fetcher(), retention }));
+    expect(focused.result.current.data).toBe(first);
+    expect(focused.result.current.loading).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(1);
+    focused.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+
+    const returned = renderHook(({ enabled }) => useWidgetQuery(widget, { ...bounds, fetcher: fetcher(), retention, enabled }), { initialProps: { enabled: false } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    returned.rerender({ enabled: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(returned.result.current.data).toBe(first);
+    expect(returned.result.current.loading).toBe(false);
+    expect(provider).toHaveBeenCalledTimes(1);
+    provider.mockResolvedValue(second);
+    await act(async () => { returned.result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(returned.result.current.data).toBe(second);
+  });
+
+  it.each(["query", "provider", "kind", "reference", "start", "end", "step", "binding", "revision"] as const)("refetches a retained outcome after changing its %s", async change => {
+    vi.useFakeTimers();
+    const provider = vi.fn().mockResolvedValueOnce(first).mockResolvedValue(second);
+    const scheduler = createQueryScheduler(provider);
+    const retention = retainedSlot();
+    const fetcher = createResolvedQueryFetcher(scheduler, request => request);
+    const before = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    before.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    const value: Widget = change === "query" ? { ...widget, query: "other" }
+      : change === "provider" ? { ...widget, providerId: "other" }
+      : change === "kind" ? { ...widget, type: "plugin", pluginId: "record-table", dataKind: "records" }
+      : change === "reference" ? { ...widget, queryRef: { id: "saved", bindings: [] } } : widget;
+    const nextBounds = change === "start" ? { ...bounds, start: bounds.start + 1 }
+      : change === "end" ? { ...bounds, end: bounds.end + 1 }
+      : change === "step" ? { ...bounds, step: bounds.step + 1 } : bounds;
+    const nextFetcher = change === "revision" ? createResolvedQueryFetcher(createQueryScheduler(provider), request => request)
+      : change === "binding" ? createResolvedQueryFetcher(scheduler, request => ({ ...request, query: "resolved-other" })) : fetcher;
+    const after = renderHook(() => useWidgetQuery(value, { ...nextBounds, fetcher: nextFetcher, retention }));
+    expect(after.result.current.loading).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(after.result.current.data).toBe(second);
+  });
+
+  it("preserves the remaining poll interval across remounts and refreshes an overdue outcome", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    const provider = vi.fn().mockResolvedValue(first);
+    const fetcher = createResolvedQueryFetcher(createQueryScheduler(provider), request => request);
+    const retention = retainedSlot();
+    const mount = () => renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention, refreshInterval: 10_000 }));
+    const before = mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    before.unmount();
+    const after = mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_999); });
+    expect(provider).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(provider).toHaveBeenCalledTimes(2);
+    after.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(11_000); });
+    mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries a cancelled manual refresh after remounting and ignores its late result", async () => {
+    vi.useFakeTimers();
+    const pending = deferred<QueryResult>();
+    const provider = vi.fn().mockResolvedValueOnce(first).mockImplementationOnce(() => pending.promise).mockResolvedValue(second);
+    const fetcher = createResolvedQueryFetcher(createQueryScheduler(provider), request => request);
+    const retention = retainedSlot();
+    const before = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    await act(async () => { before.result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(retention.read()?.request).toBeUndefined();
+    before.unmount();
+    expect((provider.mock.calls[1][1] as AbortSignal).aborted).toBe(true);
+    const after = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention }));
+    expect(after.result.current.data).toBe(first);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(3);
+    expect(after.result.current.data).toBe(second);
+    await act(async () => { pending.resolve(valued(99)); });
+    expect(retention.read()?.result).toBe(second);
+  });
+
+  it("retains an exact failed outcome without retrying on focus, while allowing explicit retry", async () => {
+    vi.useFakeTimers();
+    const provider = vi.fn().mockRejectedValueOnce(new Error("Unavailable")).mockResolvedValue(second);
+    const fetcher = createResolvedQueryFetcher(createQueryScheduler(provider), request => request);
+    const retention = retainedSlot();
+    const before = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    before.unmount();
+    const after = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention }));
+    expect(after.result.current.error).toBe("Unavailable");
+    expect(after.result.current.loading).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(1);
+    await act(async () => { after.result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(after.result.current.data).toBe(second);
+    expect(after.result.current.error).toBeNull();
   });
 });

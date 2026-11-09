@@ -42,6 +42,17 @@ export function createResolvedQueryFetcher(scheduler: QueryFetcher, resolve: (re
   return fetcher;
 }
 
+/** Exact request ownership, shared by primary observations and recorded events. */
+export function queryIdentity(request: QueryRequest, fetcher: QueryFetcher) {
+  const resolved = fetcher.requestIdentity?.(request);
+  const revision = fetcher.requestIdentity ? fetcher.requestRevision ?? fetcher : fetcher;
+  const key = JSON.stringify([
+    request.providerId, request.query, request.kind, request.start, request.end,
+    request.step, request.queryRef, request.traceId, resolved,
+  ]);
+  return { key, resolved, revision };
+}
+
 interface QuerySubscriber {
   resolve: (data: QueryResult) => void;
   reject: (reason: unknown) => void;
@@ -214,9 +225,11 @@ export interface RetainedQuery {
   unidentified?: QueryFetcher;
   result?: QueryResult;
   error?: string;
+  /** Only a settled, exactly matching request may suppress a remount fetch. */
+  request?: { key: string; revision: QueryFetcher; settledAt: number };
 }
 
-/** Where a host keeps a widget's RetainedQuery. The hook reads it once, on mount, and writes each settled request. */
+/** Session-owned observations survive presentation remounts, never a changed request or scheduler. */
 export interface QueryRetention {
   read: () => RetainedQuery | undefined;
   write: (retained: RetainedQuery) => void;
@@ -262,8 +275,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
   useEffect(() => { debounceRef.current = debounceMs; }, [debounceMs]);
   const kind = widgetKind({ type, dataKind });
   const request: QueryRequest = { providerId, query, kind, start, end, step, ...(queryRef ? { queryRef } : {}) };
-  const requestIdentity = fetcher.requestIdentity?.(request);
-  const fetcherRevision = fetcher.requestIdentity ? fetcher.requestRevision ?? fetcher : fetcher;
+  const { key, resolved: requestIdentity, revision: fetcherRevision } = queryIdentity(request, fetcher);
   // A series is what the widget asks for. Its window and step only move it through time, so they never start a new one.
   const series = JSON.stringify([widget.id, providerId, query, kind, referenceKey, requestIdentity ?? null]);
   // A fetcher without an identity may resolve differently after any change, so such a fetcher owns its series.
@@ -272,20 +284,13 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
   useLayoutEffect(() => { fetcherRef.current = fetcher; }, [fetcher]);
   const retentionRef = useRef(retention);
   useLayoutEffect(() => { retentionRef.current = retention; }, [retention]);
-  const key = JSON.stringify([
-    providerId,
-    query,
-    kind,
-    start,
-    end,
-    step,
-    referenceKey,
-    requestIdentity,
-  ]);
   const [state, setState] = useState<QueryState>(() => {
     const retained = retention?.read();
     const kept = retained && retained.series === series && retained.unidentified === unidentified ? retained : undefined;
-    return { series, unidentified, data: kept?.result, error: kept?.error ?? null, loading: enabled };
+    const completed = kept?.request;
+    const current = completed?.key === key && completed.revision === fetcherRevision;
+    const due = refreshInterval > 0 && (!completed || Date.now() >= completed.settledAt + Math.max(5_000, refreshInterval));
+    return { key: completed?.key, fetcher: completed?.revision, series, unidentified, data: kept?.result, error: kept?.error ?? null, loading: enabled && (!current || due) };
   });
   const runRef = useRef<(manual?: boolean) => void>(() => {});
   const previousRequest = useRef<
@@ -300,6 +305,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     const requestChanged =
       previousRequest.current?.key !== key ||
       previousRequest.current?.fetcher !== fetcherRevision;
+    const mayRestore = previousRequest.current === undefined || !requestChanged;
     previousRequest.current = { key, fetcher: fetcherRevision };
     const clearTimer = () => {
       if (timer) clearTimeout(timer);
@@ -324,6 +330,11 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       }
       controller = new AbortController();
       const signal = controller.signal;
+      // A cancelled explicit retry must remain unfinished on the next mount.
+      // Keep its old display outcome, but revoke permission to reuse it as current.
+      const retained = retentionRef.current?.read();
+      if (retained?.request?.key === key && retained.request.revision === fetcherRevision)
+        retentionRef.current?.write({ ...retained, request: undefined });
       // A manual retry clears the error, so the widget shows progress. An automatic refresh keeps the last outcome in
       // place and marks the frame busy instead, so a failing widget does not flash between error and placeholder.
       setState((previous) => ({ ...previous, loading: true, error: manual ? null : previous.error }));
@@ -342,13 +353,13 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
         );
         if (!disposed && !signal.aborted && generation === requestGeneration) {
           setState({ ...owner, data, loading: false, error: null });
-          retentionRef.current?.write({ series, unidentified, result: data });
+          retentionRef.current?.write({ series, unidentified, result: data, request: { key, revision: fetcherRevision, settledAt: Date.now() } });
         }
       } catch (error) {
         if (!disposed && !signal.aborted && generation === requestGeneration) {
           const message = error instanceof Error ? error.message : "The query could not be completed.";
           setState({ ...owner, data: undefined, loading: false, error: message });
-          retentionRef.current?.write({ series, unidentified, error: message });
+          retentionRef.current?.write({ series, unidentified, error: message, request: { key, revision: fetcherRevision, settledAt: Date.now() } });
         }
       } finally {
         if (
@@ -374,6 +385,18 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     // Defer the initial request so effect cleanup can cancel a StrictMode replay.
     queueMicrotask(() => {
       if (!disposed) {
+        const retained = mayRestore ? retentionRef.current?.read() : undefined;
+        if (enabled && retained?.series === series && retained.unidentified === unidentified &&
+            retained.request?.key === key && retained.request.revision === fetcherRevision) {
+          const remaining = retained.request.settledAt + Math.max(5_000, refreshInterval) - Date.now();
+          if (refreshInterval === 0 || remaining > 0 || document.hidden) {
+            setState({ key, series, unidentified, fetcher: fetcherRevision, data: retained.result, error: retained.error ?? null, loading: false });
+            // Resume the original poll deadline; opening/closing the editor must
+            // neither refresh early nor postpone the next real refresh.
+            if (refreshInterval > 0 && !document.hidden) timer = setTimeout(run, remaining);
+            return;
+          }
+        }
         if (requestChanged)
           setState((previous) => {
             // The same series keeps its last outcome visible while it reloads. Another series starts empty.
