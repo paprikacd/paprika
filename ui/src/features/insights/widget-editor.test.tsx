@@ -54,6 +54,78 @@ function choose(label: string, option: RegExp | string) {
 }
 
 describe("widget inspector", () => {
+  it("keeps a visible settings tab when undo changes the visualization", () => {
+    registerDefaultWidgetPlugins();
+    render(<WidgetEditor {...props()} onPreview={vi.fn()}
+      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn() }} />);
+    choose("Visualization", /^Threshold gauge/);
+    fireEvent.click(screen.getByRole("tab", { name: "Options" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
+    expect(screen.queryByRole("tab", { name: "Options" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Style" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Clean line" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Redo chart change" }));
+    expect(screen.getByRole("tab", { name: "Options" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Meter label")).toBeVisible();
+  });
+  it("stages layout moves with the chart and restores them through local undo", () => {
+    const callbacks = props(), onPreview = vi.fn();
+    const below = { ...widget, id: "below", title: "Below", layout: { ...widget.layout, y: 4 } };
+    render(<WidgetEditor {...callbacks} onPreview={onPreview}
+      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn(), widgets: [widget, below], canvasMode: "wide" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move widget down" }));
+    expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ layout: expect.objectContaining({ y: 4 }) }));
+    expect(callbacks.onApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
+    expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ layout: expect.objectContaining({ y: 0 }) }));
+    fireEvent.click(screen.getByRole("button", { name: "Redo chart change" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(callbacks.onApply).toHaveBeenCalledWith(expect.objectContaining({ layout: expect.objectContaining({ y: 4 }) }),
+      expect.arrayContaining([expect.objectContaining({ i: "below", y: 0 })]));
+  });
+  it("stages focused edits, keeps the last valid preview, and applies only on request", () => {
+    const callbacks = props(), onPreview = vi.fn(), onDirtyChange = vi.fn(), discard = vi.fn();
+    render(<WidgetEditor {...callbacks} onPreview={onPreview} onDirtyChange={onDirtyChange}
+      workspace={{ preview: <div>Canonical chart preview</div>, dashboardTitle: "Operations", onDiscard: discard }} />);
+    expect(screen.getByRole("region", { name: "Chart preview" })).toHaveTextContent("Canonical chart preview");
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Staged chart" } });
+    expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Staged chart" }));
+    expect(callbacks.onApply).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Apply changes" })).toBeDisabled();
+    expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Staged chart" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    expect(JSON.parse((screen.getByRole("textbox", { name: "Widget JSON" }) as HTMLTextAreaElement).value).title).toBe("Staged chart");
+    fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
+    expect(screen.getByLabelText("Title")).toHaveValue("Staged chart");
+    expect(screen.getByRole("button", { name: "Apply changes" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
+    expect(screen.getByLabelText("Title")).toHaveValue("Requests");
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Redo chart change" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(callbacks.onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: "Staged chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(discard).toHaveBeenCalledOnce();
+    expect(callbacks.onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["Clean line", "Soft area", "Compare"])("previews %s while retaining source, analytical settings and metric colours", name => {
+    const callbacks = props();
+    const source: Widget = { ...widget, color: "#7c58ad", options: { min: 10, max: 250, curve: "step", decimals: 3, timeAxis: "calendar", thresholds: [{ value: 180, color: "#bb5037" }], seriesColors: [{ label: "quantile", value: "p95", color: "#7c58ad" }] } };
+    render(<WidgetEditor {...callbacks} widget={source} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    fireEvent.click(screen.getByRole("button", { name }));
+    const changed = callbacks.onApply.mock.lastCall![0] as Widget;
+    expect(changed).toMatchObject(source);
+    expect(changed.options).toMatchObject({ display: name === "Soft area" ? "area" : "line", gridX: name === "Compare", showLegend: true });
+    expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.change(screen.getByLabelText("Line width", { exact: true }), { target: { value: "3" } });
+    expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+    expect(callbacks.onApply.mock.lastCall![0].options.lineWidth).toBe(3);
+  });
   it("offers threshold guides for time series in the style editor", () => {
     const callbacks = props();
     render(<WidgetEditor {...callbacks} />);
@@ -771,7 +843,7 @@ describe("widget inspector", () => {
   it("exposes calendar thresholds only when threshold colors are configured", () => {
     registerDefaultWidgetPlugins();
     const callbacks = props();
-    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId: "incident-calendar", providerId: "records", dataKind: "records", config: { value: "severity", aggregation: "max", colorMode: "thresholds" } }} providers={[{ id: "records", name: "Records", type: "uptime", capabilities: ["records"] }]} />);
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId: "incident-calendar", providerId: "records", dataKind: "records", query: "{}", config: { value: "severity", aggregation: "max", colorMode: "thresholds" } }} providers={[{ id: "records", name: "Records", type: "uptime", capabilities: ["records"] }]} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.getByRole("group", { name: "Value thresholds" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
@@ -783,7 +855,7 @@ describe("widget inspector", () => {
     registerDefaultWidgetPlugins();
     const callbacks = props();
     const config = { cellStyles: [{ column: "usage", display: "bar", min: 0, max: 100 }] };
-    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId: "record-table", dataKind: "records", providerId: "records", config }}
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId: "record-table", dataKind: "records", providerId: "records", query: "{}", config }}
       providers={[{ id: "records", name: "Application records", type: "uptime", capabilities: ["records"] }]} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.getByLabelText("Series color")).toBeInTheDocument();

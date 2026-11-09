@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Exercise result-column discovery in the real widget editor and conditional
 // persistence. Only unique dashboards in the isolated local store are changed.
 import assert from "node:assert/strict"
@@ -41,6 +42,7 @@ try {
       await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
       await tile.getByRole("button", { name: "Edit Company composition by market cap", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
+      await editor.getByRole("tab", { name: "Options", exact: true }).click()
       await editor.getByText(/Available result fields:.*market_cap \(number\)/).waitFor()
       const group = editor.getByLabel("Group field", { exact: true })
       assert.ok(await group.evaluate(input => [...input.list.options].some(option => option.value === "sector")))
@@ -52,8 +54,9 @@ try {
       const binding = editor.getByLabel("Selection 1 field", { exact: true })
       assert.ok(await binding.evaluate(input => [...input.list.options].some(option => option.value === "ticker")))
       assert.equal(await binding.inputValue(), "ticker")
-      await editor.getByRole("button", { name: "Apply widget" }).click()
+      await editor.getByRole("button", { name: "Apply changes" }).click()
       const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${id}` && response.ok())
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
       await write
       const saved = await api(`/api/insights/dashboards/${id}`)

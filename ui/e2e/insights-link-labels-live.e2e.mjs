@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Author a dashboard link from the loaded Prometheus label names, save it
 // conditionally and follow the exact selected node into a real dashboard.
 import assert from "node:assert/strict"
@@ -54,8 +55,9 @@ try {
       await editor.getByText(/Available result labels:.*node/).waitFor()
       assert.ok(await input.evaluate(element => [...element.list.options].some(option => option.value === "node")), "Loaded node labels should be suggested")
       await input.fill("node")
-      await editor.getByRole("button", { name: "Apply widget" }).click()
+      await editor.getByRole("button", { name: "Apply changes" }).click()
       const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${id}` && response.ok())
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
       await write
       const saved = await read(id)
@@ -67,9 +69,10 @@ try {
       await chart.press("ArrowRight")
       const tip = page.getByRole("tooltip")
       await tip.waitFor()
+      await chart.press("Enter")
+      await tip.locator("summary").filter({ hasText: "Source details" }).click()
       const match = /node:\s*(node-\d+)/.exec(await tip.innerText())
       assert.ok(match, "The chart must expose the exact selected node")
-      await chart.press("Enter")
       await tip.getByRole("button", { name: link.title, exact: true }).click()
       await page.waitForURL(url => url.searchParams.get("dashboard") === "local-gallery-fleet-atlas")
       assert.equal(JSON.parse(new URL(page.url()).searchParams.get("vars")).node, match[1])

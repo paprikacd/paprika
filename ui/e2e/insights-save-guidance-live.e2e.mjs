@@ -1,4 +1,4 @@
-// Dashboard save guidance for invalid live widget drafts against isolated
+// Focused chart Apply guidance for invalid live drafts against isolated
 // Insights storage and the actual local providers.
 import assert from "node:assert/strict"
 import { chromium } from "playwright"
@@ -41,11 +41,11 @@ try {
       const title = editor.getByRole("textbox", { name: "Title", exact: true })
       const original = await title.inputValue()
       await title.fill("")
-      const save = page.getByRole("button", { name: "Save dashboard", exact: true })
-      const hint = page.getByRole("status").filter({ hasText: "Fix the widget settings to save" })
+      const apply = editor.getByRole("button", { name: "Apply changes", exact: true })
+      const hint = editor.getByRole("alert").filter({ hasText: "title:" })
       await hint.waitFor()
-      assert.equal(await save.isDisabled(), true)
-      assert.equal(await save.getAttribute("aria-describedby"), await hint.getAttribute("id"))
+      assert.equal(await apply.isDisabled(), true)
+      assert.equal(await title.getAttribute("aria-describedby"), await hint.getAttribute("id"))
       if (process.env.SAVE_GUIDANCE_SCREENSHOTS) {
         await hint.scrollIntoViewIfNeeded()
         await page.screenshot({ path: `${process.env.SAVE_GUIDANCE_SCREENSHOTS}/save-${theme.toLowerCase()}-${width}.png`, animations: "disabled" })
@@ -54,15 +54,16 @@ try {
       assert.equal(unchanged.headers.get("x-paprika-document-etag") ?? unchanged.headers.get("etag"), etag)
       await title.fill(original)
       await hint.waitFor({ state: "hidden" })
-      assert.equal(await save.isEnabled(), true, "Correcting the draft should immediately restore save")
+      assert.equal(await apply.isEnabled(), true, "Correcting the draft should immediately restore Apply")
       await title.fill("")
       await hint.waitFor()
-      await editor.getByRole("button", { name: "Close widget editor", exact: true }).click()
+      await editor.getByRole("button", { name: "Discard", exact: true }).click()
       await hint.waitFor({ state: "hidden" })
-      assert.equal(await save.isEnabled(), true, "Closing an invalid draft should retain the last valid preview")
+      assert.equal(await page.getByRole("button", { name: "Save dashboard", exact: true }).isEnabled(), true, "Discarding an invalid draft returns to the unchanged dashboard")
+      await tile.getByRole("heading", { name: original, exact: true }).waitFor()
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true)
       assert.deepEqual(errors, [])
-      console.log(`PASS ${theme} ${width}px: invalid save reason, correction and close recovery`)
+      console.log(`PASS ${theme} ${width}px: invalid Apply reason, correction and Discard recovery`)
     } finally {
       closing = true
       await page.unrouteAll({ behavior: "ignoreErrors" })

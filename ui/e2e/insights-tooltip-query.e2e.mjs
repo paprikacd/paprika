@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry } from "./query-editor.mjs"
 // Run from ui/: INSIGHTS_E2E_URL=http://127.0.0.1:3015 node e2e/insights-tooltip-query.e2e.mjs
@@ -13,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { activateDashboardAction, selectGammaOption } from "./gamma-controls.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -207,8 +208,8 @@ async function editTooltip() {
   await panel().getByRole("tab", { name: "Tooltips", exact: true }).click()
 }
 async function applySave() {
-  await panel().getByRole("button", { name: "Apply widget", exact: true }).click()
-  await panel().getByRole("button", { name: "Close widget editor", exact: true }).click()
+  await panel().getByRole("button", { name: "Apply changes", exact: true }).click()
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
   await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
 }
@@ -238,7 +239,7 @@ async function observe(value, offset, service = quotedService, signal = "histori
     assert.equal(Number(await observation.getAttribute("data-observation-timestamp")), timestamp)
     assert.equal(await observation.getAttribute("data-observation-series"), observationSeries(service, signal))
   }
-  await tooltip().locator(`time[datetime=${JSON.stringify(new Date(timestamp).toISOString())}]`).waitFor()
+  await tooltip().locator(`time[datetime=${JSON.stringify(new Date(timestamp).toISOString())}]`).first().waitFor()
   const expected = expectedObservationQuery(value, offset, service, signal)
   await until(() => cached ? childQueries().some(entry => entry.params.query === expected) : childQueries().at(-1)?.params.query === expected, `Provider did not receive exact observation query: ${expected}`)
   const expectedChildValue = service === "worker" ? "222" : "111"
@@ -260,7 +261,12 @@ async function historicalHost(width) {
   const popup = await contained(tooltip()), card = await tile().boundingBox()
   assert.equal(await tooltip().evaluate(node => node.parentElement === document.body), true, "A chart tooltip must escape the widget's clipping container")
   const fallback = await tooltip().getAttribute("data-tooltip-overlap") === "true"
-  if (!fallback) assert.ok(popup.x + popup.width <= card.x + 1 || popup.x >= card.x + card.width - 1 || popup.y + popup.height <= card.y + 1 || popup.y >= card.y + card.height - 1, "Chart tooltip should not cover the plotted widget when outside space is available")
+  const pointerPreview = await tooltip().getAttribute("data-tooltip-pointer") === "true"
+  if (pointerPreview) {
+    assert.equal(await tooltip().evaluate(node => getComputedStyle(node).pointerEvents), "none", "A pointer preview must not block traversal across the plot")
+    assert.ok(position.x < popup.x || position.x > popup.x + popup.width || position.y < popup.y || position.y > popup.y + popup.height, "A pointer preview must leave the selected point visible")
+  }
+  else if (!fallback) assert.ok(popup.x + popup.width <= card.x + 1 || popup.x >= card.x + card.width - 1 || popup.y + popup.height <= card.y + 1 || popup.y >= card.y + card.height - 1, "Chart tooltip should not cover the plotted widget when outside space is available")
   else if (width >= 600) assert.equal(await tooltip().evaluate(node => getComputedStyle(node).pointerEvents), "none", "An overlapping hover preview must not block pointer traversal")
   await screenshot(`host-historical-pointer-${width}.png`)
   if (width < 600) { await page.touchscreen.tap(position.x, position.y); await tooltip().waitFor({ state: "hidden" }) }
@@ -269,7 +275,11 @@ async function historicalHost(width) {
     await page.mouse.move(last.x, last.y, { steps: 12 })
     await observe(32, 0)
     const moving = await contained(tooltip()), host = await tile().boundingBox()
-    if (await tooltip().getAttribute("data-tooltip-overlap") !== "true") assert.ok(moving.x + moving.width <= host.x + 1 || moving.x >= host.x + host.width - 1 || moving.y + moving.height <= host.y + 1 || moving.y >= host.y + host.height - 1, "Moving across a plotted line keeps the settled inspector outside the host")
+    if (await tooltip().getAttribute("data-tooltip-pointer") === "true") {
+      assert.equal(await tooltip().evaluate(node => getComputedStyle(node).pointerEvents), "none")
+      assert.ok(last.x < moving.x || last.x > moving.x + moving.width || last.y < moving.y || last.y > moving.y + moving.height, "Moving across a plotted line keeps the selected point visible")
+    }
+    else if (await tooltip().getAttribute("data-tooltip-overlap") !== "true") assert.ok(moving.x + moving.width <= host.x + 1 || moving.x >= host.x + host.width - 1 || moving.y + moving.height <= host.y + 1 || moving.y >= host.y + host.height - 1, "Moving across a plotted line keeps the settled inspector outside the host")
     await page.mouse.move(position.x, position.y, { steps: 12 })
     // Returning to the first observation may reuse its previously verified response.
     await observe(-7.25, 120.25, quotedService, "historical", true, true)
@@ -349,6 +359,7 @@ function toOpenUI(document) {
   return `root = Dashboard(${args([document.id, document.title, document.timeRange, document.refreshInterval])}, [${document.widgets.map((_, index) => `widget${index}`).join(", ")}], ${args([document.description, document.folder, document.customTimeRange, document.variables])})\n` + document.widgets.map((item, index) => `widget${index} = ${names[item.type]}(${args([item.id, item.title, item.providerId, item.query, item.unit, item.layout, item.description, item.color, item.options])})`).join("\n")
 }
 async function saveCurrent() {
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
   await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
 }
@@ -412,7 +423,7 @@ async function typedAuthoring(width) {
   document = await saved()
   assert.equal(document.widgets[0].type, "bar"); assert.deepEqual(document.widgets[0].options.tooltipView.source, observationSource())
   document.widgets[0].type = "table"
-  await page.getByRole("button", { name: "Build with AI", exact: true }).click()
+  await activateDashboardAction(page, "Build with AI")
   const ai = page.getByRole("region", { name: "Build with AI", exact: true })
   await ai.getByRole("textbox", { name: "AI-generated definition", exact: true }).fill(toOpenUI(document))
   await ai.getByRole("button", { name: "Review definition", exact: true }).click()
@@ -684,7 +695,7 @@ try {
 
   await check("library export and import include nested query providers and preserve capability-aware remapping", async () => {
     await openScenario({ type: "traces", source: source("{ resource.service.name = {{service}} }", "traces") })
-    await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
+    await activateDashboardAction(page, "Manage dashboards")
     const manager = page.getByRole("region", { name: "Manage dashboards", exact: true })
     const downloaded = page.waitForEvent("download")
     await manager.getByRole("button", { name: "JSON", exact: true }).click()

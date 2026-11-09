@@ -110,6 +110,16 @@ afterEach(() => {
 });
 
 describe("signal-specific dashboard drilldowns", () => {
+  it("uses the current host action after a callback changes", () => {
+    query.data = { series: [series("api", 5)] };
+    const previous = vi.fn(), current = vi.fn();
+    const { rerender } = render(<Canvas onDrilldown={previous} />);
+    rerender(<Canvas onDrilldown={current} />);
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Service dashboard/ }));
+    expect(previous).not.toHaveBeenCalled();
+    expect(current).toHaveBeenCalledWith(link, expect.objectContaining({ series: "api", value: 5 }));
+  });
   it.each([false, true])("uses a deliberately selected historical sample for links and drops it on refresh (multiple series: %s)", (multiple) => {
     vi.stubGlobal("IntersectionObserver", undefined);
     const historicalLink: Drilldown = { ...link, bindings: [{ variable: "reading", source: "value" }] };

@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Live MCP authoring acceptance. Configuration and tokens stay outside the repo.
 // Creates unique demonstration documents and retains them; never overwrites a
 // pre-existing dashboard/query. Set INSIGHTS_OMEGA_AUTHORING_CONFIG to private JSON.
@@ -267,6 +268,7 @@ try {
     const updatedTitle = `${title} — MCP and UI verified`
     await page.getByRole("textbox", { name: "Dashboard title", exact: true }).fill(updatedTitle)
     const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${dashboardId}`)
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     const response = await saved
     assert.equal(response.status(), 200, "The UI must save through the public compressed transport")

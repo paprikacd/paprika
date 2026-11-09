@@ -373,31 +373,6 @@
   font-size: 11px;
   line-height: 1.4;
 }
-.table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 12px;
-  line-height: 1.45;
-  text-align: left;
-}
-.table th {
-  position: sticky;
-  top: 0;
-  background: var(--widget-background, var(--gamma-bg, #ffffff));
-  color: var(--widget-text, var(--gamma-muted, #52636f));
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0;
-  padding: 7px 8px 9px;
-  border-bottom: 1px solid var(--gamma-chart-grid, var(--gamma-border));
-  white-space: nowrap;
-}
-.table td {
-  padding: 8px;
-  border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border, #dfe4db));
-  color: var(--widget-text, var(--gamma-ink, #223139));
-  vertical-align: middle;
-}
 .table td:first-child {
   color: var(--widget-text, var(--gamma-ink, #223139));
   max-width: 220px;
@@ -694,7 +669,7 @@
 
 /* Short desktop panels share a row while retaining a separate scroll surface
    for series identities. The second action row would consume the plot budget. */
-@container insight-widget (min-width: 400px) and (max-height: 180px) {
+@container insight-widget (min-width: 400px) and (max-height: 260px) {
   .chartFooter[data-timeseries-footer] { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
   .chartFooter[data-timeseries-footer] > .legend[data-series-count] { flex: 1 1 140px; width: auto; }
   .chartFooter[data-timeseries-footer] .legendItem { display: flex; gap: 6px; }
@@ -703,3 +678,5 @@
   .chartFooter[data-timeseries-footer] > .notice,
   .chartFooter[data-timeseries-footer] > .gapDetails { flex: 1 1 100%; }
 }
+/* Recorded context shares the controls' budget; opening it does not shrink the plot. */
+.chartFooter[data-timeseries-footer]:has(.priorLegend) [data-chart-events] > ul { position: static; width: 100%; }

@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Author a geo selection binding through the actual editor, persist it through
 // Insights, then verify the selected record drives a real PostgreSQL query.
 // All dashboard writes target unique documents in a local-only gallery store.
@@ -52,8 +53,9 @@ try {
       await controls.getByRole("button", { name: "Add selection binding" }).click()
       await selectGammaOption(page, controls.getByRole("combobox", { name: "Selection 1 variable" }), "Location")
       await controls.getByLabel("Selection 1 field", { exact: true }).fill("label")
-      await editor.getByRole("button", { name: "Apply widget" }).click()
+      await editor.getByRole("button", { name: "Apply changes" }).click()
       const savedWrite = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${id}` && response.ok())
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
       await savedWrite
       const savedResponse = await api(`/api/insights/dashboards/${id}`)

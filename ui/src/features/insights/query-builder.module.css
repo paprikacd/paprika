@@ -123,6 +123,7 @@
   border-bottom-color: var(--gamma-accent);
   box-shadow: none;
 }
+.compact.compact [role="tab"]:focus-visible { outline-offset: -2px; }
 .compact.compact [role="tabpanel"] { padding: 8px 0 0; min-width: 0; }
 .compact .guided { padding: 0; gap: 8px; }
 .compact .step { gap: 8px; }

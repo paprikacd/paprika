@@ -9,7 +9,12 @@ export function TooltipDetail({ title, children }: { title: string; children: Re
   </div>;
 }
 export function TooltipFact({ label, children }: { label: string; children: ReactNode }) {
-  return <div className={styles.tooltipFact}><span>{label}</span><strong>{children}</strong></div>;
+  return <dl className={styles.tooltipFact}><dt>{label}</dt><dd>{children}</dd></dl>;
+}
+
+/** One inset for supporting content, including histories and custom detail views. */
+export function TooltipSection({ children }: { children: ReactNode }) {
+  return <div className={styles.tooltipSection}>{children}</div>;
 }
 
 /** Consistent readable guidance inside every observation shell. */

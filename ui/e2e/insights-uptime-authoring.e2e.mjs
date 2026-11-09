@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import { selectGammaOption } from "./gamma-controls.mjs";
@@ -35,9 +36,9 @@ try {
   const editor = page.getByRole("region", { name: "Widget editor" });
   await editor.getByRole("tab", { name: "Style" }).click();
   await editor.getByLabel("Threshold 1 label", { exact: true }).fill("Down for review");
-  await editor.getByRole("button", { name: "Apply widget", exact: true }).click();
-  await editor.getByRole("button", { name: "Close widget editor" }).click();
+  await editor.getByRole("button", { name: "Apply changes", exact: true }).click();
   await grid.getByRole("button", { name: /Down for review/ }).first().waitFor();
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
   await page.getByText("All changes saved", { exact: true }).waitFor();
   const written = fixture.documents.get("local-uptime-study");

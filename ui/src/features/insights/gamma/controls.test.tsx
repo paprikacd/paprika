@@ -83,17 +83,19 @@ describe("Gamma controls adapted for Insights", () => {
       screen.getByRole("option", { name: "metric_1999" }),
     ).toBeInTheDocument();
   });
-  it("links unique tab panels and follows arrow and Home keys", () => {
+  it.each(["segmented", "underline"] as const)("links %s tab panels and supports Home, End and arrow-key wrapping", variant => {
     function Tabs() {
       const [value, setValue] = useState("query");
       return (
         <GammaTabs
           label="Settings"
+          variant={variant}
           value={value}
           onChange={setValue}
           tabs={[
             { id: "query", title: "Query", content: "Query settings" },
             { id: "style", title: "Style", content: "Style settings" },
+            { id: "source", title: "Source", content: "Source settings" },
           ]}
         />
       );
@@ -108,6 +110,15 @@ describe("Gamma controls adapted for Insights", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Style settings");
     fireEvent.keyDown(style, { key: "Home" });
     expect(screen.getByRole("tab", { name: "Query" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Query" }), { key: "End" });
+    const source = screen.getByRole("tab", { name: "Source" });
+    expect(source).toHaveFocus();
+    expect(source).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", source.id);
+    fireEvent.keyDown(source, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Query" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Query" }), { key: "ArrowLeft" });
+    expect(source).toHaveFocus();
   });
   it("uses a native labeled checkbox switch for keyboard and form semantics", () => {
     const onChange = vi.fn();

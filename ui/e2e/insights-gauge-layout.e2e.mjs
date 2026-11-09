@@ -99,24 +99,27 @@ try {
       const tooltip = page.getByRole("tooltip")
       await tooltip.waitFor({ state: "visible" })
       // A visible preview can still belong to the chart the pointer crossed.
-      await page.waitForFunction(() => document.querySelector('[role="tooltip"]')?.textContent?.includes("Below 10 GB"))
+      await page.waitForFunction(() => /Critical[\s\S]*Below 10 GB[\s\S]*Scale: 0 to 100 GB/.test(document.querySelector('[role="tooltip"]')?.innerText ?? ""))
       assert.match(await tooltip.innerText(), /Critical[\s\S]*Below 10 GB[\s\S]*Scale: 0 to 100 GB/, `${width}px ${theme}: gauge tooltip should explain its threshold band and scale`)
-      // Transient pointer previews follow the pointer and remain transparent.
-      // Pinning switches to the outside-widget investigation placement.
+      // Pinning retains the preview's pointer-side corner while making its
+      // controls interactive, even if the inspector gains extra content.
       assert.equal(await tooltip.evaluate(element => getComputedStyle(element).pointerEvents), "none")
+      const beforePin = await tooltip.boundingBox(), placement = await tooltip.getAttribute("data-placement")
       await trigger.click()
       assert.equal(await trigger.getAttribute("aria-pressed"), "true")
       await page.waitForFunction(() => document.querySelector('[role="tooltip"]')?.getAttribute("data-tooltip-pointer") !== "true")
-      const [panel, widgetBounds] = await Promise.all([tooltip.boundingBox(), tile.boundingBox()])
-      assert.ok(panel && widgetBounds && (panel.x + panel.width <= widgetBounds.x + 1 || panel.x >= widgetBounds.x + widgetBounds.width - 1 || panel.y + panel.height <= widgetBounds.y + 1 || panel.y >= widgetBounds.y + widgetBounds.height - 1), `${width}px ${theme}: gauge details should sit outside the widget when there is space`)
+      const panel = await tooltip.boundingBox(), viewport = page.viewportSize()
+      assert.match(placement, /^pointer-/)
+      assert.equal(await tooltip.getAttribute("data-placement"), placement)
+      const corner = box => ({ x: box.x + (placement.endsWith("-left") ? box.width : 0), y: box.y + (placement.startsWith("pointer-top") ? box.height : 0) })
+      const before = corner(beforePin), after = corner(panel)
+      assert.ok(Math.abs(after.x - before.x) <= 1 && Math.abs(after.y - before.y) <= 1, "Pinning gauge details keeps their pointer-side corner fixed")
+      assert.ok(panel.x >= 0 && panel.y >= 0 && panel.x + panel.width <= viewport.width + 1 && panel.y + panel.height <= viewport.height + 1, "Pinned gauge details fit the viewport")
+      assert.notEqual(await tooltip.evaluate(element => getComputedStyle(element).pointerEvents), "none", "Pinned details remain interactive")
       if (width === 1600) await page.screenshot({ path: join(output, `gauge-tooltip-${theme.toLowerCase()}.png`), animations: "disabled" })
-      if (width === 1600) assert.equal(await tooltip.getAttribute("data-tooltip-overlaps-other-widget"), "true", "This dense reference must exercise a tooltip over a neighboring chart")
-      if (await tooltip.getAttribute("data-tooltip-overlaps-other-widget") === "true") {
-        assert.equal(await trigger.getAttribute("aria-pressed"), "true", "Clicking the gauge pins details")
-        assert.notEqual(await tooltip.evaluate(element => getComputedStyle(element).pointerEvents), "none", "Pinned details remain interactive")
-        await page.keyboard.press("Escape")
-      }
       await page.mouse.move(1, 1)
+      assert.equal(await tooltip.isVisible(), true, "A pinned gauge survives pointer exit")
+      await page.keyboard.press("Escape")
       await tooltip.waitFor({ state: "hidden" })
     }
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "No page-level horizontal overflow")

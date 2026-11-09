@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Real MCP -> authenticated API proxy -> Insights storage, followed by the real
 // browser workspace. Only Kubernetes and telemetry are deterministic fixtures.
 import assert from "node:assert/strict"
@@ -468,6 +469,7 @@ try {
     await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
     await page.getByRole("textbox", { name: "Dashboard title", exact: true }).fill("Dashboard updated from the UI")
     const beforeWrites = writes.length
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await until(() => writes.slice(beforeWrites).some(item => item.path.endsWith(`/dashboards/${dashboard.id}`) && item.status === 200), "The UI must save against the latest same-content ETag")
     await page.getByRole("heading", { name: "Dashboard updated from the UI", exact: true }).waitFor()
@@ -484,6 +486,7 @@ try {
     await page.getByText("The saved dashboard changed elsewhere. Your draft is preserved.", { exact: true }).waitFor()
     assert.equal(await title.inputValue(), "Local dashboard draft")
     const before = writes.length
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await until(() => writes.slice(before).some(item => item.path.endsWith(`/dashboards/${dashboard.id}`) && item.status === 412), "Saving a stale UI dashboard must receive HTTP412")
     assert.equal(await title.inputValue(), "Local dashboard draft")
@@ -547,6 +550,7 @@ try {
     await editor.getByRole("tab", { name: "Source", exact: true }).click()
     assert.deepEqual(JSON.parse(await editor.getByRole("textbox", { name: "Widget JSON", exact: true }).inputValue()), expectedWidget)
     await unchanged("dashboards", before)
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
     dashboardEntry = verifyDocumentResult(await tool("get_dashboard", { id: dashboard.id }), { ...before.document, widgets: [expectedWidget] })
@@ -588,6 +592,7 @@ try {
       assert.equal(await editor.evaluate(element => element.scrollWidth <= element.clientWidth), true)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
       await page.screenshot({ path: join(output, `tooltip-workspace-${theme.toLowerCase()}-${width}.png`), fullPage: false })
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
       await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
       await unchanged("dashboards", dashboardEntry)

@@ -15,6 +15,7 @@ import type {
   ChartValue,
 } from "@tanstack/charts";
 import { MetricDetails } from "./metric-tooltip-content";
+import { ObservationDrilldowns } from "./observation-drilldowns";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
 import { useTooltipDismiss } from "./tooltip-dismiss";
@@ -28,7 +29,6 @@ import styles from "./chart-styles.module.css";
 import { useChartCursorPublisher } from "./chart-cursor";
 import { GammaButton } from "./gamma/button";
 import type { DrilldownContext } from "./drilldown";
-import { drilldownContextReason } from "./widget-context";
 import { useWidgetDrilldown } from "./widget-drilldown";
 
 export interface PlotDatum extends Point {
@@ -289,19 +289,12 @@ export function usePlotTooltip(
                 {showAllPeers ? "Show fewer plotted series" : `Show ${peersAtTime.length - 5} more plotted series`}
               </button>}
             </div>}
-            {current.pinned && widget.type === "timeseries" && !!widget.drilldowns?.length && (openDrilldown || onContextChange) && <div className={styles.tooltipActions}>
-              {openDrilldown && widget.drilldowns.map(link => {
-                const selected = { series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp };
-                const reason = drilldownContextReason(link, selected);
-                return <div key={link.id}>
-                  <GammaButton size="sm" variant="secondary" disabled={!!reason} onClick={() => openDrilldown(link, selected)}>{link.title}</GammaButton>
-                  {reason && <p className={styles.tooltipActionReason}>{reason}</p>}
-                </div>;
-              })}
-              {onContextChange && <GammaButton size="sm" variant="secondary" onClick={() => onContextChange({ series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp })}>
+            {current.pinned && widget.type === "timeseries" && !!widget.drilldowns?.length && (openDrilldown || onContextChange) && <>
+              <ObservationDrilldowns widget={widget} context={{ series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp }} />
+              {onContextChange && <div className={styles.tooltipActions}><GammaButton size="sm" variant="secondary" onClick={() => onContextChange({ series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp })}>
                 Use sample for dashboard links
-              </GammaButton>}
-            </div>}
+              </GammaButton></div>}
+            </>}
             {widget.options?.tooltipView && <TooltipSubWidget
               view={widget.options.tooltipView}
               series={entry}

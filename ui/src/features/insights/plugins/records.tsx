@@ -1,6 +1,9 @@
 "use client"
 
 import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { ChartTable } from "../chart-table"
+import { GammaButton } from "../gamma/button"
+import { GammaInput } from "../gamma/input"
 import { ArrowRight } from "lucide-react"
 import { hierarchy, treemap } from "d3-hierarchy"
 import { z } from "zod"
@@ -10,6 +13,7 @@ import {
   type WidgetRendererProps,
 } from "../widget-registry"
 import { EmptyState, formatMetric, ObservationTooltip } from "../chart-renderers"
+import { TooltipDetail, TooltipFact, TooltipHint } from "../tooltip-content"
 import { useEmbeddedWidget } from "../widget-presentation"
 import type { RecordFrame } from "../schema"
 import styles from "./records.module.css"
@@ -162,7 +166,7 @@ export function RecordTable({
   const scheduleCellHide = () => { clearCellHide(); cellHideTimer.current = setTimeout(() => { const state = cellInteraction.current; if (!state.panel && !state.hovered && !state.focused) setCellObservation(previous => previous?.pinned ? previous : undefined) }, 180) }
   useEffect(() => () => clearTimeout(cellHideTimer.current), [])
   const [horizontalOverflow, setHorizontalOverflow] = useState(false)
-  const config = tableConfig.parse(widget.config ?? {})
+  const config = useMemo(() => tableConfig.parse(widget.config ?? {}), [widget.config])
   const activeSearch = !embedded && config.showSearch ? search : ""
   const cellConfigIdentity = JSON.stringify([config.columns, config.cellStyles])
   const rows = useMemo(() => {
@@ -235,11 +239,11 @@ export function RecordTable({
   const activeValue = history?.state === "valid" ? history.points[history.points.length - 1].value : activeCell?.value
   const formattedValue = history && history.state !== "valid" ? history.state === "invalid" ? "Invalid history" : "No history" : activeValue == null ? "No data" : typeof activeValue === "number" ? formatMetric(activeValue, activeUnit, false, widget.options?.decimals) : typeof activeValue === "boolean" ? activeValue ? "Yes" : "No" : activeColumn?.type === "timestamp" ? new Date(String(activeValue)).toLocaleString() : String(activeValue)
   return (
-    <div className={`${styles.wrapper}${config.density === "compact" ? ` ${styles.compactTable}` : ""}`} data-table-density={config.density} data-cell-inspection={inspectCells || undefined}>
+    <div className={`${styles.wrapper}${config.density === "compact" ? ` ${styles.compactTable}` : ""}`} data-record-table="" data-table-density={config.density} data-cell-inspection={inspectCells || undefined}>
       {inspectCells && <p id={cellHelpId} className={styles.cellHistoryMeaning}>Use arrow keys to move between cells and Enter to pin details.</p>}
       {!embedded && config.showSearch && (
         <div className={styles.toolbar}>
-          <input
+          <GammaInput size="sm"
             aria-label={`Filter ${widget.title}`}
             placeholder="Filter records…"
             value={search}
@@ -260,7 +264,7 @@ export function RecordTable({
         aria-label={`${widget.title} records`}
         aria-describedby={horizontalOverflow ? overflowHintId : undefined}
       >
-        <table>
+        <ChartTable density={config.density} aria-label={widget.title}>
           <thead>
             <tr>
               {config.showRowNumbers && <th scope="col" className={styles.rowNumber} title="Position in the displayed records" aria-label="Row number">#</th>}
@@ -279,7 +283,7 @@ export function RecordTable({
                   {embedded || cellStyles.get(frame.columns[index].key)?.display === "sparkline" ? (
                     (frame.columns[index].label ?? frame.columns[index].key)
                   ) : (
-                    <button
+                    <GammaButton size="sm" variant="quiet"
                       type="button"
                       onClick={() => {
                         hideCell()
@@ -295,7 +299,7 @@ export function RecordTable({
                           ? " ↓"
                           : " ↑"
                         : ""}
-                    </button>
+                    </GammaButton>
                   )}
                 </th>
               ))}
@@ -335,7 +339,7 @@ export function RecordTable({
                   })}
                   {onContextChange && !embedded && (
                     <td>
-                      <button
+                      <GammaButton size="sm" variant="quiet"
                         type="button"
                         onClick={() =>
                           onContextChange({ labels: labels(frame, row) })
@@ -343,7 +347,7 @@ export function RecordTable({
                         aria-label={`Select row ${current * pageSize + i + 1}`}
                       >
                         Select
-                      </button>
+                      </GammaButton>
                     </td>
                   )}
                   {timeConfig && applyTime && !embedded && (() => {
@@ -353,40 +357,47 @@ export function RecordTable({
                     const padding = timeConfig.paddingSeconds * 1000
                     const from = start - padding, to = start + (typeof duration === "number" ? duration * multiplier : NaN) + padding
                     const valid = Number.isFinite(from) && from > 0 && typeof duration === "number" && Number.isFinite(duration) && duration > 0 && Number.isFinite(to) && to > from && to - from <= 31 * 86400_000
-                    return <td><button type="button" aria-label={`Focus time for row ${current * pageSize + i + 1}`} disabled={!valid} title={valid ? "Focus dashboard on this recorded interval" : "This row needs a valid start and duration within 31 days"} onClick={() => applyTime({ start: from, end: to })}>Focus time</button></td>
+                    return <td><GammaButton size="sm" variant="quiet" type="button" aria-label={`Focus time for row ${current * pageSize + i + 1}`} disabled={!valid} title={valid ? "Focus dashboard on this recorded interval" : "This row needs a valid start and duration within 31 days"} onClick={() => applyTime({ start: from, end: to })}>Focus time</GammaButton></td>
                   })()}
                 </tr>
               ))}
           </tbody>
-        </table>
+        </ChartTable>
         {!rows.length && (
           <p className={styles.note}>No records match this filter.</p>
         )}
       </div>
       {horizontalOverflow && <div id={overflowHintId} className={styles.scrollHint}><ArrowRight size={12} aria-hidden="true" /> Scroll horizontally to see more columns</div>}
       {activeCell && activeColumn && <ObservationTooltip id={cellTooltipId} anchor={activeCell.anchor} className={styles.recordTooltip} avoidWidget pinned={activeCell.pinned} role={activeCell.pinned ? "region" : "tooltip"} ariaLabel={activeCell.pinned ? "Record cell details" : undefined} tabIndex={activeCell.pinned ? 0 : undefined} panelRef={element => { cellPanel.current = element }} onDismiss={() => { if (cellPanel.current?.contains(document.activeElement)) activeCell.anchor.focus({ preventScroll: true }); hideCell() }} onEnter={() => { cellInteraction.current.panel = true; clearCellHide() }} onLeave={() => { cellInteraction.current.panel = false; scheduleCellHide() }}>
-        <div className={styles.recordCellDetails}><strong>{activeColumn.label ?? activeColumn.key}</strong><span>{formattedValue}</span>{typeof activeValue === "number" && Number.isFinite(activeValue) && <small>Recorded value: {String(activeValue)}</small>}{history?.state === "valid" && <small>{history.points.length} recorded {history.points.length === 1 ? "sample" : "samples"} · latest {new Date(history.points[history.points.length - 1].timestamp).toLocaleString()}</small>}{history?.state === "invalid" && <small>History must be an ordered JSON array of timestamped numeric or null observations.</small>}{cellMeaning && <small>{cellMeaning}</small>}{activeCell.pinned && <button type="button" onClick={() => { activeCell.anchor.focus({ preventScroll: true }); hideCell() }}>Close</button>}</div>
+        <TooltipDetail title={activeColumn.label ?? activeColumn.key}>
+          <span className={styles.recordCellValue}>{formattedValue}</span>
+          {typeof activeValue === "number" && Number.isFinite(activeValue) && <TooltipFact label="Recorded value">{String(activeValue)}</TooltipFact>}
+          {history?.state === "valid" && <small>{history.points.length} recorded {history.points.length === 1 ? "sample" : "samples"} · latest {new Date(history.points[history.points.length - 1].timestamp).toLocaleString()}</small>}
+          {history?.state === "invalid" && <small>History must be an ordered JSON array of timestamped numeric or null observations.</small>}
+          {cellMeaning && <small>{cellMeaning}</small>}
+          {activeCell.pinned && <GammaButton size="sm" variant="quiet" type="button" onClick={() => { activeCell.anchor.focus({ preventScroll: true }); hideCell() }}>Close</GammaButton>}
+        </TooltipDetail>
       </ObservationTooltip>}
       {(frame.truncated || !embedded && rows.length > pageSize) && <Note frame={frame}>
         {!embedded && rows.length > pageSize && (
           <>
-            <button
+            <GammaButton size="sm" variant="quiet"
               type="button"
               disabled={current === 0}
               onClick={() => { hideCell(); setPage(current - 1) }}
             >
               Previous
-            </button>
+            </GammaButton>
             <span>
               Page {current + 1} of {Math.ceil(rows.length / pageSize)}
             </span>
-            <button
+            <GammaButton size="sm" variant="quiet"
               type="button"
               disabled={(current + 1) * pageSize >= rows.length}
               onClick={() => { hideCell(); setPage(current + 1) }}
             >
               Next
-            </button>
+            </GammaButton>
           </>
         )}
       </Note>}
@@ -651,14 +662,12 @@ export function RecordTreemap({
       </svg>
       {active && <ObservationTooltip id={`${missingPattern}-details`} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss}
         onEnter={() => { interaction.current.panel = true; clearHide() }} onLeave={() => { interaction.current.panel = false; scheduleHide() }}>
-        <div className={styles.treeTooltip}>
-          <strong>{active.name}</strong>
-          <dl><div><dt>{active.sizeLabel}</dt><dd data-treemap-observation={active.sizeRaw}>{active.sizeValue}</dd></div>
-            {active.groupLabel && <div><dt>{active.groupLabel}</dt><dd>{active.groupValue}</dd></div>}
-            {active.colorLabel && <div><dt>{active.colorLabel}</dt><dd data-treemap-color-observation={active.colorRaw === null ? "missing" : active.colorRaw}>{active.colorValue}</dd></div>}
-          </dl>
-          <small>{active.pinned ? "Pinned · select again to close" : "Click or press Enter to keep open"}</small>
-        </div>
+        <TooltipDetail title={active.name}>
+          <TooltipFact label={active.sizeLabel}><span data-treemap-observation={active.sizeRaw}>{active.sizeValue}</span></TooltipFact>
+          {active.groupLabel && <TooltipFact label={active.groupLabel}>{active.groupValue}</TooltipFact>}
+          {active.colorLabel && <TooltipFact label={active.colorLabel}><span data-treemap-color-observation={active.colorRaw === null ? "missing" : active.colorRaw}>{active.colorValue}</span></TooltipFact>}
+        </TooltipDetail>
+        <TooltipHint>{active.pinned ? "Pinned · select again to close" : "Click or press Enter to keep open"}</TooltipHint>
       </ObservationTooltip>}
       {color >= 0 && <div className={styles.treeColorLegend} role="group" aria-label="Treemap color scale">
         <span>{frame.columns[color].label ?? frame.columns[color].key}</span>
@@ -722,7 +731,7 @@ export function RecordMatrix({
         role="region"
         aria-label={`${widget.title} matrix`}
       >
-        <table className={styles.matrix}>
+        <ChartTable className={styles.matrix}>
           <thead>
             <tr>
               <th />
@@ -778,7 +787,7 @@ export function RecordMatrix({
               </tr>
             ))}
           </tbody>
-        </table>
+        </ChartTable>
       </div>
       <Note frame={frame}>
         <span>
@@ -834,6 +843,7 @@ export function registerRecordWidgetPlugins() {
         dataKind: "records",
         parseConfig: (config) => entry.schema.parse(config ?? {}),
         ...(entry.id === "record-table" ? {
+          sizing: { mode: "fill", minHeight: 240 },
           defaultConfig: { density: "comfortable", showSearch: true },
           styleControls: ["decimals", "color", "tooltips"] as const,
           configFields: [

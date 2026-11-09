@@ -103,6 +103,7 @@
   margin-top: 2px;
 }
 .heatmapTooltip {
+  --tooltip-gutter: 14px;
   position: fixed;
   /* Placement measures immediately after writing left/top. The global reduced-
      motion duration must not activate the initial transition-property: all. */
@@ -132,17 +133,28 @@
   display: flex;
   justify-content: flex-end;
   gap: 4px;
-  padding: 4px 6px 0;
+  padding: 6px 10px 0;
 }
-.heatmapTooltip[data-inspector-minimized] .tooltipCompactControls { padding: 4px 6px; }
+.heatmapTooltip[data-inspector-minimized] .tooltipCompactControls { padding: 6px 10px; }
+.tooltipToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px var(--tooltip-gutter, 14px) 0;
+  color: var(--gamma-muted);
+  font-size: 11px;
+}
+.tooltipToolbar button { flex-shrink: 0; }
 @media (pointer: coarse) {
   .tooltipCompactControls button[data-gamma-button] { min-height: 44px; }
+  .tooltipToolbar button[data-gamma-button] { min-height: 44px; min-width: 44px; }
 }
 .tooltipHeader {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 10px 12px 0;
+  padding: 12px var(--tooltip-gutter, 14px) 0;
 }
 .tooltipHeader[data-tooltip-compact] .tooltipTitle {
   overflow: hidden;
@@ -151,6 +163,8 @@
 }
 .tooltipVisuallyHidden {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   padding: 0;
@@ -172,13 +186,20 @@
   font-weight: 600;
   color: var(--gamma-ink, #27332e);
 }
+.tooltipSeries {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--gamma-muted);
+}
 .tooltipKeyHint {
   color: var(--gamma-muted, #626e65);
   font-size: 11px;
   line-height: 1.4;
 }
 .tooltipReading {
-  padding: 4px 12px 8px;
+  padding: 8px var(--tooltip-gutter, 14px) 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -208,8 +229,8 @@
   font-size: 11px;
 }
 .tooltipLabels {
-  margin: 0 12px;
-  padding: 6px 0 7px;
+  margin: 0 var(--tooltip-gutter, 14px);
+  padding: 8px 0;
   border-top: 1px solid var(--gamma-border, #dfe4db);
 }
 .tooltipLabels dl {
@@ -219,7 +240,7 @@
   display: grid;
   grid-template-columns: minmax(70px, 0.7fr) minmax(0, 1.3fr);
   gap: 10px;
-  margin-top: 2px;
+  margin-top: 6px;
 }
 .tooltipLabels dt {
   color: var(--gamma-muted, #626e65);
@@ -238,7 +259,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 2px 10px;
-  padding: 9px 12px 7px;
+  padding: 8px var(--tooltip-gutter, 14px);
   border-bottom: 1px solid var(--gamma-border, #dfe4db);
   color: var(--gamma-muted, #626e65);
   font-size: 10px;
@@ -250,7 +271,7 @@
   font-weight: 600;
 }
 .plotTooltipValues {
-  padding: 6px 8px 5px;
+  padding: 8px calc(var(--tooltip-gutter, 14px) - 4px);
   font-variant-numeric: tabular-nums;
 }
 .plotTooltipCaption {
@@ -284,8 +305,8 @@
   grid-template-columns: 8px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 23px;
-  padding: 1px 4px;
+  min-height: 26px;
+  padding: 3px 4px;
   border-radius: 3px;
 }
 .plotTooltipValues li i {
@@ -315,8 +336,8 @@
 }
 .tooltipActions {
   display: grid;
-  gap: 6px;
-  padding: 4px 12px 8px;
+  gap: 8px;
+  padding: 8px var(--tooltip-gutter, 14px) 12px;
 }
 .tooltipActionReason { margin: 4px 0 0; color: var(--gamma-muted); font-size: 11px; line-height: 1.4; }
 .tooltipActions button[data-gamma-button] {
@@ -329,10 +350,10 @@
 .tooltipFooter {
   border-top: 1px solid var(--gamma-border, #dfe4db);
   background: transparent;
-  padding: 6px 12px 7px;
+  padding: 9px var(--tooltip-gutter, 14px);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 /* Keep the scroll and dismissal guidance visible while long inspectors scroll. */
 .heatmapTooltip .tooltipFooter:has([data-tooltip-instructions]) {
@@ -697,17 +718,14 @@
 .tooltipSourceIdentity { font-family: var(--gamma-font-code, monospace); overflow-wrap: anywhere; padding-block: 4px; color: var(--gamma-muted); }
 /* The selected node/pod identity remains visible in a pinned compact inspector,
    without opening the full source disclosure and displacing its exact reading. */
-.tooltipSourceInline { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 3px; font-weight: 400; min-width: 0; }
-.tooltipSourceInline .tooltipSourceIdentity { display: block; padding-block: 0; font-size: 10px; }
-.tooltipSourceInlineRow { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 8px; min-width: 0; }
-.tooltipSourceInlineRow > span:first-child { font-size: 10px; color: var(--gamma-muted); }
-.tooltipSourceInlineRow > span:last-child { font: 10px/1.5 var(--gamma-font-code, monospace); overflow-wrap: anywhere; }
 
-.tooltipDetail { min-width: 180px; max-width: 320px; white-space: normal; }
-.tooltipDetailBody { padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; line-height: 1.5; }
-.tooltipFact { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 16px; }
-.tooltipFact > span { color: var(--gamma-muted); }
-.tooltipFact > strong { font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tooltipDetail { min-width: 0; white-space: normal; }
+.tooltipDetailBody { padding: 10px var(--tooltip-gutter, 14px) 14px; display: flex; flex-direction: column; gap: 10px; font-size: 12px; line-height: 1.5; }
+.tooltipDetailBody small { color: var(--gamma-muted); font-size: 11px; line-height: 1.5; }
+.tooltipFact { margin: 0; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: baseline; gap: 16px; }
+.tooltipFact > dt { color: var(--gamma-muted); }
+.tooltipFact > dd { margin: 0; min-width: 0; text-align: right; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tooltipSection { padding: 10px var(--tooltip-gutter, 14px); border-top: 1px solid var(--gamma-border); min-width: 0; }
 
 .tooltipHint, .tooltipHint > span {
   color: var(--gamma-muted, #626e65);

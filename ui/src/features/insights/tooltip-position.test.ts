@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { placeHeatmapTooltip, placeOutsideWidgetTooltip, placePlotTooltip, placeTooltip, readTooltipPlacement, tooltipLimit, type TooltipPlacement, type TooltipTarget, type TooltipViewport } from "./tooltip-position";
-import { placePointerTooltip } from "./tooltip-pointer";
 
 const point = (x: number, y: number) => ({ left: x, right: x, top: y, bottom: y });
 const pointer = (x: number, y: number): TooltipTarget => ({ kind: "pointer", point: { x, y } });
@@ -20,13 +19,11 @@ describe("shared observation tooltip positioning", () => {
     expect(edge.left + size.width).toBe(954);
   });
 
-  it("keeps the default pointer placement identical to the legacy pointer function across a grid of inputs", () => {
-    const sizes = [{ width: 40, height: 20 }, { width: 292, height: 160 }, { width: 330, height: 560 }, { width: 330, height: 900 }];
-    const viewports: TooltipViewport[] = [viewport, { width: 320, height: 260 }, { width: 275, height: 190, left: 73, top: 115 }];
-    for (const current of viewports) for (const size of sizes) for (let x = -20; x <= current.width + 40; x += 53) for (let y = -20; y <= current.height + 40; y += 47) {
-      const expected = placePointerTooltip({ x: x + (current.left ?? 0), y: y + (current.top ?? 0) }, size, current);
-      const actual = placeTooltip(pointer(x + (current.left ?? 0), y + (current.top ?? 0)), size, current);
-      expect(actual).toEqual({ left: expected.left, top: expected.top, placement: expected.placement, maxHeight: expected.maxHeight });
+  it("keeps a preview on the same side as query content grows or shrinks", () => {
+    for (const placement of [undefined, "top", "bottom"] as const) for (const y of [100, 350, 400, 650]) {
+      const positions = [20, 160, 380, 560, 900].map(height => placeTooltip(pointer(500, y), { width: 330, height }, viewport, { placement }));
+      expect(new Set(positions.map(position => position.placement)).size).toBe(1);
+      expect(new Set(positions.map(position => position.maxHeight)).size).toBe(1);
     }
   });
 

@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
 // Builder surface review. Deterministic normalized API fixtures isolate authored
@@ -7,7 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { activateDashboardAction, selectGammaOption } from "./gamma-controls.mjs"
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const baseline = process.argv.includes("--baseline")
@@ -66,7 +67,7 @@ async function capture(page, name, locator, fullPage = true) {
 async function metrics(locator) {
   return locator.evaluateAll(elements => elements.filter(element => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0).map(element => {
     const style = getComputedStyle(element), box = element.getBoundingClientRect()
-    return { text: (element.getAttribute("aria-label") || element.textContent).trim().slice(0, 100), tag: element.tagName, role: element.getAttribute("role"), width: box.width, height: box.height, padding: style.padding, paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), gap: style.gap, minWidth: style.minWidth, minHeight: style.minHeight, fontSize: style.fontSize, lineHeight: style.lineHeight, color: style.color, background: style.backgroundColor, outline: style.outline, boxShadow: style.boxShadow, disabled: element.matches(":disabled"), opacity: style.opacity, iconWithText: !!element.querySelector("svg") && !!element.textContent.trim() }
+    return { text: (element.getAttribute("aria-label") || element.textContent).trim().slice(0, 100), tag: element.tagName, role: element.getAttribute("role"), width: box.width, height: box.height, padding: style.padding, paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), gap: style.gap, minWidth: style.minWidth, minHeight: style.minHeight, fontSize: style.fontSize, lineHeight: style.lineHeight, color: style.color, background: style.backgroundColor, outline: style.outline, boxShadow: style.boxShadow, disabled: element.matches(":disabled"), opacity: style.opacity, iconWithText: !!element.querySelector("svg") && !!element.textContent.trim() && style.flexDirection !== "column" }
   }))
 }
 async function switches(panel) {
@@ -77,7 +78,8 @@ async function switches(panel) {
   }))
 }
 async function textContrast(panel) {
-  return panel.locator("h1,h2,h3,p,label,summary,button,small,strong,legend,code,input,textarea,[contenteditable=true]").evaluateAll(elements => {
+  // Native switch/color values are not rendered text; their visible labels are audited separately.
+  return panel.locator('h1,h2,h3,p,label,summary,button,small,strong,legend,code,input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),textarea,[contenteditable=true]').evaluateAll(elements => {
     const canvas = document.createElement("canvas"); canvas.width = canvas.height = 1
     const context = canvas.getContext("2d", { willReadFrequently: true })
     const rgb = color => { context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data] }
@@ -100,7 +102,7 @@ async function surfaceAudit(width) {
   const record = { name: "builder surface geometry and control states", width, measurements: {}, contrast: {}, popups: {} }
   try {
     await capture(page, `workspace-${width}`)
-    const toolbar = page.getByRole("button", { name: "Manage dashboards", exact: true }).locator("..")
+    const toolbar = page.getByRole("button", { name: "Edit dashboard", exact: true }).locator("..")
     await capture(page, `toolbar-${width}`, toolbar)
     record.measurements.toolbar = await metrics(toolbar.getByRole("button"))
     record.contrast.toolbar = await textContrast(toolbar)
@@ -147,13 +149,13 @@ async function surfaceAudit(width) {
     await page.keyboard.press("Tab"); await page.keyboard.press("Shift+Tab")
     await capture(page, `switch-focused-${width}`, toggle.locator(".."))
     record.measurements.switchFocus = await switches(editor)
-    await editor.getByRole("button", { name: "Close widget editor", exact: true }).click()
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     for (const [opener, region, close, name] of [
       ["Manage dashboards", "Manage dashboards", "Close dashboard manager", "manage"],
       ["Code", "Dashboard source editor", "Close source editor", "code"],
       ["Build with AI", "Build with AI", "Close AI builder", "ai"],
     ]) {
-      await page.getByRole("button", { name: opener, exact: true }).click()
+      await activateDashboardAction(page, opener)
       const panel = page.getByRole("region", { name: region, exact: true })
       await capture(page, `${name}-${width}`, panel)
       record.measurements[name] = await metrics(panel.locator("button,input,textarea,[contenteditable=true]"))
@@ -217,6 +219,7 @@ async function widgetEditor(page, title) {
   const panel = page.getByRole("region", { name: "Widget editor", exact: true }); await panel.waitFor(); return panel
 }
 async function save(page) {
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
   await page.getByText("All changes saved", { exact: true }).waitFor()
 }
@@ -262,7 +265,7 @@ async function queryAudit(width) {
     await panel.getByLabel("Query preview", { exact: true }).waitFor()
     assert.ok(queries.some(item => item.query === generated))
     await capture(page, `query-preview-${width}`, panel)
-    await panel.getByRole("button", { name: "Close widget editor", exact: true }).click()
+    await panel.getByRole("button", { name: "Apply changes", exact: true }).click()
     await save(page)
     assert.equal(documents.get(dashboard.id).widgets[0].query, generated)
     return { generated, livePreviewRequests: queries.length - before, errorRetainedDraft: true, noApplyRequired: true, saved: true }
@@ -328,8 +331,7 @@ async function tooltipAuthoring(width) {
     await panel.getByRole("switch", { name: "Show tooltips", exact: true }).check()
     assert.match(await panel.getByRole("combobox", { name: "Tooltip chart height", exact: true }).innerText(), /Expanded/)
     const before = queries.filter(query => query.query === "service_health").length
-    await panel.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await panel.getByRole("button", { name: "Close widget editor", exact: true }).click()
+    await panel.getByRole("button", { name: "Apply changes", exact: true }).click()
     await save(page)
     const initial = { type: "timeseries", height: 200, showGrid: false, showAxis: false }
     assert.deepEqual(documents.get(dashboard.id).widgets[1].options.tooltipView, initial)
@@ -350,7 +352,7 @@ async function tooltipAuthoring(width) {
     await source.waitFor({ state: "hidden" }); await save(page)
     assert.equal(documents.get(dashboard.id).widgets[1].options.tooltipView.height, 200)
     const aiDocument = structuredClone(documents.get(dashboard.id)); aiDocument.widgets[1].options.tooltipView.height = 160
-    await page.getByRole("button", { name: "Build with AI", exact: true }).click()
+    await activateDashboardAction(page, "Build with AI")
     const ai = page.getByRole("region", { name: "Build with AI", exact: true })
     assert.equal(await ai.getByRole("button", { name: "Apply to canvas", exact: true }).isDisabled(), true)
     await ai.getByRole("textbox", { name: "AI-generated definition", exact: true }).fill(toOpenUI(aiDocument))
@@ -411,7 +413,20 @@ async function tooltipInteraction(width) {
     if (width < 600) {
       await first.tap(); await history.waitFor()
       for (const viewport of [{ width: 320, height: 600 }, { width: 844, height: 390 }]) {
+        const canvas = page.getByTestId("dashboard-canvas")
+        const previousMode = await canvas.getAttribute("data-layout-mode")
         await page.setViewportSize(viewport)
+        await page.waitForFunction(() => {
+          const canvas = document.querySelector('[data-testid="dashboard-canvas"]')
+          const width = canvas.getBoundingClientRect().width
+          return canvas.dataset.layoutMode === (width >= 960 ? "wide" : width >= 600 ? "compact" : "stacked")
+        })
+        if (await canvas.getAttribute("data-layout-mode") !== previousMode) {
+          // A layout-mode change remounts tiles and dismisses their old anchors.
+          // Reopen the same cached observation in the new layout.
+          await tip.waitFor({ state: "hidden" })
+          await first.scrollIntoViewIfNeeded(); await first.tap(); await history.waitFor()
+        }
         await page.waitForFunction(() => {
           const tip = document.querySelector('[role="tooltip"]')
           if (!tip) return false

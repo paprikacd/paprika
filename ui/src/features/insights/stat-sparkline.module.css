@@ -58,6 +58,9 @@
 /* Compact KPI cards keep the trend legible alongside the actual reading. */
 .withSparkline[data-sparkline-placement="side"] {
   display: grid;
+  /* The SVG's intrinsic aspect ratio must not set the row's flex basis. */
+  flex: 1 1 0;
+  min-height: 0;
   grid-template-columns: minmax(0, auto) minmax(48px, 1fr);
   gap: 10px;
   align-items: center;

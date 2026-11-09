@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Renderer and editor integration with deterministic provider fixtures.
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
@@ -35,13 +36,13 @@ try {
         await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
         await tile.getByRole("button", { name: "Edit Company composition by market cap", exact: true }).click();
         const editor = page.getByRole("region", { name: "Widget editor", exact: true });
-        await editor.getByRole("tab", { name: "Query", exact: true }).click();
+        await editor.getByRole("tab", { name: "Options", exact: true }).click();
         assert.equal(await editor.getByLabel("Area field").inputValue(), "market_cap");
         assert.equal(await editor.getByLabel("Color field").inputValue(), "short_interest");
         await editor.getByLabel("Color minimum").fill("0");
         await editor.getByLabel("Color maximum").fill("10");
-        await editor.getByRole("button", { name: "Apply widget", exact: true }).click();
-        await editor.getByRole("button", { name: "Close widget editor", exact: true }).click();
+        await editor.getByRole("button", { name: "Apply changes", exact: true }).click();
+        await applyWidgetChanges(page);
         await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
         await page.getByText("All changes saved", { exact: true }).waitFor();
         await page.reload({ waitUntil: "networkidle" });

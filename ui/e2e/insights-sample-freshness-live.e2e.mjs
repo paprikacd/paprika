@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Exercise optional returned-sample age through the real editor, Insights
 // persistence and the local Prometheus/Observe path. Only unique local
 // dashboards are written and each is deleted with its current ETag.
@@ -38,8 +39,9 @@ try {
       await editor.getByRole("tab", { name: "Style" }).click();
       await editor.getByRole("spinbutton", { name: "Warn when last valid sample is older than (seconds)" }).fill("300");
       await tile.locator("[data-stale-observation]").waitFor();
-      await editor.getByRole("button", { name: "Apply widget" }).click();
+      await editor.getByRole("button", { name: "Apply changes" }).click();
       const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${id}` && response.ok());
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
       await write;
       const savedResponse = await api(`/api/insights/dashboards/${id}`), saved = await savedResponse.json();

@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Real Insights service + deterministic Prometheus, bridged into the static UI.
 import assert from "node:assert/strict"
@@ -96,8 +97,8 @@ try {
     await editor().getByLabel("Link 1 title", { exact: true }).fill("Open service detail")
     await selectGammaOption(page, editor().getByRole("combobox", { name: "Link 1 destination", exact: true }), /^Service detail/)
     await editor().getByRole("button", { name: "Add variable binding to link 1", exact: true }).click()
-    await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-    await editor().getByRole("button", { name: "Close widget editor" }).click()
+    await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByText("All changes saved", { exact: true }).waitFor()
     const saved = await get("fleet")
@@ -148,6 +149,7 @@ try {
     await respondToGammaConfirmation(page, "Cancel")
     assert.equal(await page.getByLabel("Dashboard title", { exact: true }).inputValue(), "Service detail revised")
     assert.equal(new URL(page.url()).searchParams.get("dashboard"), "service-detail")
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByRole("heading", { name: "Service detail revised", exact: true }).waitFor()
     const saved = await get("service-detail")

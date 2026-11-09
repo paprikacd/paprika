@@ -72,7 +72,7 @@ try {
   }
   const selected = process.argv.slice(2)
   for (const script of selected) {
-    if (!/^e2e\/insights(?:-[a-z-]+)?\.e2e\.mjs$/.test(script)) throw new Error("Select an Insights E2E script under e2e/")
+    if (!/^e2e\/insights(?:-[a-z0-9-]+)?\.e2e\.mjs$/.test(script)) throw new Error("Select an Insights E2E script under e2e/")
   }
   const scripts = selected.length ? selected : [
     "e2e/insights.e2e.mjs",
@@ -81,11 +81,13 @@ try {
     "e2e/insights-live.e2e.mjs",
     "e2e/insights-lazy-widget.e2e.mjs",
     "e2e/insights-live-editing.e2e.mjs",
+    "e2e/insights-editor-focus.e2e.mjs",
     "e2e/insights-drilldown.e2e.mjs",
     "e2e/insights-variable-filter.e2e.mjs",
     "e2e/insights-widget-audit.e2e.mjs",
     "e2e/insights-builder.e2e.mjs",
     "e2e/insights-tooltip-query.e2e.mjs",
+    "e2e/insights-tooltip-motion.e2e.mjs",
     "e2e/insights-tooltip-peers.e2e.mjs",
     "e2e/insights-observation-drilldown.e2e.mjs",
     "e2e/insights-explorer.e2e.mjs",
@@ -105,11 +107,16 @@ try {
     "e2e/insights-compact-stat.e2e.mjs",
     "e2e/insights-legend-layout.e2e.mjs",
     "e2e/insights-presentation.e2e.mjs",
+    "e2e/insights-polish.e2e.mjs",
     "e2e/insights-reference-dashboards.e2e.mjs",
     "e2e/insights-source-provenance.e2e.mjs",
     "e2e/insights-record-charts.e2e.mjs",
     "e2e/insights-record-sparkline.e2e.mjs",
     "e2e/insights-geo-heatmap.e2e.mjs",
+    "e2e/insights-hex-contour.e2e.mjs",
+    "e2e/insights-chart-system.e2e.mjs",
+    "e2e/insights-edit-performance.e2e.mjs",
+    "e2e/insights-tooltip-structure.e2e.mjs",
     "e2e/insights-geo-interaction.e2e.mjs",
     "e2e/insights-connection-glow.e2e.mjs",
     "e2e/insights-series-colors.e2e.mjs",

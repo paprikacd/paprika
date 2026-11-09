@@ -471,6 +471,12 @@ jobs:
           e2e/insights-repository-examples.e2e.mjs
           e2e/insights-record-charts.e2e.mjs
           e2e/insights-rich-charts.e2e.mjs
+          e2e/insights-chart-system.e2e.mjs
+          e2e/insights-editor-focus.e2e.mjs
+          e2e/insights-edit-performance.e2e.mjs
+          e2e/insights-tooltip-structure.e2e.mjs
+          e2e/insights-tooltip-motion.e2e.mjs
+          e2e/insights-hex-contour.e2e.mjs
         working-directory: ui
         env:
           INSIGHTS_POLISH_OUTPUT: ${{ github.workspace }}/artifacts/insights/dashboard-polish
@@ -497,6 +503,12 @@ jobs:
             artifacts/insights/repository-examples/browser
             artifacts/insights/record-charts
             artifacts/insights/rich-charts
+            artifacts/insights/editor-focus
+            artifacts/insights/chart-system
+            artifacts/insights/edit-performance
+            artifacts/insights/tooltip-structure
+            artifacts/insights/tooltip-motion
+            artifacts/insights/hex-contour
             artifacts/insights/dashboard-polish
             artifacts/insights/presentation
             artifacts/insights/reference-dashboards

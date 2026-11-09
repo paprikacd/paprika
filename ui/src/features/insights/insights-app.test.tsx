@@ -1,4 +1,5 @@
 import { changeQueryEditor } from "./query-code-editor.test-utils";
+import type { ReactNode } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
@@ -9,7 +10,7 @@ import { EXAMPLE_SAVED_QUERIES_KEY } from "./saved-query-storage"
 import { serializeDashboardLibrary } from "./workspace-transfer"
 
 vi.mock("./canvas", () => ({
-  DashboardCanvas: () => <div data-testid="mock-canvas" />,
+  DashboardCanvas: ({ focus }: { focus?: { render: (preview: ReactNode) => ReactNode } }) => focus ? focus.render(<div data-testid="mock-canvas" />) : <div data-testid="mock-canvas" />,
 }))
 
 // Deliberately use a different object-key order from the canonical Zod output.
@@ -96,7 +97,7 @@ describe("Insights application state", () => {
     expect(api.query).not.toHaveBeenCalled()
   }, 10000) // Includes a cold lazy import and two complete workspace transitions.
 
-  it("preserves an unapplied widget editor draft when returning from Explore through sidebar Dashboards", async () => {
+  it("preserves a focused widget draft when returning from query creation through sidebar Dashboards", async () => {
     const api=client();
     vi.mocked(api.providers).mockResolvedValue([{id:"metrics",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]);
     render(<InsightsApp client={api}/>);
@@ -105,11 +106,15 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("button",{name:"Add your first widget"}));
     fireEvent.click(screen.getByRole("button",{name:/^Time series/}));
     fireEvent.change(screen.getByLabelText("Title"),{target:{value:"Retained unapplied widget draft"}});
-    fireEvent.click(screen.getByRole("button",{name:/^Explore \d+$/}));
+    expect(screen.queryByRole("complementary", { name: "Insights navigation" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use saved query" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create saved query" }));
     await screen.findByLabelText("Query name");
     fireEvent.click(screen.getByRole("button",{name:/^Dashboards \d+$/}));
-    expect(screen.getByLabelText("Title")).toHaveValue("Retained unapplied widget draft");
-    expect(screen.getByRole("button",{name:"Apply widget"})).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("Retained unapplied widget draft");
+    expect(screen.getByRole("button",{name:"Apply changes"})).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Retained unapplied widget draft" })).toHaveFocus();
   });
 
   it("creates a saved query from a fresh tooltip and returns to the same unapplied tooltip draft", async () => {
@@ -150,7 +155,7 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Tooltip saved query" }))
     fireEvent.click(await screen.findByRole("option", { name: /Created from tooltip/ }))
     expect(screen.getByLabelText("Tooltip saved query template")).toHaveValue("sum(rate(http_requests_total[5m]))")
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }))
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }))
     fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
     await waitFor(() => expect(api.save).toHaveBeenCalledOnce())
     const persisted = vi.mocked(api.save).mock.calls[0][0]

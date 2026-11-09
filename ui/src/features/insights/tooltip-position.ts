@@ -234,7 +234,7 @@ export function outsideTooltipWidthLimit(widget: Pick<TooltipRectangle, "left" |
     : Math.max(0, Math.min(right - left, options.maxWidth ?? Infinity));
 }
 
-/** Pointer previews: the lower-right quadrant by default, flipped at the viewport edges, with a gap from the pointer. */
+/** Choose room for the full height cap, so asynchronous content cannot flip a preview across the pointer. */
 export function placePointerPosition(point: { x: number; y: number }, size: TooltipSize, viewport: TooltipViewport, options: TooltipPlacementOptions = {}): TooltipPosition & { maxHeight: number } {
   const margin = 12;
   const gap = options.offset ?? 16;
@@ -245,10 +245,12 @@ export function placePointerPosition(point: { x: number; y: number }, size: Tool
   const useRight = options.placement === "left" ? !fitsLeft : fitsRight || !fitsLeft;
   const x = Math.max(left, Math.min(useRight ? rightPosition : leftPosition, right - size.width));
   const above = Math.max(0, point.y - gap - top), below = Math.max(0, bottom - point.y - gap);
-  const aboveFits = size.height <= above, belowFits = size.height <= below;
+  const minimum = Math.min(64, heightCap(options));
   const useBelow = options.placement === "top"
-    ? !aboveFits && (belowFits || below >= above)
-    : belowFits || (!aboveFits && below >= above);
+    ? above < minimum && below > above
+    : options.placement === "bottom"
+      ? below >= minimum || below >= above
+      : below >= Math.min(heightCap(options), above);
   const maxHeight = Math.min(heightCap(options), useBelow ? below : above);
   const y = useBelow ? point.y + gap : point.y - gap - Math.min(size.height, maxHeight);
   return { left: x, top: y, placement: `pointer-${useBelow ? "bottom" : "top"}-${useRight ? "right" : "left"}`, maxHeight };

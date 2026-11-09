@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 
 /** Focus follows explicit panel/widget transitions, never typing or viewport changes. */
-export function useBuilderPanelFocus(identity: string | null) {
+export function useBuilderPanelFocus(identity: string | null, restoreTarget?: () => HTMLElement | null) {
   const panel = useRef<HTMLElement>(null)
   const previousIdentity = useRef<string | null>(null)
   const opener = useRef<HTMLElement | null>(null)
@@ -10,11 +10,11 @@ export function useBuilderPanelFocus(identity: string | null) {
     const wasOpen = previousIdentity.current !== null
     previousIdentity.current = identity
     if (identity === null) {
-      const target = opener.current
+      const target = opener.current?.isConnected ? opener.current : restoreTarget?.()
       opener.current = null
       if (
         target?.isConnected &&
-        !target.closest("[inert]") &&
+        !target.closest("[inert], [hidden]") &&
         !target.matches(":disabled")
       )
         target.focus()
@@ -39,6 +39,6 @@ export function useBuilderPanelFocus(identity: string | null) {
     target.focus({ preventScroll: true })
     if (window.matchMedia("(max-width: 1100px)").matches)
       element.scrollIntoView?.({ block: "start", behavior: "auto" })
-  }, [identity])
+  }, [identity, restoreTarget])
   return panel
 }

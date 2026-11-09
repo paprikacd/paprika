@@ -8,6 +8,9 @@ import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, form
 import { useDashboardTimeZone } from "../dashboard-time-zone";
 import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
 import { GammaButton } from "../gamma/button";
+import { ObservationDrilldowns } from "../observation-drilldowns";
+import { TooltipHint, TooltipSection } from "../tooltip-content";
+import { TooltipInstructions } from "../tooltip-instructions";
 import { StatSparkline } from "../stat-sparkline";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation";
@@ -15,6 +18,7 @@ import { useChartCursor, useChartCursorPublisher } from "../chart-cursor";
 import { compactSeriesLabels } from "../series-display";
 import { validTimestamp } from "../widget-context";
 import { useAnnotationEvents } from "../annotation-events";
+import { ChartEvents } from "../chart-events";
 import { TimeWindowLens } from "../time-window-lens";
 import { useTooltipWidgetData } from "../tooltip-widget-data";
 import { useTooltipDismiss } from "../tooltip-dismiss";
@@ -37,7 +41,7 @@ import chartEntrance from "../chart-entrance.module.css";
 
 const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 // The 24-step heat ramp, lowest density first. Fallbacks are the light-theme values.
-const densityPalette = ["var(--gamma-density-0, #13a0ab)", "var(--gamma-density-1, #119ca5)", "var(--gamma-density-2, #0f979f)", "var(--gamma-density-3, #0d939a)", "var(--gamma-density-4, #0a8f94)", "var(--gamma-density-5, #088a8e)", "var(--gamma-density-6, #068689)", "var(--gamma-density-7, #078187)", "var(--gamma-density-8, #087d84)", "var(--gamma-density-9, #087881)", "var(--gamma-density-10, #09747e)", "var(--gamma-density-11, #096f7b)", "var(--gamma-density-12, #096a79)", "var(--gamma-density-13, #086576)", "var(--gamma-density-14, #076073)", "var(--gamma-density-15, #065b70)", "var(--gamma-density-16, #05556d)", "var(--gamma-density-17, #03506b)", "var(--gamma-density-18, #034b67)", "var(--gamma-density-19, #024663)", "var(--gamma-density-20, #02415f)", "var(--gamma-density-21, #013d5b)", "var(--gamma-density-22, #013857)", "var(--gamma-density-23, #003353)"];
+import { densityPalette } from "../density-palette";
 /** Histogram rows with at most this many buckets are shown while hovering; pinned rows always show them. */
 const hoverHistogramLimit = 12;
 /** Bar-mode caps are fixed-size and never encode a value. One per incomplete column, a gap above the partial stack. */
@@ -161,22 +165,23 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
 
 function Inspector({ widget, observation, peers, extra, footer, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; extra?: ReactNode; footer?: ReactNode; pinned: boolean; decimals?: number; onPin: () => void; onClose: (reason?: TooltipDismissReason) => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
   return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} options={readTooltipPlacement(widget.options)} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
-    <div className={styles.inspectorActions}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={() => onClose("close")}><X size={14} /></GammaButton></div>
+    <div className={tooltipStyles.tooltipToolbar}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={() => onClose("close")}><X size={14} /></GammaButton></div>
     <div className={styles.inspectorDetails} data-observation-details>
       <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}
-        showSourceContext={pinned && Object.keys(observation.series.labels).length <= 4 && typeof observation.series.labels.pod === "string"}>
+        seriesLabel={peers?.[observation.row]?.display ?? observation.name}>
         {observation.bucket && <span className={tooltipStyles.tooltipEyebrow}>Selected bucket: {observation.bucket}</span>}
       </MetricDetails>
     </div>
-    {peers && peers.length > 1 && <ul aria-label="Series at selected time" className={styles.inspectorPeers}>
+    {peers && peers.length > 1 && <TooltipSection><ul aria-label="Series at selected time" className={styles.inspectorPeers}>
       {peers.map((peer, index) => <li key={index} data-series-index={index} data-series-name={peer.name} data-series-value={peer.value === null ? "missing" : peer.value}><i aria-hidden="true" style={{ background: peer.color }} /><LegendName name={peer.name} display={peer.display} /><b>{peer.value === null ? "No observation" : formatMetric(peer.value, observation.unit, false, decimals)}</b></li>)}
-    </ul>}
-    {extra}
-    {observation.note && <p className={styles.note}>{observation.note}</p>}
-    {pinned && <div className={styles.history}><StatSparkline series={observation.series} name={observation.name} color={observation.color} unit={observation.unit} /></div>}
-    {footer}
-    {!pinned && <span className={styles.pinHint}>Click or tap chart to pin details</span>}
-    <GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />{pinned ? "Unpin observation" : "Pin observation"}</GammaButton>
+    </ul></TooltipSection>}
+    {extra && <TooltipSection>{extra}</TooltipSection>}
+    {observation.note && <TooltipSection><p className={styles.note}>{observation.note}</p></TooltipSection>}
+    {pinned && <ObservationDrilldowns widget={widget} context={{ series: observation.name, labels: observation.series.labels, value: observation.value, timestamp: observation.timestamp }} />}
+    {pinned && <TooltipSection><div className={styles.history}><StatSparkline series={observation.series} name={observation.name} color={observation.color} unit={observation.unit} /></div></TooltipSection>}
+    {footer && <TooltipSection>{footer}</TooltipSection>}
+    <div className={tooltipStyles.tooltipActions}><GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />{pinned ? "Unpin observation" : "Pin observation"}</GammaButton></div>
+    <TooltipHint>{pinned ? <TooltipInstructions /> : "Click or tap chart to pin details"}</TooltipHint>
   </ObservationTooltip>;
 }
 
@@ -195,13 +200,17 @@ function LegendName({ name, display }: { name: string; display: string }) {
 
 function SeriesLegend({ children, revision, table = false }: { children: ReactNode; revision: string; table?: boolean }) {
   const ref = useRef<HTMLDivElement>(null), hint = useId();
-  const [overflow, setOverflow] = useState(false);
+  const [scrollAxes, setScrollAxes] = useState({ horizontal: false, vertical: false });
+  const overflow = scrollAxes.horizontal || scrollAxes.vertical;
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
     let cancelled = false;
     const measure = () => {
-      if (!cancelled) setOverflow((element.clientHeight > 0 && element.scrollHeight > element.clientHeight + 1) || (element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1));
+      if (cancelled) return;
+      const horizontal = element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1;
+      const vertical = element.clientHeight > 0 && element.scrollHeight > element.clientHeight + 1;
+      setScrollAxes(previous => previous.horizontal === horizontal && previous.vertical === vertical ? previous : { horizontal, vertical });
     };
     measure();
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
@@ -214,7 +223,7 @@ function SeriesLegend({ children, revision, table = false }: { children: ReactNo
     <div ref={ref} className={`${styles.legend} ${table ? styles.legendTableScroll : ""}`} role="region" aria-label={table ? "Series statistics" : "Latest recorded values"} tabIndex={overflow ? 0 : undefined} aria-describedby={overflow ? hint : undefined}>
       {children}
     </div>
-    {overflow && <p className={styles.legendHint} id={hint}>{table ? "Scroll to see all statistics" : "Scroll to see all series"} <span aria-hidden="true">↕</span></p>}
+    {overflow && <p className={styles.legendHint} id={hint}>{table ? "Scroll to see all statistics" : "Scroll to see all series"} <span aria-hidden="true">{scrollAxes.horizontal ? "↔" : ""}{scrollAxes.vertical ? "↕" : ""}</span></p>}
   </div>;
 }
 
@@ -435,7 +444,6 @@ function segments(cells: MetricCell[]) {
 function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const timeZone = useDashboardTimeZone();
   const timestampFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
-  const eventTimeFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }), [timeZone]);
   const { widget, result, directional } = props;
   const config = useMemo(() => directional ? directionalConfigSchema.parse(widget.config ?? {}) : stackedConfigSchema.parse(widget.config ?? {}), [directional, widget.config]);
   const signature = JSON.stringify([widget.id, config, widget.unit, widget.options, directional]);
@@ -658,16 +666,19 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
       {prior.map(entry => <span key={entry.index} data-prior-original-first={entry.original.points[0]?.timestamp} data-prior-aligned-first={entry.shifted.points[0]?.timestamp}><i aria-hidden="true" style={{ borderColor: color(entry.index) }} />{entry.original.name ?? Object.entries(entry.original.labels).map(([key, value]) => `${key}=${value}`).join(", ")}</span>)}
       {selection?.previous?.truncated && <span>Partial prior result</span>}
     </div>}
+    <div className={styles.chartFooter} data-metric-footer>
+    {!props.embedded && !embeddedChart && <ChartEvents events={annotations} />}
     {!props.embedded && !embeddedChart && <div className={styles.comparisonActions}>
       <TimeWindowLens title={widget.title} series={fullSeries} unit={widget.unit} decimals={widget.options?.decimals} zoom={zoom} onZoom={window => setSelection({ source: result, window })} onOverlay={(window, previous) => setSelection({ source: result, window, previous })} onReset={() => setSelection(undefined)} canOverlay={canOverlay} overlayUnavailable={directional ? undefined : "A previous stacked boundary requires every displayed series to match uniquely and contain recorded values."} />
       {prior.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={prior.map(entry => entry.original)} buttonText="Inspect prior data" />}
     </div>}
-    {annotations.length > 0 && !props.embedded && !embeddedChart && <details className={styles.annotationEvents} role="group" aria-label="Chart events"><summary>{annotations.length} {annotations.length === 1 ? "event" : "events"} in view</summary><ul>{annotations.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={styles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.at).toISOString()}>{eventTimeFormat.format(new Date(event.at))}</time>{event.endAt !== undefined && <time dateTime={new Date(event.endAt).toISOString()}>to {eventTimeFormat.format(new Date(event.endAt))}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
+
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && inView.length > queried.length && <p>{inView.length - queried.length} additional events in view omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.truncated && <p>Event source response is partial.</p>}
     <Notices truncated={result.truncated}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started or have ended are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
+    </div>
   </div>;
 }
 

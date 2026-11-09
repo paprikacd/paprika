@@ -14,7 +14,10 @@
     "test:watch": "vitest",
     "generate": "cd .. && buf generate",
     "test:e2e:insights": "node e2e/run-insights.mjs",
-    "test:e2e:insights:observability": "node e2e/insights-observability.e2e.mjs"
+    "test:e2e:polish": "node --experimental-strip-types e2e/insights-polish.e2e.mjs",
+    "review:insights": "node --experimental-strip-types e2e/insights-polish.e2e.mjs --review",
+    "test:e2e:insights:observability": "node e2e/insights-observability.e2e.mjs",
+    "postinstall": "patch-package --error-on-fail"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -36,9 +39,8 @@
     "@lezer/lr": "^1.4.10",
     "@openuidev/lang-core": "1.0.1",
     "@prometheus-io/codemirror-promql": "^0.315.1",
-    "@tailwindcss/typography": "^0.5.20",
-    "@tanstack/react-query": "^5.101.2",
     "@tanstack/charts": "1.1.0",
+    "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.5",
     "@xyflow/react": "^12.11.0",
@@ -79,6 +81,7 @@
     "eslint-config-next": "16.2.7",
     "happy-dom": "^20.10.6",
     "jsdom": "^27.0.1",
+    "patch-package": "8.0.1",
     "playwright": "^1.61.1",
     "rehype-pretty-code": "^0.14.3",
     "shiki": "^4.2.0",

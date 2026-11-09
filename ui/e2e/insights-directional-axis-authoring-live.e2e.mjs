@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Exercise the centered directional axis through the real editor and store.
 import assert from "node:assert/strict"
 import { chromium } from "playwright"
@@ -30,13 +31,15 @@ try {
       await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
       await tile.getByRole("button", { name: "Edit Traffic flow", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
+      await editor.getByRole("tab", { name: "Options", exact: true }).click()
       const toggle = editor.getByRole("switch", { name: /Center zero on the value axis/ })
       await toggle.waitFor(); assert.equal(await toggle.isChecked(), false)
       await toggle.check()
       const unchanged = await api(`/api/insights/dashboards/${id}`)
       assert.equal(unchanged.headers.get("x-paprika-document-etag") ?? unchanged.headers.get("etag"), initialETag, "Draft edits do not persist")
-      await editor.getByRole("button", { name: "Apply widget" }).click()
+      await editor.getByRole("button", { name: "Apply changes" }).click()
       const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${id}` && response.ok())
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click(); await write
       const savedResponse = await api(`/api/insights/dashboards/${id}`), saved = await savedResponse.json()
       const savedETag = savedResponse.headers.get("x-paprika-document-etag") ?? savedResponse.headers.get("etag")

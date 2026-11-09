@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Changing visualizations must not hide or silently drop tooltip settings.
 // Uses a unique ETag-protected dashboard and real local Prometheus data.
 import assert from "node:assert/strict"
@@ -60,8 +61,9 @@ try {
       await editor.getByRole("button", { name: "Remove inactive tooltip widget" }).click()
       assert.equal(await editor.getByText(/configured tooltip widget is inactive/).count(), 0)
       if (theme === "dark" && width === 390) {
-        await editor.getByRole("button", { name: "Apply widget" }).click()
+        await editor.getByRole("button", { name: "Apply changes" }).click()
         const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === path && response.ok())
+        await applyWidgetChanges(page);
         await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
         await write
         const saved = await api(path)
@@ -72,7 +74,7 @@ try {
         assert.equal(widget.options?.tooltipView, undefined)
         revision = next
       } else {
-        await editor.getByRole("button", { name: "Close widget editor" }).click()
+        await editor.getByRole("button", { name: "Apply changes" }).click()
         const saved = await api(path)
         assert.equal(saved.headers.get("x-paprika-document-etag") ?? saved.headers.get("etag"), revision)
         assert.deepEqual((await saved.json()).widgets[0].options.tooltipView, tooltipView)

@@ -18,6 +18,7 @@ import type { QueryResult, Widget } from "./schema";
 import { contrastRatio } from "./appearance";
 import chartStyles from "./charts.module.css";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
+import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
 import {
   contrastText,
   balancedHeatmapColumns,
@@ -386,6 +387,17 @@ describe("bounded chart data", () => {
 });
 
 describe("widget visualizations", () => {
+  it("updates KPI sample times with the dashboard zone and retains the exact instant", () => {
+    const timestamp = Date.parse("2026-11-09T01:00:00.000Z");
+    const response = { series: [{ name: "api", labels: {}, points: [{ timestamp, value: 12 }] }] };
+    const view = (timeZone: string) => <DashboardTimeZoneProvider timeZone={timeZone}><WidgetVisualization widget={{ ...widget, type: "stat" }} result={response} /></DashboardTimeZoneProvider>;
+    const { container, rerender } = render(view("UTC"));
+    expect(container.querySelector("time")).toHaveTextContent("01:00 UTC");
+    expect(container.querySelector("time")).toHaveAttribute("datetime", "2026-11-09T01:00:00.000Z");
+    rerender(view("America/New_York"));
+    expect(container.querySelector("time")).toHaveTextContent("20:00 EST");
+    expect(container.querySelector("time")).toHaveAttribute("datetime", "2026-11-09T01:00:00.000Z");
+  });
   it("renders a real TanStack chart with an accessible name", () => {
     const { container } = render(
       <WidgetVisualization widget={widget} result={result} />,
@@ -816,6 +828,7 @@ describe("widget visualizations", () => {
   );
 
   it("portals complete sample details outside clipped tiles and supports focus, Escape, pin and outside dismissal", () => {
+    vi.useFakeTimers();
     const timestamp = "2026-10-20T12:34:56.789Z";
     const labels = Object.fromEntries(
       Array.from({ length: 12 }, (_, index) => [
@@ -882,6 +895,11 @@ describe("widget visualizations", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     fireEvent.click(cell);
     expect(cell).toHaveAttribute("aria-pressed", "true");
+    const pinned = screen.getByRole("tooltip");
+    fireEvent.blur(cell, { relatedTarget: pinned });
+    act(() => vi.advanceTimersByTime(200));
+    expect(cell).toHaveAttribute("aria-pressed", "true");
+    expect(pinned).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     fireEvent.click(cell);

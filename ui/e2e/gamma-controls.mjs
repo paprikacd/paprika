@@ -1,5 +1,26 @@
 import assert from "node:assert/strict"
 
+/** Commit a focused chart draft before operating on dashboard-level controls. */
+export async function applyWidgetChanges(page) {
+  const editor = page.getByRole("region", { name: "Widget editor", exact: true })
+  if (await editor.isVisible()) {
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
+    await editor.waitFor({ state: "hidden" })
+  }
+}
+
+/** Open a dashboard action through its visible desktop button or compact menu. */
+export async function activateDashboardAction(page, name) {
+  if (name === "Save dashboard") await applyWidgetChanges(page)
+  const button = page.getByRole("button", { name, exact: true })
+  if (await button.isVisible()) {
+    await button.click()
+    return
+  }
+  await page.getByRole("button", { name: "Dashboard actions", exact: true }).click()
+  await page.getByRole("menuitem", { name, exact: true }).click()
+}
+
 /** Choose through Gamma's visible button/listbox, including its body portal. */
 export async function selectGammaOption(page, trigger, optionName) {
   assert.equal(await trigger.evaluate((element) => element.tagName), "BUTTON", "Gamma select must expose its real trigger")

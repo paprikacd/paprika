@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Run against a local Next development server:
 // INSIGHTS_E2E_URL=http://localhost:3015 node e2e/insights.e2e.mjs
 // This script owns fresh browser contexts and writes screenshots outside source.
@@ -103,14 +104,12 @@ try {
     const editor = page.getByRole("region", { name: "Widget editor" })
     await editor.getByLabel("Title", { exact: true }).fill("Total request rate")
     await editor.getByRole("textbox", { name: /^PromQL query/ }).fill("sum(rate(http_requests_total[1m]))")
-    await editor.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await editor.getByRole("button", { name: "Close widget editor" }).click()
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     await page.getByRole("button", { name: "Add widget", exact: true }).click()
     await page.getByRole("button", { name: "Single value One number, clear context" }).click()
     await editor.getByLabel("Title", { exact: true }).fill("Worker capacity")
     await editor.getByRole("textbox", { name: /^PromQL query/ }).fill("sum(up)")
-    await editor.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await editor.getByRole("button", { name: "Close widget editor" }).click()
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     const document = await readDocument()
     assert.equal(document.widgets.length, 8)
     assert.equal(widget(document, "requests").query, "sum(rate(http_requests_total[1m]))")
@@ -205,6 +204,7 @@ try {
 
   await check("save and reload retain queries and pointer-edited layouts", async () => {
     const document = await readDocument()
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByText("Example saved in this browser.", { exact: true }).waitFor()
     await page.getByText("All changes saved", { exact: true }).waitFor()
@@ -225,8 +225,7 @@ try {
     await mobilePage.getByRole("button", { name: "Edit dashboard", exact: true }).click()
     await mobilePage.getByRole("button", { name: "Edit Request rate", exact: true }).click()
     await mobilePage.getByRole("region", { name: "Widget editor" }).getByLabel("Title", { exact: true }).fill("Mobile request rate")
-    await mobilePage.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await mobilePage.getByRole("button", { name: "Close widget editor" }).click()
+    await mobilePage.getByRole("button", { name: "Apply changes", exact: true }).click()
     await mobilePage.getByRole("heading", { name: "Mobile request rate", exact: true }).waitFor()
     await mobilePage.waitForFunction(() => document.querySelector('[data-widget-id="requests"]')?.getBoundingClientRect().width > 300)
     assert.ok(await mobilePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "Mobile edit controls must not overflow horizontally")

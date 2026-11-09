@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Generate reference-derived dashboards through the UI into an empty real Go
 // workspace. Only telemetry responses are deterministic; document writes are real.
 import assert from "node:assert/strict"
@@ -350,14 +351,14 @@ try {
       await page.getByRole("button",{name:"Edit dashboard",exact:true}).click()
       await tile(widget.id).getByRole("button",{name:`Edit ${widget.title}`,exact:true}).click()
       const editor=page.getByRole("region",{name:"Widget editor",exact:true})
-      await editor.getByRole("tab",{name:"Query",exact:true}).click()
+      await editor.getByRole("tab",{name:"Options",exact:true}).click()
       await editor.getByRole("spinbutton",{name:"Column 1 maximum",exact:true}).fill(String(maximum))
       await until(async()=> (await tile(widget.id).locator('[data-cell-display="bar"]').first().getAttribute("aria-label"))?.includes(`to ${maximum}%`),"Column scale must preview in the widget before Apply")
-      await editor.getByRole("button",{name:"Apply widget",exact:true}).click()
-      await editor.getByRole("button",{name:"Close widget editor",exact:true}).click()
+      await editor.getByRole("button",{name:"Apply changes",exact:true}).click()
     }
     await editScale(200)
     assert.equal((await environment.api(`dashboards/${board.id}`)).etag,original.etag,"Draft changes must not persist before Save")
+    await applyWidgetChanges(page);
     await page.getByRole("button",{name:"Save dashboard",exact:true}).click()
     await page.getByText("All changes saved",{exact:true}).waitFor()
     await page.reload({waitUntil:"networkidle"})
@@ -367,6 +368,7 @@ try {
     assert.deepEqual(savedWidget.queryRef,widget.queryRef)
     assert.notEqual(changed.etag,original.etag)
     await editScale(100)
+    await applyWidgetChanges(page);
     await page.getByRole("button",{name:"Save dashboard",exact:true}).click()
     await page.getByText("All changes saved",{exact:true}).waitFor()
     const restored=await environment.api(`dashboards/${board.id}`)
