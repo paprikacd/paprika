@@ -80,8 +80,8 @@ require (
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.21.2
-	k8s.io/api v0.37.0
-	k8s.io/apimachinery v0.37.0
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.0
 	k8s.io/component-base v0.37.0
 	k8s.io/metrics v0.36.2
@@ -314,7 +314,7 @@ require (
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/kubectl v0.36.2 // indirect
-	k8s.io/streaming v0.37.0 // indirect
+	k8s.io/streaming v0.37.2 // indirect
 	mvdan.cc/xurls/v2 v2.6.0 // indirect
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
