@@ -76,7 +76,7 @@ describe("refreshing a dashboard", () => {
     expect(container.querySelector("[data-chart-entering]")).toBeNull();
   });
 
-  it("a breakpoint remount shows the last result at once, with no placeholder and no second draw-in", async () => {
+  it("a breakpoint remount reuses the completed result, while a new time window still refreshes it", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     const fetcher = vi.fn(async () => series());
     const canvas = { dashboard, active: true, providers, fetcher, editing: false, onSelect: vi.fn(), onLayout: vi.fn() };
@@ -94,7 +94,11 @@ describe("refreshing a dashboard", () => {
     expect(line(container)).toBe(before);
     expect(container.querySelector("[data-loading-family]")).toBeNull();
     expect(container.querySelector("[data-chart-entering]")).toBeNull();
+    await act(async () => {});
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    rerender(<DashboardCanvas {...canvas} end={3630} />);
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    expect(fetcher).toHaveBeenLastCalledWith(expect.objectContaining({ end: 3630 }), expect.any(AbortSignal));
   });
 
   it("returning to the view shows the last result at once, with no placeholder and no second draw-in", async () => {
