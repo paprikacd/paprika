@@ -72,6 +72,6 @@ If the environment uses several clusters, preserve the cluster dimension. Aggreg
 
 Read back the saved document and run `query_dashboard` with an explicit service and time range. Inspect signal states, returned timestamps and query errors. In the browser, check a narrower viewport, keyboard navigation, legend clipping and tooltip placement. A successful JSON save is not a successful monitoring dashboard.
 
-Paprika's public [chart and dashboard showcase](../../../../landing/index.html#charts) uses synthetic data deliberately; it demonstrates presentation, not production release health. The [dashboard examples guide](../../../docs/guides/dashboard-repository-examples.md) explains how to map an example's placeholder queries to real connected providers.
+Paprika's public [chart and dashboard showcase](https://paprikacd.github.io/paprika/#charts) uses synthetic data deliberately; it demonstrates presentation, not production release health. The [dashboard examples guide](../../../docs/guides/dashboard-repository-examples.md) explains how to map an example's placeholder queries to real connected providers.
 
 For the next design step, read [Prometheus dashboard query patterns](./prometheus-dashboard-query-patterns.md) and [the dashboard layout checklist](./observability-dashboard-layout.md). Together they turn the same operational questions into defensible queries and readable panels.
