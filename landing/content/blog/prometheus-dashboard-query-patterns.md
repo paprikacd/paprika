@@ -12,6 +12,11 @@ Inspect a small query result over a bounded interval before adding any widget. V
 
 Paprika's [metrics reference](../../../docs/guides/metrics.md) documents concrete examples. Those names below are relevant to Paprika deployments **only when the corresponding metrics have been exported and scraped**.
 
+Interact with the comparison below: switch counter, gauge and histogram states, inspect the series and read the corresponding illustrative query. The chart shape changes with the metric type.
+
+```paprika-dashboard prometheus
+```
+
 ## Gauges: observe a current state
 
 An out-of-sync resource count is a gauge. It can rise or fall. To show the current value for each Application, preserve the relevant labels:
@@ -62,6 +67,10 @@ histogram_quantile(
 This is an estimated quantile derived from configured bucket boundaries, not an exact measured duration. The bucket label `le` must survive aggregation. Do not average independent p95 values across Applications and label that a fleet p95; aggregate the underlying bucket observations before computing a fleet-level quantile.
 
 Use the metric's unit on the axis. Seconds and milliseconds are not interchangeable merely because both are small numbers.
+
+![Three illustrative query panels distinguish a counter rate, a current-state gauge, and a histogram from which quantiles are estimated.](../../editorial/promql-visual-semantics.svg)
+
+*The same chart treatment is not suitable for every metric. Counters, gauges and histograms have different aggregation and time-window semantics.*
 
 ## Treat missing data as a distinct state
 
