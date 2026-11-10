@@ -460,12 +460,29 @@ function rss(manifest) {
 }
 
 function featuredPosts(manifest) {
-  return `<ol class="reading-list">${manifest.posts.slice(0, 3).map((post) => `<li>
+  const latest = [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)).slice(0, 3);
+  return `<ol class="reading-list">${latest.map((post) => `<li>
     <a class="reading-thumb" href="./${post.route}" aria-label="Read ${escapeHTML(post.title)}"><img src="./${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
     <div class="reading-meta"><span>${escapeHTML(post.category)}</span><span>Engineering</span></div>
     <div class="reading-copy"><h3><a href="./${post.route}">${escapeHTML(post.title)}</a></h3><p>${escapeHTML(post.description)}</p></div>
     <a class="reading-open" href="./${post.route}" aria-label="Read ${escapeHTML(post.title)}">Read article <span aria-hidden="true">→</span></a>
   </li>`).join('')}</ol>`;
+}
+
+function dashboardArticles(manifest) {
+  const selection = dashboardPosts(manifest).slice(0, 3);
+  return `<section class="chart-showcase-reading" aria-labelledby="dashboard-notes-title">
+    <div class="chart-showcase-reading-head">
+      <div><p class="chart-showcase-context-label">Engineering field notes / Dashboarding</p>
+        <h3 id="dashboard-notes-title">Build charts that make a decision easier.</h3>
+        <p>Go beyond the gallery: discover the right signals, select an honest visual form and verify the live result.</p></div>
+      <a href="./blog/" class="link-arrow">All engineering articles</a>
+    </div>
+    <div class="chart-showcase-reading-grid">${selection.map((post) => `<a class="chart-reading-card" href="./${post.route}">
+      <img src="./${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/>
+      <span class="chart-reading-card-body"><small>${escapeHTML(post.category)} / Field note</small><strong>${escapeHTML(post.title)}</strong><span>Read article <span aria-hidden="true">↗</span></span></span>
+    </a>`).join('')}</div>
+  </section>`;
 }
 
 export function buildContent(output) {
@@ -512,6 +529,8 @@ export function buildContent(output) {
   const homepage = join(destination, 'index.html');
   if (existsSync(homepage)) {
     const content = readFileSync(homepage, 'utf8');
+    assert.equal([...content.matchAll(/<!-- dashboard-articles:start -->[\s\S]*?<!-- dashboard-articles:end -->/g)].length, 1,
+      'Homepage needs one dashboard articles placeholder');
     const decode = new MarkdownIt().utils.unescapeAll;
     const title = decode(content.match(/<title>([^<]+)<\/title>/)?.[1] || '');
     const description = decode(content.match(/<meta name="description" content="([^"]+)"/)?.[1] || '');
@@ -521,7 +540,8 @@ export function buildContent(output) {
     const structured = jsonScript(pageStructuredData({ route: '', title, description }));
     writeFileSync(homepage, content
       .replace(marker, () => `<!-- structured-data:start -->\n<script type="application/ld+json">${structured}</script>\n<!-- structured-data:end -->`)
-      .replace(/<!-- featured-posts:start -->[\s\S]*?<!-- featured-posts:end -->/, `<!-- featured-posts:start -->\n${featuredPosts(manifest)}\n<!-- featured-posts:end -->`));
+      .replace(/<!-- featured-posts:start -->[\s\S]*?<!-- featured-posts:end -->/, `<!-- featured-posts:start -->\n${featuredPosts(manifest)}\n<!-- featured-posts:end -->`)
+      .replace(/<!-- dashboard-articles:start -->[\s\S]*?<!-- dashboard-articles:end -->/, `<!-- dashboard-articles:start -->\n${dashboardArticles(manifest)}\n<!-- dashboard-articles:end -->`));
   }
   for (const route of [...routes, '404.html']) {
     const path = join(destination, route.endsWith('.html') ? route : `${route}index.html`);
