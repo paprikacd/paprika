@@ -365,6 +365,12 @@ async function run() {
   for (const [device, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
     const { page: demoPage, context: demoContext } = await newPage({ viewport });
     try {
+      // The actual chart gallery is built and tested separately. Keep this smoke
+      // check focused on the on-demand iframe contract, not a second heavy app boot.
+      await demoPage.route('**/paprika/charts/**', (route) => route.fulfill({
+        status: 200, contentType: 'text/html',
+        body: '<!doctype html><html lang="en"><title>Synthetic chart preview test</title><body>Gallery stub</body></html>',
+      }));
       const demoRoutes = [
         ['kubernetes-release-dashboard', 'release', 'staging'],
         ['prometheus-dashboard-query-patterns', 'prometheus', 'histogram'],
