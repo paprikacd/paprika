@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import GithubSlugger from 'github-slugger';
 import { jsonScript, pageStructuredData, repositoryURL, siteURL } from './structured-data.mjs';
+import { renderDashboardDemo, renderGalleryPreview } from './article-demos.js';
 
 export { siteURL } from './structured-data.mjs';
 
@@ -270,7 +271,19 @@ export function renderDocument(item, sourceRoutes, assets = new Map(), markdown 
   };
   parser.renderer.rules.fence = (renderTokens, index) => {
     const token = renderTokens[index];
-    const language = token.info.trim().split(/\s+/)[0].replace(/[^a-zA-Z0-9_+-]/g, '');
+    const directive = token.info.trim();
+    if (directive.startsWith('paprika-')) {
+      assert.equal(item.kind, 'blog', 'Interactive editorial directives are only allowed in blog articles');
+      assert.equal(token.content.trim(), '', 'Editorial directives must not contain arbitrary HTML or content');
+      if (/^paprika-dashboard (release|prometheus|layout|testing|mcp)$/.test(directive)) {
+        return renderDashboardDemo(directive.split(' ')[1], assetPrefix(item.route)) + '\n';
+      }
+      if (/^paprika-gallery (charts|kubernetes-fleet|performance-workbench|distributed-systems)$/.test(directive)) {
+        return renderGalleryPreview(directive.split(' ')[1], assetPrefix(item.route)) + '\n';
+      }
+      throw new Error('Unknown editorial directive in ' + item.slug + ': ' + directive);
+    }
+    const language = directive.split(/\s+/)[0].replace(/[^a-zA-Z0-9_+-]/g, '');
     const label = language === 'mermaid' ? 'Diagram source' : language || 'Text';
     codeCount += 1;
     return `<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">${escapeHTML(label)}</span></div><pre tabindex="0" aria-label="${escapeHTML(label)} code example ${codeCount}"><code${language ? ` class="language-${escapeHTML(language)}"` : ''}>${escapeHTML(token.content)}</code></pre></div>\n`;
@@ -347,8 +360,10 @@ ${article?.date ? `<meta property="article:published_time" content="${article.da
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="${prefix}site.css?v=public-content-1"/>
 <link rel="stylesheet" href="${prefix}content.css?v=dashboard-notes-1"/>
+${article?.kind === 'blog' ? `<link rel="stylesheet" href="${prefix}article-demos.css?v=editorial-lab-1"/>` : ''}
 <script type="application/ld+json">${jsonScript(structured)}</script>
 <script src="${prefix}content.js?v=public-content-1" defer></script>
+${article?.kind === 'blog' ? `<script src="${prefix}article-demos.js?v=editorial-lab-1" type="module"></script>` : ''}
 </head><body class="content-page">
 ${header(prefix, active)}
 ${body}
