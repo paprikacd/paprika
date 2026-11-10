@@ -7,6 +7,13 @@ import {
   type QueryResult,
   type Widget,
 } from "./schema";
+import {
+  createQueryDiagnosticLedger,
+  diagnosticFailure,
+  diagnosticResult,
+  type QueryDiagnosticStore,
+  type QueryExecutionReceipt,
+} from "./query-diagnostics";
 
 export type QueryFetcher = ((
   request: QueryRequest,
@@ -19,6 +26,8 @@ export type QueryFetcher = ((
   requestIdentity?: (request: QueryRequest) => string;
   /** Changes when the underlying provider/scheduler is invalidated. */
   requestRevision?: QueryFetcher;
+  /** Passive, bounded execution history owned by the authenticated scheduler. */
+  diagnostics?: QueryDiagnosticStore;
 };
 
 /** The request without its window. Requests that differ only in start, end or step are one series. */
@@ -35,6 +44,7 @@ function withoutWindow(request: QueryRequest): Partial<QueryRequest> {
 export function createResolvedQueryFetcher(scheduler: QueryFetcher, resolve: (request: QueryRequest) => QueryRequest): QueryFetcher {
   const fetcher: QueryFetcher = async (request, signal) => scheduler(resolve(request), signal);
   fetcher.requestRevision = scheduler;
+  fetcher.diagnostics = scheduler.diagnostics;
   fetcher.requestIdentity = request => {
     try { return JSON.stringify(["resolved", withoutWindow(resolve(request))]); }
     catch (error) { return JSON.stringify(["error", error instanceof Error ? error.message : "Invalid query"]); }
@@ -51,6 +61,10 @@ interface QuerySubscriber {
 
 interface PendingQuery {
   key: string;
+  receiptId: string;
+  queuedAtMs: number;
+  startedAtMs?: number;
+  finished: boolean;
   request: QueryRequest;
   controller: AbortController;
   subscribers: Set<QuerySubscriber>;
@@ -60,6 +74,8 @@ export interface QuerySchedulerOptions {
   concurrency?: number;
   cacheTTL?: number;
   cacheSize?: number;
+  /** Recent execution receipts retained in memory (1..200, default 100). */
+  diagnosticsLimit?: number;
 }
 
 /**
@@ -82,20 +98,37 @@ export function createQueryScheduler(
   );
   const pending = new Map<string, PendingQuery>();
   const queue: PendingQuery[] = [];
-  const cache = new Map<string, { data: QueryResult; expires: number }>();
+  const cache = new Map<string, { data: QueryResult; expires: number; executionId: string }>();
+  const diagnostics = createQueryDiagnosticLedger(options.diagnosticsLimit);
   let active = 0;
 
   const aborted = () =>
     new DOMException("The query was cancelled.", "AbortError");
 
-  function settle(entry: PendingQuery, data?: QueryResult, error?: unknown) {
+  function finish(entry: PendingQuery, outcome: Partial<QueryExecutionReceipt>) {
+    // A provider that ignores AbortSignal must not turn a cancelled receipt
+    // back into a success when it eventually settles.
+    if (entry.finished) return;
+    entry.finished = true;
+    const finishedAtMs = performance.now();
+    diagnostics.update(entry.receiptId, {
+      ...outcome,
+      finishedAtMs,
+      queueMs: Math.max(0, (entry.startedAtMs ?? finishedAtMs) - entry.queuedAtMs),
+      requestMs: entry.startedAtMs === undefined ? 0 : Math.max(0, finishedAtMs - entry.startedAtMs),
+      totalMs: Math.max(0, finishedAtMs - entry.queuedAtMs),
+    });
+  }
+
+  function settle(entry: PendingQuery, outcome: { data: QueryResult } | { error: unknown }) {
     // Remove before resolving callers: a caller may immediately retry an error
     // before the running request's finally handler releases its slot.
     if (pending.get(entry.key) === entry) pending.delete(entry.key);
+    finish(entry, "error" in outcome ? diagnosticFailure(outcome.error) : diagnosticResult(outcome.data));
     for (const subscriber of entry.subscribers) {
       subscriber.signal.removeEventListener("abort", subscriber.abort);
-      if (error !== undefined) subscriber.reject(error);
-      else subscriber.resolve(data!);
+      if ("error" in outcome) subscriber.reject(outcome.error);
+      else subscriber.resolve(outcome.data);
     }
     entry.subscribers.clear();
   }
@@ -108,6 +141,12 @@ export function createQueryScheduler(
       void Promise.resolve()
         .then(() => {
           if (entry.controller.signal.aborted) throw aborted();
+          entry.startedAtMs = performance.now();
+          diagnostics.update(entry.receiptId, {
+            state: "running",
+            startedAtMs: entry.startedAtMs,
+            queueMs: Math.max(0, entry.startedAtMs - entry.queuedAtMs),
+          });
           return fetcher(entry.request, entry.controller.signal);
         })
         .then(
@@ -119,13 +158,13 @@ export function createQueryScheduler(
               cacheSize > 0
             ) {
               cache.delete(entry.key);
-              cache.set(entry.key, { data, expires: Date.now() + cacheTTL });
+              cache.set(entry.key, { data, expires: Date.now() + cacheTTL, executionId: entry.receiptId });
               while (cache.size > cacheSize)
                 cache.delete(cache.keys().next().value!);
             }
-            settle(entry, data);
+            settle(entry, { data });
           },
-          (error: unknown) => settle(entry, undefined, error),
+          (error: unknown) => settle(entry, { error }),
         )
         .finally(() => {
           active--;
@@ -135,8 +174,20 @@ export function createQueryScheduler(
     }
   }
 
-  return (request, signal) => {
-    if (signal.aborted) return Promise.reject(aborted());
+  const schedule: QueryFetcher = (request, signal) => {
+    const queuedAtMs = performance.now();
+    if (signal.aborted) {
+      const error = aborted();
+      diagnostics.add(request, queuedAtMs, {
+        ...diagnosticFailure(error),
+        finishedAtMs: queuedAtMs,
+        queueMs: 0,
+        requestMs: 0,
+        totalMs: 0,
+        cancelledConsumers: 1,
+      });
+      return Promise.reject(error);
+    }
     const key = JSON.stringify([
       request.providerId,
       request.kind,
@@ -152,19 +203,37 @@ export function createQueryScheduler(
       // Move hits to the newest position, keeping the cache bounded by use.
       cache.delete(key);
       cache.set(key, cached);
+      diagnostics.add(request, queuedAtMs, {
+        ...diagnosticResult(cached.data),
+        executionId: cached.executionId,
+        reuse: "cache",
+        finishedAtMs: queuedAtMs,
+        queueMs: 0,
+        requestMs: 0,
+        totalMs: 0,
+      });
       return Promise.resolve(cached.data);
     }
     cache.delete(key);
     let entry = pending.get(key);
     if (!entry) {
+      const receipt = diagnostics.add(request, queuedAtMs);
       entry = {
         key,
+        receiptId: receipt.id,
+        queuedAtMs,
+        finished: false,
         request: { ...request },
         controller: new AbortController(),
         subscribers: new Set(),
       };
       pending.set(key, entry);
       queue.push(entry);
+    } else {
+      diagnostics.update(entry.receiptId, receipt => ({
+        consumers: receipt.consumers + 1,
+        sharedConsumers: receipt.sharedConsumers + 1,
+      }));
     }
     const ownedEntry = entry;
     const promise = new Promise<QueryResult>((resolve, reject) => {
@@ -175,8 +244,10 @@ export function createQueryScheduler(
         abort: () => {
           ownedEntry.subscribers.delete(subscriber);
           signal.removeEventListener("abort", subscriber.abort);
+          diagnostics.update(ownedEntry.receiptId, receipt => ({ cancelledConsumers: receipt.cancelledConsumers + 1 }));
           reject(aborted());
           if (!ownedEntry.subscribers.size) {
+            finish(ownedEntry, diagnosticFailure(aborted()));
             ownedEntry.controller.abort();
             if (pending.get(key) === ownedEntry) pending.delete(key);
             const queuedIndex = queue.indexOf(ownedEntry);
@@ -190,6 +261,8 @@ export function createQueryScheduler(
     drain();
     return promise;
   };
+  schedule.diagnostics = diagnostics.store;
+  return schedule;
 }
 
 export interface WidgetQueryOptions {

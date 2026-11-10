@@ -2,15 +2,27 @@ import {
   dashboardSchema,
   savedQuerySchema,
   storedDashboardSchema,
+  parseQueryDiagnostics,
   type Dashboard,
   type Provider,
   type QueryRequest,
   type QueryResult,
+  type QueryDiagnostics,
   type SavedQuery,
   type SavedQueryEntry,
 } from "./schema"
 import { validateSavedQueryTemplate } from "./saved-queries"
 import { parseRecordFrame } from "./record-data"
+
+/** Preserve an authorized query failure's receipt without retaining its body. */
+export class InsightsQueryError extends Error {
+  constructor(message: string, readonly status: number, readonly code: string, readonly diagnostics?: QueryDiagnostics) {
+    super(message)
+    this.name = "InsightsQueryError"
+  }
+}
+
+const queryErrorCodes = new Set(["canceled", "timeout", "rate_limited", "forbidden", "invalid_query", "provider_not_found", "provider_error"])
 
 export interface ProviderConfig {
   id: string
@@ -199,7 +211,31 @@ export function createInsightsClient(
         throw new Error("Managing data sources requires Insights administrator access.")
       if (response.status === 403 && path === "/observe-connection")
         throw new Error("Your account does not have access to Paprika Observe. Check your Observability permissions.")
-      if (response.status === 403 && (path === "/query" || path.startsWith("/providers/")))
+      if (path === "/query") {
+        if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
+        let code = response.status === 429 ? "rate_limited" : response.status === 504 ? "timeout" : response.status === 403 ? "forbidden" : "provider_error"
+        let diagnostics: QueryDiagnostics | undefined
+        try {
+          const body: unknown = await response.json()
+          if (body && typeof body === "object") {
+            const envelope = body as Record<string, unknown>
+            if (typeof envelope.code === "string" && queryErrorCodes.has(envelope.code)) code = envelope.code
+            diagnostics = parseQueryDiagnostics(envelope.diagnostics)
+          }
+        } catch { /* A proxy may return a non-JSON error. */ }
+        if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
+        const messages: Record<string, string> = {
+          canceled: "The query was cancelled.",
+          timeout: "The query timed out. Narrow the time range or simplify the query and try again.",
+          rate_limited: "Query capacity is busy; retry shortly.",
+          forbidden: "Your account does not have access to this data source. Check its Observability permissions.",
+          invalid_query: "The data source rejected this query. Check the expression and time bounds.",
+          provider_not_found: "The data source is unavailable. Choose a connected source.",
+          provider_error: "The data source is unavailable. Check its connection and query configuration.",
+        }
+        throw new InsightsQueryError(messages[code], response.status, code, diagnostics)
+      }
+      if (response.status === 403 && path.startsWith("/providers/"))
         throw new Error("Your account does not have access to this data source. Check its Observability permissions.")
       if (response.status === 403) throw new Error("Your account does not have access to Insights.")
       if (response.status === 412 && path.startsWith("/saved-queries/"))
@@ -339,11 +375,16 @@ export function createInsightsClient(
           signal,
         })
       )
+      const diagnostics = parseQueryDiagnostics(result.diagnostics)
       if (body.kind === "records") {
         const records = parseRecordFrame(result.records)
-        return { records, truncated: result.truncated || records.truncated }
+        return { records, truncated: result.truncated || records.truncated, ...(diagnostics ? { diagnostics } : {}) }
       }
-      return result
+      // Keep optional diagnostics on an allowlisted contract, including when an
+      // older or custom backend adds unrecognized endpoint/credential fields.
+      const data = { ...result }
+      delete data.diagnostics
+      return diagnostics ? { ...data, diagnostics } : data
     },
   }
 }

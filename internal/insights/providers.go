@@ -105,6 +105,10 @@ func validateQuery(q *Query) error {
 func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 
 func (p *providerClient) query(ctx context.Context, q *Query) (QueryResult, error) {
+	return p.queryMeasured(ctx, q, nil)
+}
+
+func (p *providerClient) queryMeasured(ctx context.Context, q *Query, measurement *queryMeasurement) (QueryResult, error) {
 	if !p.public.supports(q.Kind) {
 		return QueryResult{}, errors.New("provider does not support this query kind")
 	}
@@ -112,16 +116,17 @@ func (p *providerClient) query(ctx context.Context, q *Query) (QueryResult, erro
 		return QueryResult{}, errors.New("trace detail is not available for this provider type")
 	}
 	if p.remote != nil {
-		return p.queryRemote(ctx, q)
+		return p.queryRemote(ctx, q, measurement)
 	}
-	return p.queryLocal(ctx, q)
+	return p.queryLocal(ctx, q, measurement)
 }
 
-func (p *providerClient) queryRemote(ctx context.Context, q *Query) (QueryResult, error) {
-	body, err := p.remote.query(ctx, q)
+func (p *providerClient) queryRemote(ctx context.Context, q *Query, measurement *queryMeasurement) (QueryResult, error) {
+	body, err := p.remote.query(ctx, q, measurement)
 	if err != nil {
 		return QueryResult{}, err
 	}
+	measurement.normalize()
 	if q.TraceID != "" {
 		return decodeTempoDetail(body, q.TraceID)
 	}
@@ -155,19 +160,20 @@ func providerQueryParameters(q *Query) (string, url.Values) {
 	return path, params
 }
 
-func (p *providerClient) queryLocal(ctx context.Context, q *Query) (QueryResult, error) {
+func (p *providerClient) queryLocal(ctx context.Context, q *Query, measurement *queryMeasurement) (QueryResult, error) {
 	path, params := providerQueryParameters(q)
-	body, err := p.fetch(ctx, path, params, maxResponseBytes)
+	body, err := p.fetchMeasured(ctx, path, params, maxResponseBytes, measurement)
 	fallback := retryTempoSearchLimit(ctx, q, err)
 	if fallback {
 		// Some Tempo installations reject a search limit above their own cap.
 		// Retry at our normal bound. A full fallback page is potentially partial.
 		params.Set("limit", strconv.Itoa(maxTraces))
-		body, err = p.fetch(ctx, path, params, maxResponseBytes)
+		body, err = p.fetchMeasured(ctx, path, params, maxResponseBytes, measurement)
 	}
 	if err != nil {
 		return QueryResult{}, err
 	}
+	measurement.normalize()
 	if q.Kind == "metrics" {
 		return decodePrometheus(body)
 	}
@@ -202,6 +208,10 @@ func decodeObserveQuery(kind string, body []byte) (QueryResult, error) {
 }
 
 func (p *providerClient) fetch(ctx context.Context, path string, params url.Values, limit int64) ([]byte, error) {
+	return p.fetchMeasured(ctx, path, params, limit, nil)
+}
+
+func (p *providerClient) fetchMeasured(ctx context.Context, path string, params url.Values, limit int64, measurement *queryMeasurement) ([]byte, error) {
 	if p.remote != nil {
 		return p.remote.metadata(ctx, path, params, limit)
 	}
@@ -216,16 +226,23 @@ func (p *providerClient) fetch(ctx context.Context, path string, params url.Valu
 	}
 	req.Header = p.headers.Clone()
 	req.Header.Set("Accept", "application/json")
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, safeProviderTransportError(ctx, contextErr)
+	}
+	measurement.dispatch()
 	resp, err := p.client.Do(req) // #nosec G704 -- Local provider endpoints are explicitly operator-configured and redirects are disabled.
 	if err != nil {
-		return nil, errUpstream
+		return nil, safeProviderTransportError(ctx, err)
 	}
 	defer closeReadBody(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, &providerHTTPError{status: resp.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil || int64(len(body)) > limit {
+	if err != nil {
+		return nil, safeProviderTransportError(ctx, err)
+	}
+	if int64(len(body)) > limit {
 		return nil, errUpstream
 	}
 	return body, nil
