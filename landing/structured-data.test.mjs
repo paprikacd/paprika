@@ -56,6 +56,7 @@ test('engineering articles require safe, distinct, self-contained local SVG cove
 test('every published article ties its schema image to a visible figure and copied asset', () => {
   const destination = mkdtempSync(join(tmpdir(), 'paprika-article-images-'));
   try {
+    writeFileSync(join(destination, 'index.html'), readFileSync(new URL('index.html', import.meta.url), 'utf8'));
     buildContent(destination);
     const manifest = readManifest();
     const blogIndex = readFileSync(join(destination, 'blog/index.html'), 'utf8');
