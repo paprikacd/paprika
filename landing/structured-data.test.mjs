@@ -58,6 +58,18 @@ test('every published article ties its schema image to a visible figure and copi
   try {
     buildContent(destination);
     const manifest = readManifest();
+    const blogIndex = readFileSync(join(destination, 'blog/index.html'), 'utf8');
+    const homepage = readFileSync(join(destination, 'index.html'), 'utf8');
+    const sortedPosts = [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date));
+    for (const post of sortedPosts) {
+      assert.ok(blogIndex.includes(`href="./${post.slug}/"`), `Blog index lists ${post.slug}`);
+      assert.ok(homepage.includes(`./blog/${post.slug}/`) || !sortedPosts.slice(0, 3).includes(post),
+        `Homepage features newest article ${post.slug}`);
+    }
+    assert.equal((blogIndex.match(/class="post-cover"/g) || []).length, manifest.posts.length);
+    assert.equal((blogIndex.match(/class="topic-article"/g) || []).length, Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
+    assert.equal((homepage.match(/class="chart-reading-card"/g) || []).length,
+      Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
     for (const item of [...manifest.docs, ...manifest.posts]) {
       const html = readFileSync(join(destination, item.route, 'index.html'), 'utf8');
       const graph = JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/)[1])['@graph'];
@@ -88,7 +100,7 @@ test('a rebuild replaces homepage schema, decodes metadata and retains one analy
   const destination = mkdtempSync(join(tmpdir(), 'paprika-schema-'));
   try {
     const homepage = join(destination, 'index.html');
-    writeFileSync(homepage, '<html><head><title>Paprika &amp; Kubernetes</title><meta name="description" content="Read &quot;the docs&quot; &amp; deploy. Literal $&."/><!-- structured-data:start --><!-- structured-data:end --></head><body></body></html>');
+    writeFileSync(homepage, '<html><head><title>Paprika &amp; Kubernetes</title><meta name="description" content="Read &quot;the docs&quot; &amp; deploy. Literal $&."/><!-- structured-data:start --><!-- structured-data:end --></head><body><!-- dashboard-articles:start --><!-- dashboard-articles:end --></body></html>');
     buildContent(destination);
     const first = readFileSync(homepage, 'utf8');
     buildContent(destination);
