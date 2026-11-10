@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+<title id="title">Counter, gauge and histogram query patterns</title><desc id="desc">Conceptual technical illustration for Paprika engineering notes; all signals are illustrative, not production readings.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102335"/><stop offset=".55" stop-color="#213a51"/><stop offset="1" stop-color="#102233"/></linearGradient>
+ <pattern id="mesh" width="45" height="45" patternUnits="userSpaceOnUse"><path d="M45 0H0V45" stroke="#b3ccde" stroke-opacity=".13" fill="none" stroke-width="1"/></pattern>
+</defs>
+<rect width="1200" height="675" fill="url(#bg)"/><rect width="1200" height="675" fill="url(#mesh)"/>
+<path d="M54 114H1146M54 583H1146" stroke="#88a9bf" stroke-opacity=".44"/>
+<path d="M54 58H104" stroke="#9ac6e8" stroke-width="4"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#e7f1f7">
+ <text x="54" y="86" font-size="18" font-weight="700" letter-spacing="3">05 / PROMETHEUS</text>
+ <text x="1146" y="86" font-size="13" letter-spacing="3" text-anchor="end" fill="#b1c9d8">PAPRIKA ENGINEERING</text>
+ 
+ <g transform="translate(73 165)">
+ <rect width="1054" height="375" fill="#142d42" stroke="#688ba5" stroke-width="2"/>
+ <g transform="translate(25 24)">
+  <rect width="313" height="316" fill="#213e56" stroke="#6389a3"/><text x="20" y="35" font-size="19" font-weight="700">COUNTER</text><text x="20" y="65" font-size="13" letter-spacing="2" fill="#b4cbd8">RATE / INCREASE</text>
+  <path d="M25 252H282M25 93V252" stroke="#7c9eb6"/><path d="M34 236L82 212L121 188L170 161L213 130L259 107" stroke="#9ac6e8" stroke-width="5" fill="none"/>
+  <path d="M34 198l50-10 46-5 44-9 46-6 39-5" stroke="#9fdcc4" stroke-width="3" stroke-dasharray="8 8" fill="none"/>
+  <text x="28" y="291" font-size="14" fill="#aac9dd">NOT THE RAW TOTAL</text>
+ </g>
+ <g transform="translate(370 24)">
+  <rect width="313" height="316" fill="#213e56" stroke="#6389a3"/><text x="20" y="35" font-size="19" font-weight="700">GAUGE</text><text x="20" y="65" font-size="13" letter-spacing="2" fill="#b4cbd8">CURRENT STATE</text>
+  <path d="M25 252H282M25 93V252" stroke="#7c9eb6"/>
+  <path d="M30 173H80V193H126V134H180V163H226V111H272" stroke="#9fdcc4" stroke-width="5" fill="none"/>
+  <g fill="#9fdcc4"><circle cx="80" cy="173" r="5"/><circle cx="126" cy="193" r="5"/><circle cx="180" cy="134" r="5"/><circle cx="226" cy="163" r="5"/></g>
+  <text x="28" y="291" font-size="14" fill="#aac9dd">KEEP ITS LABELS</text>
+ </g>
+ <g transform="translate(715 24)">
+  <rect width="313" height="316" fill="#213e56" stroke="#6389a3"/><text x="20" y="35" font-size="19" font-weight="700">HISTOGRAM</text><text x="20" y="65" font-size="13" letter-spacing="2" fill="#b4cbd8">BUCKETS → QUANTILE</text>
+  <path d="M25 252H282M25 93V252" stroke="#7c9eb6"/>
+  <g fill="#91bfe0"><rect x="42" y="220" width="26" height="32"/><rect x="79" y="189" width="26" height="63"/><rect x="116" y="144" width="26" height="108"/><rect x="153" y="115" width="26" height="137"/><rect x="190" y="173" width="26" height="79"/><rect x="227" y="225" width="26" height="27"/></g>
+  <path d="M43 124H272" stroke="#e9c193" stroke-width="2" stroke-dasharray="6 6"/>
+  <text x="28" y="291" font-size="14" fill="#aac9dd">PRESERVE BUCKET le</text>
+ </g>
+ </g>
+ <text x="54" y="627" font-size="14" letter-spacing="3" fill="#a8c1d1">SOURCE / SIGNAL / DECISION</text>
+ <path d="M1002 622H1146" stroke="#9ac6e8" stroke-opacity=".75" stroke-width="2"/>
+</g>
+</svg>

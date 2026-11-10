@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Observability dashboard design: layout, charts and readable KPIs · Paprika engineering</title>
+<meta name="description" content="Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="article"/>
+<meta property="og:title" content="Observability dashboard design: layout, charts and readable KPIs · Paprika engineering"/>
+<meta property="og:description" content="Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/article-images/dashboard-authoring.png"/>
+<meta property="og:image:alt" content="Discover real provider IDs, bind saved queries and parameters to dashboard widgets, then verify data and layout."/>
+<meta property="og:image:width" content="1200"/><meta property="og:image:height" content="675"/><meta property="og:image:type" content="image/png"/>
+<meta property="article:published_time" content="2026-11-10T02:05:00Z"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Observability dashboard design: layout, charts and readable KPIs · Paprika engineering"/>
+<meta name="twitter:description" content="Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/article-images/dashboard-authoring.png"/>
+<meta name="twitter:image:alt" content="Discover real provider IDs, bind saved queries and parameters to dashboard widgets, then verify data and layout."/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=dashboard-notes-1"/>
+<link rel="stylesheet" href="../../article-demos.css?v=editorial-lab-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://paprikacd.github.io/paprika/#maintainers","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika","logo":"https://paprikacd.github.io/paprika/paprika-mark.png"},{"@type":"WebSite","@id":"https://paprikacd.github.io/paprika/#website","name":"Paprika","url":"https://paprikacd.github.io/paprika/","publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"SoftwareSourceCode","@id":"https://paprikacd.github.io/paprika/#software","name":"Paprika","url":"https://paprikacd.github.io/paprika/","description":"Open source Kubernetes application delivery operator","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go","runtimePlatform":"Kubernetes","author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"}},{"@type":"WebPage","@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#webpage","url":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/","name":"Observability dashboard design: layout, charts and readable KPIs · Paprika engineering","description":"Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states.","inLanguage":"en","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"about":{"@id":"https://paprikacd.github.io/paprika/#software"},"breadcrumb":{"@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#breadcrumb"},"mainEntity":{"@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#article"},"primaryImageOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#primaryimage"}},{"@type":"BreadcrumbList","@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Observability dashboard design: layout, charts and readable KPIs","item":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/"}]},{"@type":"Blog","@id":"https://paprikacd.github.io/paprika/blog/#blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"BlogPosting","@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#article","headline":"Observability dashboard design: layout, charts and readable KPIs","description":"Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states.","url":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/","mainEntityOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#webpage"},"author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en","about":{"@id":"https://paprikacd.github.io/paprika/#software"},"isPartOf":{"@id":"https://paprikacd.github.io/paprika/blog/#blog"},"articleSection":"Dashboarding","datePublished":"2026-11-10T02:05:00Z","image":{"@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#primaryimage"}},{"@type":"ImageObject","@id":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/#primaryimage","url":"https://paprikacd.github.io/paprika/article-images/dashboard-authoring.png","contentUrl":"https://paprikacd.github.io/paprika/article-images/dashboard-authoring.png","width":1200,"height":675,"encodingFormat":"image/png","description":"Discover real provider IDs, bind saved queries and parameters to dashboard widgets, then verify data and layout.","caption":"Adapt examples by binding their queries to actual providers. Execute the saved dashboard and inspect returned data before relying on its panels.","representativeOfPage":true}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+<script src="../../article-demos.js?v=editorial-lab-1" type="module"></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="../../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="blog_open" href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Observability dashboard design: layout, charts and readable KPIs</span></li></ol></nav></div>
+<div class="article-layout article-layout--blog shell">
+
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#give-each-dashboard-one-primary-job">Give each dashboard one primary job</a></li><li class="toc-level-2"><a href="#match-the-visual-form-to-the-question">Match the visual form to the question</a></li><li class="toc-level-2"><a href="#make-kpi-cards-readable-at-their-actual-size">Make KPI cards readable at their actual size</a></li><li class="toc-level-2"><a href="#tooltips-are-diagnostic-ui-not-floating-labels">Tooltips are diagnostic UI, not floating labels</a></li><li class="toc-level-2"><a href="#design-both-desktop-and-mobile-intentionally">Design both desktop and mobile intentionally</a></li><li class="toc-level-2"><a href="#verify-with-real-queries-and-a-rendered-page">Verify with real queries and a rendered page</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><div class="editorial-eyebrow"><img src="../../paprika-mark.png" alt="" width="24" height="24"/><span>Paprika / Engineering</span></div><h1 id="observability-dashboard-design-layout-charts-and-readable-kpis">Observability dashboard design: layout, charts and readable KPIs</h1><p class="article-description">Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states.</p><div class="article-meta"><span>By <a rel="author" href="https://github.com/paprikacd/paprika">Paprika maintainers</a></span><span class="article-section">Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span><a href="https://github.com/paprikacd/paprika/blob/master/landing/content/blog/observability-dashboard-layout.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<figure class="editorial-cover"><img src="../../editorial/observability-dashboard-layout.svg" alt="A structured observability dashboard mockup shows primary KPIs, a time-series diagnostic view and a distribution with explicit labels." width="1200" height="675" decoding="async" fetchpriority="high"/><figcaption>Decision-first composition places exceptions, trends and context where operators can find them.</figcaption></figure>
+<div class="prose"><p>Dashboards are interfaces for making decisions under uncertainty. That makes layout a functional choice, not decoration. A giant number without a label is ambiguous; a heatmap without units is decorative; a tooltip that disappears outside the viewport prevents investigation precisely where you need it.</p><figure class="article-figure"><picture><source media="(max-width: 600px)" srcset="../../article-images/dashboard-authoring-mobile.png" width="600" height="820"/><img src="../../article-images/dashboard-authoring.png" alt="Discover real provider IDs, bind saved queries and parameters to dashboard widgets, then verify data and layout." width="1200" height="675" decoding="async"/></picture><figcaption><span>Adapt examples by binding their queries to actual providers. Execute the saved dashboard and inspect returned data before relying on its panels.</span> <a href="../../article-images/dashboard-authoring.png">Open full-size diagram</a></figcaption></figure>
+<p>Paprika Insights includes a public <a href="../../#charts">chart and dashboard showcase</a> built with its real chart renderers and explicitly synthetic fixtures. The authenticated application builds and stores dashboards against connected data sources. The distinction matters: an attractive example is a useful design reference, not evidence that a live service is healthy.</p>
+<h2 id="give-each-dashboard-one-primary-job">Give each dashboard one primary job</h2>
+<p>Decide what the reader must do before choosing the grid. A fleet overview answers &quot;where should I investigate?&quot; A release dashboard answers &quot;what changed around this deployment?&quot; A service dashboard answers &quot;are users experiencing errors or latency?&quot; Mixing all three into one undifferentiated page produces a long scroll with no clear hierarchy.</p>
+<p>A practical hierarchy puts three levels on one screen:</p>
+<ol>
+<li><strong>Orientation:</strong> title, selected environment, time window, data freshness and relevant filters.</li>
+<li><strong>Decision signals:</strong> a few clear exceptions, SLI trends and their actual units.</li>
+<li><strong>Diagnosis:</strong> breakdowns, distributions, logs, traces or linked detail that explain the exception.</li>
+</ol>
+<p>The top row should not be a beauty contest between equally large KPI cards. Give the important anomalous signal enough space, and let supporting numbers remain supporting numbers.</p>
+<p>Try the interactive dashboard studio. Switch between an operator overview, diagnostic details and a missing-data state. Toggle light and dark appearance and use the observation inspector under the chart.</p>
+<section class="editorial-demo" data-editorial-demo="layout" data-demo-theme="dark" aria-label="Dashboard design studio">
+  <div class="demo-heading">
+    <div><span class="demo-kicker"><span class="demo-live-dot" aria-hidden="true"></span> INTERACTIVE / SYNTHETIC DATA</span>
+      <h3>Dashboard design studio</h3><p>Compare an overview with a diagnostic view. Toggle the theme and inspect the synthetic series.</p></div>
+    <button type="button" data-demo-theme-toggle aria-pressed="false" class="demo-theme" hidden>Light theme</button>
+  </div>
+  <div class="demo-toolbar"><span class="demo-source">Insights / illustrative layout</span><div class="demo-choices" role="group" aria-label="Example view" hidden><button type="button" data-demo-choice="overview" aria-pressed="true" class="demo-choice">Overview</button><button type="button" data-demo-choice="diagnose" aria-pressed="false" class="demo-choice">Diagnose</button><button type="button" data-demo-choice="empty" aria-pressed="false" class="demo-choice">No samples</button></div></div>
+  <div class="demo-interface">
+    <div class="demo-metrics">
+      <div class="demo-kpi"><span class="demo-label">Selected measurement</span><strong data-demo-value>99.2</strong><span data-demo-unit>% availability · example</span></div>
+      <div class="demo-kpi demo-kpi-secondary"><span class="demo-label">Observation</span><strong data-demo-state>Decision first</strong><span data-demo-status data-tone="good">Overview</span></div>
+    </div>
+    <figure class="demo-plot">
+      <figcaption><strong data-demo-signal>Availability trend</strong><span>EXAMPLE SERIES / NOT LIVE</span></figcaption>
+      <svg data-demo-svg role="img" aria-label="Availability trend, illustrative data" viewBox="0 0 550 188" preserveAspectRatio="xMidYMid meet">
+        <path d="M26 22V162H531" class="demo-axis"/>
+        <path d="M26 68H531M26 115H531" class="demo-gridline"/>
+        <g data-demo-bars></g>
+        <path data-demo-line d="M26.0 162.0 L71.3 117.4 L116.5 100.7 L161.8 84.0 L207.1 106.3 L252.4 50.6 L297.6 61.7 L342.9 45.0 L388.2 45.0 L433.5 50.6 L478.7 45.0 L524.0 45.0" class="demo-line" fill="none"/>
+      </svg>
+      <p class="demo-no-data" data-demo-empty hidden>No observations for this example state. Check query and provider status.</p>
+      <div class="demo-scrub"><label>Inspect observation <input data-demo-inspect type="range" min="0" max="11" value="0"/></label>
+      <output data-demo-inspection aria-live="polite">Sample 1 of 12: 97.1 %</output></div>
+    </figure>
+    <div class="demo-query"><span>Evidence / query</span><code data-demo-query>Select a service and an explicit window before comparing panels.</code></div>
+    <p class="demo-insight" data-demo-note aria-live="polite">One high-priority KPI plus a readable trend gives the operator a question to investigate.</p>
+  </div>
+  <div class="demo-foot"><span>Local fixture only. Values, providers and statuses are illustrative.</span>
+    <a href="../../charts/#charts">Explore Paprika's full chart gallery</a></div>
+</section>
+<h2 id="match-the-visual-form-to-the-question">Match the visual form to the question</h2>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Operator question</th>
+<th>Better starting visual</th>
+<th>Common mistake</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>How has error rate changed?</td>
+<td>Time series with explicit rate unit</td>
+<td>A cumulative counter shown as an instantaneous rate</td>
+</tr>
+<tr>
+<td>Which service is failing?</td>
+<td>Sortable table or ranked bar view</td>
+<td>A donut with dozens of indistinguishable categories</td>
+</tr>
+<tr>
+<td>When does latency worsen?</td>
+<td>Time series with aligned events, or histogram</td>
+<td>A lone p95 number without its window</td>
+</tr>
+<tr>
+<td>Which pods or nodes are hottest?</td>
+<td>Heatmap with meaningful scale and labels</td>
+<td>Colour with no legend or missing-value treatment</td>
+</tr>
+<tr>
+<td>Did an action change the outcome?</td>
+<td>Pre/post trend with stable window and annotation</td>
+<td>Two cards with different filters compared side by side</td>
+</tr>
+<tr>
+<td>What is actually broken?</td>
+<td>Focused exception list linked to evidence</td>
+<td>&quot;All healthy&quot; inferred from an empty result</td>
+</tr>
+</tbody>
+</table></div>
+<p>Use data types deliberately. A categorical comparison should not appear on a continuous x-axis unless the order is meaningful. A flame graph needs hierarchical sample data; drawing rectangles from unrelated metrics would not make it a flame graph.</p>
+<p>The <a data-analytics-event="docs_open" href="../../docs/dashboards/">dashboard examples guide</a> explains how to explore the sample library and then map provider placeholders to real data. Each imported chart still needs an appropriate query, unit and filter.</p>
+<h2 id="make-kpi-cards-readable-at-their-actual-size">Make KPI cards readable at their actual size</h2>
+<p>A compact KPI card usually needs a readable label, a dominant measurement, its unit and an indication of period or freshness. A tiny sparkline is useful only when the card remains understandable without it. Avoid placing a large percentage bar, multi-line description and three secondary figures inside a row that is barely tall enough for the main value.</p>
+<p>For a rate, write the unit directly: &quot;errors/s&quot; or &quot;requests/min.&quot; For a duration, prefer &quot;p95 sync time · 10 min&quot; to &quot;Latency&quot;. When the value is unavailable, say so. A blank panel, a missing series and a numeric zero require different treatments.</p>
+<p>Colour should communicate a state that is also available in text or iconography. Red and green alone are not enough for colour-vision differences, grayscale print, or a dashboard viewed in poor lighting.</p>
+<h2 id="tooltips-are-diagnostic-ui-not-floating-labels">Tooltips are diagnostic UI, not floating labels</h2>
+<p>A tooltip should follow the selected observation and remain within the viewport. Its content needs to identify the time, series, value, unit and active filters. If the pointer approaches an edge, flip or reposition the tooltip instead of clipping it under the browser chrome or neighbouring panels.</p>
+<p>Keyboard users need an equivalent way to reach the information. For a dense chart, provide an inspectable point or an accessible table representation. Tooltips should not cover the point they're describing or disappear when the user moves toward a relevant detail link.</p>
+<p>A multi-series panel may need a shared crosshair and stable series ordering. Do not interpolate a value at a time where a particular series has no observation.</p>
+<h2 id="design-both-desktop-and-mobile-intentionally">Design both desktop and mobile intentionally</h2>
+<p>Desktop width is not a promise that every widget deserves to fit in one row. On a narrow viewport, reflow by <strong>decision priority</strong>, not simply by the original array order. The release status and current exception should remain visible before a lower-priority distribution.</p>
+<p>Check a 390px viewport as well as a wide desktop layout. Look for overflowing legends, clipped y-axis units, impossible touch targets, tiny timestamps and inspectors that create nested scrollbars. If a chart needs horizontal scrolling, give the user a visible cue and keep the explanation accessible.</p>
+<p>Support light and dark themes with consistent semantic contrast. A translucent tooltip that works on a dark plot may become unreadable on a light card. Reduce or remove transitions when the user prefers reduced motion.</p>
+<p><img src="../../content-assets/landing/editorial/dashboard-layout-comparison.svg" alt="Illustrative desktop observability dashboard showing decision-first KPIs, a diagnostic time series, and a mobile layout that preserves priority." width="1200" height="675" loading="lazy" decoding="async"></p>
+<p><em>The mobile layout deliberately prioritises the key measurement before details. The illustration is a design study rather than a production screenshot.</em></p>
+<h2 id="verify-with-real-queries-and-a-rendered-page">Verify with real queries and a rendered page</h2>
+<p>A saved document's JSON can be structurally valid while its selected provider is unauthorized, its labels do not exist, or its chart hides the useful signal. Test the saved queries with <code>query_dashboard</code>, inspect error and missing-data states, then read the actual rendered dashboard.</p>
+<p>When a deployment advertises the optional <code>render_dashboard</code> tool, Paprika can capture the live Insights UI through a private browser worker. That worker is not enabled by merely installing the Observe plugin. The <a data-analytics-event="docs_open" href="../../docs/observe-browser-renderer/">renderer guide</a> describes its security and revision conditions.</p>
+<p>For a focused visual test, compare desktop and mobile, light and dark themes, a chosen tooltip state and an empty-data state. Keep the screenshot tied to the saved document revision. The <a data-analytics-event="blog_open" href="../../blog/visual-testing-observability-dashboards/">visual verification article</a> turns that approach into an acceptance checklist.</p>
+<p>The public chart gallery below runs <strong>Paprika's actual chart renderers with synthetic fixtures</strong>, including working plot inspection and configuration examples. It is separate from an authenticated Insights dashboard.</p>
+<aside class="article-gallery-preview" data-editorial-gallery aria-label="Interactive chart showcase preview">
+  <div class="article-gallery-intro"><div><span class="demo-kicker">REAL PAPRIKA RENDERERS / SYNTHETIC FIXTURES</span>
+    <h3>Open the working chart showcase</h3>
+    <p>The embedded gallery uses the same chart renderer catalogue as the public showcase. It runs on labelled synthetic data and is separate from your authenticated dashboard workspace.</p></div>
+    <a data-gallery-link href="../../charts/#performance-workbench">Open the full-screen gallery</a></div>
+  <div class="article-gallery-prompt" data-gallery-prompt>
+    <span>Browse interactive charts, their tooltips and example configurations.</span>
+    <button type="button" data-gallery-launch hidden>Load interactive preview</button>
+  </div>
+  <iframe data-gallery-frame title="Paprika chart gallery with synthetic data" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
+  </aside>
+<p>Finally, decide whether a view could help someone at 03:00 without its author in the room. A good dashboard is precise about what it knows, explicit about what it doesn't, and quick to move from symptom to evidence.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More articles"><a data-analytics-event="blog_open" href="../../blog/prometheus-dashboard-query-patterns/" rel="prev"><span>Previous article</span><strong>Prometheus dashboard query patterns: rates, gauges and histograms</strong></a><a data-analytics-event="blog_open" href="../../blog/visual-testing-observability-dashboards/" rel="next"><span>Next article</span><strong>Visual testing for observability dashboards: data, layout and MCP verification</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand"><img src="../../paprika-mark.png" alt="" width="34" height="34"/><span>Paprika</span></a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../../docs/">Documentation</a><a data-analytics-event="blog_open" href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

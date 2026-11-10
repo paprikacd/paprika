@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Kubernetes release dashboards: the signals that matter before and after a rollout · Paprika engineering</title>
+<meta name="description" content="Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="article"/>
+<meta property="og:title" content="Kubernetes release dashboards: the signals that matter before and after a rollout · Paprika engineering"/>
+<meta property="og:description" content="Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/article-images/metrics.png"/>
+<meta property="og:image:alt" content="Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules."/>
+<meta property="og:image:width" content="1200"/><meta property="og:image:height" content="675"/><meta property="og:image:type" content="image/png"/>
+<meta property="article:published_time" content="2026-11-10T02:05:00Z"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Kubernetes release dashboards: the signals that matter before and after a rollout · Paprika engineering"/>
+<meta name="twitter:description" content="Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/article-images/metrics.png"/>
+<meta name="twitter:image:alt" content="Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules."/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=dashboard-notes-1"/>
+<link rel="stylesheet" href="../../article-demos.css?v=editorial-lab-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://paprikacd.github.io/paprika/#maintainers","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika","logo":"https://paprikacd.github.io/paprika/paprika-mark.png"},{"@type":"WebSite","@id":"https://paprikacd.github.io/paprika/#website","name":"Paprika","url":"https://paprikacd.github.io/paprika/","publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"SoftwareSourceCode","@id":"https://paprikacd.github.io/paprika/#software","name":"Paprika","url":"https://paprikacd.github.io/paprika/","description":"Open source Kubernetes application delivery operator","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go","runtimePlatform":"Kubernetes","author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"}},{"@type":"WebPage","@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#webpage","url":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/","name":"Kubernetes release dashboards: the signals that matter before and after a rollout · Paprika engineering","description":"Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness.","inLanguage":"en","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"about":{"@id":"https://paprikacd.github.io/paprika/#software"},"breadcrumb":{"@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#breadcrumb"},"mainEntity":{"@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#article"},"primaryImageOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#primaryimage"}},{"@type":"BreadcrumbList","@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Kubernetes release dashboards: the signals that matter before and after a rollout","item":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/"}]},{"@type":"Blog","@id":"https://paprikacd.github.io/paprika/blog/#blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"BlogPosting","@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#article","headline":"Kubernetes release dashboards: the signals that matter before and after a rollout","description":"Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness.","url":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/","mainEntityOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#webpage"},"author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en","about":{"@id":"https://paprikacd.github.io/paprika/#software"},"isPartOf":{"@id":"https://paprikacd.github.io/paprika/blog/#blog"},"articleSection":"Dashboarding","datePublished":"2026-11-10T02:05:00Z","image":{"@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#primaryimage"}},{"@type":"ImageObject","@id":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/#primaryimage","url":"https://paprikacd.github.io/paprika/article-images/metrics.png","contentUrl":"https://paprikacd.github.io/paprika/article-images/metrics.png","width":1200,"height":675,"encodingFormat":"image/png","description":"Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules.","caption":"Metrics become useful after scraping, label selection and freshness checks. Tune alert thresholds and durations to the installation.","representativeOfPage":true}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+<script src="../../article-demos.js?v=editorial-lab-1" type="module"></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="../../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="blog_open" href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Kubernetes release dashboards: the signals that matter before and after a rollout</span></li></ol></nav></div>
+<div class="article-layout article-layout--blog shell">
+
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#start-with-the-question-not-the-widget">Start with the question, not the widget</a></li><li class="toc-level-2"><a href="#put-paprikas-own-control-plane-metrics-to-work">Put Paprika&#39;s own control-plane metrics to work</a></li><li class="toc-level-2"><a href="#separate-delivery-progress-from-service-health">Separate delivery progress from service health</a></li><li class="toc-level-2"><a href="#design-for-the-next-decision">Design for the next decision</a></li><li class="toc-level-2"><a href="#verify-the-dashboard-before-relying-on-it">Verify the dashboard before relying on it</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><div class="editorial-eyebrow"><img src="../../paprika-mark.png" alt="" width="24" height="24"/><span>Paprika / Engineering</span></div><h1 id="kubernetes-release-dashboards-the-signals-that-matter-before-and-after-a-rollout">Kubernetes release dashboards: the signals that matter before and after a rollout</h1><p class="article-description">Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness.</p><div class="article-meta"><span>By <a rel="author" href="https://github.com/paprikacd/paprika">Paprika maintainers</a></span><span class="article-section">Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span><a href="https://github.com/paprikacd/paprika/blob/master/landing/content/blog/kubernetes-release-dashboard.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<figure class="editorial-cover"><img src="../../editorial/kubernetes-release-dashboard.svg" alt="An illustrated release evidence board connects source revision, workload readiness, drift comparison and provider-backed service signals." width="1200" height="675" decoding="async" fetchpriority="high"/><figcaption>A reliable rollout view keeps source identity, health, drift and service telemetry distinct.</figcaption></figure>
+<div class="prose"><p>A release dashboard should answer an operational question: <strong>is the new revision reaching its intended workloads, and can we trust the evidence?</strong> A grid of green charts does not answer that by itself. A Kubernetes Deployment can be available while its live configuration differs from Git; an Application can be synced while its pods fail readiness checks.</p><figure class="article-figure"><picture><source media="(max-width: 600px)" srcset="../../article-images/metrics-mobile.png" width="600" height="820"/><img src="../../article-images/metrics.png" alt="Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules." width="1200" height="675" decoding="async"/></picture><figcaption><span>Metrics become useful after scraping, label selection and freshness checks. Tune alert thresholds and durations to the installation.</span> <a href="../../article-images/metrics.png">Open full-size diagram</a></figcaption></figure>
+<p>Start with the release identity and deployment target. Then put desired-state comparison, workload health, control-plane progress and application telemetry alongside it. Paprika models those concerns separately through Applications, Releases and Stages; the <a data-analytics-event="docs_open" href="../../docs/concepts/">concepts guide</a> explains the resource relationships, and the <a data-analytics-event="blog_open" href="../../blog/kubernetes-health-vs-drift/">health and drift article</a> explains why the two status dimensions must not be collapsed.</p>
+<h2 id="start-with-the-question-not-the-widget">Start with the question, not the widget</h2>
+<p>A useful first screen has four distinct rows of evidence:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Signal to inspect</th>
+<th>Useful visual</th>
+<th>What it cannot establish</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Which revision is selected?</td>
+<td>Application and Release identity, target Stage</td>
+<td>Revision and target detail</td>
+<td>That a rollout completed</td>
+</tr>
+<tr>
+<td>Does live state match intent?</td>
+<td>Desired/live comparison and prune candidates</td>
+<td>Status plus resource breakdown</td>
+<td>That the workload is healthy</td>
+</tr>
+<tr>
+<td>Are the workloads converging?</td>
+<td>Resource conditions and readiness</td>
+<td>Status timeline and affected resources</td>
+<td>That application requests succeed</td>
+</tr>
+<tr>
+<td>Is the service behaving?</td>
+<td>Provider-backed request, error and latency queries</td>
+<td>Rates and time series</td>
+<td>That the rollout itself is the cause</td>
+</tr>
+</tbody>
+</table></div>
+<section class="editorial-demo" data-editorial-demo="release" data-demo-theme="dark" aria-label="Release evidence workbench">
+  <div class="demo-heading">
+    <div><span class="demo-kicker"><span class="demo-live-dot" aria-hidden="true"></span> INTERACTIVE / SYNTHETIC DATA</span>
+      <h3>Release evidence workbench</h3><p>Select a deployment target. Compare readiness, drift and the evidence behind the status.</p></div>
+    <button type="button" data-demo-theme-toggle aria-pressed="false" class="demo-theme" hidden>Light theme</button>
+  </div>
+  <div class="demo-toolbar"><span class="demo-source">Kubernetes / illustrative release</span><div class="demo-choices" role="group" aria-label="Example view" hidden><button type="button" data-demo-choice="dev" aria-pressed="true" class="demo-choice">Development</button><button type="button" data-demo-choice="staging" aria-pressed="false" class="demo-choice">Staging</button><button type="button" data-demo-choice="production" aria-pressed="false" class="demo-choice">Production</button></div></div>
+  <div class="demo-interface">
+    <div class="demo-metrics">
+      <div class="demo-kpi"><span class="demo-label">Selected measurement</span><strong data-demo-value>3 / 3</strong><span data-demo-unit>workloads ready</span></div>
+      <div class="demo-kpi demo-kpi-secondary"><span class="demo-label">Observation</span><strong data-demo-state>Synced, workloads ready</strong><span data-demo-status data-tone="good">Observed</span></div>
+    </div>
+    <figure class="demo-plot">
+      <figcaption><strong data-demo-signal>Reconciliation observations</strong><span>EXAMPLE SERIES / NOT LIVE</span></figcaption>
+      <svg data-demo-svg role="img" aria-label="Reconciliation observations, illustrative data" viewBox="0 0 550 188" preserveAspectRatio="xMidYMid meet">
+        <path d="M26 22V162H531" class="demo-axis"/>
+        <path d="M26 68H531M26 115H531" class="demo-gridline"/>
+        <g data-demo-bars></g>
+        <path data-demo-line d="M26.0 162.0 L71.3 130.8 L116.5 154.2 L161.8 115.2 L207.1 99.6 L252.4 99.6 L297.6 84.0 L342.9 76.2 L388.2 60.6 L433.5 52.8 L478.7 45.0 L524.0 45.0" class="demo-line" fill="none"/>
+      </svg>
+      <p class="demo-no-data" data-demo-empty hidden>No observations for this example state. Check query and provider status.</p>
+      <div class="demo-scrub"><label>Inspect observation <input data-demo-inspect type="range" min="0" max="11" value="0"/></label>
+      <output data-demo-inspection aria-live="polite">Sample 1 of 12: 28 events</output></div>
+    </figure>
+    <div class="demo-query"><span>Evidence / query</span><code data-demo-query>max by (app, namespace) (paprika_out_of_sync)</code></div>
+    <p class="demo-insight" data-demo-note aria-live="polite">The example reports no drift for this selected target. Workload readiness remains a separate observation.</p>
+  </div>
+  <div class="demo-foot"><span>Local fixture only. Values, providers and statuses are illustrative.</span>
+    <a href="../../charts/#charts">Explore Paprika's full chart gallery</a></div>
+</section>
+<p>The interactive example above switches between three <strong>synthetic</strong> environment states. It demonstrates why &quot;synced&quot;, &quot;ready&quot; and &quot;provider data available&quot; must remain separately visible.</p>
+<p>Do not replace a missing reading with zero. A disconnected Prometheus provider, a stale metric sample, and a genuine value of zero are different situations. In the saved Insights dashboard, keep the selected time window, provider and query status visible; use <code>query_dashboard</code> to confirm the widgets receive their expected signals.</p>
+<h2 id="put-paprikas-own-control-plane-metrics-to-work">Put Paprika's own control-plane metrics to work</h2>
+<p>Paprika exposes documented metrics for drift and reconciliation. The following PromQL is illustrative and only returns data after the corresponding metrics have been scraped. Confirm metric and label availability against the <a data-analytics-event="docs_open" href="../../docs/metrics/">metrics reference</a> and your actual provider.</p>
+<p>A count of out-of-sync resources by Application uses a gauge, not a counter:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 1"><code class="language-promql">max by (app, namespace) (paprika_out_of_sync)
+</code></pre></div>
+<p>A view of Applications whose controller is behind the declared generation uses:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 2"><code class="language-promql">max by (application, namespace) (
+  paprika_application_reconcile_lag
+)
+</code></pre></div>
+<p>For apply errors, which are represented by a counter, use a rate over an explicit window:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 3"><code class="language-promql">sum by (app) (
+  rate(paprika_sync_errors_total[5m])
+)
+</code></pre></div>
+<p>A positive error <em>rate</em> is evidence of recent failures, not an exact failure count. For a count over a window, <code>increase(paprika_sync_errors_total[1h])</code> is more suitable. Neither expression diagnoses the underlying problem; the next action is to inspect the affected Application, Release, events and logs.</p>
+<p>An empty series can mean the target was never scraped. Check scrape health, provider permissions, available labels and sampling freshness before making a release decision from the panel.</p>
+<p><img src="../../content-assets/landing/editorial/release-evidence-board.svg" alt="Illustrative release evidence dashboard with revision identity, distinct workload and drift status, and a missing telemetry state." width="1200" height="675" loading="lazy" decoding="async"></p>
+<p><em>Illustrative dashboard composition. The source revision, readiness, drift and telemetry cards communicate different facts; these are not production values.</em></p>
+<h2 id="separate-delivery-progress-from-service-health">Separate delivery progress from service health</h2>
+<p>A production candidate needs both delivery evidence and service evidence. A successful render or apply operation does not show that users can complete requests. Conversely, an apparently healthy workload does not prove the intended source revision was deployed.</p>
+<p>For staged promotion, use the same immutable commit as the reference point while retaining each environment's own configuration. Paprika's <a data-analytics-event="docs_open" href="../../docs/environment-promotion/">environment promotion guide</a> distinguishes selected candidate, verification and approval. A dashboard can place those events on a timeline without pretending they are interchangeable.</p>
+<p>For a canary, show the configured step, current workload convergence and whichever analysis signals are actually available. A configured ten-percent traffic weight is an <em>intent</em>, not proof that ten percent of real requests reached the candidate. The <a data-analytics-event="docs_open" href="../../docs/canary/">canary guide</a> describes the rollout gates and their limits.</p>
+<h2 id="design-for-the-next-decision">Design for the next decision</h2>
+<p>Above the fold, prefer a revision identifier, deployment target, release phase and a small set of genuine exceptions. Put exploration underneath:</p>
+<ol>
+<li>The selected revision and its release record, without truncating away the differentiating commit characters.</li>
+<li>Drift and workload status, with the affected resource linked or identifiable.</li>
+<li>Time-series evidence around the deployment window, including units and timestamps.</li>
+<li>A clear route to the underlying query, logs or traces when a chart is abnormal.</li>
+</ol>
+<p>Use a fixed pre/post window when comparing a release with its predecessor. A graph whose time range silently changes when you select a new service is difficult to compare. Keep selectors connected to the saved-query parameters, not merely drawn above the charts.</p>
+<p>If the environment uses several clusters, preserve the cluster dimension. Aggregating unlike clusters into a single apparently healthy total can obscure a failed deployment in a smaller target. For a cluster-specific incident, drill down before summing anything.</p>
+<h2 id="verify-the-dashboard-before-relying-on-it">Verify the dashboard before relying on it</h2>
+<p>Read back the saved document and run <code>query_dashboard</code> with an explicit service and time range. Inspect signal states, returned timestamps and query errors. In the browser, check a narrower viewport, keyboard navigation, legend clipping and tooltip placement. A successful JSON save is not a successful monitoring dashboard.</p>
+<p>Paprika's public <a href="../../#charts">chart and dashboard showcase</a> uses synthetic data deliberately; it demonstrates presentation, not production release health. The <a data-analytics-event="docs_open" href="../../docs/dashboards/">dashboard examples guide</a> explains how to map an example's placeholder queries to real connected providers.</p>
+<p>For a hands-on example, open the actual chart renderer below. The gallery uses <strong>labelled synthetic fixture data</strong>, not a live cluster.</p>
+<aside class="article-gallery-preview" data-editorial-gallery aria-label="Interactive chart showcase preview">
+  <div class="article-gallery-intro"><div><span class="demo-kicker">REAL PAPRIKA RENDERERS / SYNTHETIC FIXTURES</span>
+    <h3>Open the working chart showcase</h3>
+    <p>The embedded gallery uses the same chart renderer catalogue as the public showcase. It runs on labelled synthetic data and is separate from your authenticated dashboard workspace.</p></div>
+    <a data-gallery-link href="../../charts/#kubernetes-fleet">Open the full-screen gallery</a></div>
+  <div class="article-gallery-prompt" data-gallery-prompt>
+    <span>Browse interactive charts, their tooltips and example configurations.</span>
+    <button type="button" data-gallery-launch hidden>Load interactive preview</button>
+  </div>
+  <iframe data-gallery-frame title="Paprika chart gallery with synthetic data" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
+  </aside>
+<p>For the next design step, read <a data-analytics-event="blog_open" href="../../blog/prometheus-dashboard-query-patterns/">Prometheus dashboard query patterns</a> and <a data-analytics-event="blog_open" href="../../blog/observability-dashboard-layout/">the dashboard layout checklist</a>. Together they turn the same operational questions into defensible queries and readable panels.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More articles"><a data-analytics-event="blog_open" href="../../blog/building-dashboards-with-mcp/" rel="prev"><span>Previous article</span><strong>Build and verify observability dashboards through MCP</strong></a><a data-analytics-event="blog_open" href="../../blog/prometheus-dashboard-query-patterns/" rel="next"><span>Next article</span><strong>Prometheus dashboard query patterns: rates, gauges and histograms</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand"><img src="../../paprika-mark.png" alt="" width="34" height="34"/><span>Paprika</span></a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../../docs/">Documentation</a><a data-analytics-event="blog_open" href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

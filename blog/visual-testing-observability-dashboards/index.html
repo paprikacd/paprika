@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Visual testing for observability dashboards: data, layout and MCP verification · Paprika engineering</title>
+<meta name="description" content="Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="article"/>
+<meta property="og:title" content="Visual testing for observability dashboards: data, layout and MCP verification · Paprika engineering"/>
+<meta property="og:description" content="Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/article-images/browser-renderer.png"/>
+<meta property="og:image:alt" content="Authorized dashboard identity and ETag pass to a private browser worker, which returns a real Insights screenshot for visual inspection."/>
+<meta property="og:image:width" content="1200"/><meta property="og:image:height" content="675"/><meta property="og:image:type" content="image/png"/>
+<meta property="article:published_time" content="2026-11-10T02:05:00Z"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Visual testing for observability dashboards: data, layout and MCP verification · Paprika engineering"/>
+<meta name="twitter:description" content="Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/article-images/browser-renderer.png"/>
+<meta name="twitter:image:alt" content="Authorized dashboard identity and ETag pass to a private browser worker, which returns a real Insights screenshot for visual inspection."/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=dashboard-notes-1"/>
+<link rel="stylesheet" href="../../article-demos.css?v=editorial-lab-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://paprikacd.github.io/paprika/#maintainers","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika","logo":"https://paprikacd.github.io/paprika/paprika-mark.png"},{"@type":"WebSite","@id":"https://paprikacd.github.io/paprika/#website","name":"Paprika","url":"https://paprikacd.github.io/paprika/","publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"SoftwareSourceCode","@id":"https://paprikacd.github.io/paprika/#software","name":"Paprika","url":"https://paprikacd.github.io/paprika/","description":"Open source Kubernetes application delivery operator","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go","runtimePlatform":"Kubernetes","author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"}},{"@type":"WebPage","@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#webpage","url":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/","name":"Visual testing for observability dashboards: data, layout and MCP verification · Paprika engineering","description":"Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states.","inLanguage":"en","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"about":{"@id":"https://paprikacd.github.io/paprika/#software"},"breadcrumb":{"@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#breadcrumb"},"mainEntity":{"@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#article"},"primaryImageOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#primaryimage"}},{"@type":"BreadcrumbList","@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Visual testing for observability dashboards: data, layout and MCP verification","item":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/"}]},{"@type":"Blog","@id":"https://paprikacd.github.io/paprika/blog/#blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"BlogPosting","@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#article","headline":"Visual testing for observability dashboards: data, layout and MCP verification","description":"Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states.","url":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/","mainEntityOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#webpage"},"author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en","about":{"@id":"https://paprikacd.github.io/paprika/#software"},"isPartOf":{"@id":"https://paprikacd.github.io/paprika/blog/#blog"},"articleSection":"Dashboarding","datePublished":"2026-11-10T02:05:00Z","image":{"@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#primaryimage"}},{"@type":"ImageObject","@id":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/#primaryimage","url":"https://paprikacd.github.io/paprika/article-images/browser-renderer.png","contentUrl":"https://paprikacd.github.io/paprika/article-images/browser-renderer.png","width":1200,"height":675,"encodingFormat":"image/png","description":"Authorized dashboard identity and ETag pass to a private browser worker, which returns a real Insights screenshot for visual inspection.","caption":"The optional worker captures the actual Insights interface at the requested viewport. Use query_dashboard alongside the image to verify data freshness and errors.","representativeOfPage":true}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+<script src="../../article-demos.js?v=editorial-lab-1" type="module"></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="../../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="blog_open" href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Visual testing for observability dashboards: data, layout and MCP verification</span></li></ol></nav></div>
+<div class="article-layout article-layout--blog shell">
+
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#establish-a-repeatable-source-of-truth">Establish a repeatable source of truth</a></li><li class="toc-level-2"><a href="#use-screenshots-only-when-the-renderer-is-available">Use screenshots only when the renderer is available</a></li><li class="toc-level-2"><a href="#test-the-states-that-routinely-break">Test the states that routinely break</a></li><li class="toc-level-2"><a href="#keep-verification-separate-from-authoring">Keep verification separate from authoring</a></li><li class="toc-level-2"><a href="#measure-the-failure-not-just-the-screenshot">Measure the failure, not just the screenshot</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><div class="editorial-eyebrow"><img src="../../paprika-mark.png" alt="" width="24" height="24"/><span>Paprika / Engineering</span></div><h1 id="visual-testing-for-observability-dashboards-data-layout-and-mcp-verification">Visual testing for observability dashboards: data, layout and MCP verification</h1><p class="article-description">Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states.</p><div class="article-meta"><span>By <a rel="author" href="https://github.com/paprikacd/paprika">Paprika maintainers</a></span><span class="article-section">Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span><a href="https://github.com/paprikacd/paprika/blob/master/landing/content/blog/visual-testing-observability-dashboards.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<figure class="editorial-cover"><img src="../../editorial/visual-testing-observability-dashboards.svg" alt="Desktop and phone dashboard screens show validation of KPI cards, tooltips, missing data and responsive layout." width="1200" height="675" decoding="async" fetchpriority="high"/><figcaption>Data verification and actual browser inspection are separate acceptance checks for every dashboard.</figcaption></figure>
+<div class="prose"><p>A dashboard can pass JSON Schema validation and still fail its user. A legend might obscure the last data point, a KPI might scroll inside a fixed-height card, or a tooltip might render outside the browser viewport. Worse, a beautiful screenshot can conceal a failed query or a stale series. Dashboard quality needs two independent checks: <strong>data semantics</strong> and <strong>rendered behaviour</strong>.</p><figure class="article-figure"><picture><source media="(max-width: 600px)" srcset="../../article-images/browser-renderer-mobile.png" width="600" height="820"/><img src="../../article-images/browser-renderer.png" alt="Authorized dashboard identity and ETag pass to a private browser worker, which returns a real Insights screenshot for visual inspection." width="1200" height="675" decoding="async"/></picture><figcaption><span>The optional worker captures the actual Insights interface at the requested viewport. Use query_dashboard alongside the image to verify data freshness and errors.</span> <a href="../../article-images/browser-renderer.png">Open full-size diagram</a></figcaption></figure>
+<p>Paprika Observe separates these concerns. <code>query_dashboard</code> reports live provider-backed signals and their states, while the optional <code>render_dashboard</code> capability captures the actual Insights interface using a controlled Chromium worker. The tools are complementary, not substitutes.</p>
+<h2 id="establish-a-repeatable-source-of-truth">Establish a repeatable source of truth</h2>
+<p>Start by reading the saved dashboard with <code>get_dashboard</code>. Keep its ID, ETag, time range, variables and referenced saved queries. If you plan to edit its layout through MCP, discover the current schema with <code>get_insights_schema</code> and make the smallest safe change.</p>
+<p>Use <code>query_dashboard</code> to test the query side. The following is an illustrative request; replace the dashboard ID, widget ID and service name with values discovered from your workspace:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">json</span></div><pre tabindex="0" aria-label="json code example 1"><code class="language-json">{
+  &quot;name&quot;: &quot;query_dashboard&quot;,
+  &quot;arguments&quot;: {
+    &quot;id&quot;: &quot;service-overview&quot;,
+    &quot;widget_ids&quot;: [&quot;request-rate&quot;],
+    &quot;variables&quot;: {&quot;service&quot;: &quot;checkout&quot;},
+    &quot;history_points&quot;: 12
+  }
+}
+</code></pre></div>
+<p>Inspect every returned signal's state, unit, timestamp and provider error before interpreting the chart. A value of zero is not interchangeable with no series, a truncated result or a stale sample. A widget can be visually correct while displaying the wrong source or time window.</p>
+<p>The <a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/dashboard-query.md">dashboard query contract</a> documents deduplication, bounded results and how variables propagate.</p>
+<h2 id="use-screenshots-only-when-the-renderer-is-available">Use screenshots only when the renderer is available</h2>
+<p>The browser renderer is an optional private worker. The Observe deployment must advertise <code>render_dashboard</code>; a plugin installation by itself does not supply a browser worker or permission to render arbitrary sites.</p>
+<p>When enabled, Paprika first authorizes the requested dashboard, passes a short-lived delegated token to the isolated worker, and checks that the UI read the expected document revision. The worker uses a trusted internal UI origin, rejects unrelated browser destinations and mutating requests, and fails captures with unresolved loading states or visible query errors. These constraints matter because a screenshot taken against a different document revision is not a valid visual comparison.</p>
+<p>The <a data-analytics-event="docs_open" href="../../docs/observe-browser-renderer/">renderer deployment guide</a> describes the opt-in configuration and its limits. If the renderer is unavailable, use the normal authenticated dashboard page in a browser. Do not report a nonexistent screenshot as proof of visual quality.</p>
+<p>The following local demo lets you simulate a desktop view, narrow layout and a provider error. Check that missing data is presented as a state rather than a fabricated zero.</p>
+<section class="editorial-demo" data-editorial-demo="testing" data-demo-theme="dark" aria-label="Visual acceptance lab">
+  <div class="demo-heading">
+    <div><span class="demo-kicker"><span class="demo-live-dot" aria-hidden="true"></span> INTERACTIVE / SYNTHETIC DATA</span>
+      <h3>Visual acceptance lab</h3><p>Exercise desktop/mobile layout and missing-data states. This is a local synthetic preview, not the private screenshot worker.</p></div>
+    <button type="button" data-demo-theme-toggle aria-pressed="false" class="demo-theme" hidden>Light theme</button>
+  </div>
+  <div class="demo-toolbar"><span class="demo-source">Browser verification / illustrative</span><div class="demo-choices" role="group" aria-label="Example view" hidden><button type="button" data-demo-choice="desktop" aria-pressed="true" class="demo-choice">Desktop</button><button type="button" data-demo-choice="mobile" aria-pressed="false" class="demo-choice">Mobile</button><button type="button" data-demo-choice="unavailable" aria-pressed="false" class="demo-choice">Provider error</button></div></div>
+  <div class="demo-interface">
+    <div class="demo-metrics">
+      <div class="demo-kpi"><span class="demo-label">Selected measurement</span><strong data-demo-value>4</strong><span data-demo-unit>evidence panels</span></div>
+      <div class="demo-kpi demo-kpi-secondary"><span class="demo-label">Observation</span><strong data-demo-state>Wide layout, visible inspection</strong><span data-demo-status data-tone="neutral">Layout</span></div>
+    </div>
+    <figure class="demo-plot">
+      <figcaption><strong data-demo-signal>Example response-time trend</strong><span>EXAMPLE SERIES / NOT LIVE</span></figcaption>
+      <svg data-demo-svg role="img" aria-label="Example response-time trend, illustrative data" viewBox="0 0 550 188" preserveAspectRatio="xMidYMid meet">
+        <path d="M26 22V162H531" class="demo-axis"/>
+        <path d="M26 68H531M26 115H531" class="demo-gridline"/>
+        <g data-demo-bars></g>
+        <path data-demo-line d="M26.0 110.0 L71.3 155.5 L116.5 162.0 L161.8 71.0 L207.1 97.0 L252.4 123.0 L297.6 129.5 L342.9 45.0 L388.2 116.5 L433.5 103.5 L478.7 136.0 L524.0 142.5" class="demo-line" fill="none"/>
+      </svg>
+      <p class="demo-no-data" data-demo-empty hidden>No observations for this example state. Check query and provider status.</p>
+      <div class="demo-scrub"><label>Inspect observation <input data-demo-inspect type="range" min="0" max="11" value="0"/></label>
+      <output data-demo-inspection aria-live="polite">Sample 1 of 12: 82 ms</output></div>
+    </figure>
+    <div class="demo-query"><span>Evidence / query</span><code data-demo-query>Verify page width, full legend labels and bounded tooltips.</code></div>
+    <p class="demo-insight" data-demo-note aria-live="polite">A screenshot is only useful when it matches the saved dashboard revision and includes the tested viewport.</p>
+  </div>
+  <div class="demo-foot"><span>Local fixture only. Values, providers and statuses are illustrative.</span>
+    <a href="../../charts/#charts">Explore Paprika's full chart gallery</a></div>
+</section>
+<h2 id="test-the-states-that-routinely-break">Test the states that routinely break</h2>
+<p>Use an acceptance matrix rather than one polished desktop capture:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>View or state</th>
+<th>What to inspect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Desktop, light</td>
+<td>Hierarchy, axis labels, tooltip contrast, unused space</td>
+</tr>
+<tr>
+<td>Desktop, dark</td>
+<td>Grid contrast, colour semantics, focus indicators</td>
+</tr>
+<tr>
+<td>Mobile, light</td>
+<td>Card priority, legend wrapping, scroll/overflow</td>
+</tr>
+<tr>
+<td>Mobile, dark</td>
+<td>Inspector positioning, touch targets, readable units</td>
+</tr>
+<tr>
+<td>Narrow KPI card</td>
+<td>Primary value prominence, no internal scrollbar</td>
+</tr>
+<tr>
+<td>Missing or failed query</td>
+<td>Visible error/empty state, not a fabricated zero</td>
+</tr>
+<tr>
+<td>Dense chart inspection</td>
+<td>Crosshair, exact timestamp, correct series/units</td>
+</tr>
+<tr>
+<td>Changed document ETag</td>
+<td>Capture rejected or explicitly matched to the new revision</td>
+</tr>
+</tbody>
+</table></div>
+<p>For a chart with interactive inspection, deliberately focus an observation near both horizontal viewport edges. A fixed tooltip may appear correct in a centre screenshot yet clip when the selected point is close to the boundary.</p>
+<p>Use a real viewport and a screenshot of the actual application, not a cropped marketing fixture. Compare only equivalent data windows if you intend to judge a visual regression.</p>
+<p><img src="../../content-assets/landing/editorial/dashboard-visual-test-matrix.svg" alt="Four-cell visual regression matrix for desktop light, desktop dark, mobile reflow and provider-error empty states." width="1200" height="675" loading="lazy" decoding="async"></p>
+<p><em>Illustrative acceptance matrix. A verified render must match the saved document revision, viewport and data state.</em></p>
+<h2 id="keep-verification-separate-from-authoring">Keep verification separate from authoring</h2>
+<p>A useful workflow for an agent or engineer is:</p>
+<ol>
+<li>Discover providers, queries and dashboard IDs. Confirm actual authorization and capabilities.</li>
+<li>Query the dashboard with known variables; record its signal states and saved revision.</li>
+<li>Render or open the UI in a browser; inspect layout at wide and narrow widths.</li>
+<li>Identify one specific defect, such as a clipped legend or an excessively tall KPI card.</li>
+<li>Apply a targeted presentation change with the exact current ETag.</li>
+<li>Read the dashboard back, query again, and capture the revised layout.</li>
+<li>Compare results, including the possibility that the edit had no visual effect.</li>
+</ol>
+<p>The target should be an observable improvement, not just a larger diff. For MCP edits, <code>patch_dashboard</code> can update widgets by stable ID, but arrays replace in full and stale ETags are rejected. Reread rather than attempting a wildcard overwrite. See the <a data-analytics-event="blog_open" href="../../blog/building-dashboards-with-mcp/">authoring walkthrough</a> for scope and conflict details.</p>
+<h2 id="measure-the-failure-not-just-the-screenshot">Measure the failure, not just the screenshot</h2>
+<p>A visual regression report needs a reproducible condition: viewport size, colour theme, dashboard ID, document revision, query window, widget/series identity and exact symptom. Include the expected state and observed state. Screenshots and query summaries are evidence; they are not a release guarantee.</p>
+<p>A dashboard may also be intentionally empty. Test that emptiness without labelling it &quot;healthy.&quot; Compare the incoming signals and the UI's empty state. Where a chart or provider supports only a limited sample, surface truncation and sampling limits.</p>
+<p>Paprika's browser suite covers deterministic fixtures in light/dark modes and desktop/mobile viewports, but a passing fixture does not prove a particular production provider's data is correct. The <a data-analytics-event="docs_open" href="../../docs/dashboards/">dashboard examples guide</a> explains that source-backed examples use sample data until each query is mapped to a connected provider.</p>
+<p>For practical layout decisions, continue with <a data-analytics-event="blog_open" href="../../blog/observability-dashboard-layout/">observability dashboard design</a>. For the query semantics underneath those panels, read <a data-analytics-event="blog_open" href="../../blog/prometheus-dashboard-query-patterns/">Prometheus dashboard query patterns</a>. The result is a dashboard someone can trust, not merely one that screenshots well.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More articles"><a data-analytics-event="blog_open" href="../../blog/observability-dashboard-layout/" rel="prev"><span>Previous article</span><strong>Observability dashboard design: layout, charts and readable KPIs</strong></a><a data-analytics-event="docs_open" href="../../docs/"><span>Keep exploring</span><strong>Read the documentation</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand"><img src="../../paprika-mark.png" alt="" width="34" height="34"/><span>Paprika</span></a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../../docs/">Documentation</a><a data-analytics-event="blog_open" href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>

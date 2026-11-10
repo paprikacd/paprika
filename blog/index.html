@@ -2,24 +2,24 @@
 <html lang="en"><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Paprika engineering blog</title>
-<meta name="description" content="Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP."/>
+<title>Kubernetes, observability and dashboarding articles · Paprika engineering</title>
+<meta name="description" content="Practical guides for Kubernetes release dashboards, Prometheus queries, dashboard UX, MCP authoring and deployment operations."/>
 
 <link rel="canonical" href="https://paprikacd.github.io/paprika/blog/"/>
 <link rel="icon" type="image/png" href="../paprika-mark.png"/>
 <meta name="theme-color" content="#1d2d3d"/>
 <meta property="og:site_name" content="Paprika"/>
 <meta property="og:type" content="website"/>
-<meta property="og:title" content="Paprika engineering blog"/>
-<meta property="og:description" content="Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP."/>
+<meta property="og:title" content="Kubernetes, observability and dashboarding articles · Paprika engineering"/>
+<meta property="og:description" content="Practical guides for Kubernetes release dashboards, Prometheus queries, dashboard UX, MCP authoring and deployment operations."/>
 <meta property="og:url" content="https://paprikacd.github.io/paprika/blog/"/>
 <meta property="og:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
 <meta property="og:image:alt" content="Paprika console showing synthetic application data"/>
 
 
 <meta name="twitter:card" content="summary_large_image"/>
-<meta name="twitter:title" content="Paprika engineering blog"/>
-<meta name="twitter:description" content="Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP."/>
+<meta name="twitter:title" content="Kubernetes, observability and dashboarding articles · Paprika engineering"/>
+<meta name="twitter:description" content="Practical guides for Kubernetes release dashboards, Prometheus queries, dashboard UX, MCP authoring and deployment operations."/>
 <meta name="twitter:image" content="https://paprikacd.github.io/paprika/demo-applications.webp"/>
 <meta name="twitter:image:alt" content="Paprika console showing synthetic application data"/>
 <link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../feed.xml"/>
@@ -27,9 +27,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="../site.css?v=public-content-1"/>
-<link rel="stylesheet" href="../content.css?v=editorial-covers-2"/>
-<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://paprikacd.github.io/paprika/#maintainers","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika","logo":"https://paprikacd.github.io/paprika/paprika-mark.png"},{"@type":"WebSite","@id":"https://paprikacd.github.io/paprika/#website","name":"Paprika","url":"https://paprikacd.github.io/paprika/","publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"SoftwareSourceCode","@id":"https://paprikacd.github.io/paprika/#software","name":"Paprika","url":"https://paprikacd.github.io/paprika/","description":"Open source Kubernetes application delivery operator","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go","runtimePlatform":"Kubernetes","author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"}},{"@type":"CollectionPage","@id":"https://paprikacd.github.io/paprika/blog/#webpage","url":"https://paprikacd.github.io/paprika/blog/","name":"Paprika engineering blog","description":"Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP.","inLanguage":"en","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"about":[{"@id":"https://paprikacd.github.io/paprika/#software"},{"@id":"https://paprikacd.github.io/paprika/blog/#blog"}],"breadcrumb":{"@id":"https://paprikacd.github.io/paprika/blog/#breadcrumb"},"mainEntity":{"@id":"https://paprikacd.github.io/paprika/blog/#articles"}},{"@type":"BreadcrumbList","@id":"https://paprikacd.github.io/paprika/blog/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Engineering blog","item":"https://paprikacd.github.io/paprika/blog/"}]},{"@type":"ItemList","@id":"https://paprikacd.github.io/paprika/blog/#articles","numberOfItems":3,"itemListElement":[{"@type":"ListItem","position":1,"name":"Kubernetes health and drift answer different questions","url":"https://paprikacd.github.io/paprika/blog/kubernetes-health-vs-drift/"},{"@type":"ListItem","position":2,"name":"Promoting a tested Git revision across Kubernetes environments","url":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/"},{"@type":"ListItem","position":3,"name":"Build and verify observability dashboards through MCP","url":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/"}]},{"@type":"Blog","@id":"https://paprikacd.github.io/paprika/blog/#blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en","mainEntityOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/#webpage"}}]}</script>
+<link rel="stylesheet" href="../content.css?v=dashboard-notes-1"/>
+
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://paprikacd.github.io/paprika/#maintainers","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika","logo":"https://paprikacd.github.io/paprika/paprika-mark.png"},{"@type":"WebSite","@id":"https://paprikacd.github.io/paprika/#website","name":"Paprika","url":"https://paprikacd.github.io/paprika/","publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"SoftwareSourceCode","@id":"https://paprikacd.github.io/paprika/#software","name":"Paprika","url":"https://paprikacd.github.io/paprika/","description":"Open source Kubernetes application delivery operator","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go","runtimePlatform":"Kubernetes","author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"}},{"@type":"CollectionPage","@id":"https://paprikacd.github.io/paprika/blog/#webpage","url":"https://paprikacd.github.io/paprika/blog/","name":"Kubernetes, observability and dashboarding articles · Paprika engineering","description":"Practical guides for Kubernetes release dashboards, Prometheus queries, dashboard UX, MCP authoring and deployment operations.","inLanguage":"en","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"about":[{"@id":"https://paprikacd.github.io/paprika/#software"},{"@id":"https://paprikacd.github.io/paprika/blog/#blog"}],"breadcrumb":{"@id":"https://paprikacd.github.io/paprika/blog/#breadcrumb"},"mainEntity":{"@id":"https://paprikacd.github.io/paprika/blog/#articles"}},{"@type":"BreadcrumbList","@id":"https://paprikacd.github.io/paprika/blog/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Engineering blog","item":"https://paprikacd.github.io/paprika/blog/"}]},{"@type":"ItemList","@id":"https://paprikacd.github.io/paprika/blog/#articles","numberOfItems":7,"itemListElement":[{"@type":"ListItem","position":1,"name":"Kubernetes release dashboards: the signals that matter before and after a rollout","url":"https://paprikacd.github.io/paprika/blog/kubernetes-release-dashboard/"},{"@type":"ListItem","position":2,"name":"Prometheus dashboard query patterns: rates, gauges and histograms","url":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/"},{"@type":"ListItem","position":3,"name":"Observability dashboard design: layout, charts and readable KPIs","url":"https://paprikacd.github.io/paprika/blog/observability-dashboard-layout/"},{"@type":"ListItem","position":4,"name":"Visual testing for observability dashboards: data, layout and MCP verification","url":"https://paprikacd.github.io/paprika/blog/visual-testing-observability-dashboards/"},{"@type":"ListItem","position":5,"name":"Kubernetes health and drift answer different questions","url":"https://paprikacd.github.io/paprika/blog/kubernetes-health-vs-drift/"},{"@type":"ListItem","position":6,"name":"Promoting a tested Git revision across Kubernetes environments","url":"https://paprikacd.github.io/paprika/blog/promoting-pinned-revisions/"},{"@type":"ListItem","position":7,"name":"Build and verify observability dashboards through MCP","url":"https://paprikacd.github.io/paprika/blog/building-dashboards-with-mcp/"}]},{"@type":"Blog","@id":"https://paprikacd.github.io/paprika/blog/#blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en","mainEntityOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/#webpage"}}]}</script>
 <script src="../content.js?v=public-content-1" defer></script>
+
 <!-- paprika-analytics:start -->
 <script id="paprika-analytics" defer src="../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
 <!-- paprika-analytics:end -->
@@ -37,8 +39,54 @@
 <a href="#main-content" class="skip-link">Skip to main content</a>
 <header class="masthead nav"><div class="masthead-inner shell"><a href="../" class="wordmark" aria-label="Paprika home"><img src="../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../#deployment">Product</a><a data-analytics-event="docs_open" href="../docs/">Docs</a><a href="../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../#deployment">Product</a><a data-analytics-event="docs_open" href="../docs/">Docs</a><a href="../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
 <main id="main-content" tabindex="-1">
-  <header class="content-hero shell"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../">Paprika</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Engineering blog</span></li></ol></nav><div class="editorial-eyebrow"><img src="../paprika-mark.png" alt="" width="24" height="24"/><span>Paprika / Engineering journal</span></div><h1>Notes from the control plane.</h1><p>Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP.</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header>
-  <div class="content-index shell"><ol class="post-list"><li><article class="post-card">
+    <header class="content-hero shell"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../">Paprika</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Engineering blog</span></li></ol></nav><div class="editorial-eyebrow"><img src="../paprika-mark.png" alt="" width="24" height="24"/><span>Paprika / Engineering journal</span></div><h1>Engineering notes on Kubernetes and observability.</h1><p>Practical guides for Kubernetes release dashboards, Prometheus queries, dashboard UX, MCP authoring and deployment operations.</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header>
+    <div class="content-index shell">
+      <section class="blog-topic-hub" aria-labelledby="dashboarding-topic-title">
+        <div class="blog-topic-heading"><div><span class="topic-kicker">Featured subject / Dashboarding</span><h2 id="dashboarding-topic-title">From query to dashboard.</h2>
+        <p>How to select signals, build reliable PromQL, arrange readable panels and verify the result in a real browser.</p></div>
+        <a href="../charts/#charts" class="link-arrow">Explore chart gallery</a></div>
+        <ol class="topic-article-list"><li>
+    <a data-analytics-event="blog_open" class="topic-article" href="./kubernetes-release-dashboard/" aria-label="Read Kubernetes release dashboards: the signals that matter before and after a rollout">
+      <img src="../editorial/kubernetes-release-dashboard.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/>
+      <span class="topic-article-content"><small>Dashboarding · 5 min</small><strong>Kubernetes release dashboards: the signals that matter before and after a rollout</strong></span>
+    </a>
+  </li><li>
+    <a data-analytics-event="blog_open" class="topic-article" href="./prometheus-dashboard-query-patterns/" aria-label="Read Prometheus dashboard query patterns: rates, gauges and histograms">
+      <img src="../editorial/prometheus-dashboard-query-patterns.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/>
+      <span class="topic-article-content"><small>Dashboarding · 5 min</small><strong>Prometheus dashboard query patterns: rates, gauges and histograms</strong></span>
+    </a>
+  </li><li>
+    <a data-analytics-event="blog_open" class="topic-article" href="./observability-dashboard-layout/" aria-label="Read Observability dashboard design: layout, charts and readable KPIs">
+      <img src="../editorial/observability-dashboard-layout.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/>
+      <span class="topic-article-content"><small>Dashboarding · 5 min</small><strong>Observability dashboard design: layout, charts and readable KPIs</strong></span>
+    </a>
+  </li></ol>
+      </section>
+      <section aria-labelledby="all-engineering-title"><h2 id="all-engineering-title" class="blog-index-heading">All engineering articles</h2><ol class="post-list"><li><article class="post-card">
+      <a data-analytics-event="blog_open" class="post-cover" href="./kubernetes-release-dashboard/" aria-label="Read Kubernetes release dashboards: the signals that matter before and after a rollout"><img src="../editorial/kubernetes-release-dashboard.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
+      <div class="post-card-body">
+        <div class="post-meta"><span>Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span></div>
+        <div class="post-copy"><h2><a data-analytics-event="blog_open" href="./kubernetes-release-dashboard/">Kubernetes release dashboards: the signals that matter before and after a rollout</a></h2><p>Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness.</p><a data-analytics-event="blog_open" class="link-arrow" href="./kubernetes-release-dashboard/" aria-label="Read Kubernetes release dashboards: the signals that matter before and after a rollout">Read article</a></div>
+      </div>
+    </article></li><li><article class="post-card">
+      <a data-analytics-event="blog_open" class="post-cover" href="./prometheus-dashboard-query-patterns/" aria-label="Read Prometheus dashboard query patterns: rates, gauges and histograms"><img src="../editorial/prometheus-dashboard-query-patterns.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
+      <div class="post-card-body">
+        <div class="post-meta"><span>Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span></div>
+        <div class="post-copy"><h2><a data-analytics-event="blog_open" href="./prometheus-dashboard-query-patterns/">Prometheus dashboard query patterns: rates, gauges and histograms</a></h2><p>Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts.</p><a data-analytics-event="blog_open" class="link-arrow" href="./prometheus-dashboard-query-patterns/" aria-label="Read Prometheus dashboard query patterns: rates, gauges and histograms">Read article</a></div>
+      </div>
+    </article></li><li><article class="post-card">
+      <a data-analytics-event="blog_open" class="post-cover" href="./observability-dashboard-layout/" aria-label="Read Observability dashboard design: layout, charts and readable KPIs"><img src="../editorial/observability-dashboard-layout.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
+      <div class="post-card-body">
+        <div class="post-meta"><span>Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span></div>
+        <div class="post-copy"><h2><a data-analytics-event="blog_open" href="./observability-dashboard-layout/">Observability dashboard design: layout, charts and readable KPIs</a></h2><p>Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states.</p><a data-analytics-event="blog_open" class="link-arrow" href="./observability-dashboard-layout/" aria-label="Read Observability dashboard design: layout, charts and readable KPIs">Read article</a></div>
+      </div>
+    </article></li><li><article class="post-card">
+      <a data-analytics-event="blog_open" class="post-cover" href="./visual-testing-observability-dashboards/" aria-label="Read Visual testing for observability dashboards: data, layout and MCP verification"><img src="../editorial/visual-testing-observability-dashboards.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
+      <div class="post-card-body">
+        <div class="post-meta"><span>Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span></div>
+        <div class="post-copy"><h2><a data-analytics-event="blog_open" href="./visual-testing-observability-dashboards/">Visual testing for observability dashboards: data, layout and MCP verification</a></h2><p>Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states.</p><a data-analytics-event="blog_open" class="link-arrow" href="./visual-testing-observability-dashboards/" aria-label="Read Visual testing for observability dashboards: data, layout and MCP verification">Read article</a></div>
+      </div>
+    </article></li><li><article class="post-card">
       <a data-analytics-event="blog_open" class="post-cover" href="./kubernetes-health-vs-drift/" aria-label="Read Kubernetes health and drift answer different questions"><img src="../editorial/health-vs-drift.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
       <div class="post-card-body">
         <div class="post-meta"><span>Operations</span><time datetime="2026-11-07T06:57:52Z">7 November 2026</time><span>4 min read</span></div>
@@ -53,10 +101,11 @@
     </article></li><li><article class="post-card">
       <a data-analytics-event="blog_open" class="post-cover" href="./building-dashboards-with-mcp/" aria-label="Read Build and verify observability dashboards through MCP"><img src="../editorial/dashboards-through-mcp.svg" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
       <div class="post-card-body">
-        <div class="post-meta"><span>Observability</span><time datetime="2026-11-07T06:57:52Z">7 November 2026</time><span>4 min read</span></div>
+        <div class="post-meta"><span>Dashboarding</span><time datetime="2026-11-07T06:57:52Z">7 November 2026</time><span>5 min read</span></div>
         <div class="post-copy"><h2><a data-analytics-event="blog_open" href="./building-dashboards-with-mcp/">Build and verify observability dashboards through MCP</a></h2><p>Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.</p><a data-analytics-event="blog_open" class="link-arrow" href="./building-dashboards-with-mcp/" aria-label="Read Build and verify observability dashboards through MCP">Read article</a></div>
       </div>
-    </article></li></ol>
-  <section class="blog-next"><h2>Put it into practice.</h2><p>Each article links back to the maintained implementation and guides. Start with a test cluster and a first Application.</p><a data-analytics-event="get_started" href="../docs/getting-started/" class="btn">Open the getting started guide</a></section></div></main>
+    </article></li></ol></section>
+      <section class="blog-next"><h2>Put it into practice.</h2><p>Articles link to maintained implementation and guides. Explore synthetic dashboard examples, then bind their queries to real data sources.</p><a data-analytics-event="docs_open" href="../docs/dashboards/" class="btn">Read dashboards guide</a></section>
+    </div></main>
 <footer class="content-footer"><div class="shell"><a href="../" class="footer-brand"><img src="../paprika-mark.png" alt="" width="34" height="34"/><span>Paprika</span></a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../docs/">Documentation</a><a data-analytics-event="blog_open" href="../blog/">Engineering blog</a><a href="../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
 </body></html>

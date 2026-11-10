@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Prometheus dashboard query patterns: rates, gauges and histograms · Paprika engineering</title>
+<meta name="description" content="Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts."/>
+
+<link rel="canonical" href="https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/"/>
+<link rel="icon" type="image/png" href="../../paprika-mark.png"/>
+<meta name="theme-color" content="#1d2d3d"/>
+<meta property="og:site_name" content="Paprika"/>
+<meta property="og:type" content="article"/>
+<meta property="og:title" content="Prometheus dashboard query patterns: rates, gauges and histograms · Paprika engineering"/>
+<meta property="og:description" content="Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts."/>
+<meta property="og:url" content="https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/"/>
+<meta property="og:image" content="https://paprikacd.github.io/paprika/article-images/metrics.png"/>
+<meta property="og:image:alt" content="Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules."/>
+<meta property="og:image:width" content="1200"/><meta property="og:image:height" content="675"/><meta property="og:image:type" content="image/png"/>
+<meta property="article:published_time" content="2026-11-10T02:05:00Z"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Prometheus dashboard query patterns: rates, gauges and histograms · Paprika engineering"/>
+<meta name="twitter:description" content="Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts."/>
+<meta name="twitter:image" content="https://paprikacd.github.io/paprika/article-images/metrics.png"/>
+<meta name="twitter:image:alt" content="Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules."/>
+<link rel="alternate" type="application/rss+xml" title="Paprika engineering blog" href="../../feed.xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../../site.css?v=public-content-1"/>
+<link rel="stylesheet" href="../../content.css?v=dashboard-notes-1"/>
+<link rel="stylesheet" href="../../article-demos.css?v=editorial-lab-1"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://paprikacd.github.io/paprika/#maintainers","name":"Paprika maintainers","url":"https://github.com/paprikacd/paprika","logo":"https://paprikacd.github.io/paprika/paprika-mark.png"},{"@type":"WebSite","@id":"https://paprikacd.github.io/paprika/#website","name":"Paprika","url":"https://paprikacd.github.io/paprika/","publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"SoftwareSourceCode","@id":"https://paprikacd.github.io/paprika/#software","name":"Paprika","url":"https://paprikacd.github.io/paprika/","description":"Open source Kubernetes application delivery operator","codeRepository":"https://github.com/paprikacd/paprika","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Go","runtimePlatform":"Kubernetes","author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"}},{"@type":"WebPage","@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#webpage","url":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/","name":"Prometheus dashboard query patterns: rates, gauges and histograms · Paprika engineering","description":"Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts.","inLanguage":"en","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"about":{"@id":"https://paprikacd.github.io/paprika/#software"},"breadcrumb":{"@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#breadcrumb"},"mainEntity":{"@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#article"},"primaryImageOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#primaryimage"}},{"@type":"BreadcrumbList","@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Paprika","item":"https://paprikacd.github.io/paprika/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://paprikacd.github.io/paprika/blog/"},{"@type":"ListItem","position":3,"name":"Prometheus dashboard query patterns: rates, gauges and histograms","item":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/"}]},{"@type":"Blog","@id":"https://paprikacd.github.io/paprika/blog/#blog","name":"Paprika engineering blog","url":"https://paprikacd.github.io/paprika/blog/","isPartOf":{"@id":"https://paprikacd.github.io/paprika/#website"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en"},{"@type":"BlogPosting","@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#article","headline":"Prometheus dashboard query patterns: rates, gauges and histograms","description":"Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts.","url":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/","mainEntityOfPage":{"@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#webpage"},"author":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"publisher":{"@id":"https://paprikacd.github.io/paprika/#maintainers"},"inLanguage":"en","about":{"@id":"https://paprikacd.github.io/paprika/#software"},"isPartOf":{"@id":"https://paprikacd.github.io/paprika/blog/#blog"},"articleSection":"Dashboarding","datePublished":"2026-11-10T02:05:00Z","image":{"@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#primaryimage"}},{"@type":"ImageObject","@id":"https://paprikacd.github.io/paprika/blog/prometheus-dashboard-query-patterns/#primaryimage","url":"https://paprikacd.github.io/paprika/article-images/metrics.png","contentUrl":"https://paprikacd.github.io/paprika/article-images/metrics.png","width":1200,"height":675,"encodingFormat":"image/png","description":"Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules.","caption":"Metrics become useful after scraping, label selection and freshness checks. Tune alert thresholds and durations to the installation.","representativeOfPage":true}]}</script>
+<script src="../../content.js?v=public-content-1" defer></script>
+<script src="../../article-demos.js?v=editorial-lab-1" type="module"></script>
+<!-- paprika-analytics:start -->
+<script id="paprika-analytics" defer src="../../analytics.js?v=flaggr-1" data-site-id="site_80bcab2402b475bbc6bd267a"></script>
+<!-- paprika-analytics:end -->
+</head><body class="content-page">
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="masthead nav"><div class="masthead-inner shell"><a href="../../" class="wordmark" aria-label="Paprika home"><img src="../../paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a><details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links"><a href="../../#deployment">Product</a><a data-analytics-event="docs_open" href="../../docs/">Docs</a><a href="../../charts/#charts">Charts</a><a data-analytics-event="blog_open" href="../../blog/" aria-current="page">Blog</a><a data-analytics-event="get_started" href="../../docs/getting-started/">Get started</a></div></details><a href="https://github.com/paprikacd/paprika" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>
+<div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="blog_open" href="../../blog/">Blog</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Prometheus dashboard query patterns: rates, gauges and histograms</span></li></ol></nav></div>
+<div class="article-layout article-layout--blog shell">
+
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#discover-the-shape-of-the-data-first">Discover the shape of the data first</a></li><li class="toc-level-2"><a href="#gauges-observe-a-current-state">Gauges: observe a current state</a></li><li class="toc-level-2"><a href="#counters-ask-for-a-rate-or-an-increase">Counters: ask for a rate or an increase</a></li><li class="toc-level-2"><a href="#histograms-aggregate-buckets-before-taking-a-quantile">Histograms: aggregate buckets before taking a quantile</a></li><li class="toc-level-2"><a href="#treat-missing-data-as-a-distinct-state">Treat missing data as a distinct state</a></li><li class="toc-level-2"><a href="#bind-selectors-to-queries-not-just-to-headings">Bind selectors to queries, not just to headings</a></li></ol></nav></details></aside>
+<main id="main-content" class="article-main" tabindex="-1"><article>
+<header class="article-header"><div class="editorial-eyebrow"><img src="../../paprika-mark.png" alt="" width="24" height="24"/><span>Paprika / Engineering</span></div><h1 id="prometheus-dashboard-query-patterns-rates-gauges-and-histograms">Prometheus dashboard query patterns: rates, gauges and histograms</h1><p class="article-description">Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts.</p><div class="article-meta"><span>By <a rel="author" href="https://github.com/paprikacd/paprika">Paprika maintainers</a></span><span class="article-section">Dashboarding</span><time datetime="2026-11-10T02:05:00Z">10 November 2026</time><span>5 min read</span><a href="https://github.com/paprikacd/paprika/blob/master/landing/content/blog/prometheus-dashboard-query-patterns.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<figure class="editorial-cover"><img src="../../editorial/prometheus-dashboard-query-patterns.svg" alt="Three technical chart panels distinguish a counter and rate, a gauge and histogram bucket distributions." width="1200" height="675" decoding="async" fetchpriority="high"/><figcaption>Prometheus query semantics determine what a panel can truthfully report; visuals come afterward.</figcaption></figure>
+<div class="prose"><p>A Prometheus dashboard can be visually precise and analytically wrong. The usual problem is not the chart renderer; it is the query's type, aggregation or window. A counter plotted as an instantaneous value, a histogram bucket averaged as a latency, or an absent series displayed as zero can lead an operator in exactly the wrong direction.</p><figure class="article-figure"><picture><source media="(max-width: 600px)" srcset="../../article-images/metrics-mobile.png" width="600" height="820"/><img src="../../article-images/metrics.png" alt="Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules." width="1200" height="675" decoding="async"/></picture><figcaption><span>Metrics become useful after scraping, label selection and freshness checks. Tune alert thresholds and durations to the installation.</span> <a href="../../article-images/metrics.png">Open full-size diagram</a></figcaption></figure>
+<p>Paprika Observe can query connected Prometheus-compatible providers and pass saved queries into Insights dashboards. The <a data-analytics-event="docs_open" href="../../docs/observability-gateway/">observability gateway guide</a> documents metric discovery, bounded reads and provider permissions; it does not claim that any specific metric exists in your cluster. Use the deployment's actual schema and label set.</p>
+<h2 id="discover-the-shape-of-the-data-first">Discover the shape of the data first</h2>
+<p>Start by listing available providers and the metric names, labels and metadata they expose. The Observe MCP tools include <code>list_observability_providers</code>, <code>list_metric_names</code>, <code>list_metric_series</code>, <code>list_label_names</code>, <code>list_label_values</code> and <code>get_metric_metadata</code>. For Insights authoring, use <code>list_insights_providers</code> for the actual IDs the UI accepts.</p>
+<p>Inspect a small query result over a bounded interval before adding any widget. Verify its unit, type, labels, timestamp and sample count. <code>list_metric_series</code> returns a bounded sample of series, not a guaranteed global active-series count.</p>
+<p>Paprika's <a data-analytics-event="docs_open" href="../../docs/metrics/">metrics reference</a> documents concrete examples. Those names below are relevant to Paprika deployments <strong>only when the corresponding metrics have been exported and scraped</strong>.</p>
+<p>Interact with the comparison below: switch counter, gauge and histogram states, inspect the series and read the corresponding illustrative query. The chart shape changes with the metric type.</p>
+<section class="editorial-demo" data-editorial-demo="prometheus" data-demo-theme="dark" aria-label="Prometheus query semantics">
+  <div class="demo-heading">
+    <div><span class="demo-kicker"><span class="demo-live-dot" aria-hidden="true"></span> INTERACTIVE / SYNTHETIC DATA</span>
+      <h3>Prometheus query semantics</h3><p>Switch metric types to see why the chart and PromQL must follow the underlying data.</p></div>
+    <button type="button" data-demo-theme-toggle aria-pressed="false" class="demo-theme" hidden>Light theme</button>
+  </div>
+  <div class="demo-toolbar"><span class="demo-source">Metrics / illustrative series</span><div class="demo-choices" role="group" aria-label="Example view" hidden><button type="button" data-demo-choice="counter" aria-pressed="true" class="demo-choice">Counter</button><button type="button" data-demo-choice="gauge" aria-pressed="false" class="demo-choice">Gauge</button><button type="button" data-demo-choice="histogram" aria-pressed="false" class="demo-choice">Histogram</button></div></div>
+  <div class="demo-interface">
+    <div class="demo-metrics">
+      <div class="demo-kpi"><span class="demo-label">Selected measurement</span><strong data-demo-value>0.08</strong><span data-demo-unit>errors/s</span></div>
+      <div class="demo-kpi demo-kpi-secondary"><span class="demo-label">Observation</span><strong data-demo-state>Use a rate for recent errors</strong><span data-demo-status data-tone="neutral">Rate</span></div>
+    </div>
+    <figure class="demo-plot">
+      <figcaption><strong data-demo-signal>Estimated errors per second</strong><span>EXAMPLE SERIES / NOT LIVE</span></figcaption>
+      <svg data-demo-svg role="img" aria-label="Estimated errors per second, illustrative data" viewBox="0 0 550 188" preserveAspectRatio="xMidYMid meet">
+        <path d="M26 22V162H531" class="demo-axis"/>
+        <path d="M26 68H531M26 115H531" class="demo-gridline"/>
+        <g data-demo-bars></g>
+        <path data-demo-line d="M26.0 162.0 L71.3 142.5 L116.5 142.5 L161.8 123.0 L207.1 123.0 L252.4 45.0 L297.6 64.5 L342.9 84.0 L388.2 103.5 L433.5 142.5 L478.7 162.0 L524.0 162.0" class="demo-line" fill="none"/>
+      </svg>
+      <p class="demo-no-data" data-demo-empty hidden>No observations for this example state. Check query and provider status.</p>
+      <div class="demo-scrub"><label>Inspect observation <input data-demo-inspect type="range" min="0" max="11" value="0"/></label>
+      <output data-demo-inspection aria-live="polite">Sample 1 of 12: 2 × 0.01 errors/s</output></div>
+    </figure>
+    <div class="demo-query"><span>Evidence / query</span><code data-demo-query>sum by (app) (rate(paprika_sync_errors_total[5m]))</code></div>
+    <p class="demo-insight" data-demo-note aria-live="polite">A raw counter grows across the process lifetime. Rate handles resets using the available scrape samples.</p>
+  </div>
+  <div class="demo-foot"><span>Local fixture only. Values, providers and statuses are illustrative.</span>
+    <a href="../../charts/#charts">Explore Paprika's full chart gallery</a></div>
+</section>
+<h2 id="gauges-observe-a-current-state">Gauges: observe a current state</h2>
+<p>An out-of-sync resource count is a gauge. It can rise or fall. To show the current value for each Application, preserve the relevant labels:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 1"><code class="language-promql">max by (app, namespace) (paprika_out_of_sync)
+</code></pre></div>
+<p>A max is often appropriate when duplicated scrape targets report the same state; it is not a universal solution to duplicate series. If target labels identify genuinely different controllers, investigate that topology first.</p>
+<p>A gauge cannot answer how many times an event occurred over the past day. Plotting <code>paprika_out_of_sync</code> does not count drift incidents; it describes observed drift at each scrape.</p>
+<h2 id="counters-ask-for-a-rate-or-an-increase">Counters: ask for a rate or an increase</h2>
+<p>Paprika's <code>paprika_sync_errors_total</code> is a counter. Its raw value reflects accumulated errors since process start and may reset after a restart. A request like &quot;are apply errors occurring now?&quot; calls for a rate:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 2"><code class="language-promql">sum by (app) (
+  rate(paprika_sync_errors_total[5m])
+)
+</code></pre></div>
+<p>The result has units of errors per second. If you want a recent count for a chosen window, use:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 3"><code class="language-promql">sum by (app) (
+  increase(paprika_sync_errors_total[1h])
+)
+</code></pre></div>
+<p><code>rate</code> and <code>increase</code> account for counter resets using the samples available in their window, but short and sparse series can still make estimates unstable. Check the scrape interval before choosing a tiny range. Do not compare a per-second error rate with an absolute error threshold.</p>
+<p>Preserve labels deliberately. Aggregating away <code>app</code> can make one repeatedly failing Application disappear into an otherwise quiet fleet.</p>
+<h2 id="histograms-aggregate-buckets-before-taking-a-quantile">Histograms: aggregate buckets before taking a quantile</h2>
+<p>Paprika documents the <code>paprika_sync_duration_seconds</code> histogram with an <code>app</code> label. The conventional Prometheus histogram export exposes bucket series ending in <code>_bucket</code>. A p95 over a ten-minute window can be expressed as:</p>
+<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 4"><code class="language-promql">histogram_quantile(
+  0.95,
+  sum by (le, app) (
+    rate(paprika_sync_duration_seconds_bucket[10m])
+  )
+)
+</code></pre></div>
+<p>This is an estimated quantile derived from configured bucket boundaries, not an exact measured duration. The bucket label <code>le</code> must survive aggregation. Do not average independent p95 values across Applications and label that a fleet p95; aggregate the underlying bucket observations before computing a fleet-level quantile.</p>
+<p>Use the metric's unit on the axis. Seconds and milliseconds are not interchangeable merely because both are small numbers.</p>
+<p><img src="../../content-assets/landing/editorial/promql-visual-semantics.svg" alt="Three illustrative query panels distinguish a counter rate, a current-state gauge, and a histogram from which quantiles are estimated." width="1200" height="675" loading="lazy" decoding="async"></p>
+<p><em>The same chart treatment is not suitable for every metric. Counters, gauges and histograms have different aggregation and time-window semantics.</em></p>
+<h2 id="treat-missing-data-as-a-distinct-state">Treat missing data as a distinct state</h2>
+<p>These observations should not render identically:</p>
+<div class="table-scroll" role="region" aria-label="Table 1, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Data state</th>
+<th>Suitable UI treatment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Queried series with a genuine zero</td>
+<td>Zero with its unit and sample timestamp</td>
+</tr>
+<tr>
+<td>No series matched the query</td>
+<td>No matching series, with query/filter context</td>
+</tr>
+<tr>
+<td>Provider unavailable or unauthorized</td>
+<td>Query error, with source identifier</td>
+</tr>
+<tr>
+<td>Old latest sample</td>
+<td>Stale data warning and last observed time</td>
+</tr>
+<tr>
+<td>Query was intentionally truncated</td>
+<td>Partial-data indicator, not an unqualified total</td>
+</tr>
+</tbody>
+</table></div>
+<p>A chart component should not synthesize a baseline, invent a trend, or interpolate across a known outage without labelling the uncertainty. For an incident dashboard, the absence of recent telemetry can itself be a reason to investigate.</p>
+<p>Paprika's <code>query_dashboard</code> response reports signal states and truncation in addition to readings. Read that structured result rather than relying on a screenshot alone. The <a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/dashboard-query.md">dashboard query contract</a> describes how duplicates are executed once, time ranges propagate and signals are bounded.</p>
+<h2 id="bind-selectors-to-queries-not-just-to-headings">Bind selectors to queries, not just to headings</h2>
+<p>A service or Application selector has to be connected to the saved query's parameters. Confirm that a filtered query actually returns different series when the selected identity changes. Test at least two values and an empty/no-match case.</p>
+<p>For comparison panels, align the time range and units. Only compare response times that measure the same thing. If one provider reports request latency while another reports Kubernetes reconciliation duration, the two lines should not share a label such as &quot;latency&quot; without a visible distinction.</p>
+<p>The <a data-analytics-event="blog_open" href="../../blog/building-dashboards-with-mcp/">dashboard authoring walkthrough</a> covers discovering IDs, saving documents with ETags and executing the result. The <a data-analytics-event="blog_open" href="../../blog/kubernetes-release-dashboard/">Kubernetes release dashboard guide</a> shows which operational questions those queries need to support. The goal is not the most elaborate expression. It is a query whose semantics still make sense when the pager goes off.</p>
+</div>
+</article>
+<nav class="article-next" aria-label="More articles"><a data-analytics-event="blog_open" href="../../blog/kubernetes-release-dashboard/" rel="prev"><span>Previous article</span><strong>Kubernetes release dashboards: the signals that matter before and after a rollout</strong></a><a data-analytics-event="blog_open" href="../../blog/observability-dashboard-layout/" rel="next"><span>Next article</span><strong>Observability dashboard design: layout, charts and readable KPIs</strong></a></nav>
+</main></div>
+<footer class="content-footer"><div class="shell"><a href="../../" class="footer-brand"><img src="../../paprika-mark.png" alt="" width="34" height="34"/><span>Paprika</span></a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a data-analytics-event="docs_open" href="../../docs/">Documentation</a><a data-analytics-event="blog_open" href="../../blog/">Engineering blog</a><a href="../../feed.xml">RSS feed</a><a href="https://github.com/paprikacd/paprika">GitHub</a><a href="https://github.com/paprikacd/paprika/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>
+</body></html>
