@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+<title id="title">Information hierarchy over visual clutter</title><desc id="desc">Conceptual technical illustration for Paprika engineering notes; all signals are illustrative, not production readings.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102335"/><stop offset=".55" stop-color="#213a51"/><stop offset="1" stop-color="#102233"/></linearGradient>
+ <pattern id="mesh" width="45" height="45" patternUnits="userSpaceOnUse"><path d="M45 0H0V45" stroke="#b3ccde" stroke-opacity=".13" fill="none" stroke-width="1"/></pattern>
+</defs>
+<rect width="1200" height="675" fill="url(#bg)"/><rect width="1200" height="675" fill="url(#mesh)"/>
+<path d="M54 114H1146M54 583H1146" stroke="#88a9bf" stroke-opacity=".44"/>
+<path d="M54 58H104" stroke="#a7c6df" stroke-width="4"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#e7f1f7">
+ <text x="54" y="86" font-size="18" font-weight="700" letter-spacing="3">06 / DASHBOARD DESIGN</text>
+ <text x="1146" y="86" font-size="13" letter-spacing="3" text-anchor="end" fill="#b1c9d8">PAPRIKA ENGINEERING</text>
+ 
+ <rect x="88" y="153" width="1024" height="391" fill="#152c40" stroke="#7398b1" stroke-width="2"/>
+ <rect x="88" y="153" width="1024" height="57" fill="#2c4b63"/>
+ <text x="115" y="188" font-size="19" font-weight="700">SERVICE / OVERVIEW</text>
+ <text x="1027" y="188" font-size="14" text-anchor="end" letter-spacing="2" fill="#c8dae6">PROVIDER  ·  1H  ·  FILTER</text>
+ <g transform="translate(110 236)">
+  <rect width="226" height="118" fill="#274961" stroke="#7297b0"/>
+  <text x="18" y="27" font-size="13" letter-spacing="2" fill="#b7cfdd">REQUEST RATE</text><text x="20" y="84" font-size="41" font-weight="700">—</text>
+  <text x="85" y="81" font-size="13" fill="#a8c2d3">LIVE QUERY</text>
+ </g>
+ <g transform="translate(356 236)">
+  <rect width="226" height="118" fill="#274961" stroke="#7297b0"/>
+  <text x="18" y="27" font-size="13" letter-spacing="2" fill="#b7cfdd">ERROR STATE</text>
+  <text x="19" y="82" font-size="29" font-weight="700" fill="#a2d4c1">UNAVAILABLE?</text>
+ </g>
+ <g transform="translate(603 236)">
+  <rect width="487" height="118" fill="#274961" stroke="#7297b0"/>
+  <text x="18" y="27" font-size="13" letter-spacing="2" fill="#b7cfdd">LATENCY / WINDOW</text>
+  <path d="M26 96h436" stroke="#749ab5" stroke-width="1"/>
+  <path d="M26 91l53-17 55 12 50-32 48 20 52-43 53 19 49-22 76 15" stroke="#a7c6df" stroke-width="4" fill="none"/>
+ </g>
+ <g transform="translate(110 374)">
+  <rect width="620" height="144" fill="#223f56" stroke="#7297b0"/>
+  <text x="19" y="28" font-size="14" letter-spacing="2">TREND / DRILL-DOWN</text>
+  <path d="M25 108h570M25 67h570" stroke="#577990"/>
+  <path d="M25 106l63-27 64 8 63-32 64 23 60-33 66 38 64-16 67 7 69-31" fill="none" stroke="#91c6e4" stroke-width="3"/>
+  <circle cx="431" cy="67" r="8" fill="#e9c18c" stroke="#dcecf4" stroke-width="2"/>
+ </g>
+ <g transform="translate(750 374)">
+  <rect width="340" height="144" fill="#223f56" stroke="#7297b0"/>
+  <text x="19" y="28" font-size="14" letter-spacing="2">DISTRIBUTION</text>
+  <g><rect x="22" y="54" width="40" height="65" fill="#3f7191"/><rect x="74" y="67" width="40" height="52" fill="#588aae"/><rect x="126" y="42" width="40" height="77" fill="#87b8d7"/><rect x="178" y="59" width="40" height="60" fill="#6997b6"/><rect x="230" y="84" width="40" height="35" fill="#467899"/><rect x="282" y="97" width="36" height="22" fill="#385f7c"/></g>
+ </g>
+ <text x="90" y="568" font-size="13" letter-spacing="2" fill="#aac4d7">CLARITY / UNIT / TIMESTAMP / QUERY STATUS</text>
+
+ <text x="54" y="627" font-size="14" letter-spacing="3" fill="#a8c1d1">SOURCE / SIGNAL / DECISION</text>
+ <path d="M1002 622H1146" stroke="#a7c6df" stroke-opacity=".75" stroke-width="2"/>
+</g>
+</svg>
