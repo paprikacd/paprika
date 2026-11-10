@@ -16,6 +16,11 @@ A practical hierarchy puts three levels on one screen:
 
 The top row should not be a beauty contest between equally large KPI cards. Give the important anomalous signal enough space, and let supporting numbers remain supporting numbers.
 
+Try the interactive dashboard studio. Switch between an operator overview, diagnostic details and a missing-data state. Toggle light and dark appearance and use the observation inspector under the chart.
+
+```paprika-dashboard layout
+```
+
 ## Match the visual form to the question
 
 | Operator question | Better starting visual | Common mistake |
@@ -55,6 +60,10 @@ Check a 390px viewport as well as a wide desktop layout. Look for overflowing le
 
 Support light and dark themes with consistent semantic contrast. A translucent tooltip that works on a dark plot may become unreadable on a light card. Reduce or remove transitions when the user prefers reduced motion.
 
+![Illustrative desktop observability dashboard showing decision-first KPIs, a diagnostic time series, and a mobile layout that preserves priority.](../../editorial/dashboard-layout-comparison.svg)
+
+*The mobile layout deliberately prioritises the key measurement before details. The illustration is a design study rather than a production screenshot.*
+
 ## Verify with real queries and a rendered page
 
 A saved document's JSON can be structurally valid while its selected provider is unauthorized, its labels do not exist, or its chart hides the useful signal. Test the saved queries with `query_dashboard`, inspect error and missing-data states, then read the actual rendered dashboard.
@@ -62,5 +71,10 @@ A saved document's JSON can be structurally valid while its selected provider is
 When a deployment advertises the optional `render_dashboard` tool, Paprika can capture the live Insights UI through a private browser worker. That worker is not enabled by merely installing the Observe plugin. The [renderer guide](../../../docs/guides/observe-browser-renderer.md) describes its security and revision conditions.
 
 For a focused visual test, compare desktop and mobile, light and dark themes, a chosen tooltip state and an empty-data state. Keep the screenshot tied to the saved document revision. The [visual verification article](./visual-testing-observability-dashboards.md) turns that approach into an acceptance checklist.
+
+The public chart gallery below runs **Paprika's actual chart renderers with synthetic fixtures**, including working plot inspection and configuration examples. It is separate from an authenticated Insights dashboard.
+
+```paprika-gallery performance-workbench
+```
 
 Finally, decide whether a view could help someone at 03:00 without its author in the room. A good dashboard is precise about what it knows, explicit about what it doesn't, and quick to move from symptom to evidence.
