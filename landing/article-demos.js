@@ -152,9 +152,9 @@ export function renderDashboardDemo(key, prefix = '../../') {
   <div class="demo-heading">
     <div><span class="demo-kicker"><span class="demo-live-dot" aria-hidden="true"></span> INTERACTIVE / SYNTHETIC DATA</span>
       <h3>${escapeHTML(example.title)}</h3><p>${escapeHTML(example.intro)}</p></div>
-    <button type="button" data-demo-theme-toggle aria-pressed="false" class="demo-theme">Light theme</button>
+    <button type="button" data-demo-theme-toggle aria-pressed="false" class="demo-theme" hidden>Light theme</button>
   </div>
-  <div class="demo-toolbar"><span class="demo-source">${escapeHTML(example.source)}</span><div class="demo-choices" role="group" aria-label="Example view">${buttons}</div></div>
+  <div class="demo-toolbar"><span class="demo-source">${escapeHTML(example.source)}</span><div class="demo-choices" role="group" aria-label="Example view" hidden>${buttons}</div></div>
   <div class="demo-interface">
     <div class="demo-metrics">
       <div class="demo-kpi"><span class="demo-label">Selected measurement</span><strong data-demo-value>${escapeHTML(first.value)}</strong><span data-demo-unit>${escapeHTML(first.unit)}</span></div>
@@ -202,6 +202,10 @@ function mountDemo(root) {
   let selected = example.choices[0];
   const get = (selector) => root.querySelector(selector);
   const buttons = Array.from(root.querySelectorAll('[data-demo-choice]'));
+  const themeButton = get('[data-demo-theme-toggle]');
+  const choices = get('.demo-choices');
+  if (themeButton) themeButton.hidden = false;
+  if (choices) choices.hidden = false;
   const output = get('[data-demo-inspection]');
   const slider = get('[data-demo-inspect]');
   const line = get('[data-demo-line]');
