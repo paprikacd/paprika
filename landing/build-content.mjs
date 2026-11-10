@@ -264,7 +264,18 @@ export function renderDocument(item, sourceRoutes, assets = new Map(), markdown 
   const defaultImage = parser.renderer.rules.image;
   parser.renderer.rules.image = (renderTokens, index, options, env, renderer) => {
     const token = renderTokens[index];
-    token.attrSet('src', rewriteURL(token.attrGet('src'), item.source, item.route, sourceRoutes, assets, true));
+    const originalImage = token.attrGet('src');
+    token.attrSet('src', rewriteURL(originalImage, item.source, item.route, sourceRoutes, assets, true));
+    // Reserve intrinsic dimensions for local editorial SVGs so lazy images
+    // have a real layout box, can enter the viewport and avoid content shifts.
+    if (/^\.\.\/\.\.\/editorial\/[a-z0-9-]+\.svg$/.test(originalImage)) {
+      const imageSource = insideRepository('landing/' + originalImage.replace('../../', ''));
+      const markup = readFileSync(imageSource, 'utf8');
+      const dimensions = markup.match(/<svg\b[^>]*\bwidth="(\d+)"\s+height="(\d+)"/);
+      assert.ok(dimensions, 'Editorial SVG needs explicit dimensions: ' + originalImage);
+      token.attrSet('width', dimensions[1]);
+      token.attrSet('height', dimensions[2]);
+    }
     token.attrSet('loading', 'lazy');
     token.attrSet('decoding', 'async');
     return defaultImage(renderTokens, index, options, env, renderer);
