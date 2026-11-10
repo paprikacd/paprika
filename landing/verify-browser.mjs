@@ -393,9 +393,15 @@ async function run() {
         assert.equal(await demo.getAttribute('data-demo-theme'), 'dark');
         const figure = demoPage.locator('.prose > p > img[src*="content-assets/landing/editorial/"]');
         assert.equal(await figure.count(), 1, slug + ': one inline explanatory dashboard image');
-        // This illustration is intentionally lazy. Mobile pages may place it far
-        // below the fold; decode() must not wait on an image never requested.
+        // Load and check the asset before decoding. In a narrow viewport a
+        // native lazy image may still have an unstarted request immediately
+        // after scrolling, and decode() can reject before it is fetched.
+        await figure.evaluate((img) => { img.loading = 'eager'; });
         await figure.scrollIntoViewIfNeeded();
+        await demoPage.waitForFunction(() => {
+          const img = document.querySelector('.prose > p > img[src*="content-assets/landing/editorial/"]');
+          return img && img.complete && img.naturalWidth > 0;
+        }, null, { timeout: 10000 });
         await figure.evaluate((img) => img.decode());
         if (slug === 'prometheus-dashboard-query-patterns') {
           assert.equal(await demo.locator('[data-demo-bars] rect').count(), 12, 'Histogram uses bars');
