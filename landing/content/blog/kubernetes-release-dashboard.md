@@ -15,6 +15,11 @@ A useful first screen has four distinct rows of evidence:
 | Are the workloads converging? | Resource conditions and readiness | Status timeline and affected resources | That application requests succeed |
 | Is the service behaving? | Provider-backed request, error and latency queries | Rates and time series | That the rollout itself is the cause |
 
+```paprika-dashboard release
+```
+
+The interactive example above switches between three **synthetic** environment states. It demonstrates why "synced", "ready" and "provider data available" must remain separately visible.
+
 Do not replace a missing reading with zero. A disconnected Prometheus provider, a stale metric sample, and a genuine value of zero are different situations. In the saved Insights dashboard, keep the selected time window, provider and query status visible; use `query_dashboard` to confirm the widgets receive their expected signals.
 
 ## Put Paprika's own control-plane metrics to work
@@ -47,6 +52,10 @@ A positive error *rate* is evidence of recent failures, not an exact failure cou
 
 An empty series can mean the target was never scraped. Check scrape health, provider permissions, available labels and sampling freshness before making a release decision from the panel.
 
+![Illustrative release evidence dashboard with revision identity, distinct workload and drift status, and a missing telemetry state.](../../editorial/release-evidence-board.svg)
+
+*Illustrative dashboard composition. The source revision, readiness, drift and telemetry cards communicate different facts; these are not production values.*
+
 ## Separate delivery progress from service health
 
 A production candidate needs both delivery evidence and service evidence. A successful render or apply operation does not show that users can complete requests. Conversely, an apparently healthy workload does not prove the intended source revision was deployed.
@@ -73,5 +82,10 @@ If the environment uses several clusters, preserve the cluster dimension. Aggreg
 Read back the saved document and run `query_dashboard` with an explicit service and time range. Inspect signal states, returned timestamps and query errors. In the browser, check a narrower viewport, keyboard navigation, legend clipping and tooltip placement. A successful JSON save is not a successful monitoring dashboard.
 
 Paprika's public [chart and dashboard showcase](https://paprikacd.github.io/paprika/#charts) uses synthetic data deliberately; it demonstrates presentation, not production release health. The [dashboard examples guide](../../../docs/guides/dashboard-repository-examples.md) explains how to map an example's placeholder queries to real connected providers.
+
+For a hands-on example, open the actual chart renderer below. The gallery uses **labelled synthetic fixture data**, not a live cluster.
+
+```paprika-gallery kubernetes-fleet
+```
 
 For the next design step, read [Prometheus dashboard query patterns](./prometheus-dashboard-query-patterns.md) and [the dashboard layout checklist](./observability-dashboard-layout.md). Together they turn the same operational questions into defensible queries and readable panels.
