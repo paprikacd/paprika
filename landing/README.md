@@ -108,6 +108,40 @@ maintained documentation and a distinct editorial question. Sitemap, RSS and
 structured-data counts are derived automatically. Check desktop and mobile
 reading before publishing.
 
+## Interactive article components
+
+The static Markdown renderer accepts two strictly whitelisted fenced directives
+in blog articles only; their bodies must be empty:
+
+```text
+~~~paprika-dashboard release
+~~~
+~~~paprika-gallery kubernetes-fleet
+~~~
+```
+
+Use actual Markdown triple-backtick fences instead of the tildes shown above.
+Supported demo keys are `release`, `prometheus`, `layout`, `testing`
+and `mcp`. Gallery deep links may target `charts`, `kubernetes-fleet`,
+`performance-workbench` or `distributed-systems`. Unsupported directives
+and arbitrary HTML are rejected by the builder.
+
+The components in `article-demos.js` are deterministic synthetic fixtures.
+They expose native buttons, readable measurements, an accessible sample slider,
+responsive charts, dark/light display, query-state descriptions, and a clear
+warning that they do not connect to a real provider. They are not a substitute
+for an authenticated Insights dashboard or an MCP query.
+
+An inline gallery presents a direct working link even when JavaScript is
+disabled. The embedded chart application is loaded only after explicit user
+interaction, avoiding heavyweight renderers in ordinary article page loads.
+The article images under `editorial/` are original explanatory SVGs. Markdown
+image links are resolved, copied and checked by the content builder.
+
+Run `npm test --prefix landing` for directive safety, fixtures and build
+contracts; use the Chromium browser suite to validate actual state switches,
+mobile layout, gallery activation, no-JS fallback and asset decoding.
+
 ## SEO and measurement
 
 The sitemap uses canonical URLs under the project path, and content pages ship
