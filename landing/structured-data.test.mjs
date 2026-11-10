@@ -16,7 +16,7 @@ test('embedded JSON-LD cannot terminate its script and preserves editorial text'
 
 test('publication dates require a real calendar date, time and explicit UTC zone', () => {
   const post = { slug: 'test', title: 'Test', description: 'Test publication date',
-    category: 'Delivery', source: 'landing/content/blog/promoting-pinned-revisions.md', image: readManifest().posts[0].image };
+    category: 'Delivery', source: 'landing/content/blog/promoting-pinned-revisions.md', image: readManifest().posts[0].image, cover: readManifest().posts[0].cover };
   const docs = [{ slug: 'start', title: 'Test guide', description: 'Test guide',
     section: 'Start', source: 'docs/getting-started.md', image: readManifest().docs[0].image }];
   for (const date of ['2026-11-07', '2026-11-07T06:57:52', '2026-02-30T06:57:52Z', '2026-11-07T25:00:00Z']) {
@@ -37,6 +37,19 @@ test('article images require real local files, accurate dimensions and editorial
     const invalid = structuredClone(manifest);
     invalid.docs[0].image = image;
     assert.throws(() => validateManifest(invalid), /image|PNG/);
+  }
+});
+
+test('engineering articles require safe, distinct, self-contained local SVG covers', () => {
+  const manifest = readManifest();
+  assert.equal(new Set(manifest.posts.map((post) => post.cover.src)).size, manifest.posts.length);
+  for (const cover of [undefined, { ...manifest.posts[0].cover, alt: '' },
+    { ...manifest.posts[0].cover, caption: '' },
+    { ...manifest.posts[0].cover, src: '../paprika-mark.png' },
+    { ...manifest.posts[0].cover, src: 'https://example.com/art.svg' }]) {
+    const invalid = structuredClone(manifest);
+    invalid.posts[0].cover = cover;
+    assert.throws(() => validateManifest(invalid), /cover|Editorial/);
   }
 });
 
@@ -62,6 +75,11 @@ test('every published article ties its schema image to a visible figure and copi
       assert.ok(html.includes(`<meta property="og:image" content="${image.url}"`));
       assert.ok(html.includes(`<meta name="twitter:image" content="${image.url}"`));
       assert.deepEqual(readFileSync(join(destination, item.image.src)), readFileSync(new URL(item.image.src, import.meta.url)));
+      if (item.kind === 'blog') {
+        assert.match(html, /<figure class="editorial-cover">/);
+        assert.ok(html.includes(`src="../../${item.cover.src}"`));
+        assert.deepEqual(readFileSync(join(destination, item.cover.src)), readFileSync(new URL(item.cover.src, import.meta.url)));
+      }
     }
   } finally { rmSync(destination, { recursive: true, force: true }); }
 });
