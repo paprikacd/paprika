@@ -10,7 +10,7 @@ import { readManifest } from './build-content.mjs';
 
 const BASE = '/paprika/';
 const CANONICAL = 'https://paprikacd.github.io/paprika/';
-const EXPECTED_GUIDES = 16;
+const EXPECTED_GUIDES = readManifest().docs.length;
 const [stagingArgument, artifactArgument, ...extra] = process.argv.slice(2);
 if (!stagingArgument || !artifactArgument || extra.length) {
   console.error('Usage: node landing/verify-browser.mjs <staging-directory> <artifact-directory>');
@@ -553,8 +553,16 @@ async function run() {
           await noJS.page.locator('.editorial-cover').screenshot({ path: resolve(artifacts, 'mobile-editorial-cover.png'), animations: 'disabled' });
         }
       }
-      if (path === 'blog/') assert.equal(await noJS.page.locator('.post-cover img').count(), manifest.posts.length);
-      if (path === '') assert.equal(await noJS.page.locator('.reading-thumb img').count(), Math.min(3, manifest.posts.length));
+      if (path === 'blog/') {
+        assert.equal(await noJS.page.locator('.post-cover img').count(), manifest.posts.length);
+        assert.equal(await noJS.page.locator('.topic-article img').count(),
+          Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
+      }
+      if (path === '') {
+        assert.equal(await noJS.page.locator('.reading-thumb img').count(), Math.min(3, manifest.posts.length));
+        assert.equal(await noJS.page.locator('.chart-reading-card img').count(),
+          Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
+      }
       if (['docs/canary/', 'blog/building-dashboards-with-mcp/'].includes(path)) {
         await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
         await noJS.page.screenshot({ path: resolve(artifacts, path.startsWith('docs/') ? 'mobile-canary-figure.png' : 'mobile-dashboard-figure.png'), animations: 'disabled' });
