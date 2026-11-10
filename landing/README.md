@@ -91,6 +91,23 @@ dimensions, title-linked cover navigation and the existing article-image
 metadata. Its screenshots include a mobile and desktop editorial cover;
 inspect those alongside the blog index and product reading-list cards.
 
+## Dashboarding editorial discovery
+
+The homepage's chart showcase and the engineering blog topic hub now surface
+current dashboarding articles from the same published `posts` manifest.
+`build-content.mjs` selects the latest three entries in the `Dashboarding`
+category for the showcase and topic hub, and the three latest posts overall
+for the homepage engineering notes. Keep canonical article identities and
+publication dates in the manifest; do not edit these card lists manually.
+
+The dashboarding content and search-intent matrix is maintained in
+[`content/EDITORIAL_SEO.md`](content/EDITORIAL_SEO.md). This is a
+source-backed internal publication guide, not a claim about keyword demand.
+Each new article still needs its own cover, substantive Markdown, links to
+maintained documentation and a distinct editorial question. Sitemap, RSS and
+structured-data counts are derived automatically. Check desktop and mobile
+reading before publishing.
+
 ## SEO and measurement
 
 The sitemap uses canonical URLs under the project path, and content pages ship
