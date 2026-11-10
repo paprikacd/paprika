@@ -136,12 +136,12 @@ func (c *observeMCPConnection) callMeasured(name string, args any, limit int64, 
 	measurement.dispatch()
 	result, err := c.session.CallTool(c.ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
-		return nil, false, sanitizeObserveTransportError(c.ctx, err)
+		return nil, false, sanitizeObserveTransportError(c.ctx.Err(), err)
 	}
 	return decodeObserveMCPCallResult(result, limit)
 }
 
-func decodeObserveMCPCallResult(result *sdkmcp.CallToolResult, limit int64) ([]byte, bool, error) {
+func decodeObserveMCPCallResult(result *sdkmcp.CallToolResult, limit int64) (payload []byte, failed bool, callErr error) {
 	if result == nil || result.StructuredContent == nil {
 		return nil, false, errUpstream
 	}
@@ -228,7 +228,7 @@ func (t *observeMCPTransport) RoundTrip(request *http.Request) (*http.Response, 
 	}
 	response, err := base.RoundTrip(r)
 	if err != nil {
-		return nil, sanitizeObserveTransportError(t.ctx, err)
+		return nil, sanitizeObserveTransportError(t.ctx.Err(), err)
 	}
 	defer closeReadBody(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -239,7 +239,7 @@ func (t *observeMCPTransport) RoundTrip(request *http.Request) (*http.Response, 
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return nil, sanitizeObserveTransportError(t.ctx, err)
+		return nil, sanitizeObserveTransportError(t.ctx.Err(), err)
 	}
 	if len(body) > maxResponseBytes {
 		return nil, errUpstream
@@ -251,9 +251,9 @@ func (t *observeMCPTransport) RoundTrip(request *http.Request) (*http.Response, 
 // The SDK HTTP request is canceled when the operation's deadline expires. Keep
 // the operation cause so an expired gateway budget is not relabelled as a
 // backend error (or as a user's cancellation).
-func sanitizeObserveTransportError(ctx context.Context, err error) error {
-	if cause := ctx.Err(); cause != nil {
-		err = cause
+func sanitizeObserveTransportError(operationErr, err error) error {
+	if operationErr != nil {
+		err = operationErr
 	}
 	return sanitizeObserveMCPError(err)
 }

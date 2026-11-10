@@ -249,7 +249,10 @@ func TestObserveTransportReceiptPreservesOperationDeadlineDuringRequestAndBodyRe
 			})
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, transport.endpoint, http.NoBody)
 			require.NoError(t, err)
-			_, err = transport.RoundTrip(req)
+			response, err := transport.RoundTrip(req)
+			if response != nil {
+				defer closeReadBody(response.Body)
+			}
 			require.Error(t, err)
 			require.NoError(t, req.Context().Err(), "the caller is still active; only the gateway operation expired")
 			failure := queryFailureDetails(err)

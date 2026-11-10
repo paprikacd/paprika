@@ -226,8 +226,8 @@ func (p *providerClient) fetchMeasured(ctx context.Context, path string, params 
 	}
 	req.Header = p.headers.Clone()
 	req.Header.Set("Accept", "application/json")
-	if err := ctx.Err(); err != nil {
-		return nil, safeProviderTransportError(ctx, err)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, safeProviderTransportError(ctx, contextErr)
 	}
 	measurement.dispatch()
 	resp, err := p.client.Do(req) // #nosec G704 -- Local provider endpoints are explicitly operator-configured and redirects are disabled.
