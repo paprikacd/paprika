@@ -346,7 +346,7 @@ ${article?.date ? `<meta property="article:published_time" content="${article.da
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="${prefix}site.css?v=public-content-1"/>
-<link rel="stylesheet" href="${prefix}content.css?v=editorial-covers-2"/>
+<link rel="stylesheet" href="${prefix}content.css?v=dashboard-notes-1"/>
 <script type="application/ld+json">${jsonScript(structured)}</script>
 <script src="${prefix}content.js?v=public-content-1" defer></script>
 </head><body class="content-page">
@@ -446,7 +446,7 @@ function blogIndex(manifest, rendered) {
       <section aria-labelledby="all-engineering-title"><h2 id="all-engineering-title" class="blog-index-heading">All engineering articles</h2><ol class="post-list">${cards}</ol></section>
       <section class="blog-next"><h2>Put it into practice.</h2><p>Articles link to maintained implementation and guides. Explore synthetic dashboard examples, then bind their queries to real data sources.</p><a href="../docs/dashboards/" class="btn">Read dashboards guide</a></section>
     </div></main>`;
-  return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs, listing: manifest.posts });
+  return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs, listing: [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)) });
 }
 
 function notFoundPage() {
@@ -456,7 +456,7 @@ function notFoundPage() {
 }
 
 function rss(manifest) {
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Paprika engineering blog</title><link>${siteURL}blog/</link><description>Practical notes on Kubernetes delivery and observability.</description><language>en</language><atom:link href="${siteURL}feed.xml" rel="self" type="application/rss+xml"/>${manifest.posts.map((post) => `<item><title>${escapeXML(post.title)}</title><link>${publicURL(post.route)}</link><guid isPermaLink="true">${publicURL(post.route)}</guid><description>${escapeXML(post.description)}</description><category>${escapeXML(post.category)}</category><dc:date>${post.date}</dc:date></item>`).join('')}</channel></rss>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Paprika engineering blog</title><link>${siteURL}blog/</link><description>Engineering notes on Kubernetes delivery, observability and dashboard design.</description><language>en</language><atom:link href="${siteURL}feed.xml" rel="self" type="application/rss+xml"/>${[...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)).map((post) => `<item><title>${escapeXML(post.title)}</title><link>${publicURL(post.route)}</link><guid isPermaLink="true">${publicURL(post.route)}</guid><description>${escapeXML(post.description)}</description><category>${escapeXML(post.category)}</category><dc:date>${post.date}</dc:date></item>`).join('')}</channel></rss>\n`;
 }
 
 function featuredPosts(manifest) {
