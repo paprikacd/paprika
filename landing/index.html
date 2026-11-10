@@ -31,8 +31,8 @@
   <link rel="stylesheet" href="./install-hub.css?v=install-connect-1" />
   <link rel="stylesheet" href="./agents.css?v=install-connect-1" />
   <link rel="stylesheet" href="./tour-launch.css?v=fleet-tour-1" />
-  <link rel="stylesheet" href="./chart-showcase.css?v=public-charts-1" />
-  <link rel="stylesheet" href="./content.css?v=editorial-covers-2" />
+  <link rel="stylesheet" href="./chart-showcase.css?v=dashboard-notes-1" />
+  <link rel="stylesheet" href="./content.css?v=dashboard-notes-1" />
   <script src="./gamma-ui.js?v=gamma-story-1" defer></script>
   <script src="./story.js?v=diagram-loading-2" defer></script>
   <script src="./chart-showcase.js?v=public-charts-1" defer></script>
@@ -256,6 +256,15 @@
           <div><span class="chart-showcase-context-label">Public · explore</span><h3>All the examples. One gallery.</h3><p>The full catalogue and every dashboard lens are available inside this showcase. Switch studies in its top navigation, inspect tooltips, try configuration presets and compare responsive layouts.</p><a class="link-arrow" href="./charts/#charts">Browse the complete chart library</a></div>
           <div><span class="chart-showcase-context-label">Application · build</span><h3>Keep your console focused.</h3><p>The authenticated Insights app remains the dashboard builder: compose panels, connect data sources, configure queries, save dashboards and import starter templates. Public demo navigation lives here, not in the operator console.</p><a class="link-arrow" href="./docs/dashboards/">Dashboard builder documentation</a></div>
         </div>
+        <!-- dashboard-articles:start -->
+        <section class="chart-showcase-reading" aria-labelledby="dashboard-notes-title">
+          <div class="chart-showcase-reading-head"><div><p class="chart-showcase-context-label">Engineering field notes / Dashboarding</p>
+            <h3 id="dashboard-notes-title">Build charts that make a decision easier.</h3>
+            <p>Explore query design, readable panels and browser verification alongside the working gallery.</p></div>
+          <a href="./blog/" class="link-arrow">All engineering articles</a></div>
+          <p><a href="./blog/building-dashboards-with-mcp/">Read the dashboard authoring guide</a></p>
+        </section>
+        <!-- dashboard-articles:end -->
       </div>
     </section>
 
@@ -387,7 +396,7 @@ claude mcp login paprika</code></pre></div><p class="mcp-host-note">Replace the 
 
     <section id="engineering" class="reading-section" aria-labelledby="engineering-title">
       <div class="shell">
-        <div class="reading-heading"><div><h2 id="engineering-title">Engineering notes.</h2><p>Practical guides to the decisions behind a delivery system: what to compare, what to promote, and what to verify.</p></div><a class="link-arrow" href="./blog/">All articles</a></div>
+        <div class="reading-heading"><div><h2 id="engineering-title">Engineering notes.</h2><p>How to design and verify observability dashboards, work with Prometheus queries, and ship Kubernetes releases with evidence.</p></div><a class="link-arrow" href="./blog/">All articles</a></div>
         <!-- featured-posts:start -->
         <ol class="reading-list">
           <li><div class="reading-meta"><span>Operations</span><span>Guide</span></div><div><h3><a href="./blog/kubernetes-health-vs-drift/">Kubernetes health and drift answer different questions</a></h3><p>A healthy workload can still differ from Git. Read health, desired-state drift and prune candidates together.</p></div><a class="reading-open" href="./blog/kubernetes-health-vs-drift/">Read article</a></li>
