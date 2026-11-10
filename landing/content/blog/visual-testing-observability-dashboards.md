@@ -34,6 +34,11 @@ When enabled, Paprika first authorizes the requested dashboard, passes a short-l
 
 The [renderer deployment guide](../../../docs/guides/observe-browser-renderer.md) describes the opt-in configuration and its limits. If the renderer is unavailable, use the normal authenticated dashboard page in a browser. Do not report a nonexistent screenshot as proof of visual quality.
 
+The following local demo lets you simulate a desktop view, narrow layout and a provider error. Check that missing data is presented as a state rather than a fabricated zero.
+
+```paprika-dashboard testing
+```
+
 ## Test the states that routinely break
 
 Use an acceptance matrix rather than one polished desktop capture:
@@ -52,6 +57,10 @@ Use an acceptance matrix rather than one polished desktop capture:
 For a chart with interactive inspection, deliberately focus an observation near both horizontal viewport edges. A fixed tooltip may appear correct in a centre screenshot yet clip when the selected point is close to the boundary.
 
 Use a real viewport and a screenshot of the actual application, not a cropped marketing fixture. Compare only equivalent data windows if you intend to judge a visual regression.
+
+![Four-cell visual regression matrix for desktop light, desktop dark, mobile reflow and provider-error empty states.](../../editorial/dashboard-visual-test-matrix.svg)
+
+*Illustrative acceptance matrix. A verified render must match the saved document revision, viewport and data state.*
 
 ## Keep verification separate from authoring
 
