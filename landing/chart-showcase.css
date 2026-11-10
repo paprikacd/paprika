@@ -30,6 +30,25 @@
 .chart-showcase-context h3{font-size:clamp(29px,3.3vw,45px);max-width:18ch;margin-bottom:12px}
 .chart-showcase-context p{font-size:16px;line-height:1.6;color:#dae5ed;margin-bottom:18px}
 .chart-showcase-context .link-arrow{font-size:15px}
+
+/* A discoverable editorial route from the interactive chart gallery. */
+.chart-showcase-reading{margin-top:68px;padding-top:32px;border-top:1px solid var(--line-on-dark)}
+.chart-showcase-reading-head{display:flex;align-items:end;justify-content:space-between;gap:24px 44px;margin-bottom:25px}
+.chart-showcase-reading-head h3{max-width:20ch;font:600 clamp(31px,3.8vw,51px)/1.05 var(--display);color:var(--white);margin:0 0 13px}
+.chart-showcase-reading-head p:not(.chart-showcase-context-label){max-width:67ch;margin:0;font:400 16px/1.6 var(--sans);color:#d1deeb}
+.chart-showcase-reading-head .link-arrow{flex:none;color:var(--white);font-size:15px}
+.chart-showcase-reading-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.chart-reading-card{display:flex;flex-direction:column;min-width:0;background:#1a3348;border:1px solid #56738a;transition:background 160ms ease-out,border-color 160ms ease-out}
+.chart-reading-card:hover,.chart-reading-card:focus-visible{background:#24425c;border-color:#9ac1dc}
+.chart-reading-card img{display:block;aspect-ratio:16/9;width:100%;height:auto;object-fit:cover}
+.chart-reading-card-body{display:flex;flex-direction:column;gap:13px;flex:1;padding:19px 19px 22px}
+.chart-reading-card-body small{display:block;font:600 11px/1.4 var(--mono);color:#b6d2e5;text-transform:uppercase;letter-spacing:.06em}
+.chart-reading-card-body strong{display:block;max-width:28ch;font:600 clamp(24px,2.3vw,31px)/1.14 var(--display);color:var(--white);overflow-wrap:break-word}
+.chart-reading-card-body>span{margin-top:auto;display:block;font:600 14px/1.4 var(--sans);color:#c8e2f1}
+@media(max-width:920px){.chart-showcase-reading-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.chart-showcase-reading{margin-top:45px}.chart-showcase-reading-head{display:block}.chart-showcase-reading-head .link-arrow{display:inline-flex;margin-top:16px}.chart-showcase-reading-grid{grid-template-columns:1fr}.chart-reading-card-body strong{font-size:30px}}
+@media(prefers-reduced-motion:reduce){.chart-reading-card{transition:none}}
+
 @media(max-width:920px){
  .chart-showcase-controls{flex-direction:column;align-items:stretch;gap:10px;padding:12px}
  .chart-showcase-tabs{width:100%}
