@@ -360,7 +360,7 @@
       "slug": "building-dashboards-with-mcp",
       "title": "Build and verify observability dashboards through MCP",
       "description": "Discover real providers, create reusable queries, save dashboards with exact ETags, and verify both live data and the rendered result.",
-      "category": "Observability",
+      "category": "Dashboarding",
       "date": "2026-11-07T06:57:52Z",
       "source": "landing/content/blog/building-dashboards-with-mcp.md",
       "image": {
@@ -379,6 +379,106 @@
         "src": "editorial/dashboards-through-mcp.svg",
         "alt": "Telemetry from metrics, logs and traces flows through MCP discovery and queries into a verified dashboard.",
         "caption": "Discover real providers, run queries, save and read back the document, then inspect its rendered dashboard."
+      }
+    },
+    {
+      "slug": "kubernetes-release-dashboard",
+      "title": "Kubernetes release dashboards: the signals that matter before and after a rollout",
+      "description": "Choose useful Kubernetes release dashboard signals: revision identity, workload health, desired-state drift, Prometheus metrics and evidence freshness.",
+      "category": "Dashboarding",
+      "date": "2026-11-10T02:05:00Z",
+      "source": "landing/content/blog/kubernetes-release-dashboard.md",
+      "image": {
+        "src": "article-images/metrics.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/metrics-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules.",
+        "caption": "Metrics become useful after scraping, label selection and freshness checks. Tune alert thresholds and durations to the installation."
+      },
+      "cover": {
+        "src": "editorial/kubernetes-release-dashboard.svg",
+        "alt": "An illustrated release evidence board connects source revision, workload readiness, drift comparison and provider-backed service signals.",
+        "caption": "A reliable rollout view keeps source identity, health, drift and service telemetry distinct."
+      }
+    },
+    {
+      "slug": "prometheus-dashboard-query-patterns",
+      "title": "Prometheus dashboard query patterns: rates, gauges and histograms",
+      "description": "Write defensible PromQL for dashboards: distinguish counters, gauges, histograms, labels, missing data and aggregation before building charts.",
+      "category": "Dashboarding",
+      "date": "2026-11-10T02:05:00Z",
+      "source": "landing/content/blog/prometheus-dashboard-query-patterns.md",
+      "image": {
+        "src": "article-images/metrics.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/metrics-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Paprika exposes instrumentation at /metrics for Prometheus to scrape and evaluate with queries and alert rules.",
+        "caption": "Metrics become useful after scraping, label selection and freshness checks. Tune alert thresholds and durations to the installation."
+      },
+      "cover": {
+        "src": "editorial/prometheus-dashboard-query-patterns.svg",
+        "alt": "Three technical chart panels distinguish a counter and rate, a gauge and histogram bucket distributions.",
+        "caption": "Prometheus query semantics determine what a panel can truthfully report; visuals come afterward."
+      }
+    },
+    {
+      "slug": "observability-dashboard-layout",
+      "title": "Observability dashboard design: layout, charts and readable KPIs",
+      "description": "Design useful observability dashboards with clear KPI hierarchy, chart selection, responsive layouts, accessible tooltips and visible missing-data states.",
+      "category": "Dashboarding",
+      "date": "2026-11-10T02:05:00Z",
+      "source": "landing/content/blog/observability-dashboard-layout.md",
+      "image": {
+        "src": "article-images/dashboard-authoring.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/dashboard-authoring-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Discover real provider IDs, bind saved queries and parameters to dashboard widgets, then verify data and layout.",
+        "caption": "Adapt examples by binding their queries to actual providers. Execute the saved dashboard and inspect returned data before relying on its panels."
+      },
+      "cover": {
+        "src": "editorial/observability-dashboard-layout.svg",
+        "alt": "A structured observability dashboard mockup shows primary KPIs, a time-series diagnostic view and a distribution with explicit labels.",
+        "caption": "Decision-first composition places exceptions, trends and context where operators can find them."
+      }
+    },
+    {
+      "slug": "visual-testing-observability-dashboards",
+      "title": "Visual testing for observability dashboards: data, layout and MCP verification",
+      "description": "Test saved dashboards beyond JSON validation: verify queries, revisions, desktop and mobile charts, tooltip bounds and empty states.",
+      "category": "Dashboarding",
+      "date": "2026-11-10T02:05:00Z",
+      "source": "landing/content/blog/visual-testing-observability-dashboards.md",
+      "image": {
+        "src": "article-images/browser-renderer.png",
+        "width": 1200,
+        "height": 675,
+        "mobile": {
+          "src": "article-images/browser-renderer-mobile.png",
+          "width": 600,
+          "height": 820
+        },
+        "alt": "Authorized dashboard identity and ETag pass to a private browser worker, which returns a real Insights screenshot for visual inspection.",
+        "caption": "The optional worker captures the actual Insights interface at the requested viewport. Use query_dashboard alongside the image to verify data freshness and errors."
+      },
+      "cover": {
+        "src": "editorial/visual-testing-observability-dashboards.svg",
+        "alt": "Desktop and phone dashboard screens show validation of KPI cards, tooltips, missing data and responsive layout.",
+        "caption": "Data verification and actual browser inspection are separate acceptance checks for every dashboard."
       }
     }
   ]
