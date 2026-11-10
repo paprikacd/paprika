@@ -270,6 +270,25 @@ async function structuredDataMatchesPage(page, path) {
   }
 }
 
+async function editorialArtwork(page, post) {
+  const cover = page.locator('.editorial-cover img');
+  assert.equal(await cover.count(), 1, `${post.route}: one editorial cover`);
+  assert.equal(await cover.getAttribute('alt'), post.cover.alt, `${post.route}: informative cover alt text`);
+  assert.equal(await cover.getAttribute('width'), '1200');
+  assert.equal(await cover.getAttribute('height'), '675');
+  await cover.scrollIntoViewIfNeeded();
+  await cover.evaluate((img) => img.decode());
+  const actual = await cover.evaluate((img) => ({
+    src: new URL(img.currentSrc).pathname,
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+  }));
+  assert(actual.src.endsWith('/' + post.cover.src), `${post.route}: correct cover asset`);
+  assert.equal(actual.width, 1200);
+  assert.equal(actual.height, 675);
+  assert.equal(await page.locator('.footer-brand img').count(), 1, `${post.route}: footer identity`);
+}
+
 async function directory(page) {
   await page.locator('.docs-directory').waitFor({ state: 'visible' });
   assert.equal(await page.locator('.docs-directory .doc-link').count(), EXPECTED_GUIDES);
@@ -527,6 +546,15 @@ async function run() {
     for (const path of schemaRoutes) {
       await visit(noJS.page, path);
       await structuredDataMatchesPage(noJS.page, path);
+      const editorial = manifest.posts.find((post) => post.route === path);
+      if (editorial) {
+        await editorialArtwork(noJS.page, editorial);
+        if (editorial.slug === 'building-dashboards-with-mcp') {
+          await noJS.page.locator('.editorial-cover').screenshot({ path: resolve(artifacts, 'mobile-editorial-cover.png'), animations: 'disabled' });
+        }
+      }
+      if (path === 'blog/') assert.equal(await noJS.page.locator('.post-cover img').count(), manifest.posts.length);
+      if (path === '') assert.equal(await noJS.page.locator('.reading-thumb img').count(), Math.min(3, manifest.posts.length));
       if (['docs/canary/', 'blog/building-dashboards-with-mcp/'].includes(path)) {
         await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
         await noJS.page.screenshot({ path: resolve(artifacts, path.startsWith('docs/') ? 'mobile-canary-figure.png' : 'mobile-dashboard-figure.png'), animations: 'disabled' });
@@ -537,6 +565,12 @@ async function run() {
     for (const item of [...manifest.docs, ...manifest.posts]) {
       await visit(noJS.page, item.route);
       await structuredDataMatchesPage(noJS.page, item.route);
+      if (item.kind === 'blog') {
+        await editorialArtwork(noJS.page, item);
+        if (item.slug === 'building-dashboards-with-mcp') {
+          await noJS.page.locator('.editorial-cover').screenshot({ path: resolve(artifacts, 'desktop-editorial-cover.png'), animations: 'disabled' });
+        }
+      }
       if (['getting-started', 'building-dashboards-with-mcp'].includes(item.slug)) {
         await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
         await noJS.page.screenshot({ path: resolve(artifacts, `${item.kind === 'docs' ? 'desktop-guide' : 'desktop-dashboard'}-figure.png`), animations: 'disabled' });

@@ -117,6 +117,17 @@ export function validateManifest(manifest) {
         const date = new Date(item.date);
         assert.ok(!Number.isNaN(date.valueOf()) && date.toISOString() === item.date.replace('Z', '.000Z'), `Invalid publication date: ${item.date}`);
       }
+      if (kind === 'posts') {
+        assert.ok(item.cover && typeof item.cover === 'object', `${item.slug} needs an editorial cover`);
+        assert.match(item.cover.src, /^editorial\/[a-z0-9-]+\.svg$/, 'Editorial covers must be local SVG assets');
+        for (const key of ['alt', 'caption']) {
+          assert.ok(typeof item.cover[key] === 'string' && item.cover[key].trim(), `${item.slug} cover needs ${key}`);
+        }
+        const artwork = readFileSync(insideRepository(`landing/${item.cover.src}`), 'utf8');
+        assert.ok(artwork.length >= 500 && artwork.length < 200_000, `Invalid cover size: ${item.cover.src}`);
+        assert.match(artwork, /^<svg\b[^>]*\bviewBox="0 0 1200 675"/, `Cover needs a 1200×675 viewBox: ${item.cover.src}`);
+        assert.doesNotMatch(artwork, /<(?:script|foreignObject|image)\b/i, `Cover must be self-contained and inert: ${item.cover.src}`);
+      }
       assert.ok(item.image && typeof item.image === 'object', `${item.slug} needs an article image`);
       for (const key of ['alt', 'caption']) {
         assert.ok(typeof item.image[key] === 'string' && item.image[key].trim(), `${item.slug} image needs ${key}`);
@@ -292,8 +303,12 @@ function header(prefix, active) {
 <header class="masthead nav"><div class="masthead-inner shell"><a href="${prefix}" class="wordmark" aria-label="Paprika home"><img src="${prefix}paprika-mark.png" width="35" height="35" alt=""/><span>Paprika</span></a><nav class="nav-links" aria-label="Main navigation">${links}<details class="mobile-menu"><summary>Menu</summary><div class="mobile-menu-links">${links}</div></details><a href="${repositoryURL}" class="nav-action">GitHub <span aria-hidden="true">↗</span></a></nav></div></header>`;
 }
 
+function editorialEyebrow(prefix, label) {
+  return `<div class="editorial-eyebrow"><img src="${prefix}paprika-mark.png" alt="" width="24" height="24"/><span>${escapeHTML(label)}</span></div>`;
+}
+
 function footer(prefix) {
-  return `<footer class="content-footer"><div class="shell"><a href="${prefix}" class="footer-brand">Paprika</a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="${prefix}docs/">Documentation</a><a href="${prefix}blog/">Engineering blog</a><a href="${prefix}feed.xml">RSS feed</a><a href="${repositoryURL}">GitHub</a><a href="${repositoryURL}/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>`;
+  return `<footer class="content-footer"><div class="shell"><a href="${prefix}" class="footer-brand"><img src="${prefix}paprika-mark.png" alt="" width="34" height="34"/><span>Paprika</span></a><p>Open source Kubernetes delivery and observability.</p><nav aria-label="Footer"><a href="${prefix}docs/">Documentation</a><a href="${prefix}blog/">Engineering blog</a><a href="${prefix}feed.xml">RSS feed</a><a href="${repositoryURL}">GitHub</a><a href="${repositoryURL}/blob/master/LICENSE">Apache 2.0</a></nav></div></footer>`;
 }
 
 function page({ route, title, description, active, body, article, listing, breadcrumbs, noindex = false, fileRoute = false }) {
@@ -331,7 +346,7 @@ ${article?.date ? `<meta property="article:published_time" content="${article.da
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="${prefix}site.css?v=public-content-1"/>
-<link rel="stylesheet" href="${prefix}content.css?v=article-images-1"/>
+<link rel="stylesheet" href="${prefix}content.css?v=editorial-covers-2"/>
 <script type="application/ld+json">${jsonScript(structured)}</script>
 <script src="${prefix}content.js?v=public-content-1" defer></script>
 </head><body class="content-page">
@@ -356,6 +371,7 @@ function articlePage(item, document, manifest) {
   const previous = list[index - 1];
   const next = list[index + 1];
   const { image } = item;
+  const editorialCover = blog ? `<figure class="editorial-cover"><img src="${prefix}${item.cover.src}" alt="${escapeHTML(item.cover.alt)}" width="1200" height="675" decoding="async" fetchpriority="high"/><figcaption>${escapeHTML(item.cover.caption)}</figcaption></figure>` : '';
   const figure = `<figure class="article-figure"><picture><source media="(max-width: 600px)" srcset="${prefix}${image.mobile.src}" width="${image.mobile.width}" height="${image.mobile.height}"/><img src="${prefix}${image.src}" alt="${escapeHTML(image.alt)}" width="${image.width}" height="${image.height}" decoding="async"/></picture><figcaption><span>${escapeHTML(image.caption)}</span> <a href="${prefix}${image.src}">Open full-size diagram</a></figcaption></figure>`;
   const illustratedBody = document.html.includes('</p>')
     ? document.html.replace('</p>', () => `</p>${figure}`) : figure + document.html;
@@ -365,7 +381,8 @@ function articlePage(item, document, manifest) {
 ${blog ? '' : articleSidebar(manifest.docs, item, prefix)}
 ${toc}
 <main id="main-content" class="article-main" tabindex="-1"><article>
-<header class="article-header"><h1 id="${escapeHTML(document.headingID)}">${escapeHTML(item.title)}</h1><p class="article-description">${escapeHTML(item.description)}</p><div class="article-meta"><span>${blog ? 'By' : 'Maintained by'} <a rel="author" href="${repositoryURL}">Paprika maintainers</a></span><span class="article-section">${escapeHTML(blog ? item.category : item.section)}</span>${blog ? `<time datetime="${item.date}">${dateLabel(item.date)}</time><span>${document.readingMinutes} min read</span>` : ''}<a href="${sourceURL(item.source)}">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+<header class="article-header">${editorialEyebrow(prefix, blog ? 'Paprika / Engineering' : 'Paprika / Guides')}<h1 id="${escapeHTML(document.headingID)}">${escapeHTML(item.title)}</h1><p class="article-description">${escapeHTML(item.description)}</p><div class="article-meta"><span>${blog ? 'By' : 'Maintained by'} <a rel="author" href="${repositoryURL}">Paprika maintainers</a></span><span class="article-section">${escapeHTML(blog ? item.category : item.section)}</span>${blog ? `<time datetime="${item.date}">${dateLabel(item.date)}</time><span>${document.readingMinutes} min read</span>` : ''}<a href="${sourceURL(item.source)}">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
+${editorialCover}
 <div class="prose">${illustratedBody}</div>
 </article>
 <nav class="article-next" aria-label="${blog ? 'More articles' : 'More guides'}">${previous ? `<a href="${prefix}${previous.route}" rel="prev"><span>Previous ${blog ? 'article' : 'guide'}</span><strong>${escapeHTML(previous.title)}</strong></a>` : `<a href="${prefix}${item.kind}/"><span>Browse</span><strong>All ${blog ? 'engineering articles' : 'documentation'}</strong></a>`}${next ? `<a href="${prefix}${next.route}" rel="next"><span>Next ${blog ? 'article' : 'guide'}</span><strong>${escapeHTML(next.title)}</strong></a>` : `<a href="${prefix}${blog ? 'docs/' : 'blog/'}"><span>Keep exploring</span><strong>${blog ? 'Read the documentation' : 'Read the engineering blog'}</strong></a>`}</nav>
@@ -383,7 +400,7 @@ function docsIndex(manifest) {
   const description = 'Install Paprika, deliver applications to Kubernetes, connect telemetry, and build dashboards with practical guides and API references.';
   const sections = [...new Set(manifest.docs.map((item) => item.section))];
   const breadcrumbs = [{ name: 'Paprika', route: '' }, { name: 'Documentation', route: 'docs/' }];
-  const body = `<main id="main-content" tabindex="-1"><header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}<h1>Paprika documentation</h1><p>${description}</p><a class="btn" href="./getting-started/">Deploy your first Application</a></header>
+  const body = `<main id="main-content" tabindex="-1"><header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}${editorialEyebrow('../', 'Paprika / Documentation')}<h1>Paprika documentation</h1><p>${description}</p><a class="btn" href="./getting-started/">Deploy your first Application</a></header>
 <div class="content-index shell">
 <section class="docs-search" aria-label="Find documentation" data-docs-search hidden><form role="search"><label for="docs-query">Search documentation</label><div class="search-field"><input id="docs-query" name="q" type="search" placeholder="Try promotion, Prometheus, or MCP" autocomplete="off" enterkeyhint="search"/><button type="button" data-search-clear hidden aria-label="Clear search">Clear</button></div></form><p class="search-status" role="status" aria-live="polite" aria-atomic="true"></p><div class="search-results" hidden></div></section>
 <div class="docs-directory">${sections.map((section) => `<section class="doc-group" aria-labelledby="group-${section.toLowerCase()}"><div class="doc-group-heading"><h2 id="group-${section.toLowerCase()}">${escapeHTML(section)}</h2><p>${escapeHTML(sectionDescriptions[section] || '')}</p></div><ul class="doc-list">${manifest.docs.filter((item) => item.section === section).map((item) => `<li><a class="doc-link" href="./${item.slug}/"><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.description)}</p><span aria-hidden="true">↗</span></a></li>`).join('')}</ul></section>`).join('')}</div>
@@ -396,7 +413,20 @@ function blogIndex(manifest, rendered) {
   const title = 'Paprika engineering blog';
   const breadcrumbs = [{ name: 'Paprika', route: '' }, { name: 'Engineering blog', route: 'blog/' }];
   const description = 'Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP.';
-  const body = `<main id="main-content" tabindex="-1"><header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}<h1>Notes from the control plane.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header><div class="content-index shell"><ol class="post-list">${manifest.posts.map((post) => `<li><article class="post-card"><div class="post-meta"><span>${escapeHTML(post.category)}</span><time datetime="${post.date}">${dateLabel(post.date)}</time><span>${rendered.get(post.source).readingMinutes} min read</span></div><div class="post-copy"><h2><a href="./${post.slug}/">${escapeHTML(post.title)}</a></h2><p>${escapeHTML(post.description)}</p><a class="link-arrow" href="./${post.slug}/" aria-label="Read ${escapeHTML(post.title)}">Read article</a></div></article></li>`).join('')}</ol><section class="blog-next"><h2>Put it into practice.</h2><p>Each article links back to the maintained implementation and guides. Start with a test cluster and a first Application.</p><a href="../docs/getting-started/" class="btn">Open the getting started guide</a></section></div></main>`;
+  const cards = manifest.posts.map((post) => {
+    const route = `./${post.slug}/`;
+    return `<li><article class="post-card">
+      <a class="post-cover" href="${route}" aria-label="Read ${escapeHTML(post.title)}"><img src="../${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
+      <div class="post-card-body">
+        <div class="post-meta"><span>${escapeHTML(post.category)}</span><time datetime="${post.date}">${dateLabel(post.date)}</time><span>${rendered.get(post.source).readingMinutes} min read</span></div>
+        <div class="post-copy"><h2><a href="${route}">${escapeHTML(post.title)}</a></h2><p>${escapeHTML(post.description)}</p><a class="link-arrow" href="${route}" aria-label="Read ${escapeHTML(post.title)}">Read article</a></div>
+      </div>
+    </article></li>`;
+  }).join('');
+  const body = `<main id="main-content" tabindex="-1">
+  <header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}${editorialEyebrow('../', 'Paprika / Engineering journal')}<h1>Notes from the control plane.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header>
+  <div class="content-index shell"><ol class="post-list">${cards}</ol>
+  <section class="blog-next"><h2>Put it into practice.</h2><p>Each article links back to the maintained implementation and guides. Start with a test cluster and a first Application.</p><a href="../docs/getting-started/" class="btn">Open the getting started guide</a></section></div></main>`;
   return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs, listing: manifest.posts });
 }
 
@@ -411,7 +441,12 @@ function rss(manifest) {
 }
 
 function featuredPosts(manifest) {
-  return `<ol class="reading-list">${manifest.posts.slice(0, 3).map((post) => `<li><div class="reading-meta"><span>${escapeHTML(post.category)}</span><span>Guide</span></div><div><h3><a href="./${post.route}">${escapeHTML(post.title)}</a></h3><p>${escapeHTML(post.description)}</p></div><a class="reading-open" href="./${post.route}" aria-label="Read ${escapeHTML(post.title)}">Read article <span aria-hidden="true">→</span></a></li>`).join('')}</ol>`;
+  return `<ol class="reading-list">${manifest.posts.slice(0, 3).map((post) => `<li>
+    <a class="reading-thumb" href="./${post.route}" aria-label="Read ${escapeHTML(post.title)}"><img src="./${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
+    <div class="reading-meta"><span>${escapeHTML(post.category)}</span><span>Engineering</span></div>
+    <div class="reading-copy"><h3><a href="./${post.route}">${escapeHTML(post.title)}</a></h3><p>${escapeHTML(post.description)}</p></div>
+    <a class="reading-open" href="./${post.route}" aria-label="Read ${escapeHTML(post.title)}">Read article <span aria-hidden="true">→</span></a>
+  </li>`).join('')}</ol>`;
 }
 
 export function buildContent(output) {
@@ -423,7 +458,7 @@ export function buildContent(output) {
   const assets = new Map();
   const rendered = new Map(items.map((item) => [item.source, renderDocument(item, sourceRoutes, assets)]));
   mkdirSync(destination, { recursive: true });
-  for (const directory of ['docs', 'blog', 'content-assets']) {
+  for (const directory of ['docs', 'blog', 'content-assets', 'editorial']) {
     rmSync(join(destination, directory), { recursive: true, force: true });
   }
   const articleImages = new Set(items.flatMap(item => [item.image.src, item.image.mobile.src]));
@@ -431,6 +466,11 @@ export function buildContent(output) {
     const target = join(destination, source);
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(join(landingRoot, source), target);
+  }
+  for (const post of manifest.posts) {
+    const target = join(destination, post.cover.src);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(join(landingRoot, post.cover.src), target);
   }
   const writePage = (route, html) => {
     const path = join(destination, route, 'index.html');

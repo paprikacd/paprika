@@ -59,6 +59,38 @@ examples. Do not invent adoption statistics, benchmark results, supported
 capabilities, people or customer stories. Check the actual implementation
 before presenting a configuration field as working behavior.
 
+## Editorial artwork and identity
+
+Each published blog post has two purposeful visuals in `content/site.json`:
+`cover` is an original 1200×675 SVG illustration for the blog index,
+the homepage's reading list, and the article opening; `image` is the
+desktop/mobile PNG technical diagram that explains a specific claim.
+The Markdown source remains the article's authoritative text. Covers
+should introduce a question or mechanism; diagrams should clarify its
+operational meaning. Do not substitute atmospheric art for evidence.
+
+Add new covers in `landing/editorial/<descriptive-slug>.svg` and declare
+`cover.src`, `cover.alt`, and `cover.caption` alongside the article
+metadata. Use the restrained navy, steel, cool-white and attention-amber
+palette in `DESIGN.md`; keep linework and labels legible at card size,
+avoid fabricated metric values, and use native SVG shapes rather than
+external assets or embedded scripts. The build validates the local SVG
+and publishes only referenced covers. Both the article listing and
+homepage use the same source file at the appropriate 16:9 aspect ratio.
+
+The article retains its PNG explanatory diagram and PNG Open Graph/Twitter
+preview, because social crawlers do not reliably render SVG cards. The
+original Paprika mark is applied separately in editorial labels,
+thumbnail signatures and footers rather than redrawing the trademark
+inside each illustration. The `content.css` asset version should change
+whenever markup and styles change together.
+
+Run the standard site build, then the no-JavaScript and responsive
+Playwright checks. The browser test verifies SVG decoding, intrinsic
+dimensions, title-linked cover navigation and the existing article-image
+metadata. Its screenshots include a mobile and desktop editorial cover;
+inspect those alongside the blog index and product reading-list cards.
+
 ## SEO and measurement
 
 The sitemap uses canonical URLs under the project path, and content pages ship
