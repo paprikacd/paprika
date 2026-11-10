@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+<title id="title">Dashboard hierarchy and responsive design</title><desc id="description">Labelled synthetic explanatory dashboard composition for an engineering article; not production telemetry.</desc>
+<defs><linearGradient id="background" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#12283b"/><stop offset="1" stop-color="#203b52"/></linearGradient><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" stroke="#85a4b9" stroke-opacity=".08" fill="none"/></pattern></defs>
+<rect width="1200" height="675" fill="url(#background)"/><rect width="1200" height="675" fill="url(#grid)"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#e8f2f7">
+<text x="54" y="67" font-size="16" letter-spacing="3" font-weight="700">PAPRIKA / DESIGN / OVERVIEW VS INVESTIGATE</text>
+<text x="1145" y="67" font-size="13" text-anchor="end" fill="#9cc2d8" letter-spacing="2">ILLUSTRATIVE / NOT LIVE</text>
+<path d="M54 89H1146M54 604H1146" stroke="#66869e" stroke-opacity=".8"/>
+
+<rect x="62" y="122" width="748" height="444" fill="#173249" stroke="#a0bcce"/><text x="85" y="161" font-size="23" font-weight="700">OVERVIEW / DESKTOP</text>
+<rect x="86" y="182" width="221" height="110" fill="#294b64"/><text x="103" y="210" font-size="14">CURRENT AVAILABILITY</text><text x="103" y="265" font-size="41" font-weight="700" fill="#a6d9c2">99.2%</text>
+<rect x="324" y="182" width="220" height="110" fill="#294b64"/><text x="344" y="210" font-size="14">QUERY STATE</text><text x="344" y="259" font-size="24" fill="#eec08c" font-weight="700">NO SERIES</text>
+<rect x="560" y="182" width="222" height="110" fill="#294b64"/><text x="577" y="210" font-size="14">RELEASE CONTEXT</text><text x="577" y="258" font-size="23" font-weight="700">REV / 2f6a</text>
+<rect x="86" y="313" width="696" height="230" fill="#21425b" stroke="#668ba5"/><text x="103" y="345" font-size="16">TRENDS / ANNOTATED</text><path d="M107 503H752M107 365H752" stroke="#527692"/><path d="M110 482l65-28 66 13 64-52 63 31 63-50 66 23 65-30 66 17 64-43" stroke="#a1cfeb" stroke-width="4" fill="none"/><path d="M430 363V510" stroke="#e8c18c" stroke-width="2" stroke-dasharray="6 6"/>
+<g transform="translate(850 122)">
+<rect width="284" height="444" rx="24" fill="#0f2235" stroke="#a0bcce" stroke-width="4"/><rect x="17" y="17" width="250" height="410" rx="8" fill="#26465e"/>
+<text x="140" y="51" text-anchor="middle" font-size="19" font-weight="700">MOBILE / PRIORITY</text>
+<rect x="35" y="73" width="216" height="100" fill="#37617e"/><text x="51" y="101" font-size="13">PRIMARY KPI</text><text x="51" y="148" font-size="31" font-weight="700">99.2%</text>
+<rect x="35" y="188" width="216" height="96" fill="#37617e"/><text x="51" y="216" font-size="13">WHY IT CHANGED</text><path d="M51 259l35-17 39 5 37-28 39 21 34-18" stroke="#b2d8ef" stroke-width="3" fill="none"/>
+<rect x="35" y="299" width="216" height="91" fill="#37617e"/><text x="51" y="329" font-size="13">PROVIDER CONTEXT</text><text x="51" y="362" font-size="16">No false zeros</text>
+</g>
+<text x="55" y="638" font-size="13" letter-spacing="2" fill="#91b1c5">ENGINEERING NOTES / EVIDENCE BEFORE INTERPRETATION</text>
+</g></svg>
