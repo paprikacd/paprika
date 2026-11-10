@@ -257,7 +257,7 @@ for (const route of [...routes, '404.html']) {
     verifyURL(attrs.src, route, { asset: true });
   }
 }
-for (const privatePath of ['node_modules', 'content', 'package.json', 'package-lock.json', 'build-content.mjs', 'analytics.test.mjs', 'verify-browser.mjs', 'structured-data.mjs', 'structured-data.test.mjs']) {
+for (const privatePath of ['node_modules', 'content', 'package.json', 'package-lock.json', 'build-content.mjs', 'analytics.test.mjs', 'verify-browser.mjs', 'structured-data.mjs', 'structured-data.test.mjs', 'article-demos.test.mjs']) {
   assert.ok(!existsSync(join(destination, privatePath)), `Build source should not be published: ${privatePath}`);
 }
 assert.equal(failures.length, 0, `Public content verification failed:\n${failures.join('\n')}`);
