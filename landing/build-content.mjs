@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import GithubSlugger from 'github-slugger';
 import { jsonScript, pageStructuredData, repositoryURL, siteURL } from './structured-data.mjs';
+import { renderDashboardDemo, renderGalleryPreview } from './article-demos.js';
 
 export { siteURL } from './structured-data.mjs';
 
@@ -263,14 +264,37 @@ export function renderDocument(item, sourceRoutes, assets = new Map(), markdown 
   const defaultImage = parser.renderer.rules.image;
   parser.renderer.rules.image = (renderTokens, index, options, env, renderer) => {
     const token = renderTokens[index];
-    token.attrSet('src', rewriteURL(token.attrGet('src'), item.source, item.route, sourceRoutes, assets, true));
+    const originalImage = token.attrGet('src');
+    token.attrSet('src', rewriteURL(originalImage, item.source, item.route, sourceRoutes, assets, true));
+    // Reserve intrinsic dimensions for local editorial SVGs so lazy images
+    // have a real layout box, can enter the viewport and avoid content shifts.
+    if (/^\.\.\/\.\.\/editorial\/[a-z0-9-]+\.svg$/.test(originalImage)) {
+      const imageSource = insideRepository('landing/' + originalImage.replace('../../', ''));
+      const markup = readFileSync(imageSource, 'utf8');
+      const dimensions = markup.match(/<svg\b[^>]*\bwidth="(\d+)"\s+height="(\d+)"/);
+      assert.ok(dimensions, 'Editorial SVG needs explicit dimensions: ' + originalImage);
+      token.attrSet('width', dimensions[1]);
+      token.attrSet('height', dimensions[2]);
+    }
     token.attrSet('loading', 'lazy');
     token.attrSet('decoding', 'async');
     return defaultImage(renderTokens, index, options, env, renderer);
   };
   parser.renderer.rules.fence = (renderTokens, index) => {
     const token = renderTokens[index];
-    const language = token.info.trim().split(/\s+/)[0].replace(/[^a-zA-Z0-9_+-]/g, '');
+    const directive = token.info.trim();
+    if (directive.startsWith('paprika-')) {
+      assert.equal(item.kind, 'blog', 'Interactive editorial directives are only allowed in blog articles');
+      assert.equal(token.content.trim(), '', 'Editorial directives must not contain arbitrary HTML or content');
+      if (/^paprika-dashboard (release|prometheus|layout|testing|mcp)$/.test(directive)) {
+        return renderDashboardDemo(directive.split(' ')[1], assetPrefix(item.route)) + '\n';
+      }
+      if (/^paprika-gallery (charts|kubernetes-fleet|performance-workbench|distributed-systems)$/.test(directive)) {
+        return renderGalleryPreview(directive.split(' ')[1], assetPrefix(item.route)) + '\n';
+      }
+      throw new Error('Unknown editorial directive in ' + item.slug + ': ' + directive);
+    }
+    const language = directive.split(/\s+/)[0].replace(/[^a-zA-Z0-9_+-]/g, '');
     const label = language === 'mermaid' ? 'Diagram source' : language || 'Text';
     codeCount += 1;
     return `<div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">${escapeHTML(label)}</span></div><pre tabindex="0" aria-label="${escapeHTML(label)} code example ${codeCount}"><code${language ? ` class="language-${escapeHTML(language)}"` : ''}>${escapeHTML(token.content)}</code></pre></div>\n`;
@@ -346,9 +370,11 @@ ${article?.date ? `<meta property="article:published_time" content="${article.da
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="${prefix}site.css?v=public-content-1"/>
-<link rel="stylesheet" href="${prefix}content.css?v=editorial-covers-2"/>
+<link rel="stylesheet" href="${prefix}content.css?v=dashboard-notes-1"/>
+${article?.kind === 'blog' ? `<link rel="stylesheet" href="${prefix}article-demos.css?v=editorial-lab-1"/>` : ''}
 <script type="application/ld+json">${jsonScript(structured)}</script>
 <script src="${prefix}content.js?v=public-content-1" defer></script>
+${article?.kind === 'blog' ? `<script src="${prefix}article-demos.js?v=editorial-lab-1" type="module"></script>` : ''}
 </head><body class="content-page">
 ${header(prefix, active)}
 ${body}
@@ -409,11 +435,22 @@ function docsIndex(manifest) {
   return page({ route: 'docs/', active: 'docs', title, description, body, breadcrumbs, listing: manifest.docs });
 }
 
+function dashboardPosts(manifest) {
+  return manifest.posts.filter((post) => post.category === 'Dashboarding')
+    .sort((left, right) => right.date.localeCompare(left.date));
+}
+
 function blogIndex(manifest, rendered) {
-  const title = 'Paprika engineering blog';
+  const title = 'Kubernetes, observability and dashboarding articles · Paprika engineering';
   const breadcrumbs = [{ name: 'Paprika', route: '' }, { name: 'Engineering blog', route: 'blog/' }];
-  const description = 'Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP.';
-  const cards = manifest.posts.map((post) => {
+  const description = 'Practical guides for Kubernetes release dashboards, Prometheus queries, dashboard UX, MCP authoring and deployment operations.';
+  const topicCards = dashboardPosts(manifest).slice(0, 3).map((post) => `<li>
+    <a class="topic-article" href="./${post.slug}/" aria-label="Read ${escapeHTML(post.title)}">
+      <img src="../${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/>
+      <span class="topic-article-content"><small>Dashboarding · ${rendered.get(post.source).readingMinutes} min</small><strong>${escapeHTML(post.title)}</strong></span>
+    </a>
+  </li>`).join('');
+  const cards = [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)).map((post) => {
     const route = `./${post.slug}/`;
     return `<li><article class="post-card">
       <a class="post-cover" href="${route}" aria-label="Read ${escapeHTML(post.title)}"><img src="../${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
@@ -424,10 +461,18 @@ function blogIndex(manifest, rendered) {
     </article></li>`;
   }).join('');
   const body = `<main id="main-content" tabindex="-1">
-  <header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}${editorialEyebrow('../', 'Paprika / Engineering journal')}<h1>Notes from the control plane.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header>
-  <div class="content-index shell"><ol class="post-list">${cards}</ol>
-  <section class="blog-next"><h2>Put it into practice.</h2><p>Each article links back to the maintained implementation and guides. Start with a test cluster and a first Application.</p><a href="../docs/getting-started/" class="btn">Open the getting started guide</a></section></div></main>`;
-  return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs, listing: manifest.posts });
+    <header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}${editorialEyebrow('../', 'Paprika / Engineering journal')}<h1>Engineering notes on Kubernetes and observability.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header>
+    <div class="content-index shell">
+      <section class="blog-topic-hub" aria-labelledby="dashboarding-topic-title">
+        <div class="blog-topic-heading"><div><span class="topic-kicker">Featured subject / Dashboarding</span><h2 id="dashboarding-topic-title">From query to dashboard.</h2>
+        <p>How to select signals, build reliable PromQL, arrange readable panels and verify the result in a real browser.</p></div>
+        <a href="../charts/#charts" class="link-arrow">Explore chart gallery</a></div>
+        <ol class="topic-article-list">${topicCards}</ol>
+      </section>
+      <section aria-labelledby="all-engineering-title"><h2 id="all-engineering-title" class="blog-index-heading">All engineering articles</h2><ol class="post-list">${cards}</ol></section>
+      <section class="blog-next"><h2>Put it into practice.</h2><p>Articles link to maintained implementation and guides. Explore synthetic dashboard examples, then bind their queries to real data sources.</p><a href="../docs/dashboards/" class="btn">Read dashboards guide</a></section>
+    </div></main>`;
+  return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs, listing: [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)) });
 }
 
 function notFoundPage() {
@@ -437,16 +482,33 @@ function notFoundPage() {
 }
 
 function rss(manifest) {
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Paprika engineering blog</title><link>${siteURL}blog/</link><description>Practical notes on Kubernetes delivery and observability.</description><language>en</language><atom:link href="${siteURL}feed.xml" rel="self" type="application/rss+xml"/>${manifest.posts.map((post) => `<item><title>${escapeXML(post.title)}</title><link>${publicURL(post.route)}</link><guid isPermaLink="true">${publicURL(post.route)}</guid><description>${escapeXML(post.description)}</description><category>${escapeXML(post.category)}</category><dc:date>${post.date}</dc:date></item>`).join('')}</channel></rss>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Paprika engineering blog</title><link>${siteURL}blog/</link><description>Engineering notes on Kubernetes delivery, observability and dashboard design.</description><language>en</language><atom:link href="${siteURL}feed.xml" rel="self" type="application/rss+xml"/>${[...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)).map((post) => `<item><title>${escapeXML(post.title)}</title><link>${publicURL(post.route)}</link><guid isPermaLink="true">${publicURL(post.route)}</guid><description>${escapeXML(post.description)}</description><category>${escapeXML(post.category)}</category><dc:date>${post.date}</dc:date></item>`).join('')}</channel></rss>\n`;
 }
 
 function featuredPosts(manifest) {
-  return `<ol class="reading-list">${manifest.posts.slice(0, 3).map((post) => `<li>
+  const latest = [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)).slice(0, 3);
+  return `<ol class="reading-list">${latest.map((post) => `<li>
     <a class="reading-thumb" href="./${post.route}" aria-label="Read ${escapeHTML(post.title)}"><img src="./${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
     <div class="reading-meta"><span>${escapeHTML(post.category)}</span><span>Engineering</span></div>
     <div class="reading-copy"><h3><a href="./${post.route}">${escapeHTML(post.title)}</a></h3><p>${escapeHTML(post.description)}</p></div>
     <a class="reading-open" href="./${post.route}" aria-label="Read ${escapeHTML(post.title)}">Read article <span aria-hidden="true">→</span></a>
   </li>`).join('')}</ol>`;
+}
+
+function dashboardArticles(manifest) {
+  const selection = dashboardPosts(manifest).slice(0, 3);
+  return `<section class="chart-showcase-reading" aria-labelledby="dashboard-notes-title">
+    <div class="chart-showcase-reading-head">
+      <div><p class="chart-showcase-context-label">Engineering field notes / Dashboarding</p>
+        <h3 id="dashboard-notes-title">Build charts that make a decision easier.</h3>
+        <p>Go beyond the gallery: discover the right signals, select an honest visual form and verify the live result.</p></div>
+      <a href="./blog/" class="link-arrow">All engineering articles</a>
+    </div>
+    <div class="chart-showcase-reading-grid">${selection.map((post) => `<a class="chart-reading-card" href="./${post.route}">
+      <img src="./${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/>
+      <span class="chart-reading-card-body"><small>${escapeHTML(post.category)} / Field note</small><strong>${escapeHTML(post.title)}</strong><span>Read article <span aria-hidden="true">↗</span></span></span>
+    </a>`).join('')}</div>
+  </section>`;
 }
 
 export function buildContent(output) {
@@ -493,6 +555,8 @@ export function buildContent(output) {
   const homepage = join(destination, 'index.html');
   if (existsSync(homepage)) {
     const content = readFileSync(homepage, 'utf8');
+    assert.equal([...content.matchAll(/<!-- dashboard-articles:start -->[\s\S]*?<!-- dashboard-articles:end -->/g)].length, 1,
+      'Homepage needs one dashboard articles placeholder');
     const decode = new MarkdownIt().utils.unescapeAll;
     const title = decode(content.match(/<title>([^<]+)<\/title>/)?.[1] || '');
     const description = decode(content.match(/<meta name="description" content="([^"]+)"/)?.[1] || '');
@@ -502,7 +566,8 @@ export function buildContent(output) {
     const structured = jsonScript(pageStructuredData({ route: '', title, description }));
     writeFileSync(homepage, content
       .replace(marker, () => `<!-- structured-data:start -->\n<script type="application/ld+json">${structured}</script>\n<!-- structured-data:end -->`)
-      .replace(/<!-- featured-posts:start -->[\s\S]*?<!-- featured-posts:end -->/, `<!-- featured-posts:start -->\n${featuredPosts(manifest)}\n<!-- featured-posts:end -->`));
+      .replace(/<!-- featured-posts:start -->[\s\S]*?<!-- featured-posts:end -->/, `<!-- featured-posts:start -->\n${featuredPosts(manifest)}\n<!-- featured-posts:end -->`)
+      .replace(/<!-- dashboard-articles:start -->[\s\S]*?<!-- dashboard-articles:end -->/, `<!-- dashboard-articles:start -->\n${dashboardArticles(manifest)}\n<!-- dashboard-articles:end -->`));
   }
   for (const route of [...routes, '404.html']) {
     const path = join(destination, route.endsWith('.html') ? route : `${route}index.html`);

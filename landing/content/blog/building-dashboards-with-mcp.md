@@ -89,6 +89,11 @@ resolve the conflict and submit the exact new ETag with your intended edit. See 
 [targeted authoring contract](../../../docs/design/insights/targeted-authoring.md)
 for examples and immutable fields.
 
+The illustrative workbench below is a clickable explanation of the discovery → query → verify loop. These are **fixed sample states**, not responses from a connected Paprika MCP server.
+
+```paprika-dashboard mcp
+```
+
 ## Execute the saved dashboard
 
 After saving, call `query_dashboard`. It resolves saved queries and parameter
@@ -120,6 +125,10 @@ traffic, and a bounded trace sample is not a total request count. The
 [dashboard query contract](../../../docs/design/insights/dashboard-query.md)
 defines those distinctions and the available response limits.
 
+![Illustrative MCP Observe lifecycle showing provider discovery, a bounded query response and saved-revision visual verification.](../../editorial/mcp-observe-evidence-flow.svg)
+
+*Discovery, execution and verification must each succeed. The sample diagram does not claim that a live provider or private render worker is available.*
+
 ## Inspect the rendered dashboard
 
 When the deployment advertises `render_dashboard`, use it after querying to
@@ -133,6 +142,11 @@ widget's tooltip. Look for clipped units, unreadable legends, overflowing
 inspectors and compact stat cards with internal scrollbars. A short KPI card
 usually needs a clear value and, if useful, one trend. Adding a percentage
 bar, a long description and a sparkline can crowd out the measurement.
+
+To explore Paprika's **working chart renderers** on synthetic data, open this embedded public gallery, then follow the authorization steps above for a genuine saved dashboard.
+
+```paprika-gallery charts
+```
 
 Keep query verification and visual verification as separate results. If the
 renderer is unavailable, open the saved dashboard in the browser and inspect

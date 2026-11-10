@@ -10,7 +10,7 @@ import { readManifest } from './build-content.mjs';
 
 const BASE = '/paprika/';
 const CANONICAL = 'https://paprikacd.github.io/paprika/';
-const EXPECTED_GUIDES = 16;
+const EXPECTED_GUIDES = readManifest().docs.length;
 const [stagingArgument, artifactArgument, ...extra] = process.argv.slice(2);
 if (!stagingArgument || !artifactArgument || extra.length) {
   console.error('Usage: node landing/verify-browser.mjs <staging-directory> <artifact-directory>');
@@ -363,6 +363,71 @@ async function run() {
   }
 
   for (const [device, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
+    const { page: demoPage, context: demoContext } = await newPage({ viewport });
+    try {
+      // The actual chart gallery is built and tested separately. Keep this smoke
+      // check focused on the on-demand iframe contract, not a second heavy app boot.
+      await demoPage.route('**/paprika/charts/**', (route) => route.fulfill({
+        status: 200, contentType: 'text/html',
+        body: '<!doctype html><html lang="en"><title>Synthetic chart preview test</title><body>Gallery stub</body></html>',
+      }));
+      const demoRoutes = [
+        ['kubernetes-release-dashboard', 'release', 'staging'],
+        ['prometheus-dashboard-query-patterns', 'prometheus', 'histogram'],
+        ['observability-dashboard-layout', 'layout', 'diagnose'],
+        ['visual-testing-observability-dashboards', 'testing', 'mobile'],
+        ['building-dashboards-with-mcp', 'mcp', 'verify'],
+      ];
+      for (const [slug, kind, alternate] of demoRoutes) {
+        await visit(demoPage, 'blog/' + slug + '/');
+        const demo = demoPage.locator('[data-editorial-demo="' + kind + '"]');
+        assert.equal(await demo.count(), 1, slug + ': interactive demo');
+        assert.equal(await demo.locator('.demo-kicker').textContent().then((text) => text.includes('SYNTHETIC')), true);
+        const starting = await demo.locator('[data-demo-value]').textContent();
+        await demo.locator('button[data-demo-choice="' + alternate + '"]').click();
+        assert.equal(await demo.locator('button[data-demo-choice="' + alternate + '"]').getAttribute('aria-pressed'), 'true');
+        assert.notEqual(await demo.locator('[data-demo-value]').textContent(), starting);
+        await demo.locator('[data-demo-theme-toggle]').click();
+        assert.equal(await demo.getAttribute('data-demo-theme'), 'light');
+        await demo.locator('[data-demo-theme-toggle]').click();
+        assert.equal(await demo.getAttribute('data-demo-theme'), 'dark');
+        const figure = demoPage.locator('.prose > p > img[src*="content-assets/landing/editorial/"]');
+        assert.equal(await figure.count(), 1, slug + ': one inline explanatory dashboard image');
+        // Load and check the asset before decoding. In a narrow viewport a
+        // native lazy image may still have an unstarted request immediately
+        // after scrolling, and decode() can reject before it is fetched.
+        await figure.evaluate((img) => { img.loading = 'eager'; });
+        await figure.scrollIntoViewIfNeeded();
+        await demoPage.waitForFunction(() => {
+          const img = document.querySelector('.prose > p > img[src*="content-assets/landing/editorial/"]');
+          return img && img.complete && img.naturalWidth > 0;
+        }, null, { timeout: 10000 });
+        await figure.evaluate((img) => img.decode());
+        if (slug === 'prometheus-dashboard-query-patterns') {
+          assert.equal(await demo.locator('[data-demo-bars] rect').count(), 12, 'Histogram uses bars');
+        }
+        if (slug === 'observability-dashboard-layout') {
+          await demo.locator('button[data-demo-choice="empty"]').click();
+          assert(await demo.locator('[data-demo-empty]').isVisible());
+          assert(await demo.locator('[data-demo-inspect]').isDisabled());
+        }
+        await demo.scrollIntoViewIfNeeded();
+        if (slug === 'observability-dashboard-layout') {
+          await demo.screenshot({ path: resolve(artifacts, device + '-editorial-demo.png'), animations: 'disabled' });
+        }
+      }
+      await visit(demoPage, 'blog/kubernetes-release-dashboard/');
+      const preview = demoPage.locator('[data-editorial-gallery]');
+      assert.equal(await preview.count(), 1, 'Public chart gallery embeds are available');
+      assert.equal(await preview.locator('iframe').getAttribute('src'), null, 'Heavy chart gallery is not fetched before intent');
+      await preview.locator('[data-gallery-launch]').click();
+      assert(await preview.locator('iframe').isVisible(), 'Gallery frame shown on request');
+      assert.match(await preview.locator('iframe').getAttribute('src'), /\/charts\/#kubernetes-fleet$/);
+      console.log('PASS ' + device + ': five synthetic dashboard demos, themed controls, accessible data states, decoded illustrations and on-demand gallery');
+    } finally { await demoContext.close(); }
+  }
+
+  for (const [device, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
     const suffix = device === 'mobile' ? '-mobile' : '';
     const unavailable = ['source', 'build'].map((phase) => `${BASE}diagrams/deployment-${phase}${suffix}.svg`);
     const { page, context } = await newPage({ viewport }, unavailable);
@@ -553,8 +618,24 @@ async function run() {
           await noJS.page.locator('.editorial-cover').screenshot({ path: resolve(artifacts, 'mobile-editorial-cover.png'), animations: 'disabled' });
         }
       }
-      if (path === 'blog/') assert.equal(await noJS.page.locator('.post-cover img').count(), manifest.posts.length);
-      if (path === '') assert.equal(await noJS.page.locator('.reading-thumb img').count(), Math.min(3, manifest.posts.length));
+      const featuredDemo = manifest.posts.find((post) => post.route === path);
+      if (featuredDemo && ['kubernetes-release-dashboard', 'prometheus-dashboard-query-patterns',
+        'observability-dashboard-layout', 'visual-testing-observability-dashboards',
+        'building-dashboards-with-mcp'].includes(featuredDemo.slug)) {
+        assert.equal(await noJS.page.locator('[data-editorial-demo]').count(), 1);
+        assert(await noJS.page.locator('[data-demo-value]').isVisible(), 'Static demo evidence remains visible without JavaScript');
+        assert.equal(await noJS.page.locator('[data-gallery-launch]:visible').count(), 0, 'No nonfunctional launch buttons without JavaScript');
+      }
+      if (path === 'blog/') {
+        assert.equal(await noJS.page.locator('.post-cover img').count(), manifest.posts.length);
+        assert.equal(await noJS.page.locator('.topic-article img').count(),
+          Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
+      }
+      if (path === '') {
+        assert.equal(await noJS.page.locator('.reading-thumb img').count(), Math.min(3, manifest.posts.length));
+        assert.equal(await noJS.page.locator('.chart-reading-card img').count(),
+          Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
+      }
       if (['docs/canary/', 'blog/building-dashboards-with-mcp/'].includes(path)) {
         await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
         await noJS.page.screenshot({ path: resolve(artifacts, path.startsWith('docs/') ? 'mobile-canary-figure.png' : 'mobile-dashboard-figure.png'), animations: 'disabled' });
