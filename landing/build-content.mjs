@@ -409,11 +409,22 @@ function docsIndex(manifest) {
   return page({ route: 'docs/', active: 'docs', title, description, body, breadcrumbs, listing: manifest.docs });
 }
 
+function dashboardPosts(manifest) {
+  return manifest.posts.filter((post) => post.category === 'Dashboarding')
+    .sort((left, right) => right.date.localeCompare(left.date));
+}
+
 function blogIndex(manifest, rendered) {
-  const title = 'Paprika engineering blog';
+  const title = 'Kubernetes, observability and dashboarding articles · Paprika engineering';
   const breadcrumbs = [{ name: 'Paprika', route: '' }, { name: 'Engineering blog', route: 'blog/' }];
-  const description = 'Practical notes on Kubernetes delivery, drift detection, release promotion, and building observability dashboards through MCP.';
-  const cards = manifest.posts.map((post) => {
+  const description = 'Practical guides for Kubernetes release dashboards, Prometheus queries, dashboard UX, MCP authoring and deployment operations.';
+  const topicCards = dashboardPosts(manifest).slice(0, 3).map((post) => `<li>
+    <a class="topic-article" href="./${post.slug}/" aria-label="Read ${escapeHTML(post.title)}">
+      <img src="../${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/>
+      <span class="topic-article-content"><small>Dashboarding · ${rendered.get(post.source).readingMinutes} min</small><strong>${escapeHTML(post.title)}</strong></span>
+    </a>
+  </li>`).join('');
+  const cards = [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)).map((post) => {
     const route = `./${post.slug}/`;
     return `<li><article class="post-card">
       <a class="post-cover" href="${route}" aria-label="Read ${escapeHTML(post.title)}"><img src="../${post.cover.src}" alt="" width="1200" height="675" loading="lazy" decoding="async"/></a>
@@ -424,9 +435,17 @@ function blogIndex(manifest, rendered) {
     </article></li>`;
   }).join('');
   const body = `<main id="main-content" tabindex="-1">
-  <header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}${editorialEyebrow('../', 'Paprika / Engineering journal')}<h1>Notes from the control plane.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header>
-  <div class="content-index shell"><ol class="post-list">${cards}</ol>
-  <section class="blog-next"><h2>Put it into practice.</h2><p>Each article links back to the maintained implementation and guides. Start with a test cluster and a first Application.</p><a href="../docs/getting-started/" class="btn">Open the getting started guide</a></section></div></main>`;
+    <header class="content-hero shell">${breadcrumbHTML(breadcrumbs, '../')}${editorialEyebrow('../', 'Paprika / Engineering journal')}<h1>Engineering notes on Kubernetes and observability.</h1><p>${description}</p><a href="../feed.xml" class="link-arrow">Subscribe with RSS</a></header>
+    <div class="content-index shell">
+      <section class="blog-topic-hub" aria-labelledby="dashboarding-topic-title">
+        <div class="blog-topic-heading"><div><span class="topic-kicker">Featured subject / Dashboarding</span><h2 id="dashboarding-topic-title">From query to dashboard.</h2>
+        <p>How to select signals, build reliable PromQL, arrange readable panels and verify the result in a real browser.</p></div>
+        <a href="../charts/#charts" class="link-arrow">Explore chart gallery</a></div>
+        <ol class="topic-article-list">${topicCards}</ol>
+      </section>
+      <section aria-labelledby="all-engineering-title"><h2 id="all-engineering-title" class="blog-index-heading">All engineering articles</h2><ol class="post-list">${cards}</ol></section>
+      <section class="blog-next"><h2>Put it into practice.</h2><p>Articles link to maintained implementation and guides. Explore synthetic dashboard examples, then bind their queries to real data sources.</p><a href="../docs/dashboards/" class="btn">Read dashboards guide</a></section>
+    </div></main>`;
   return page({ route: 'blog/', active: 'blog', title, description, body, breadcrumbs, listing: manifest.posts });
 }
 
