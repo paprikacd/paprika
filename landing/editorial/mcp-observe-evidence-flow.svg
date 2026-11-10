@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+<title id="title">MCP query, authoring and rendering evidence loop</title><desc id="description">Labelled synthetic explanatory dashboard composition for an engineering article; not production telemetry.</desc>
+<defs><linearGradient id="background" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#12283b"/><stop offset="1" stop-color="#203b52"/></linearGradient><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" stroke="#85a4b9" stroke-opacity=".08" fill="none"/></pattern></defs>
+<rect width="1200" height="675" fill="url(#background)"/><rect width="1200" height="675" fill="url(#grid)"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#e8f2f7">
+<text x="54" y="67" font-size="16" letter-spacing="3" font-weight="700">PAPRIKA / MCP / DISCOVER TO VERIFY</text>
+<text x="1145" y="67" font-size="13" text-anchor="end" fill="#9cc2d8" letter-spacing="2">ILLUSTRATIVE / NOT LIVE</text>
+<path d="M54 89H1146M54 604H1146" stroke="#66869e" stroke-opacity=".8"/>
+
+<g transform="translate(71 152)">
+<rect width="306" height="347" fill="#1c3b54" stroke="#83a3b9" stroke-width="2"/><text x="21" y="38" font-size="18" font-weight="700">01 / DISCOVER</text><text x="21" y="79" font-size="16" fill="#abc9dd">Provider / metadata</text>
+<rect x="21" y="113" width="264" height="56" fill="#294f6b"/><text x="38" y="145" font-size="14">list_insights_providers</text>
+<rect x="21" y="180" width="264" height="56" fill="#294f6b"/><text x="38" y="213" font-size="14">get_insights_schema</text>
+<text x="21" y="316" font-size="15" fill="#e9c18c">No invented provider IDs</text>
+<rect x="373" width="306" height="347" fill="#1c3b54" stroke="#83a3b9" stroke-width="2"/><text x="394" y="38" font-size="18" font-weight="700">02 / QUERY</text><text x="394" y="79" font-size="16" fill="#abc9dd">Bound series / state</text>
+<path d="M402 270H648M402 119V270" stroke="#6d96b1" stroke-width="2"/><path d="M407 247l42-21 42 10 43-33 41 24 42-47 26 15" stroke="#a6d2e8" stroke-width="4" fill="none"/>
+<text x="394" y="316" font-size="15" fill="#e9c18c">Timestamp, unit, error</text>
+<rect x="746" width="306" height="347" fill="#1c3b54" stroke="#83a3b9" stroke-width="2"/><text x="767" y="38" font-size="18" font-weight="700">03 / VERIFY</text><text x="767" y="79" font-size="16" fill="#abc9dd">Saved ETag / browser</text>
+<rect x="765" y="109" width="265" height="147" fill="#294f6b" stroke="#8cb2c9"/>
+<rect x="785" y="133" width="96" height="39" fill="#507c98"/><rect x="892" y="133" width="115" height="39" fill="#507c98"/>
+<path d="M785 229l35-18 31 8 36-35 37 16 36-17 35-13" stroke="#a6d2e8" stroke-width="3" fill="none"/>
+<text x="767" y="316" font-size="15" fill="#9fd7bf">Read back, query, render</text></g>
+<path d="M386 316h56M757 316h58" stroke="#95b6ca" stroke-width="3"/><path d="M428 308l12 8-12 8M801 308l12 8-12 8" stroke="#95b6ca" stroke-width="2.5" fill="none"/>
+<text x="55" y="638" font-size="13" letter-spacing="2" fill="#91b1c5">ENGINEERING NOTES / EVIDENCE BEFORE INTERPRETATION</text>
+</g></svg>
