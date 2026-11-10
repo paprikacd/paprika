@@ -212,12 +212,16 @@ func observeHTTPError(status int) error {
 }
 
 func (p *observeProvider) data(ctx context.Context, tool string, request any, limit int64) ([]byte, error) {
+	return p.dataMeasured(ctx, tool, request, limit, nil)
+}
+
+func (p *observeProvider) dataMeasured(ctx context.Context, tool string, request any, limit int64, measurement *queryMeasurement) ([]byte, error) {
 	connection, err := p.gateway.connect(ctx, p.token)
 	if err != nil {
 		return nil, err
 	}
 	defer connection.close()
-	body, failed, err := connection.call(tool, request, maxResponseBytes)
+	body, failed, err := connection.callMeasured(tool, request, maxResponseBytes, measurement)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +259,7 @@ func observeTime(seconds float64) string {
 	return time.Unix(whole, int64((seconds-float64(whole))*1e9)).UTC().Format(time.RFC3339Nano)
 }
 
-func (p *observeProvider) query(ctx context.Context, q *Query) ([]byte, error) {
+func (p *observeProvider) query(ctx context.Context, q *Query, measurement *queryMeasurement) ([]byte, error) {
 	input := map[string]any{"provider": p.reference, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
 	switch q.Kind {
 	case "metrics":
@@ -270,7 +274,7 @@ func (p *observeProvider) query(ctx context.Context, q *Query) ([]byte, error) {
 		}
 	}
 	tool := "query_" + q.Kind
-	return p.data(ctx, tool, input, maxResponseBytes)
+	return p.dataMeasured(ctx, tool, input, maxResponseBytes, measurement)
 }
 
 // Adapt the existing bounded native metadata decoders to the gateway's typed

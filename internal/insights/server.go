@@ -149,13 +149,8 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, _, err := s.runProviderQuery(r.Context(), p, &q)
-	if errors.Is(err, errQueryCapacity) {
-		w.Header().Set("Retry-After", "1")
-		writeError(w, 429, "too many active queries; retry shortly")
-		return
-	}
 	if err != nil {
-		writeProviderError(w, err)
+		writeQueryFailure(w, err, result.Diagnostics)
 		return
 	}
 	writeJSON(w, 200, result)
@@ -206,16 +201,40 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 }
 
 func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
+	diagnostics := newQueryDiagnostics(p, q)
+	queued := time.Now()
 	release, err := s.acquireQuery(ctx)
+	started := time.Now()
+	diagnostics.phase("admission", started.Sub(queued))
 	if err != nil {
-		return QueryResult{}, false, err
+		diagnostics.TotalMs = started.Sub(queued).Seconds() * 1000
+		diagnostics.complete(nil, err)
+		return QueryResult{Diagnostics: diagnostics}, false, err
 	}
 	defer release()
-	started := time.Now()
-	result, err := p.query(ctx, q)
+	measurement := &queryMeasurement{}
+	result, err := p.queryMeasured(ctx, q, measurement)
+	finished := time.Now()
+	if measurement.dispatched {
+		diagnostics.Effective = effectiveQueryBounds(p, q, diagnostics.Effective.Scope)
+	}
+	diagnostics.TotalMs = finished.Sub(queued).Seconds() * 1000
+	if measurement.normalizationStarted.IsZero() {
+		diagnostics.phase("upstream", finished.Sub(started))
+	} else {
+		diagnostics.phase("upstream", measurement.normalizationStarted.Sub(started))
+		diagnostics.phase("normalization", finished.Sub(measurement.normalizationStarted))
+	}
+	if measurement.dispatched {
+		diagnostics.Phases = append(diagnostics.Phases, QueryDiagnosticPhase{
+			Name: "provider", Owner: "provider", Clock: "unavailable", Relationship: "nested", Parent: "upstream",
+		})
+	}
 	if err != nil && ctx.Err() != nil {
 		err = fmt.Errorf("query execution context: %w", ctx.Err())
 	}
+	diagnostics.complete(&result, err)
+	result.Diagnostics = diagnostics
 	outcome := "success"
 	if err != nil {
 		outcome = "error"
@@ -223,7 +242,7 @@ func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Que
 	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
 	s.queryCount.Add(ctx, 1, attributes)
 	s.queryDuration.Record(ctx, time.Since(started).Seconds(), attributes)
-	return result, true, err
+	return result, measurement.dispatched, err
 }
 
 func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {

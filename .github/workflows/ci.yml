@@ -459,6 +459,7 @@ jobs:
         timeout-minutes: 15
         run: >-
           node e2e/run-insights.mjs
+          e2e/insights-query-inspector.e2e.mjs
           e2e/insights-dashboard-query.e2e.mjs
           e2e/insights-observe-authoring.e2e.mjs
           e2e/insights-render-worker.e2e.mjs
@@ -475,6 +476,7 @@ jobs:
         env:
           INSIGHTS_POLISH_OUTPUT: ${{ github.workspace }}/artifacts/insights/dashboard-polish
           INSIGHTS_PRESENTATION_OUTPUT: ${{ github.workspace }}/artifacts/insights/presentation
+          INSIGHTS_QUERY_INSPECTOR_OUTPUT: ${{ github.workspace }}/artifacts/insights/query-inspector
 
       - name: Generate reference dashboards through the UI
         timeout-minutes: 10
@@ -490,6 +492,7 @@ jobs:
             ui/playwright-report
             ui/test-results
             artifacts/insights/dashboard-query
+            artifacts/insights/query-inspector
             artifacts/insights/observe-authoring
             artifacts/insights/render-worker
             artifacts/insights/tooltip-peers

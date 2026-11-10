@@ -656,7 +656,82 @@ export interface RecordFrame {
   rows: (string | number | boolean | null)[][]
   truncated?: boolean
 }
+
+const queryTimingSchema = z.number().finite().nonnegative().max(86_400_000)
+const queryBoundsSchema = z.object({
+  start: z.number().finite(),
+  end: z.number().finite(),
+  step: z.number().finite().nonnegative(),
+})
+const queryCountSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+
+/** An optional, bounded receipt. It is not part of a persisted dashboard. */
+export const queryDiagnosticsSchema = z.object({
+  version: z.literal(1),
+  executionId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.-]+$/),
+  outcome: z.enum(["success", "partial", "error", "cancelled", "timeout", "capacity"]),
+  source: z.object({
+    providerId: z.string().min(1).max(256).regex(/^[A-Za-z0-9_./-]+$/),
+    providerType: z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/),
+    transport: z.enum(["direct", "gateway"]),
+  }),
+  requested: queryBoundsSchema,
+  effective: queryBoundsSchema.partial().extend({
+    dispatched: z.boolean(),
+    rangeApplied: z.boolean(),
+    scope: z.enum(["provider", "gateway"]),
+  }),
+  phases: z.array(z.object({
+    name: z.enum(["admission", "upstream", "normalization", "provider"]),
+    owner: z.enum(["insights", "provider"]),
+    clock: z.enum(["server-monotonic", "unavailable"]),
+    durationMs: queryTimingSchema.nullable(),
+    relationship: z.enum(["exclusive", "nested"]),
+    parent: z.literal("upstream").optional(),
+  })).max(8),
+  totalMs: queryTimingSchema,
+  counts: z.object({
+    series: queryCountSchema,
+    points: queryCountSchema,
+    traces: queryCountSchema,
+    spans: queryCountSchema,
+    rows: queryCountSchema,
+  }).optional(),
+  truncated: z.boolean(),
+}).superRefine((receipt, context) => {
+  if (!receipt.effective.dispatched && (receipt.effective.rangeApplied ||
+    receipt.effective.start !== undefined || receipt.effective.end !== undefined || receipt.effective.step !== undefined)) {
+    context.addIssue({ code: "custom", path: ["effective"], message: "An undispatched query has no applied bounds" })
+  }
+  const seen = new Set<string>()
+  let exclusiveMs = 0
+  receipt.phases.forEach((phase, index) => {
+    const unknownProvider = phase.name === "provider" && phase.owner === "provider" &&
+      phase.clock === "unavailable" && phase.durationMs === null &&
+      phase.relationship === "nested" && phase.parent === "upstream"
+    const measuredService = phase.name !== "provider" && phase.owner === "insights" &&
+      phase.clock === "server-monotonic" && phase.durationMs !== null &&
+      phase.relationship === "exclusive" && phase.parent === undefined
+    if ((!unknownProvider && !measuredService) || seen.has(phase.name)) {
+      context.addIssue({ code: "custom", path: ["phases", index], message: "Inconsistent timing ownership or duplicate phase" })
+    }
+    seen.add(phase.name)
+    if (measuredService) exclusiveMs += phase.durationMs!
+  })
+  if (exclusiveMs - receipt.totalMs > Math.max(0.001, receipt.totalMs * 1e-9)) {
+    context.addIssue({ code: "custom", path: ["totalMs"], message: "Exclusive phases exceed service elapsed time" })
+  }
+})
+export type QueryDiagnostics = z.infer<typeof queryDiagnosticsSchema>
+
+/** Strip unknown fields; a malformed optional receipt must not lose valid data. */
+export function parseQueryDiagnostics(value: unknown): QueryDiagnostics | undefined {
+  const parsed = queryDiagnosticsSchema.safeParse(value)
+  return parsed.success ? parsed.data : undefined
+}
+
 export interface QueryResult {
+  diagnostics?: QueryDiagnostics
   records?: RecordFrame
   truncated?: boolean
   spans?: { spanId: string; parentSpanId?: string; service: string; operation: string; startTime: number; durationMs: number; status: string; attributes?: { key: string; value: string }[]; attributesOmitted?: number }[]
