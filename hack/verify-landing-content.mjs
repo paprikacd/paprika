@@ -137,7 +137,7 @@ function verifyStructuredData(structured, html, route, title, description) {
       return { name, item };
     }), visible, `Structured breadcrumbs disagree with visible navigation: ${route}`);
   }
-  const listing = route === 'docs/' ? manifest.docs : route === 'blog/' ? manifest.posts : null;
+  const listing = route === 'docs/' ? manifest.docs : route === 'blog/' ? [...manifest.posts].sort((left, right) => right.date.localeCompare(left.date)) : null;
   if (listing) {
     assert.equal(webpage['@type'], 'CollectionPage');
     const list = entities.get(webpage.mainEntity['@id']);
