@@ -324,6 +324,11 @@
         },
         "alt": "A desired Deployment requests three replicas while two live replicas are ready, illustrating healthy workloads that are still out of sync.",
         "caption": "Illustrative evidence: workload health and desired-state drift answer different questions. A healthy running resource can still differ from Git."
+      },
+      "cover": {
+        "src": "editorial/health-vs-drift.svg",
+        "alt": "Technical artwork contrasting two healthy running pods with three replicas declared in Git, illustrating the difference between availability and drift.",
+        "caption": "An illustrative workload can be available while the live configuration still differs from its source of truth."
       }
     },
     {
@@ -344,6 +349,11 @@
         },
         "alt": "Dev and staging verify a pinned revision while production keeps its accepted Release until the separate candidate is approved.",
         "caption": "Illustrative promotion binds a candidate to a Git revision and verification evidence. Each Application retains its own target configuration and release history."
+      },
+      "cover": {
+        "src": "editorial/pinned-revisions.svg",
+        "alt": "A pinned revision moves through development and verified staging, while a production candidate waits for approval.",
+        "caption": "A revision can carry verification evidence forward without overwriting the current production release before approval."
       }
     },
     {
@@ -364,6 +374,11 @@
         },
         "alt": "Discover real telemetry, bind provider-backed queries to widgets with exact ETags, and verify query execution and the rendered dashboard.",
         "caption": "MCP dashboard authoring follows discovery, query, save, read-back and verification. A successful save alone does not establish fresh data or a readable layout."
+      },
+      "cover": {
+        "src": "editorial/dashboards-through-mcp.svg",
+        "alt": "Telemetry from metrics, logs and traces flows through MCP discovery and queries into a verified dashboard.",
+        "caption": "Discover real providers, run queries, save and read back the document, then inspect its rendered dashboard."
       }
     }
   ]
