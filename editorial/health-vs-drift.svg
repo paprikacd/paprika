@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="art-title art-desc">
+<title id="art-title">Health and drift are separate signals</title><desc id="art-desc">Illustrated comparison of live workload availability against declarative desired state.</desc>
+<defs>
+ <linearGradient id="night" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102334"/><stop offset=".62" stop-color="#1d3449"/><stop offset="1" stop-color="#112334"/></linearGradient>
+ <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#81a6c1" stroke-width=".8" stroke-opacity=".13"/></pattern>
+ <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#90d8bf" stop-opacity=".35"/><stop offset="1" stop-color="#90d8bf" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="url(#night)"/>
+<rect width="1200" height="675" fill="url(#grid)"/>
+<path d="M0 121H1200M0 590H1200" stroke="#6f90a8" stroke-opacity=".45"/>
+<path d="M70 64H124M1090 64H1130" stroke="#90d8bf" stroke-width="4"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#dce9f2">
+ <text x="70" y="86" font-size="19" font-weight="700" letter-spacing="4">01 / OPERATIONS</text>
+ <text x="1130" y="86" font-size="13" letter-spacing="3" text-anchor="end" fill="#91afc4">PAPRIKA / ENGINEERING</text>
+ 
+ <rect x="70" y="158" width="436" height="384" fill="#182e42" stroke="#55778f" stroke-width="1.5"/>
+ <rect x="536" y="158" width="594" height="384" fill="#172b3f" stroke="#55778f" stroke-width="1.5"/>
+ <text x="100" y="200" font-size="14" letter-spacing="3" fill="#95bad0">LIVE / WORKLOAD</text>
+ <circle cx="455" cy="194" r="6" fill="#90d8bf"/><text x="439" y="223" text-anchor="end" font-size="14" fill="#b3d8c9">AVAILABLE</text>
+ <path d="M108 239H469" stroke="#58758b"/>
+ <g transform="translate(107 265)">
+  <rect width="157" height="192" fill="#213c53" stroke="#81a6c1"/>
+  <path d="M18 30H139" stroke="#789bb4"/><text x="17" y="21" font-size="14" fill="#b3cde0">POD 01</text>
+  <rect x="27" y="66" width="105" height="76" fill="#304d63" stroke="#90d8bf" stroke-width="2"/>
+  <path d="M51 104l17 17 37-43" stroke="#90d8bf" stroke-width="7" fill="none" stroke-linecap="square"/>
+  <text x="79" y="174" text-anchor="middle" font-size="16" fill="#a5d7c4">READY</text>
+ </g>
+ <g transform="translate(295 265)">
+  <rect width="157" height="192" fill="#213c53" stroke="#81a6c1"/>
+  <path d="M18 30H139" stroke="#789bb4"/><text x="17" y="21" font-size="14" fill="#b3cde0">POD 02</text>
+  <rect x="27" y="66" width="105" height="76" fill="#304d63" stroke="#90d8bf" stroke-width="2"/>
+  <path d="M51 104l17 17 37-43" stroke="#90d8bf" stroke-width="7" fill="none" stroke-linecap="square"/>
+  <text x="79" y="174" text-anchor="middle" font-size="16" fill="#a5d7c4">READY</text>
+ </g>
+ <text x="102" y="510" font-size="19" font-weight="700" fill="#d4efe2">2 / 2 HEALTHY</text>
+ <text x="567" y="200" font-size="14" letter-spacing="3" fill="#95bad0">DECLARED / OBSERVED</text>
+ <path d="M565 238H1100" stroke="#58758b"/>
+ <g transform="translate(570 269)">
+   <text x="0" y="0" font-size="15" fill="#a9c6db" letter-spacing="2">GIT DESIRED</text>
+   <text x="317" y="0" font-size="15" fill="#a9c6db" letter-spacing="2">CLUSTER LIVE</text>
+   <g fill="#2e516a" stroke="#8fb4cc" stroke-width="2">
+     <rect x="0" y="30" width="142" height="60"/><rect x="0" y="106" width="142" height="60"/><rect x="0" y="182" width="142" height="60"/>
+     <rect x="316" y="30" width="142" height="60"/><rect x="316" y="106" width="142" height="60"/>
+   </g>
+   <g font-size="14" fill="#e3f0f8"><text x="71" y="67" text-anchor="middle">REPLICA 01</text><text x="71" y="143" text-anchor="middle">REPLICA 02</text><text x="71" y="219" text-anchor="middle">REPLICA 03</text>
+   <text x="387" y="67" text-anchor="middle">REPLICA 01</text><text x="387" y="143" text-anchor="middle">REPLICA 02</text></g>
+   <path d="M158 60H295M158 136H295" stroke="#8baabf" stroke-width="2" stroke-dasharray="6 7"/>
+   <path d="M158 212H295" stroke="#eebc87" stroke-width="2" stroke-dasharray="6 7"/>
+   <rect x="316" y="182" width="142" height="60" fill="none" stroke="#eebc87" stroke-width="2" stroke-dasharray="6 6"/>
+   <path d="M374 207l24 24m0-24l-24 24" stroke="#eebc87" stroke-width="3"/>
+ </g>
+ <text x="573" y="510" font-size="19" font-weight="700" fill="#eebc87">OUT OF SYNC</text>
+
+ <text x="70" y="630" font-size="13" letter-spacing="3" fill="#9eb8c9">SOURCE / STAGE / RELEASE</text>
+ <path d="M1000 626H1130" stroke="#90d8bf" stroke-opacity=".7" stroke-width="2"/>
+</g>
+</svg>
