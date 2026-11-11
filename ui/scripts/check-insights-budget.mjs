@@ -2,12 +2,12 @@
 // First-view size budget for the Insights page, measured on the static export.
 //
 // The first view is the scripts and stylesheets in out/dashboard/insights/index.html (excluding
-// legacy nomodule scripts) plus the chunks that InsightsApp loads eagerly through its dynamic import.
-// Run after `npm run build`:
+// legacy nomodule scripts) plus the chunks that InsightsApp loads through its dynamic import, as listed by
+// Next's react-loadable manifest for the page. Run after `npm run build`:
 //
 //   node scripts/check-insights-budget.mjs            # check budgets, exit 1 when exceeded
 //   node scripts/check-insights-budget.mjs --report   # print the breakdown only
-//   node scripts/check-insights-budget.mjs --out <dir>
+//   node scripts/check-insights-budget.mjs --out <dir> --next <dir>
 //
 // Budgets are the measured size plus about 10% headroom. Raise one only in the change that adds the weight.
 
@@ -17,19 +17,26 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 export const BUDGET = {
-  // Measured after the examples catalog and CodeMirror moved out of the first view.
-  jsRaw: 2_617_000, // measured 2,378,708 bytes
-  jsGzip: 757_000, // measured 688,844 bytes
+  // Measured after the map land outline moved out of the first view.
+  jsRaw: 2_557_000, // measured 2,323,640 bytes
+  jsGzip: 733_000, // measured 666,191 bytes (Node zlib, level 9)
   // Insights-specific stylesheets only; the global root sheets are excluded.
-  cssRaw: 343_000, // measured 311,530 bytes
-  cssGzip: 51_000, // measured 46,192 bytes
+  cssRaw: 293_000, // measured 265,715 bytes
+  cssGzip: 45_000, // measured 40,191 bytes
 };
+
+function fail(message) {
+  console.error(`Insights budget check: ${message}`);
+  process.exit(1);
+}
 
 const uiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const report = args.includes("--report");
 const outIndex = args.indexOf("--out");
 const out = resolve(outIndex >= 0 ? args[outIndex + 1] : join(uiRoot, "out"));
+const nextIndex = args.indexOf("--next");
+const nextDir = resolve(nextIndex >= 0 ? args[nextIndex + 1] : join(uiRoot, ".next"));
 
 // Maps an emitted URL (with or without a basePath prefix) to its path under out/_next.
 // Loader chunk lists name assets relative to _next/ already.
@@ -37,7 +44,7 @@ function assetKey(url) {
   const at = url.indexOf("_next/");
   if (at >= 0) return url.slice(at + "_next/".length);
   if (url.startsWith("static/")) return url;
-  throw new Error(`Unexpected asset URL: ${url}`);
+  fail(`Unexpected asset URL: ${url}`);
 }
 
 function attr(tag, name) {
@@ -59,39 +66,30 @@ function firstViewFromHtml(html) {
   return { scripts, styles };
 }
 
-// next/dynamic(() => import("insights-app"), { ssr: false }) compiles to a call to the loader
-// module, and that module's chunk list is what the browser fetches before InsightsApp renders.
-function insightsChunkGroup(jsKeys) {
-  const readJs = (key) => readFileSync(join(out, "_next", key), "utf8");
-  let moduleId;
-  for (const key of jsKeys) {
-    const match = /\(\)=>e\.A\((\d+)\),\{loadableGenerated/.exec(readJs(key));
-    if (match) {
-      moduleId = match[1];
-      break;
-    }
-  }
-  if (!moduleId) throw new Error("Insights dynamic import not found in the first-view scripts. Update the loader pattern for this Next.js build.");
-  const listPattern = new RegExp(`(?:^|[^\\w$])${moduleId},e=>\\{e\\.v\\(t=>Promise\\.all\\(\\[([^\\]]*)\\]`);
-  for (const key of jsKeys) {
-    const match = listPattern.exec(readJs(key));
-    if (match) return [...match[1].matchAll(/"([^"]+)"/g)].map(([, path]) => assetKey(path));
-  }
-  throw new Error(`Chunk list for Insights module ${moduleId} not found. Update the loader pattern for this Next.js build.`);
+// Next writes the chunk list each next/dynamic() call loads to the page's react-loadable manifest, keyed by the
+// module id. The Insights page has one dynamic import (InsightsApp), so every listed file belongs to it.
+function insightsChunkGroup() {
+  const manifestPath = join(nextDir, "server", "app", "dashboard", "insights", "page", "react-loadable-manifest.json");
+  if (!existsSync(manifestPath))
+    fail(`Missing ${manifestPath}. Run npm run build in ui/ first, or pass --next <dir>.`);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const files = Object.values(manifest).flatMap((entry) => entry.files ?? []).map(assetKey);
+  if (!files.length) fail(`${manifestPath} lists no chunks for the Insights page; the dynamic import may have moved.`);
+  return [...new Set(files)];
 }
 
 function sizeOf(key) {
   const path = join(out, "_next", key);
-  if (!existsSync(path)) throw new Error(`Missing build asset: ${path}`);
+  if (!existsSync(path)) fail(`Missing build asset: ${path}`);
   const bytes = readFileSync(path);
   return { key, raw: bytes.length, gzip: gzipSync(bytes, { level: 9 }).length };
 }
 
 const indexPath = join(out, "dashboard", "insights", "index.html");
-if (!existsSync(indexPath)) throw new Error(`Missing ${indexPath}. Run npm run build in ui/ first.`);
+if (!existsSync(indexPath)) fail(`Missing ${indexPath}. Run npm run build in ui/ first.`);
 const rootStyles = new Set(firstViewFromHtml(readFileSync(join(out, "index.html"), "utf8")).styles);
 const page = firstViewFromHtml(readFileSync(indexPath, "utf8"));
-const loaded = insightsChunkGroup(page.scripts.filter((key) => key.endsWith(".js")));
+const loaded = insightsChunkGroup();
 
 const scriptKeys = [...new Set([...page.scripts, ...loaded.filter((key) => key.endsWith(".js"))])];
 const styleKeys = [...new Set([...page.styles, ...loaded.filter((key) => key.endsWith(".css"))])];
