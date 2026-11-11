@@ -231,6 +231,8 @@ export function PortableImportPanel({
   const [refreshing, setRefreshing] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [remaining, setRemaining] = useState<string[]>();
+  // Findings a rejected save carried, keyed by dashboard id. They show in that dashboard's row after an attempt.
+  const [saveFindings, setSaveFindings] = useState<ReadonlyMap<string, CheckReport>>(() => new Map());
   // Each dashboard's answer is kept with the document text it checked, so only a changed document is checked again.
   const [checkResults, setCheckResults] = useState<Record<string, CheckedDashboard>>({});
   const checkResultsRef = useRef<Record<string, CheckedDashboard>>({});
@@ -521,6 +523,7 @@ export function PortableImportPanel({
     generation.current++;
     setReview(undefined);
     setRemaining(undefined);
+    setSaveFindings(new Map());
     setAttempted(false);
     setQueryChoices({});
     setDashboardChoices({});
@@ -609,6 +612,7 @@ export function PortableImportPanel({
     setImporting(true);
     onBusyChange?.(true);
     setError("");
+    setSaveFindings(new Map());
     try {
       const result = await onImportBundle(request);
       setMessage(
@@ -618,6 +622,13 @@ export function PortableImportPanel({
       if (result.dashboardTargetsLocked)
         setLockedActions(request.dashboardChoices ?? {});
       if (result.errors.length) setError(result.errors.join("\n"));
+      setSaveFindings(
+        new Map(
+          (result.errorDetails ?? []).flatMap((failure) =>
+            failure.dashboardId && failure.checks ? [[failure.dashboardId, failure.checks] as const] : [],
+          ),
+        ),
+      );
       if (result.complete) {
         setReview(undefined);
         setSource("");
@@ -828,6 +839,14 @@ export function PortableImportPanel({
                     ) : (
                       <p role="status">Checking this dashboard…</p>
                     )
+                  )}
+                  {saveFindings.get(item.original.id) && (
+                    <ChecksList
+                      label={`Save checks for ${item.original.title}`}
+                      report={saveFindings.get(item.original.id)!}
+                      dashboard={item.original}
+                      headingLevel={5}
+                    />
                   )}
                   {item.existing && !item.complete && (
                     <Comparison

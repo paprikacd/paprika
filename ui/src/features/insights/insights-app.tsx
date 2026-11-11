@@ -2159,6 +2159,7 @@ export default function InsightsApp({
                   onImport={importDashboards}
                   onImportBundle={importBundle}
                   onReviewBundle={reviewBundle}
+                  validateDocument={client.validate}
                   onRefreshQueries={refreshSavedQueries}
                 />
               )}

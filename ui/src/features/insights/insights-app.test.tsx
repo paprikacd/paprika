@@ -753,6 +753,41 @@ describe("Insights findings wiring", () => {
     expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Request latency")
   })
 
+  async function reviewLibrary(api: InsightsClient, incoming: Dashboard) {
+    fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(screen.getByRole("option", { name: "JSON" }))
+    fireEvent.change(screen.getByLabelText("Library import source"), { target: { value: serializeDashboardLibrary([incoming], "json") } })
+    fireEvent.click(screen.getByRole("button", { name: "Review import" }))
+    await screen.findByRole("region", { name: "Portable dashboard import" })
+    return api
+  }
+
+  it("validates each dashboard in a library import from Manage dashboards before it is written", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    const incoming: Dashboard = { ...first, id: "incoming", title: "Library dashboard to check", widgets: [] }
+    await reviewLibrary(api, incoming)
+    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(expect.objectContaining({ title: "Library dashboard to check" }), expect.any(AbortSignal)))
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it("shows the findings of a failed library import save beside its dashboard", async () => {
+    const api = clientWithLatency()
+    const incoming: Dashboard = { ...first, id: "incoming", title: "Library dashboard that fails", widgets: [] }
+    vi.mocked(api.validate).mockResolvedValue(report([]))
+    vi.mocked(api.save).mockRejectedValue(new InsightsHTTPError("Dashboard rejected by checks", 400, null, report([
+      finding({ widgetId: "", pointer: "", ruleId: "doc.title", message: "Title is reserved by the workspace.", fix: "Rename the dashboard." }),
+    ])))
+    await renderLatency(api)
+    await reviewLibrary(api, incoming)
+    await importCopies()
+    expect(await screen.findByText(/^0 dashboard decisions? completed\./)).toBeInTheDocument()
+    const checks = await screen.findByRole("region", { name: "Save checks for Library dashboard that fails" })
+    expect(within(checks).getByText("Title is reserved by the workspace.")).toBeInTheDocument()
+    expect(within(checks).getByText("Whole dashboard")).toBeInTheDocument()
+  })
+
   it("validates the dashboards in an imported library before they are written", async () => {
     const api = clientWithLatency()
     await renderLatency(api)
