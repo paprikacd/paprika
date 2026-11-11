@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
-import { fillFloor, markFillEvidence } from "./fixtures/mark-fill.mjs"
+import { fillFloor, focusRingEvidence, markFillEvidence } from "./fixtures/mark-fill.mjs"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const output = join(root,"artifacts/insights/status-history-axis")
@@ -97,14 +97,29 @@ try {
       if(width===390) assert.equal(framedCount,0,`${label}: thin marks at 390 px carry no frame`)
       console.log(`  ${label}: ${marks.filter(mark=>mark.state==="resting").length} critical marks, ${framedCount} framed; fill focused ${marks.filter(mark=>mark.state==="focused").map(mark=>(mark.fill/mark.total).toFixed(2)).join(", ")} / resting ${marks.filter(mark=>mark.state==="resting").map(mark=>(mark.fill/mark.total).toFixed(2)).join(", ")}`)
     }
+    // Keyboard focus shows a ring outside the sample, above the run frame: inside a framed run and outside any run.
+    const checkRings=async label=>{
+      for(const [what,mark] of [["focused in run",criticalMarks.first()],["focused outside run",host.locator('[data-history-value="0"]').first()]]){
+        await page.keyboard.press("Shift")
+        await mark.focus()
+        const ring=await focusRingEvidence(page,mark)
+        await mark.evaluate(node=>node.blur())
+        assert.equal(ring.found,true,`${label} ${what}: a focused sample has a focus ring`)
+        assert.ok(ring.ringPixelsLeft+ring.ringPixelsRight>=4,`${label} ${what}: the ring is visible on the sample's sides: ${JSON.stringify(ring)}`)
+        assert.ok(ring.contrast>=3,`${label} ${what}: ring contrast ${ring.contrast.toFixed(2)}:1 is below 3:1 against its surroundings`)
+        console.log(`  ${label} ${what}: ring ${ring.ringPixelsLeft}/${ring.ringPixelsRight} device px left/right, contrast ${ring.contrast.toFixed(2)}:1`)
+      }
+    }
     await page.mouse.move(0,0)
     await checkCritical(`${theme} ${width}px`)
+    await checkRings(`${theme} ${width}px`)
     if(width===1512&&theme==="Dark"){
       const compact=page.getByRole("button",{name:"Compact view",exact:true})
       assert.equal(await compact.isEnabled(),true,"Compact view is available on the wide canvas")
       await compact.click()
       await page.waitForFunction(()=>document.querySelector('[data-insights-theme="dark"][data-density="compact"]')!==null)
       await checkCritical("Compact dark 1512px")
+      await checkRings("Compact dark 1512px")
     }
     await page.screenshot({path:join(output,`${theme.toLowerCase()}-${width}.png`),animations:"disabled"})
     await context.close(); console.log(`PASS ${theme} ${width}px status history`)
