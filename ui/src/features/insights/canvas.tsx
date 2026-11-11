@@ -333,7 +333,7 @@ const Tile = memo(function Tile({
           </span>
         )}
         <div className={`${styles.tileTitle}${compactRecordDescription ? ` ${recordStyles.compactRecordTitle}` : ""}`}>
-          <h3 style={{ color: textColor }}>{widget.title}</h3>
+          <h3 style={{ color: textColor }} title={editing && widget.type === "stat" ? widget.title : undefined}>{widget.title}</h3>
           {widget.description && (compactRecordDescription ? (
             <details className={recordStyles.compactRecordDescription}>
               <summary aria-label={`Details for ${widget.title}`}>Details</summary>
@@ -365,7 +365,7 @@ const Tile = memo(function Tile({
             iconOnly
             size="sm"
             variant="quiet"
-            className={styles.iconButton}
+            className={`${styles.iconButton} ${styles.editChip}`}
             aria-label={`Edit ${widget.title}`}
             data-widget-edit={widget.id}
             onClick={() => onSelect(widget.id)}

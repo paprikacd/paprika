@@ -8,7 +8,7 @@
 .market-axis { fill:var(--gamma-muted,var(--gamma-ink)); font:11px Barlow,sans-serif; }
 .market-value { fill:var(--gamma-ink,var(--gamma-ink)); font:11px Barlow,sans-serif; pointer-events:none; }
 .market-matrix-value { fill:var(--gamma-ink); font-family:Barlow,sans-serif; pointer-events:none; }
-.market-inspector { position:absolute; right:8px; bottom:30px; width:239px; max-width:calc(100% - 16px); z-index:10; padding:10px 11px; border:1px solid var(--gamma-muted); border-radius:5px; background:color-mix(in srgb, var(--gamma-surface) 97%, transparent); box-shadow:var(--gamma-shadow-mid); color:var(--gamma-ink); font-size:11px; animation:market-inspector-in var(--gamma-motion-duration,150ms) ease-out; }
+.market-inspector { position:absolute; right:8px; bottom:30px; width:239px; max-width:calc(100% - 16px); z-index:10; padding:10px 11px; border:1px solid var(--gamma-muted); border-radius:5px; background:color-mix(in srgb, var(--gamma-surface) 97%, transparent); box-shadow:var(--gamma-shadow-mid); color:var(--gamma-ink); font-size:11px; animation:market-inspector-in var(--gamma-duration-base, 150ms) ease-out; }
 .market-inspector header { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:10px; color:var(--gamma-ink); }
 .market-inspector button { font:inherit; cursor:pointer; }
 .market-inspector header button { display:flex; background:none; border:0; color:var(--gamma-ink); padding:2px; }
