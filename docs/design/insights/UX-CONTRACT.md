@@ -42,6 +42,16 @@ Paths are relative to `ui/src/features/insights/` unless stated otherwise.
 - The URL identifies the view: variables, a relative preset (`range`) or fixed window (`from`/`to`), and auto refresh (`refresh`). Save preserves the saved defaults. A fixed window pauses auto refresh; relative windows keep refreshing. Link variables the dashboard no longer declares, malformed link variables, and malformed range or refresh values are dropped with a dismissible notice that opens the linked dashboard, and the address is corrected without adding a history step. Structural link errors stay visible as errors. Query variables are encoded by the interpolation helper; never concatenate raw values into query syntax.
 - The service enforces write conflicts; the UI retains the user's draft on failure. Dashboard/import navigation must not discard intervening edits or create duplicate identities after ambiguous saves.
 
+## Review contracts for status, breach and attention
+
+These contracts record the Next-phase review decisions. Each one names the code that owns it.
+
+- **Status second cue.** Every status mark carries a glyph and a word (`status-chip.tsx`). Warning and critical status cells draw an inset frame of 1px and 2px. A cell too small for its frame keeps its whole fill: a warning frame needs at least 6px and a critical frame 8px. The chip and accessible name carry the level then.
+- **Hatching.** Hatching marks missing data. Invalid source data uses a second, warning-toned hatch, as in the observable behaviour above. Status colour never uses hatching, and a hex-only band has no level.
+- **Breach shading.** A time series shades a stretch only where an author-set `warning` or `critical` status band applies (`breaches.ts`). A colour-only threshold never shades or counts as a breach, and no separate shade option exists. A breaching series draws a heavier line over the breach span, and a reference line marks an objective without shading it.
+- **Attention strip counting.** Counts come from author-declared statuses, failed queries and stale data, with each widget counted once under its most severe reason (`widget-attention.ts`, `attention-strip.tsx`). A tile with no loaded result is "not loaded" and counts as unchecked, never as failed or empty. A chip scrolls to its tile and outlines it briefly. The strip reports declared statuses and never infers health.
+- **View controls never edit the document.** Range, refresh, variables, selections, brushes and drilldown parameters live in the URL (`dashboard-view.ts`). They never mark the dashboard dirty or enter edit mode. In edit mode, only **Set as dashboard default** writes the document.
+
 ## Evidence and policy sources
 
 | Area | Source |

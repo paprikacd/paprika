@@ -14,6 +14,18 @@ before designing or implementing changes. Its bundled references, visual
 fixtures, review templates, and contract checker guide the work alongside the
 current `DESIGN.md` and applicable directory instructions.
 
+**Authoring procedure and gates.** Build or change a dashboard with the Paprika Observe
+skill procedure (`plugins/paprika-observe/skills/paprika-observe/SKILL.md`). Composition rules
+are served by `get_insights_schema` and the observe server instructions; this file does not restate them.
+
+- Lint: `go run ./cmd/paprika-insights lint --served-schema-examples ui/src/features/insights/repository-examples/catalog.json internal/insights/starters`.
+  CI also lints the gallery export and the reference fixtures.
+- Visual matrix: `ui/e2e/insights-visual-matrix-linux.sh` (Docker; `--update` records the baseline).
+- Playground: `cd ui && npm run insights:lab` (hot-reloading, synthetic fixtures).
+- Local loop: `docs/guides/local-dashboard-polish.md`. `render_dashboard` needs
+  `PAPRIKA_OBSERVE_RENDER_URL` and `PAPRIKA_OBSERVE_RENDER_SECRET`; see `docs/guides/observe-browser-renderer.md`.
+- Dated evidence lives in `docs/design/insights/receipts/`, not here.
+
 ### Repairing a live dashboard
 
 Repair drifted dashboards with the tested toolkit before writing new queries:
@@ -67,80 +79,11 @@ apply.
    If tools are absent, verify that the authenticated app is selected in a
    fresh conversation. Do not create another plugin, invent app IDs, paste
    bearer tokens or commit account-specific `.app.json` bindings.
-5. **Discover live sources, then author.** Call `list_observability_providers`
-   for the provider health inventory and `list_insights_providers` for the
-   canonical **Insights provider IDs**. The latter are not the same as
-   `namespace/name` provider references; never derive IDs by hand. Read
-   `get_insights_schema` for `dashboard` and `widget` (and `saved_query` if
-   creating one). Check `list_dashboards` to avoid duplicate IDs; inspect
-   trusted existing dashboards with `get_dashboard` to reuse genuine
-   saved-query IDs, expressions and parameter bindings. For a novel query,
-   first discover metrics and labels, then execute a small bounded read
-   against the actual backend. Avoid invented metric families or synthetic
-   data unless the user explicitly requests a test fixture.
-6. **Write only the requested document.** Call `create_saved_query` first
-   if new reusable queries are needed, then `create_dashboard` with a unique
-   ID, `schemaVersion:1`, title, time range, refresh interval, and widgets
-   with IDs, type, provider ID, query, unit and non-overlapping 12-column
-   layouts. Bind dashboard variables to query parameters explicitly.
-   Edits to existing documents require `get_dashboard`/`get_saved_query`,
-   the **exact ETag**, and `patch_dashboard`/`patch_saved_query`; never
-   overwrite a concurrent revision or silently change another user's draft.
-7. **Prove the live result.** Read the new document back with `get_dashboard`
-   and capture the returned `uiUrl` and ETag. Call `query_dashboard` with
-   bounded options (for example `{"id":"…","history_points":0,"max_series":2,"max_traces":1}`).
-   Verify returned widget count and `queryCount.planned`, `.executed`,
-   `.deduplicated`, every signal's `state`/`error`, last sample timestamps,
-   missing values, partial responses and truncation. A successful save
-   without this query is **not** a working dashboard. Provider `OK` and
-   query `state:"ok"` describe reachability/data availability, not SLO
-   health. Never turn missing samples or failed exports into zero.
-8. **Avoid burst amplification.** Parallel `query_dashboard` calls have
-   returned HTTP 429 under real load. Prefer one dashboard per call,
-   then retry selectively according to `Retry-After`; keep the calls
-   sequential or narrowly bounded. Bounded queue/bulkhead behavior may be
-   under development; verify it is **deployed** before relying on it.
-   Keep client cancellations and tool deadlines intact, and do not infer
-   that queued work completed without an actual result.
-
-**Verified authoring reference (6 Nov 2026):** the saved dashboard
-`omega-observe-operations-control-room` was created through Paprika Observe
-using existing Omega cluster, Telesis collector and service saved queries.
-Its first live `query_dashboard` returned **14 widgets**, **13 distinct queries
-executed**, **1 deduplicated query**, and **no error/empty signals**. The UI
-URL is `https://paprika.benebsworth.com/dashboard/insights/?dashboard=omega-observe-operations-control-room`.
-This is one historical validation receipt, not a guarantee about future
-observations or current workload health. For full tool semantics see
-`plugins/paprika-observe/skills/paprika-observe/SKILL.md` and
-`docs/guides/observability-gateway.md`.
-
-
-### Dashboard visual regression checklist (required)
-
-When changing the presentation of an MCP-authored dashboard, follow the
-\`plugins/paprika-observe/skills/paprika-observe/SKILL.md\` **Mandatory visual
-QA** section. A valid schema, ETag save, and successful \`query_dashboard\`
-do not constitute design verification.
-
-- For \`layout.h:2\` stat cards, prefer a short title, value and at most
-  one sparkline. Do not add \`showStatBar:true\` or long descriptions by
-  default; such combinations have created internal card scrollbars.
-- Avoid copied provider/source metadata in every widget description,
-  redundant chart axis captions and unnecessary fixed 0–100 scales.
-- Record before/after rendering at desktop/mobile widths and verify
-  no card-internal scrollbars, clipped values/units, overlap or tooltip
-  placement failures. Inspect a real hover/pinned tooltip.
-- A live \`query_dashboard\` is required to verify source execution,
-  missing/stale data and query count, but it cannot attest to pixel quality.
-  If the screenshot renderer is not deployed, explicitly mark visual QA
-  **NOT RUN**, instead of claiming success.
-- Patch only targeted fields with exact ETags and revert visual regressions
-  without altering saved queries or their provider bindings.
-
-**Postmortem reference:** On 6 Nov 2026 the Omega Observe Control Room
-regressed after enabling five percentage stat bars with \`min/max\` on
-short KPI cards alongside sparklines and lengthy descriptions. Removing
-the redundant elements restored a simpler semantic presentation.
+5. **Author and prove the dashboard.** Follow the Paprika Observe skill's
+   "Build or change a dashboard" procedure. A successful save is not a working
+   dashboard: read it back, and `query_dashboard` must show its signals. Visual QA
+   is a separate `render_dashboard` check and may report NOT RUN. Do not burst
+   parallel dashboard reads; the skill's rate-limit section says how to back off.
 
 ## Core fleet console: adapt demo quality without synthetic data
 
@@ -166,28 +109,6 @@ and keep actual-data semantics independent from style. A successful unit
 test or a sample screenshot cannot establish live deployment or demo parity.
 The first production adaptation is core overview PR #193, which adds a
 whole-fleet instrument strip and measured board-header styling.
-
-## Visual-feedback loop for MCP-authored dashboards
-
-A dashboard can pass `query_dashboard` while rendering poorly (clipped
-tooltips, unreadable axes, crowded cards or bad mobile reflow). After saving
-and querying real signals, prefer `render_dashboard` once a separate,
-authenticated Playwright worker has been explicitly deployed. It returns
-`image/png` image content alongside the document ETag, selected viewport
-and theme; it never invents chart data. Inspect desktop (1512px), tablet
-(768px) and mobile (390px), then tune the saved widget options with exact
-ETag / `patch_dashboard`, requery and rerender. Use `focus_widget` to inspect
-a selected chart with its interactive hover tooltip.
-
-This tool is opt-in: it is **not available** merely because the UI and
-gateway deployed, and `render_dashboard` is registered only when
-`PAPRIKA_OBSERVE_RENDER_URL` and `PAPRIKA_OBSERVE_RENDER_SECRET` are set
-and the private Chromium worker is running. See
-`docs/guides/observe-browser-renderer.md`. The production API image does
-not ship Chromium. Never send credentials in screenshot URLs, admit
-arbitrary external pages, enable unauthenticated captures or treat a
-screenshot as proof of current telemetry health. Keep using
-`query_dashboard` for data freshness, error and truncation checks.
 
 ## Constraints & Preferences
 
