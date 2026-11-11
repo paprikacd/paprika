@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F05",
+  "featureName": "Panel binding repair",
+  "synthetic": true,
+  "summary": "Synthetic saved binding expects p95_ms, but the query now returns latency_seconds. Source values are 0.210 s and 0.940 s. A supported ×1000 conversion yields 210 ms and 940 ms. The invalid draft retains the last valid preview and remains unapplied.",
+  "data": {
+    "savedField": "p95_ms",
+    "returnedField": "latency_seconds",
+    "sourceUnit": "seconds",
+    "sourceValues": [
+      0.21,
+      0.94
+    ],
+    "proposedSupportedConversion": {
+      "operation": "multiply",
+      "factor": 1000,
+      "resultUnit": "milliseconds",
+      "resultValues": [
+        210,
+        940
+      ]
+    },
+    "draftState": "Invalid and unapplied",
+    "lastValidPreview": "Retained"
+  },
+  "constraints": [
+    "Unit conversion must be an executable supported operation, not a suffix change.",
+    "If the canonical owner cannot represent the conversion, keep the repair unresolved or change the query through its supported path.",
+    "Invalid mapping cannot Apply; preserve the last valid preview and original scope.",
+    "Apply changes the dashboard session; Save persists a revision. Do not imply that preview or Apply durably saves the document.",
+    "Save conflicts preserve the local repair and require explicit reconciliation with the newer revision.",
+    "Presentation edits remain query-free. The separate request_count/duration_ms conflict demo is a different fixture and must not be merged into this artboard."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/219"
+  ]
+}

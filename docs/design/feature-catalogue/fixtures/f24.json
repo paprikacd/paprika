@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F24",
+  "featureName": "Rollback plan and target binding",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Native primary fixture, shown as a current, retained, eligible plan before execution.",
+    "application": "checkout",
+    "target": "mel-prod / production",
+    "plan": "rbp-042",
+    "current": {
+      "version": "v2.8.1",
+      "release": "rel-281"
+    },
+    "restore": {
+      "version": "v2.8.0",
+      "release": "rel-280",
+      "snapshot": "snap-280",
+      "selection": "Controller-selected",
+      "retained": true
+    },
+    "changes": [
+      {
+        "resource": "checkout-api",
+        "field": "Image",
+        "from": "8ac4…91bf",
+        "to": "45b2…d120"
+      },
+      {
+        "resource": "checkout-config",
+        "field": "Config",
+        "from": "config-42",
+        "to": "config-39"
+      },
+      {
+        "resource": "Service checkout",
+        "field": "State",
+        "result": "Unchanged"
+      }
+    ],
+    "imageText": [
+      "Review rollback",
+      "Current release",
+      "v2.8.1 · rel-281",
+      "Restore snapshot",
+      "v2.8.0 · rel-280 · snap-280",
+      "Controller-selected · Retained",
+      "mel-prod / production",
+      "checkout-api · Image changes",
+      "checkout-config · config-42 → config-39",
+      "Service checkout · Unchanged",
+      "Review rollback",
+      "Resource rollback only",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "First slice presents the controller-selected restore target; alternate snapshot selection requires the extended server contract.",
+    "Reviewing or selecting a retained snapshot does not execute rollback.",
+    "Execution must bind current release UID, snapshot UID/hash, target/configuration and plan version.",
+    "Do not imply a new Release is necessarily created, Kubernetes changes are atomic, or migrations/external effects are reversed.",
+    "Keep Current release and Restore snapshot labels explicit throughout."
+  ],
+  "actions": null,
+  "clarification": "The image-change fixture binds the digest aliases 8ac4…91bf → 45b2…d120. A version tag shown in an earlier illustration is not a substitute for immutable target binding.",
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/241"
+  ]
+}

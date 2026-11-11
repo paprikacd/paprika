@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F19",
+  "featureName": "Runbook evidence checklist",
+  "synthetic": true,
+  "summary": "Five steps: Confirm impact — Verified at 09:42 UTC; Identify release — Verified at 09:43 UTC; Compare cohorts — In progress; Evaluate rollback — Blocked, owner approval required; Verify recovery — Pending. Counts: 2 verified, 1 in progress, 1 blocked, 1 pending. Cohort evidence: 400 / 100,000 = 0.4%; 6,200 / 100,000 = 6.2%.",
+  "data": {
+    "steps": [
+      {
+        "name": "Confirm impact",
+        "status": "Verified",
+        "timeUTC": "09:42"
+      },
+      {
+        "name": "Identify release",
+        "status": "Verified",
+        "timeUTC": "09:43"
+      },
+      {
+        "name": "Compare cohorts",
+        "status": "In progress"
+      },
+      {
+        "name": "Evaluate rollback",
+        "status": "Blocked",
+        "reason": "Owner approval required"
+      },
+      {
+        "name": "Verify recovery",
+        "status": "Pending"
+      }
+    ],
+    "counts": {
+      "verified": 2,
+      "inProgress": 1,
+      "blocked": 1,
+      "pending": 1
+    },
+    "selectedStep": "Compare cohorts",
+    "cohortEvidence": [
+      {
+        "failures": 400,
+        "requests": 100000,
+        "errorPercent": 0.4
+      },
+      {
+        "failures": 6200,
+        "requests": 100000,
+        "errorPercent": 6.2
+      }
+    ]
+  },
+  "constraints": [
+    "A durable versioned checklist is proposed beyond the existing finding and playbook strings.",
+    "Checklist progress, observed condition and executed operation have separate states.",
+    "Owner, actor, time and evidence identity persist. Operator attestation is distinct from observed proof.",
+    "Attached proof retains its source, window and revision, and may become stale without silent refresh.",
+    "Diagnostic reads are bounded and authorized. Future actions reuse maintained pipeline owners."
+  ],
+  "actions": {
+    "enabled": [
+      "Attach evidence",
+      "Inspect evidence",
+      "Open existing resource"
+    ],
+    "disabled": [
+      "Evaluate rollback while required owner approval is unresolved"
+    ],
+    "excluded": [
+      "Run arbitrary command",
+      "Bypass approval",
+      "Automatic remediation"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/234",
+    "https://github.com/paprikacd/paprika/issues/221"
+  ]
+}

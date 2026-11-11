@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F27",
+  "featureName": "Pipeline retry-impact preview",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Exact companion ready-for-review fixture.",
+    "pipeline": "pipe-281",
+    "attempt": "02",
+    "selectedStep": "Deploy",
+    "steps": [
+      {
+        "name": "Build",
+        "result": "Passed",
+        "retryEffect": "Preserved"
+      },
+      {
+        "name": "Test",
+        "result": "Passed",
+        "retryEffect": "Preserved"
+      },
+      {
+        "name": "Lint",
+        "result": "Passed",
+        "retryEffect": "Preserved"
+      },
+      {
+        "name": "Deploy",
+        "result": "Failed",
+        "retryEffect": "Rerun",
+        "selected": true
+      },
+      {
+        "name": "Smoke",
+        "result": "Skipped",
+        "retryEffect": "Reset"
+      },
+      {
+        "name": "Verify",
+        "result": "Skipped",
+        "retryEffect": "Reset"
+      }
+    ],
+    "stopChecks": {
+      "oldJob": "Terminal confirmed",
+      "activePods": 0,
+      "deletion": "Complete"
+    },
+    "nextExecutionUID": "Assigned after acceptance",
+    "imageText": [
+      "Review retry",
+      "pipe-281 · attempt 02",
+      "Build · Passed · Preserved",
+      "Test · Passed · Preserved",
+      "Lint · Passed · Preserved",
+      "Deploy · Failed · Rerun",
+      "Smoke · Skipped · Reset",
+      "Verify · Skipped · Reset",
+      "3 preserved · 3 affected",
+      "Old Job terminal",
+      "Active Pods 0",
+      "Deletion complete",
+      "Review retry",
+      "New execution ID after acceptance",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "Existing retry engine owns eligibility, prerequisites, descendant resets, retry budgets and stop checks.",
+    "The preview is non-mutating; a review is available because stop checks are complete in this fixture.",
+    "Do not assign a future execution UID before acceptance.",
+    "Skipped Smoke and Verify have no Job references for this attempt; do not invent them.",
+    "Do not imply all six steps rerun or broaden cancelled-execution retry semantics."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/244"
+  ]
+}

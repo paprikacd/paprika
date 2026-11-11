@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F18",
+  "featureName": "Capacity scenario planner",
+  "synthetic": true,
+  "summary": "Capacity is 100 vCPU allocatable; a 20% reserve leaves 80 vCPU usable. Aggregate fleet p95 demand is 60 vCPU. Assumed linear growth of 5 vCPU/week reaches 80 vCPU at 4.0 weeks. Adding 20 vCPU gives 120 vCPU allocatable and 96 vCPU usable, reached at 7.2 weeks.",
+  "data": {
+    "allocatableVcpu": 100,
+    "reservePercent": 20,
+    "usableVcpu": 80,
+    "aggregateP95DemandVcpu": 60,
+    "assumedGrowthVcpuPerWeek": 5,
+    "firstCrossingWeeks": 4,
+    "addedCapacityVcpu": 20,
+    "expandedAllocatableVcpu": 120,
+    "expandedUsableVcpu": 96,
+    "expandedCrossingWeeks": 7.2
+  },
+  "constraints": [
+    "A historical aggregate-demand contract is proposed beyond the current snapshot sources.",
+    "Compute p95 from the aggregate-demand time series, not from a sum of per-host p95 values.",
+    "Recalculate reserve after changing allocatable capacity.",
+    "Label growth as an assumption, not a forecast. Requested, used, allocatable and scenario demand remain separate.",
+    "Insufficient or incompatible history disables projection; do not fill missing values with zero.",
+    "Aggregate headroom cannot prove placement or schedulability. Future HPA assumptions remain separate. No scaling writes occur."
+  ],
+  "actions": {
+    "enabled": [
+      "Compare scenario",
+      "Inspect assumptions"
+    ],
+    "disabled": [
+      "Dependent projection when history insufficient"
+    ],
+    "excluded": [
+      "Provision capacity",
+      "Scale workload",
+      "Promise autoscaling outcome",
+      "Claim schedulability"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/233",
+    "https://github.com/paprikacd/paprika/issues/225"
+  ]
+}

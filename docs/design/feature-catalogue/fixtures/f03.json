@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F03",
+  "featureName": "Evidence coverage",
+  "synthetic": true,
+  "summary": "Synthetic checkout-api / production / eu-west-1 / /checkout over [09:41, 09:53) UTC. Metrics have 12 of 12 expected one-minute bins at the end of the window. payment-svc heartbeat logs are missing [09:47, 09:50). Traces have a configured 10% sampling policy; collection coverage is unknown. External bank-gateway is uninstrumented.",
+  "data": {
+    "scope": {
+      "service": "checkout-api",
+      "environment": "production",
+      "region": "eu-west-1",
+      "route": "/checkout"
+    },
+    "windowUTC": {
+      "start": "09:41",
+      "endExclusive": "09:53"
+    },
+    "metrics": {
+      "binMinutes": 1,
+      "expectedBins": 12,
+      "receivedBins": 12
+    },
+    "heartbeatLogs": {
+      "service": "payment-svc",
+      "gapStartUTC": "09:47",
+      "gapEndExclusiveUTC": "09:50"
+    },
+    "traces": {
+      "configuredSamplingPercent": 10,
+      "collectionCoverage": "Unknown"
+    },
+    "externalSource": {
+      "name": "bank-gateway",
+      "instrumentation": "Uninstrumented"
+    }
+  },
+  "constraints": [
+    "Missing expected heartbeat observations justify a gap; quiet ordinary logs alone do not.",
+    "A configured 10% trace sampling policy is not a measured 10% coverage claim.",
+    "Distinguish received observations, missing expected observations, sampled traces and uninstrumented sources.",
+    "Selecting an observation highlights its exact source interval and query without moving the matrix.",
+    "Candidate explanations keep supporting, contrary and missing evidence separate; do not show an opaque confidence percentage.",
+    "The matrix describes available evidence, not inferred health or root cause."
+  ],
+  "actions": null,
+  "clarification": "The 12/12 expected metric bins, the separate payment-svc heartbeat gap and the configured trace sampling policy describe different evidence populations. Trace collection coverage remains unknown.",
+  "sourcePage": "https://chatgpt.com/space/page_fca6170dff808191bc520e4365f1490b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/216"
+  ]
+}

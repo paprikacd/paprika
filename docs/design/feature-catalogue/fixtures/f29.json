@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F29",
+  "featureName": "Deployment execution journal",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Exact companion fixture, selecting the positive apply outcome while keeping the later health failure visible.",
+    "date": "11 Nov 2026",
+    "timezone": "AEDT",
+    "application": "checkout",
+    "release": "rel-281",
+    "configuration": "cfg-042",
+    "target": "mel-prod / production",
+    "events": [
+      {
+        "time": "14:02",
+        "event": "Verification started"
+      },
+      {
+        "time": "14:07",
+        "event": "Verification passed"
+      },
+      {
+        "time": "14:10",
+        "event": "Approval bound"
+      },
+      {
+        "time": "15:15",
+        "event": "Window eligible"
+      },
+      {
+        "time": "15:16",
+        "event": "Apply completed",
+        "selected": true
+      },
+      {
+        "time": "15:18",
+        "event": "Health failed"
+      },
+      {
+        "time": "15:19",
+        "event": "Rollback preview requested"
+      }
+    ],
+    "rollbackCompletionRecorded": false,
+    "imageText": [
+      "Execution journal",
+      "checkout · rel-281 · cfg-042",
+      "11 Nov 2026 · AEDT",
+      "mel-prod / production",
+      "14:02 Verification started",
+      "14:07 Verification passed",
+      "14:10 Approval bound",
+      "15:15 Window eligible",
+      "15:16 Apply completed",
+      "15:18 Health failed",
+      "15:19 Rollback preview requested",
+      "Selected event · Apply completed",
+      "Inspect event",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "Apply completed is an operation outcome, not proof of workload health; later Health failed remains visible.",
+    "Rollback preview requested is not rollback execution or completion.",
+    "Recorded chronology does not itself prove causality; retain real event/attempt links and do not invent them.",
+    "The selected receipt is read-only; no event-derived action authority.",
+    "Typed gate decision receipts remain owned by #235; do not create a second decision store or guess missing history."
+  ],
+  "actions": null,
+  "clarification": "Retain the combined target mel-prod / production. Typed production records retain their actual cluster and namespace identities; generic illustration labels do not redefine those fields.",
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/246"
+  ]
+}
