@@ -1,43 +1,34 @@
 // Design playground for Paprika Insights: `npm run insights:lab` from ui/.
 // Starts next dev (hot reload) and the Insights/Observe harness. Chart data comes
-// from the same JavaScript fixtures the Playwright review uses, served over
-// loopback HTTP, so any browser can open the printed link. Ctrl-C stops everything
-// this command started. Synthetic data only; documents are discarded on exit.
-import { spawn } from "node:child_process"
+// from the JavaScript fixtures the Playwright review uses, served over loopback
+// HTTP, so any browser can open the printed link. Ctrl-C, SIGTERM or SIGHUP stops
+// everything this command started and removes its temporary workspace. Synthetic
+// data only; documents and the harness credentials are discarded on exit.
+//
+// Cannot run while another `next dev` uses ui/.next (for example `npm run dev`):
+// stop that server first. The lab reports this when next dev refuses to start.
 import { once } from "node:events"
-import { createHash } from "node:crypto"
-import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rename } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { createServer } from "node:net"
-import { join, relative, resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createReferenceDashboardEnvironment } from "./fixtures/reference-dashboard-environment.mjs"
-import { polishDashboards, polishQuery } from "./fixtures/dashboard-polish.mjs"
-import { startQueryFixtureServer } from "./fixtures/query-fixture-server.mjs"
+import { polishDashboards } from "./fixtures/dashboard-polish.mjs"
+import { referenceQueryResolver, startQueryFixtureServer } from "./fixtures/query-fixture-server.mjs"
+import { createRunSupervisor, recoverOrphans } from "./fixtures/lab-process.mjs"
 
 const uiDirectory = fileURLToPath(new URL("../", import.meta.url))
 const repository = resolve(uiDirectory, "..")
 const cacheDirectory = join(repository, "artifacts/insights/lab")
 const harnessBinary = join(cacheDirectory, "observe-e2e")
-const harnessStamp = join(cacheDirectory, "observe-e2e.sha256")
+const recordDirectory = join(repository, "artifacts/insights/runs")
+const allowedRoots = [join(repository, "artifacts"), tmpdir()]
+const tool = "insights-lab"
 const tokenTTL = process.env.INSIGHTS_LAB_SESSION || "12h"
 const firstDashboard = "local-polish-service"
-const skipped = new Set(["node_modules", ".git", ".next", ".worktrees", "artifacts", "output", "ui"])
-
-const cleanups = []
-let nextServer
-let nextOutput = ""
-
-async function stopProcess(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return
-  const exited = once(child, "exit")
-  child.kill("SIGTERM")
-  const force = setTimeout(() => child.kill("SIGKILL"), 5000)
-  try { await exited } finally { clearTimeout(force) }
-}
-
-async function cleanup() {
-  while (cleanups.length) await cleanups.pop()()
-}
+const log = message => console.error(message)
+const supervisor = createRunSupervisor({ tool, recordDirectory, allowedRoots, log })
 
 async function freePort() {
   const probe = createServer()
@@ -48,75 +39,74 @@ async function freePort() {
   return port
 }
 
-// Fingerprint every Go source and module file the harness can import from this
-// repository, so an edit anywhere under internal/ or hack/ rebuilds the cache.
-async function goFingerprint(directory, hash) {
-  for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : 1)) {
-    if (entry.isDirectory()) {
-      if (!skipped.has(entry.name)) await goFingerprint(join(directory, entry.name), hash)
-      continue
-    }
-    if (!entry.isFile() || !/\.go$|^go\.(mod|sum)$/.test(entry.name)) continue
-    const path = join(directory, entry.name)
-    hash.update(relative(repository, path)).update("\0").update(await readFile(path)).update("\0")
-  }
-  return hash
-}
-
-async function ensureHarness() {
-  const hash = await goFingerprint(repository, createHash("sha256"))
-  const fingerprint = hash.digest("hex")
-  const previous = await readFile(harnessStamp, "utf8").catch(() => "")
-  if (previous.trim() === fingerprint && await stat(harnessBinary).then(() => true, () => false)) {
-    console.log("Reusing the cached Insights harness (Go sources unchanged).")
-    return harnessBinary
-  }
-  console.log("Building the Insights harness…")
+// Always invoke go build: its build cache makes an unchanged rebuild fast, and
+// a content hash of our own would miss files the harness embeds (for example
+// docs/design/insights/*.schema.json).
+async function buildHarness() {
   await mkdir(cacheDirectory, { recursive: true })
-  const partial = `${harnessBinary}.partial`
-  const build = spawn("go", ["build", "-o", partial, "./hack/insights-observe-e2e"], { cwd: repository, stdio: ["ignore", "inherit", "inherit"] })
+  const partial = `${harnessBinary}.partial-${process.pid}`
+  const build = supervisor.spawnChild("go build", "go", ["build", "-o", partial, "./hack/insights-observe-e2e"], { cwd: repository, stdio: ["ignore", "inherit", "inherit"] })
   const [code] = await once(build, "exit")
   if (code !== 0) throw new Error(`go build failed with exit code ${code}`)
   await rename(partial, harnessBinary)
-  await writeFile(harnessStamp, `${fingerprint}\n`)
   return harnessBinary
 }
 
+const lockHint = "Another next dev is already using ui/.next (for example `npm run dev`). Stop it, then run `npm run insights:lab` again."
+
 async function startNext(port) {
-  nextServer = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
+  let output = ""
+  const next = supervisor.spawnChild("next dev", process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: uiDirectory,
     env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   })
-  cleanups.push(() => stopProcess(nextServer))
-  const capture = data => { nextOutput = (nextOutput + data).slice(-8000) }
-  nextServer.stdout.on("data", capture)
-  nextServer.stderr.on("data", capture)
+  const capture = data => { output = (output + data).slice(-8000) }
+  next.stdout.on("data", capture)
+  next.stderr.on("data", capture)
   const baseURL = `http://127.0.0.1:${port}`
   const deadline = Date.now() + 120_000
   while (Date.now() < deadline) {
-    if (nextServer.exitCode !== null) throw new Error(`next dev exited before becoming ready:\n${nextOutput}`)
+    if (next.exitCode !== null || next.signalCode !== null) {
+      const hint = /lock|already running|another next dev/i.test(output) ? `\n${lockHint}` : ""
+      throw new Error(`next dev exited before becoming ready.${hint}\n${output}`)
+    }
     try {
       const response = await fetch(`${baseURL}/dashboard/insights/`, { signal: AbortSignal.timeout(10_000) })
-      if (response.ok) return baseURL
+      if (response.ok) {
+        next.once("exit", (code, signal) => supervisor.requestShutdown(1, `next dev stopped (${code ?? signal})`))
+        return baseURL
+      }
     } catch { /* Compilation and socket startup may still be in progress. */ }
     await new Promise(resolve => setTimeout(resolve, 250))
   }
-  throw new Error(`next dev was not ready after 120 seconds:\n${nextOutput}`)
+  throw new Error(`next dev was not ready after 120 seconds.\n${output}`)
 }
 
 async function main() {
-  const binary = await ensureHarness()
-  const fixtures = await startQueryFixtureServer(request => polishQuery(request))
-  cleanups.push(() => fixtures.close())
+  supervisor.installSignalHandlers()
+  await recoverOrphans({ tool, recordDirectory, allowedRoots, log })
+  const binary = await buildHarness()
+  const workspace = await mkdtemp(join(tmpdir(), "paprika-reference-dashboards-"))
+  supervisor.addRemovePath(workspace)
+  const fixtures = await startQueryFixtureServer(referenceQueryResolver)
+  supervisor.addCleanup(() => fixtures.close())
   const uiURL = await startNext(await freePort())
   const environment = await createReferenceDashboardEnvironment(repository, uiURL, {
     binary,
+    workspace,
     queryFixtureURL: fixtures.url,
     labEntry: true,
     tokenTTL,
+    onSpawn: pid => supervisor.adopt("harness", pid),
+    onUnexpectedExit: ({ code, signal, diagnostics }) => {
+      // A shutdown stops the harness on purpose; only an exit while running is a failure.
+      if (supervisor.stopping) return
+      log(`The Insights harness stopped (${code ?? signal}). Last output:\n${diagnostics.trim().split("\n").slice(-12).join("\n")}`)
+      supervisor.requestShutdown(1, "harness stopped")
+    },
   })
-  cleanups.push(() => environment.close())
+  supervisor.addCleanup(() => environment.close())
   const boards = polishDashboards(environment.providerIds.metrics)
   for (const board of boards) await environment.api(`dashboards/${board.id}`, "PUT", board, { "If-None-Match": "*" })
   console.log([
@@ -133,19 +123,7 @@ async function main() {
 
 try {
   await main()
-  // Run until Ctrl-C, or until next dev exits on its own.
-  const interrupted = once(process, "SIGINT").catch(() => {})
-  const stopped = await Promise.race([
-    interrupted.then(() => "interrupt"),
-    once(nextServer, "exit").then(([code]) => `next dev stopped (${code})`),
-  ])
-  if (stopped !== "interrupt") {
-    console.error(`${stopped}. The lab is stopping.`)
-    process.exitCode = 1
-  }
 } catch (error) {
-  console.error(error.message)
-  process.exitCode = 1
-} finally {
-  await cleanup()
+  log(error.message)
+  await supervisor.requestShutdown(1, "startup failed")
 }

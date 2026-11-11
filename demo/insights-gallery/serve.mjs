@@ -1,12 +1,19 @@
 // Local-only demo host: real Paprika Insights/Observe + isolated providers.
 // The loopback proxy supplies an ephemeral test token server-side, never to
 // the browser. The data and provider file are user-selected local fixtures.
+// Run from the repository root (up.mjs does this). The harness binary is built
+// into this run's state directory and started directly, not through `go run`.
+// SIGINT, SIGTERM and SIGHUP stop the harness and remove this run's state (tokens,
+// documents, binary). Repeated signals are ignored while that runs.
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { galleryDocuments } from "./dashboards.mjs";
 
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const args = Object.fromEntries(process.argv.slice(2).map(argument => {
   const match = /^--([a-z-]+)=(.*)$/.exec(argument);
   if (!match) throw Error("Use --providers=PATH --ui-url=URL [--ready-file=PATH] [--session-duration=12h]");
@@ -15,20 +22,70 @@ const args = Object.fromEntries(process.argv.slice(2).map(argument => {
 if (!args.providers || !args["ui-url"]) throw Error("A private provider file and local static UI URL are required");
 const ui = new URL(args["ui-url"]);
 if (!['127.0.0.1', 'localhost', '::1'].includes(ui.hostname) || !['http:', 'https:'].includes(ui.protocol)) throw Error("UI must be served from loopback");
-const parent = resolve("artifacts/insights"); await mkdir(parent, { recursive: true });
-const state = await mkdtemp(resolve(parent, "gallery-insights-"));
-await import("node:fs/promises").then(fs => fs.chmod(state, 0o700));
-const connectionFile = resolve(state, "private-connection.json"), data = resolve(state, "documents");
-const child = spawn("go", ["run", "./hack/insights-observe-e2e", `--ready-file=${connectionFile}`, `--data-dir=${data}`, `--ui-url=${ui.href}`, `--token-ttl=${args["session-duration"] ?? "1h"}`, "--application-fixtures", `--application-providers=${resolve(args.providers)}`], { stdio: ["ignore", "ignore", "pipe"] });
-let diagnostic = ""; child.stderr.on("data", data => { diagnostic = (diagnostic + data).slice(-8000); });
-let connection;
+
+const SIGNALS = [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]];
+let state, harness, server, shuttingDown = null;
+let diagnostic = "";
+
+async function stopChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, "exit");
+  child.kill("SIGTERM");
+  const force = setTimeout(() => child.kill("SIGKILL"), 5000);
+  try { await exited; } finally { clearTimeout(force); }
+}
+
+function shutdown(code, reason) {
+  if (!shuttingDown) {
+    shuttingDown = (async () => {
+      console.error(`Stopping the local gallery service (${reason})…`);
+      server?.close();
+      await stopChild(harness);
+      // The store and connection file are per run: remove the whole state directory.
+      if (state) await rm(state, { recursive: true, force: true });
+    })().finally(() => process.exit(code));
+  }
+  return shuttingDown;
+}
+
+// Installed before anything starts, so a signal at any point stops what exists.
+for (const [signal, code] of SIGNALS) {
+  process.on(signal, () => { if (shuttingDown) console.error(`${signal} received; already stopping.`); else shutdown(code, signal); });
+}
+
 try {
+  const parent = join(root, "artifacts/insights");
+  await mkdir(parent, { recursive: true });
+  state = await mkdtemp(join(parent, "gallery-insights-"));
+  await import("node:fs/promises").then(fs => fs.chmod(state, 0o700));
+  const connectionFile = join(state, "private-connection.json"), data = join(state, "documents");
+  const binary = join(state, "bin", "observe-e2e");
+  await mkdir(join(state, "bin"), { mode: 0o700 });
+
+  const build = spawn("go", ["build", "-o", binary, "./hack/insights-observe-e2e"], { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+  let buildOutput = "";
+  build.stderr.on("data", chunk => { buildOutput = (buildOutput + chunk).slice(-8000); });
+  const [buildCode] = await once(build, "exit");
+  if (buildCode !== 0) throw Error(`Could not build the local Insights service (${buildCode}): ${buildOutput}`);
+
+  // Same process group as this script: a group signal from up.mjs reaches both.
+  harness = spawn(binary, [`--ready-file=${connectionFile}`, `--data-dir=${data}`, `--ui-url=${ui.href}`, `--token-ttl=${args["session-duration"] ?? "1h"}`, "--application-fixtures", `--application-providers=${resolve(args.providers)}`], { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+  harness.stderr.on("data", chunk => { diagnostic = (diagnostic + chunk).slice(-8000); });
+  harness.once("exit", (code, signal) => {
+    if (!shuttingDown) {
+      console.error(`The local Insights service stopped (${code ?? signal}). Last output:\n${diagnostic.trim().split("\n").slice(-12).join("\n")}`);
+      shutdown(1, "harness stopped");
+    }
+  });
+
+  let connection;
   for (let attempt = 0; attempt < 600; attempt++) {
-    if (child.exitCode !== null) throw Error(`Local Insights service exited (${child.exitCode}): ${diagnostic}`);
+    if (harness.exitCode !== null || harness.signalCode !== null) throw Error(`Local Insights service exited (${harness.exitCode ?? harness.signalCode}): ${diagnostic}`);
     try { connection = JSON.parse(await readFile(connectionFile, "utf8")); break; } catch (error) { if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error; }
     await new Promise(done => setTimeout(done, 200));
   }
   if (!connection) throw Error("Local Insights service did not become ready");
+
   const api = async (path, method = "GET", document, headers = {}) => {
     for (let attempt = 0; attempt < 8; attempt++) {
       const response = await fetch(`${connection.baseURL}/api/insights/${path}`, { method, headers: { Authorization: `Bearer ${connection.token}`, "Content-Type": "application/json", ...headers }, ...(document ? { body: JSON.stringify(document) } : {}), signal: AbortSignal.timeout(30000) });
@@ -52,7 +109,7 @@ try {
   for (const dashboard of documents.dashboards) await api(`dashboards/${encodeURIComponent(dashboard.id)}`, "PUT", dashboard, { "If-None-Match": "*" });
   const upstream = new URL(connection.baseURL);
   let port;
-  const server = createServer((req, res) => {
+  server = createServer((req, res) => {
     const origin = `http://127.0.0.1:${port}`;
     if (req.headers.host !== `127.0.0.1:${port}` || (req.headers.origin && req.headers.origin !== origin)) { res.writeHead(403); return res.end("Local demo only"); }
     const headers = { ...req.headers, host: upstream.host };
@@ -64,9 +121,14 @@ try {
   await new Promise((done, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", done); });
   port = server.address().port;
   const receipt = { url: `http://127.0.0.1:${port}/`, state, dashboards: documents.dashboards.map(item => item.id), savedQueryCount: documents.savedQueries.length, syntheticData: true };
-  if (args["ready-file"]) await writeFile(resolve(args["ready-file"]), JSON.stringify(receipt, null, 2), { mode: 0o600 });
+  if (args["ready-file"]) {
+    // Write then rename, so a reader never sees a half-written receipt.
+    const target = resolve(args["ready-file"]), partial = `${target}.partial`;
+    await writeFile(partial, JSON.stringify(receipt, null, 2), { mode: 0o600 });
+    await rename(partial, target);
+  }
   console.log(JSON.stringify(receipt));
-  const shutdown = () => { server.close(); child.kill("SIGTERM"); };
-  process.once("SIGINT", shutdown); process.once("SIGTERM", shutdown);
-  child.once("exit", () => server.close());
-} catch (error) { child.kill("SIGTERM"); throw error; }
+} catch (error) {
+  console.error(error.message);
+  await shutdown(1, "startup failed");
+}

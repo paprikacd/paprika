@@ -1,10 +1,16 @@
 // Loopback HTTP server for the design playground. The Insights harness forwards
 // chart queries here, so a browser receives the same normalized results that the
 // Playwright review gets from its page.route fixture. Tests may inject a resolver.
+import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { polishQuery } from "./dashboard-polish.mjs"
 
-export const referenceQueryResolver = request => polishQuery(request)
+// The Insights service resolves saved-query bindings before it calls the provider.
+// An unresolved binding is a bug, so the fixture rejects it as the Playwright route did.
+export const referenceQueryResolver = request => {
+  assert.ok(!request.query.includes("{{"), "Saved-query bindings must resolve before querying")
+  return polishQuery(request)
+}
 
 const maxBodyBytes = 32 * 1024
 

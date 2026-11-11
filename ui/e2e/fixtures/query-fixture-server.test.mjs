@@ -45,6 +45,15 @@ describe("query fixture server", () => {
     } finally { await server.close() }
   })
 
+  it("rejects unresolved saved-query bindings", async () => {
+    const server = await startQueryFixtureServer()
+    try {
+      const response = await post(server.url, request('fixture_percentiles{service={{service}}}'))
+      assert.equal(response.status, 500)
+      assert.match(JSON.parse(response.text).error, /bindings must resolve/)
+    } finally { await server.close() }
+  })
+
   it("reports unknown fixture queries as errors instead of empty data", async () => {
     const server = await startQueryFixtureServer()
     try {
