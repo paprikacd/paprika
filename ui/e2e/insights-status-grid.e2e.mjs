@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
+import { fillFloor, markFillEvidence } from "./fixtures/mark-fill.mjs"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const output = join(root,"artifacts/insights/status-grid")
@@ -83,6 +84,15 @@ try {
     await host.scrollIntoViewIfNeeded()
     await page.keyboard.press("Escape")
     await page.getByRole("tooltip").waitFor({state:"hidden"})
+    if (statusBands) {
+      // A critical cell at 1512 px is 12 px or more, so it is framed; its frame must leave at least half its sampled area as fill.
+      await page.mouse.move(0,0)
+      const critical = await markFillEvidence(page, cells.nth(1))
+      assert.equal(critical.framed, true, "A critical 12 px cell keeps its frame")
+      assert.equal(critical.centreIsFill, true, `The framed critical cell's centre is its fill: ${JSON.stringify(critical)}`)
+      assert.ok(critical.total > 0 && critical.fill / critical.total >= fillFloor(critical), `Framed critical cell fill ${(critical.fill / critical.total).toFixed(2)} is below ${fillFloor(critical)}`)
+      console.log(`  monitor grid ${theme} ${width}px: critical cell ${critical.framed ? "framed" : "unframed"}, fill ${(critical.fill / critical.total).toFixed(2)}`)
+    }
     await page.screenshot({path:join(output,`${theme.toLowerCase()}-${width}.png`),fullPage:false,animations:"disabled"})
     await context.close(); console.log(`PASS ${theme} ${width}px monitor status grid`)
   }

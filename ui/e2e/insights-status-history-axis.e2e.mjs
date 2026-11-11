@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
-import { markFillEvidence } from "./fixtures/mark-fill.mjs"
+import { fillFloor, markFillEvidence } from "./fixtures/mark-fill.mjs"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const output = join(root,"artifacts/insights/status-history-axis")
@@ -35,8 +35,9 @@ try {
         return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({series:[{name:"burn",labels:{service:"uptime-api"},points:Array.from({length:61},(_,index)=>({timestamp:(request.start+(request.end-request.start)*index/60)*1000,value:7.9+0.2*index/60}))}]})})
       }
       if(!request.query.startsWith("paprika_example_ab_service_pulse_states{")) return route.fallback()
-      const end=request.end*1000, start=end-30*24*60*60*1000
-      const series=["uptime-api","payment-api","auth-api","catalog-api","worker"].map((name,row)=>({name:`up{service="${name}"}`,labels:{service:name},points:Array.from({length:60},(_,i)=>({timestamp:start+i*(end-start)/59,value:i===10&&row===1?2:i===16&&row===2?1:0}))}))
+      // 30 samples leave ~10 px marks at 1512 px, so critical samples are framed; 60 leave ~5 px marks at 390 px, unframed.
+      const end=request.end*1000, start=end-30*24*60*60*1000, points=width===1512?30:60
+      const series=["uptime-api","payment-api","auth-api","catalog-api","worker"].map((name,row)=>({name:`up{service="${name}"}`,labels:{service:name},points:Array.from({length:points},(_,i)=>({timestamp:start+i*(end-start)/(points-1),value:i===10&&row===1?2:i===16&&row===2?1:0}))}))
       await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({series})})
     })
     await page.goto(`${base}/dashboard/insights/?dashboard=example-artboard-service-pulse`,{waitUntil:"networkidle"})
@@ -75,16 +76,23 @@ try {
     const criticalMarks=host.locator('[data-history-value="2"]')
     const checkCritical=async label=>{
       const marks=[]
-      for(let index=0;index<await criticalMarks.count();index++) marks.push(await markFillEvidence(page,criticalMarks.nth(index),{trimRight:1}))
+      for(let index=0;index<await criticalMarks.count();index++){
+        const mark=criticalMarks.nth(index)
+        // A frame belongs to the contiguous critical run that covers the sample; a run of one frames that sample.
+        const framed=await mark.evaluate(node=>{const m=node.getBoundingClientRect();return [...node.parentElement.querySelectorAll('[data-status-run="critical"]')].some(run=>{const r=run.getBoundingClientRect();return r.left<=m.left+0.5&&r.right>=m.right-0.5})})
+        marks.push(await markFillEvidence(page,mark,{trimRight:1,framed}))
+      }
       assert.ok(marks.length>0,`${label}: the fixture has critical marks`)
       for(const mark of marks){
-        assert.equal(mark.framed,mark.width>=7,`${label}: a frame appears exactly on marks of 7 px or wider: ${JSON.stringify(mark)}`)
         assert.equal(mark.centreIsFill,true,`${label}: a critical mark's centre is its fill, not a frame or gap: ${JSON.stringify(mark)}`)
-        // Unframed marks are 2-4 CSS px, so one device column of edge is noise; a covered mark would fall far below 60%.
-        if(!mark.framed) assert.ok(mark.fill/mark.total>=0.6,`${label}: an unframed critical mark is mostly fill: ${JSON.stringify(mark)}`)
+        assert.ok(mark.total>0&&mark.fill/mark.total>=fillFloor(mark),`${label}: ${mark.framed?"framed":"unframed"} critical mark fill ${(mark.fill/mark.total).toFixed(2)} is below ${fillFloor(mark)}: ${JSON.stringify(mark)}`)
       }
-      console.log(`  ${label}: ${marks.length} critical marks, ${marks.filter(mark=>mark.framed).length} framed, ${marks.filter(mark=>!mark.framed).length} unframed`)
+      const framedCount=marks.filter(mark=>mark.framed).length
+      if(width===1512) assert.ok(framedCount>0,`${label}: the 30-sample fixture yields framed critical marks`)
+      if(width===390) assert.equal(framedCount,0,`${label}: thin marks at 390 px carry no frame`)
+      console.log(`  ${label}: ${marks.length} critical marks, ${framedCount} framed, ${marks.length-framedCount} unframed; fill ${marks.map(mark=>(mark.fill/mark.total).toFixed(2)).join(", ")}`)
     }
+    await page.mouse.move(0,0)
     await checkCritical(`${theme} ${width}px`)
     if(width===1512&&theme==="Dark"){
       const compact=page.getByRole("button",{name:"Compact view",exact:true})

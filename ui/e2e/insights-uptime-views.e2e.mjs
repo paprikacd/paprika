@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 import { selectGammaOption } from "./gamma-controls.mjs";
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs";
 import { installUptimeExample, uptimeExampleResult } from "./fixtures/uptime-reference-data.mjs";
+import { fillFloor, markFillEvidence } from "./fixtures/mark-fill.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 const base = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015";
@@ -58,6 +59,17 @@ try {
       const days = await widget.locator('[data-uptime-state="observed"]').evaluateAll(nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return { width: box.width, height: box.height, stroke: node.getAttribute("data-status-stroke") } }))
       assert.ok(days.every(day => day.stroke === null || (day.width >= 7 && day.height >= 7)), `${id}: no frame on a day under 7 px`)
       if (width >= 1200) assert.ok(days.some(day => day.stroke === "critical"), `${id}: wide critical days carry the frame`)
+      // Critical days are read from their own pixels: framed days keep at least half their area as fill, unframed days are nearly all fill.
+      await page.mouse.move(0, 0)
+      const criticalDays = widget.locator('[data-uptime-state="observed"][aria-label*="Unavailable"]')
+      const sampled = []
+      for (let index = 0; index < Math.min(3, await criticalDays.count()); index++) sampled.push(await markFillEvidence(page, criticalDays.nth(index)))
+      assert.ok(sampled.length > 0, `${id}: the fixture has critical days`)
+      for (const day of sampled) {
+        assert.equal(day.centreIsFill, true, `${id} ${width}px ${theme}: a critical day's centre is its fill: ${JSON.stringify(day)}`)
+        assert.ok(day.total > 0 && day.fill / day.total >= fillFloor(day), `${id} ${width}px ${theme}: ${day.framed ? "framed" : "unframed"} critical day fill ${(day.fill / day.total).toFixed(2)} is below ${fillFloor(day)}`)
+      }
+      console.log(`  ${id} ${width}px ${theme}: ${sampled.map(day => `${day.framed ? "framed" : "unframed"} ${(day.fill / day.total).toFixed(2)}`).join(", ")}`)
       const known = widget.locator('[data-uptime-state="observed"]').first();
       await known.focus(); const prior = await known.getAttribute("data-uptime-key");
       await page.keyboard.press("ArrowRight");
