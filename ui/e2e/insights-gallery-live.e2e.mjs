@@ -88,7 +88,10 @@ try {
           await selectGammaOption(page, page.getByRole("combobox", { name: "Service", exact: true }), "payments");
           const data = await (await updated).json();
           assert.deepEqual(new Set(data.series.map(series => series.labels.service)), new Set(["payments", "catalog", "worker"]));
-          await page.locator('[data-widget-id="error-history"]').getByText("Error budget burn rate · 1h").waitFor();
+          const errorHistory = page.locator('[data-widget-id="error-history"]');
+          await errorHistory.getByRole("heading", { name: "Error budget burn rate · 1h", exact: true }).waitFor();
+          // The lone series is named by the title, so its legend item carries the title and reading as its accessible name.
+          await errorHistory.getByRole("list", { name: "Latest values by series" }).getByRole("listitem", { name: /^Error budget burn rate · 1h, latest valid sample:/ }).waitFor();
         }
         if (board === "signal-kit") {
           const rate = page.locator('[data-widget-id="request-history"]');
@@ -176,7 +179,8 @@ try {
       const sectorTrend = page.locator('[data-widget-id="history"]');
       await sectorTrend.scrollIntoViewIfNeeded();
       for (const sector of ["Consumer", "Energy", "Financials", "Healthcare", "Industrials", "Technology"]) {
-        await sectorTrend.getByText(`${sector} · short_interest`, { exact: true }).waitFor();
+        // The legend shows the shared-suffix-free sector label; its full name stays in the item's title.
+        await sectorTrend.locator(`[title="${sector} · short_interest"]`).getByText(sector, { exact: true }).waitFor();
       }
       const companyHistory = page.locator('[data-widget-id="selected-company-history"]');
       await companyHistory.scrollIntoViewIfNeeded();

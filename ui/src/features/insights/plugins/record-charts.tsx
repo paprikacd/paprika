@@ -7,6 +7,7 @@ import type { RecordFrame } from "../schema"
 import { DashboardWindowProvider } from "../dashboard-window"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
 import { formatTimeTick } from "../chart-data"
+import { displaySeriesNames, fallbackIdentityTitle } from "../series-display"
 import { TimeWindowLens } from "../time-window-lens"
 import type { ObservationWindow } from "../time-window"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
@@ -80,6 +81,12 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   if(!frame?.rows.length||!data)return <EmptyState/>
   const config=configSchema.parse(widget.config??{})
   const series=data.series.slice(0,24).map(entry=>zoom?{...entry,points:entry.points.filter(point=>point.x>=zoom.start&&point.x<=zoom.end)}:entry)
+  // Records carry no labels, so only the names matter. Shared group or column segments are dropped from the legend;
+  // the full name stays in the title and srOnly text. A lone generic series named by the widget gets no legend: a
+  // swatch alone would say nothing and record legends carry no reading. Its full identity stays on the plot's title.
+  const recordSeries=series.map(entry=>({name:entry.name,labels:{},points:[]}))
+  const identityTitle=fallbackIdentityTitle(widget,recordSeries)
+  const legendNames=displaySeriesNames(recordSeries)
   const all=series.flatMap(entry=>entry.points), xs=all.map(point=>point.x)
   if(!xs.length)return <EmptyState/>
   const positions=[...new Set(xs)].sort((a,b)=>a-b), minX=positions[0], maxX=positions.at(-1)!
@@ -149,7 +156,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     onClick={event=>{if(event.target instanceof Element&&event.target.hasAttribute("data-record-mark"))return;const hit=nearest(event.clientX,event.clientY);if(!hit)return;if(current?.pinned&&current.point===hit.point&&current.seriesIndex===hit.seriesIndex){setInspection(undefined);return}show(hit.seriesIndex,hit.point,true);select(series[hit.seriesIndex],hit.point)}}
     onFocus={event=>{if(event.target!==event.currentTarget||current||!accessiblePoints.length)return;show(accessiblePoints[0].seriesIndex,accessiblePoints[0].point)}}
     onKeyDown={event=>{if(!tooltipEnabled||event.target!==event.currentTarget)return;if(event.key==="Escape"){setInspection(undefined);return}if(event.key==="Enter"&&current){event.preventDefault();show(current.seriesIndex,current.point,!current.pinned);return}if(!["ArrowLeft","ArrowRight"].includes(event.key)||!accessiblePoints.length)return;event.preventDefault();const index=current?accessiblePoints.findIndex(item=>item.seriesIndex===current.seriesIndex&&item.point===current.point):-1;const next=Math.max(0,Math.min(accessiblePoints.length-1,index+(event.key==="ArrowRight"?1:-1)));show(accessiblePoints[next].seriesIndex,accessiblePoints[next].point)}}>
-    <defs><clipPath id={unique}><rect data-record-plot-height={plotHeight} x={plotLeft-2} y={plotTop-6} width={plotWidth+4} height={plotHeight+8}/></clipPath></defs>
+    {identityTitle&&<title>{`${identityTitle} · ${series[0].name}`}</title>}<defs><clipPath id={unique}><rect data-record-plot-height={plotHeight} x={plotLeft-2} y={plotTop-6} width={plotWidth+4} height={plotHeight+8}/></clipPath></defs>
     {yTicks.map(fraction=><g key={fraction}><line x1={plotLeft} x2={plotRight} y1={plotBottom-fraction*plotHeight} y2={plotBottom-fraction*plotHeight} stroke="var(--gamma-border)"/><text x={plotLeft-6} y={plotBottom+4-fraction*plotHeight} textAnchor="end">{formatMetric(left.min*(1-fraction)+left.max*fraction,"",true,widget.options?.decimals)}</text>{series.some(s=>s.right)&&<text x={plotRight+6} y={plotBottom+4-fraction*plotHeight}>{formatMetric(right.min*(1-fraction)+right.max*fraction,"",true,widget.options?.decimals)}</text>}</g>)}
     {ticks.map(x=><text key={x} x={xScale(x)} y={plotBottom+20} textAnchor="middle">{xText(x)}</text>)}
     <text x={plotLeft} y={12}>{series.filter(s=>!s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text><text x={plotRight} y={12} textAnchor="end">{series.filter(s=>s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text>
@@ -170,7 +177,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     <div data-record-observation={current.point.x}><div className={tooltipStyles.plotTooltipTime}><span>Selected observation</span><span>{xText(current.point.x,true)}</span></div><div className={tooltipStyles.plotTooltipValues}><ul><li className={tooltipStyles.plotTooltipSelected}><i aria-hidden="true" style={{background:colors[current.seriesIndex%colors.length]}}/><span>{series[current.seriesIndex].name}</span><strong>{formatMetric(current.point.value!,series[current.seriesIndex].unit==="percent"?"%":series[current.seriesIndex].unit||widget.unit,false,widget.options?.decimals)}</strong></li></ul></div>
       {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?"No data":String(value).length>128?`${String(value).slice(0,128)}…`:String(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
       <div className={tooltipStyles.tooltipFooter}><small>{current.pinned?"Pinned · press Escape to close":"Move across the chart or use arrow keys · Enter to pin"}</small></div></div>
-  </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&<div className={styles.legend}>{series.map((entry,index)=><span key={index}><i style={{background:colors[index%colors.length]}}/>{entry.name}{entry.right?" (right axis)":""}</span>)}</div>}
+  </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:colors[index%colors.length]}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}
   {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{frame.truncated&&<span>Partial source response</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
 }
 export const RecordLine=(props:WidgetRendererProps)=><RecordChart {...props}/>
