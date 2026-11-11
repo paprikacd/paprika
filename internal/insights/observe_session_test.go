@@ -731,6 +731,7 @@ func TestObserveQueryBudgetCapsEveryPhase(t *testing.T) {
 			w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
 			elapsed := time.Since(started)
 			assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
+			assert.JSONEq(t, `{"error":"query exceeded its time budget"}`, w.Body.String())
 			assert.Less(t, elapsed, 2*time.Second, "the query outlived its budget")
 		})
 	}
@@ -825,4 +826,42 @@ func TestObserveCatalogBusyIsCountedByOutcome(t *testing.T) {
 		}
 	}
 	assert.Equal(t, int64(1), busy, "one catalog-phase rejection, counted once")
+}
+
+// A data call the gateway refuses as busy forwards the gateway's Retry-After, and
+// one second when it sent none.
+func TestObserveDataBusyForwardsGatewayRetryAfter(t *testing.T) {
+	for _, tc := range []struct{ name, header, want string }{
+		{"gateway delay", "5", "5"},
+		{"no delay", "", "1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/list_observability_providers" {
+					writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
+					return
+				}
+				if tc.header != "" {
+					w.Header().Set("Retry-After", tc.header)
+				}
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{"state": "Error"})
+			}))
+			defer gateway.Close()
+			s := observeTestService(t, gateway.URL)
+			w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+			assert.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
+			assert.Equal(t, tc.want, w.Header().Get("Retry-After"))
+		})
+	}
+}
+
+// Outside a query, a deadline reads as the request's budget, not as a query.
+func TestDeadlineMessageIsNotQueryScopedOutsideQueries(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeProviderError(recorder, context.DeadlineExceeded)
+	assert.Equal(t, http.StatusGatewayTimeout, recorder.Code)
+	assert.JSONEq(t, `{"error":"request exceeded its time budget"}`, recorder.Body.String())
+	queryRecorder := httptest.NewRecorder()
+	writeQueryError(queryRecorder, context.DeadlineExceeded)
+	assert.JSONEq(t, `{"error":"query exceeded its time budget"}`, queryRecorder.Body.String())
 }

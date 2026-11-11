@@ -174,7 +174,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	result, err := s.executeProviderQuery(ctx, p, &q)
 	if err != nil {
-		writeProviderError(w, err)
+		writeQueryError(w, err)
 		return
 	}
 	writeJSON(w, 200, result)
@@ -185,7 +185,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 func (s *Server) resolveLocalQuery(w http.ResponseWriter, r *http.Request, q *Query) (*providerClient, bool) {
 	p, err := s.resolveProvider(r, q.ProviderID)
 	if err != nil {
-		writeProviderError(w, err)
+		writeQueryError(w, err)
 		return nil, false
 	}
 	if !p.public.supports(q.Kind) {
@@ -205,7 +205,7 @@ func (s *Server) admitQueryRequest(w http.ResponseWriter, r *http.Request) (func
 			writeError(w, 429, "too many active queries; retry shortly")
 			return nil, false
 		}
-		writeProviderError(w, err)
+		writeQueryError(w, err)
 		return nil, false
 	}
 	return release, true
@@ -230,7 +230,7 @@ func (s *Server) admitAndResolveShared(w http.ResponseWriter, r *http.Request, q
 	p, err := s.resolveSharedProvider(r, q.ProviderID)
 	if err != nil {
 		release()
-		writeProviderError(w, err)
+		writeQueryError(w, err)
 		return nil, nil, false
 	}
 	if !p.public.supports(q.Kind) {
@@ -271,12 +271,22 @@ func (s *Server) enterCatalogPhase(ctx context.Context) (func(), error) {
 	}
 }
 
+// writeQueryError reports a failed query phase. A deadline here is the query's
+// own budget, so the message names the query; other failures keep the shared text.
+func writeQueryError(w http.ResponseWriter, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		writeError(w, http.StatusGatewayTimeout, "query exceeded its time budget")
+		return
+	}
+	writeProviderError(w, err)
+}
+
 // writeCatalogAdmissionError reports a shared query that could not get a catalog
 // phase. Busy is retryable; a canceled caller is answered like other admission
 // cancellations. The rejection is counted under the existing query metric.
 func (s *Server) writeCatalogAdmissionError(w http.ResponseWriter, r *http.Request, q *Query, err error) {
 	if !errors.Is(err, errCatalogBusy) {
-		writeProviderError(w, err)
+		writeQueryError(w, err)
 		return
 	}
 	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", "catalog_busy"))

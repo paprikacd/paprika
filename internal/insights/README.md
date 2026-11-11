@@ -71,7 +71,7 @@ catalog or session is retained across requests, so removing access takes effect
 on the next request. The adapter discovers read-only tools, calls
 provider/query/exploration tools and requires structured results; it never
 parses the truncated text preview or falls back to REST. Each shared gateway
-Each shared gateway operation (session setup, discovery, each tool call) is
+operation (session setup, discovery, each tool call) is
 capped at 20 seconds and at the time left on its request's own deadline, so a
 dashboard keeps its 22-second budget. `/providers` has a 20-second budget end to
 end, inside the API proxy's 25-second response-header timeout.
@@ -90,10 +90,18 @@ times out, returns 429 with `Retry-After: 1` before any listing. Local queries
 never wait for a catalog phase.
 
 A busy shared catalog is answered 200 with `sharedCatalog.status: "busy"` and
-`retryAfter` in seconds (the gateway's Retry-After, or 1). The UI client and the
-render worker both replay it at most three times, each after a delay of
-`retryAfter` spread by +-30%. A listing still busy after those replays stays a
-banner with a manual retry.
+`retryAfter` in seconds (the gateway's Retry-After, or 1). That is the only
+retry layer for a busy listing. The page client replays it at most three times,
+each after `retryAfter` capped at 10 seconds and spread by +-30%, and stops when
+its caller goes away. The render worker does not replay: it waits on the page's
+aria-busy tiles under its own readiness and deadline, so a persistent busy spell
+costs one client replay cycle and ends in the worker's normal failure, not a
+stacked replay. A listing still busy after the client's replays shows the banner
+with a manual retry.
+
+A `/query` 429 from the gateway forwards its Retry-After, bounded to 60 seconds
+and defaulting to 1 second. A deadline reads as "query exceeded its time budget"
+on the query path and as "request exceeded its time budget" elsewhere.
 
 Measured at the default timeouts against a gateway that never answers or stalls:
 

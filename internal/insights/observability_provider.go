@@ -403,14 +403,19 @@ func writeProviderError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &remoteErr):
 		if remoteErr.status == http.StatusTooManyRequests {
-			w.Header().Set("Retry-After", "1")
+			// Forward the gateway's bounded delay; one second when it sent none.
+			retryAfter := remoteErr.retryAfter
+			if retryAfter == 0 {
+				retryAfter = defaultSharedRetryAfter
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 		}
 		writeError(w, remoteErr.status, remoteErr.message)
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "provider not found")
 	case errors.Is(err, context.DeadlineExceeded):
-		// The request's own deadline, such as the query budget, not a provider fault.
-		writeError(w, http.StatusGatewayTimeout, "query exceeded its time budget")
+		// The request's own deadline, not a provider fault. Query paths name the query.
+		writeError(w, http.StatusGatewayTimeout, "request exceeded its time budget")
 	default:
 		writeError(w, http.StatusBadGateway, errUpstream.Error())
 	}
