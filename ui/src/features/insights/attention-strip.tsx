@@ -119,6 +119,18 @@ function keepInRow(chip: HTMLElement) {
   else if (element.right > track.right - CHIP_EDGE_MARGIN) row.scrollLeft += element.right - (track.right - CHIP_EDGE_MARGIN);
 }
 
+/**
+ * Marks a chip row that has more chips past its right edge, so CSS can fade that edge. Scrolled to the end, or not
+ * overflowing, the mark is removed.
+ */
+function updateChipEdge(row: HTMLElement | null) {
+  if (!row) return;
+  const overflowing = row.scrollWidth > row.clientWidth + 1;
+  const atEnd = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+  if (overflowing && !atEnd) row.setAttribute("data-overflow-end", "");
+  else row.removeAttribute("data-overflow-end");
+}
+
 function tileElement(scope: HTMLElement | null, widgetId: string): HTMLElement | undefined {
   return Array.from(scope?.querySelectorAll<HTMLElement>("article[data-widget-id]") ?? []).find((element) => element.dataset.widgetId === widgetId);
 }
@@ -198,6 +210,8 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
   }, []);
 
   const flagged = ATTENTION_REASONS.filter((reason) => counts[reason] > 0);
+  const hasStrip = ids.length > 0;
+  const chipsRef = useRef<HTMLDivElement>(null);
   // A chip that was focused and is gone leaves focus on the body. Move it to the strip, which is always there.
   useEffect(() => {
     const reason = focusedReason.current;
@@ -229,6 +243,18 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
     }, OUTLINE_MS));
   }
 
+  // The chip row's overflow edge: checked after every render, since chips and widths change, and on scroll and resize.
+  useEffect(() => { updateChipEdge(chipsRef.current); });
+  useEffect(() => {
+    const row = chipsRef.current;
+    if (!row) return;
+    const update = () => updateChipEdge(row);
+    row.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
+    observer?.observe(row);
+    return () => { row.removeEventListener("scroll", update); observer?.disconnect(); };
+  }, [hasStrip]);
+
   if (!ids.length) return null;
   const age = oldestCompletedAt === undefined ? undefined : formatAge(now - oldestCompletedAt);
   const sampleTime = newestSample === undefined ? undefined : new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }).format(new Date(newestSample));
@@ -240,14 +266,17 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
   const timeText = [ageText, sampleText, refreshText].filter(Boolean).join(" · ");
   // Counts are one nowrap item, with the separator in its text, so they read as one phrase at every width.
   const countsText = `${checked} of ${summary.widgets} checked${notLoaded > 0 ? ` · ${notLoaded} not loaded yet` : ""}`;
+  // Narrow canvases show the compact count to sighted users; the full text stays in the DOM for assistive technology.
+  const countsCompact = `${checked}/${summary.widgets} checked`;
   return (
     <section ref={sectionRef} tabIndex={-1} aria-label="Dashboard attention" className={styles.strip} data-attention-strip="">
       <div className={styles.text} title={timeText}>
         <span className={styles.age} data-freshness={oldestCompletedAt === undefined ? "none" : "settled"}>{ageText}</span>
-        {sampleText && <span className={styles.sample}>{sampleText}</span>}
+        {sampleText && <><span className={styles.separator} aria-hidden="true">{" · "}</span><span className={styles.sample}>{sampleText}</span></>}
+        <span className={styles.separator} aria-hidden="true">{" · "}</span>
         <span className={styles.refresh}>{refreshText}</span>
       </div>
-      <div className={styles.chips}>
+      <div className={styles.chips} ref={chipsRef}>
         {!flagged.length && <span className={styles.clear}>{notLoaded ? "Nothing flagged so far" : "Nothing flagged"}</span>}
         {flagged.map((reason) => {
           const label = `${counts[reason]} ${reason}`;
@@ -272,7 +301,10 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
           );
         })}
       </div>
-      <p className={styles.counts}>{countsText}</p>
+      <p className={styles.counts}>
+        <span className={styles.countsCompact} aria-hidden="true">{countsCompact}</span>
+        <span className={styles.countsFull}>{countsText}</span>
+      </p>
       {/* Polite regions without the status role, so they do not join other status messages on the page. */}
       <p aria-live="polite" aria-atomic="true" className={styles.srOnly}>{announced}</p>
       <p aria-live="polite" aria-atomic="true" className={styles.notice} data-notice="">{notice}</p>

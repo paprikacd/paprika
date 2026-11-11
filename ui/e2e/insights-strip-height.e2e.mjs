@@ -90,12 +90,15 @@ const measure = (page) => page.evaluate(() => {
     chipsTops: [...new Set(buttons.map(button => Math.round(box(button).top)))].length,
     chipsScrollbar: chips.offsetHeight - chips.clientHeight,
     countsText: counts.textContent,
-    firstTileOffset: tiles.length ? Math.round((box(tiles[0]).top - box(strip).bottom) * 100) / 100 : null,
+    textInner: text.innerText,
+    // The first tile's page position, so the flagged and calm dashboards are compared at the same place on the page.
+    firstTileTop: tiles.length ? Math.round((box(tiles[0]).top + window.scrollY) * 100) / 100 : null,
     buttons: buttons.length,
   }
 })
 
-const browser = await chromium.launch()
+// Real scrollbars: Chromium's headless default hides them, which would let a scrollbar's height go unseen.
+const browser = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] })
 const results = {}
 try {
   for (const colorScheme of ["light", "dark"]) {
@@ -104,6 +107,7 @@ try {
       results[`${colorScheme}-${variant}`] = {}
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 900 })
+        await page.evaluate(() => window.scrollTo(0, 0))
         await page.waitForTimeout(200)
         results[`${colorScheme}-${variant}`][width] = await measure(page)
       }
@@ -141,7 +145,7 @@ for (const colorScheme of ["light", "dark"]) {
       bucket.canvasMin = Math.min(bucket.canvasMin, m.canvasW); bucket.canvasMax = Math.max(bucket.canvasMax, m.canvasW)
     }
     try {
-      assert.equal(flagged.firstTileOffset, calm.firstTileOffset, `${colorScheme} viewport ${width}: the first tile must sit the same distance below the strip with and without flags`)
+      assert.equal(flagged.firstTileTop, calm.firstTileTop, `${colorScheme} viewport ${width}: the first tile must sit at the same page position with and without flags`)
     } catch (error) {
       failures++
       console.error(`FAIL ${error.message}`)
@@ -151,5 +155,6 @@ for (const colorScheme of ["light", "dark"]) {
 console.log("SUMMARY", JSON.stringify(summary))
 const sample = results["light-flagged"][390] ?? results["light-flagged"][WIDTHS[0]]
 console.log("SAMPLE", JSON.stringify(sample))
+assert.match(sample.textInner, /^Updated \d+ min ago · Newest sample \d\d:\d\d GMT\+5:30 · Refreshes every 30 s$/, "The text row must read as one sentence with its separators")
 assert.equal(failures, 0, `${failures} strip height checks failed`)
 console.log(`strip height sweep passed: ${WIDTHS.length} canvas widths (viewport 288 to 1400) in light and dark, flagged and calm.`)

@@ -119,10 +119,6 @@ function Stat({
     }))
     .filter((entry) => entry.point);
   const first = entries[0];
-  // Up to four series show the reading and up to three rows, with no note. Five or more show the reading and two rows,
-  // and the note counts every series not shown. The row count keeps a visible caption inside the 148px card.
-  const shownSeries = entries.length > 4 ? 3 : 4;
-  const extraRows = shownSeries - 1;
   if (!first?.point) return <EmptyState partial={attention.partial} />;
   // A Single value intentionally displays the last valid observation. A
   // newer missing observation must still be disclosed: otherwise an older
@@ -133,6 +129,14 @@ function Stat({
     if (validTimestamp(point.timestamp) && (!latestObservation || point.timestamp >= latestObservation.timestamp)) latestObservation = point;
   }
   const latestMissing = latestObservation !== undefined && (typeof latestObservation.value !== "number" || !Number.isFinite(latestObservation.value));
+  // The card holds three lines under the reading: the extra rows and, when series are left over, the note that counts them.
+  // The latest-missing line takes one of those lines. So with four series or fewer every series has its row; beyond that
+  // the card shows two rows and the note, or one row and the note when the latest-missing line is there too.
+  const lines = 3 - (latestMissing ? 1 : 0);
+  const extraSeries = entries.length - 1;
+  const noteNeeded = extraSeries > lines;
+  const extraRows = noteNeeded ? lines - 1 : extraSeries;
+  const shownSeries = extraRows + 1;
   const { ageSeconds, stale, band } = attention;
   const thresholds = widget.options?.thresholds;
   // Colour names the threshold's hue on the trend and the bar; the reading stays in ink (or an author's text colour).
@@ -230,6 +234,12 @@ function Stat({
             </span>
           )}
         </div>
+      )}
+      {/* In short cards the rows above are hidden and this one-line note stands in for them. It counts every extra series. */}
+      {entries.length > 1 && (
+        <span className={styles.statCompactNote} data-stat-compact-note="">
+          {entries.length - 1} more series · Switch to table to inspect
+        </span>
       )}
     </div>
   );
