@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "paprika-control-plane",
   "title": "Paprika control plane",
-  "description": "Whether Paprika itself is keeping up: applications behind their spec, exhausted release retries, stuck releases, fleet index health, controller liveness, reconcile lag, and how applications and releases sit across phases. Each count tile turns critical above zero.",
+  "description": "Whether Paprika itself is keeping up: applications behind their spec, exhausted release retries, stuck releases, fleet index health, controller liveness, reconcile lag, and how applications and releases sit across phases. Exhausted release retries turn critical above zero; stale applications, stuck releases and a degraded fleet index turn warning above zero.",
   "timeRange": "6h",
   "refreshInterval": 30,
   "widgets": [
@@ -18,7 +18,7 @@
         "showSparkline": true,
         "thresholds": [
           { "value": 0, "status": "ok" },
-          { "value": 1, "status": "critical" }
+          { "value": 1, "status": "warning" }
         ]
       },
       "layout": { "x": 0, "y": 0, "w": 3, "h": 2 }
@@ -52,7 +52,7 @@
         "showSparkline": true,
         "thresholds": [
           { "value": 0, "status": "ok" },
-          { "value": 1, "status": "critical" }
+          { "value": 1, "status": "warning" }
         ]
       },
       "layout": { "x": 6, "y": 0, "w": 3, "h": 2 }
@@ -69,7 +69,7 @@
         "showSparkline": true,
         "thresholds": [
           { "value": 0, "status": "ok" },
-          { "value": 1, "status": "critical" }
+          { "value": 1, "status": "warning" }
         ]
       },
       "layout": { "x": 9, "y": 0, "w": 3, "h": 2 }
@@ -96,9 +96,9 @@
       "title": "Reconcile lag by application",
       "type": "table",
       "providerId": "metrics-provider-id",
-      "query": "topk(5, max by (application, namespace) (paprika_application_reconcile_lag))",
+      "query": "topk(5, max by (application) (paprika_application_reconcile_lag))",
       "unit": "",
-      "description": "The five applications furthest behind their latest spec. Zero means the application has reconciled.",
+      "description": "The five applications furthest behind their latest spec, across namespaces. Zero means the application has reconciled.",
       "options": { "decimals": 0 },
       "layout": { "x": 8, "y": 2, "w": 4, "h": 5 }
     },
@@ -148,7 +148,7 @@
         "decimals": 0,
         "thresholds": [
           { "value": 0, "status": "ok" },
-          { "value": 1, "status": "critical" }
+          { "value": 1, "status": "warning" }
         ]
       },
       "layout": { "x": 6, "y": 11, "w": 6, "h": 4 }

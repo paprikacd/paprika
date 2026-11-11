@@ -439,9 +439,10 @@ with its type and labels. The starters use the placeholder provider id
 `metrics-provider-id`; an import maps it to a real provider.
 
 `paprika-control-plane` shows whether Paprika is keeping up. Its count tiles
-(stale applications, exhausted release retries, stuck releases and a degraded
-fleet index) turn critical above zero and read the same gauges as the
-PrometheusRule alerts, with `max()` over each. Controller liveness is the age of
+read the same gauges as the PrometheusRule alerts, with `max()` over each.
+Exhausted release retries turn critical above zero, as their alert does. Stuck
+releases and a degraded fleet index turn warning above zero, as their alerts do.
+Stale applications turns warning above zero; no alert covers it. Controller liveness is the age of
 the slowest controller's last successful reconcile and turns warning after five
 minutes, as in [metrics.md](../../docs/guides/metrics.md). The remaining panels
 show reconcile lag, reconcile throughput by outcome, and the applications and
