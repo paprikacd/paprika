@@ -1,18 +1,18 @@
 {
   "service-overview": [
-    { "id": "request-rate", "patch": { "color": "#4F86B5" } },
-    { "id": "client-errors", "patch": { "color": "#AF7B3C" } },
-    { "id": "server-errors", "patch": { "color": "#BE6269" } },
-    { "id": "latency-p95", "patch": { "color": "#8375BC" } },
-    { "id": "request-trend", "patch": { "color": "#4F86B5", "options": { "lineWidth": 2.2, "showLegend": true } } },
+    { "id": "request-rate", "patch": { "color": null } },
+    { "id": "client-errors", "patch": { "color": null } },
+    { "id": "server-errors", "patch": { "color": null } },
+    { "id": "latency-p95", "patch": { "color": null } },
+    { "id": "request-trend", "patch": { "color": null, "options": { "lineWidth": 2.2, "showLegend": true } } },
     { "id": "response-errors", "patch": { "description": null, "options": { "lineWidth": 2.2, "seriesColors": [
-      { "label": "status_class", "value": "4xx", "color": "#AF7B3C" },
-      { "label": "status_class", "value": "5xx", "color": "#BE6269" }
+      { "label": "status_class", "value": "4xx", "role": "client-error" },
+      { "label": "status_class", "value": "5xx", "role": "server-error" }
     ] } } },
     { "id": "latency-percentiles", "patch": { "description": null, "options": { "lineWidth": 2.2, "seriesColors": [
-      { "label": "quantile", "value": "p50", "color": "#4F86B5" },
-      { "label": "quantile", "value": "p95", "color": "#8375BC" },
-      { "label": "quantile", "value": "p99", "color": "#BE6269" }
+      { "label": "quantile", "value": "p50", "role": "p50" },
+      { "label": "quantile", "value": "p95", "role": "p95" },
+      { "label": "quantile", "value": "p99", "role": "p99" }
     ] } } }
   ],
   "omega-k8s-cluster-overview": [

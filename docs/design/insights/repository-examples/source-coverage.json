@@ -149,8 +149,10 @@
           "liveWidgetIds": [
             "p5-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/5/targets/0",
           "language": "promql",
           "sourceQuery": "sum(increase(rpc_server_requests_total{job=~\"$service\"}[24h]))"
@@ -165,8 +167,10 @@
           "liveWidgetIds": [
             "p6-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/6/targets/0",
           "language": "promql",
           "sourceQuery": "sum(increase(rpc_server_requests_total{job=~\"$service\", rpc_connect_status_code!=\"ok\"}[24h]))"
@@ -245,8 +249,10 @@
           "liveWidgetIds": [
             "p11-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/11/targets/0",
           "language": "promql",
           "sourceQuery": "sum(increase(shorted_rate_limit_blocked_total{job=\"shorted-api\"}[24h]))"
@@ -261,8 +267,10 @@
           "liveWidgetIds": [
             "p12-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/12/targets/0",
           "language": "promql",
           "sourceQuery": "sum(increase(shorted_scraper_blocked_total{job=\"shorted-api\"}[24h]))"
@@ -471,8 +479,10 @@
           "liveWidgetIds": [
             "p25-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/25/targets/0",
           "language": "promql",
           "sourceQuery": "(time() - shorted_sync_last_success) / 3600"
@@ -503,8 +513,10 @@
           "liveWidgetIds": [
             "p27-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/27/targets/0",
           "language": "promql",
           "sourceQuery": "sum(increase(shorted_sync_status_total{status=\"failure\"}[24h])) by (sync_job)"
@@ -554,8 +566,10 @@
           "liveWidgetIds": [
             "p1-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
           "sourceQuery": "increase(shorted_stealth_fetch_total[1h])"
@@ -570,8 +584,10 @@
           "liveWidgetIds": [
             "p2-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/2/targets/0",
           "language": "promql",
           "sourceQuery": "increase(shorted_stealth_fetch_errors[1h]) / (increase(shorted_stealth_fetch_total[1h]) > 0)"
@@ -586,8 +602,10 @@
           "liveWidgetIds": [
             "p3-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "promql",
           "sourceQuery": "histogram_quantile(0.95, rate(shorted_stealth_fetch_duration_bucket[5m]))"
@@ -602,8 +620,10 @@
           "liveWidgetIds": [
             "p4-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/4/targets/0",
           "language": "promql",
           "sourceQuery": "increase(shorted_stealth_fetch_bytes[1h])"
@@ -714,8 +734,10 @@
           "liveWidgetIds": [
             "p10-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/10/targets/0",
           "language": "promql",
           "sourceQuery": "sum(increase(shorted_logo_discovery_total{logo_success=\"true\"}[1h]))"
@@ -730,8 +752,10 @@
           "liveWidgetIds": [
             "p11-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/11/targets/0",
           "language": "promql",
           "sourceQuery": "sum(increase(shorted_logo_discovery_total{logo_success=\"false\"}[1h])) / sum(increase(shorted_logo_discovery_total[1h]))"
@@ -746,8 +770,10 @@
           "liveWidgetIds": [
             "p12-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/12/targets/0",
           "language": "promql",
           "sourceQuery": "histogram_quantile(0.95, rate(shorted_logo_discovery_duration_bucket[5m]))"
@@ -849,8 +875,10 @@
           "liveWidgetIds": [
             "p0-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/0/targets/0",
           "language": "promql",
           "sourceQuery": "up{job=\"grafana\"}"
@@ -865,8 +893,10 @@
           "liveWidgetIds": [
             "p1-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
           "sourceQuery": "grafana_stat_totals_dashboard"
@@ -881,8 +911,10 @@
           "liveWidgetIds": [
             "p2-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/2/targets/0",
           "language": "promql",
           "sourceQuery": "grafana_stat_total_users"
@@ -897,8 +929,10 @@
           "liveWidgetIds": [
             "p3-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "promql",
           "sourceQuery": "grafana_stat_total_playlists"
@@ -929,8 +963,10 @@
           "liveWidgetIds": [
             "p5-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/5/targets/0",
           "language": "promql",
           "sourceQuery": "sum by (status_code) (irate(grafana_http_request_duration_seconds_count[5m]))"
@@ -947,6 +983,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 6, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/6/targets/0",
@@ -965,6 +1002,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 6, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/6/targets/1",
@@ -983,6 +1021,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 6, target C; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/6/targets/2",
@@ -1015,8 +1054,10 @@
           "liveWidgetIds": [
             "p8-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/8/targets/0",
           "language": "promql",
           "sourceQuery": "increase(grafana_alerting_active_alerts[1m])"
@@ -1031,8 +1072,10 @@
           "liveWidgetIds": [
             "p9-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/9/targets/0",
           "language": "promql",
           "sourceQuery": " sum (ALERTS)"
@@ -1049,6 +1092,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 10, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/10/targets/0",
@@ -1067,6 +1111,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 10, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/10/targets/1",
@@ -1192,8 +1237,10 @@
           "liveWidgetIds": [
             "p1-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
           "sourceQuery": "sum(irate(pg_stat_database_xact_commit{datname=~\"$db\",instance=~\"$instance\"}[5m])) + sum(irate(pg_stat_database_xact_rollback{datname=~\"$db\",instance=~\"$instance\"}[5m]))"
@@ -1389,8 +1436,10 @@
           "liveWidgetIds": [
             "p0-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/0/targets/0",
           "language": "promql",
           "sourceQuery": "sum(irate(prometheus_tsdb_head_samples_appended_total{job=\"prometheus\"}[5m]))"
@@ -1405,8 +1454,10 @@
           "liveWidgetIds": [
             "p1-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
           "sourceQuery": "topk(5, max(scrape_duration_seconds) by (job))"
@@ -1423,6 +1474,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 2, target D; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/2/targets/0",
@@ -1441,6 +1493,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 2, target C; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/2/targets/1",
@@ -1457,8 +1510,10 @@
           "liveWidgetIds": [
             "p3-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "promql",
           "sourceQuery": "prometheus_tsdb_wal_corruptions_total{job=\"prometheus\"}"
@@ -1475,6 +1530,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 4, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/4/targets/0",
@@ -1493,6 +1549,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 4, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/4/targets/1",
@@ -1509,8 +1566,10 @@
           "liveWidgetIds": [
             "p5-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/5/targets/0",
           "language": "promql",
           "sourceQuery": "prometheus_tsdb_blocks_loaded{job=\"prometheus\"}"
@@ -1525,8 +1584,10 @@
           "liveWidgetIds": [
             "p6-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/6/targets/0",
           "language": "promql",
           "sourceQuery": "prometheus_tsdb_head_chunks{job=\"prometheus\"}"
@@ -1543,6 +1604,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 7, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/7/targets/0",
@@ -1561,6 +1623,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 7, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/7/targets/1",
@@ -1579,6 +1642,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 8, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/0",
@@ -1597,6 +1661,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 8, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/1",
@@ -1615,6 +1680,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 8, target C; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/2",
@@ -1633,6 +1699,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 8, target D; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/3",
@@ -1651,6 +1718,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 9, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/9/targets/0",
@@ -1669,6 +1737,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 9, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/9/targets/1",
@@ -1685,8 +1754,10 @@
           "liveWidgetIds": [
             "p10-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/10/targets/0",
           "language": "promql",
           "sourceQuery": "prometheus_engine_query_duration_seconds{job=\"prometheus\", quantile=\"0.99\"}"
@@ -1701,8 +1772,10 @@
           "liveWidgetIds": [
             "p11-t0"
           ],
-          "status": "mapped",
-          "notes": [],
+          "status": "adapted",
+          "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          ],
           "sourcePointer": "/panels/11/targets/0",
           "language": "promql",
           "sourceQuery": "max(prometheus_rule_group_duration_seconds{job=\"prometheus\"}) by (quantile)"
@@ -1719,6 +1792,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 12, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/12/targets/0",
@@ -1737,6 +1811,7 @@
           ],
           "status": "adapted",
           "notes": [
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
             "Split from source panel 12, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/12/targets/1",
@@ -1786,7 +1861,8 @@
           "liveWidgetIds": [],
           "status": "unsupported-live",
           "notes": [
-            "Grafana test-data gauge is explicitly synthetic and has no live provider equivalent."
+            "Grafana test-data gauge is explicitly synthetic and has no live provider equivalent.",
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "grafana-testdata"
@@ -1804,7 +1880,8 @@
           "status": "adapted",
           "notes": [
             "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
-            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/2/targets/0",
           "language": "sql-postgresql",
@@ -1823,7 +1900,8 @@
           "status": "adapted",
           "notes": [
             "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
-            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "sql-postgresql",
@@ -1882,7 +1960,8 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained."
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained.",
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/0/targets/0",
           "language": "sql-postgresql",
@@ -1901,7 +1980,8 @@
           "status": "adapted",
           "notes": [
             "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
-            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained."
+            "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
+            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "sql-postgresql",
