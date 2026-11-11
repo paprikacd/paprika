@@ -13,7 +13,9 @@ const api = async (path, init) => {
   assert.ok(response.ok, `${path}: ${response.status}`)
   return response
 }
-const providers = (await (await api("/api/insights/providers")).json()).providers
+const listing = await (await api("/api/insights/providers")).json()
+assert.equal(listing.sharedCatalog, undefined, `Shared observability catalog did not load (${listing.sharedCatalog?.status}): ${listing.sharedCatalog?.message}`)
+const providers = listing.providers
 const provider = providers.find(item => item.providerRef === "observability/warning-prometheus")
 assert.ok(provider?.capabilities.includes("metrics"))
 const id = `partial-ui-${Date.now()}`

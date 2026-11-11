@@ -45,7 +45,23 @@ export interface MetricSeriesMetadata {
   sample?: boolean
   labels: { name: string; cardinality: number; values: string[]; valuesTruncated?: boolean }[]
 }
+/** Why the shared catalog is missing from a listing that still has the local providers. */
+export interface SharedCatalogStatus {
+  status: "busy" | "forbidden" | "unavailable"
+  code: number
+  message: string
+  /** Seconds to wait before replaying a busy listing; the gateway's Retry-After, or a default. */
+  retryAfter?: number
+}
+export interface ProviderCatalog {
+  providers: Provider[]
+  sharedCatalog?: SharedCatalogStatus
+}
 export interface InsightsClient {
+  /** The listing with its shared-catalog status. Absent for hosts that predate it; providers() still works. */
+  providerCatalog?(signal?: AbortSignal): Promise<ProviderCatalog>
+  /** Starts the host's sign-in flow, returning to this view afterwards. Absent when the host has no sign-in. */
+  signIn?(): void
   /** Optional for embedded hosts that do not expose Paprika Observe. */
   observeConnection?(signal?: AbortSignal): Promise<ObserveConnection>
   listSavedQueries(signal?: AbortSignal): Promise<SavedQueryEntry[]>
@@ -86,6 +102,9 @@ function canRetryCapacity(path: string, init: RequestInit): boolean {
   // The query endpoint is read-only even though its bounded request is POST.
   // A 429 is a definite admission rejection, so replay is safe.
   if (path === "/query" && init.method === "POST") return true
+  // A busy shared catalog is answered 200 with sharedCatalog.retryAfter, which
+  // fetchProviderCatalog replays. This covers only an explicit 429 from the route.
+  if (path === "/providers" && (!init.method || init.method === "GET")) return true
   if (!/^\/(dashboards|saved-queries)(\/[^/?]+)?$/.test(path)) return false
   if (!init.method || init.method === "GET") return true
   const headers = new Headers(init.headers)
@@ -102,8 +121,19 @@ function capacityRetryDelay(response: Response, attempt: number): number | undef
     if (!Number.isNaN(requested)) delay = Math.max(100, requested)
   }
   // A long server cooldown should surface the error, never retry prematurely.
-  return delay <= 10_000 ? delay : undefined
+  return delay <= REPLAY_DELAY_CAP_MS ? jitter(delay) : undefined
 }
+
+// No replay waits longer than this, however large the server's Retry-After is.
+const REPLAY_DELAY_CAP_MS = 10_000
+
+/** Spreads a replay delay by +-30%, so viewers blocked by one busy spell do not replay in step. */
+function jitter(delay: number): number {
+  return Math.round(delay * (0.7 + 0.6 * Math.random()))
+}
+
+// A busy listing is replayed at most this many times, as a 429 read is.
+const BUSY_LISTING_REPLAYS = 3
 
 function waitForCapacity(delay: number, signal?: AbortSignal | null): Promise<void> {
   signal?.throwIfAborted()
@@ -115,6 +145,32 @@ function waitForCapacity(delay: number, signal?: AbortSignal | null): Promise<vo
     }, delay)
     signal?.addEventListener("abort", abort, { once: true })
   })
+}
+
+/** A failed HTTP response, with the status and Retry-After header a caller needs to classify it. */
+export class InsightsHTTPError extends Error {
+  readonly status: number
+  readonly retryAfter: string | null
+  constructor(message: string, status: number, retryAfter: string | null) {
+    super(message)
+    this.name = "InsightsHTTPError"
+    this.status = status
+    this.retryAfter = retryAfter
+  }
+}
+
+export type SourceFailure = "access" | "busy" | "unavailable"
+
+/**
+ * Classifies a failed shared-source (provider catalog) request by its cause:
+ * 401 and 403 end this viewer's access, a 429 or any response carrying
+ * Retry-After is a busy gateway, and everything else is an unavailable source.
+ */
+export function classifySourceFailure(error: unknown): SourceFailure {
+  if (!(error instanceof InsightsHTTPError)) return "unavailable"
+  if (error.status === 401 || error.status === 403) return "access"
+  if (error.status === 429 || error.retryAfter !== null) return "busy"
+  return "unavailable"
 }
 
 /** The embedding host owns authentication; standalone Insights needs no session implementation. */
@@ -146,7 +202,7 @@ export function createInsightsClient(
     }
     return { bearer, principal }
   }
-  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false) {
+  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false, deferSession = false) {
     const current = context ?? requestContext(session ? await session.ensureToken() : token?.() ?? null)
     let bearer = current.bearer
     const send = async () => {
@@ -172,7 +228,10 @@ export function createInsightsClient(
       return response
     }
     let response = await send()
-    if (response.status === 401 && session && identity() === current.principal) {
+    // A deferred read never renews or clears the session. Renewal that fails
+    // clears it, which changes the identity and remounts the workspace. Its
+    // 401 is shown as a banner that the user resolves with an explicit sign-in.
+    if (response.status === 401 && session && !deferSession && identity() === current.principal) {
       const renewed = await session.recoverUnauthorized(bearer)
       if (renewed) {
         if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
@@ -186,26 +245,29 @@ export function createInsightsClient(
       }
     }
     if (!response.ok && !(allowNotModified && response.status === 304)) {
+      const failure = (message: string) => new InsightsHTTPError(message, response.status, response.headers.get("Retry-After"))
       if (response.status === 401) {
         // Parallel startup/query requests must not repeatedly navigate the host.
         // A late response from a previous session must not sign out a newer one.
-        if (!authenticationRequested && ((token?.() ?? null) === bearer || (session && !(token?.() ?? null)))) {
+        // A caller that can show its own sign-in prompt may defer the host's
+        // navigation, so unsaved work stays mounted until the user chooses.
+        if (!deferSession && !authenticationRequested && ((token?.() ?? null) === bearer || (session && !(token?.() ?? null)))) {
           authenticationRequested = true
           onUnauthorized?.()
         }
-        throw new Error("Sign in to access your dashboards.")
+        throw failure("Sign in to access your dashboards.")
       }
       if (response.status === 403 && path.startsWith("/provider-configs"))
-        throw new Error("Managing data sources requires Insights administrator access.")
+        throw failure("Managing data sources requires Insights administrator access.")
       if (response.status === 403 && path === "/observe-connection")
-        throw new Error("Your account does not have access to Paprika Observe. Check your Observability permissions.")
+        throw failure("Your account does not have access to Paprika Observe. Check your Observability permissions.")
       if (response.status === 403 && (path === "/query" || path.startsWith("/providers/")))
-        throw new Error("Your account does not have access to this data source. Check its Observability permissions.")
-      if (response.status === 403) throw new Error("Your account does not have access to Insights.")
+        throw failure("Your account does not have access to this data source. Check its Observability permissions.")
+      if (response.status === 403) throw failure("Your account does not have access to Insights.")
       if (response.status === 412 && path.startsWith("/saved-queries/"))
-        throw new Error("This saved query changed on the server. Reload it before saving to preserve someone else’s work.")
+        throw failure("This saved query changed on the server. Reload it before saving to preserve someone else’s work.")
       if ((response.status === 412 || response.status === 409) && path.startsWith("/dashboards/"))
-        throw new Error(
+        throw failure(
           "This dashboard changed on the server. Reload before saving to avoid overwriting someone else’s work.",
         )
       let message = "Insights is unavailable. Check the service and provider configuration."
@@ -215,7 +277,7 @@ export function createInsightsClient(
       } catch {
         /* Non-JSON gateway response */
       }
-      throw new Error(message)
+      throw failure(message)
     }
     if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
     authenticationRequested = false
@@ -252,7 +314,22 @@ export function createInsightsClient(
     }
     return value
   }
+  // A busy shared catalog arrives as 200 with sharedCatalog busy, so it is replayed
+  // here by its retryAfter. The replay stops when the caller aborts, which is how
+  // an unmount or a newer request ends it.
+  async function fetchProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalog> {
+    for (let attempt = 0; ; attempt++) {
+      const body = await readJSON<{ providers: Provider[]; sharedCatalog?: SharedCatalogStatus }>(
+        await request("/providers", { signal }, undefined, false, true),
+      )
+      const shared = body.sharedCatalog
+      if (shared?.status !== "busy" || attempt >= BUSY_LISTING_REPLAYS)
+        return { providers: body.providers, ...(shared ? { sharedCatalog: shared } : {}) }
+      await waitForCapacity(jitter(Math.min((shared.retryAfter ?? 1) * 1000, REPLAY_DELAY_CAP_MS)), signal)
+    }
+  }
   return {
+    ...(onUnauthorized ? { signIn: () => onUnauthorized() } : {}),
     observeConnection: async (signal) => readJSON(await request("/observe-connection", { signal })),
     listSavedQueries: (signal) => cachedRead("/saved-queries", body => {
       return ((body.queries ?? []) as SavedQueryEntry[]).map((entry: SavedQueryEntry) => {
@@ -277,7 +354,9 @@ export function createInsightsClient(
       if (!etag) throw new Error("Reload this saved query before deleting it.")
       await request(`/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "If-Match": etag } })
     },
-    providers: async (signal) => (await readJSON<{ providers: Provider[] }>(await request("/providers", { signal }))).providers,
+    // The shared catalog loads behind a rendered workspace; its 401 becomes a banner, not a navigation.
+    providerCatalog: fetchProviderCatalog,
+    providers: async (signal) => (await fetchProviderCatalog(signal)).providers,
     providerConfigs: async (signal) =>
       (await readJSON<{ providers: ProviderConfig[] }>(await request("/provider-configs", { signal }))).providers,
     saveProvider: async ({ managed: _managed, etag, ...config }) => {
@@ -346,4 +425,14 @@ export function createInsightsClient(
       return result
     },
   }
+}
+
+/**
+ * The listing with its shared-catalog status, from any client. Hosts that predate
+ * providerCatalog fall back to providers(), which carries no status.
+ */
+export function loadProviderCatalog(client: InsightsClient, signal?: AbortSignal): Promise<ProviderCatalog> {
+  return client.providerCatalog
+    ? client.providerCatalog(signal)
+    : client.providers(signal).then((providers) => ({ providers }))
 }

@@ -42,7 +42,9 @@ assert.match(template.sql, /observed_at >= \$2 AND observed_at <= \$3/);
 template.sql = template.sql.replace("observed_at, requests FROM reporting.service_history", "observed_at, up::int AS requests FROM gallery.service_probe_samples");
 assert.match(template.sql, /gallery\.service_probe_samples/);
 const query = JSON.stringify(template);
-const provider = (await (await fetch(new URL("/api/insights/providers", origin))).json()).providers.find(item => item.providerRef === "observability/gallery-postgresql");
+const listing = await (await fetch(new URL("/api/insights/providers", origin))).json();
+assert.equal(listing.sharedCatalog, undefined, `Shared observability catalog did not load (${listing.sharedCatalog?.status}): ${listing.sharedCatalog?.message}`);
+const provider = listing.providers.find(item => item.providerRef === "observability/gallery-postgresql");
 assert.ok(provider?.capabilities.includes("records"));
 const end = Math.floor(Date.now() / 60_000) * 60_000;
 async function records(start, finish) {

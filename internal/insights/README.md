@@ -63,11 +63,58 @@ uses that token only as the gateway bearer token, independently of its own
 service authentication. Missing delegation is denied, including in development
 mode. Provider discovery, queries, connection tests, metadata and saved-query
 validation all resolve the current caller's authorized catalog through
-request-local MCP sessions on the configured origin's `/observe/mcp`. The
-adapter discovers read-only tools, calls provider/query/exploration tools and
-requires structured results; it never parses the truncated text preview or
-falls back to REST. Removing access takes effect on the next request. Sessions
-have a 20-second deadline, bounded responses and no redirect or retry behavior.
+request-local MCP sessions on the configured origin's `/observe/mcp`. One HTTP
+request shares a single session and a single catalog listing across all of its
+operations (a widget query needs one session, not two), and that session closes
+when the response is written. A failed operation discards the session. No
+catalog or session is retained across requests, so removing access takes effect
+on the next request. The adapter discovers read-only tools, calls
+provider/query/exploration tools and requires structured results; it never
+parses the truncated text preview or falls back to REST. Each shared gateway
+operation (session setup, discovery, each tool call) is
+capped at 20 seconds and at the time left on its request's own deadline, so a
+dashboard keeps its 22-second budget. `/providers` has a 20-second budget end to
+end, inside the API proxy's 25-second response-header timeout.
+
+A `/query` has one 22-second budget that every phase draws on, in order:
+
+- waiting for one of four catalog phases, up to 5 seconds, at most 16 waiters,
+  and only when the query is shared; no admission slot is held while waiting;
+- waiting for an admission slot, up to 2 seconds;
+- the catalog listing, capped at 10 seconds;
+- the data call, capped at 20 seconds.
+
+Each phase is capped by what remains of the budget. A phase that runs out returns
+504 `query exceeded its time budget`. A full waiter queue, or a catalog wait that
+times out, returns 429 with `Retry-After: 1` before any listing. Local queries
+never wait for a catalog phase.
+
+A busy shared catalog is answered 200 with `sharedCatalog.status: "busy"` and
+`retryAfter` in seconds (the gateway's Retry-After, or 1). That is the only
+retry layer for a busy listing. The page client replays it at most three times,
+each after `retryAfter` capped at 10 seconds and spread by +-30%, and stops when
+its caller goes away. The render worker does not replay: it waits on the page's
+aria-busy tiles under its own readiness and deadline, so a persistent busy spell
+costs one client replay cycle and ends in the worker's normal failure, not a
+stacked replay. A listing still busy after the client's replays shows the banner
+with a manual retry.
+
+A `/query` 429 from the gateway forwards its Retry-After, bounded to 60 seconds
+and defaulting to 1 second. A deadline reads as "query exceeded its time budget"
+on the query path and as "request exceeded its time budget" elsewhere.
+
+Measured at the default timeouts against a gateway that never answers or stalls:
+
+- `/providers`: 200 after 20 seconds, with the local providers and
+  `sharedCatalog: {status: "unavailable", code: 504}`. A silent gateway does not
+  fail the listing, because a 504 there would blank local tiles.
+- `/query`, catalog never answers: 504 after 10 seconds (the catalog phase cap).
+- `/query`, catalog answers, data call stalls: 504 after 15 seconds. The
+  gateway transport's response-header timeout ends a silent response first.
+- `/query`, catalog takes 9 seconds, then data stalls: 504 after 22 seconds (the
+  overall budget; before this change it was 24 seconds).
+
+Bounded responses, no redirects and no retries.
 
 Shared provider IDs are `observe-` plus the full SHA-256 of their canonical
 `namespace/name`, preserving namespace identity within the existing dashboard
@@ -159,7 +206,7 @@ A stale edit returns 412. Clients that omit preconditions choose last-write-wins
 
 Query limits: 31 days; at least 1-second step; at most 5,000 points per series,
 100 series, 100,000 total points, 100 traces, 8 MiB upstream response, 20-second
-timeout, 16 simultaneous query executions and a bounded 64-request queue with up to 2 seconds of cancellable waiting. Overflow still returns 429 with Retry-After; the gateway separately limits concurrent queries globally and per provider. Provider results exceeding count limits
+data timeout (10 seconds for the shared catalog phase), 16 simultaneous query executions and a bounded 64-request queue with up to 2 seconds of cancellable waiting. Overflow still returns 429 with Retry-After; the gateway separately limits concurrent queries globally and per provider. Provider results exceeding count limits
 set `truncated:true`; invalid requests fail before contacting a provider.
 Client cancellation propagates to providers.
 Native warnings and explicit partial-result markers also set `truncated:true`

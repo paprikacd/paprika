@@ -65,9 +65,19 @@ export function allowedRequest(url, method, origin) {
     u.pathname==="/icon.png")
 }
 
-function supportsCapacityRetry(path,method) {
+// A tile is still loading while it has a "Widget waiting to load" marker or any
+// aria-busy descendant, which includes a tile waiting on a shared data source.
+export const tileNotReadySelector='[aria-label="Widget waiting to load"],[aria-busy="true"]'
+// A tile whose shared source failed is final, so it is rejected rather than awaited.
+export const tileSourceUnavailableSelector='[data-widget-state="source-unavailable"]'
+
+// The page client replays a busy shared listing (at most three times, each after its
+// capped, jittered retryAfter). The worker does not replay it again, so a persistent busy
+// spell costs one client replay cycle, and the worker's readiness and deadline decide the
+// outcome. A busy tile stays aria-busy while the client retries.
+export function supportsCapacityRetry(path,method) {
   return method==="POST" && path==="/api/insights/query" ||
-    method==="GET" && /^\/api\/insights\/(dashboards|saved-queries)(\/[a-zA-Z0-9_-]+)?$/.test(path)
+    method==="GET" && /^\/api\/insights\/(providers|dashboards|saved-queries)(\/[a-zA-Z0-9_-]+)?$/.test(path)
 }
 
 function trusted(actual, expected) {
@@ -189,7 +199,8 @@ async function render(params, bearer, origin, signal, etag) {
     const rejectWidgetErrors=async target=>{
       // An authorized dashboard can reference a provider the viewer cannot
       // read. That is rendered as an alert without making a failing HTTP call.
-      if(await target.locator('[role="alert"]:visible').count()) throw new RenderError("widget_error")
+      // A tile whose shared source failed is a final state, never a screenshot.
+      if(await target.locator('[role="alert"]:visible').count() || await target.locator(tileSourceUnavailableSelector).count()) throw new RenderError("widget_error")
     }
     await tiles.first().waitFor({state:"visible",timeout:maxTime})
     const count=await tiles.count()
@@ -200,10 +211,10 @@ async function render(params, bearer, origin, signal, etag) {
       await tile.scrollIntoViewIfNeeded()
       // Wait for both deferred mounting and query completion. A skeleton is
       // never silently accepted as a completed screenshot.
-      await page.waitForFunction(id=>{
+      await page.waitForFunction(([id,notReady])=>{
         const tile=document.querySelector('[data-widget-id="'+id+'"]')
-        return tile && !tile.querySelector('[aria-label="Widget waiting to load"],[aria-busy="true"]')
-      },await tile.getAttribute("data-widget-id"),{timeout:maxTime})
+        return tile && !tile.querySelector(notReady)
+      },[await tile.getAttribute("data-widget-id"),tileNotReadySelector],{timeout:maxTime})
       if(failure)throw failure
       await rejectWidgetErrors(tile)
     }

@@ -53,6 +53,7 @@ import { useInsightsTheme } from "./insights-theme";
 
 const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
 import { TooltipEditor } from "./tooltip-editor";
+import { useSourceStatus } from "./source-status";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
 import { useSavedQueryLibrary } from "./saved-query-context";
 import { AnnotationSourceEditor } from "./annotation-source-editor";
@@ -822,6 +823,7 @@ export function WidgetEditor({
   const pendingQueryLoss = !!pendingDefinition && pendingDefinition.dataKind !== widgetKind(draft);
   const pendingEventLoss = !!pendingDefinition && !!draft.annotationSource &&
     !supportsAnnotationSource(pendingDefinition.type, pendingDefinition.id);
+  const sourceStatus = useSourceStatus();
   const compatible = providers.filter((provider) =>
     provider.capabilities.includes(widgetKind(draft)),
   );
@@ -919,7 +921,11 @@ export function WidgetEditor({
       !draft.queryRef &&
       !compatible.some((provider) => provider.id === draft.providerId)
     ) {
-      throw new Error("Choose a provider compatible with this visualization.");
+      throw new Error(
+        sourceStatus === "pending"
+          ? "Data sources are loading. Apply this visualization again when they finish."
+          : "Choose a provider compatible with this visualization.",
+      );
     }
     const tooltip = parsed.data.options?.tooltipView;
     if (tooltip?.source?.type === "query") {
@@ -1244,7 +1250,7 @@ export function WidgetEditor({
                             ? [
                                 {
                                   value: draft.providerId,
-                                  label: "Choose a compatible provider",
+                                  label: sourceStatus === "pending" ? "Data sources are loading" : "Choose a compatible provider",
                                 },
                               ]
                             : []),

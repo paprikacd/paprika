@@ -319,7 +319,7 @@ func TestObserveGatewayRedirectBoundsAndCancellation(t *testing.T) {
 			require.NoError(t, err)
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
-			_, err = g.connect(ctx, "alice")
+			_, err = g.connect(ctx, ctx, "alice")
 			require.Error(t, err)
 		})
 	}

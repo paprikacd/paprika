@@ -35,7 +35,8 @@ describe("lazy example workspace", () => {
   })
 
   it("disables both recovery actions while an example start is in flight", async () => {
-    render(<InsightsApp client={liveClient({ providers: vi.fn().mockRejectedValue(new Error("Insights is down")) })} />)
+    // A failed dashboard list keeps the setup landing; provider-only failures now keep the workspace (R39).
+    render(<InsightsApp client={liveClient({ list: vi.fn().mockRejectedValue(new Error("Insights is down")) })} />)
     const explore = await screen.findByRole("button", { name: "Explore the example" })
     const retry = screen.getByRole("button", { name: "Retry connection" })
     fireEvent.click(explore)

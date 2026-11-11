@@ -26,7 +26,7 @@ describe("Observe MCP connection", () => {
     expect(within(card).getByText("query_traces")).toBeInTheDocument()
     expect(within(card).getByText("Protocol 2025-06-18")).toBeInTheDocument()
     fireEvent.click(within(card).getByRole("button", { name: "Refresh connection and providers" }))
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith([]))
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ providers: [] }))
     expect(api.observeConnection).toHaveBeenCalledTimes(2)
     expect(api.providers).toHaveBeenCalledWith(expect.any(AbortSignal))
     expect(within(card).queryByRole("textbox")).not.toBeInTheDocument()
@@ -57,7 +57,7 @@ describe("Observe MCP connection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh connection and providers" }))
     expect(await screen.findByText("Connected")).toBeInTheDocument()
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-    expect(onChange).toHaveBeenCalledWith([])
+    expect(onChange).toHaveBeenCalledWith({ providers: [] })
   })
 
   it("does not publish providers after the panel closes during refresh", async () => {

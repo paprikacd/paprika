@@ -47,8 +47,17 @@ type Server struct {
 	queries          chan struct{}
 	queryWaiting     chan struct{}
 	queryWaitTimeout time.Duration
-	queryCount       metric.Int64Counter
-	queryDuration    metric.Float64Histogram
+	// catalogPhases caps how many shared queries may be resolving the catalog at
+	// once. catalogWaiting bounds the queue for those phases; a shared query waits
+	// up to catalogWaitTimeout for a phase before it fails with a retry hint.
+	catalogPhases      chan struct{}
+	catalogWaiting     chan struct{}
+	catalogWaitTimeout time.Duration
+	// queryBudget bounds one /api/query end to end: every phase (catalog wait,
+	// admission wait, listing, data call) is capped by what remains of it.
+	queryBudget   time.Duration
+	queryCount    metric.Int64Counter
+	queryDuration metric.Float64Histogram
 }
 
 func NewServer(config Config, store *Store) (*Server, error) {
@@ -70,7 +79,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second}
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second}
 	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
 	if err != nil {
 		return nil, fmt.Errorf("create query counter: %w", err)
@@ -107,7 +116,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/dashboards/validate", s.checkDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
-	mux.Handle("/api/", s.authenticate(api))
+	mux.Handle("/api/", s.authenticate(s.scopeObserveSessions(api)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -143,26 +152,159 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	p, err := s.resolveProvider(r, q.ProviderID)
+	// The whole query shares one deadline, so it answers inside the API proxy's
+	// header timeout. Each phase below draws on what remains of it.
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryBudget)
+	defer cancel()
+	r = r.WithContext(ctx)
+	var (
+		p       *providerClient
+		release func()
+		ok      bool
+	)
+	if s.observe != nil && strings.HasPrefix(q.ProviderID, observeProviderPrefix) {
+		p, release, ok = s.admitAndResolveShared(w, r, &q)
+	} else {
+		// Local providers come from the registry, so they resolve before admission:
+		// they never wait on the shared catalog, and an unknown id is a 404 even
+		// while Insights is saturated.
+		if p, ok = s.resolveLocalQuery(w, r, &q); ok {
+			release, ok = s.admitQueryRequest(w, r)
+		}
+	}
+	if !ok {
+		return
+	}
+	defer release()
+	result, err := s.executeProviderQuery(ctx, p, &q)
 	if err != nil {
-		writeProviderError(w, err)
-		return
-	}
-	if !p.public.supports(q.Kind) {
-		writeError(w, 400, "provider does not support this query kind")
-		return
-	}
-	result, _, err := s.runProviderQuery(r.Context(), p, &q)
-	if errors.Is(err, errQueryCapacity) {
-		w.Header().Set("Retry-After", "1")
-		writeError(w, 429, "too many active queries; retry shortly")
-		return
-	}
-	if err != nil {
-		writeProviderError(w, err)
+		writeQueryError(w, err)
 		return
 	}
 	writeJSON(w, 200, result)
+}
+
+// resolveLocalQuery resolves a registry provider and checks the query kind. It
+// writes the failure and reports false when the request must stop.
+func (s *Server) resolveLocalQuery(w http.ResponseWriter, r *http.Request, q *Query) (*providerClient, bool) {
+	p, err := s.resolveProvider(r, q.ProviderID)
+	if err != nil {
+		writeQueryError(w, err)
+		return nil, false
+	}
+	if !p.public.supports(q.Kind) {
+		writeError(w, 400, "provider does not support this query kind")
+		return nil, false
+	}
+	return p, true
+}
+
+// admitQueryRequest takes an Insights execution slot, writing the 429 or the
+// admission failure when none is available.
+func (s *Server) admitQueryRequest(w http.ResponseWriter, r *http.Request) (func(), bool) {
+	release, err := s.acquireQuery(r.Context())
+	if err != nil {
+		if errors.Is(err, errQueryCapacity) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, 429, "too many active queries; retry shortly")
+			return nil, false
+		}
+		writeQueryError(w, err)
+		return nil, false
+	}
+	return release, true
+}
+
+// admitAndResolveShared runs the shared-catalog path in this order: wait for a
+// catalog phase (no admission slot is held while waiting), take an admission
+// slot, list the catalog, then release the phase before the data call. The
+// listing therefore happens only for admitted work, and local queries never
+// queue behind shared waiters for their slots.
+func (s *Server) admitAndResolveShared(w http.ResponseWriter, r *http.Request, q *Query) (*providerClient, func(), bool) {
+	leave, err := s.enterCatalogPhase(r.Context())
+	if err != nil {
+		s.writeCatalogAdmissionError(w, r, q, err)
+		return nil, nil, false
+	}
+	defer leave()
+	release, ok := s.admitQueryRequest(w, r)
+	if !ok {
+		return nil, nil, false
+	}
+	p, err := s.resolveSharedProvider(r, q.ProviderID)
+	if err != nil {
+		release()
+		writeQueryError(w, err)
+		return nil, nil, false
+	}
+	if !p.public.supports(q.Kind) {
+		release()
+		writeError(w, 400, "provider does not support this query kind")
+		return nil, nil, false
+	}
+	return p, release, true
+}
+
+var errCatalogBusy = errors.New("shared catalog capacity reached")
+
+// enterCatalogPhase takes a catalog phase, waiting up to catalogWaitTimeout when
+// all phases are busy. Only catalogWaiting callers may queue; any beyond that
+// fail fast, so a burst of shared work cannot pile up without bound.
+func (s *Server) enterCatalogPhase(ctx context.Context) (func(), error) {
+	leave := func() { <-s.catalogPhases }
+	select {
+	case s.catalogPhases <- struct{}{}:
+		return leave, nil
+	default:
+	}
+	select {
+	case s.catalogWaiting <- struct{}{}:
+		defer func() { <-s.catalogWaiting }()
+	default:
+		return nil, errCatalogBusy
+	}
+	timer := time.NewTimer(s.catalogWaitTimeout)
+	defer timer.Stop()
+	select {
+	case s.catalogPhases <- struct{}{}:
+		return leave, nil
+	case <-timer.C:
+		return nil, errCatalogBusy
+	case <-ctx.Done():
+		return nil, fmt.Errorf("catalog admission context: %w", ctx.Err())
+	}
+}
+
+// writeQueryError reports a failed query phase. A deadline here is the query's
+// own budget, so the message names the query; other failures keep the shared text.
+func writeQueryError(w http.ResponseWriter, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		writeError(w, http.StatusGatewayTimeout, "query exceeded its time budget")
+		return
+	}
+	writeProviderError(w, err)
+}
+
+// writeCatalogAdmissionError reports a shared query that could not get a catalog
+// phase. Busy is retryable; a canceled caller is answered like other admission
+// cancellations. The rejection is counted under the existing query metric.
+func (s *Server) writeCatalogAdmissionError(w http.ResponseWriter, r *http.Request, q *Query, err error) {
+	if !errors.Is(err, errCatalogBusy) {
+		writeQueryError(w, err)
+		return
+	}
+	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", "catalog_busy"))
+	s.queryCount.Add(r.Context(), 1, attributes)
+	w.Header().Set("Retry-After", "1")
+	writeError(w, 429, "too many active shared catalog requests; retry shortly")
+}
+
+// resolveSharedProvider bounds the catalog phase by the catalog timeout. The
+// scope's session outlives this context, so the cap ends only this listing.
+func (s *Server) resolveSharedProvider(r *http.Request, id string) (*providerClient, error) {
+	ctx, cancel := context.WithTimeout(r.Context(), s.observe.timeouts.catalog)
+	defer cancel()
+	return s.resolveProvider(r.WithContext(ctx), id)
 }
 
 var errQueryCapacity = errors.New("query execution capacity reached")
@@ -209,12 +351,20 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 	return func() { <-s.queries }, nil
 }
 
+// runProviderQuery admits, then executes an already resolved provider. Callers
+// that resolve providers first (dashboards) keep their existing ordering.
 func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
 	release, err := s.acquireQuery(ctx)
 	if err != nil {
 		return QueryResult{}, false, err
 	}
 	defer release()
+	result, err := s.executeProviderQuery(ctx, p, q)
+	return result, true, err
+}
+
+// executeProviderQuery runs the query under an admission slot the caller holds.
+func (s *Server) executeProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, error) {
 	started := time.Now()
 	result, err := p.query(ctx, q)
 	if err != nil && ctx.Err() != nil {
@@ -227,7 +377,7 @@ func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Que
 	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
 	s.queryCount.Add(ctx, 1, attributes)
 	s.queryDuration.Record(ctx, time.Since(started).Seconds(), attributes)
-	return result, true, err
+	return result, err
 }
 
 func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {

@@ -13,7 +13,9 @@ assert.equal(base.hostname, "127.0.0.1")
 const headers = { Authorization: `Bearer ${fixture.token}`, "Content-Type": "application/json" }
 const providerResponse = await fetch(new URL("/api/insights/providers", base), { headers })
 assert.equal(providerResponse.status, 200)
-const provider = (await providerResponse.json()).providers.find(item => item.providerRef === "observability/gallery-tempo")
+const listing = await providerResponse.json()
+assert.equal(listing.sharedCatalog, undefined, `Shared observability catalog did not load (${listing.sharedCatalog?.status}): ${listing.sharedCatalog?.message}`)
+const provider = listing.providers.find(item => item.providerRef === "observability/gallery-tempo")
 assert.ok(provider)
 const id = `trace-waterfall-e2e-${Date.now()}`
 const query = '{ resource.service.name = {{service}} }'

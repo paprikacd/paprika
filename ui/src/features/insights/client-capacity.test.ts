@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createInsightsClient } from "./client"
+import { classifySourceFailure, createInsightsClient, InsightsHTTPError } from "./client"
 import type { Dashboard, SavedQuery } from "./schema"
 
 const dashboard: Dashboard = {
@@ -21,8 +21,14 @@ function mockFetch(...responses: Response[]) {
   vi.stubGlobal("fetch", fetcher)
   return fetcher
 }
-beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-29T12:00:00Z")) })
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+// The replay jitter is +-30%. Exact-delay assertions use the neutral factor;
+// the jitter test below pins both ends.
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date("2026-10-29T12:00:00Z"))
+  vi.spyOn(Math, "random").mockReturnValue(0.5)
+})
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe("document capacity backoff", () => {
   it.each([undefined, '"query-revision"'])("retries a rejected saved query with the exact body and precondition %s", async etag => {
@@ -139,6 +145,165 @@ describe("document capacity backoff", () => {
     await expect(api.remove(dashboard.id)).rejects.toThrow(/retry shortly/)
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe("provider catalog capacity backoff", () => {
+  const provider = { id: "metrics", name: "Metrics", type: "prometheus" as const, capabilities: ["metrics" as const] }
+  it("retries a busy catalog listing with Retry-After and returns the catalog", async () => {
+    const fetcher = mockFetch(limited("1"), response({ providers: [provider] }))
+    const pending = createInsightsClient().providers(new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual([provider])
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[1][0]).toBe(fetcher.mock.calls[0][0])
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/providers")
+  })
+  it("surfaces a typed busy error after three replays", async () => {
+    const fetcher = mockFetch(limited(), limited(), limited(), limited())
+    const rejected = createInsightsClient().providers().catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(7000)
+    const error = await rejected
+    expect(error).toBeInstanceOf(InsightsHTTPError)
+    expect(error).toMatchObject({ status: 429, message: "too many active observability requests; retry shortly" })
+    expect(classifySourceFailure(error)).toBe("busy")
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it("does not replay a catalog listing for a permanent failure", async () => {
+    const fetcher = mockFetch(response({ error: "Your account does not have access to Insights." }, 403, { "Retry-After": "1" }))
+    await expect(createInsightsClient().providers()).rejects.toThrow(/does not have access/)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe("retry jitter", () => {
+  it.each([[0, 700], [1, 1300]])("spreads a Retry-After replay with random %s to %s ms", async (random, expected) => {
+    vi.mocked(Math.random).mockReturnValue(random)
+    const fetcher = mockFetch(limited("1"), response({ series: [] }))
+    const pending = createInsightsClient().query({ providerId: "metrics", kind: "metrics", query: "up", start: 0, end: 1000, step: 1 }, new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(expected - 1)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    await pending
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("catalog session expiry", () => {
+  it("does not navigate the host for a catalog 401, but still does for other reads", async () => {
+    const onUnauthorized = vi.fn()
+    mockFetch(response({ error: "expired" }, 401), response({ error: "expired" }, 401))
+    const api = createInsightsClient("/api/insights", () => "token", onUnauthorized)
+    await expect(api.providers()).rejects.toMatchObject({ status: 401 })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+    await expect(api.list()).rejects.toMatchObject({ status: 401 })
+    expect(onUnauthorized).toHaveBeenCalledOnce()
+  })
+  it("starts the host's sign-in flow only when the user asks for it", () => {
+    const onUnauthorized = vi.fn()
+    createInsightsClient("/api/insights", () => "token", onUnauthorized).signIn?.()
+    expect(onUnauthorized).toHaveBeenCalledOnce()
+    expect(createInsightsClient().signIn).toBeUndefined()
+  })
+})
+
+describe("shared catalog status", () => {
+  const local = { id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }
+  const busyListing = (retryAfter?: number) => response({ providers: [local], sharedCatalog: { status: "busy", code: 429, message: "too many active observability requests; retry shortly", retryAfter } })
+  const readyListing = () => response({ providers: [local] })
+
+  it("replays a busy shared catalog with its jittered retryAfter and returns the recovered listing", async () => {
+    const fetcher = mockFetch(busyListing(2), readyListing())
+    const pending = createInsightsClient().providerCatalog?.(new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual({ providers: [local] })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[1][0]).toBe("/api/insights/providers")
+  })
+
+  it("replays a busy listing at most three times, then returns it busy with its delay", async () => {
+    const fetcher = mockFetch(busyListing(1), busyListing(1), busyListing(1), busyListing(1))
+    const pending = createInsightsClient().providerCatalog?.()
+    await vi.advanceTimersByTimeAsync(3000)
+    const catalog = await pending
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(catalog?.providers).toEqual([local])
+    expect(catalog?.sharedCatalog).toMatchObject({ status: "busy", code: 429, retryAfter: 1 })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("caps a busy listing's replay at ten seconds, however large its retryAfter", async () => {
+    const fetcher = mockFetch(busyListing(60), readyListing())
+    const pending = createInsightsClient().providerCatalog?.(new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(9999)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual({ providers: [local] })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it("stops replaying when the caller aborts, so an unmount or a newer request ends the wait", async () => {
+    const fetcher = mockFetch(busyListing(1), readyListing())
+    const abort = new AbortController()
+    const rejected = expect(createInsightsClient().providerCatalog?.(abort.signal)).rejects.toMatchObject({ name: "AbortError" })
+    await vi.advanceTimersByTimeAsync(0)
+    abort.abort()
+    await rejected
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("does not replay a settled shared failure", async () => {
+    const fetcher = mockFetch(response({ providers: [local], sharedCatalog: { status: "forbidden", code: 403, message: "denied" } }))
+    expect((await createInsightsClient().providerCatalog?.())?.sharedCatalog).toMatchObject({ status: "forbidden" })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  it("never renews or clears the session for the catalog read", async () => {
+    const session = { ensureToken: vi.fn().mockResolvedValue("token"), recoverUnauthorized: vi.fn().mockResolvedValue(null), clearRejectedSession: vi.fn(), identity: () => "same" }
+    mockFetch(response({ error: "expired" }, 401))
+    await expect(createInsightsClient("/api/insights", undefined, undefined, session).providerCatalog?.()).rejects.toMatchObject({ status: 401 })
+    expect(session.recoverUnauthorized).not.toHaveBeenCalled()
+    expect(session.clearRejectedSession).not.toHaveBeenCalled()
+  })
+})
+
+describe("shared source failure classification", () => {
+  it.each([401, 403])("treats HTTP %s as an access failure", status => {
+    expect(classifySourceFailure(new InsightsHTTPError("denied", status, null))).toBe("access")
+  })
+  it("treats a 429 as busy, with or without Retry-After", () => {
+    expect(classifySourceFailure(new InsightsHTTPError("busy", 429, null))).toBe("busy")
+    expect(classifySourceFailure(new InsightsHTTPError("busy", 429, "1"))).toBe("busy")
+  })
+  it("treats any response carrying Retry-After as busy", () => {
+    expect(classifySourceFailure(new InsightsHTTPError("cooling down", 503, "2"))).toBe("busy")
+  })
+  it.each([500, 502, 503, 504])("treats HTTP %s without Retry-After as an unavailable source", status => {
+    expect(classifySourceFailure(new InsightsHTTPError("unavailable", status, null))).toBe("unavailable")
+  })
+  it("treats a refused connection and a plain error as unavailable", () => {
+    expect(classifySourceFailure(new TypeError("Failed to fetch"))).toBe("unavailable")
+    expect(classifySourceFailure(new Error("Something else"))).toBe("unavailable")
+  })
+  it("classifies a real 403 from the client as an access failure", async () => {
+    mockFetch(response({ error: "Your account does not have access to Insights." }, 403))
+    const failure = await createInsightsClient().providers().catch((error: unknown) => error)
+    expect(classifySourceFailure(failure)).toBe("access")
+    expect(failure).toMatchObject({ status: 403, message: "Your account does not have access to Insights." })
+  })
+  it("classifies a real 503 with a server message as unavailable, keeping the message", async () => {
+    mockFetch(response({ error: "observability MCP does not expose the required read-only data tool" }, 503))
+    const failure = await createInsightsClient().providers().catch((error: unknown) => error)
+    expect(classifySourceFailure(failure)).toBe("unavailable")
+    expect(failure).toMatchObject({ message: "observability MCP does not expose the required read-only data tool" })
   })
 })
 

@@ -1,7 +1,9 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 import {request} from "node:http"
-import {parseRenderRequest,allowedRequest,createRenderServer,RenderError} from "./render-worker.mjs"
+import {Window} from "happy-dom"
+import * as worker from "./render-worker.mjs"
+import {parseRenderRequest,allowedRequest,createRenderServer,RenderError,supportsCapacityRetry,tileNotReadySelector,tileSourceUnavailableSelector} from "./render-worker.mjs"
 
 test("strict viewport, identity and no arbitrary URL",()=>{
   assert.deepEqual(parseRenderRequest({id:"board"}),{id:"board",width:1512,theme:"dark",focusWidget:""})
@@ -141,4 +143,58 @@ test("deadline diagnostics retain the existing timeout status without exception 
     assert.equal(response.headers.get("x-paprika-render-failure"),"render_deadline")
     assert.equal(await response.text(),"")
   })
+})
+
+// Real tile markup captured from the Insights canvas: the pending tile waits on
+// /providers, the unavailable tile names a failed source. The loaded tile is the
+// same tile after the listing arrives.
+const pendingTile=`<article class="_tile_aa0e36 " data-widget-id="inline" data-widget-type="timeseries" aria-label="Inline latency"><div class="_tileHeader_aa0e36"><div class="_tileTitle_aa0e36"><h3>Inline latency</h3></div></div><div class="_visualization_aa0e36"><div class="_visualization_59c41b _loadingFrame_59c41b" data-widget-state-frame="" aria-busy="true"><div class="_state_59c41b" data-widget-state="waiting-for-sources" aria-busy="true"><span>Waiting for data sources…</span></div></div></div></article>`
+const unavailableTile=`<article class="_tile_aa0e36 " data-widget-id="inline" data-widget-type="timeseries" aria-label="Inline latency"><div class="_tileHeader_aa0e36"><div class="_tileTitle_aa0e36"><h3>Inline latency</h3></div></div><div class="_visualization_aa0e36"><div class="_visualization_59c41b" data-widget-state-frame=""><div class="_state_59c41b" data-widget-state="source-unavailable"><span>Data sources are unavailable. Retry data sources to load this tile.</span></div></div></div></article>`
+const loadedTile=`<article data-widget-id="inline" data-widget-type="timeseries" aria-label="Inline latency"><div class="_visualization" data-widget-state-frame=""><svg role="img" aria-label="Inline latency"></svg></div></article>`
+
+function documentWith(markup) {
+  const window=new Window()
+  window.document.body.innerHTML=markup
+  return window.document
+}
+
+// The worker's wait predicate, exactly as page.waitForFunction evaluates it.
+function tileReady(document,id) {
+  const tile=document.querySelector('[data-widget-id="'+id+'"]')
+  return !!tile && !tile.querySelector(tileNotReadySelector)
+}
+
+test("a pending tile is not ready while /providers is delayed, then is ready once it arrives",()=>{
+  const document=documentWith(pendingTile)
+  assert.equal(tileReady(document,"inline"),false,"a pending tile must keep the worker waiting")
+  assert.equal(document.querySelector('[data-widget-id="inline"]').querySelector(tileSourceUnavailableSelector),null)
+  // /providers resolves: the same tile re-renders with its data.
+  document.body.innerHTML=loadedTile
+  assert.equal(tileReady(document,"inline"),true)
+})
+
+test("an unavailable tile is ready for the predicate but is rejected as a final widget state",()=>{
+  const document=documentWith(unavailableTile)
+  assert.equal(tileReady(document,"inline"),true)
+  assert.notEqual(document.querySelector('[data-widget-id="inline"]').querySelector(tileSourceUnavailableSelector),null,"the worker must reject this tile")
+  assert.equal(documentWith(pendingTile).querySelector(tileSourceUnavailableSelector),null)
+})
+
+test("GET /providers is a capacity-retry read, while writes and provider configuration are not",()=>{
+  assert.equal(supportsCapacityRetry("/api/insights/providers","GET"),true)
+  assert.equal(supportsCapacityRetry("/api/insights/query","POST"),true)
+  assert.equal(supportsCapacityRetry("/api/insights/providers","POST"),false)
+  assert.equal(supportsCapacityRetry("/api/insights/provider-configs","GET"),false)
+})
+
+// The page client replays a busy listing; the worker must not add a replay layer.
+test("the worker exports no listing replay, so a busy spell is replayed once, by the page client",()=>{
+  assert.deepEqual(Object.keys(worker).filter(name=>/busy|replay/i.test(name)),[])
+})
+
+test("a busy tile waiting on the client's replays is not ready, and a final unavailable tile is rejected",()=>{
+  const waiting=documentWith(pendingTile)
+  assert.equal(tileReady(waiting,"inline"),false,"the worker keeps waiting while the client replays")
+  const unavailable=documentWith(unavailableTile)
+  assert.notEqual(unavailable.querySelector('[data-widget-id="inline"]').querySelector(tileSourceUnavailableSelector),null)
 })

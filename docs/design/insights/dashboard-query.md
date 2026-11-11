@@ -159,7 +159,8 @@ numeric fields. Use structured content for the authoritative included examples.
 | Trace examples | 3 by default, 1–10 supported |
 | Structured result | 128 KiB; narrow widget/series/history selection if exceeded |
 | Text synopsis | At most 8 KiB |
-| Execution | 22-second shared budget, partial timeout results when possible |
+| Execution | 22-second budget for the whole read; shared-catalog calls draw on it, each capped at 20 seconds, with partial timeout results when possible |
+| Shared catalog | 4 concurrent catalog phases; a waiting query gets one within 5 seconds (16 waiters), else 429 with `Retry-After: 1`; a listing's own cap is 10 seconds. A `/query` has one 22-second budget covering the wait, the admission wait, the listing and the data call |
 
 Repeated identical queries execute once within a call. Results are not cached
 across callers. All widgets use one resolved range; the dashboard and saved
