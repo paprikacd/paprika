@@ -16,6 +16,29 @@ var dashboardSchema []byte
 //go:embed saved-query.schema.json
 var savedQuerySchema []byte
 
+// widgetPluginList is the committed list of plugin ids the UI registers by
+// default. The UI test widget-plugin-list.test.ts regenerates and checks it.
+//
+//go:embed widget-plugins.json
+var widgetPluginList []byte
+
+// BuiltInWidgetPlugins returns the plugin ids the Insights UI registers by
+// default, sorted. Hosts may register further plugins, so a plugin id outside this
+// list is not an error by itself.
+func BuiltInWidgetPlugins() ([]string, error) {
+	var list struct {
+		SchemaVersion int      `json:"schemaVersion"`
+		PluginIDs     []string `json:"pluginIds"`
+	}
+	if err := json.Unmarshal(widgetPluginList, &list); err != nil {
+		return nil, fmt.Errorf("decode embedded widget plugin list: %w", err)
+	}
+	if list.SchemaVersion != 1 || len(list.PluginIDs) == 0 {
+		return nil, errors.New("embedded widget plugin list has no plugin ids")
+	}
+	return list.PluginIDs, nil
+}
+
 var ErrUnknownKind = errors.New("schema kind must be dashboard, widget, or saved_query")
 
 // Document returns an independent, compact schema. Widget extraction retains

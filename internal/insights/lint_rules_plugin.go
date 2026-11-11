@@ -1,6 +1,10 @@
 package insights
 
-import "fmt"
+import (
+	"fmt"
+
+	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
+)
 
 var pluginLintRules = []lintRule{
 	{
@@ -12,17 +16,22 @@ var pluginLintRules = []lintRule{
 	},
 }
 
-// registeredWidgetPlugins lists the plugin ids the Insights UI registers, from
-// the registerWidgetPlugin calls and their entry arrays under ui/src/features/insights.
-// The schema accepts any well-formed id, so this list is what makes a misspelled
-// plugin visible. TestRegisteredWidgetPluginsMatchTheUI checks that each id is still
-// registered in the UI source; a plugin added to the UI must be added here too.
-var registeredWidgetPlugins = map[string]bool{
-	"connection-map": true, "directional-traffic": true, "distribution-heatmap": true, "geo-heatmap": true,
-	"incident-calendar": true, "pie": true, "pipeline-topology": true, "record-list": true,
-	"record-matrix": true, "record-table": true, "record-treemap": true, "records-bar": true,
-	"records-line": true, "small-multiples": true, "stacked-timeseries": true, "status-grid": true,
-	"status-history": true, "threshold-gauge": true, "uptime-calendar": true, "uptime-timeline": true,
+// builtInWidgetPlugins is the set of plugin ids the UI registers by default. It is
+// read from the committed list that the UI test regenerates and checks, so it
+// cannot drift from the registry. A host may register its own plugins, which the
+// rule reports as not built in: a warning, not an error.
+var builtInWidgetPlugins = loadBuiltInWidgetPlugins()
+
+func loadBuiltInWidgetPlugins() map[string]bool {
+	ids, err := insightsschema.BuiltInWidgetPlugins()
+	if err != nil {
+		panic(err)
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
 }
 
 // checkUnknownPlugin fires for each plugin widget whose pluginId is not a
@@ -31,13 +40,13 @@ func checkUnknownPlugin(doc *lintDocument) []lintHit {
 	var hits []lintHit
 	for i := range doc.widgets {
 		widget := &doc.widgets[i]
-		if widget.widgetType != "plugin" || registeredWidgetPlugins[widget.pluginID] {
+		if widget.widgetType != "plugin" || builtInWidgetPlugins[widget.pluginID] {
 			continue
 		}
 		hits = append(hits, lintHit{
 			pointer:  widgetBase(widget.index) + "/pluginId",
 			widgetID: widget.id,
-			message:  fmt.Sprintf("plugin %q is not a registered plugin", widget.pluginID),
+			message:  fmt.Sprintf("plugin %q is not a built-in widget plugin", widget.pluginID),
 		})
 	}
 	return hits

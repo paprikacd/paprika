@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "pluginIds": [
+    "connection-map",
+    "directional-traffic",
+    "distribution-heatmap",
+    "geo-heatmap",
+    "incident-calendar",
+    "pie",
+    "pipeline-topology",
+    "record-list",
+    "record-matrix",
+    "record-table",
+    "record-treemap",
+    "records-bar",
+    "records-line",
+    "small-multiples",
+    "stacked-timeseries",
+    "status-grid",
+    "status-history",
+    "threshold-gauge",
+    "uptime-calendar",
+    "uptime-timeline"
+  ]
+}

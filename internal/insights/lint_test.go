@@ -3,13 +3,12 @@ package insights
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/insights/guidance"
 )
@@ -116,34 +115,22 @@ func TestLintSummariesAreComposed(t *testing.T) {
 	}
 }
 
-// registeredWidgetPlugins must match the plugins the UI registers. Each id must
-// still be registered in the UI source; a new UI plugin must be added to the map.
-func TestRegisteredWidgetPluginsMatchTheUI(t *testing.T) {
-	root := filepath.Join("..", "..", "ui", "src", "features", "insights")
-	var source strings.Builder
-	for _, pattern := range []string{"plugins/*.tsx", "*.tsx"} {
-		files, err := filepath.Glob(filepath.Join(root, pattern))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, file := range files {
-			if strings.Contains(file, ".test.") {
-				continue
-			}
-			data, err := os.ReadFile(file) //nolint:gosec // Fixed source paths under the repository.
-			if err != nil {
-				t.Fatal(err)
-			}
-			source.Write(data)
+// The embedded list parses and holds the plugins the lint rules name in their
+// fixtures. The UI test widget-plugin-list.test.ts keeps it equal to the registry.
+func TestBuiltInWidgetPluginListIsEmbedded(t *testing.T) {
+	ids, err := insightsschema.BuiltInWidgetPlugins()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.IsSorted(ids) {
+		t.Fatalf("plugin list must be sorted: %v", ids)
+	}
+	for _, known := range []string{"pie", "stacked-timeseries", "threshold-gauge"} {
+		if !slices.Contains(ids, known) {
+			t.Fatalf("built-in plugin %q missing from %v", known, ids)
 		}
 	}
-	text := source.String()
-	for id := range registeredWidgetPlugins {
-		pattern := regexp.MustCompile(`\bid\s*:\s*"` + regexp.QuoteMeta(id) + `"`)
-		if !pattern.MatchString(text) {
-			t.Fatalf("plugin %q is no longer registered in the UI source", id)
-		}
-	}
+	requireNoHits(t, lintFor(t, documentWithWidgets("demo", pluginTestWidget("a", "pie", ""))), "plugin.unknown")
 }
 
 func TestLintOverlapIsAnErrorAtTheLaterWidget(t *testing.T) {
@@ -318,7 +305,10 @@ func TestLintAxisLabelRepeatsTheUnit(t *testing.T) {
 
 func TestLintUnknownPlugin(t *testing.T) {
 	unknown := documentWithWidgets("demo", pluginTestWidget("a", "made-up-plugin", ""))
-	requireOneHit(t, lintFor(t, unknown), "plugin.unknown", "/widgets/0/pluginId")
+	finding := requireOneHit(t, lintFor(t, unknown), "plugin.unknown", "/widgets/0/pluginId")
+	if finding.GetSeverity() != insightsv1.Severity_SEVERITY_WARNING || !strings.Contains(finding.GetMessage(), "not a built-in widget plugin") {
+		t.Fatalf("unknown plugin finding = %v", finding)
+	}
 
 	known := documentWithWidgets("demo", pluginTestWidget("a", "stacked-timeseries", ""))
 	requireNoHits(t, lintFor(t, known), "plugin.unknown")
