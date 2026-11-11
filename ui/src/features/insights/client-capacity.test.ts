@@ -214,10 +214,10 @@ describe("catalog session expiry", () => {
 describe("shared catalog status", () => {
   const local = { id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }
   const busyListing = (retryAfter?: number) => response({ providers: [local], sharedCatalog: { status: "busy", code: 429, message: "too many active observability requests; retry shortly", retryAfter } })
-  const readyListing = response({ providers: [local] })
+  const readyListing = () => response({ providers: [local] })
 
   it("replays a busy shared catalog with its jittered retryAfter and returns the recovered listing", async () => {
-    const fetcher = mockFetch(busyListing(2), readyListing)
+    const fetcher = mockFetch(busyListing(2), readyListing())
     const pending = createInsightsClient().providerCatalog?.(new AbortController().signal)
     await vi.advanceTimersByTimeAsync(1999)
     expect(fetcher).toHaveBeenCalledOnce()
@@ -238,8 +238,18 @@ describe("shared catalog status", () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it("caps a busy listing's replay at ten seconds, however large its retryAfter", async () => {
+    const fetcher = mockFetch(busyListing(60), readyListing())
+    const pending = createInsightsClient().providerCatalog?.(new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(9999)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual({ providers: [local] })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
   it("stops replaying when the caller aborts, so an unmount or a newer request ends the wait", async () => {
-    const fetcher = mockFetch(busyListing(1), readyListing)
+    const fetcher = mockFetch(busyListing(1), readyListing())
     const abort = new AbortController()
     const rejected = expect(createInsightsClient().providerCatalog?.(abort.signal)).rejects.toMatchObject({ name: "AbortError" })
     await vi.advanceTimersByTimeAsync(0)

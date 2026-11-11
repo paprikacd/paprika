@@ -121,8 +121,11 @@ function capacityRetryDelay(response: Response, attempt: number): number | undef
     if (!Number.isNaN(requested)) delay = Math.max(100, requested)
   }
   // A long server cooldown should surface the error, never retry prematurely.
-  return delay <= 10_000 ? jitter(delay) : undefined
+  return delay <= REPLAY_DELAY_CAP_MS ? jitter(delay) : undefined
 }
+
+// No replay waits longer than this, however large the server's Retry-After is.
+const REPLAY_DELAY_CAP_MS = 10_000
 
 /** Spreads a replay delay by +-30%, so viewers blocked by one busy spell do not replay in step. */
 function jitter(delay: number): number {
@@ -322,7 +325,7 @@ export function createInsightsClient(
       const shared = body.sharedCatalog
       if (shared?.status !== "busy" || attempt >= BUSY_LISTING_REPLAYS)
         return { providers: body.providers, ...(shared ? { sharedCatalog: shared } : {}) }
-      await waitForCapacity(jitter((shared.retryAfter ?? 1) * 1000), signal)
+      await waitForCapacity(jitter(Math.min((shared.retryAfter ?? 1) * 1000, REPLAY_DELAY_CAP_MS)), signal)
     }
   }
   return {

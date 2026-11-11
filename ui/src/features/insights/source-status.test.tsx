@@ -52,7 +52,9 @@ function expectNoMissingSourceCopy() {
   expect(bodyText()).not.toContain("Choose a connected source")
 }
 
+let mobileViewport = false
 beforeEach(() => {
+  mobileViewport = false
   window.history.replaceState(null, "", "/dashboard/insights/")
   // Every tile is on screen, so tiles engage and query as they would for a viewer.
   vi.stubGlobal("IntersectionObserver", class {
@@ -62,7 +64,7 @@ beforeEach(() => {
     disconnect() {}
   })
   vi.stubGlobal("matchMedia", vi.fn().mockImplementation((query: string) => ({
-    matches: false, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+    matches: mobileViewport && query === "(max-width: 950px)", media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
   })))
 })
 afterEach(() => {
@@ -341,14 +343,58 @@ describe("a shared catalog that is busy after the workspace renders", () => {
     expect(screen.getByRole("button", { name: "Retry data sources" })).toBeInTheDocument()
   }, 10000)
 
-  it("after a successful retry, focus moves to the named Data sources control", async () => {
+  it("after a successful retry, focus moves to the always-rendered workspace region", async () => {
     const client = catalogClient([() => busyCatalog(1), readyCatalog])
     render(createElement(InsightsApp, { client }))
     fireEvent.click(await screen.findByRole("button", { name: "Retry data sources" }, { timeout: 6000 }))
     await waitFor(() => expect(screen.queryByText("Data sources are busy.")).not.toBeInTheDocument())
-    expect(document.activeElement?.tagName).toBe("BUTTON")
-    expect(document.activeElement).toHaveTextContent("Data sources")
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Dashboard workspace" }))
   }, 10000)
+
+  it("on mobile, where the Data sources control is not rendered, focus still lands on the workspace region", async () => {
+    mobileViewport = true
+    const client = catalogClient([() => busyCatalog(1), readyCatalog])
+    render(createElement(InsightsApp, { client }))
+    fireEvent.click(await screen.findByRole("button", { name: "Retry data sources" }, { timeout: 6000 }))
+    await waitFor(() => expect(screen.queryByText("Data sources are busy.")).not.toBeInTheDocument())
+    expect(screen.queryAllByRole("button", { name: /Data sources/ })).toHaveLength(0)
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Dashboard workspace" }))
+  }, 10000)
+
+  it("a user who moved on before the retry succeeded keeps their focus", async () => {
+    let answerRetry: (catalog: ProviderCatalog) => void = () => undefined
+    const client = catalogClient([() => busyCatalog(1), () => new Promise<ProviderCatalog>(resolve => { answerRetry = resolve })])
+    render(createElement(InsightsApp, { client }))
+    fireEvent.click(await screen.findByRole("button", { name: "Retry data sources" }, { timeout: 6000 }))
+    const elsewhere = screen.getAllByRole("button", { name: /Data sources/ })[0]
+    elsewhere.focus()
+    await act(async () => answerRetry(await readyCatalog()))
+    await waitFor(() => expect(screen.queryByText("Data sources are busy.")).not.toBeInTheDocument())
+    expect(document.activeElement).toBe(elsewhere)
+  }, 10000)
+
+  it("a retry that ends busy again keeps focus on the banner's retry control", async () => {
+    const client = catalogClient([() => busyCatalog(1), () => busyCatalog(1)])
+    render(createElement(InsightsApp, { client }))
+    fireEvent.click(await screen.findByRole("button", { name: "Retry data sources" }, { timeout: 6000 }))
+    await waitFor(() => expect(client.providerCatalog).toHaveBeenCalledTimes(2), { timeout: 8000 })
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Retry data sources" })), { timeout: 8000 })
+  }, 15000)
+
+  it("closing the Data sources panel mid-refresh does not strand the sources", async () => {
+    const client = Object.assign(catalogClient([readyCatalog, () => new Promise<ProviderCatalog>(resolve => setTimeout(() => resolve({ providers: [localProvider, sharedProvider] }), 300))]), {
+      observeConnection: vi.fn().mockResolvedValue({ configured: true, connected: true, providerCount: 1, tools: [], transport: "mcp" }),
+    })
+    render(createElement(InsightsApp, { client }))
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    await waitFor(() => expect(queriedShared(client)).toBe(true))
+    fireEvent.click(screen.getAllByRole("button", { name: /Data sources/ })[0])
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh connection and providers" }))
+    await waitFor(() => expect(document.querySelector("[data-source-state]")?.getAttribute("data-source-state")).toBe("pending"))
+    fireEvent.click(screen.getByRole("button", { name: "Close data sources" }))
+    await waitFor(() => expect(document.querySelector("[data-source-state]")?.getAttribute("data-source-state")).toBe("ready"), { timeout: 3000 })
+    expect(document.querySelector('[data-widget-id="inline"] [aria-busy="true"]')).toBeNull()
+  })
 
   it("a renewed session reloads a sign-in banner's sources, which clears the banner and its tile copy", async () => {
     const client = catalogClient([
@@ -364,4 +410,48 @@ describe("a shared catalog that is busy after the workspace renders", () => {
     await waitFor(() => expect(queriedShared(client)).toBe(true))
     expect(client.providerCatalog).toHaveBeenCalledTimes(2)
   })
+})
+
+// A fetch-level listing: the real client replays it, so these tests see the true request count.
+function listingFetch(answer: (call: number) => Record<string, unknown>) {
+  const counts = { listings: 0 }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://console.test")
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
+    if (url.pathname === "/api/insights/dashboards") return json({ dashboards: [dashboard] })
+    if (url.pathname === "/api/insights/dashboards/a") return new Response(JSON.stringify(dashboard), { status: 200, headers: { "Content-Type": "application/json", ETag: '"v1"' } })
+    if (url.pathname === "/api/insights/saved-queries") return json({ queries: [] })
+    if (url.pathname === "/api/insights/providers") return json(answer(counts.listings++))
+    return json({ series: [] })
+  }))
+  return counts
+}
+
+describe("replays stop with their request", () => {
+  it("unmounting during an automatic replay sends no further listing", async () => {
+    const counts = listingFetch(() => ({ providers: [localProvider], sharedCatalog: { status: "busy", code: 429, message: "busy", retryAfter: 1 } }))
+    const view = render(createElement(InsightsApp, { client: createInsightsClient("/api/insights", () => "tok") }))
+    await waitFor(() => expect(counts.listings).toBe(1))
+    view.unmount()
+    await new Promise(resolve => setTimeout(resolve, 3500))
+    expect(counts.listings).toBe(1)
+  }, 10000)
+
+  it("a refresh that resolves during a manual retry stops the retry's replays", async () => {
+    let refreshWanted = false
+    const counts = listingFetch(call => call < 4 || !refreshWanted
+      ? { providers: [localProvider], sharedCatalog: { status: "busy", code: 429, message: "busy", retryAfter: 1 } }
+      : { providers: [localProvider, sharedProvider] })
+    render(createElement(InsightsApp, { client: createInsightsClient("/api/insights", () => "tok") }))
+    fireEvent.click(await screen.findByRole("button", { name: "Retry data sources" }, { timeout: 8000 }))
+    await waitFor(() => expect(counts.listings).toBe(5), { timeout: 8000 })
+    fireEvent.click(screen.getAllByRole("button", { name: /Data sources/ })[0])
+    refreshWanted = true
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh connection and providers" }))
+    await waitFor(() => expect(document.querySelector("[data-source-state]")?.getAttribute("data-source-state")).toBe("ready"), { timeout: 5000 })
+    const settled = counts.listings
+    await new Promise(resolve => setTimeout(resolve, 4000))
+    expect(counts.listings).toBe(settled)
+    expect(screen.queryByText("Data sources are busy.")).not.toBeInTheDocument()
+  }, 25000)
 })
