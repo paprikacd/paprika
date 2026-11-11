@@ -50,7 +50,7 @@ type dataWidget struct {
 	annotation *DashboardQueryError
 	// signal is the widget's executed query. It is nil when the query did not run.
 	signal    *DashboardSignal
-	freshness *DashboardObservationFreshness
+	freshness *DashboardSample
 }
 
 // dataOptions are the author's declared options the data rules compare with.
@@ -112,7 +112,7 @@ var dataRules = []dataRule{
 	{
 		ID:       "data.stale",
 		Severity: warningSeverity,
-		Summary:  "The newest valid sample is older than options.staleAfterSeconds when the range ends. Applies to stat, timeseries and rich-metrics widgets over metrics; a stat judges its primary series, the others the newest sample of any series.",
+		Summary:  "The newest valid sample is older than options.staleAfterSeconds when the range ends. Applies to stat and timeseries widgets over metrics, the only types the UI marks stale (judgesStaleAfter); a stat judges its displayed primary series, a timeseries the newest sample of any series.",
 		Fix:      "Check that the metric is still being written. If a longer silence is expected, raise staleAfterSeconds.",
 		check:    checkDataStale,
 	},
@@ -269,18 +269,20 @@ func seriesExtremes(series []DashboardSeriesSummary) (low, high float64, found b
 }
 
 // checkDataStale fires for a widget whose freshness is stale: its newest valid
-// sample is older than options.staleAfterSeconds when the range ends. The query
-// path judges a stat; the dry run judges the other covered types (see dryRunWidgets).
+// sample is older than options.staleAfterSeconds when the range ends. Only the types
+// judgesStaleAfter names carry a stale freshness, so this rule covers stat and timeseries.
 func checkDataStale(widgets []dataWidget) []dataHit {
 	var hits []dataHit
 	for i := range widgets {
 		widget := &widgets[i]
 		freshness := widget.freshness
-		if freshness == nil || freshness.State != "stale" || freshness.AgeSeconds == nil {
+		// Only an explicit staleAfterSeconds is the option the data.stale message names; a
+		// cadence-derived limit is the UI's own stale tail and is not a declared option.
+		if freshness == nil || freshness.State != "stale" || freshness.AgeSeconds == nil || freshness.Basis != sampleBasisStaleAfter || freshness.StaleAfterSeconds == nil {
 			continue
 		}
 		hits = append(hits, newDataHit(widget, widgetBase(widget.index)+"/options/staleAfterSeconds",
-			fmt.Sprintf("%s newest sample is %s s old, past its staleAfterSeconds of %d", dataLabel(widget), strconv.FormatFloat(math.Round(*freshness.AgeSeconds), 'f', 0, 64), freshness.ThresholdSeconds)))
+			fmt.Sprintf("%s newest sample is %s s old, past its staleAfterSeconds of %d", dataLabel(widget), strconv.FormatFloat(math.Round(*freshness.AgeSeconds), 'f', 0, 64), int(*freshness.StaleAfterSeconds))))
 	}
 	return hits
 }

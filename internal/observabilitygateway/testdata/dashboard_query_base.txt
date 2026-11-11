@@ -1,0 +1,10 @@
+Dashboard "overview": partial. Structured content is authoritative; state is data availability, not health.
+Range "2026-10-26T00:00:00Z" to "2026-10-26T01:00:00Z"; step=12s; observed at "OBSERVED"; dashboard ETag="\"ba890f0549b6ec9fac3125f2b4ae5c030e100201e13529417418ffe777d5837c\""
+Selected variables: "service"="checkout"
+widget "rate": returned sample freshness=fresh (threshold 3600s, age 3588s); relative to range end, not scrape health
+widget "missing" "missing": error "missing_saved_query": "The referenced saved query is unavailable."
+widget "rate": configured visual band="matched"; boundary=2; color="#123456"; label="High"
+q1 "rate": ok; first view="stat"; kind="metrics"; provider="prometheus"; returned series=1 (bounded response), omitted summaries=0; latest valid=2.5 "req/s" at 1792972812000 ms; sample mean=2 "req/s"; latest observation missing; series=1
+q2 "trend": ok; first view="timeseries"; kind="metrics"; provider="prometheus"; returned series=2 (bounded response), omitted summaries=0; latest valid=3 "req/s" at 1792972812000 ms; sample mean=2 "req/s"; series=2; series details: [#0 "service"="api"; last valid=3 "req/s" at 1792972812000 ms; sample mean=2 "req/s"] [#1 "service"="worker"; last valid=4 "req/s" at 1792972812000 ms; sample mean=3 "req/s"]
+q3 "boom": error; first view="stat"; kind="metrics"; provider="prometheus"; error "provider_error": "The provider query could not be completed."
+q4 "empty": empty; first view="stat"; kind="metrics"; provider="prometheus"; returned series=0 (bounded response), omitted summaries=0
