@@ -956,10 +956,13 @@ func toolErrorResult(err error) *sdkmcp.CallToolResult {
 	}
 	text, operational := operationalToolErrorText[ce.Code()]
 	if toolActionableCode(ce.Code()) {
+		// The headline can echo upstream text, so it is escaped like every other
+		// producer string: a newline or a bidirectional override cannot reach the agent.
 		text = ce.Error()
 		if inner := ce.Unwrap(); inner != nil {
 			text = inner.Error()
 		}
+		text = checkwire.Printable(text)
 	} else if !operational {
 		return nil
 	}
@@ -1032,6 +1035,8 @@ func newIssueList(report *insightsv1.CheckReport) (issueList, error) {
 	total := max(report.GetTotal(), checkwire.Count(len(report.GetIssues())))
 	list := issueList{total: total, truncated: total > checkwire.Count(len(shown))}
 	list.lines = append(list.lines, fmt.Sprintf("Issues (%d of %d shown):", len(shown), total))
+	sharedFixText, sharedOK := sharedFix(shown)
+	printed := make(map[string]bool)
 	for _, finding := range shown {
 		list.lines = append(list.lines, issueLine(finding))
 		raw, err := checkwire.Marshal(finding)
@@ -1039,15 +1044,21 @@ func newIssueList(report *insightsv1.CheckReport) (issueList, error) {
 			return issueList{}, fmt.Errorf("mcp: marshal issue: %w", err)
 		}
 		list.structured = append(list.structured, raw)
-	}
-	if fix, ok := sharedFix(shown); ok {
-		list.lines = append(list.lines, "Fix for all shown issues: "+checkwire.Printable(fix))
-		return list, nil
-	}
-	for _, finding := range shown {
-		if finding.GetFix() != "" {
-			list.lines = append(list.lines, "  Fix: "+checkwire.Printable(finding.GetFix()))
+		if sharedOK || finding.GetFix() == "" {
+			continue
 		}
+		// A fix sits directly under the first issue that carries it, so it reads as
+		// that issue's fix. A later issue with the same rule and fix adds nothing;
+		// the same rule with a different fix still prints.
+		key := finding.GetRuleId() + "\x00" + finding.GetFix()
+		if printed[key] {
+			continue
+		}
+		printed[key] = true
+		list.lines = append(list.lines, fmt.Sprintf("  Fix (%s): %s", checkwire.Printable(finding.GetRuleId()), checkwire.Printable(finding.GetFix())))
+	}
+	if sharedOK {
+		list.lines = append(list.lines, "Fix for all shown issues: "+checkwire.Printable(sharedFixText))
 	}
 	return list, nil
 }

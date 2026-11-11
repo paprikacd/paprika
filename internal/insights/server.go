@@ -287,20 +287,13 @@ func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "dashboard document is required")
 		return
 	}
-	// The identity comes from the document itself, because there is no path id.
-	// A document without a readable id fails the id check like any other invalid id.
-	var identity struct {
-		ID string `json:"id"`
-	}
-	if json.Unmarshal(request.Document, &identity) != nil {
-		identity.ID = ""
-	}
-	writeCheckReport(w, 200, capCheckReport(schemaFindings(identity.ID, request.Document)))
+	writeCheckReport(w, 200, capCheckReport(dryRunFindings(request.Document)))
 }
 
 // validationErrorBody is the 400 response to a rejected save. Error keeps the
-// single message clients have always read. The rest is the CheckReport list
-// shape the dry run uses, so one parser reads both.
+// single message clients have always read: the first finding in validation
+// order. The rest is the CheckReport list shape the dry run uses, whose issues
+// list document-level findings first.
 type validationErrorBody struct {
 	Error     string            `json:"error"`
 	Issues    []json.RawMessage `json:"issues"`

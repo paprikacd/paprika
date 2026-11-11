@@ -173,9 +173,9 @@ func TestSchemaFindingsCapReportAtThirtyTwo(t *testing.T) {
 	}
 }
 
-// adversarialDocument builds a document near the 256 KiB limit that is
-// expensive to check: long arrays inside options, thousands of unknown keys,
-// and widgets that each fail in a different place.
+// adversarialDocument builds a document close to the 256 KiB limit that is
+// expensive to check: long arrays inside options, thousands of unknown keys, and
+// widgets that each fail in a different place.
 func adversarialDocument(t *testing.T) Dashboard {
 	t.Helper()
 	var widgets []string
@@ -183,18 +183,21 @@ func adversarialDocument(t *testing.T) Dashboard {
 		id := fmt.Sprintf("w%02d", i)
 		switch i % 4 {
 		case 0:
-			widgets = append(widgets, widgetJSON(id, "", `"options":{"referenceLines":[`+zeroArray(1100)+`]}`))
+			widgets = append(widgets, widgetJSON(id, "", `"options":{"referenceLines":[`+zeroArray(2500)+`]}`))
 		case 1:
-			widgets = append(widgets, widgetJSON(id, "", `"options":{`+unknownKeyObject(260)+`}`))
+			widgets = append(widgets, widgetJSON(id, "", `"options":{`+unknownKeyObject(600)+`}`))
 		case 2:
-			widgets = append(widgets, widgetJSON(id, `{"x":0,"y":0,"w":0,"h":4}`, `"options":{"thresholds":[`+zeroArray(400)+`]}`))
+			widgets = append(widgets, widgetJSON(id, `{"x":0,"y":0,"w":0,"h":4}`, `"options":{"thresholds":[`+zeroArray(1000)+`]}`))
 		default:
-			widgets = append(widgets, widgetJSON(id, "", `"options":{"decimals":99,"tags":[`+zeroArray(300)+`]},"extra":{`+unknownKeyObject(200)+`}`))
+			widgets = append(widgets, widgetJSON(id, "", `"options":{"decimals":99,"tags":[`+zeroArray(1000)+`]},"extra":{`+unknownKeyObject(600)+`}`))
 		}
 	}
 	document := documentWithWidgets("demo", widgets...)
 	if len(document) > maxDocumentBytes {
 		t.Fatalf("adversarial document is %d bytes, over the %d limit", len(document), maxDocumentBytes)
+	}
+	if len(document) < maxDocumentBytes*9/10 {
+		t.Fatalf("adversarial document is only %d bytes; it must sit near the %d limit", len(document), maxDocumentBytes)
 	}
 	return document
 }

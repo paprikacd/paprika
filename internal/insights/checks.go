@@ -3,6 +3,7 @@ package insights
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
@@ -221,13 +222,51 @@ func truncateRunes(value string, limit int) string {
 	return string(runes[:limit])
 }
 
+// dryRunPlaceholderID stands in for the path id of a dry run when the document
+// has no string id. The structure checks then report the document the way a save does.
+const dryRunPlaceholderID = "dry-run"
+
+// dryRunFindings checks a document the way a save at the path named by its own
+// id would, so a dry run reports exactly what the save reports. Structure is
+// checked before identity, and a missing or non-string id is never compared.
+func dryRunFindings(document Dashboard) []*insightsv1.CheckFinding {
+	var head struct {
+		ID *string `json:"id"`
+	}
+	id := dryRunPlaceholderID
+	if json.Unmarshal(document, &head) == nil && head.ID != nil {
+		id = *head.ID
+	}
+	return schemaFindings(id, document)
+}
+
 // capCheckReport keeps the first checkwire.MaxIssues findings and counts the rest.
+// Document-level findings come first, so a count or identity failure is never
+// pushed past the cap by many widget findings.
 func capCheckReport(findings []*insightsv1.CheckFinding) *insightsv1.CheckReport {
-	report := &insightsv1.CheckReport{Total: checkwire.Count(len(findings))}
-	if len(findings) > checkwire.MaxIssues {
-		findings = findings[:checkwire.MaxIssues]
+	ordered := documentFirst(findings)
+	report := &insightsv1.CheckReport{Total: checkwire.Count(len(ordered))}
+	if len(ordered) > checkwire.MaxIssues {
+		ordered = ordered[:checkwire.MaxIssues]
 		report.Truncated = true
 	}
-	report.Issues = findings
+	report.Issues = ordered
 	return report
+}
+
+// documentFirst returns the findings with document-level ones ahead of widget
+// ones. Each group keeps its validation order.
+func documentFirst(findings []*insightsv1.CheckFinding) []*insightsv1.CheckFinding {
+	ordered := make([]*insightsv1.CheckFinding, 0, len(findings))
+	for _, finding := range findings {
+		if !strings.HasPrefix(finding.GetPointer(), "/widgets/") {
+			ordered = append(ordered, finding)
+		}
+	}
+	for _, finding := range findings {
+		if strings.HasPrefix(finding.GetPointer(), "/widgets/") {
+			ordered = append(ordered, finding)
+		}
+	}
+	return ordered
 }

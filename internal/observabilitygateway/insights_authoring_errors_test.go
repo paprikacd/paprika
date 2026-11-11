@@ -83,6 +83,9 @@ func TestInsightsStatusErrorCarriesOnlyNamedRetryDelays(t *testing.T) {
 		}
 		require.Empty(t, detailValues(t, insightsStatusError(http.StatusTooManyRequests, nil, header)), value)
 	}
+	unavailable := http.Header{}
+	unavailable.Set("Retry-After", "5")
+	require.Empty(t, detailValues(t, insightsStatusError(http.StatusServiceUnavailable, []byte(`{"error":"down"}`), unavailable)), "503 is reported without a retry delay")
 	internal := http.Header{}
 	internal.Set("Retry-After", "5")
 	require.Empty(t, detailValues(t, insightsStatusError(http.StatusInternalServerError, []byte("secret upstream body"), internal)))

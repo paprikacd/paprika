@@ -257,10 +257,12 @@ func insightsCheckReport(body []byte) *insightsv1.CheckReport {
 // maxInsightsRetryAfterSecs bounds the delay a Retry-After may ask an agent to wait.
 const maxInsightsRetryAfterSecs = 300
 
-// insightsRetryDelay reads a Retry-After in seconds from a throttling or
-// unavailable response. A date-form or out-of-range value is ignored.
+// insightsRetryDelay reads a Retry-After in seconds from a throttling response.
+// Only 429 carries it: it maps to ResourceExhausted, the code agents receive
+// with their retry delay. Unavailable is reported without one, as every other
+// unavailable upstream is. A date-form or out-of-range value is ignored.
 func insightsRetryDelay(status int, header http.Header) (time.Duration, bool) {
-	if status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable {
+	if status != http.StatusTooManyRequests {
 		return 0, false
 	}
 	seconds, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After")))
