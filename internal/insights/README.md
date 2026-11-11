@@ -427,6 +427,26 @@ an error, 1 when one is, and 2 for unreadable input or usage. Each finding print
 on one line, followed by a summary. The CI step runs the command over the
 repository catalog, the served examples and the gallery export.
 
+## Starter dashboards
+
+`internal/insights/starters/*.json` holds first-party dashboard documents that
+an operator can start from. `Starters()` returns them embedded in the binary, in
+file-name order; each file's `id` matches its name. `starters_test.go` runs every
+starter through the save-time schema and the lint registry, requires zero
+findings, and checks that each metric it queries is in the
+[metric reference](../../.agents/skills/paprika-dashboard-design/references/paprika-signals.md)
+with its type and labels. The starters use the placeholder provider id
+`metrics-provider-id`; an import maps it to a real provider.
+
+`paprika-control-plane` shows whether Paprika is keeping up. Its count tiles
+(stale applications, exhausted release retries, stuck releases and a degraded
+fleet index) turn critical above zero and read the same gauges as the
+PrometheusRule alerts, with `max()` over each. Controller liveness is the age of
+the slowest controller's last successful reconcile and turns warning after five
+minutes, as in [metrics.md](../../docs/guides/metrics.md). The remaining panels
+show reconcile lag, reconcile throughput by outcome, and the applications and
+releases in each phase as current state.
+
 ## Dashboard extensions
 
 Dashboard documents support optional `folder` paths (160 characters, nonempty

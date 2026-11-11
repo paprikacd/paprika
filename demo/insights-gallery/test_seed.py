@@ -198,6 +198,28 @@ class GallerySeedTest(unittest.TestCase):
             for age in range(0, 31 * 24, 3):
                 self.assertGreater(module.error_activity(end - age * 3600, end, service), 0)
 
+    def test_control_plane_incident_is_consistent_and_recovers(self):
+        spec = importlib.util.spec_from_file_location("gallery_metrics", HERE / "generate-metrics.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        end = 1_793_254_800 // 60 * 60 - 60
+        timestamps = [end - (360 - n) * 60 for n in range(361)]
+        families = {name: (kind, series) for name, kind, series, _ in module.control_plane_families(timestamps)}
+        lag = {tags["application"] + "/" + tags["namespace"]: [value for _, value in points] for _, tags, points in families["paprika_application_reconcile_lag"][1]}
+        stale = [value for _, value in families["paprika_applications_stale"][1][0][2]]
+        self.assertEqual(stale, [sum(1 for values in lag.values() if values[n] > 0) for n in range(361)], "stale apps are the apps with spec lag")
+        self.assertEqual(max(stale), 1)
+        success = {tags["controller"]: points for _, tags, points in families["paprika_controller_last_reconcile_timestamp_seconds"][1] if tags["result"] == "success"}
+        frozen = success["release"][250][1]
+        self.assertTrue(all(success["release"][n][1] == frozen for n in range(250, 273)), "release success freezes during the incident")
+        self.assertGreater(success["release"][272][0] - frozen, 300, "the liveness age crosses the five-minute band")
+        self.assertEqual(success["release"][273][1], success["release"][273][0], "a recovered controller reports the sample time")
+        live = importlib.util.spec_from_file_location("live_series", HERE / "live_series.py")
+        live_module = importlib.util.module_from_spec(live)
+        live.loader.exec_module(live_module)
+        key = 'paprika_controller_last_reconcile_timestamp_seconds{controller="release",result="success"}'
+        self.assertEqual(live_module.continued_value(key, (1_000, frozen), None, 1_600.5), 1_600.5, "live successes follow the scrape clock")
+
     def test_live_job_states_continue_the_recorded_cycle(self):
         spec = importlib.util.spec_from_file_location("live_series", HERE / "live_series.py")
         module = importlib.util.module_from_spec(spec)

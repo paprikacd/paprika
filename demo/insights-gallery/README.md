@@ -323,6 +323,15 @@ The ready count includes observed pressure and ready states; missing samples
 remain unknown and are excluded. The node resource table is a separately seeded
 synthetic inventory and is not a claim about a real Kubernetes cluster.
 
+The Paprika control plane dashboard is the starter from
+`internal/insights/starters/`, bound to the local Prometheus. Its synthetic
+gauges and counters are healthy except for one seeded window, minutes 250 to
+272 of the six-hour history: the payments application stops reconciling, its
+release retries are exhausted, a release stays stuck, the fleet index is
+degraded for part of that window, and the application and release controllers
+record errors. The live exporter keeps the controller liveness at the scrape
+time after the window, so the panel stays healthy while the stack runs.
+
 The studies are runnable demonstrations rather than pixel-identical copies of
 the artboards. Some artboard-specific detail panels and status states remain
 to be built. The incident calendar displays incident duration; it does not
@@ -391,6 +400,10 @@ The primary metric families are:
 | `paprika_demo_pipeline_rejected_total` | cluster, pipeline; counter |
 | `paprika_demo_source_freshness_seconds` | cluster, source; seconds |
 | `paprika_demo_slo_burn_ratio` | cluster, service, window; ratio |
+| `paprika_application_reconcile_lag`, `paprika_applications_stale`, `paprika_applications_release_retries_exhausted`, `paprika_releases_stuck`, `paprika_fleet_index_degraded` | application, namespace (lag); unlabelled counts and 0/1 state |
+| `paprika_controller_last_reconcile_timestamp_seconds` | controller, result; Unix seconds of the last reconcile |
+| `paprika_reconcile_total` | controller, result; counter |
+| `paprika_applications_by_phase_ratio`, `paprika_releases_by_phase_ratio` | phase; current counts |
 | `paprika_demo_market_companies`, `paprika_demo_market_short_percent`, `paprika_demo_market_change`, `paprika_demo_market_coverage_percent` | sector; count, percent or percentage-point change |
 
 `seed.sql` documents the `gallery` tables for companies and histories,

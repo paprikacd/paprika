@@ -1,6 +1,9 @@
 // Local gallery compositions. Documents are seeded into an isolated Insights
 // store; telemetry comes from the real local Prometheus/Tempo/PostgreSQL stack.
 import { chartFixtureCollections } from "../../ui/e2e/fixtures/rich-chart-data.ts";
+// The first-party control-plane starter. The gallery copy keeps its widgets and
+// queries, so it renders the same panels against the synthetic paprika_* series.
+import controlPlaneStarter from "../../internal/insights/starters/paprika-control-plane.json" with { type: "json" };
 
 const sql = (statement, variable) => JSON.stringify({ sql: statement, parameters: ["__PAPRIKA_PARAMETER__"] }).replace('"__PAPRIKA_PARAMETER__"', `{{${variable}}}`);
 // Range values are prepared timestamp parameters, not SQL text substitutions.
@@ -465,5 +468,10 @@ export function galleryDocuments(providers) {
     ],
   };
   dashboards.push(stress);
+  const controlPlane = structuredClone(controlPlaneStarter);
+  Object.assign(controlPlane, { id: "local-gallery-control-plane", title: "Paprika control plane · Local demo", folder: "Local gallery demos", refreshInterval: 0 });
+  controlPlane.description = `${controlPlaneStarter.description} Synthetic local data includes one seeded payments incident.`;
+  for (const widget of controlPlane.widgets) widget.providerId = providers.metrics;
+  dashboards.push(controlPlane);
   return { dashboards, savedQueries };
 }

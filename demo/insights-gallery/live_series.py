@@ -64,6 +64,10 @@ def continued_value(key, last, previous, now):
     # Keep observations continuous at the backfill boundary. Stable phase
     # offsets make nodes and other series move independently across restarts.
     wave = math.sin(elapsed / 360 + phase) - math.sin(phase)
+    if name == "paprika_controller_last_reconcile_timestamp_seconds" and 'result="success"' in key:
+        # The seeded incident is in the past: live controllers complete reconciles,
+        # so the latest success is the scrape time and the liveness age stays near zero.
+        return now
     if name in ("paprika_demo_node_cpu_ratio", "paprika_demo_node_memory_ratio"):
         return min(1.0, max(0.0, value + .045 * wave))
     if name == "paprika_demo_node_condition_state":

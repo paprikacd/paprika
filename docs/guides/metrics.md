@@ -120,6 +120,10 @@ max by (controller) (workqueue_longest_running_processor_seconds) > 60
 paprika_releases_stuck > 0
 ```
 
+A ready-made Insights dashboard charts these gauges with the same `max()`
+semantics as the alert rules: the `paprika-control-plane` starter in
+`internal/insights/starters/`.
+
 `workqueue_*` and `controller_runtime_reconcile_*` are supplied by
 controller-runtime; the Paprika-specific gauges above add the per-application
 lag and release-liveness view that those generic metrics cannot express.
