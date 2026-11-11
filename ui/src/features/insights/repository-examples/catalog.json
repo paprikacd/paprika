@@ -2800,7 +2800,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/5/targets/0",
         "language": "promql",
@@ -2818,7 +2818,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/6/targets/0",
         "language": "promql",
@@ -2900,7 +2900,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/11/targets/0",
         "language": "promql",
@@ -2918,7 +2918,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/12/targets/0",
         "language": "promql",
@@ -3130,7 +3130,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/25/targets/0",
         "language": "promql",
@@ -3164,7 +3164,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/27/targets/0",
         "language": "promql",
@@ -3216,21 +3216,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 50,
-                    "status": "warning"
-                  },
-                  {
-                    "value": 100,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 0,
@@ -3457,13 +3443,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 6,
@@ -3624,7 +3604,7 @@
               "layout": {
                 "x": 0,
                 "y": 28,
-                "w": 6,
+                "w": 12,
                 "h": 5
               }
             }
@@ -3995,21 +3975,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 50,
-                    "status": "warning"
-                  },
-                  {
-                    "value": 100,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 0,
@@ -4236,13 +4202,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 6,
@@ -4403,7 +4363,7 @@
               "layout": {
                 "x": 0,
                 "y": 28,
-                "w": 6,
+                "w": 12,
                 "h": 5
               }
             }
@@ -4787,7 +4747,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/1/targets/0",
         "language": "promql",
@@ -4805,7 +4765,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/2/targets/0",
         "language": "promql",
@@ -4823,7 +4783,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/3/targets/0",
         "language": "promql",
@@ -4841,7 +4801,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/4/targets/0",
         "language": "promql",
@@ -4955,7 +4915,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/10/targets/0",
         "language": "promql",
@@ -4973,7 +4933,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/11/targets/0",
         "language": "promql",
@@ -4991,7 +4951,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/12/targets/0",
         "language": "promql",
@@ -5143,17 +5103,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 3,
@@ -5175,17 +5125,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 6,
@@ -5207,17 +5147,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 9,
@@ -5259,17 +5189,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -5290,17 +5210,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -5321,17 +5231,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -5352,17 +5252,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -5404,17 +5294,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -5435,17 +5315,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -5466,17 +5336,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -5497,17 +5357,7 @@
               "unit": "B",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -5877,17 +5727,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 3,
@@ -5909,17 +5749,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 6,
@@ -5941,17 +5771,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": false,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": false
               },
               "layout": {
                 "x": 9,
@@ -5993,17 +5813,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -6024,17 +5834,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -6055,17 +5855,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -6086,17 +5876,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -6138,17 +5918,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -6169,17 +5939,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -6200,17 +5960,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -6231,17 +5981,7 @@
               "unit": "B",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -6576,7 +6316,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/0/targets/0",
         "language": "promql",
@@ -6594,7 +6334,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/1/targets/0",
         "language": "promql",
@@ -6612,7 +6352,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/2/targets/0",
         "language": "promql",
@@ -6630,7 +6370,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/3/targets/0",
         "language": "promql",
@@ -6664,7 +6404,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/5/targets/0",
         "language": "promql",
@@ -6682,7 +6422,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 6, target A; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/6/targets/0",
@@ -6701,7 +6441,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 6, target B; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/6/targets/1",
@@ -6720,7 +6460,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 6, target C; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/6/targets/2",
@@ -6755,7 +6495,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/8/targets/0",
         "language": "promql",
@@ -6773,7 +6513,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/9/targets/0",
         "language": "promql",
@@ -6791,7 +6531,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 10, target A; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/10/targets/0",
@@ -6810,7 +6550,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 10, target B; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/10/targets/1",
@@ -7036,17 +6776,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": true,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": true
               },
               "layout": {
                 "x": 6,
@@ -7323,7 +7053,7 @@
               "layout": {
                 "x": 0,
                 "y": 35,
-                "w": 6,
+                "w": 12,
                 "h": 5
               }
             }
@@ -8030,17 +7760,7 @@
               "options": {
                 "showTooltip": true,
                 "decimals": 0,
-                "showSparkline": true,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "showSparkline": true
               },
               "layout": {
                 "x": 6,
@@ -8317,7 +8037,7 @@
               "layout": {
                 "x": 0,
                 "y": 35,
-                "w": 6,
+                "w": 12,
                 "h": 5
               }
             }
@@ -8938,7 +8658,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/1/targets/0",
         "language": "promql",
@@ -9147,17 +8867,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9178,17 +8888,7 @@
               "unit": "s",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9209,17 +8909,7 @@
               "unit": "B",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9240,17 +8930,7 @@
               "unit": "B",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9307,17 +8987,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 3,
@@ -9338,17 +9008,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9369,17 +9029,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9400,17 +9050,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9431,17 +9071,7 @@
               "unit": "s",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9462,17 +9092,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9493,17 +9113,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9524,17 +9134,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9555,17 +9155,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9586,17 +9176,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9617,17 +9197,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9648,17 +9218,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9679,17 +9239,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9710,17 +9260,7 @@
               "unit": "s",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -9741,17 +9281,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -9772,22 +9302,12 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
                 "y": 50,
-                "w": 6,
+                "w": 12,
                 "h": 5
               }
             }
@@ -10262,17 +9782,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10293,17 +9803,7 @@
               "unit": "s",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10324,17 +9824,7 @@
               "unit": "B",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10355,17 +9845,7 @@
               "unit": "B",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10422,17 +9902,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 3,
@@ -10453,17 +9923,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10484,17 +9944,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10515,17 +9965,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10546,17 +9986,7 @@
               "unit": "s",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10577,17 +10007,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10608,17 +10028,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10639,17 +10049,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10670,17 +10070,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10701,17 +10091,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10732,17 +10112,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10763,17 +10133,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10794,17 +10154,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10825,17 +10175,7 @@
               "unit": "s",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -10856,17 +10196,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -10887,22 +10217,12 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
                 "y": 50,
-                "w": 6,
+                "w": 12,
                 "h": 5
               }
             }
@@ -11379,7 +10699,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/0/targets/0",
         "language": "promql",
@@ -11397,7 +10717,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/1/targets/0",
         "language": "promql",
@@ -11415,7 +10735,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 2, target D; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/2/targets/0",
@@ -11434,7 +10754,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 2, target C; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/2/targets/1",
@@ -11453,7 +10773,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/3/targets/0",
         "language": "promql",
@@ -11471,7 +10791,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 4, target A; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/4/targets/0",
@@ -11490,7 +10810,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 4, target B; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/4/targets/1",
@@ -11509,7 +10829,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/5/targets/0",
         "language": "promql",
@@ -11527,7 +10847,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/6/targets/0",
         "language": "promql",
@@ -11545,7 +10865,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 7, target A; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/7/targets/0",
@@ -11564,7 +10884,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 7, target B; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/7/targets/1",
@@ -11583,7 +10903,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 8, target A; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/8/targets/0",
@@ -11602,7 +10922,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 8, target B; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/8/targets/1",
@@ -11621,7 +10941,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 8, target C; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/8/targets/2",
@@ -11640,7 +10960,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 8, target D; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/8/targets/3",
@@ -11659,7 +10979,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 9, target A; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/9/targets/0",
@@ -11678,7 +10998,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 9, target B; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/9/targets/1",
@@ -11697,7 +11017,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/10/targets/0",
         "language": "promql",
@@ -11715,7 +11035,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/11/targets/0",
         "language": "promql",
@@ -11733,7 +11053,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 12, target B; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/12/targets/0",
@@ -11752,7 +11072,7 @@
         ],
         "status": "adapted",
         "notes": [
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
           "Split from source panel 12, target A; sibling targets retain independent units and queries."
         ],
         "sourcePointer": "/panels/12/targets/1",
@@ -11868,17 +11188,7 @@
               "unit": "%",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -11906,17 +11216,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -12129,17 +11429,7 @@
               "unit": "%",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -12167,17 +11457,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -12308,7 +11588,7 @@
         "status": "unsupported-live",
         "notes": [
           "Grafana test-data gauge is explicitly synthetic and has no live provider equivalent.",
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
         ],
         "sourcePointer": "/panels/1/targets/0",
         "language": "grafana-testdata"
@@ -12327,7 +11607,7 @@
         "notes": [
           "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
           "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/2/targets/0",
         "language": "sql-postgresql",
@@ -12347,7 +11627,7 @@
         "notes": [
           "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
           "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/3/targets/0",
         "language": "sql-postgresql",
@@ -12416,17 +11696,7 @@
               "unit": "%",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -12454,17 +11724,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -12573,17 +11833,7 @@
               "unit": "%",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 0,
@@ -12611,17 +11861,7 @@
               "unit": "",
               "options": {
                 "showTooltip": true,
-                "decimals": 2,
-                "thresholds": [
-                  {
-                    "value": 0,
-                    "status": "ok"
-                  },
-                  {
-                    "value": 80,
-                    "status": "critical"
-                  }
-                ]
+                "decimals": 2
               },
               "layout": {
                 "x": 6,
@@ -12733,7 +11973,7 @@
         "status": "adapted",
         "notes": [
           "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained.",
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/0/targets/0",
         "language": "sql-postgresql",
@@ -12753,7 +11993,7 @@
         "notes": [
           "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
           "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
-          "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+          "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
         ],
         "sourcePointer": "/panels/1/targets/0",
         "language": "sql-postgresql",
@@ -18654,31 +17894,6 @@
           "refreshInterval": 0,
           "widgets": [
             {
-              "id": "health-score",
-              "title": "Health Score",
-              "type": "plugin",
-              "providerId": "example-prometheus",
-              "query": "paprika_example_uptime_reliability_health_score",
-              "queryRef": {
-                "id": "ex-uptime-reliability-health-score"
-              },
-              "unit": "",
-              "options": {
-                "showTooltip": true,
-                "decimals": 0,
-                "showSparkline": false
-              },
-              "layout": {
-                "x": 0,
-                "y": 0,
-                "w": 6,
-                "h": 5
-              },
-              "pluginId": "threshold-gauge",
-              "dataKind": "metrics",
-              "config": {}
-            },
-            {
               "id": "critical-issues",
               "title": "Critical Issues",
               "type": "stat",
@@ -18694,10 +17909,10 @@
                 "showSparkline": false
               },
               "layout": {
-                "x": 6,
+                "x": 0,
                 "y": 0,
-                "w": 3,
-                "h": 5
+                "w": 4,
+                "h": 3
               }
             },
             {
@@ -18716,10 +17931,10 @@
                 "showSparkline": false
               },
               "layout": {
-                "x": 9,
+                "x": 4,
                 "y": 0,
-                "w": 3,
-                "h": 5
+                "w": 4,
+                "h": 3
               }
             },
             {
@@ -18738,11 +17953,36 @@
                 "showSparkline": false
               },
               "layout": {
-                "x": 0,
-                "y": 5,
-                "w": 3,
-                "h": 5
+                "x": 8,
+                "y": 0,
+                "w": 4,
+                "h": 3
               }
+            },
+            {
+              "id": "health-score",
+              "title": "Health Score",
+              "type": "plugin",
+              "providerId": "example-prometheus",
+              "query": "paprika_example_uptime_reliability_health_score",
+              "queryRef": {
+                "id": "ex-uptime-reliability-health-score"
+              },
+              "unit": "",
+              "options": {
+                "showTooltip": true,
+                "decimals": 0,
+                "showSparkline": false
+              },
+              "layout": {
+                "x": 0,
+                "y": 3,
+                "w": 6,
+                "h": 5
+              },
+              "pluginId": "threshold-gauge",
+              "dataKind": "metrics",
+              "config": {}
             },
             {
               "id": "executive-summary",
@@ -18759,8 +17999,8 @@
                 "decimals": 2
               },
               "layout": {
-                "x": 3,
-                "y": 5,
+                "x": 6,
+                "y": 3,
                 "w": 6,
                 "h": 5
               },
@@ -18788,8 +18028,8 @@
               },
               "layout": {
                 "x": 0,
-                "y": 10,
-                "w": 6,
+                "y": 8,
+                "w": 12,
                 "h": 5
               },
               "pluginId": "record-list",
@@ -18945,31 +18185,6 @@
           "refreshInterval": 0,
           "widgets": [
             {
-              "id": "health-score",
-              "title": "Health Score",
-              "type": "plugin",
-              "providerId": "source-uptime-api",
-              "query": "{\"operation\":\"reliability_summary\",\"args\":{},\"projection\":{\"value\":\"healthScore\"}}",
-              "queryRef": {
-                "id": "src-uptime-reliability-health-score"
-              },
-              "unit": "",
-              "options": {
-                "showTooltip": true,
-                "decimals": 0,
-                "showSparkline": false
-              },
-              "layout": {
-                "x": 0,
-                "y": 0,
-                "w": 6,
-                "h": 5
-              },
-              "pluginId": "threshold-gauge",
-              "dataKind": "metrics",
-              "config": {}
-            },
-            {
               "id": "critical-issues",
               "title": "Critical Issues",
               "type": "stat",
@@ -18985,10 +18200,10 @@
                 "showSparkline": false
               },
               "layout": {
-                "x": 6,
+                "x": 0,
                 "y": 0,
-                "w": 3,
-                "h": 5
+                "w": 4,
+                "h": 3
               }
             },
             {
@@ -19007,10 +18222,10 @@
                 "showSparkline": false
               },
               "layout": {
-                "x": 9,
+                "x": 4,
                 "y": 0,
-                "w": 3,
-                "h": 5
+                "w": 4,
+                "h": 3
               }
             },
             {
@@ -19029,11 +18244,36 @@
                 "showSparkline": false
               },
               "layout": {
-                "x": 0,
-                "y": 5,
-                "w": 3,
-                "h": 5
+                "x": 8,
+                "y": 0,
+                "w": 4,
+                "h": 3
               }
+            },
+            {
+              "id": "health-score",
+              "title": "Health Score",
+              "type": "plugin",
+              "providerId": "source-uptime-api",
+              "query": "{\"operation\":\"reliability_summary\",\"args\":{},\"projection\":{\"value\":\"healthScore\"}}",
+              "queryRef": {
+                "id": "src-uptime-reliability-health-score"
+              },
+              "unit": "",
+              "options": {
+                "showTooltip": true,
+                "decimals": 0,
+                "showSparkline": false
+              },
+              "layout": {
+                "x": 0,
+                "y": 3,
+                "w": 6,
+                "h": 5
+              },
+              "pluginId": "threshold-gauge",
+              "dataKind": "metrics",
+              "config": {}
             },
             {
               "id": "executive-summary",
@@ -19050,8 +18290,8 @@
                 "decimals": 2
               },
               "layout": {
-                "x": 3,
-                "y": 5,
+                "x": 6,
+                "y": 3,
                 "w": 6,
                 "h": 5
               },
@@ -19079,8 +18319,8 @@
               },
               "layout": {
                 "x": 0,
-                "y": 10,
-                "w": 6,
+                "y": 8,
+                "w": 12,
                 "h": 5
               },
               "pluginId": "record-list",

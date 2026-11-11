@@ -12,7 +12,7 @@ describe("provider-backed reference compositions", () => {
       ["locations", 0, 6, 4, 4], ["outcomes", 4, 6, 4, 4], ["risks", 8, 6, 4, 4],
       ["blocked-requests", 0, 10, 12, 4],
     ]],
-    ["reliability-room", ["availability", "target", "budget"], [
+    ["reliability-room", ["availability", "target", "incidents", "budget"], [
       ["burn", 0, 3, 8, 5], ["services-attention", 8, 3, 4, 5],
       ["service-timeline", 0, 8, 8, 4], ["calendar", 8, 8, 4, 4],
       ["incidents-list", 0, 12, 12, 4],

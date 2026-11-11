@@ -12,11 +12,17 @@ const healthThresholds: WidgetOptions["thresholds"] = [
   { value: 0.5, status: "warning", label: "Degraded" },
   { value: 1, status: "ok", label: "Healthy" },
 ]
-/** Service latency objective: p95 at or above 250 ms is a warning, at or above 500 ms critical. */
+/** Service latency objective: a p95 above 1 s is a warning and above 2 s critical. Normal service sits well below 1 s. */
 const latencyThresholds: WidgetOptions["thresholds"] = [
-  { value: 0, status: "ok", label: "Within objective" },
-  { value: 250, status: "warning", label: "Above 250 ms" },
-  { value: 500, status: "critical", label: "Above 500 ms" },
+  { value: 0, status: "ok", label: "Within 1 s objective" },
+  { value: 1000, status: "warning", label: "Above 1 s" },
+  { value: 2000, status: "critical", label: "Above 2 s" },
+]
+/** Error budget burn on a 99.9 % objective: 2x burn is a warning, 14.4x (a fast burn that spends two days of budget per hour) critical. */
+const burnThresholds: WidgetOptions["thresholds"] = [
+  { value: 0, status: "ok", label: "Within budget" },
+  { value: 2, status: "warning", label: "2× burn" },
+  { value: 14.4, status: "critical", label: "14.4× fast burn" },
 ]
 
 /** Test-only chart scenarios. Never imported by the application or public gallery. */
@@ -119,9 +125,9 @@ function servicePulse(): RepositoryExample {
   const availability = b.scalar("availability", "Service availability", 99.98, 0.008, 0.9997)
   b.stat("requests", "Request rate", requests, 0, "req/s")
   b.stat("errors", "Error ratio", errors, 1, "%", { thresholds: [
-    { value: 0, status: "ok", label: "Within 0.1% objective" },
-    { value: 0.1, status: "warning", label: "1× budget burn" },
-    { value: 0.2, status: "critical", label: "2× budget burn" },
+    { value: 0, status: "ok", label: "Within budget" },
+    { value: 0.2, status: "warning", label: "2× burn" },
+    { value: 1.44, status: "critical", label: "14.4× fast burn" },
   ] })
   b.stat("latency", "p95 latency", latency, 2, "ms", { thresholds: latencyThresholds })
   b.stat("availability", "Availability", availability, 3, "%", { thresholds: [
@@ -214,8 +220,8 @@ function reliabilityRoom(): RepositoryExample {
   // A collection gap, then a stale tail: both burn series stop reporting well before the range end.
   const burnGaps = [{ from: 0.38, to: 0.45 }, { from: 0.8, to: 1 }]
   const burn = b.metrics("burn", "Availability burn rates", b.scoped([{ name: "1h burn rate", labels: { window: "1h" }, base: 1.42, variation: 0.9, gaps: burnGaps }, { name: "6h burn rate", labels: { window: "6h" }, base: 0.81, variation: 0.3, gaps: burnGaps }], 1.7))
-  b.add("burn", "Availability burn rate", burn, "timeseries", [0, 3, 8, 6], "×", { min: 0, thresholds: [{ value: 0, status: "ok", label: "Within budget" }, { value: 1, status: "warning", label: "1× burn" }, { value: 2, status: "critical", label: "2× burn threshold" }] })
-  b.plugin("budget-meter", "Remaining error budget", budget, "threshold-gauge", "metrics", [8, 3, 4, 6], { display: "segmented", label: "Remaining proportion", segments: 30 }, "%", { min: 0, max: 100, thresholds: [{ value: 0, status: "critical", label: "Exhausting" }, { value: 25, status: "warning", label: "At risk" }, { value: 50, status: "ok", label: "Available" }] })
+  b.add("burn", "Availability burn rate", burn, "timeseries", [0, 3, 8, 6], "×", { min: 0, thresholds: burnThresholds })
+  b.plugin("budget-meter", "Remaining error budget", budget, "threshold-gauge", "metrics", [8, 3, 4, 6], { display: "segmented", label: "Remaining proportion", segments: 30 }, "%", { min: 0, max: 100, thresholds: [{ value: 0, status: "critical", label: "Exhausted" }, { value: 25, status: "warning", label: "At risk" }, { value: 50, status: "ok", label: "Healthy" }] })
   const incidents = b.records("incidents", "October incident records", [time("date", "Started (UTC)"), text("label", "Incident"), number("value", "Duration", "min"), text("status", "State")], (_choice, index) => index ? [["2026-10-10T09:10:00Z", "Queue saturation", 23, "Resolved"], ["2026-10-22T15:00:00Z", "Upstream latency", 14, "Resolved"]] : [["2026-10-05T18:37:00Z", "Connection pool exhaustion", 72, "Resolved"], ["2026-10-10T03:14:00Z", "Elevated error rate", 22, "Resolved"], ["2026-10-16T10:21:00Z", "Third-party latency", 56, "Resolved"]])
   b.plugin("calendar", "Incident duration by day · UTC", incidents, "incident-calendar", "records", [0, 9, 5, 5], { date: "date", value: "value", label: "label", status: "status", aggregation: "sum", months: 1, endDate: "2026-10-31" }, "min")
   b.plugin("incidents-list", "Recorded incidents · October 2026", incidents, "record-table", "records", [5, 9, 7, 5], { columns: ["date", "label", "value", "status"], pageSize: 5 }, "min")

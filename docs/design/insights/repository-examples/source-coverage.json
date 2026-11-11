@@ -151,7 +151,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/5/targets/0",
           "language": "promql",
@@ -169,7 +169,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/6/targets/0",
           "language": "promql",
@@ -251,7 +251,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/11/targets/0",
           "language": "promql",
@@ -269,7 +269,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/12/targets/0",
           "language": "promql",
@@ -481,7 +481,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/25/targets/0",
           "language": "promql",
@@ -515,7 +515,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/27/targets/0",
           "language": "promql",
@@ -568,7 +568,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
@@ -586,7 +586,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/2/targets/0",
           "language": "promql",
@@ -604,7 +604,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "promql",
@@ -622,7 +622,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/4/targets/0",
           "language": "promql",
@@ -736,7 +736,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/10/targets/0",
           "language": "promql",
@@ -754,7 +754,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/11/targets/0",
           "language": "promql",
@@ -772,7 +772,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/12/targets/0",
           "language": "promql",
@@ -877,7 +877,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/0/targets/0",
           "language": "promql",
@@ -895,7 +895,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
@@ -913,7 +913,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/2/targets/0",
           "language": "promql",
@@ -931,7 +931,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "promql",
@@ -965,7 +965,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/5/targets/0",
           "language": "promql",
@@ -983,7 +983,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 6, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/6/targets/0",
@@ -1002,7 +1002,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 6, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/6/targets/1",
@@ -1021,7 +1021,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 6, target C; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/6/targets/2",
@@ -1056,7 +1056,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/8/targets/0",
           "language": "promql",
@@ -1074,7 +1074,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/9/targets/0",
           "language": "promql",
@@ -1092,7 +1092,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 10, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/10/targets/0",
@@ -1111,7 +1111,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 10, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/10/targets/1",
@@ -1239,7 +1239,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
@@ -1438,7 +1438,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/0/targets/0",
           "language": "promql",
@@ -1456,7 +1456,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "promql",
@@ -1474,7 +1474,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 2, target D; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/2/targets/0",
@@ -1493,7 +1493,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 2, target C; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/2/targets/1",
@@ -1512,7 +1512,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "promql",
@@ -1530,7 +1530,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 4, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/4/targets/0",
@@ -1549,7 +1549,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 4, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/4/targets/1",
@@ -1568,7 +1568,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/5/targets/0",
           "language": "promql",
@@ -1586,7 +1586,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/6/targets/0",
           "language": "promql",
@@ -1604,7 +1604,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 7, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/7/targets/0",
@@ -1623,7 +1623,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 7, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/7/targets/1",
@@ -1642,7 +1642,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 8, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/0",
@@ -1661,7 +1661,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 8, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/1",
@@ -1680,7 +1680,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 8, target C; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/2",
@@ -1699,7 +1699,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 8, target D; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/8/targets/3",
@@ -1718,7 +1718,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 9, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/9/targets/0",
@@ -1737,7 +1737,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 9, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/9/targets/1",
@@ -1756,7 +1756,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/10/targets/0",
           "language": "promql",
@@ -1774,7 +1774,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/11/targets/0",
           "language": "promql",
@@ -1792,7 +1792,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 12, target B; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/12/targets/0",
@@ -1811,7 +1811,7 @@
           ],
           "status": "adapted",
           "notes": [
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.",
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.",
             "Split from source panel 12, target A; sibling targets retain independent units and queries."
           ],
           "sourcePointer": "/panels/12/targets/1",
@@ -1862,7 +1862,7 @@
           "status": "unsupported-live",
           "notes": [
             "Grafana test-data gauge is explicitly synthetic and has no live provider equivalent.",
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "grafana-testdata"
@@ -1881,7 +1881,7 @@
           "notes": [
             "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
             "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/2/targets/0",
           "language": "sql-postgresql",
@@ -1901,7 +1901,7 @@
           "notes": [
             "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
             "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/3/targets/0",
           "language": "sql-postgresql",
@@ -1961,7 +1961,7 @@
           "status": "adapted",
           "notes": [
             "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source query is otherwise retained.",
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/0/targets/0",
           "language": "sql-postgresql",
@@ -1981,7 +1981,7 @@
           "notes": [
             "Live SQL history selects the latest 100 source observations, then orders them chronologically. Source stock/date filters remain intact; full history and dashboard-range filtering are not implied. The exact original SQL is retained in provenance.",
             "Grafana variable lists become one bound PostgreSQL parameter per selected stock; no SQL interpolation. Source calculations and filters are retained.",
-            "Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status."
+            "Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory."
           ],
           "sourcePointer": "/panels/1/targets/0",
           "language": "sql-postgresql",

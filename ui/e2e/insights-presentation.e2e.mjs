@@ -75,7 +75,8 @@ try {
             }) }));
           });
           assert.ok(readings.every(reading => reading.fits), `${width}px ${theme}: all short legend names and values must be visible: ${JSON.stringify(readings)}`);
-          assert.deepEqual(readings.map(reading => reading.color), id === 'latency-percentiles' ? ['rgb(190, 98, 105)', 'rgb(79, 134, 181)', 'rgb(131, 117, 188)'] : ['rgb(190, 98, 105)', 'rgb(175, 123, 60)']);
+          // Patched series name semantic roles, so the swatch carries the role token (p99, p50, p95 and server-error, client-error).
+          assert.deepEqual(readings.map(reading => reading.color), id === 'latency-percentiles' ? ['var(--gamma-series-p99, #a75fa7)', 'var(--gamma-series-p50, #127a8b)', 'var(--gamma-series-p95, #61516f)'] : ['var(--gamma-series-server-error, #b77080)', 'var(--gamma-series-client-error, #887fd0)']);
         }
         const chart = page.locator('[data-widget-id="latency-percentiles"]');
         await chart.getByRole('img', { name: 'latency-percentiles', exact: true }).focus();

@@ -121,7 +121,7 @@ export function galleryDocuments(providers) {
       dashboard.description += " Incident markers are read from synthetic PostgreSQL records. Burn rate compares one-hour request errors with a 99.9% objective.";
       const burnWidget = dashboard.widgets.find(widget => widget.id === "error-history");
       Object.assign(burnWidget, { title: "Error budget burn rate · 1h", query: burnQuery, unit: "×", queryRef: { id: "local-service-burn", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, annotationSource: { queryRef: { id: "local-ab-reliability-room-incidents", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, timestampColumn: "date", labelColumn: "label", severityColumn: "status" } });
-      burnWidget.options = { ...burnWidget.options, min: 0, thresholds: [{ value: 0, status: "ok", label: "Within budget" }, { value: 1, status: "warning", label: "1× burn" }, { value: 2, status: "critical", label: "2× burn" }] };
+      burnWidget.options = { ...burnWidget.options, min: 0, thresholds: [{ value: 0, status: "ok", label: "Within budget" }, { value: 2, status: "warning", label: "2× burn" }, { value: 14.4, status: "critical", label: "14.4× fast burn" }] };
     }
     if (key === "fleet-atlas") {
       dashboard.widgets.find(widget => widget.id === "nodes").title = "Ready nodes · observed";
@@ -205,12 +205,10 @@ export function galleryDocuments(providers) {
       Object.assign(destinations, { title: "Top destinations", type: "plugin", pluginId: "record-table", dataKind: "records", providerId: providers.records, query: destinationQuery,
         queryRef: { id: "local-edge-destinations", bindings: binding }, config: { columns: ["destination", "traffic", "percent"], pageSize: 10, density: "compact", showSearch: false, showRowNumbers: true, cellStyles: [{ column: "traffic", display: "bar", min: 0, max: 500, unit: "Mb/s" }, { column: "percent", display: "color-text", unit: "%" }] } });
       dashboard.widgets.find(widget => widget.id === "flow").config.symmetricAxis = true;
-      // Outcomes take the HTTP-class roles: allowed is success, challenged a client-side refusal, blocked the bad-outcome slot.
-      dashboard.widgets.find(widget => widget.id === "outcomes").config.seriesColors = [{ label: "outcome", value: "allowed", role: "success" }, { label: "outcome", value: "challenged", role: "client-error" }, { label: "outcome", value: "blocked", role: "server-error" }];
       const risks = dashboard.widgets.find(widget => widget.id === "risks");
       risks.title = "Risk by source · snapshot";
       risks.description = "Seed-time source risk snapshot. Trends show up to the latest 240 observations in the selected range.";
-      risks.config = { columns: ["source", "country", "trend", "risk", "status"], pageSize: 5, density: "compact", showSearch: false, showRowNumbers: true, cellStyles: [{ column: "trend", display: "sparkline", thresholdColumn: "risk" }, { column: "risk", display: "bar-segments", min: 0, max: 100, segments: 6, barColorMode: "value" }, { column: "status", display: "status-badge", mappings: [{ value: "Blocking", color: "#ef5a46" }, { value: "Challenging", color: "#f4b333" }, { value: "Monitoring", color: "#7992a1" }, { value: "Allowed", color: "#13c8a1" }] }] };
+      risks.config = { columns: ["source", "country", "trend", "risk", "status"], pageSize: 5, density: "compact", showSearch: false, showRowNumbers: true, cellStyles: [{ column: "trend", display: "sparkline", thresholdColumn: "risk" }, { column: "risk", display: "bar-segments", min: 0, max: 100, segments: 6, barColorMode: "value" }, { column: "status", display: "status-badge", mappings: [{ value: "Blocking", status: "critical" }, { value: "Challenging", status: "warning" }, { value: "Monitoring", status: "info" }, { value: "Allowed", status: "ok" }] }] };
       risks.options = { ...risks.options, thresholds: [{ value: 0, status: "ok", label: "Low" }, { value: 40, status: "warning", label: "Elevated" }, { value: 70, status: "critical", label: "High" }] };
       // The Edge reference uses a compact traffic row above a shallower
       // geography/outcomes/risk row. Keep the authored grid heights matched
@@ -221,12 +219,12 @@ export function galleryDocuments(providers) {
       map.title = "Connection geography";
       map.config = { latitude: "latitude", longitude: "longitude", label: "label", value: "value", display: "density", showLocations: false, maxPoints: 500 };
       map.selectionBindings = [{ variable: "location", source: "label", value: "label" }];
-      map.options = { ...map.options, thresholds: [{ value: 0, color: "#00cee2", label: "Low" }, { value: 250, color: "#8a7bf6", label: "Medium" }, { value: 400, color: "#f4523c", label: "High" }] };
+      map.options = { ...map.options, thresholds: [{ value: 0, color: "#a8e6f3", label: "Low" }, { value: 250, color: "#27b3d9", label: "Medium" }, { value: 400, color: "#00688f", label: "High" }] };
       for (const [id, icon] of [["ingress","arrow-down"],["egress","arrow-up"],["blocked","shield"],["connections","network"]]) {
         const stat = dashboard.widgets.find(widget => widget.id === id);
         stat.options = { ...stat.options, sparklinePlacement: "side", statIcon: icon };
       }
-      dashboard.widgets.push({ id: "blocked-requests", title: "Recent blocked requests", type: "plugin", pluginId: "record-table", dataKind: "records", providerId: providers.records, query: blockedQuery, unit: "", queryRef: { id: "local-edge-blocked-requests", bindings: binding }, config: { columns: ["time", "source", "destination", "rule", "count", "status"], pageSize: 5, density: "compact", showSearch: false, cellStyles: [{ column: "status", display: "status-badge", mappings: [{ value: "Blocked", color: "#ef5a46" }] }] }, layout: { x: 0, y: 14, w: 12, h: 4 } });
+      dashboard.widgets.push({ id: "blocked-requests", title: "Recent blocked requests", type: "plugin", pluginId: "record-table", dataKind: "records", providerId: providers.records, query: blockedQuery, unit: "", queryRef: { id: "local-edge-blocked-requests", bindings: binding }, config: { columns: ["time", "source", "destination", "rule", "count", "status"], pageSize: 5, density: "compact", showSearch: false, cellStyles: [{ column: "status", display: "status-badge", mappings: [{ value: "Blocked", status: "critical" }] }] }, layout: { x: 0, y: 14, w: 12, h: 4 } });
       const edgeEvents = sqlRange("SELECT occurred_at AS date, label, severity AS status FROM gallery.edge_events e WHERE to_jsonb(e)->>'cluster'=$1 AND occurred_at >= $2::timestamptz AND occurred_at <= $3::timestamptz ORDER BY occurred_at DESC", "gateway");
       savedQueries.push({ schemaVersion: 1, id: "local-edge-gateway-events", name: "Gateway events", kind: "records", providerId: providers.records, query: edgeEvents,
         description: "Synthetic gateway events for directional traffic annotations.", parameters: [{ name: "gateway", label: "Cluster", type: "string", defaultValue: "omega" }] });
@@ -250,18 +248,18 @@ export function galleryDocuments(providers) {
       // The selected request series can be checkout, payments, catalog or
       // worker; all four have synthetic metric and trace samples.
       dashboard.variables[0].options = ["checkout", "payments", "catalog", "worker"];
-      dashboard.widgets = dashboard.widgets.filter(widget => widget.id !== "incidents" && widget.id !== "budget-meter");
-      // The KPI band keeps its authored three rows: the error-budget bar needs layout h of at least 3 (stat.compact-bar).
-      for (const [id, icon] of [["availability","shield"],["target","target"],["budget","pie"]]) {
+      dashboard.widgets = dashboard.widgets.filter(widget => widget.id !== "budget-meter");
+      // Four KPI cards fill one three-row band: the error-budget bar needs layout h of at least 3 (stat.compact-bar).
+      for (const [index, [id, icon]] of [["availability","shield"],["target","target"],["incidents","activity"],["budget","pie"]].entries()) {
         const widget = dashboard.widgets.find(item => item.id === id);
-        widget.layout = { ...widget.layout, x: id === "availability" ? 0 : id === "target" ? 4 : 8, w: 4, y: 0, h: 3 };
+        widget.layout = { ...widget.layout, x: index * 3, w: 3, y: 0, h: 3 };
         widget.options = { ...widget.options, sparklinePlacement: "side", statIcon: icon };
       }
       dashboard.widgets.find(widget => widget.id === "availability").title = "Observed availability · 30d";
       dashboard.widgets.find(widget => widget.id === "target").title = "Target (SLO)";
       const budgetCard = dashboard.widgets.find(widget => widget.id === "budget");
       budgetCard.title = "Budget remaining · 30d";
-      budgetCard.options = { ...budgetCard.options, showStatBar: true, min: 0, max: 100, thresholds: [{ value: 0, status: "critical", label: "At risk" }, { value: 25, status: "warning", label: "Warning" }, { value: 75, status: "ok", label: "Healthy" }] };
+      budgetCard.options = { ...budgetCard.options, showStatBar: true, min: 0, max: 100, thresholds: [{ value: 0, status: "critical", label: "Exhausted" }, { value: 25, status: "warning", label: "At risk" }, { value: 50, status: "ok", label: "Healthy" }] };
       dashboard.widgets.find(widget => widget.id === "target").options.showSparkline = true;
       const events = sqlRange("SELECT started_at AS date, least(coalesce(ended_at,$3::timestamptz),$3::timestamptz) AS ended_at, summary AS label, severity AS status FROM gallery.incidents i WHERE service=$1 AND to_jsonb(i)->>'cluster'='omega' AND started_at<=$3::timestamptz AND (ended_at IS NULL OR ended_at>=$2::timestamptz) ORDER BY started_at DESC", "service");
       const incidentSeverity = sqlRange("SELECT started_at AS date, summary AS label, severity AS status, CASE severity WHEN 'warning' THEN 1.0 WHEN 'critical' THEN 2.0 ELSE NULL END::double precision AS value FROM gallery.incidents i WHERE service=$1 AND to_jsonb(i)->>'cluster'='omega' AND started_at>=$2::timestamptz AND started_at<=$3::timestamptz UNION ALL SELECT started_at AS date, summary AS label, severity AS status, NULL::double precision AS value FROM gallery.incident_severity_samples s WHERE service=$1 AND to_jsonb(s)->>'cluster'='omega' AND started_at>=$2::timestamptz AND started_at<=$3::timestamptz ORDER BY date DESC", "service");
@@ -273,8 +271,10 @@ export function galleryDocuments(providers) {
         { schemaVersion: 1, id: "local-reliability-attention", name: "Observed service availability summary", kind: "records", providerId: providers.records, query: attention, parameters: [] });
       const burn = dashboard.widgets.find(widget => widget.id === "burn");
       burn.title = "Availability burn rate · request errors";
+      // The two windows are palette slots chosen for contrast in both themes (traffic blue, p99 magenta); their names live in the legend.
+      burn.options = { ...burn.options, seriesColors: [{ label: "window", value: "1h", role: "traffic" }, { label: "window", value: "6h", role: "p99" }] };
       burn.annotationSource = { queryRef: { id: "local-reliability-events", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, timestampColumn: "date", endColumn: "ended_at", labelColumn: "label", severityColumn: "status" };
-      dashboard.widgets.push({ id: "services-attention", title: "Services needing attention · recorded probes", type: "plugin", pluginId: "record-table", dataKind: "records", providerId: providers.records, query: attention, unit: "", queryRef: { id: "local-reliability-attention", bindings: [] }, config: { columns: ["service", "availability", "budget", "status"], pageSize: 6, density: "compact", showSearch: false, cellStyles: [{ column: "availability", display: "color-text", unit: "%" }, { column: "budget", display: "bar", min: 0, max: 100, unit: "%", barColorMode: "value" }, { column: "status", display: "status-badge", mappings: [{ value: "At risk", color: "#e8554e" }, { value: "Healthy", color: "#20cba3" }] }] }, options: { thresholds: [{ value: 0, status: "critical", label: "At risk" }, { value: 25, status: "warning", label: "Warning" }, { value: 50, status: "ok", label: "Healthy" }] }, layout: { x: 8, y: 3, w: 4, h: 6 } },
+      dashboard.widgets.push({ id: "services-attention", title: "Services needing attention · recorded probes", type: "plugin", pluginId: "record-table", dataKind: "records", providerId: providers.records, query: attention, unit: "", queryRef: { id: "local-reliability-attention", bindings: [] }, config: { columns: ["service", "availability", "budget", "status"], pageSize: 6, density: "compact", showSearch: false, cellStyles: [{ column: "availability", display: "color-text", unit: "%" }, { column: "budget", display: "bar", min: 0, max: 100, unit: "%", barColorMode: "value" }, { column: "status", display: "status-badge", mappings: [{ value: "At risk", status: "critical" }, { value: "Healthy", status: "ok" }] }] }, options: { thresholds: [{ value: 0, status: "critical", label: "Exhausted" }, { value: 25, status: "warning", label: "At risk" }, { value: 50, status: "ok", label: "Healthy" }] }, layout: { x: 8, y: 3, w: 4, h: 6 } },
         { id: "service-timeline", title: "Service state · worst recorded probe per 3h", type: "plugin", pluginId: "status-history", dataKind: "metrics", providerId: providers.metrics, query: timeline, unit: "", queryRef: { id: "local-reliability-timeline", bindings: [] }, config: { labelField: "service", showTimeAxis: true, segmented: true, maxSeries: 6, maxPoints: 120 }, options: { showLegend: true, showTooltip: true, thresholds: [{ value: 0, status: "critical", label: "Down" }, { value: 1, status: "ok", label: "Up" }] }, layout: { x: 0, y: 9, w: 8, h: 5 } });
       const calendar = dashboard.widgets.find(widget => widget.id === "calendar"); delete calendar.config.endDate;
       Object.assign(calendar, { title: "Incident severity by day · UTC", query: incidentSeverity, unit: "", queryRef: { id: "local-reliability-severity", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, config: { ...calendar.config, value: "value", status: "status", label: "label", aggregation: "max", colorMode: "thresholds" }, options: { ...calendar.options, thresholds: [{ value: 1, status: "warning", label: "Warning" }, { value: 2, status: "critical", label: "Critical" }] }, layout: { x: 8, y: 9, w: 4, h: 5 } });
@@ -308,7 +308,7 @@ export function galleryDocuments(providers) {
       dashboard.description += " Job execution states are synthetic sampled metrics; recent job records are seeded independently.";
       const failures = dashboard.widgets.find(widget => widget.id === "failures");
       failures.title = "Recent failed or retrying jobs";
-      failures.config = { columns: ["started", "source", "pipeline", "duration_s", "message", "status"], density: "compact", showSearch: false, pageSize: 5, cellStyles: [{ column: "status", display: "status-badge", mappings: [{ value: "Failed", color: "#e95352" }, { value: "Retrying", color: "#f1b841" }] }] };
+      failures.config = { columns: ["started", "source", "pipeline", "duration_s", "message", "status"], density: "compact", showSearch: false, pageSize: 5, cellStyles: [{ column: "status", display: "status-badge", mappings: [{ value: "Failed", status: "critical" }, { value: "Retrying", status: "warning" }] }] };
       dashboard.variables.push({ name: "source", label: "Source", defaultValue: "prometheus", options: ["prometheus", "tempo", "shorted-api", "brandbrain", "market-sync"] });
       const sourceList = sql("SELECT source,state AS status,freshness_seconds,rows_processed FROM gallery.sources s WHERE to_jsonb(s)->>'cluster'=$1 ORDER BY source", "pipeline");
       const sourceHistory = 'paprika_demo_source_freshness_seconds{cluster={{pipeline}},source={{source}}}';

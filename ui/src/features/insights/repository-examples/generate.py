@@ -36,7 +36,18 @@ GRAFANA_METRIC_SOURCES = {
 # dashboard keeps its meaning across themes. Unknown colours fail the build rather than guessing.
 GRAFANA_STATUS = {'green':'ok','blue':'info','yellow':'warning','orange':'warning','red':'critical',
  'rgba(50, 172, 45, 0.97)':'ok','rgb(234, 245, 234)':'ok','rgb(235, 244, 235)':'ok','rgba(237, 129, 40, 0.89)':'warning','rgba(222, 3, 3, 0.9)':'critical','rgba(245, 54, 54, 0.9)':'critical'}
-THRESHOLD_ADAPTATION = 'Grafana threshold colours became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.'
+THRESHOLD_ADAPTATION = 'Grafana threshold colours that the panel displays became statuses: green ok, yellow and orange warning, red critical, blue info. The unvalued base step became a band starting at 0, so breaches start from its status.'
+THRESHOLD_NOT_DISPLAYED = 'Grafana threshold steps are not imported: this panel does not display them (time series with thresholds off, or a palette, fixed or continuous colour mode). The source steps remain in the inventory.'
+def grafana_shows_thresholds(panel_type, defaults, options):
+ # Grafana draws threshold steps only where the panel displays them. A time series draws them when its
+ # thresholds style is not off (the default). A stat draws them as colour when colour mode is thresholds and
+ # the value colour is not none; gauges and bar gauges draw them in thresholds colour mode. Other steps are
+ # kept in the source inventory and are not imported as statuses.
+ mode=defaults.get('color',{}).get('mode')
+ if panel_type=='timeseries': return defaults.get('custom',{}).get('thresholdsStyle',{}).get('mode','off')!='off'
+ if panel_type=='stat': return mode=='thresholds' and options.get('colorMode')!='none'
+ if panel_type in ('gauge','bargauge','barchart'): return mode=='thresholds'
+ return False
 def grafana_thresholds(steps):
  if not steps: return []
  out=[]
@@ -137,6 +148,8 @@ def arrange_widgets(widgets):
 # keep the plain packing, whose gaps the canvas already closes.
 FILLED_ROW_EXAMPLES={'shorted-stealth-scraping','shorted-postgres-exporter','shorted-prometheus-stats','uptime-reliability'}
 def arrange_filled_widgets(widgets):
+ # Rows fill the canvas: a row of stats splits 12 columns evenly, a mixed row widens its last widget to 12,
+ # and a short row widens its last widget when a later widget sits below the empty columns or it is the last row.
  rows,row,x=[],[],0
  for widget in widgets:
   width=3 if widget['type']=='stat' else 6
@@ -145,18 +158,27 @@ def arrange_filled_widgets(widgets):
  if row:rows.append(row)
  spans=[]
  for row in rows:
-  start,placed=0,[]
-  for widget,width in row:
-   placed.append([widget,start,width]);start+=width
-  spans.append((placed,start))
+  stats_only=all(widget['type']=='stat' for widget,_ in row)
+  if stats_only:
+   widths=[12//len(row)]*len(row);widths[-1]+=12-sum(widths)
+   placed=[];start=0
+   for (widget,_),width in zip(row,widths):placed.append([widget,start,width]);start+=width
+  else:
+   placed=[];start=0
+   for widget,width in row:placed.append([widget,start,width]);start+=width
+  spans.append((placed,start,stats_only))
  y=0
- for index,(placed,filled) in enumerate(spans):
+ for index,(placed,filled,stats_only) in enumerate(spans):
   height=max(3 if widget['type']=='stat' else 5 for widget,_,_ in placed)
-  later=[(x,w) for row,_ in spans[index+1:] for _,x,w in row]
-  if filled<12 and any(x<12 and x+w>filled for x,w in later):placed[-1][2]+=12-filled
+  later=[(x,w) for row,_,_ in spans[index+1:] for _,x,w in row]
+  is_last=index==len(spans)-1
+  if not stats_only and filled<12 and (is_last or any(x<12 and x+w>filled for x,w in later)):placed[-1][2]+=12-filled
   for widget,x,width in placed:
    widget['layout']={'x':x,'y':y,'w':width,'h':height}
   y+=height
+
+# Stat cards that are a KPI band come first, so the charts below them form their own rows.
+KPI_FIRST_EXAMPLES={'uptime-reliability'}
 
 def finish(e,history_limit=None):
  if any(provider['type']=='postgresql' for provider in e['providers']):e['limitations'].append('Live PostgreSQL requires a dedicated unprivileged reader role with SELECT on the source tables and verify-full TLS using a CA trusted by the gateway. Provider remapping alone does not provision credentials or trust.')
@@ -167,7 +189,9 @@ def finish(e,history_limit=None):
   if mode in e:
    e[mode]['dashboards'][0]['description']=(('Authored historical data. ' if e['id']=='shorted-housing-feature' else 'Illustrative data. ') if mode=='sample' else 'Live provider reads. ')+e['description'][:430]
    if mode=='live' and history_limit:e[mode]['dashboards'][0]['description']=e[mode]['dashboards'][0]['description'][:350].rstrip('. ')+f'. History charts show the latest {history_limit} source observations. Source date filters apply; the dashboard time range does not rewrite this SQL.'
-   (arrange_filled_widgets if e['id'] in FILLED_ROW_EXAMPLES else arrange_widgets)(e[mode]['dashboards'][0]['widgets'])
+   widgets=e[mode]['dashboards'][0]['widgets']
+   if e['id'] in KPI_FIRST_EXAMPLES:widgets.sort(key=lambda w:w['type']!='stat')
+   (arrange_filled_widgets if e['id'] in FILLED_ROW_EXAMPLES else arrange_widgets)(widgets)
 
 # All seven Grafana definitions, one saved query for each target including hidden targets.
 for src in SHORT['examples'][:7]:
@@ -206,7 +230,9 @@ for src in SHORT['examples'][:7]:
    options={'decimals':max(0,min(8,defaults.get('decimals',0 if typ=='stat' and unit=='' else 2) or 0))}
    if typ=='stat':options['showSparkline']=panel.get('presentation',{}).get('options',{}).get('graphMode','none')=='area'
    steps=defaults.get('thresholds',{}).get('steps',[])
-   thresholds=grafana_thresholds(steps)
+   displayed=grafana_shows_thresholds(typ,defaults,panel.get('presentation',{}).get('options',{}))
+   thresholds=grafana_thresholds(steps) if displayed else []
+   hidden_steps=bool(steps) and not displayed
    if thresholds:options['thresholds']=thresholds[:12]
    visual={'graph':'timeseries','table-old':'table','barchart':'bar','bargauge':'bar','gauge':'threshold-gauge','piechart':'pie'}.get(typ,typ)
    config={} if visual in ['threshold-gauge','pie'] else None
@@ -246,6 +272,7 @@ for src in SHORT['examples'][:7]:
    else:
     notes.append('Grafana test-data gauge is explicitly synthetic and has no live provider equivalent.');live=None
    if thresholds:notes.append(THRESHOLD_ADAPTATION)
+   if hidden_steps:notes.append(THRESHOLD_NOT_DISPLAYED)
    if len(targets)>1: notes.append(f'Split from source panel {ordinal}, target {ref}; sibling targets retain independent units and queries.')
    if target.get('settings',{}).get('hide'):notes.append('Source target is hidden; exposed here for complete query coverage.')
    if notes:c['status']='adapted'
