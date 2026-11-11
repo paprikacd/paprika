@@ -14,10 +14,10 @@ import { dateTimeFormat, formatMetric, formatMetricDetails, latestPoint, seriesN
 import { useChartEntrance } from "./chart-entrance";
 import chartEntrance from "./chart-entrance.module.css";
 import { ChartDataInspector } from "./chart-data-inspector";
+import { widgetSeriesColors } from "./series-colors";
 import {
   EMPTY_OPTIONS,
   MAX_SERIES,
-  PALETTE,
   chartYAxisLayout,
   configuredTheme,
   resolveChartDomain,
@@ -78,6 +78,8 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
     !embedded && options.showTooltip !== false;
   const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
   const displayLabels = useMemo(() => compactSeriesLabels(series.slice(0, MAX_SERIES)), [series]);
+  // Colours come from the whole result, so the bar of one service keeps its colour in every widget.
+  const seriesColors = useMemo(() => widgetSeriesColors(series, widget), [series, widget]);
   const rows = useMemo(
     () =>
       series.slice(0, MAX_SERIES).map((entry, index): BarRow => {
@@ -97,12 +99,10 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
           timestamp: point.timestamp,
           color:
             thresholdPaint(thresholdForValue(point.value, options.thresholds)) ??
-            (index === 0 && widget.color
-              ? widget.color
-              : PALETTE[index % PALETTE.length]),
+            seriesColors[index].color,
         };
       }),
-    [series, widget.color, options.thresholds, displayLabels],
+    [series, seriesColors, options.thresholds, displayLabels],
   );
   const noDataRows = useMemo(() => rows.filter((row) => row.noData), [rows]);
   const values = useMemo(() => rows.flatMap((row) => (row.noData ? [] : [row.value])), [rows]);

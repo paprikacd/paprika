@@ -455,7 +455,8 @@ describe("stacked bars with missing and not-started series", () => {
     expect(cap).toHaveAttribute("height", "6");
     expect(cap).toHaveAttribute("stroke-width", "1");
     expect(cap).toHaveAttribute("stroke-dasharray", "2 2");
-    expect(cap).toHaveAttribute("stroke", seriesSlot(1));
+    // The identities are service=checkout (home slot 6), service=notifications (1) and service=search (0), with no clash.
+    expect(cap).toHaveAttribute("stroke", seriesSlot(0));
     expect(cap).toHaveAttribute("data-missing-count", "1");
     expect(cap.getAttribute("fill")).toMatch(/-hatch\)$/);
     expect(container.querySelector('pattern[id$="-hatch"]')).toBeInTheDocument();

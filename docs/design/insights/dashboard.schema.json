@@ -964,6 +964,13 @@
                   "additionalProperties": false
                 }
               },
+              "seriesColorMode": {
+                "type": "string",
+                "enum": [
+                  "name",
+                  "index"
+                ]
+              },
               "gridX": {
                 "type": "boolean"
               },

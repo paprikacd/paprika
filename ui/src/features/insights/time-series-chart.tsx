@@ -41,7 +41,6 @@ import { calendarTickLabel, calendarTicks, DEFAULT_AREA_OPACITY, horizontalPlotB
 import {
   EMPTY_OPTIONS,
   MAX_SERIES,
-  PALETTE,
   chartYAxisLayout,
   configuredTheme,
   resolveChartDomain,
@@ -60,7 +59,7 @@ import type { DrilldownContext } from "./drilldown";
 import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
-import { resolveSeriesColor } from "./series-colors";
+import { widgetSeriesColors } from "./series-colors";
 import { displaySeriesNames, fallbackIdentityTitle } from "./series-display";
 import { alignPriorPeriod, formatWindowDuration, minimumTimeWindow, normalizeTimeWindow, sameTimeWindow, seriesInWindow, timeWindowExtent, type ObservationWindow } from "./time-window";
 import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./chart-window-controls";
@@ -227,11 +226,13 @@ export function TimeSeriesChart({
   const identityTitle = useMemo(() => fallbackIdentityTitle(widget, visibleSeries), [widget, visibleSeries]);
   const previousIdentityTitle = useMemo(() => fallbackIdentityTitle(widget, prior.map(entry => entry.original)), [widget, prior]);
   const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels);
+  // Colours are assigned over the whole result, so zooming, hiding and the series cut never recolour a series.
+  const seriesColors = useMemo(() => widgetSeriesColors(series, widget), [series, widget]);
   const domain = useMemo(
     () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options, yCount),
     [visibleSeries, prior, options, yCount],
   );
-  const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: resolveSeriesColor(entry.original.labels, options.seriesColors, entry.index === 0 && widget.color ? widget.color : PALETTE[entry.index % PALETTE.length]), points: downsamplePoints(entry.shifted.points), plotPoints: downsamplePoints(withGapBreaks(entry.shifted.points, sampleCadence(entry.shifted.points))) })), [prior, widget.color, options.seriesColors]);
+  const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: seriesColors[entry.index].color, points: downsamplePoints(entry.shifted.points), plotPoints: downsamplePoints(withGapBreaks(entry.shifted.points, sampleCadence(entry.shifted.points))) })), [prior, seriesColors]);
   const data = useMemo(
     () =>
       visibleSeries.slice(0, MAX_SERIES).map((entry, index) => {
@@ -242,15 +243,14 @@ export function TimeSeriesChart({
         return {
           name: seriesName(entry, index),
           latest: latestPoint(entry),
-          color: resolveSeriesColor(entry.labels, options.seriesColors,
-            index === 0 && widget.color ? widget.color : PALETTE[index % PALETTE.length]),
+          color: seriesColors[index].color,
           points: downsamplePoints(entry.points).map(tag),
           plotPoints,
           // Observations that no line segment reaches. They get dots of their own.
           dotPoints: isolatedPlotPoints(plotPoints),
         };
       }),
-    [visibleSeries, widget.color, options.seriesColors],
+    [visibleSeries, seriesColors],
   );
   // One fill per observed run, so a gap never moves another run's zero line. Runs with the same stops share a gradient.
   // Each fade meets the visible zero line, which is the plot edge nearest zero when the domain excludes zero.

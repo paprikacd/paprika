@@ -39,6 +39,10 @@ describe("metric series color rules", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add series color" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Color rule 1 label" }), { target: { value: "direction" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Color rule 1 value" }), { target: { value: "inbound" } });
+    // A new rule defaults to the traffic role; switching to a hex colour is an explicit choice.
+    expect(screen.getByRole("combobox", { name: "Color rule 1 source" })).toHaveTextContent("Role: traffic");
+    fireEvent.click(screen.getByRole("combobox", { name: "Color rule 1 source" }));
+    fireEvent.click(screen.getByRole("option", { name: "Hex colour" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Color rule 1 color" }), { target: { value: "#00cee2" } });
     const saved = JSON.parse(screen.getByLabelText("Saved configuration").textContent!);
     expect(directionalConfigSchema.parse(saved).seriesColors).toEqual([rules[0]]);

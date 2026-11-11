@@ -8,6 +8,7 @@ import { exactMetric, formatMetricDetails, type Point, type Series } from "./cha
 import { calendarDateTime, DEFAULT_AREA_OPACITY } from "./chart-presentation";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { metricTooltipTitle } from "./metric-tooltip-content";
+import { widgetSeriesColors } from "./series-colors";
 import {
   inspectPreparedObservation,
   prepareObservationInspector,
@@ -74,8 +75,8 @@ export interface ObservationInspectorProps {
   onClose: () => void;
   /** The chart window the histories show. Without it, the histories span the returned data. */
   window?: InspectionWindow;
-  /** Series colours by source index, cycled when there are more series than colours. */
-  colors: readonly string[];
+  /** Series colours by source index. Unset, the widget's own assignment is used, so the inspector matches the chart. */
+  colors?: readonly string[];
   note?: string;
   /** Host actions, such as a drilldown, appended after the readings. */
   children?: ReactNode;
@@ -87,6 +88,7 @@ export interface ObservationInspectorProps {
  */
 export function ObservationInspector({ widget, title, series, selectedSeriesIndex, timestamp, unit, decimals, pinned, onPin, onClose, window, colors, note, children }: ObservationInspectorProps) {
   const timeZone = useDashboardTimeZone();
+  const sourceColors = useMemo(() => colors ?? widgetSeriesColors(series, widget ?? {}).map(choice => choice.color), [colors, series, widget]);
   const windowStart = window?.start, windowEnd = window?.end;
   const prepared = useMemo(
     () => prepareObservationInspector(series, windowStart === undefined || windowEnd === undefined ? undefined : { start: windowStart, end: windowEnd }, 12, 96, selectedSeriesIndex),
@@ -116,7 +118,7 @@ export function ObservationInspector({ widget, title, series, selectedSeriesInde
     </div>}
     <div className={styles.rows}>
       {model.rows.map((row) => {
-        const color = colors[row.sourceIndex % colors.length] ?? "var(--gamma-chart-1)";
+        const color = sourceColors[row.sourceIndex] ?? "var(--gamma-chart-1)";
         const exact: ExactObservation = row.exact;
         return <section key={row.key} className={styles.row} data-selected-series={row.sourceIndex === selectedSeriesIndex || undefined} data-observation-state={exact.kind}>
           <div className={styles.value}>

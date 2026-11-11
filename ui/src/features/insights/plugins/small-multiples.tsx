@@ -7,7 +7,7 @@ import { formatSharedScale } from "../units";
 import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName, type Point, type Series } from "../chart-data";
 import { validTimestamp } from "../widget-context";
 import { compactSeriesLabels } from "../series-display";
-import { SERIES_PALETTE } from "../series-palette";
+import { widgetSeriesColors } from "../series-colors";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import type { QueryResult, Widget } from "../schema";
@@ -47,9 +47,9 @@ export function smallMultiplesPath(points: readonly Point[], domain: Domains) {
   }).filter(Boolean).join(" ");
 }
 
-function SmallMultiple({ entry, index, displayName, domain, widget, result, maxPoints, interactive, detailsEnabled, onContextChange }: { entry: Series; index: number; displayName: string; domain: Domains; widget: Widget; result: QueryResult; maxPoints: number; interactive: boolean; detailsEnabled: boolean; onContextChange: WidgetRendererProps["onContextChange"] }) {
+function SmallMultiple({ entry, index, color, displayName, domain, widget, result, maxPoints, interactive, detailsEnabled, onContextChange }: { entry: Series; index: number; color: string; displayName: string; domain: Domains; widget: Widget; result: QueryResult; maxPoints: number; interactive: boolean; detailsEnabled: boolean; onContextChange: WidgetRendererProps["onContextChange"] }) {
   const points = useMemo(() => downsamplePoints(entry.points, maxPoints), [entry.points, maxPoints]);
-  const name = seriesName(entry, index), latest = latestPoint(entry), color = index === 0 && widget.color ? widget.color : SERIES_PALETTE[index % SERIES_PALETTE.length];
+  const name = seriesName(entry, index), latest = latestPoint(entry);
   const id = useId(), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), interaction = useRef({ hovered: false, focused: false, panel: false });
   const [active, setActive] = useState<{ index: number; anchor: SVGSVGElement; pinned: boolean; revision: QueryResult }>();
   const current = active?.revision === result ? active : undefined;
@@ -121,6 +121,8 @@ function SmallMultiple({ entry, index, displayName, domain, widget, result, maxP
 export function SmallMultiples({ widget, result, embedded, onContextChange }: WidgetRendererProps) {
   const config = configSchema.parse(widget.config ?? {}), parentEmbedded = useEmbeddedWidget();
   const series = useMemo(() => (result.series ?? []).slice(0, config.maxSeries ?? 6), [result.series, config.maxSeries]);
+  // Colours come from every returned series, so a panel keeps its colour whatever maxSeries shows.
+  const colors = useMemo(() => widgetSeriesColors(result.series ?? [], widget), [result.series, widget]);
   // Resolve names against all returned peers, not just visible panels, so an
   // omitted series cannot make a shortened identity ambiguous.
   const displayNames = useMemo(() => compactSeriesLabels(result.series ?? []), [result.series]);
@@ -151,7 +153,7 @@ export function SmallMultiples({ widget, result, embedded, onContextChange }: Wi
   };
   return <div className={styles.root}><div className={styles.scroll} ref={scroll} role="region" aria-label={`${widget.title} trends`} aria-describedby={overflow ? overflowId : undefined} tabIndex={overflow && !embedded && !parentEmbedded ? 0 : undefined} onKeyDown={scrollKeys}>
     <div className={styles.grid} ref={grid} style={{ "--multiple-columns": config.columns ?? 3 } as CSSProperties}>
-      {series.map((entry, index) => <SmallMultiple key={index} entry={entry} index={index} displayName={displayNames[index]} domain={domain} widget={widget} result={result} maxPoints={config.maxPoints ?? 120} interactive={interactive} detailsEnabled={detailsEnabled} onContextChange={onContextChange} />)}
+      {series.map((entry, index) => <SmallMultiple key={index} entry={entry} index={index} color={colors[index].color} displayName={displayNames[index]} domain={domain} widget={widget} result={result} maxPoints={config.maxPoints ?? 120} interactive={interactive} detailsEnabled={detailsEnabled} onContextChange={onContextChange} />)}
     </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>Showing {series.length} of {result.series?.length} series</span>}{result.truncated && <span>Partial source response</span>}</div></div>;
 }
 export function registerSmallMultiplesPlugin() {

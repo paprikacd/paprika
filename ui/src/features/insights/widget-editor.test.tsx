@@ -872,7 +872,8 @@ describe("widget inspector", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
-    expect(screen.getByLabelText("Series color")).toHaveValue("#53876a");
+    // The gauge draws the second palette slot (--gamma-series-2) until it has a colour of its own.
+    expect(screen.getByLabelText("Series color")).toHaveValue("#0c9a93");
     expect(screen.queryByLabelText("Y minimum")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("switch", { name: "Show grid" }),
@@ -987,7 +988,8 @@ describe("widget inspector", () => {
     render(<WidgetEditor {...callbacks} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.queryByLabelText("Fill opacity")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Series color")).toHaveValue("#c46146");
+    // Without loaded data the swatch shows the first palette slot, the colour the first series draws in light mode.
+    expect(screen.getByLabelText("Series color")).toHaveValue("#003d75");
     choose("Display", "Area");
     fireEvent.change(screen.getByLabelText("Fill opacity"), {
       target: { value: "0.35" },
