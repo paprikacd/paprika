@@ -27,4 +27,10 @@ describe("time-series threshold guides",()=>{
     rerender(<WidgetVisualization widget={{...configured,options:{thresholds,min:4,max:10}}} result={result}/>);
     expect(container.querySelector("[data-threshold-value]")).not.toBeInTheDocument();
   });
+  it("does not draw the ok base band as a guide at the plot's lower edge",()=>{
+    const healthy=[{value:0,status:"ok" as const,label:"Within budget"},{value:10,status:"critical" as const,label:"2× burn"}];
+    const {container}=render(<WidgetVisualization widget={{...widget,options:{thresholds:healthy}}} result={result}/>);
+    expect(container.querySelector('[data-threshold-value="0"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-threshold-value="10"]')).toBeInTheDocument();
+  });
 });
