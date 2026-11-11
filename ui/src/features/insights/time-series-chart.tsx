@@ -1,7 +1,7 @@
 "use client";
 
 // The time-series renderer. chart-renderers.tsx re-exports it, so existing importers are unchanged.
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { areaY } from "@tanstack/charts/area";
 import { crosshair } from "@tanstack/charts/crosshair";
 import { d3Curve } from "@tanstack/charts/d3/shape";
@@ -69,6 +69,9 @@ import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { autoAxisDomain, niceDomain } from "./units";
 import { validTimestamp } from "./widget-context";
 import { thresholdPaint } from "./status";
+import { breachBands, breachEmphasisPoints, breachSummary, clampBreaches, timeSeriesBreaches, type BreachLevel, type SeriesBreachInterval } from "./breaches";
+import { BreachSummary } from "./breach-summary";
+import breachStyles from "./breach.module.css";
 import { useWidgetPresentation } from "./widget-presentation";
 
 const CURVES = {
@@ -144,6 +147,32 @@ function TimeBrushOverlay({ preview, top, bottom }: { preview: TimeBrushPreview 
   const left = Math.min(preview.x1, preview.x2), selected = Math.abs(preview.x2 - preview.x1);
   return <div className={chartStyles.brush} style={{ left, width: selected, top, bottom }} data-time-brush-selection aria-hidden="true"><span>{formatWindowDuration(Math.abs(preview.end - preview.start))}</span></div>;
 }
+
+/**
+ * Breach bands per level are capped, so a long, noisy series cannot add thousands of plot nodes. Each level keeps its most
+ * recent bands, and the footer says how many are not shaded.
+ */
+const BREACH_BAND_LIMIT = 200;
+
+/**
+ * The breach shading: one low-opacity band per breaching stretch, behind the plot. It is memoised on its own props, so a
+ * cursor moving over another chart never reaches it.
+ */
+const BreachBands = memo(function BreachBands({ spans, timeDomain, left, width, top, bottom }: {
+  spans: readonly { start: number; end: number; level: BreachLevel }[];
+  timeDomain: [number, number];
+  left: number;
+  width: number;
+  top: number;
+  bottom: number;
+}) {
+  return <>{spans.map((span) => {
+    const from = temporalPosition(span.start, timeDomain[0], timeDomain[1], left, left + width);
+    const to = temporalPosition(span.end, timeDomain[0], timeDomain[1], left, left + width);
+    return <span key={`${span.level}-${span.start}`} aria-hidden="true" className={breachStyles.band} data-breach-band data-level={span.level} data-from={span.start} data-to={span.end}
+      style={{ left: from, width: Math.max(1.5, to - from), top, bottom }} />;
+  })}</>;
+});
 
 export function TimeSeriesChart({
   widget,
@@ -331,6 +360,28 @@ export function TimeSeriesChart({
       : holes;
   }, [coverage, embedded, truncated, dataStart, dataEnd, staleTail]);
   const visibleBands = embedded || emptyZoom ? [] : bands;
+  // Breaches are a function of the visible samples and the thresholds alone. Cursor moves and resizes never recompute them,
+  // and each series keeps its own step (null when unknown).
+  const breaches = useMemo<SeriesBreachInterval[]>(
+    () => embedded ? [] : timeSeriesBreaches(visibleSeries.slice(0, MAX_SERIES).map(entry => ({ points: entry.points, step: sampleCadence(entry.points) })), options.thresholds),
+    [embedded, visibleSeries, options.thresholds],
+  );
+  // Intervals are clipped to the plotted window, so the footer never counts time the plot does not show.
+  const windowBreaches = useMemo(() => timeDomain ? clampBreaches(breaches, timeDomain) : breaches, [breaches, timeDomain]);
+  const breachLevels = useMemo(() => breachSummary(windowBreaches), [windowBreaches]);
+  // A widget with a warning or critical status always reserves its breach line, so the plot's height is a function of the
+  // configuration alone. Whether a breach is active only changes the words on that line, never the layout.
+  const reservesBreachLine = !embedded && (options.thresholds ?? []).some(threshold => threshold.status === "warning" || threshold.status === "critical");
+  // Bands: one per merged span with time in it, so instants (single samples) get no zero-width band. Spans closer than one
+  // pixel merge into one band. Each level keeps its most recent bands, and warning is drawn before critical so that critical
+  // paints over any overlap.
+  const bandPlan = useMemo(() => {
+    const msPerPixel = timeDomain && plotWidth > 0 ? (timeDomain[1] - timeDomain[0]) / plotWidth : 0;
+    return breachBands(windowBreaches, msPerPixel, BREACH_BAND_LIMIT);
+  }, [windowBreaches, timeDomain, plotWidth]);
+  // The stroke is derived from each series' plotted points, so it sits on the drawn line. Threshold crossings are
+  // interpolated, which makes entry and exit symmetric. Nothing here depends on the cursor.
+  const breachEmphasis = useMemo(() => embedded ? [] : data.map((entry, index) => breachEmphasisPoints(entry.plotPoints, options.thresholds).map(point => ({ ...point, seriesIndex: index }))), [embedded, data, options.thresholds]);
   const intervalCount = visibleBands.length + (staleTail ? 1 : 0);
   const gapsHidden = !embedded && !!truncated && dataStart !== undefined;
   const tailBox = staleTail ? bandBox(staleTail.from, staleTail.to) : undefined;
@@ -376,6 +427,17 @@ export function TimeSeriesChart({
             points: true,
           }))] : []),
           ]),
+          // The breaching stretch of each series, drawn heavier over its line. Decorative, so the line keeps focus and hover.
+          ...breachEmphasis.flatMap((points, index) => points.length && data[index] ? [decorative(lineY(points, {
+            id: `breach-${index}`,
+            x: "timestamp",
+            y: "value",
+            // Grouped by series, like the line it sits on, so the marks keep a stable identity across updates.
+            z: "seriesIndex",
+            stroke: data[index].color,
+            strokeWidth: (options.lineWidth ?? 1.8) + 1.5,
+            curve: CURVES[options.curve ?? "linear"],
+          }))] : []),
           // The focus guide: a dashed rule at the focused x. It reads focus state only, so it adds no scale input.
           ...(embedded ? [] : [crosshair({ x: { stroke: "var(--gamma-chart-axis, var(--gamma-muted, #52636f))", strokeOpacity: .7, strokeWidth: 1, strokeDasharray: "3 3" }, y: false })]),
         ],
@@ -476,6 +538,7 @@ export function TimeSeriesChart({
       plotLeft,
       plotRight,
       areaFills,
+      breachEmphasis,
       calendarTickList,
       calendarLabels,
       timeZone,
@@ -498,6 +561,8 @@ export function TimeSeriesChart({
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
         {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
+        {/* Breach bands come before the no-sample hatches, so a hatch paints over any band it touches. */}
+        {!embedded && !emptyZoom && timeDomain && bandPlan.spans.length > 0 && <BreachBands spans={bandPlan.spans} timeDomain={timeDomain} left={plotLeft} width={plotWidth} top={eventTop} bottom={eventBottom} />}
         {visibleBands.map((band) => {
           const box = bandBox(band.from, band.to);
           // A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times.
@@ -563,6 +628,7 @@ export function TimeSeriesChart({
         </ul>
       </details>}
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
+      {reservesBreachLine && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 ? 0 : undefined}>
           {data.map((entry, index) => {
