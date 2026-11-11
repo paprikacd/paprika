@@ -58,6 +58,10 @@ try {
           await widget.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
           await widget.getByRole("status", { name: "Loading widget" }).waitFor({ state: "hidden" });
           const widgetId = await widget.getAttribute("data-widget-id");
+          // A tile waiting on a shared data source is not ready: give its source a
+          // chance to load, then require that no waiting or unavailable state remains.
+          await widget.locator('[aria-busy="true"]').first().waitFor({ state: "detached", timeout: 20000 }).catch(() => undefined);
+          assert.equal(await widget.locator('[data-widget-state="waiting-for-sources"], [data-widget-state="source-unavailable"]').count(), 0, `${board} ${widgetId} is still waiting on or missing its data source`);
           if (board === "signal-kit" && widgetId === "expected-empty") {
             await widget.getByText("No data in this time range").waitFor();
             assert.equal(await widget.getByText("Query failed", { exact: true }).count(), 0, "A genuine empty result is not an error");
