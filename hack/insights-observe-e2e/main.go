@@ -571,8 +571,12 @@ func (f *telemetryFixture) serveFixtureRange(w http.ResponseWriter, r *http.Requ
 	for _, series := range result.Series {
 		values := make([]any, 0, len(series.Points))
 		for _, point := range series.Points {
+			// A null observation becomes NaN, which the normaliser reports as a
+			// missing value (the Playwright fixture's null). Dropping it would
+			// instead show the previous sample as the latest reading.
 			if point.Value == nil {
-				continue // Prometheus has no null samples: a gap is an absent point.
+				values = append(values, []any{point.Timestamp / 1000, "NaN"})
+				continue
 			}
 			values = append(values, []any{point.Timestamp / 1000, strconv.FormatFloat(*point.Value, 'f', -1, 64)})
 		}

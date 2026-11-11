@@ -197,11 +197,14 @@ func TestQueryFixtureRangeConversion(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &matrix); err != nil {
 		t.Fatal(err)
 	}
-	if len(matrix.Data.Result) != 1 || matrix.Data.Result[0].Metric["quantile"] != "p50" || len(matrix.Data.Result[0].Values) != 2 {
+	if len(matrix.Data.Result) != 1 || matrix.Data.Result[0].Metric["quantile"] != "p50" || len(matrix.Data.Result[0].Values) != 3 {
 		t.Fatalf("matrix = %s", response.Body.String())
 	}
 	if matrix.Data.Result[0].Values[0][0] != 60.0 || matrix.Data.Result[0].Values[0][1] != "22" {
 		t.Fatalf("first sample = %v", matrix.Data.Result[0].Values[0])
+	}
+	if gap := matrix.Data.Result[0].Values[1]; gap[0] != 120.0 || gap[1] != "NaN" {
+		t.Fatalf("null observation must be NaN at its timestamp, got %v", gap)
 	}
 	if received["query"] != "fixture_percentiles" || received["kind"] != "metrics" {
 		t.Fatalf("resolver received %v", received)
