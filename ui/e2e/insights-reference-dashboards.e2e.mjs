@@ -159,6 +159,8 @@ async function renderEveryPanel(board) {
       for(let index=1;index<ticks.length;index++)assert.ok(ticks[index].top>=ticks[index-1].bottom,"Heatmap bucket labels must not overlap")
     }
     if(widget.pluginId==="connection-map") {
+      // The land outline is a lazy chunk; wait for it instead of counting before it arrives.
+      await until(async()=>await element.locator("[data-geographic-land]").count()===1,`${widget.title}: map land outline did not load`,20000)
       assert.equal(await element.locator("[data-geographic-land]").count(),1,"Map needs geographic context, not only coordinates")
       const plane=await element.locator('[data-map-plane]').evaluate(node=>{const r=node.getBoundingClientRect(),matrix=node.querySelector('svg').getScreenCTM();return{ratio:r.width/r.height,height:r.height,scaleX:matrix.a,scaleY:matrix.d}})
       assert.ok(Math.abs(plane.ratio-2)<.01 && Math.abs(plane.scaleX-plane.scaleY)<.001,`Map must preserve geographic proportions: ${JSON.stringify(plane)}`)
