@@ -8,6 +8,7 @@ import {
   type SavedQuery,
   type SavedQueryEntry,
 } from "./schema"
+import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
 import { dashboardAsSent } from "./layout-compaction"
 import { validateSavedQueryTemplate } from "./saved-queries"
 import { parseRecordFrame } from "./record-data"
@@ -72,6 +73,10 @@ export interface InsightsClient {
   list(signal?: AbortSignal): Promise<Dashboard[]>
   get(id: string, signal?: AbortSignal): Promise<{ dashboard: Dashboard; etag?: string }>
   save(dashboard: Dashboard, etag?: string): Promise<string | undefined>
+  /** Saves with ?checks=true, so a successful save reports its warnings. checks is absent from servers that predate it. */
+  saveChecked?(dashboard: Dashboard, etag?: string): Promise<{ etag?: string; checks?: CheckReport }>
+  /** Dry-run checks of a document as a save would send it. Absent for hosts that predate it. */
+  validate?(document: Dashboard, signal?: AbortSignal): Promise<CheckReport>
   remove(id: string, etag?: string): Promise<void>
   query(request: QueryRequest, signal: AbortSignal): Promise<QueryResult>
   providerConfigs(signal?: AbortSignal): Promise<ProviderConfig[]>
@@ -98,7 +103,9 @@ function documentETag(response: Response): string | undefined {
   return response.headers.get("X-Paprika-Document-ETag") ?? response.headers.get("ETag") ?? undefined
 }
 
-function canRetryCapacity(path: string, init: RequestInit): boolean {
+function canRetryCapacity(requestPath: string, init: RequestInit): boolean {
+  // Query strings such as ?checks=true do not change what a route is.
+  const path = requestPath.split("?")[0]
   // The query endpoint is read-only even though its bounded request is POST.
   // A 429 is a definite admission rejection, so replay is safe.
   if (path === "/query" && init.method === "POST") return true
@@ -151,12 +158,75 @@ function waitForCapacity(delay: number, signal?: AbortSignal | null): Promise<vo
 export class InsightsHTTPError extends Error {
   readonly status: number
   readonly retryAfter: string | null
-  constructor(message: string, status: number, retryAfter: string | null) {
+  /** The findings a rejected document carried (a 400 save or dry run), when the body had any. */
+  readonly checks?: CheckReport
+  constructor(message: string, status: number, retryAfter: string | null, checks?: CheckReport) {
     super(message)
     this.name = "InsightsHTTPError"
     this.status = status
     this.retryAfter = retryAfter
+    this.checks = checks
   }
+}
+
+const SEVERITY_BY_NAME: Record<string, Severity> = {
+  SEVERITY_INFO: Severity.INFO,
+  SEVERITY_WARNING: Severity.WARNING,
+  SEVERITY_ERROR: Severity.ERROR,
+}
+const SOURCE_BY_NAME: Record<string, Source> = {
+  SOURCE_SCHEMA: Source.SCHEMA,
+  SOURCE_LINT: Source.LINT,
+  SOURCE_DATA: Source.DATA,
+  SOURCE_VISUAL: Source.VISUAL,
+}
+
+function textField(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+function countField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined
+}
+
+/**
+ * Reads a check report from a 400 save body, a dry run, or a list response. Older bodies
+ * may omit the counts or the truncation flag: those are derived from the listed issues.
+ * Unknown enum names read as unspecified rather than failing the whole report.
+ */
+export function parseCheckReport(body: unknown): CheckReport {
+  const raw = body && typeof body === "object" ? body as Record<string, unknown> : {}
+  const list = Array.isArray(raw.issues) ? raw.issues : []
+  const issues = list.map((item) => {
+    const finding = item && typeof item === "object" ? item as Record<string, unknown> : {}
+    return new CheckFinding({
+      ruleId: textField(finding.ruleId),
+      severity: SEVERITY_BY_NAME[textField(finding.severity)] ?? Severity.UNSPECIFIED,
+      source: SOURCE_BY_NAME[textField(finding.source)] ?? Source.UNSPECIFIED,
+      widgetId: textField(finding.widgetId),
+      pointer: textField(finding.pointer),
+      message: textField(finding.message),
+      fix: textField(finding.fix),
+    })
+  })
+  const total = countField(raw.total) ?? issues.length
+  const tally = (key: string, matches: (severity: Severity) => boolean) =>
+    countField(raw[key]) ?? issues.filter((issue) => matches(issue.severity)).length
+  return new CheckReport({
+    issues,
+    total,
+    truncated: typeof raw.truncated === "boolean" ? raw.truncated : total > issues.length,
+    errorCount: tally("errorCount", (severity) => severity === Severity.ERROR),
+    warningCount: tally("warningCount", (severity) => severity === Severity.WARNING),
+    infoCount: tally("infoCount", (severity) => severity !== Severity.ERROR && severity !== Severity.WARNING),
+  })
+}
+
+// A dry run is one bounded read; past this it is reported as a failed check.
+const VALIDATE_TIMEOUT_MS = 10_000
+
+/** The findings carried by a failed request, or undefined when the failure had none. */
+export function checksFromError(error: unknown): CheckReport | undefined {
+  return error instanceof InsightsHTTPError ? error.checks : undefined
 }
 
 export type SourceFailure = "access" | "busy" | "unavailable"
@@ -236,7 +306,7 @@ export function createInsightsClient(
       if (renewed) {
         if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
         const readOnly = !init.method || init.method === "GET" ||
-          (init.method === "POST" && (path === "/query" || /^\/providers\/[^/]+\/test$/.test(path)))
+          (init.method === "POST" && (path === "/query" || path === "/dashboards/validate" || /^\/providers\/[^/]+\/test$/.test(path)))
         if (!readOnly) throw new Error("Your session was renewed. Please retry this action.")
         init.signal?.throwIfAborted()
         bearer = renewed
@@ -245,7 +315,8 @@ export function createInsightsClient(
       }
     }
     if (!response.ok && !(allowNotModified && response.status === 304)) {
-      const failure = (message: string) => new InsightsHTTPError(message, response.status, response.headers.get("Retry-After"))
+      const failure = (message: string, checks?: CheckReport) =>
+        new InsightsHTTPError(message, response.status, response.headers.get("Retry-After"), checks)
       if (response.status === 401) {
         // Parallel startup/query requests must not repeatedly navigate the host.
         // A late response from a previous session must not sign out a newer one.
@@ -271,13 +342,16 @@ export function createInsightsClient(
           "This dashboard changed on the server. Reload before saving to avoid overwriting someone else’s work.",
         )
       let message = "Insights is unavailable. Check the service and provider configuration."
+      let checks: CheckReport | undefined
       try {
         const body = await response.json()
         if (typeof body.error === "string") message = body.error
+        // A rejected document carries its findings beside the error text.
+        if (Array.isArray(body.issues)) checks = parseCheckReport(body)
       } catch {
         /* Non-JSON gateway response */
       }
-      throw failure(message)
+      throw failure(message, checks)
     }
     if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
     authenticationRequested = false
@@ -313,6 +387,13 @@ export function createInsightsClient(
       cached.etag = response.headers.get("ETag") ?? undefined
     }
     return value
+  }
+  function sendSave(dashboard: Dashboard, etag: string | undefined, checked: boolean) {
+    return request(`/dashboards/${encodeURIComponent(dashboard.id)}${checked ? "?checks=true" : ""}`, {
+      method: "PUT",
+      body: JSON.stringify(dashboardAsSent(dashboard)),
+      headers: etag ? { "If-Match": etag } : { "If-None-Match": "*" },
+    })
   }
   // A busy shared catalog arrives as 200 with sharedCatalog busy, so it is replayed
   // here by its retryAfter. The replay stops when the caller aborts, which is how
@@ -397,13 +478,43 @@ export function createInsightsClient(
     }), signal),
     // Every dashboard save goes through here, so the layout is sent as the canvas draws it. The server rejects
     // overlapping widgets, and a stored dashboard can overlap while the canvas still shows it settled.
-    save: async (dashboard, etag) => {
-      const response = await request(`/dashboards/${encodeURIComponent(dashboard.id)}`, {
-        method: "PUT",
-        body: JSON.stringify(dashboardAsSent(dashboard)),
-        headers: etag ? { "If-Match": etag } : { "If-None-Match": "*" },
-      })
-      return documentETag(response)
+    save: async (dashboard, etag) => documentETag(await sendSave(dashboard, etag, false)),
+    saveChecked: async (dashboard, etag) => {
+      const response = await sendSave(dashboard, etag, true)
+      // The save is committed by a success status. A body that is not JSON only lacks its findings.
+      let body: unknown
+      try {
+        body = await response.json()
+      } catch {
+        body = undefined
+      }
+      const checks = body && typeof body === "object" ? (body as Record<string, unknown>).checks : undefined
+      return {
+        etag: documentETag(response),
+        // A server without checks sends none, which is not the same as no findings.
+        ...(checks !== undefined ? { checks: parseCheckReport(checks) } : {}),
+      }
+    },
+    validate: async (document, signal) => {
+      // A dry run that does not answer is a failed check, so the caller can let the user proceed.
+      const deadline = new AbortController()
+      const timer = setTimeout(() => deadline.abort(), VALIDATE_TIMEOUT_MS)
+      const forward = () => deadline.abort()
+      signal?.addEventListener("abort", forward, { once: true })
+      try {
+        return parseCheckReport(await readJSON(await request("/dashboards/validate", {
+          method: "POST",
+          body: JSON.stringify({ document: dashboardAsSent(document) }),
+          signal: deadline.signal,
+        })))
+      } catch (error) {
+        if (!signal?.aborted && deadline.signal.aborted)
+          throw new Error(`The check did not finish within ${VALIDATE_TIMEOUT_MS / 1000} seconds.`)
+        throw error
+      } finally {
+        clearTimeout(timer)
+        signal?.removeEventListener("abort", forward)
+      }
     },
     remove: async (id, etag) => {
       await request(`/dashboards/${encodeURIComponent(id)}`, {

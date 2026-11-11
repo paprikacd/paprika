@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, RefreshCw } from "lucide-react";
 import type { Dashboard, DocumentFormat, Provider, SavedQuery } from "./schema";
+import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
+import { ChecksList, hasErrors, type DocumentValidator } from "./checks-list";
+import { dashboardAsSent } from "./layout-compaction";
 import type {
   BundleImportRequest,
   BundleImportResult,
@@ -44,6 +47,55 @@ export interface PortableImportProps {
   onRefreshQueries?: () => Promise<void>;
   onBusyChange?: (busy: boolean) => void;
   initialDocument?: { source: string; format: DocumentFormat };
+  /** Dry-run checks for each incoming dashboard, shown before the import is confirmed. */
+  validateDocument?: DocumentValidator;
+}
+
+type DashboardCheck =
+  | { status: "done"; report: CheckReport; document: Dashboard }
+  | { status: "failed"; message: string };
+type CheckedDashboard = { key: string; check: DashboardCheck };
+/** At most this many dry runs are in flight for one review. */
+const CHECK_CONCURRENCY = 4;
+interface CheckScheduler {
+  validate: DocumentValidator;
+  controller: AbortController;
+  /** Document id to the text key queued or running for it. */
+  wanted: Map<string, string>;
+  queue: { id: string; key: string; incoming: Dashboard }[];
+  running: number;
+  record: (id: string, entry: CheckedDashboard) => void;
+}
+function pumpChecks(scheduler: CheckScheduler) {
+  while (scheduler.running < CHECK_CONCURRENCY && scheduler.queue.length) {
+    const job = scheduler.queue.shift()!;
+    scheduler.running++;
+    void Promise.resolve()
+      .then(() => scheduler.validate(job.incoming, scheduler.controller.signal))
+      .then(
+        (report): DashboardCheck => ({ status: "done", report, document: job.incoming }),
+        (error): DashboardCheck => ({
+          status: "failed",
+          message: error instanceof Error ? error.message : "Unknown error.",
+        }),
+      )
+      .then((check) => {
+        scheduler.running--;
+        if (scheduler.controller.signal.aborted) return;
+        if (scheduler.wanted.get(job.id) === job.key) scheduler.wanted.delete(job.id);
+        scheduler.record(job.id, { key: job.key, check });
+        pumpChecks(scheduler);
+      });
+  }
+}
+
+/** Widgets the canvas would move on save: the source overlaps or leaves gaps that the drawn layout closes. */
+function movedWidgets(source: Dashboard, saved: Dashboard): number {
+  return saved.widgets.filter((widget) => {
+    const original = source.widgets.find((item) => item.id === widget.id);
+    return !original || original.layout.x !== widget.layout.x || original.layout.y !== widget.layout.y ||
+      original.layout.w !== widget.layout.w || original.layout.h !== widget.layout.h;
+  }).length;
 }
 function initialMapping(bundle: DashboardBundle, providers: Provider[]) {
   const mapping: Record<string, string> = Object.create(null);
@@ -133,6 +185,7 @@ export function PortableImportPanel({
   onRefreshQueries,
   onBusyChange,
   initialDocument,
+  validateDocument,
 }: PortableImportProps) {
   const library = useSavedQueryLibrary();
   const [initial] = useState(() => {
@@ -178,6 +231,11 @@ export function PortableImportPanel({
   const [refreshing, setRefreshing] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [remaining, setRemaining] = useState<string[]>();
+  // Each dashboard's answer is kept with the document text it checked, so only a changed document is checked again.
+  const [checkResults, setCheckResults] = useState<Record<string, CheckedDashboard>>({});
+  const checkResultsRef = useRef<Record<string, CheckedDashboard>>({});
+  const checkScheduler = useRef<CheckScheduler | null>(null);
+  useEffect(() => () => checkScheduler.current?.controller.abort(), []);
   const file = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
   const reviewLoader = useRef(onReviewBundle);
@@ -340,7 +398,7 @@ export function PortableImportPanel({
       };
     }
   }, [activeBundle, mapping, providers, keptQueries]);
-  const dashboards = useMemo(
+  const incomingDocs = useMemo(
     () =>
       (review?.bundle.dashboards ?? []).map((original) => {
         let incoming: Dashboard = original;
@@ -349,21 +407,86 @@ export function PortableImportPanel({
         } catch {
           /* Sources can be selected after choosing Keep. */
         }
+        // The canvas draws a settled layout, so a source that overlaps or leaves gaps is stored at other positions.
+        let moved = 0;
+        try {
+          moved = movedWidgets(incoming, dashboardAsSent(incoming));
+        } catch {
+          /* An invalid dashboard is reported by its checks. */
+        }
+        return { original, incoming, key: JSON.stringify(incoming), moved };
+      }),
+    [review, mapping, providers],
+  );
+  // Only what the import would save is checked: not Keep, and not a dashboard an earlier attempt completed.
+  const checkTargets = useMemo(
+    () =>
+      validateDocument
+        ? incomingDocs.filter(
+            (item) =>
+              selectedAction(dashboardChoices, item.original.id) !== "keep" &&
+              !(remaining && !remaining.includes(item.original.id)),
+          )
+        : [],
+    [incomingDocs, validateDocument, dashboardChoices, remaining],
+  );
+  useEffect(() => {
+    if (!validateDocument) return;
+    let scheduler = checkScheduler.current;
+    if (!scheduler || scheduler.validate !== validateDocument || scheduler.controller.signal.aborted) {
+      scheduler?.controller.abort();
+      scheduler = {
+        validate: validateDocument,
+        controller: new AbortController(),
+        wanted: new Map(),
+        queue: [],
+        running: 0,
+        record: (id, entry) => {
+          checkResultsRef.current = { ...checkResultsRef.current, [id]: entry };
+          setCheckResults(checkResultsRef.current);
+        },
+      };
+      checkScheduler.current = scheduler;
+    }
+    // Only a document whose text is new or changed is queued. Changing a Keep choice queues nothing it already has.
+    for (const item of checkTargets) {
+      const id = item.original.id;
+      if (checkResultsRef.current[id]?.key === item.key || scheduler.wanted.get(id) === item.key) continue;
+      scheduler.wanted.set(id, item.key);
+      scheduler.queue.push({ id, key: item.key, incoming: item.incoming });
+    }
+    pumpChecks(scheduler);
+  }, [checkTargets, validateDocument]);
+  const checksPending = checkTargets.some(
+    (item) => checkResults[item.original.id]?.key !== item.key,
+  );
+  const dashboards = useMemo(
+    () =>
+      incomingDocs.map(({ original, incoming, key, moved }) => {
         const existing = current.dashboards.find(
           (item) => item.document.id === original.id,
         );
         const comparison = reviewDashboard(incoming, existing);
         const action = selectedAction(dashboardChoices, original.id) ?? "copy";
         const complete = !!remaining && !remaining.includes(original.id);
+        const entry = checkResults[original.id];
+        const checked = entry?.key === key ? entry.check : undefined;
+        // Name only the actions this dashboard can take: Keep needs an existing saved dashboard.
+        const keepAvailable =
+          !!existing && selectedAction(lockedActions, original.id) !== "copy";
+        const checkIssue =
+          !complete && action !== "keep" && checked?.status === "done" && hasErrors(checked.report)
+            ? `Saving this dashboard would be rejected while its checks list errors. ${keepAvailable ? "Fix the source, or choose Keep existing." : "Fix the source before importing it."}`
+            : undefined;
         const issue =
-          !complete && action === "keep" && !existing
+          (!complete && action === "keep" && !existing
             ? "This dashboard is no longer available to keep. Refresh the comparison."
             : !complete && action === "replace" && !comparison.canReplace
               ? comparison.replaceBlockedReason
-              : undefined;
-        return { original, existing, comparison, action, complete, issue };
+              : undefined) ?? checkIssue;
+        return { original, incoming, existing, comparison, action, complete, issue, checked, moved };
       }),
-    [review, mapping, providers, current, dashboardChoices, remaining],
+    [incomingDocs, current, dashboardChoices, remaining, checkResults, lockedActions],
   );
   const usesLibrary = !!activeBundle?.dashboards.some((document) =>
     document.widgets.some(
@@ -387,7 +510,8 @@ export function PortableImportPanel({
     !!snapshotError ||
     importing ||
     refreshing ||
-    issues.length > 0;
+    issues.length > 0 ||
+    checksPending;
   const allCopies = pending.every(
     (document) =>
       (selectedAction(dashboardChoices, document.id) ?? "copy") === "copy",
@@ -607,7 +731,9 @@ export function PortableImportPanel({
             <div aria-label="Dashboard review">
               {dashboards.map((item) => (
                 <div className={styles.query} key={item.original.id}>
-                  <strong>{item.original.title}</strong>
+                  <h4>
+                    <strong>{item.original.title}</strong>
+                  </h4>
                   <code>{item.original.id}</code>
                   <p>
                     {item.original.folder || "Workspace root"} ·{" "}
@@ -679,6 +805,29 @@ export function PortableImportPanel({
                     <p role="alert" className={styles.error}>
                       {item.issue}
                     </p>
+                  )}
+                  {item.action !== "keep" && item.moved > 0 && (
+                    <p>
+                      {item.moved === 1
+                        ? "1 widget in this source is stored at a different position: the canvas closes an overlap or gap when it saves."
+                        : `${item.moved} widgets in this source are stored at different positions: the canvas closes overlaps or gaps when it saves.`}
+                    </p>
+                  )}
+                  {validateDocument && item.action !== "keep" && !item.complete && (
+                    item.checked?.status === "done" ? (
+                      <ChecksList
+                        label={`Checks for ${item.original.title}`}
+                        report={item.checked.report}
+                        dashboard={item.checked.document}
+                        headingLevel={5}
+                      />
+                    ) : item.checked?.status === "failed" ? (
+                      <p role="status">
+                        Could not check this dashboard: {item.checked.message}. Saving still validates it on the server.
+                      </p>
+                    ) : (
+                      <p role="status">Checking this dashboard…</p>
+                    )
                   )}
                   {item.existing && !item.complete && (
                     <Comparison
