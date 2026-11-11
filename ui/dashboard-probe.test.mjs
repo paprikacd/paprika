@@ -151,6 +151,60 @@ test("each rule reports at most once per widget", () => {
   assert.equal(forRule(dashboardProbe({document}), "visual.widget-error").length, 1)
 })
 
+test("visual.internal-scroll: a closed details body is not visible, so it is not a scroller", () => {
+  const closed = page(tile("details", `<details id="d"><summary>More</summary><div id="s" style="overflow-y: auto">rows</div></details>`))
+  place(closed, "#s", {x: 0, y: 40, w: 200, h: 80}, {scrollHeight: 240})
+  // Chromium lays out a closed body, so the test models its checkVisibility result.
+  Object.defineProperty(closed.querySelector("#s"), "checkVisibility", {value: () => false})
+  assert.deepEqual(forRule(dashboardProbe({document: closed}), "visual.internal-scroll"), [])
+})
+
+test("visual.internal-scroll: a focusable, named region is an intentional scroll region", () => {
+  const named = page(tile("records", `<div id="s" role="region" tabindex="0" aria-label="Recent records" style="overflow-y: auto">rows</div>`))
+  place(named, "#s", {x: 0, y: 0, w: 200, h: 80}, {scrollHeight: 240})
+  assert.deepEqual(forRule(dashboardProbe({document: named}), "visual.internal-scroll"), [], "designed keyboard scrolling")
+
+  const focusOnly = page(tile("focus", `<div id="s" tabindex="0" style="overflow-y: auto">rows</div>`))
+  place(focusOnly, "#s", {x: 0, y: 0, w: 200, h: 80}, {scrollHeight: 240})
+  assert.deepEqual(rulesOf(dashboardProbe({document: focusOnly})), ["visual.internal-scroll@focus:SEVERITY_WARNING"], "focus without a name is not a designed region")
+})
+
+test("visual.clipped-text: text inside a scroll container is not cut by an outer clipper, but a metric value is", () => {
+  const rows = (name, extra) => page(tile("feed", `<div id="outer" style="overflow: hidden"><div id="scroller" ${extra} style="overflow-y: auto"><p id="p">A long event line</p></div></div>`))
+  const geometry = document => {
+    place(document, "#outer", {x: 0, y: 0, w: 200, h: 100})
+    place(document, "#scroller", {x: 0, y: 0, w: 200, h: 100}, {scrollHeight: 300})
+    place(document, "#p", {x: 0, y: 150, w: 200, h: 20}, {scrollWidth: 200})
+  }
+  const named = rows("named", 'role="region" tabindex="0" aria-label="Events"')
+  geometry(named)
+  assert.deepEqual(forRule(dashboardProbe({document: named}), "visual.clipped-text"), [], "a named region stops the walk")
+
+  const unnamed = rows("unnamed", "")
+  geometry(unnamed)
+  assert.deepEqual(forRule(dashboardProbe({document: unnamed}), "visual.clipped-text"), [], "off-screen rows of a scroller are reachable by scrolling")
+
+  const value = page(tile("kpi", `<div id="outer" style="overflow: hidden"><div id="scroller" style="overflow-y: auto"><div data-metric-value="1" id="v">101.23</div></div></div>`))
+  place(value, "#outer", {x: 0, y: 0, w: 200, h: 60})
+  place(value, "#scroller", {x: 0, y: 0, w: 200, h: 60}, {scrollHeight: 60})
+  place(value, "#v", {x: 0, y: 40, w: 200, h: 40})
+  assert.deepEqual(rulesOf(dashboardProbe({document: value})), ["visual.clipped-text@kpi:SEVERITY_ERROR"], "a metric value keeps its clipper even inside a scroller")
+})
+
+test("visual.empty-plot: a chart root's series count is checked without a legend, and all-zero values are skipped", () => {
+  const legendless = page(tile("noleg", `<div id="root" data-series-count="2"><svg role="img" id="c"><line x1="0" x2="200"/></svg></div>`))
+  place(legendless, "#c", {x: 0, y: 0, w: 220, h: 120})
+  assert.deepEqual(rulesOf(dashboardProbe({document: legendless})), ["visual.empty-plot@noleg:SEVERITY_WARNING"])
+
+  const zero = page(tile("bars", `<div data-series-count="1"><svg role="img" id="c"></svg><span data-legend-value="0">0</span></div>`))
+  place(zero, "#c", {x: 0, y: 0, w: 220, h: 120})
+  assert.deepEqual(forRule(dashboardProbe({document: zero}), "visual.empty-plot"), [], "zero is plotted as nothing")
+
+  const nonzero = page(tile("bars", `<div data-series-count="1"><svg role="img" id="c"></svg><span data-legend-value="5">5</span></div>`))
+  place(nonzero, "#c", {x: 0, y: 0, w: 220, h: 120})
+  assert.deepEqual(rulesOf(dashboardProbe({document: nonzero})), ["visual.empty-plot@bars:SEVERITY_WARNING"])
+})
+
 test("the probe function is self-contained, so Playwright can serialize its source", () => {
   const source = dashboardProbe.toString()
   assert.ok(!/\brequire\(|\bimport\(/.test(source), "no module references inside the serialized body")

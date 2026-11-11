@@ -468,7 +468,7 @@ export function TimeSeriesChart({
   );
 
   return (
-    <div className={styles.chart} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
+    <div className={styles.chart} data-series-count={data.length} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
       <div
         className={`${styles.plot} ${chartEntrance.tanstackPlot}`}
         ref={ref}

@@ -127,8 +127,8 @@ jobs:
         run: npm test
         working-directory: ui
 
-      - name: Browser-render worker contract tests
-        run: node --test render-worker.test.mjs
+      - name: Browser-render worker and visual probe tests
+        run: node --test render-worker.test.mjs dashboard-probe.test.mjs
         working-directory: ui
 
       - name: Lint

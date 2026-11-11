@@ -4,35 +4,50 @@
 // the function uses no imports or module state. Tests call it directly with a
 // happy-dom document, passed as options.document.
 //
-// Findings use the shared CheckFinding wire names (SEVERITY_*, SOURCE_VISUAL), and
-// messages and fixes are fixed text, never dashboard content. Each rule reports at
-// most one finding per widget, and the page-level rule reports one with widgetId "".
+// Findings use the shared CheckFinding wire names (SEVERITY_*, SOURCE_VISUAL). Messages
+// and fixes are fixed text, never dashboard content; the gateway owns the final text for
+// each rule. Each rule reports at most one finding per widget, and the page-level rule
+// reports one with widgetId "".
 //
-// Rules (conditions are exact; "shown" means a box wider and taller than 1px, so
-// visually hidden text and the contents of a closed <details> are ignored; visually
-// hidden means a box no wider and no taller than 1px, or a clip-path):
+// "Visible" means laid out and not hidden by display, visibility or opacity
+// (Element.checkVisibility). A closed <details> body is therefore not visible, even though
+// Chromium gives its contents boxes. "Shown" also needs a box wider and taller than 1px, so
+// visually hidden text is ignored. Visually hidden means a box no wider and no taller than
+// 1px, or a clip-path.
+//
+// An intentional scroll region is a focusable (tabIndex >= 0) element with a name
+// (aria-label or aria-labelledby) or a region, list, grid, log or table role. Records,
+// traces, events and legends are built this way, so their scrolling is designed.
+//
+// Rules:
 //   visual.widget-error     ERROR   a shown [role="alert"] or
 //                                   [data-widget-state="source-unavailable"] in the tile.
 //   visual.page-overflow    ERROR   document scrollWidth > window innerWidth + 1.
 //   visual.clipped-text     ERROR   for metric values and units, WARNING otherwise. An HTML
-//                                   element with its own non-blank text, shown, whose
-//                                   content (its own overflow, or its box crossing an
-//                                   edge) extends past the inner edge of its nearest
-//                                   ancestor-or-self, within the tile, with overflow
-//                                   hidden or clip on that axis. Elements whose clipper
-//                                   has text-overflow:ellipsis are intentional, except
-//                                   metric values and units (any [data-metric-value]).
-//   visual.internal-scroll  WARNING an HTML element in the tile with overflow-y auto or
-//                                   scroll, laid out (any client rect, so a collapsed
-//                                   scroller counts), and scrollHeight > clientHeight + 1.
-//                                   Intentional keyboard-scrollable regions also match.
-//   visual.empty-plot       WARNING a shown svg[role=img|group] of at least 40x40 in a
-//                                   tile that reports data (a [data-series-count] above
-//                                   zero, a [data-legend-value], or [data-metric-value]),
-//                                   with no alert, busy or [data-widget-state] marker in the
-//                                   tile, and that has no drawn data mark: a path[d] with a box, or
-//                                   a rect or circle with width and height, whose box meets the
-//                                   chart's box. Axis and grid <line> elements are not data.
+//                                   element with its own non-blank text that is shown and
+//                                   visible, whose content (its own overflow, or its box
+//                                   crossing an edge) extends past the inner edge of its
+//                                   nearest clipping ancestor-or-self within the tile. The walk
+//                                   stops at an intentional scroll region. Other scroll
+//                                   containers are passed only for metric values, since
+//                                   content inside them is reachable by scrolling and is
+//                                   reported by visual.internal-scroll. Text with
+//                                   text-overflow:ellipsis or -webkit-line-clamp is intentional,
+//                                   except metric values and units (any [data-metric-value]).
+//   visual.internal-scroll  WARNING a visible HTML element in the tile with overflow-y auto or
+//                                   scroll, laid out (a collapsed scroller counts), with
+//                                   scrollHeight > clientHeight + 1, that is not an intentional
+//                                   scroll region.
+//   visual.empty-plot       WARNING a visible svg[role=img|group] of at least 40x40 in a tile
+//                                   that reports data: a [data-series-count] (on the chart root,
+//                                   so it does not depend on the legend) above zero, a
+//                                   [data-legend-value], or [data-metric-value]. The tile must
+//                                   have no alert, busy or [data-widget-state] marker. Tiles whose
+//                                   reported values are all zero are skipped, since zero is
+//                                   plotted as nothing. The chart must have no drawn data mark: a
+//                                   path[d] with a box, or a rect or circle with width and height,
+//                                   whose box meets the chart's box. Axis and grid <line> elements
+//                                   are not data.
 export function dashboardProbe(options = {}) {
   const doc = options.document ?? globalThis.document
   const view = doc.defaultView ?? globalThis
@@ -41,18 +56,22 @@ export function dashboardProbe(options = {}) {
   const HTML = "http://www.w3.org/1999/xhtml"
   const findings = []
   const rect = el => el.getBoundingClientRect()
-  const shown = el => { const r = rect(el); return r.width > 1 && r.height > 1 }
-  // Laid out at all (a closed <details> body or display:none has no client rects). A collapsed box still counts.
-  const laidOut = el => el.getClientRects().length > 0
+  // checkVisibility is absent from some DOM implementations; those are treated as visible.
+  const visible = el => typeof el.checkVisibility !== "function" || el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+  const shown = el => { const r = rect(el); return r.width > 1 && r.height > 1 && visible(el) }
+  const laidOut = el => el.getClientRects().length > 0 && visible(el)
   const styleOf = el => view.getComputedStyle(el)
   // Engines expand the overflow shorthand into both axes; fall back to it for any that do not.
   const overflowAxis = (el, axis) => { const style = styleOf(el); return style[axis] || style.overflow }
   const clipsX = el => /^(hidden|clip)$/.test(overflowAxis(el, "overflowX"))
   const clipsY = el => /^(hidden|clip)$/.test(overflowAxis(el, "overflowY"))
+  const scrollsAxis = (el, axis) => /^(auto|scroll)$/.test(overflowAxis(el, axis))
+  const scrollRegion = el => el.tabIndex >= 0 && (el.hasAttribute("aria-label") || el.hasAttribute("aria-labelledby") || /^(region|list|grid|log|table)$/.test(el.getAttribute("role") ?? ""))
   const finding = (ruleId, severity, widgetId, message, fix) => findings.push({ ruleId, severity, source: "SOURCE_VISUAL", widgetId, pointer: "", message, fix })
   const hasOwnText = el => [...el.childNodes].some(node => node.nodeType === 3 && node.textContent.trim() !== "")
   // A metric value and its unit are one text run (the unit sits inside [data-metric-value]).
   const metricValue = el => el.closest("[data-metric-value]") !== null
+  const lineClamped = el => (styleOf(el).webkitLineClamp ?? "none") !== "none"
   // Visually hidden text (a 1px box or a clip-path, like the stat timestamp kept for AT) is not clipped content.
   const visuallyHidden = (el, tile) => {
     for (let node = el; node && node !== tile && tile.contains(node); node = node.parentElement) {
@@ -63,7 +82,6 @@ export function dashboardProbe(options = {}) {
     }
     return false
   }
-
   // A selector matches the tile itself as well as its descendants.
   const within = (tile, selector) => (tile.matches(selector) ? tile : tile.querySelector(selector))
 
@@ -83,8 +101,7 @@ export function dashboardProbe(options = {}) {
     let scrolling = 0
     for (const el of elements) {
       if (!(el.scrollHeight > el.clientHeight + 1) || !laidOut(el)) continue
-      const overflowY = overflowAxis(el, "overflowY")
-      if (overflowY === "auto" || overflowY === "scroll") scrolling++
+      if (scrollsAxis(el, "overflowY") && !scrollRegion(el)) scrolling++
     }
     if (scrolling > 0) {
       finding("visual.internal-scroll", "SEVERITY_WARNING", id, "Widget body scrolls vertically inside its tile.",
@@ -95,14 +112,19 @@ export function dashboardProbe(options = {}) {
     let clippedStat = 0, clippedOther = 0
     for (const el of elements) {
       if (!hasOwnText(el) || !shown(el)) continue
+      const stat = metricValue(el)
       let clipper = null
       for (let node = el; node && tile.contains(node); node = node.parentElement) {
+        if (node.namespaceURI === HTML && (scrollsAxis(node, "overflowX") || scrollsAxis(node, "overflowY"))) {
+          // Content inside a scroll container is reachable by scrolling. Only a metric value keeps
+          // walking past an unnamed container, because a hidden value is always a defect.
+          if (scrollRegion(node) || !stat) break
+        }
         if (node.namespaceURI === HTML && (clipsX(node) || clipsY(node))) { clipper = node; break }
         if (node === tile) break
       }
       if (!clipper) continue
-      const stat = metricValue(el)
-      if (!stat && styleOf(clipper).textOverflow === "ellipsis") continue
+      if (!stat && (styleOf(clipper).textOverflow === "ellipsis" || lineClamped(clipper))) continue
       const inner = rect(clipper)
       const left = inner.left + clipper.clientLeft, top = inner.top + clipper.clientTop
       const right = left + clipper.clientWidth, bottom = top + clipper.clientHeight
@@ -124,15 +146,14 @@ export function dashboardProbe(options = {}) {
 
     // visual.empty-plot
     const seriesCount = Number(within(tile, "[data-series-count]")?.getAttribute("data-series-count") ?? 0)
-    const dataReported = seriesCount > 0 || within(tile, "[data-legend-value], [data-metric-value]") !== null
+    const legendValues = [...tile.querySelectorAll("[data-legend-value]")].map(el => Number(el.getAttribute("data-legend-value")))
+    const allZero = legendValues.length > 0 && legendValues.every(value => value === 0)
+    const dataReported = !allZero && (seriesCount > 0 || legendValues.length > 0 || within(tile, "[data-metric-value]") !== null)
     if (dataReported && within(tile, '[role="alert"], [aria-busy="true"], [data-widget-state]') === null) {
       const charts = [...tile.querySelectorAll('svg[role="img"], svg[role="group"]')].filter(chart => {
         const r = rect(chart)
-        return r.width >= 40 && r.height >= 40
+        return r.width >= 40 && r.height >= 40 && visible(chart)
       })
-      // Series lines and areas are paths with a box, rects are bars or cells, and circles are points. Axis and grid
-      // lines are <line> elements and are not data. A mark must also meet its chart's box: a series scaled entirely
-      // outside the plot is placed outside the chart, so it is not drawn.
       const drawn = charts.some(chart => {
         const frame = rect(chart)
         return [...chart.querySelectorAll("path[d], rect, circle")].some(mark => {
