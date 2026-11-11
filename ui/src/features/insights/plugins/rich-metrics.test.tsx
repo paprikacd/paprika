@@ -238,7 +238,7 @@ describe("rich metric renderers", () => {
     render(<DistributionHeatmap widget={{ ...widget, unit: "ms", config: { densityUnit: "observations/s" } }} result={histogram} onContextChange={onContextChange} />);
     const chart = screen.getByRole("group", { name: /histogram buckets/ });
     fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowUp" }); fireEvent.keyDown(chart, { key: "Enter" });
-    expect(onContextChange).toHaveBeenLastCalledWith({ series: "10–100 ms", value: 11, labels: { service: "api", le: "100" } });
+    expect(onContextChange).toHaveBeenLastCalledWith({ series: "10 ms–100 ms", value: 11, labels: { service: "api", le: "100" } });
     expect(screen.getByLabelText("Color encodes bucket observations/s")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Observation details" }).textContent).toContain("11.00 observations/s");
   });
@@ -263,11 +263,11 @@ describe("rich metric renderers", () => {
     };
     assertObservation("≤ 10 ms", "5.00 observations/s", "1970-01-01T00:00:02.000Z");
     fireEvent.keyDown(chart, { key: "ArrowUp" });
-    assertObservation("10–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
+    assertObservation("10 ms–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
     fireEvent.keyDown(chart, { key: "Enter" });
-    assertObservation("10–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
+    assertObservation("10 ms–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
     fireEvent.keyDown(chart, { key: "ArrowLeft" });
-    assertObservation("10–100 ms", "7.00 observations/s", "1970-01-01T00:00:01.000Z");
+    assertObservation("10 ms–100 ms", "7.00 observations/s", "1970-01-01T00:00:01.000Z");
   });
   it("does not render area through an incomplete stack and explains the gap", () => {
     const broken: QueryResult = { series: result.series!.map((entry, i) => ({ ...entry, points: [{ timestamp: 1000, value: i ? 2 : 4 }, { timestamp: 2000, value: i ? null : 8 }, { timestamp: 3000, value: i ? 3 : 9 }] })) };
@@ -347,7 +347,7 @@ describe("rich metric renderers", () => {
     };
     try {
       const { container, rerender } = render(<DirectionalTraffic widget={{ ...widget, unit: "Mb/s" }} result={{ series: [{ name: "Outbound", labels: { direction: "outbound" }, points: [{ timestamp: 1000, value: 253.42 }] }] }} />);
-      expect(container.textContent).toContain("-253.42 Mb/s"); assertGutter(container);
+      expect(container.textContent).toContain("-300.00 Mb/s"); assertGutter(container);
       expect(Number(container.querySelector("clipPath rect")?.getAttribute("width"))).toBeGreaterThan(140);
       rerender(<DistributionHeatmap widget={{ ...widget, unit: "milliseconds" }} result={{ series: [
         { name: "Bucket", labels: { le: "250" }, points: [{ timestamp: 1000, value: 3 }] },

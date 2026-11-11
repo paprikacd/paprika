@@ -1,5 +1,6 @@
 "use client";
 
+import { axisScale, formatRange, ticksWithin } from "../units";
 import type { Widget } from "../schema";
 import { resolveSeriesColor } from "../series-colors";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
@@ -235,7 +236,7 @@ function coordinates(event: PointerEvent<SVGSVGElement>, width: number, height: 
 function cellLabel(lower: number, upper: number, unit: string) {
   if (!Number.isFinite(lower)) return `≤ ${formatMetric(upper, unit)}`;
   if (!Number.isFinite(upper)) return `> ${formatMetric(lower, unit)}`;
-  return `${formatMetric(lower, "")}–${formatMetric(upper, unit)}`;
+  return formatRange(lower, upper, unit);
 }
 
 /** A nonzero color domain should not be labeled as zero solely because the
@@ -479,12 +480,10 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const overlayDomain = previousPlot && (bars ? previousPlot.completeDomain : previousPlot.domain);
   const domain: [number, number] = overlayDomain ? [Math.min(data.domain[0], overlayDomain[0]), Math.max(data.domain[1], overlayDomain[1])] : data.domain;
   const minTime = zoom?.start ?? displayTimes[0] ?? 0, span = zoom ? zoom.end - zoom.start : (displayTimes.at(-1) ?? minTime) - minTime;
-  const ticks = Array.from({ length: height < 150 ? 3 : 5 }, (_, index) => {
-    const fraction = index / (height < 150 ? 2 : 4);
-    // Weighted endpoints remain finite when max - min overflows.
-    return domain[0] * (1 - fraction) + domain[1] * fraction;
-  });
-  const tickLabels = ticks.map(value => formatMetric(value, widget.unit, true, widget.options?.decimals));
+  // Nice ticks for the requested count, so gridlines fall on readable values (never 37.5 between 0 and 150).
+  const ticks = ticksWithin(domain, height < 150 ? 3 : 5);
+  const tickAxis = axisScale(domain, widget.unit, { compact: true, decimals: widget.options?.decimals, ticks });
+  const tickLabels = ticks.map(value => tickAxis.label(value));
   const gutter = useAxisGutter(tickLabels, ref, width);
   const left = showAxis ? gutter : 4, right = 12, top = showAxis ? 14 : 4, bottom = showAxis ? 29 : 4;
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);

@@ -19,6 +19,7 @@ export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
+import { formatReading, formatSharedScale, joinReading } from "./units";
 export {
   downsamplePoints,
   latestPoint,
@@ -115,6 +116,9 @@ function Stat({
   const span = showBar ? maximum - minimum : 1;
   const magnitude = showBar ? Math.max(Math.abs(minimum), Math.abs(maximum), 1) : 1;
   const fraction = showBar ? Math.max(0, Math.min(1, Number.isFinite(span) ? (boundedValue - minimum) / span : (boundedValue / magnitude - minimum / magnitude) / (maximum / magnitude - minimum / magnitude))) : 0;
+  // The reading may rescale its unit (ms to s, bytes to MiB), so the unit span shows the reading's unit, not the authored one.
+  // Thresholds stay on their side of the rounded reading: 99.86 never reads 99.9 against a 99.9 threshold.
+  const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (widget.options?.thresholds ?? []).map(threshold => threshold.value) });
   const barColor = thresholdPaint(thresholdForValue(first.point.value, widget.options?.thresholds)) ?? widget.color ?? "var(--gamma-chart-1)";
   return (
     <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
@@ -132,15 +136,11 @@ function Stat({
           <span
             className={styles.statValue}
             data-metric-value={String(first.point.value)}
+            title={exactMetric(first.point.value, widget.unit)}
             style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdText(band) : valueText }}
           >
-            {formatMetric(
-              first.point.value,
-              "",
-              false,
-              widget.options?.decimals,
-            )}
-            <span className={styles.statUnit}>{widget.unit}</span>
+            {statReading.value}
+            <span className={styles.statUnit}>{statReading.unit}</span>
           </span>
           <div className={styles.statMeta}>
             {entries.length > 1 ? `${first.name} · ` : ""}Latest valid sample ·{" "}
@@ -171,12 +171,7 @@ function Stat({
         <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
           <span>{entry.name}</span>
           <strong>
-            {formatMetric(
-              entry.point!.value,
-              widget.unit,
-              false,
-              widget.options?.decimals,
-            )}
+            {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (widget.options?.thresholds ?? []).map(threshold => threshold.value) }))}
           </strong>
         </div>
       ))}
@@ -209,6 +204,24 @@ function MetricTable({
     setSelected(contextKey(context));
     onContextChange?.(context);
   };
+  // Each row's extremes, and one display scale per column, so a column compares in one unit ("1.03 s" beside "1.21 s").
+  const tableRows = series.slice(0, MAX_ROWS).map(entry => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of entry.points)
+      if (typeof point.value === "number" && Number.isFinite(point.value) && validTimestamp(point.timestamp)) {
+        min = Math.min(min, point.value);
+        max = Math.max(max, point.value);
+      }
+    return { entry, latest: latestPoint(entry), min, max };
+  });
+  const columnLabels = (values: number[]) =>
+    widget.options?.decimals === undefined
+      ? formatSharedScale(values, widget.unit)
+      : values.map(value => formatMetric(value, widget.unit, false, widget.options?.decimals));
+  const latestLabels = columnLabels(tableRows.map(row => row.latest?.value ?? NaN));
+  const minLabels = columnLabels(tableRows.map(row => row.min));
+  const maxLabels = columnLabels(tableRows.map(row => row.max));
   return (
     <div
       className={styles.tableWrap}
@@ -232,19 +245,7 @@ function MetricTable({
           </tr>
         </thead>
         <tbody>
-          {series.slice(0, MAX_ROWS).map((entry, index) => {
-            const latest = latestPoint(entry);
-            let min = Infinity;
-            let max = -Infinity;
-            for (const point of entry.points)
-              if (
-                typeof point.value === "number" &&
-                Number.isFinite(point.value) &&
-                validTimestamp(point.timestamp)
-              ) {
-                min = Math.min(min, point.value);
-                max = Math.max(max, point.value);
-              }
+          {tableRows.map(({ entry, latest, min, max }, index) => {
             const name = seriesName(entry, index);
             return (
               <tr
@@ -331,28 +332,13 @@ function MetricTable({
                   </ObservationDetails>
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    latest?.value ?? NaN,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {latestLabels[index]}
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    min,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {minLabels[index]}
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    max,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {maxLabels[index]}
                 </td>
               </tr>
             );

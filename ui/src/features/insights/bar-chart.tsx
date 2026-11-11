@@ -118,16 +118,17 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       ),
     [rows, options],
   );
-  // With no-data rows the y domain is fixed here rather than left to TanStack, so the placeholder can span its exact ends.
-  const yDomain = useMemo(
-    () =>
-      domain ??
-      (noDataRows.length
-        ? barDomain(values, barNiceCount(showAxis, ticks.y, height))
-        : undefined),
-    [domain, noDataRows.length, values, showAxis, ticks.y, height],
+  // The chart draws exactly the domain and ticks its labels were computed for, so each gridline shows its own value.
+  const baseDomain = useMemo<[number, number]>(
+    () => domain ?? barDomain(values, barNiceCount(showAxis, ticks.y, height)),
+    [domain, values, showAxis, ticks.y, height],
   );
-  const { left: axisLeft, separateUnit } = chartYAxisLayout(values.concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel, options.axisUnit);
+  const yAxis = useMemo(
+    () => chartYAxisLayout(values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, baseDomain, ticks.y),
+    [values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, baseDomain, ticks.y],
+  );
+  const { left: axisLeft, separateUnit, scale: yScale } = yAxis;
+  const yDomain = yScale.domain;
   const definition = useMemo(
     () =>
       defineChart({
@@ -195,8 +196,8 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
                 },
           },
           y: {
-            scale: yDomain ? scaleLinear().domain(yDomain) : scaleLinear,
-            nice: !yDomain,
+            scale: scaleLinear().domain(yDomain),
+            nice: false,
             grid:
               options.showGrid === false
                 ? false
@@ -211,10 +212,10 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
                     : undefined,
                   line: false,
                   ticks: {
-                    count: ticks.y,
+                    values: yScale.ticks,
                     line: false,
                     format: (value: number) =>
-                      formatMetric(value, separateUnit ? "" : widget.unit, true, options.decimals),
+                      yScale.label(value, !separateUnit),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -260,8 +261,8 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       widget.unit,
       axisLeft,
       separateUnit,
+      yScale,
       options,
-      ticks.y,
       width,
       height,
       showAxis,
@@ -308,7 +309,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
-        {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
         <Chart
           definition={definition}
           height={height}

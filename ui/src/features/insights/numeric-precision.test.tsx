@@ -22,10 +22,18 @@ describe("configured numeric precision", () => {
     expect(formatMetric(Infinity, "ms", false, decimals)).toBe("—");
   });
 
+  it("scales a stat reading and its unit together, and keeps an authored unit under authored decimals", () => {
+    const scaled = render(<WidgetVisualization widget={{ ...widget, type: "stat", unit: "ms" }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 999.5 }] }] }} />);
+    expect(scaled.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^1s$/);
+    scaled.unmount();
+    const fixed = render(<WidgetVisualization widget={{ ...widget, type: "stat", unit: "ms", options: { decimals: 2 } }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 999.5 }] }] }} />);
+    expect(fixed.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^999\.50ms$/);
+  });
+
   it("keeps Auto details exact and safely handles invalid host-supplied precision", () => {
     expect(formatMetricDetails(0.123456789, "ms")).toBe("0.123456789 ms");
     for (const decimals of [NaN, Infinity, -Infinity]) {
-      expect(formatMetric(12.345678, "", false, decimals)).toBe("12.35");
+      expect(formatMetric(12.345678, "", false, decimals)).toBe("12.3");
       expect(formatMetricDetails(12.345678, "", decimals)).toBe("12.345678");
     }
     expect(formatMetric(12.345678, "", false, -1)).toBe("12");

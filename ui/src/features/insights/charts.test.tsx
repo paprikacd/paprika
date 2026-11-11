@@ -609,7 +609,7 @@ describe("widget visualizations", () => {
     );
     expect(screen.getByText("checkout")).toBeInTheDocument();
     expect(screen.getByText("POST /orders")).toBeInTheDocument();
-    expect(screen.getByText("132.5 ms")).toBeInTheDocument();
+    expect(screen.getByText("133 ms")).toBeInTheDocument();
     expect(screen.getByText("error")).toBeInTheDocument();
   });
 

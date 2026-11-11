@@ -96,6 +96,8 @@ export function galleryDocuments(providers) {
     for (const widget of dashboard.widgets) {
       const oldId = widget.queryRef.id, keyPart = oldId.slice(`ab-${key}-`.length);
       widget.providerId = providers[widget.dataKind ?? (widget.type === "traces" ? "traces" : "metrics")];
+      // The shared e2e fixture sets decimals: 2 on every widget. Only an explicit author choice keeps fixed precision here.
+      if (widget.options?.decimals === 2) delete widget.options.decimals;
       widget.query = q[key][keyPart];
       // A saved query can be shared by several original widgets. Replace the
       // reference rather than mutating a shared object returned by the clone.

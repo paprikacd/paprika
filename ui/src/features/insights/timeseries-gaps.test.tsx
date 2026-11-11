@@ -347,7 +347,7 @@ describe("no-sample band labels", () => {
     // full label would have given that tail the full one.
     const context = { font: "", measureText: vi.fn((text: string) => ({ width: text.length * 6 })) };
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as unknown as CanvasRenderingContext2D);
-    const { container } = render(tailAt(147_000));
+    const { container } = render(tailAt(147_500));
     const tail = tailOf(container);
     expect(parseFloat(tail.style.width)).toBeGreaterThanOrEqual(bandLabelWidth(fullTailLabel));
     expect(parseFloat(tail.style.width)).toBeLessThan(bandLabelWidth(fullTailLabel, (text) => text.length * 6));
@@ -359,7 +359,7 @@ describe("no-sample band labels", () => {
 
   it("estimates the label from its characters where the browser has no canvas", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-    const { container } = render(tailAt(147_000));
+    const { container } = render(tailAt(147_500));
     // The same 137px tail holds the full label at the 135.6px estimate.
     const tail = tailOf(container);
     expect(parseFloat(tail.style.width)).toBeGreaterThanOrEqual(bandLabelWidth(fullTailLabel));
@@ -414,11 +414,15 @@ describe("threshold guide labels", () => {
   const samples = Array.from({ length: 9 }, (_, index) => ({ timestamp: (index + 1) * 1000, value: index + 1 }));
 
   it("sets each label at the left end of its line, dropping it below only when no room is left above", () => {
-    const configured = { ...guided, options: { thresholds: [{ value: 9, color: "#b64a3a", label: "Ceiling" }, { value: 4, color: "#53876a", label: "Target" }] } };
+    // An explicit 0–10 domain puts the ceiling exactly on the plot's top edge, so it has no room above and drops below.
+    // The target sits well inside the plot and keeps its label above.
+    const configured = { ...guided, options: { min: 0, max: 10, thresholds: [{ value: 10, color: "#b64a3a", label: "Ceiling" }, { value: 4, color: "#53876a", label: "Target" }] } };
     render(<WidgetVisualization widget={configured} result={{ series: [{ name: "api", labels: {}, points: samples }] }} />);
-    const ceiling = screen.getByRole("img", { name: "Ceiling: 9 req" });
+    const ceiling = screen.getByRole("img", { name: "Ceiling: 10 req" });
     const target = screen.getByRole("img", { name: "Target: 4 req" });
-    // The ceiling sits within 16px of the plot top, so its label moves below the line.
+    const ceilingTop = parseFloat(ceiling.style.top), targetTop = parseFloat(target.style.top);
+    expect(ceilingTop).toBeLessThan(16);
+    expect(targetTop).toBeGreaterThan(40);
     expect(ceiling).toHaveAttribute("data-label-placement", "below");
     expect(target).toHaveAttribute("data-label-placement", "above");
     expect(within(ceiling).getByText("Ceiling")).toBeInTheDocument();

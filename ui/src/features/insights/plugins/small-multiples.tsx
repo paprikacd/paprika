@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
+import { formatSharedScale } from "../units";
 import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName, type Point, type Series } from "../chart-data";
 import { validTimestamp } from "../widget-context";
 import { compactSeriesLabels } from "../series-display";
@@ -90,9 +91,13 @@ function SmallMultiple({ entry, index, displayName, domain, widget, result, maxP
     const hasValue = (other: Point | undefined) => typeof other?.value === "number" && Number.isFinite(other.value);
     return !hasValue(points[pointIndex - 1]) && !hasValue(points[pointIndex + 1]) ? [coordinates(point, domain)] : [];
   });
+  // Both extremes share one scale and reading precision, so the pair compares in one unit. Authored decimals stay exact.
+  const [topLabel, bottomLabel] = widget.options?.decimals === undefined
+    ? formatSharedScale([domain.max, domain.min], widget.unit)
+    : [formatMetric(domain.max, widget.unit, false, widget.options.decimals), formatMetric(domain.min, widget.unit, false, widget.options.decimals)];
   return <section className={styles.panel} data-multiple-series={name}>
     <div className={styles.heading}><span className={styles.name} title={name} aria-label={name}>{displayName}</span><span className={styles.value}>{latest ? formatMetric(latest.value, widget.unit, false, widget.options?.decimals) : "No data"}</span></div>
-    <div className={styles.plotLayout}><div className={styles.yAxis} aria-hidden="true"><span>{formatMetric(domain.max, widget.unit, false, widget.options?.decimals)}</span><span>{formatMetric(domain.min, widget.unit, false, widget.options?.decimals)}</span></div>
+    <div className={styles.plotLayout}><div className={styles.yAxis} aria-hidden="true"><span>{topLabel}</span><span>{bottomLabel}</span></div>
     <svg className={styles.plot} viewBox="0 0 600 100" preserveAspectRatio="none" role="group" aria-label={`${name} trend. Shared scales.${interactive && points.length ? " Arrow keys inspect samples; Enter pins." : ""}`} aria-describedby={detailsEnabled && selected ? id : undefined} tabIndex={interactive && points.length ? 0 : undefined}
       data-domain-start={domain.start} data-domain-end={domain.end} data-domain-min={domain.min} data-domain-max={domain.max}
       onFocus={event => { interaction.current.focused = true; show(points.length - 1, event.currentTarget); }}

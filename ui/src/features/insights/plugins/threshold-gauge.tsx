@@ -1,5 +1,6 @@
 "use client";
 
+import { sharedScale, unitSuffix } from "../units";
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { z } from "zod";
 import { ChevronsUp, ChevronsDown } from "lucide-react";
@@ -71,6 +72,18 @@ function gaugeFraction(value: number, min: number, max: number) {
 }
 
 /** Keep the configured cells honest: below four pixels use the continuous scale. */
+/**
+ * One scale for a gauge's track, bounds, markers and reading. A single gauge takes its unit from its reading, so 0.4 ms
+ * on a 0–1,000 ms gauge reads "0.4 ms" and 12.3 ms reads "12.3 ms". A gauge without a reading (or a bank, whose legend
+ * is shared) takes it from the bounds and markers. Authored decimals keep the exact authored unit and precision.
+ */
+function gaugeScale(widget: WidgetRendererProps["widget"], reading?: number): { unit: string; number(value: number): string } {
+  if (widget.options?.decimals !== undefined) return { unit: widget.unit, number: value => formatMetric(value, "", false, widget.options?.decimals) };
+  if (reading !== undefined && Number.isFinite(reading)) return sharedScale([reading], widget.unit, { scaleDown: false });
+  const { min, max } = gaugeBounds(widget);
+  return sharedScale([min, max, ...(widget.options?.thresholds ?? []).map(threshold => threshold.value)], widget.unit);
+}
+
 export function gaugeTrackLayout(extent: number | undefined, segments: number) {
   return {
     continuous: extent !== undefined && extent < segments * 4,
@@ -107,8 +120,8 @@ function RadialLayout({ reading, track, cue, bank }: { reading: ReactNode; track
   </div>;
 }
 
-function GaugeTrack({ widget, config, value, title }: {
-  widget: WidgetRendererProps["widget"]; config: GaugeConfig; value: number | undefined; title: string;
+function GaugeTrack({ widget, config, value, scaleReading, title }: {
+  widget: WidgetRendererProps["widget"]; config: GaugeConfig; value: number | undefined; scaleReading: number | undefined; title: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [extent, setExtent] = useState<number>();
@@ -153,8 +166,8 @@ function GaugeTrack({ widget, config, value, title }: {
       <path d="M16 98 A84 84 0 0 1 184 98" pathLength={100} className={meterStyles.arcTrack} />
       {value !== undefined && <path d="M16 98 A84 84 0 0 1 184 98" pathLength={100} className={meterStyles.arcFill} stroke={color} strokeDasharray={`${progress * 100} 100`} />}
     </svg><div className={meterStyles.radialBounds} data-gauge-radial-bounds aria-hidden="true">
-      <span data-gauge-bound="min" title={exactMetric(min, widget.unit)}>{formatMetric(min, "", false, widget.options?.decimals)}</span>
-      <span data-gauge-bound="max" title={exactMetric(max, widget.unit)}>{formatMetric(max, "", false, widget.options?.decimals)}</span>
+      <span data-gauge-bound="min" title={exactMetric(min, widget.unit)}>{gaugeScale(widget, scaleReading).number(min)}</span>
+      <span data-gauge-bound="max" title={exactMetric(max, widget.unit)}>{gaugeScale(widget, scaleReading).number(max)}</span>
     </div></> : display === "segmented" && !continuous ? Array.from({ length: segments }, (_, index) => {
       const start = index / segments, fraction = value === undefined ? 0 : Math.max(0, Math.min(1, (progress - start) * segments));
       const middle = (index + .5) / segments, segmentValue = min * (1 - middle) + max * middle;
@@ -169,13 +182,13 @@ function GaugeTrack({ widget, config, value, title }: {
   </div>;
 }
 
-function GaugeLegend({ widget, config, compactRows = false }: Pick<WidgetRendererProps, "widget"> & { config: GaugeConfig; compactRows?: boolean }) {
+function GaugeLegend({ widget, config, compactRows = false, scaleReading }: Pick<WidgetRendererProps, "widget"> & { config: GaugeConfig; compactRows?: boolean; scaleReading?: number }) {
   if (widget.options?.showLegend === false) return null;
   const { min, max } = gaugeBounds(widget);
   const markers = config.showThresholds === false ? [] : (widget.options?.thresholds ?? []).filter(item => item.value > min && item.value < max);
   return <div className={meterStyles.legend} data-gauge-legend data-gauge-legend-layout={compactRows ? "rows" : undefined}>
-    <div className={meterStyles.bounds}>{compactRows ? <span>Scale {formatMetric(min, widget.unit, false, widget.options?.decimals)} – {formatMetric(max, widget.unit, false, widget.options?.decimals)}</span> : <><span>{formatMetric(min, widget.unit, false, widget.options?.decimals)}</span><span>{formatMetric(max, widget.unit, false, widget.options?.decimals)}</span></>}</div>
-    {markers.length > 0 && <div className={meterStyles.thresholds} aria-label="Threshold limits">{markers.map(marker => <span key={marker.value}><i aria-hidden="true" style={{ background: thresholdPaint(marker) }} />{marker.label ?? "Threshold"} {formatMetric(marker.value, widget.unit, false, widget.options?.decimals)}</span>)}</div>}
+    <div className={meterStyles.bounds}>{compactRows ? <span>Scale {`${gaugeScale(widget, scaleReading).number(min)}${unitSuffix(gaugeScale(widget, scaleReading).unit)}`} – {`${gaugeScale(widget, scaleReading).number(max)}${unitSuffix(gaugeScale(widget, scaleReading).unit)}`}</span> : <><span>{`${gaugeScale(widget, scaleReading).number(min)}${unitSuffix(gaugeScale(widget, scaleReading).unit)}`}</span><span>{`${gaugeScale(widget, scaleReading).number(max)}${unitSuffix(gaugeScale(widget, scaleReading).unit)}`}</span></>}</div>
+    {markers.length > 0 && <div className={meterStyles.thresholds} aria-label="Threshold limits">{markers.map(marker => <span key={marker.value}><i aria-hidden="true" style={{ background: thresholdPaint(marker) }} />{marker.label ?? "Threshold"} {`${gaugeScale(widget, scaleReading).number(marker.value)}${unitSuffix(gaugeScale(widget, scaleReading).unit)}`}</span>)}</div>}
   </div>;
 }
 
@@ -243,6 +256,8 @@ function GaugeBank(props: WidgetRendererProps & { config: GaugeConfig; series: G
 function GaugeItem({ widget, result, onContextChange, embedded, series, index, config, displayLabel, bank = false }: WidgetRendererProps & { series: GaugeSeries; index: number; config: GaugeConfig; displayLabel?: string; bank?: boolean }) {
   const parentEmbedded = useEmbeddedWidget(), interactive = !embedded && !parentEmbedded;
   const point = latestGaugePoint(series), value = typeof point?.value === "number" && Number.isFinite(point.value) ? point.value : undefined;
+  // A single gauge sets its unit from its reading; a bank shares the bounds scale of its legend.
+  const scaleReading = bank ? undefined : value;
   const options = widget.options ?? {}, { min, max } = gaugeBounds(widget);
   const threshold = value === undefined ? undefined : thresholdForValue(value, options.thresholds);
   const thresholdIndex = threshold ? options.thresholds?.indexOf(threshold) ?? -1 : -1;
@@ -277,10 +292,10 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
       data-gauge-value={value === undefined ? "unknown" : value} title={interactive && options.showTooltip !== false ? undefined : exact}
       style={{ color: widgetTextColor(options) ?? (bank ? undefined : thresholdText(threshold) ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": thresholdPaint(threshold) } : {}) } as CSSProperties}>
       {display !== "radial" && rangeCue}
-      <span data-gauge-number>{value === undefined ? "No data" : formatMetric(value, "", false, options.decimals)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{widget.unit}</small>}
+      <span data-gauge-number>{value === undefined ? "No data" : gaugeScale(widget, scaleReading).number(value)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{gaugeScale(widget, scaleReading).unit}</small>}
     </span>
   </ObservationDetails>;
-  const track = <GaugeTrack widget={widget} config={config} value={value} title={title} />;
+  const track = <GaugeTrack widget={widget} config={config} value={value} scaleReading={scaleReading} title={title} />;
   const showStatus = bank && display !== "radial" && orientation === "horizontal" && config.showStatus;
   const statusLabel = value === undefined ? "Unknown" : threshold?.label ?? "Observed";
   return <div className={meterStyles.item} data-gauge-series={name} data-gauge-kind={display}
@@ -288,7 +303,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     {display === "radial" ? <><RadialLayout reading={reading} track={track} cue={rangeCue} bank={bank} /><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span></> :
       <div className={meterStyles.body} data-gauge-show-status={showStatus || undefined}><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span>{track}{reading}{showStatus && <span className={meterStyles.status} data-gauge-status title={statusLabel} style={{ "--gauge-status-color": thresholdPaint(threshold) ?? "var(--gamma-muted)" } as CSSProperties}><i aria-hidden="true" />{statusLabel}</span>}</div>}
     {value === undefined && <span role="status" className={meterStyles.srOnly}>Unknown · latest sample has no finite value</span>}
-    {!bank && <GaugeLegend widget={widget} config={config} />}
+    {!bank && <GaugeLegend widget={widget} config={config} scaleReading={scaleReading} />}
   </div>;
 }
 
