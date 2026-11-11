@@ -42,6 +42,12 @@ type dashboardReadWidget struct {
 		Decimals          *int                     `json:"decimals"`
 		StaleAfterSeconds *float64                 `json:"staleAfterSeconds"`
 		Thresholds        []dashboardReadThreshold `json:"thresholds"`
+		// The declared scale and styling the dry-run data rules compare against.
+		// Query output never reads them.
+		Min           *float64        `json:"min"`
+		Max           *float64        `json:"max"`
+		ShowSparkline bool            `json:"showSparkline"`
+		SeriesColors  json.RawMessage `json:"seriesColors"`
 	} `json:"options"`
 }
 

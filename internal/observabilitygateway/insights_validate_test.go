@@ -481,8 +481,10 @@ func TestValidateDashboardExecuteRunsQueriesAndReportsDataStates(t *testing.T) {
 		}
 	})
 	p := authoringPrincipal([]string{"editors"}, true)
+	share := dataWidgetMap("share", "share", "%", 0)
+	share["options"] = map[string]any{"max": 100}
 	document := documentWithWidgets(t, "Executed",
-		dataWidgetMap("share", "share", "%", 0),
+		share,
 		dataWidgetMap("absent", "absent", "req/s", 4),
 		dataWidgetMap("scoped", `up{service={{service}}}`, "req/s", 8),
 	)
@@ -492,7 +494,7 @@ func TestValidateDashboardExecuteRunsQueriesAndReportsDataStates(t *testing.T) {
 	require.False(t, res.IsError)
 
 	text := resultText(t, res)
-	require.True(t, strings.HasPrefix(text, "Checks: 0 errors, 2 warnings\nData: 2 ok, 1 empty across 3 widgets.\n"), text)
+	require.True(t, strings.HasPrefix(text, "Checks: 0 errors, 1 warning (1 info note)\nData: 2 ok, 1 empty across 3 widgets.\n"), text)
 	require.Contains(t, text, "data.unit-mismatch")
 	require.Contains(t, text, "data.no-series")
 	_, sawVariable := seenQueries.Load(`up{service="api"}`)
@@ -500,7 +502,7 @@ func TestValidateDashboardExecuteRunsQueriesAndReportsDataStates(t *testing.T) {
 
 	var structured dryRunStructured
 	require.NoError(t, json.Unmarshal(structuredBytes(t, res), &structured))
-	require.Equal(t, uint32(2), structured.WarningCount)
+	require.Equal(t, uint32(1), structured.WarningCount)
 	require.Len(t, structured.Widgets, 3)
 	require.Equal(t, "DATA_STATE_OK", structured.Widgets[0].State)
 	require.Equal(t, "DATA_STATE_EMPTY", structured.Widgets[1].State)
@@ -511,7 +513,7 @@ func TestValidateDashboardExecuteRunsQueriesAndReportsDataStates(t *testing.T) {
 	for _, issue := range structured.Issues {
 		sources[issue.RuleID] = issue.Source + " " + issue.Pointer
 	}
-	require.Equal(t, "SOURCE_DATA /widgets/0/unit", sources["data.unit-mismatch"])
+	require.Equal(t, "SOURCE_DATA /widgets/0/options/max", sources["data.unit-mismatch"])
 	require.Equal(t, "SOURCE_DATA /widgets/1/query", sources["data.no-series"])
 	require.JSONEq(t, string(structuredBytes(t, res)), resultJSON(t, res), "content[0] is the structured content")
 	require.Equal(t, int32(3), calls.Load(), "one provider request per distinct query")
@@ -630,4 +632,18 @@ func TestValidateDashboardExecuteRequiresOrchestrationAdmission(t *testing.T) {
 	_, err = h.invoker.Call(admitted, p, "validate_dashboard", raw(map[string]any{"document": document, "execute": true}))
 	require.NoError(t, err)
 	require.Equal(t, int32(1), calls.Load())
+}
+
+// A widget list the service cannot read still has a document with errors, so an
+// executed dry run says not run, never "no widgets to check".
+func TestValidateDashboardExecuteSaysNotRunWhenWidgetsAreUnreadable(t *testing.T) {
+	var calls atomic.Int32
+	h := executeHarness(t, &calls, func(string, float64) string { return promMatrixBody("") })
+	p := authoringPrincipal([]string{"editors"}, true)
+	res, err := h.callRaw(t, p, "validate_dashboard", map[string]any{"document": map[string]any{"schemaVersion": 1, "id": "mcp-demo", "title": "Broken", "timeRange": "1h", "refreshInterval": 0, "widgets": "nope"}, "execute": true})
+	require.NoError(t, err)
+	text := resultText(t, res)
+	require.Contains(t, text, "\nData: not run, because the document has errors that block a save.", text)
+	require.NotContains(t, text, "no widgets to check")
+	require.Equal(t, int32(0), calls.Load())
 }

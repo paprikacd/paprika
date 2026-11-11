@@ -202,32 +202,50 @@ func TestDryRunNoSeriesOnlyForEmptyMetrics(t *testing.T) {
 	require.Equal(t, uint32(1), report.Widgets[1].SeriesReturned)
 }
 
-func TestDryRunUnitMismatchForPercentOutsideTheRange(t *testing.T) {
-	cases := map[string]struct {
-		unit, value string
-		finding     bool
-	}{
-		"percent above 100":        {unit: "%", value: "120", finding: true},
-		"percent just over 100":    {unit: "%", value: "100.4", finding: false},
-		"percent within range":     {unit: "%", value: "42", finding: false},
-		"other unit above 100":     {unit: "req/s", value: "120", finding: false},
-		"percent far above 100":    {unit: "%", value: "1234", finding: true},
-		"percent below zero":       {unit: "%", value: "-30", finding: true},
-		"percent float noise zero": {unit: "%", value: "-0.0000001", finding: false},
+// unitCase is one widget whose returned values are judged against its declared
+// scale. The provider returns the values as one series, one sample each.
+type unitCase struct {
+	name, unit, options string
+	values              []string
+	wantRule            string // empty when no finding is expected
+	wantPointer         string
+	wantSeverity        string
+}
+
+func TestDryRunUnitMismatchJudgesOnlyTheDeclaredScale(t *testing.T) {
+	cases := []unitCase{
+		{name: "declared max exceeded", unit: "%", options: `"options":{"max":100}`, values: []string{"120"}, wantRule: "data.unit-mismatch", wantPointer: "/widgets/0/options/max", wantSeverity: "SEVERITY_INFO"},
+		{name: "declared min undershot", unit: "%", options: `"options":{"min":0}`, values: []string{"-5"}, wantRule: "data.unit-mismatch", wantPointer: "/widgets/0/options/min", wantSeverity: "SEVERITY_INFO"},
+		{name: "within declared range", unit: "%", options: `"options":{"min":0,"max":100}`, values: []string{"42"}},
+		{name: "350 percent CPU with no declared scale", unit: "%", values: []string{"350"}},
+		{name: "negative percentage change with no declared scale", unit: "%", values: []string{"-30"}},
+		{name: "ratio shown as percent under a threshold of 99", unit: "%", options: `"options":{"thresholds":[{"value":99,"status":"critical"}]}`, values: []string{"0.97"}, wantRule: "data.unit-mismatch", wantPointer: "/widgets/0/unit", wantSeverity: "SEVERITY_INFO"},
+		{name: "ratio shown as percent under a declared max of 100", unit: "%", options: `"options":{"max":100}`, values: []string{"0.5", "0.02"}, wantRule: "data.unit-mismatch", wantPointer: "/widgets/0/unit", wantSeverity: "SEVERITY_INFO"},
+		{name: "ratio whose scale is below ten", unit: "%", options: `"options":{"thresholds":[{"value":0.9,"status":"warning"}]}`, values: []string{"0.5"}},
+		{name: "all zeros is not evidence of a ratio", unit: "%", options: `"options":{"max":100}`, values: []string{"0", "0"}},
+		{name: "values above one are not a ratio", unit: "%", options: `"options":{"max":100}`, values: []string{"1.5"}},
+		{name: "other units are not judged against percent", unit: "req/s", options: `"options":{"max":100}`, values: []string{"0.5"}},
 	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			provider, _ := newDataProvider(t, func(_ string, end float64) (int, string) {
-				return http.StatusOK, promMatrix(promSeries("ratio", pair(end-60, tc.value)))
+				samples := make([]string, 0, len(tc.values))
+				for i, value := range tc.values {
+					samples = append(samples, pair(end-float64(60*(len(tc.values)-i)), value))
+				}
+				return http.StatusOK, promMatrix(promSeries("share", samples...))
 			})
 			s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
-			report, _ := executeDryRunRequest(t, s, documentOf("demo", dataWidgetJSON("share", "timeseries", "share", tc.unit, 0, "")), nil)
-			if tc.finding {
-				require.Equal(t, []string{"data.unit-mismatch /widgets/0/unit"}, dataFindingsOf(report))
-				require.Contains(t, report.Issues[0].Message, tc.value)
-			} else {
+			widget := widgetAt("share", "timeseries", "share", tc.unit, 0, 0, 12, 4, tc.options)
+			report, _ := executeDryRunRequest(t, s, documentOf("demo", widget), nil)
+			if tc.wantRule == "" {
 				require.Empty(t, dataFindingsOf(report))
+				return
 			}
+			require.Equal(t, []string{tc.wantRule + " " + tc.wantPointer}, dataFindingsOf(report))
+			require.Equal(t, tc.wantSeverity, report.Issues[0].Severity)
+			require.Equal(t, uint32(0), report.WarningCount, "a unit finding is info, never a warning")
+			require.Equal(t, "DATA_STATE_OK", stateOf(report, "/widgets/0"), "a unit finding does not change the data state")
 		})
 	}
 }
@@ -404,18 +422,30 @@ func TestDryRunWithoutExecuteKeepsTheCheckReportShape(t *testing.T) {
 	require.NotContains(t, shape, "widgets", "a dry run that did not execute adds no member")
 }
 
-func TestDataRegistryIsWarningOnlyAndDocumented(t *testing.T) {
+func TestDataRegistryIsDocumentedAndSharesOneCatalogue(t *testing.T) {
 	seen := map[string]bool{}
 	for _, rule := range dataRules {
 		require.True(t, strings.HasPrefix(rule.ID, "data."), rule.ID)
 		require.False(t, seen[rule.ID], "duplicate rule %s", rule.ID)
 		seen[rule.ID] = true
-		require.Equal(t, insightsv1.Severity_SEVERITY_WARNING, rule.Severity, rule.ID)
+		require.Contains(t, []insightsv1.Severity{insightsv1.Severity_SEVERITY_WARNING, insightsv1.Severity_SEVERITY_INFO}, rule.Severity, rule.ID)
+		require.NotEmpty(t, rule.Summary, rule.ID)
 		require.NotEmpty(t, rule.Fix, rule.ID)
 	}
-	require.Len(t, dataRules, 5)
-	for _, rule := range lintRules {
-		require.False(t, seen[rule.ID], "data rule ids never collide with lint ids")
+	require.Len(t, dataRules, 7)
+
+	catalogue := checkRuleCatalog()
+	require.Len(t, catalogue, len(lintRules)+len(dataRules))
+	ids := map[string]bool{}
+	for _, entry := range catalogue {
+		require.False(t, ids[entry.ID], "one catalogue, one id per rule: %s", entry.ID)
+		ids[entry.ID] = true
+		require.NotEmpty(t, entry.Summary, entry.ID)
+		wantSource := insightsv1.Source_SOURCE_LINT
+		if strings.HasPrefix(entry.ID, "data.") {
+			wantSource = insightsv1.Source_SOURCE_DATA
+		}
+		require.Equal(t, wantSource, entry.Source, "lint and data keep their own source: %s", entry.ID)
 	}
 }
 
@@ -449,4 +479,108 @@ func TestDryRunGatewayAndUnavailableStatusesAreTransient(t *testing.T) {
 	putReadDashboard(t, s, queryReadWidget("busy", "unavailable"))
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
 	require.Equal(t, "provider_error", result.Signals[0].Error.Code, "query_dashboard keeps the code it reported before")
+}
+
+func TestDryRunStaleCoversStatTimeseriesAndRichMetricsOnly(t *testing.T) {
+	provider, _ := newDataProvider(t, func(_ string, end float64) (int, string) {
+		return http.StatusOK, promMatrix(promSeries("up", pair(end-600, "1")))
+	})
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	stale := `"options":{"staleAfterSeconds":60}`
+	series := widgetAt("series", "timeseries", "series", "req/s", 0, 0, 12, 4, stale)
+	rich := widgetAt("rich", "plugin", "rich", "req/s", 0, 4, 12, 4, `"pluginId":"rich-metrics","dataKind":"metrics",`+stale)
+	bar := widgetAt("bar", "bar", "bar", "req/s", 0, 8, 12, 4, stale)
+	report, _ := executeDryRunRequest(t, s, documentOf("demo", series, rich, bar), nil)
+	require.Equal(t, []string{
+		"data.stale /widgets/0/options/staleAfterSeconds",
+		"data.stale /widgets/1/options/staleAfterSeconds",
+	}, dataFindingsOf(report), "bar charts do not honour staleAfterSeconds, so they are not judged")
+	require.Equal(t, "DATA_STATE_STALE", stateOf(report, "/widgets/0"))
+	require.Equal(t, "DATA_STATE_STALE", stateOf(report, "/widgets/1"))
+	require.Equal(t, "DATA_STATE_OK", stateOf(report, "/widgets/2"))
+}
+
+// An alert or a comparison filter is often empty by design, so its empty result is
+// info; a plain metric that is empty stays a warning.
+func TestDryRunNoSeriesIsInfoForAlertsAndComparisonFilters(t *testing.T) {
+	provider, _ := newDataProvider(t, func(string, float64) (int, string) { return http.StatusOK, promMatrix() })
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	document := documentOf("demo",
+		dataWidgetJSON("alerts", "timeseries", `ALERTS{alertstate="firing"}`, "req/s", 0, ""),
+		dataWidgetJSON("filter", "timeseries", "error_rate > 0", "req/s", 4, ""),
+		dataWidgetJSON("plain", "timeseries", "requests_total", "req/s", 8, ""),
+	)
+	report, _ := executeDryRunRequest(t, s, document, nil)
+	require.Equal(t, []string{"data.no-series /widgets/0/query", "data.no-series /widgets/1/query", "data.no-series /widgets/2/query"}, dataFindingsOf(report))
+	require.Equal(t, "SEVERITY_INFO", report.Issues[0].Severity)
+	require.Equal(t, "SEVERITY_INFO", report.Issues[1].Severity)
+	require.Equal(t, "SEVERITY_WARNING", report.Issues[2].Severity)
+	require.Contains(t, report.Issues[0].Message, "can legitimately be empty")
+	require.Equal(t, uint32(1), report.WarningCount)
+}
+
+// A provider-setting failure points at the provider, not the query.
+func TestDryRunProviderSettingFailuresPointAtProviderID(t *testing.T) {
+	s, _ := testService(t)
+	report, _ := executeDryRunRequest(t, s, documentOf("demo", dataWidgetJSON("orphan", "timeseries", "up", "req/s", 0, "")), nil)
+	require.Equal(t, []string{"data.query-error /widgets/0/providerId"}, dataFindingsOf(report))
+	require.Contains(t, report.Issues[0].Message, "(provider_not_found)")
+}
+
+// A failed event query keeps its finding and makes the widget partial, so the
+// widget is not reported as complete.
+func TestDryRunFailedEventQueryMakesTheWidgetPartial(t *testing.T) {
+	provider, _ := newDataProvider(t, func(_ string, end float64) (int, string) {
+		return http.StatusOK, promMatrix(promSeries("up", pair(end-60, "1")))
+	})
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	annotated := dataWidgetJSON("annotated", "timeseries", "up", "req/s", 0,
+		`"annotationSource":{"queryRef":{"id":"absent","bindings":[]},"timestampColumn":"at","labelColumn":"label"}`)
+	report, _ := executeDryRunRequest(t, s, documentOf("demo", annotated), nil)
+	require.Equal(t, []string{"data.query-error /widgets/0/annotationSource"}, dataFindingsOf(report))
+	require.Equal(t, "DATA_STATE_PARTIAL", stateOf(report, "/widgets/0"))
+}
+
+func TestDryRunManySeriesAdvisoryNeedsSeriesColors(t *testing.T) {
+	series := make([]string, 0, 9)
+	for i := range 9 {
+		series = append(series, promSeries(fmt.Sprintf("s%d", i), pair(1, "1")))
+	}
+	provider, _ := newDataProvider(t, func(string, float64) (int, string) { return http.StatusOK, promMatrix(series...) })
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	plain := dataWidgetJSON("plain", "timeseries", "many", "req/s", 0, "")
+	coloured := dataWidgetJSON("coloured", "timeseries", "many", "req/s", 4, `"options":{"seriesColors":[{"label":"s0","value":"s0","color":"#111111"}]}`)
+	report, _ := executeDryRunRequest(t, s, documentOf("demo", plain, coloured), nil)
+	require.Equal(t, []string{"data.many-series /widgets/0/query"}, dataFindingsOf(report))
+	require.Equal(t, "SEVERITY_INFO", report.Issues[0].Severity)
+	require.Equal(t, uint32(9), report.Widgets[0].SeriesReturned)
+}
+
+func TestDryRunConstantSparklineAdvisory(t *testing.T) {
+	provider, _ := newDataProvider(t, func(query string, end float64) (int, string) {
+		if query == "flat" {
+			return http.StatusOK, promMatrix(promSeries("target", pair(end-120, "99"), pair(end-60, "99")))
+		}
+		return http.StatusOK, promMatrix(promSeries("rate", pair(end-120, "98"), pair(end-60, "99")))
+	})
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	flat := widgetAt("target", "stat", "flat", "%", 0, 0, 4, 4, `"options":{"showSparkline":true,"decimals":0}`)
+	moving := widgetAt("rate", "stat", "rate", "%", 4, 0, 4, 4, `"options":{"showSparkline":true,"decimals":0}`)
+	report, _ := executeDryRunRequest(t, s, documentOf("demo", flat, moving), nil)
+	require.Equal(t, []string{"data.constant-sparkline /widgets/0/options/showSparkline"}, dataFindingsOf(report))
+	require.Equal(t, "SEVERITY_INFO", report.Issues[0].Severity)
+	require.Contains(t, report.Issues[0].Message, "all 2 valid samples equal 99")
+}
+
+// A widget whose id is not a string blanks only its own id; every widget is still
+// reported as not run, so the report never claims there were no widgets.
+func TestNotRunStatesKeepEveryWidgetWhenAnIDIsNotAString(t *testing.T) {
+	document := strings.Replace(string(documentOf("demo", dataWidgetJSON("first", "timeseries", "up", "req/s", 0, ""), dataWidgetJSON("second", "timeseries", "up", "req/s", 4, ""))), `"id":"first"`, `"id":5`, 1)
+	states := notRunStates(Dashboard(document))
+	require.Len(t, states, 2)
+	require.Empty(t, states[0].GetWidgetId())
+	require.Equal(t, "second", states[1].GetWidgetId())
+	for _, state := range states {
+		require.Equal(t, insightsv1.DataState_DATA_STATE_NOT_RUN, state.GetState())
+	}
 }

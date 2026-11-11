@@ -39,6 +39,7 @@ type lintHit struct {
 const (
 	errorSeverity   = insightsv1.Severity_SEVERITY_ERROR
 	warningSeverity = insightsv1.Severity_SEVERITY_WARNING
+	infoSeverity    = insightsv1.Severity_SEVERITY_INFO
 )
 
 // lintRules is the registry, in report order. A new rule is added to the

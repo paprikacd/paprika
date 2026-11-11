@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -560,13 +561,14 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 		Widgets: make([]DashboardQueryWidget, 0, len(doc.Widgets)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
 	}
 	s.runDashboardPlan(r, &result, doc.Widgets, saved, doc.Variables, start, end, dryRunSummaryOptions)
-	return dryRunWidgets(&doc, &result), nil
+	return dryRunWidgets(&doc, &result, saved, end), nil
 }
 
 // dryRunWidgets joins each planned widget to its executed query and derives the
 // data.* findings and per-widget states. Planned widgets keep the document's
-// order, so result.Widgets[i] is the widget at /widgets/i.
-func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult) dryRunOutcome {
+// order, so result.Widgets[i] is the widget at /widgets/i. end is the query range
+// end, which the freshness of the widgets the query path does not judge is measured from.
+func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, end float64) dryRunOutcome {
 	signals := make(map[string]*DashboardSignal, len(result.Signals))
 	for i := range result.Signals {
 		signals[result.Signals[i].ID] = &result.Signals[i]
@@ -574,10 +576,12 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult) dry
 	widgets := make([]dataWidget, 0, len(result.Widgets))
 	for i := range result.Widgets {
 		planned := &result.Widgets[i]
+		declared := &doc.Widgets[i]
 		widget := dataWidget{
-			index: i, id: planned.ID, title: planned.Title, unit: planned.Unit,
-			queryRef: doc.Widgets[i].QueryRef != nil, failure: planned.Error, annotation: planned.AnnotationError,
-			signal: signals[planned.SignalID], freshness: planned.Freshness,
+			index: i, id: planned.ID, title: planned.Title, widgetType: declared.Type, pluginID: declared.PluginID, unit: planned.Unit,
+			queryRef: declared.QueryRef != nil, expression: dryRunExpression(declared, saved),
+			options: dataOptionsOf(declared), failure: planned.Error, annotation: planned.AnnotationError,
+			signal: signals[planned.SignalID], freshness: dryRunWidgetFreshness(planned, declared, signals[planned.SignalID], end),
 		}
 		if widget.failure == nil && widget.signal != nil {
 			widget.failure = widget.signal.Error
@@ -589,6 +593,67 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult) dry
 		states = append(states, widgetDataState(&widgets[i]))
 	}
 	return dryRunOutcome{findings: dataFindings(widgets), widgets: states}
+}
+
+// dryRunWidgetFreshness is the freshness a widget's data state and data.stale
+// read. A stat keeps the query path's judgement; a timeseries or rich-metrics
+// widget over metrics is judged here against its own staleAfterSeconds.
+func dryRunWidgetFreshness(planned *DashboardQueryWidget, declared *dashboardReadWidget, signal *DashboardSignal, end float64) *DashboardObservationFreshness {
+	if planned.Freshness != nil {
+		return planned.Freshness
+	}
+	if signal == nil || signal.Error != nil || signal.Kind != "metrics" || declared.Options.StaleAfterSeconds == nil || !staleJudgedByDryRun(declared) {
+		return nil
+	}
+	return dryRunFreshness(signal, end, *declared.Options.StaleAfterSeconds)
+}
+
+// staleJudgedByDryRun reports whether a widget honours staleAfterSeconds beyond
+// the stat the query path judges: a timeseries, or the rich-metrics plugin.
+func staleJudgedByDryRun(declared *dashboardReadWidget) bool {
+	return declared.Type == "timeseries" || (declared.Type == "plugin" && declared.PluginID == "rich-metrics")
+}
+
+// dryRunExpression is the query text a widget reads: its own, or its saved query's.
+func dryRunExpression(declared *dashboardReadWidget, saved map[string]dashboardSavedSnapshot) string {
+	if declared.QueryRef != nil {
+		return saved[declared.QueryRef.ID].Query.Query
+	}
+	return declared.Query
+}
+
+// dataOptionsOf reads the declared options the data rules compare with.
+func dataOptionsOf(declared *dashboardReadWidget) dataOptions {
+	options := dataOptions{showSparkline: declared.Options.ShowSparkline, min: declared.Options.Min, max: declared.Options.Max}
+	var colors []json.RawMessage
+	if json.Unmarshal(declared.Options.SeriesColors, &colors) == nil {
+		options.seriesColors = len(colors)
+	}
+	for _, threshold := range declared.Options.Thresholds {
+		options.thresholds = append(options.thresholds, threshold.Value)
+	}
+	return options
+}
+
+// dryRunFreshness judges the newest valid sample across a widget's summarised
+// series against its staleAfterSeconds, as the query path judges a stat. It returns
+// nil when no series holds a valid sample, so there is nothing to judge.
+func dryRunFreshness(signal *DashboardSignal, end, threshold float64) *DashboardObservationFreshness {
+	newest := math.Inf(-1)
+	for i := range signal.Series {
+		if last := signal.Series[i].Last; last != nil {
+			newest = math.Max(newest, last.Timestamp)
+		}
+	}
+	if math.IsInf(newest, -1) {
+		return nil
+	}
+	age := math.Max(0, end-newest/1000)
+	freshness := &DashboardObservationFreshness{ThresholdSeconds: int(threshold), State: "fresh", LastTimestamp: &newest, AgeSeconds: &age}
+	if age > threshold {
+		freshness.State = "stale"
+	}
+	return freshness
 }
 
 // widgetDataState reports one widget's data for the dry-run report.
@@ -616,13 +681,13 @@ func failureCode(code string) string {
 	return "provider_error"
 }
 
-// notRunStates reports every widget of a document that was not executed. It is
-// bounded by the widget limit, which a document with more widgets fails anyway.
+// notRunStates reports every widget of a document that was not executed. Each
+// widget is reported on its own, so an id that is not a string only blanks that
+// widget's id. It is bounded by the widget limit, which a document with more
+// widgets fails anyway.
 func notRunStates(document Dashboard) []*insightsv1.WidgetDataState {
 	var head struct {
-		Widgets []struct {
-			ID string `json:"id"`
-		} `json:"widgets"`
+		Widgets []json.RawMessage `json:"widgets"`
 	}
 	states := []*insightsv1.WidgetDataState{}
 	if json.Unmarshal(document, &head) != nil {
@@ -632,7 +697,7 @@ func notRunStates(document Dashboard) []*insightsv1.WidgetDataState {
 		if i == maxDashboardWidgets {
 			break
 		}
-		states = append(states, &insightsv1.WidgetDataState{WidgetId: boundedWidgetID(widget.ID), Pointer: widgetBase(i), State: insightsv1.DataState_DATA_STATE_NOT_RUN})
+		states = append(states, &insightsv1.WidgetDataState{WidgetId: boundedWidgetID(widgetIDOf(widget)), Pointer: widgetBase(i), State: insightsv1.DataState_DATA_STATE_NOT_RUN})
 	}
 	return states
 }

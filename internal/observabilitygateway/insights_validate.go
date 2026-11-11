@@ -263,7 +263,7 @@ func insightsDryRunResult(report *insightsv1.CheckReport, widgets []*insightsv1.
 	if !ok {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("insights checks could not be rendered"))
 	}
-	if err := addDryRunData(res, widgets); err != nil {
+	if err := addDryRunData(res, widgets, report.GetErrorCount()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("insights checks could not be rendered"))
 	}
 	return res, nil
@@ -271,7 +271,7 @@ func insightsDryRunResult(report *insightsv1.CheckReport, widgets []*insightsv1.
 
 // addDryRunData adds the widget states to the structured content and its JSON
 // text, then adds the data line after the verdict in the checks section.
-func addDryRunData(res *sdkmcp.CallToolResult, widgets []*insightsv1.WidgetDataState) error {
+func addDryRunData(res *sdkmcp.CallToolResult, widgets []*insightsv1.WidgetDataState, errorCount uint32) error {
 	structured, ok := res.StructuredContent.(json.RawMessage)
 	if !ok || len(res.Content) != 2 {
 		return errors.New("checks result has an unexpected shape")
@@ -290,7 +290,7 @@ func addDryRunData(res *sdkmcp.CallToolResult, widgets []*insightsv1.WidgetDataS
 	}
 	res.StructuredContent = json.RawMessage(data)
 	jsonBlock.Text = string(data)
-	section.Text = withDryRunDataLine(section.Text, widgets)
+	section.Text = withDryRunDataLine(section.Text, widgets, errorCount)
 	return nil
 }
 
@@ -322,9 +322,9 @@ func withDryRunWidgets(structured json.RawMessage, widgets []*insightsv1.WidgetD
 
 // withDryRunDataLine places the data line directly under the verdict, which is
 // always the section's first line, and keeps the issue lines after it.
-func withDryRunDataLine(section string, widgets []*insightsv1.WidgetDataState) string {
+func withDryRunDataLine(section string, widgets []*insightsv1.WidgetDataState, errorCount uint32) string {
 	verdict, rest, hasRest := strings.Cut(section, "\n")
-	line := verdict + "\n" + dryRunDataLine(widgets)
+	line := verdict + "\n" + dryRunDataLine(widgets, errorCount)
 	if hasRest {
 		line += "\n" + rest
 	}
@@ -332,17 +332,19 @@ func withDryRunDataLine(section string, widgets []*insightsv1.WidgetDataState) s
 }
 
 // dryRunDataLine summarises the widget states in one plain line, counting each
-// state that occurs. A dry run that did not execute says so.
-func dryRunDataLine(widgets []*insightsv1.WidgetDataState) string {
-	if len(widgets) == 0 {
-		return "Data: no widgets to check."
-	}
+// state that occurs. A dry run that did not execute says so. A document with
+// errors reports not run even when its widget list is unreadable, because no
+// state exists to show it; only an error-free document with no widgets has none to check.
+func dryRunDataLine(widgets []*insightsv1.WidgetDataState, errorCount uint32) string {
 	counts := make(map[insightsv1.DataState]int, len(widgets))
 	for _, widget := range widgets {
 		counts[widget.GetState()]++
 	}
-	if counts[insightsv1.DataState_DATA_STATE_NOT_RUN] == len(widgets) {
+	if errorCount > 0 && counts[insightsv1.DataState_DATA_STATE_NOT_RUN] == len(widgets) {
 		return "Data: not run, because the document has errors that block a save. Fix them, then run again."
+	}
+	if len(widgets) == 0 {
+		return "Data: no widgets to check."
 	}
 	labels := []struct {
 		state insightsv1.DataState
