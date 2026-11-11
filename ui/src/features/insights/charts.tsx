@@ -199,7 +199,8 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       aria-busy={!!loading}
     >
       {loading && loadingPresentation && <div className={styles.refreshNotice}>{loadingPresentation({ widget, phase: "refresh" })}</div>}
-      {(result?.truncated || result?.records?.truncated) && (
+      {/* A single value shows a partial response as a chip beside its reading, so a block notice never pushes the reading out. */}
+      {(result?.truncated || result?.records?.truncated) && widget.type !== "stat" && (
         <p className={styles.limitNotice} role="status">
           Provider response may be incomplete. Narrow the query or check the data source.
         </p>

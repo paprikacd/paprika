@@ -243,10 +243,9 @@ describe("optional single-value history", () => {
         }}
       />,
     );
-    expect(screen.getByRole("img").querySelector("path[data-stat-trend]")).toHaveAttribute(
-      "d",
-      "M1,32L239,32",
-    );
+    // A constant history has no trend to draw: the label says so in the trend's place.
+    expect(screen.getByText("Steady")).toHaveAttribute("data-stat-steady");
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
     rerender(
       <WidgetVisualization
         widget={{ ...widget, options: { showSparkline: true } }}

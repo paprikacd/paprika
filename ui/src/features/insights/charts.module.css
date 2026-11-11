@@ -289,6 +289,34 @@
   letter-spacing: 0;
   font-weight: 450;
 }
+/* Reading row: the value and unit never shrink. The chips share the rest of the row and give way first: a long label
+   ellipsizes, then collapses to its glyph. The status word stays in the accessible name when its text is clipped. */
+.statFigure {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 8px;
+  min-width: 0;
+}
+.statFigure > .statValue { flex: none; }
+.statChip,
+.statBandChip,
+.statNoticeChip { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+/* A colour-only band: a dot in the band's hue and its label. Ink text, so the label stays readable on any tile. */
+.statBandChip,
+.statNoticeChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--widget-text, var(--gamma-ink));
+}
+.statNoticeChip { color: var(--widget-text, var(--gamma-muted, #52636f)); }
+.statBandDot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--gamma-muted, #52636f); }
+.statBandText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+/* Screen-reader-only text, for the full stale sentence beside its short visible chip. */
+.statSrOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .statMeta {
   font-size: 11px;
   line-height: 1.5;
@@ -296,12 +324,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.staleObservation {
-  color: var(--gamma-warning, #886827);
-  font-size: 11px;
-  line-height: 1.35;
-  padding: 4px 16px;
 }
 .missingObservation {
   color: var(--gamma-warning, #886827);
@@ -520,6 +542,8 @@
   white-space: nowrap;
 }
 @container insight-widget (max-height: 40px) {
+  .statFigure { flex-wrap: nowrap; }
+  .statChip, .statBandChip { font-size: 10px; }
   .stat.stat { gap: 0; overflow: auto; }
   .stat.stat .statValue { font-size: clamp(16px, 8cqw, 21px); line-height: 1.1; }
   .stat.stat .statMeta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

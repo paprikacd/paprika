@@ -69,6 +69,9 @@ import { GammaActionMenu } from "./gamma/action-menu";
 import contextStyles from "./widget-context.module.css";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
+import { AttentionStoreProvider, useAttentionPublisher } from "./attention-store";
+import { isAttentionLevel, widgetAttention, WidgetAttentionContext, type AttentionFailure } from "./widget-attention";
+import { statusToken, thresholdPaint } from "./status";
 
 const STAT_ICONS = {
   "arrow-down": ArrowDown,
@@ -272,6 +275,26 @@ const Tile = memo(function Tile({
       : (widget.type === "timeseries" && currentSelection?.result === data && selectedContext && currentSelection.context.timestamp !== undefined
         ? currentSelection.context
         : (selectedContext ?? (contexts.length === 1 ? contexts[0] : {})));
+  // The error a tile shows: a failed query, or a provider the dashboard does not configure.
+  const visibleError = savedQueryLoading ? null : error ?? (!provider && !widget.queryRef && sourceStatus === "ready"
+    ? `Provider “${widget.providerId}” is not configured.`
+    : null);
+  // One verdict per tile: the renderer reads it through WidgetAttentionContext, and the dashboard publishes it for an attention strip.
+  // The source outcome decides the verdict's failure: a source that cannot load or a provider that is not configured is
+  // final, so the tile reports it rather than pending. A failed read has no band, so a retained breach is not reported.
+  const sourceFailure: Exclude<AttentionFailure, "none"> | undefined = !savedQueryLoading && (waitingOn === "unavailable" || waitingOn === "signin") ? "provider"
+    : !savedQueryLoading && !provider && !widget.queryRef && sourceStatus === "ready" ? "planning"
+    : !savedQueryLoading && error ? "provider" : undefined;
+  const attention = useMemo(
+    () => widgetAttention(widget, { result: savedQueryLoading ? undefined : data, failure: sourceFailure, rangeEnd: end * 1000 }),
+    [widget, savedQueryLoading, data, sourceFailure, end],
+  );
+  const attentionPublisher = useAttentionPublisher();
+  useEffect(() => {
+    attentionPublisher.publish({ widgetId: widget.id, title: widget.title, state: attention.state });
+  }, [attentionPublisher, widget.id, widget.title, attention.state]);
+  useEffect(() => () => attentionPublisher.clear(widget.id), [attentionPublisher, widget.id]);
+  const attentionMark = isAttentionLevel(attention.state) ? (thresholdPaint(attention.band) ?? statusToken(attention.state)) : undefined;
   const textColor = widgetTextColor(widget.options);
   const StatIcon = widget.type === "stat" && widget.options?.statIcon ? STAT_ICONS[widget.options.statIcon] : undefined;
   const links = widget.drilldowns ?? [];
@@ -319,6 +342,7 @@ const Tile = memo(function Tile({
       data-widget-sparkline={widget.type === "stat" && widget.options?.showSparkline || undefined}
       data-sparkline-placement={widget.type === "stat" ? widget.options?.sparklinePlacement : undefined}
       data-stat-icon={StatIcon ? "true" : undefined}
+      data-attention={attention.state}
       data-compact-stat={widget.type === "stat" && widget.layout.h === 1 ? "true" : undefined}
       aria-label={widget.title}
       style={
@@ -327,6 +351,7 @@ const Tile = memo(function Tile({
           color: textColor,
           "--widget-text": textColor,
           "--stat-icon-color": widget.color,
+          "--attention-mark": attentionMark,
         } as CSSProperties
       }
     >
@@ -422,24 +447,19 @@ const Tile = memo(function Tile({
       {/* A tile waiting on its source is busy even when it still shows an earlier result. */}
       <div className={styles.visualization} aria-busy={busyOnSources || undefined} data-widget-state={waitingOn ? (waitingOn === "pending" ? "waiting-for-sources" : "source-unavailable") : undefined}>
         {active && (
-          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetVisualization
+          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetAttentionContext.Provider value={attention}><WidgetVisualization
             widget={widget}
             naturalHeight={naturalHeight}
             result={savedQueryLoading ? undefined : data}
             loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
             deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
             sourceState={!savedQueryLoading && waitingOn ? { status: waitingOn, label: waitingOn === "pending" ? "Waiting for data sources…" : sourceWaitMessage(waitingOn) } : undefined}
-            error={
-              savedQueryLoading ? null : error ??
-              (!provider && !widget.queryRef && sourceStatus === "ready"
-                ? `Provider “${widget.providerId}” is not configured.`
-                : null)
-            }
+            error={visibleError}
             onRetry={error && active && engaged && !savedQueryLoading ? refresh : undefined}
             onContextChange={
               (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined
             }
-          /></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
+          /></WidgetAttentionContext.Provider></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
         )}
       </div>
     </article>
@@ -642,6 +662,7 @@ export function DashboardCanvas({
             ));
   return (
     <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
+    <AttentionStoreProvider>
     <TooltipQueryProvider
       fetcher={tooltipFetcher}
       providers={providers}
@@ -707,6 +728,7 @@ export function DashboardCanvas({
         </ChartCursorProvider>
       </div>
     </TooltipQueryProvider>
+    </AttentionStoreProvider>
     </DashboardTimeZoneProvider>
   );
 }
