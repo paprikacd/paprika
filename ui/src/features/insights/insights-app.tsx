@@ -1667,7 +1667,7 @@ export default function InsightsApp({
         {editing && !widgetDraftValid && <p id={invalidWidgetSaveHintId} className={styles.saveBlockedHint} role="status">Fix the widget settings to save, or close the editor to keep the last valid preview.</p>}
         <div className={styles.toolbar} data-tooltip-obstacle>
           <div className={styles.toolbarLeft}>
-            <VariableBar key={dashboard.id} dashboard={dashboard} values={variableValues} onApply={values => {
+            <VariableBar dashboard={dashboard} values={variableValues} onApply={values => {
               try {
                 applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
                 setError("")

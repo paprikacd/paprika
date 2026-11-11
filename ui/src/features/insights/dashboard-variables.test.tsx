@@ -277,6 +277,17 @@ describe("dashboard variable value bar", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  it("starts a fresh draft for another dashboard even when its declarations and values match", () => {
+    const onApply = vi.fn();
+    const values = { service: "api", region: "east" };
+    const { rerender } = render(<VariableBar dashboard={dashboard} values={values} onApply={onApply} />);
+    fireEvent.change(screen.getByLabelText("Service"), { target: { value: "pending" } });
+    rerender(<VariableBar dashboard={{ ...dashboard, id: "other" }} values={values} onApply={onApply} />);
+    expect(screen.getByLabelText("Service")).toHaveValue("api");
+    expect(screen.getByRole("button", { name: "Apply values" })).toBeDisabled();
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
   it("does not invent empty values for unset declarations, and hides for dashboards without variables", () => {
     const onApply = vi.fn();
     const { rerender } = render(
