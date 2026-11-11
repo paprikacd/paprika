@@ -11,7 +11,7 @@ import { dashboardSchema } from "./schema"
 // Written by internal/insights TestCheckWireGolden from the real HTTP handlers,
 // so this test reads the bytes the service sends. Regenerate it there with
 // UPDATE_CHECKS_GOLDEN=1 when the contract changes.
-type Report = { issues: JsonValue[]; total: number; truncated: boolean }
+type Report = { issues: JsonValue[]; total: number; truncated: boolean; errorCount: number; warningCount: number; infoCount: number }
 type Golden = {
   save: Report & { error: string }
   dryRun: Report
