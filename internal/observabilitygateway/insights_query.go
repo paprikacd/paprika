@@ -62,14 +62,14 @@ const dashboardQueryInputSchema = `{"type":"object","additionalProperties":false
 
 // The response is a versioned machine contract, independent of visual layout.
 // Numeric observations retain provider precision; display decimals are metadata.
-const dashboardQueryOutputSchema = `{"type":"object","required":["schemaVersion","dashboard","observedAt","range","variables","widgets","savedQueries","signals","queryCount","state","attention"],"properties":{
+const dashboardQueryOutputSchema = `{"type":"object","required":["schemaVersion","dashboard","observedAt","range","variables","widgets","savedQueries","signals","queryCount","state"],"properties":{
 "schemaVersion":{"const":1},
 "attention":{"type":"object","additionalProperties":false,"required":["basis","widgets","checked","critical","warning","failed","stale"],"description":"Dashboard-level count of widgets that need attention. Each widget is counted once, under its most severe reason: critical or warning (an author-declared band, or a time series with such a breach in the window), failed (its query or planning failed) or stale. Checked counts widgets whose query returned usable data. This is a count of declared statuses, failures and staleness, not a health verdict; state is data availability.","properties":{"basis":{"type":"string"},"widgets":{"type":"integer","minimum":0},"checked":{"type":"integer","minimum":0},"critical":{"type":"integer","minimum":0},"warning":{"type":"integer","minimum":0},"failed":{"type":"integer","minimum":0},"stale":{"type":"integer","minimum":0}}},
 "dashboard":{"type":"object","required":["id","title","etag"],"properties":{"id":{"type":"string"},"title":{"type":"string"},"etag":{"type":"string"}}},
 "observedAt":{"type":"string","format":"date-time"},
 "range":{"type":"object","required":["start","end","stepSeconds"],"properties":{"start":{"type":"string","format":"date-time"},"end":{"type":"string","format":"date-time"},"stepSeconds":{"type":"number"}}},
 "variables":{"type":"object","additionalProperties":{"type":"string"}},
-"widgets":{"type":"array","items":{"type":"object","required":["id","title","type","unit"],"properties":{"id":{"type":"string"},"title":{"type":"string"},"type":{"type":"string"},"pluginId":{"type":"string","description":"Registered visualization ID when type is plugin; configuration remains in the saved dashboard document."},"dataKind":{"enum":["metrics","records","traces"],"description":"Normalized input kind for a plugin visualization."},"savedQueryId":{"type":"string","description":"Saved query referenced by this widget, including failed resolution; see savedQueries for its captured ETag when available."},"annotationSavedQueryId":{"type":"string","description":"Saved query referenced by the widget annotation source, including failed resolution."},"unit":{"type":"string"},"decimals":{"type":"integer"},"signalId":{"type":"string"},"error":{"$ref":"#/$defs/error"},"attention":{"enum":["critical","warning","failed","stale"],"description":"The most severe reason this widget needs attention. Absent when none applies. Counts appear in the top-level attention summary."},"breaches":{"type":"object","additionalProperties":false,"required":["seriesEvaluated","intervals","summary"],"description":"Time-series stretches inside the author's warning or critical bands within the returned window, from each of up to 12 series evaluated with its own observed cadence. Intervals run from the first breaching sample to the last, extended toward the next observed contiguous sample by at most one cadence. A zero durationMs is a single breaching sample. Only the most recent intervals are listed; the summary counts every interval, merged across series. Not a health verdict.","properties":{"seriesEvaluated":{"type":"integer","minimum":0,"maximum":12},"seriesOmitted":{"type":"integer","minimum":0,"description":"Returned series beyond the twelve evaluated."},"intervals":{"type":"array","maxItems":12,"items":{"type":"object","additionalProperties":false,"required":["series","level","start","end","durationMs"],"properties":{"series":{"type":"integer","minimum":0},"level":{"enum":["warning","critical"]},"start":{"type":"number","description":"Unix milliseconds"},"end":{"type":"number","description":"Unix milliseconds"},"durationMs":{"type":"number","minimum":0}}}},"intervalsOmitted":{"type":"integer","minimum":0,"description":"Intervals older than those listed."},"summary":{"type":"array","maxItems":2,"items":{"type":"object","additionalProperties":false,"required":["level","intervals","samples","durationMs"],"properties":{"level":{"enum":["critical","warning"]},"intervals":{"type":"integer","minimum":0,"description":"Merged spans with positive duration, across series."},"samples":{"type":"integer","minimum":0,"description":"Single breaching samples outside those spans."},"durationMs":{"type":"number","minimum":0,"description":"Merged breaching time."}}}}}},"freshness":{"type":"object","description":"Age of the primary series' latest valid returned sample relative to the selected range end. This is not underlying scrape or ingestion health. Every metric widget reports it. Only stat and time-series widgets, the types the UI marks stale, judge staleAfterSeconds: they are fresh or stale against it and report it as thresholdSeconds. A time series is judged on its newest sample across series. Other metric widgets report no_threshold, with their age but no judgement, and omit thresholdSeconds. Unknown means no usable returned sample.","required":["state"],"properties":{"thresholdSeconds":{"type":"integer","description":"The staleAfterSeconds that a stat or time-series widget judges with; absent otherwise."},"state":{"enum":["fresh","stale","no_threshold","unknown"]},"lastTimestamp":{"type":"number","description":"Unix milliseconds"},"ageSeconds":{"type":"number"}}},"threshold":{"type":"object","additionalProperties":false,"description":"A configured visual band that names a status, not an alert or service-health verdict. Stat bands use the last valid displayed sample. Gauges, status grids and status histories, and heatmaps use each series' latest recorded sample, a missing one being unknown and setting no band, and report the most severe matched band with its series index. A matched band names a status (ok, info, warning, critical or unknown), a six-digit hex color override, or both. The first band also applies below its boundary. A color override, when present, replaces the status mark for that band. A missing latest observation is reported separately on the signal.","required":["state"],"properties":{"state":{"enum":["matched","unknown"]},"boundary":{"type":"number"},"status":{"enum":["ok","info","warning","critical","unknown"]},"color":{"type":"string"},"label":{"type":"string"},"series":{"type":"integer","minimum":0,"description":"The series that set a multi-series band; absent for a stat."}},"oneOf":[{"properties":{"state":{"const":"matched"}},"required":["boundary"],"anyOf":[{"required":["status"]},{"required":["color"]}]},{"properties":{"state":{"const":"unknown"}},"not":{"anyOf":[{"required":["boundary"]},{"required":["status"]},{"required":["color"]},{"required":["label"]}]}}]},"annotationSignalId":{"type":"string"},"annotationError":{"$ref":"#/$defs/error"},"annotationColumns":{"type":"object","required":["timestamp","label"],"properties":{"timestamp":{"type":"string"},"end":{"type":"string","description":"Optional end-time column for interval annotations."},"label":{"type":"string"},"severity":{"type":"string"}}}}}},
+"widgets":{"type":"array","items":{"type":"object","required":["id","title","type","unit"],"properties":{"id":{"type":"string"},"title":{"type":"string"},"type":{"type":"string"},"pluginId":{"type":"string","description":"Registered visualization ID when type is plugin; configuration remains in the saved dashboard document."},"dataKind":{"enum":["metrics","records","traces"],"description":"Normalized input kind for a plugin visualization."},"savedQueryId":{"type":"string","description":"Saved query referenced by this widget, including failed resolution; see savedQueries for its captured ETag when available."},"annotationSavedQueryId":{"type":"string","description":"Saved query referenced by the widget annotation source, including failed resolution."},"unit":{"type":"string"},"decimals":{"type":"integer"},"signalId":{"type":"string"},"error":{"$ref":"#/$defs/error"},"attention":{"enum":["critical","warning","failed","stale"],"description":"The most severe reason this widget needs attention. Absent when none applies. Counts appear in the top-level attention summary. A time series counts by breaches in its window; see breaches.latestLevel for the newest sample."},"sample":{"type":"object","additionalProperties":false,"required":["state"],"description":"Age of the widget's latest valid returned sample relative to the selected range end, and the limit that judges it. Every metric widget reports it. The age is the primary series' latest sample for a stat and the newest sample across series for a time series. A limit applies to a stat or time series with staleAfterSeconds, and to a time series without one by the UI's cadence fallback (twice the longest cadence among the series that reported last); a truncated time-series result is not judged. Unknown means no usable sample; no_threshold means the age is reported with no limit. This is not underlying scrape or ingestion health.","properties":{"state":{"enum":["fresh","stale","unknown","no_threshold"]},"basis":{"enum":["staleAfterSeconds","cadence"],"description":"What set the limit; absent when none applies."},"staleAfterSeconds":{"type":"number","exclusiveMinimum":0,"description":"The limit in effect, in seconds. Fractional for a cadence limit."},"lastTimestamp":{"type":"number","description":"Unix milliseconds"},"ageSeconds":{"type":"number"}}},"breaches":{"type":"object","additionalProperties":false,"required":["seriesEvaluated","intervals","summary"],"description":"Time-series stretches inside the author's warning or critical bands within the returned window, from each of up to 12 series evaluated with its own observed cadence. Intervals run from the first breaching sample to the last, extended toward the next observed contiguous sample by at most one cadence. A zero durationMs is a single breaching sample. The most recent intervals per level are listed, within a dashboard-wide budget; the summary counts every interval, merged across series. latestLevel names the level of the newest sample. Not a health verdict.","properties":{"seriesEvaluated":{"type":"integer","minimum":0,"maximum":12},"seriesOmitted":{"type":"integer","minimum":0,"description":"Returned series beyond the twelve evaluated."},"latestLevel":{"enum":["critical","warning"],"description":"The band of the newest sample. Absent when that sample is not in a warning or critical band."},"intervals":{"type":"array","maxItems":24,"items":{"type":"object","additionalProperties":false,"required":["series","level","start","end","durationMs"],"properties":{"series":{"type":"integer","minimum":0},"name":{"type":"string","description":"Bounded label of the series."},"level":{"enum":["warning","critical"]},"start":{"type":"number","description":"Unix milliseconds"},"end":{"type":"number","description":"Unix milliseconds"},"durationMs":{"type":"number","minimum":0}}}},"intervalsOmitted":{"type":"integer","minimum":0,"description":"Intervals older than those listed, or cut by the dashboard budget."},"summary":{"type":"array","maxItems":2,"items":{"type":"object","additionalProperties":false,"required":["level","intervals","samples","durationMs"],"properties":{"level":{"enum":["critical","warning"]},"intervals":{"type":"integer","minimum":0,"description":"Merged spans with positive duration, across series."},"samples":{"type":"integer","minimum":0,"description":"Single breaching samples outside those spans."},"durationMs":{"type":"number","minimum":0,"description":"Merged breaching time."}}}}}},"freshness":{"type":"object","description":"First-contract freshness, kept for clients that read it. Present only where an explicit staleAfterSeconds judges the widget: a stat, or a time series whose result is not truncated. Its state is fresh, stale or unknown. Use sample for every metric widget.","required":["thresholdSeconds","state"],"properties":{"thresholdSeconds":{"type":"integer","description":"The widget's staleAfterSeconds."},"state":{"enum":["fresh","stale","unknown"]},"lastTimestamp":{"type":"number","description":"Unix milliseconds"},"ageSeconds":{"type":"number"}}},"threshold":{"type":"object","additionalProperties":false,"description":"A configured visual band that names a status, not an alert or service-health verdict. Stat bands use the last valid displayed sample. Gauges, status grids and status histories, and heatmaps evaluate the series the visualization draws, each on its latest recorded sample (a missing one is unknown and sets no band), and report the most severe matched band; bandSeries names the series that set it. A matched band names a status (ok, info, warning, critical or unknown), a six-digit hex color override, or both. The first band also applies below its boundary. A color override, when present, replaces the status mark for that band. A missing latest observation is reported separately on the signal.","required":["state"],"properties":{"state":{"enum":["matched","unknown"]},"boundary":{"type":"number"},"status":{"enum":["ok","info","warning","critical","unknown"]},"color":{"type":"string"},"label":{"type":"string"}},"oneOf":[{"properties":{"state":{"const":"matched"}},"required":["boundary"],"anyOf":[{"required":["status"]},{"required":["color"]}]},{"properties":{"state":{"const":"unknown"}},"not":{"anyOf":[{"required":["boundary"]},{"required":["status"]},{"required":["color"]},{"required":["label"]}]}}]},"bandSeries":{"type":"object","additionalProperties":false,"required":["evaluated","omitted"],"description":"For a multi-series band: how many of the series the visualization draws were evaluated, how many returned series it does not draw, and which series set the band.","properties":{"evaluated":{"type":"integer","minimum":0},"omitted":{"type":"integer","minimum":0},"series":{"type":"integer","minimum":0,"description":"The series that set a matched band."},"name":{"type":"string","description":"Bounded label of that series."}}},"annotationSignalId":{"type":"string"},"annotationError":{"$ref":"#/$defs/error"},"annotationColumns":{"type":"object","required":["timestamp","label"],"properties":{"timestamp":{"type":"string"},"end":{"type":"string","description":"Optional end-time column for interval annotations."},"label":{"type":"string"},"severity":{"type":"string"}}}}}},
 "savedQueries":{"type":"array","items":{"type":"object","required":["id","etag"],"properties":{"id":{"type":"string"},"etag":{"type":"string"}}}},
 "signals":{"type":"array","items":{"type":"object","required":["id","state"],"properties":{
 "id":{"type":"string"},"kind":{"enum":["metrics","records","traces"],"description":"Normalized query kind, including empty and failed results."},"providerId":{"type":"string","description":"Resolved provider ID when the caller is authorized to resolve the provider; omitted when its lookup fails."},"state":{"enum":["ok","partial","empty","error"],"description":"Data availability, not health. A source-limited response without usable observations is partial rather than definitively empty; populated limited responses remain ok and disclose providerTruncated."},"error":{"$ref":"#/$defs/error"},"primarySeries":{"type":"integer"},
@@ -218,9 +218,27 @@ type dashboardTextWidget struct {
 		ThresholdSeconds *int     `json:"thresholdSeconds"`
 		AgeSeconds       *float64 `json:"ageSeconds"`
 	} `json:"freshness"`
-	Threshold *dashboardTextThreshold `json:"threshold"`
-	Attention string                  `json:"attention"`
-	Breaches  *dashboardTextBreaches  `json:"breaches"`
+	Threshold  *dashboardTextThreshold    `json:"threshold"`
+	BandSeries *dashboardTextBandSeries   `json:"bandSeries"`
+	Sample     *dashboardTextWidgetSample `json:"sample"`
+	Attention  string                     `json:"attention"`
+	Breaches   *dashboardTextBreaches     `json:"breaches"`
+}
+
+// dashboardTextWidgetSample is the age of a metric widget's latest sample and the limit in effect.
+type dashboardTextWidgetSample struct {
+	State             string   `json:"state"`
+	Basis             string   `json:"basis"`
+	StaleAfterSeconds *float64 `json:"staleAfterSeconds"`
+	AgeSeconds        *float64 `json:"ageSeconds"`
+}
+
+// dashboardTextBandSeries names the series a multi-series band was evaluated over.
+type dashboardTextBandSeries struct {
+	Evaluated int    `json:"evaluated"`
+	Omitted   int    `json:"omitted"`
+	Series    *int   `json:"series"`
+	Name      string `json:"name"`
 }
 
 // dashboardTextThreshold is a configured visual band in the structured output. A matched band names a status, a colour
@@ -231,15 +249,16 @@ type dashboardTextThreshold struct {
 	Status   string   `json:"status"`
 	Color    string   `json:"color"`
 	Label    string   `json:"label"`
-	Series   *int     `json:"series"`
 }
 
 type dashboardTextBreaches struct {
-	SeriesEvaluated  int `json:"seriesEvaluated"`
-	SeriesOmitted    int `json:"seriesOmitted"`
-	IntervalsOmitted int `json:"intervalsOmitted"`
+	SeriesEvaluated  int    `json:"seriesEvaluated"`
+	SeriesOmitted    int    `json:"seriesOmitted"`
+	IntervalsOmitted int    `json:"intervalsOmitted"`
+	LatestLevel      string `json:"latestLevel"`
 	Intervals        []struct {
 		Series     int     `json:"series"`
+		Name       string  `json:"name"`
 		Level      string  `json:"level"`
 		Start      float64 `json:"start"`
 		End        float64 `json:"end"`
@@ -322,7 +341,7 @@ func appendDashboardAttentionText(out *strings.Builder, attention *dashboardText
 	if attention == nil {
 		return
 	}
-	summary := "none declared"
+	summary := "none"
 	if counts := dashboardAttentionCountsText(attention); len(counts) > 0 {
 		summary = strings.Join(counts, ", ")
 	}
@@ -361,7 +380,11 @@ func dashboardAttentionWidgetsText(widgets []dashboardTextWidget) (text string, 
 			continue
 		}
 		total++
-		item := fmt.Sprintf("%s %s", strconv.Quote(shortDashboardText(widget.ID, 80)), widget.Attention)
+		reason := widget.Attention
+		if widget.Type == "timeseries" && (reason == "critical" || reason == "warning") && (widget.Breaches == nil || widget.Breaches.LatestLevel != reason) {
+			reason += " in window"
+		}
+		item := fmt.Sprintf("%s %s", strconv.Quote(shortDashboardText(widget.ID, 80)), reason)
 		if items.Len()+len(item)+2 > 600 {
 			continue
 		}
@@ -385,32 +408,44 @@ func appendDashboardBreachesText(out *strings.Builder, widgets []dashboardTextWi
 		if widget.Breaches == nil {
 			continue
 		}
-		var line strings.Builder
-		fmt.Fprintf(&line, "widget %s breaches in window:", strconv.Quote(shortDashboardText(widget.ID, 80)))
-		if len(widget.Breaches.Summary) == 0 {
-			line.WriteString(" none in the returned window")
-		}
-		for _, level := range widget.Breaches.Summary {
-			fmt.Fprintf(&line, " %s: intervals=%d, merged=%s ms, samples=%d;", strconv.Quote(shortDashboardText(level.Level, 16)), level.Intervals, strconv.FormatFloat(level.DurationMs, 'f', -1, 64), level.Samples)
-		}
-		shown := widget.Breaches.Intervals[max(0, len(widget.Breaches.Intervals)-3):]
-		for _, interval := range shown {
-			fmt.Fprintf(&line, " [series %d %s %s-%s ms]", interval.Series, strconv.Quote(shortDashboardText(interval.Level, 16)), strconv.FormatFloat(interval.Start, 'f', -1, 64), strconv.FormatFloat(interval.End, 'f', -1, 64))
-		}
-		if omitted := widget.Breaches.IntervalsOmitted + len(widget.Breaches.Intervals) - len(shown); omitted > 0 {
-			fmt.Fprintf(&line, " (%d more intervals in structuredContent)", omitted)
-		}
-		line.WriteByte('\n')
-		if lines.Len()+line.Len() > 1000 || out.Len()+lines.Len()+line.Len()+128 > dashboardQueryTextBytes {
+		line := dashboardBreachLineText(widget)
+		if lines.Len()+len(line) > 1000 || out.Len()+lines.Len()+len(line)+128 > dashboardQueryTextBytes {
 			truncated = true
 			break
 		}
-		lines.WriteString(line.String())
+		lines.WriteString(line)
 	}
 	out.WriteString(lines.String())
 	if truncated {
 		out.WriteString("More breach details are available in structuredContent.\n")
 	}
+}
+
+// dashboardBreachLineText describes one time series' breaches: the window totals per level, the
+// band of the newest sample, and the most recent intervals.
+func dashboardBreachLineText(widget *dashboardTextWidget) string {
+	var line strings.Builder
+	fmt.Fprintf(&line, "widget %s breaches:", strconv.Quote(shortDashboardText(widget.ID, 80)))
+	if len(widget.Breaches.Summary) == 0 {
+		line.WriteString(" none in the returned window;")
+	}
+	for _, level := range widget.Breaches.Summary {
+		fmt.Fprintf(&line, " %s in window: intervals=%d, merged=%s ms, samples=%d;", strconv.Quote(shortDashboardText(level.Level, 16)), level.Intervals, strconv.FormatFloat(level.DurationMs, 'f', -1, 64), level.Samples)
+	}
+	if widget.Breaches.LatestLevel != "" {
+		fmt.Fprintf(&line, " latest sample: %s now;", strconv.Quote(shortDashboardText(widget.Breaches.LatestLevel, 16)))
+	} else {
+		line.WriteString(" latest sample: not in a breach band;")
+	}
+	shown := widget.Breaches.Intervals[max(0, len(widget.Breaches.Intervals)-3):]
+	for _, interval := range shown {
+		fmt.Fprintf(&line, " [series %d %s %s %s-%s ms]", interval.Series, strconv.Quote(shortDashboardText(interval.Name, 96)), strconv.Quote(shortDashboardText(interval.Level, 16)), strconv.FormatFloat(interval.Start, 'f', -1, 64), strconv.FormatFloat(interval.End, 'f', -1, 64))
+	}
+	if omitted := widget.Breaches.IntervalsOmitted + len(widget.Breaches.Intervals) - len(shown); omitted > 0 {
+		fmt.Fprintf(&line, " (%d more intervals in structuredContent)", omitted)
+	}
+	line.WriteByte('\n')
+	return line.String()
 }
 
 func appendDashboardHeaderText(out *strings.Builder, summary *dashboardTextSummary) {
@@ -430,14 +465,9 @@ func appendDashboardHeaderText(out *strings.Builder, summary *dashboardTextSumma
 func appendDashboardWidgetDiagnostics(out *strings.Builder, widgets []dashboardTextWidget) bool {
 	for index := range widgets {
 		widget := &widgets[index]
-		// Freshness is described only where a staleAfterSeconds threshold judges it; an
-		// unjudged age stays in the structured output.
-		if widget.Freshness != nil && widget.Freshness.ThresholdSeconds != nil {
-			line := fmt.Sprintf("widget %s: returned sample freshness=%s (threshold %ds", strconv.Quote(shortDashboardText(widget.ID, 80)), widget.Freshness.State, *widget.Freshness.ThresholdSeconds)
-			if widget.Freshness.AgeSeconds != nil {
-				line += fmt.Sprintf(", age %.0fs", *widget.Freshness.AgeSeconds)
-			}
-			line += "); relative to range end, not scrape health\n"
+		// Freshness is described only where a limit judges it; an unjudged age stays in the
+		// structured output.
+		if line, judged := dashboardFreshnessText(widget); judged {
 			if out.Len()+len(line)+80 > dashboardQueryTextBytes {
 				out.WriteString("More widget details and signals are available in structuredContent.\n")
 				return true
@@ -475,9 +505,43 @@ func appendDashboardBandText(line *strings.Builder, threshold *dashboardTextThre
 	if threshold.Label != "" {
 		fmt.Fprintf(line, "; label=%s", strconv.Quote(shortDashboardText(threshold.Label, 80)))
 	}
-	if threshold.Series != nil {
-		fmt.Fprintf(line, "; series=%d", *threshold.Series)
+}
+
+// dashboardFreshnessText describes a widget whose sample is judged. The sample names the limit
+// and its basis; a document from the first contract carries only the freshness object.
+func dashboardFreshnessText(widget *dashboardTextWidget) (string, bool) {
+	id := strconv.Quote(shortDashboardText(widget.ID, 80))
+	if sample := widget.Sample; sample != nil && sample.Basis != "" && sample.StaleAfterSeconds != nil {
+		limit := strconv.FormatFloat(*sample.StaleAfterSeconds, 'f', -1, 64) + "s"
+		if sample.Basis == "cadence" {
+			limit += ", twice the longest cadence"
+		}
+		line := fmt.Sprintf("widget %s: returned sample freshness=%s (threshold %s", id, sample.State, limit)
+		if sample.AgeSeconds != nil {
+			line += fmt.Sprintf(", age %.0fs", *sample.AgeSeconds)
+		}
+		return line + "); relative to range end, not scrape health\n", true
 	}
+	if widget.Freshness == nil || widget.Freshness.ThresholdSeconds == nil {
+		return "", false
+	}
+	line := fmt.Sprintf("widget %s: returned sample freshness=%s (threshold %ds", id, widget.Freshness.State, *widget.Freshness.ThresholdSeconds)
+	if widget.Freshness.AgeSeconds != nil {
+		line += fmt.Sprintf(", age %.0fs", *widget.Freshness.AgeSeconds)
+	}
+	return line + "); relative to range end, not scrape health\n", true
+}
+
+// appendDashboardBandSeriesText says which series set a multi-series band and how many the
+// visualization drew, so a reader can tell a band from a series it never shows.
+func appendDashboardBandSeriesText(line *strings.Builder, bands *dashboardTextBandSeries) {
+	if bands == nil {
+		return
+	}
+	if bands.Series != nil {
+		fmt.Fprintf(line, "; series=%d name=%s", *bands.Series, strconv.Quote(shortDashboardText(bands.Name, 96)))
+	}
+	fmt.Fprintf(line, "; evaluated=%d omitted=%d", bands.Evaluated, bands.Omitted)
 }
 
 // Keep visual-band context bounded independently of data signals. These are
@@ -496,6 +560,7 @@ func appendDashboardThresholdsText(out *strings.Builder, widgets []dashboardText
 		if widget.Threshold.State == "matched" && widget.Threshold.Boundary != nil {
 			appendDashboardBandText(&line, widget.Threshold)
 		}
+		appendDashboardBandSeriesText(&line, widget.BandSeries)
 		line.WriteByte('\n')
 		if lines.Len()+line.Len() <= 1000 && out.Len()+lines.Len()+line.Len()+128 <= dashboardQueryTextBytes {
 			lines.WriteString(line.String())
