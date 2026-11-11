@@ -331,6 +331,13 @@
   line-height: 1.3;
   padding-inline: var(--stat-reading-inset, 0px);
 }
+/* The extra rows and their note form one section, so the card's gap separates it from the reading only once. */
+.statExtras {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .statExtra {
   display: flex;
   align-items: center;
@@ -571,6 +578,7 @@
 .visualization.intrinsicStat { height: auto; container-type: inline-size; }
 .intrinsicStat .visualizationContent { flex: none; }
 .intrinsicStat .stat { height: auto; gap: 4px; padding: 0 4px; overflow: visible; }
+.intrinsicStat .statExtras { gap: 4px; }
 .intrinsicStat [data-stat-reading] { gap: 2px; }
 .intrinsicStat .statValue { font-size: 28px; line-height: 1.1; }
 .intrinsicStat .statUnit { font-size: 12px; }

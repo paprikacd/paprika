@@ -208,18 +208,23 @@ function Stat({
         data-stat-bar="" data-stat-bar-value={first.point.value} data-stat-bar-fraction={fraction}>
         <span className={styles.statBarFill} style={{ width: `${fraction * 100}%`, backgroundColor: barColor }} />
       </div>}
-      {entries.slice(1, 4).map((entry) => (
-        <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
-          <span>{entry.name}</span>
-          <strong>
-            {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) }))}
-          </strong>
+      {entries.length > 1 && (
+        // One section for the extra rows and their note, so the card's gap separates the reading from the list once.
+        <div className={styles.statExtras} data-stat-extras="">
+          {entries.slice(1, 4).map((entry) => (
+            <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
+              <span>{entry.name}</span>
+              <strong>
+                {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) }))}
+              </strong>
+            </div>
+          ))}
+          {entries.length > 4 && (
+            <span className={styles.notice} role="status">
+              +{entries.length - 4} more series. Switch to table to inspect.
+            </span>
+          )}
         </div>
-      ))}
-      {entries.length > 4 && (
-        <span className={styles.notice} role="status">
-          +{entries.length - 4} more series. Switch to table to inspect.
-        </span>
       )}
     </div>
   );
