@@ -79,3 +79,16 @@ describe("guided domains keep their headroom at three ticks", () => {
     expect(worst).toBeLessThan(0.5);
   });
 });
+
+describe("an ok base band does not widen the axis", () => {
+  it("keeps an availability plot near its data when the healthy base sits at 0", () => {
+    const [low, high] = resolveTimeSeriesDomain(series([99.91, 99.93, 99.94]), { thresholds: [{ value: 0, status: "ok", label: "Within objective" }, { value: 99.95, status: "critical" }] })!;
+    expect(low).toBeGreaterThan(99);
+    expect(high).toBeGreaterThanOrEqual(99.95);
+  });
+
+  it("still autoscales to a base that is not ok, so a colour-only floor keeps its guide in range", () => {
+    expect(resolveTimeSeriesDomain(series([99.91, 99.93, 99.94]), { thresholds: [{ value: 0, color: "red" }, { value: 99.95, color: "green" }] })).toEqual([0, 105]);
+  });
+});
+

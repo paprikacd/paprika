@@ -18,8 +18,8 @@ const end = Date.parse("2026-10-28T13:00:00Z")
 const fixtures: Fixture[] = []
 const colors = { green: "#74b367", blue: "#5b9cdb", purple: "#b08dc9", orange: "#d49745", red: "#ce6266", cyan: "#5db2b0", yellow: "#c5b749" }
 const statColors: Record<string, string> = { [colors.green]: "#538d48", [colors.blue]: "#447faf", [colors.purple]: "#9166b0", [colors.orange]: "#ad7b27", [colors.red]: "#bd5d62", [colors.cyan]: "#318b89", [colors.yellow]: "#968825" }
-const health = [{ value: 0, color: colors.green, label: "Normal" }, { value: 40, color: colors.orange, label: "Elevated" }, { value: 70, color: colors.red, label: "High" }]
-const freeSpace = [{ value: 0, color: colors.red, label: "Critical" }, { value: 10, color: colors.orange, label: "Low" }, { value: 30, color: colors.yellow, label: "Available" }, { value: 60, color: colors.green, label: "Healthy" }]
+const health: WidgetOptions["thresholds"] = [{ value: 0, status: "ok", label: "Normal" }, { value: 40, status: "warning", label: "Elevated" }, { value: 70, status: "critical", label: "High" }]
+const freeSpace: WidgetOptions["thresholds"] = [{ value: 0, status: "critical", label: "Critical" }, { value: 10, status: "warning", label: "Low" }, { value: 30, status: "info", label: "Available" }, { value: 60, status: "ok", label: "Healthy" }]
 const number = (key: string, label: string, unit?: string): RecordColumn => ({ key, label, type: "number", ...(unit ? { unit } : {}) })
 const text = (key: string, label: string): RecordColumn => ({ key, label, type: "string" })
 const timestamp: RecordColumn = { key: "at", label: "Time (local)", type: "timestamp" }
@@ -111,11 +111,11 @@ function ingress(): ReferenceDashboard {
   b.stat("availability", "Available", signal(106, 97, .001, { last: 97 }), [2, 0, 1, 2], "%", undefined, false, 1)
   b.stat("connections", "Connections", countSeries(107, 311, [[44, 210, 2], [102, 280, 4]], 311), [3, 0, 1, 2], "")
   b.stat("duration", "p95 latency", signal(108, 850, .1, { spikes: [[102, 2100, 2]], last: 850 }), [4, 0, 1, 2], "ms")
-  b.stat("success", "Success rate", signal(109, 99.3, .001, { last: 99.3 }), [5, 0, 2, 2], "%", colors.green, false, 1)
-  b.stat("http2xx", "HTTP 2xx", successful, [7, 0, 1, 2], "/s", colors.green, true, 1)
+  b.stat("success", "Success rate", signal(109, 99.3, .001, { last: 99.3 }), [5, 0, 2, 2], "%", undefined, false, 1)
+  b.stat("http2xx", "HTTP 2xx", successful, [7, 0, 1, 2], "/s", undefined, true, 1)
   b.stat("http3xx", "HTTP 3xx", redirects, [8, 0, 1, 2], "/s", colors.blue, true, 2)
-  b.stat("http4xx", "HTTP 4xx", clientErrors, [9, 0, 1, 2], "/s", colors.orange, true, 2)
-  b.stat("http5xx", "HTTP 5xx", serverErrors, [10, 0, 2, 2], "/s", colors.red, true, 2)
+  b.stat("http4xx", "HTTP 4xx", clientErrors, [9, 0, 1, 2], "/s", undefined, true, 2)
+  b.stat("http5xx", "HTTP 5xx", serverErrors, [10, 0, 2, 2], "/s", undefined, true, 2)
   b.add("traffic", "HTTP requests / ingress", b.metric("traffic", "HTTP requests by ingress", [{ name: "public", labels: { ingress: "public" }, values: requests }, { name: "internal", labels: { ingress: "internal" }, values: signal(110, 2.2, .8, { spikes: [[59, 14, 2], [110, 18, 3]] }) }]), "timeseries", [0, 2, 4, 3], "req/s", "First of three equal-width traffic plots; irregular request rates with short bursts.", { display: "area", decimals: 1 })
   b.add("status", "HTTP status codes", b.metric("status", "HTTP response rates by status", [{ name: "HTTP 2xx", values: successful }, { name: "HTTP 3xx", values: redirects }, { name: "HTTP 4xx", values: clientErrors }, { name: "HTTP 5xx", values: serverErrors }]), "timeseries", [4, 2, 4, 3], "req/s", "Four low-opacity response-code lines with a compact legend.", { decimals: 2 })
   b.plugin("request-bars", "Total HTTP requests", b.metric("request-bars", "Requests per observation interval", [{ name: "Requests", values: signal(111, 540, .2, { drift: 600, spikes: [[48, 700, 2], [83, 1200, 1], [117, 1600, 1]] }) }]), "stacked-timeseries", [8, 2, 4, 3], "", { display: "bar", maxPoints: 48 }, "Green-style vertical time bars with varying heights, not categorical bars.", { showLegend: false, decimals: 0 })
@@ -152,7 +152,7 @@ function networkHosts(): ReferenceDashboard {
   const flows = b.records("flows", "Recent network flows", [text("source", "Source"), text("destination", "Destination"), number("packets", "Packets"), text("state", "State")], variant => Array.from({ length: 7 }, (_, index) => [`198.51.100.${index + 4}`, ["api", "dns", "cdn", "updates"][index % 4], 210 + index * 127 + variant * 40, index === 5 ? "Drop" : "Pass"]))
   b.plugin("flows", "Recent flows", flows, "record-table", [8, 7, 4, 3], "", { density: "compact", showSearch: false, columns: ["source", "destination", "packets", "state"], pageSize: 10 }, "A third table preserves the network dashboard's lower-row density.")
   const hostNames = ["host-01", "host-02", "host-03", "host-04", "host-05", "host-06"]
-  for (let index = 0; index < 6; index++) b.stat(`host-${index}`, hostNames[index], signal(230 + index, 99.7, .0005, { last: 99.7 - index * .1 }), [index * 2, 10, 2, 2], "%", colors.green, false, 1)
+  for (let index = 0; index < 6; index++) b.stat(`host-${index}`, hostNames[index], signal(230 + index, 99.7, .0005, { last: 99.7 - index * .1 }), [index * 2, 10, 2, 2], "%", undefined, false, 1)
   const hosts = (seed: number, base: number, noise: number, spikes: [number, number, number][], unit: string, group: string) => hostNames.map((name, index) => ({ name, labels: { host: name, signal: group }, values: signal(seed + index, base * (1 + index * .11), noise, { spikes: spikes.map(([center, amplitude, radius]) => [center + index % 3, amplitude * (1 + index * .07), radius]), ...(unit === "%" ? { max: 100, gap: index === 5 ? [66, 68] : undefined } : {}) }) }))
   const rows = [
     { y: 12, key: "cpu", title: "CPU usage", unit: "%", left: hosts(240, 12, .5, [[25, 62, 1], [75, 48, 2], [105, 73, 1]], "%", "cpu"), right: hosts(250, 3, .7, [[20, 55, 1], [61, 75, 1], [109, 63, 2]], "%", "gpu") },
@@ -207,7 +207,7 @@ function serviceOverview(): ReferenceDashboard {
   }) }))
   b.plugin("cpu-history", "Server CPU usage", b.metric("cpu-history", "Recorded server CPU bands", states, 1), "status-history", [0, 7, 8, 3], "%", { maxSeries: 6, maxPoints: 100 }, "Six continuous horizontal state lanes with abrupt green/yellow/red transitions and an explicit unknown interval.", { thresholds: health, decimals: 0 })
   const readings = b.records("flow-readings", "Flow readings", [timestamp, number("flow1", "flow1", "%"), number("flow2", "flow2", "%"), number("flow3", "flow3", "%")], variant => Array.from({ length: 5 }, (_, index) => [at(samples - 1 - index * 2), Number((48.6 + index * .7 + variant * 3).toFixed(1)), Number((51.7 - index * .8 - variant * 2).toFixed(1)), Number((58.9 - index * 1.6 + variant).toFixed(1))]))
-  b.plugin("flow-readings", "Flow readings", readings, "record-table", [8, 7, 4, 3], "", { density: "compact", showSearch: false, columns: ["at", "flow1", "flow2", "flow3"], pageSize: 5, cellStyles: [{ column: "flow1", display: "bar", min: 0, max: 100 }, { column: "flow2", display: "color-text" }, { column: "flow3", display: "color-background" }] }, "Five exact timestamped flow rows with in-cell gauge, threshold text and heat backgrounds.", { decimals: 1, thresholds: [{ value: 0, color: colors.green, label: "Below 50%" }, { value: 50, color: colors.yellow, label: "50% or more" }, { value: 57, color: colors.red, label: "57% or more" }] })
+  b.plugin("flow-readings", "Flow readings", readings, "record-table", [8, 7, 4, 3], "", { density: "compact", showSearch: false, columns: ["at", "flow1", "flow2", "flow3"], pageSize: 5, cellStyles: [{ column: "flow1", display: "bar", min: 0, max: 100 }, { column: "flow2", display: "color-text" }, { column: "flow3", display: "color-background" }] }, "Five exact timestamped flow rows with in-cell gauge, threshold text and heat backgrounds.", { decimals: 1, thresholds: [{ value: 0, status: "ok", label: "Below 50%" }, { value: 50, status: "warning", label: "50% or more" }, { value: 57, status: "critical", label: "57% or more" }] })
   return b.finish({ filename: "codex-clipboard-8e02f56f-0d25-4739-8b42-d10f263f027b.png", width: 1280, height: 640 }, true, ["Radial and segmented capacities are multi-series components rather than six independent dashboard tiles.", "The original free-space panels show different readings, so the two banks use separately named saved queries.", "The flow table supports per-column bars, colored values and heat backgrounds while retaining exact values and units."])
 }
 

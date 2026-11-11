@@ -8,9 +8,10 @@ exercises these same settings with explicitly synthetic observations.
 The on-call reading task is to compare CPU and memory over the same time range,
 then distinguish request volume, response classes and latency percentiles.
 Equal-width, six-row resource panels reserve useful plot height above their
-statistics tables. Service colours match the existing Control Room: blue traffic
-and p50, violet p95, amber 4xx, red 5xx and p99. Exact label rules keep identities
-stable when the backend reorders series. Queries, units, thresholds, variables,
+statistics tables. Latency and response series take the semantic series roles
+(p50, p95, p99, client-error, server-error), which are palette slots rather than
+status meanings, and the stat and trend colours fall back to the palette. Exact
+label rules keep identities stable when the backend reorders series. Queries, units, thresholds, variables,
 refresh cadence and missing-data policies are unchanged.
 
 The three Service overview trends share a latest-value legend row. Two redundant

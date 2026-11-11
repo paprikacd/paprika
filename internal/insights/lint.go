@@ -45,7 +45,7 @@ const (
 // lintRules is the registry, in report order. A new rule is added to the
 // file for its family and to this list; the drift test then requires its summary
 // in the composition guidance.
-var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules)
+var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules, colorLintRules)
 
 // lintDocument is the part of a schema-valid document the rules read. It is
 // decoded once per call, so every rule sees the same snapshot and the cost stays
@@ -74,6 +74,8 @@ type lintWidget struct {
 	yAxisLabel  string
 	// variables lists each variable reference with the pointer of its variable member.
 	variables []lintVariableRef
+	// colorFields lists each authored hex that carries no status or role.
+	colorFields []colorField
 }
 
 type lintVariableRef struct {
@@ -98,11 +100,13 @@ type wireWidget struct {
 	Description       string            `json:"description"`
 	Unit              string            `json:"unit"`
 	Query             string            `json:"query"`
+	Color             string            `json:"color"`
 	Layout            wireLayout        `json:"layout"`
 	QueryRef          *wireQueryRef     `json:"queryRef"`
 	AnnotationSource  *wireAnnotation   `json:"annotationSource"`
 	SelectionBindings []wireBinding     `json:"selectionBindings"`
 	Options           *wireWidgetOption `json:"options"`
+	Config            json.RawMessage   `json:"config"`
 }
 
 type wireLayout struct {
@@ -126,17 +130,49 @@ type wireBinding struct {
 }
 
 type wireWidgetOption struct {
-	ShowStatBar   bool         `json:"showStatBar"`
-	ShowSparkline bool         `json:"showSparkline"`
-	XAxisLabel    string       `json:"xAxisLabel"`
-	YAxisLabel    string       `json:"yAxisLabel"`
-	TooltipView   *wireTooltip `json:"tooltipView"`
+	ShowStatBar    bool            `json:"showStatBar"`
+	ShowSparkline  bool            `json:"showSparkline"`
+	XAxisLabel     string          `json:"xAxisLabel"`
+	YAxisLabel     string          `json:"yAxisLabel"`
+	TooltipView    *wireTooltip    `json:"tooltipView"`
+	Thresholds     []wireThreshold `json:"thresholds"`
+	ReferenceLines []wireMark      `json:"referenceLines"`
+	SeriesColors   []wireMark      `json:"seriesColors"`
 }
 
 type wireTooltip struct {
+	Color  string `json:"color"`
 	Source *struct {
 		Ref *wireQueryRef `json:"ref"`
 	} `json:"source"`
+}
+
+// wireThreshold names a status or a hue. Status is empty when the band has no status.
+type wireThreshold struct {
+	Status string `json:"status"`
+	Color  string `json:"color"`
+}
+
+// wireMark is a colour-carrying rule: a reference line, or a series colour that names a hex or a role.
+type wireMark struct {
+	Color string `json:"color"`
+	Role  string `json:"role"`
+}
+
+// wireWidgetConfig holds the plugin config members that carry colours: series colour rules and the
+// value mappings of record-table status badges.
+type wireWidgetConfig struct {
+	SeriesColors []wireMark `json:"seriesColors"`
+	CellStyles   []struct {
+		Mappings []wireMapping `json:"mappings"`
+	} `json:"cellStyles"`
+}
+
+// wireMapping is one status-badge mapping. A mapping that names a status keeps its colour as a hue
+// override; a colour-only mapping is a bare colour and is checked.
+type wireMapping struct {
+	Status string `json:"status"`
+	Color  string `json:"color"`
 }
 
 // decodeLintDocument reads the members lint needs. It reports false when the
@@ -175,9 +211,87 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 		if widget.Options != nil && widget.Options.TooltipView != nil && widget.Options.TooltipView.Source != nil {
 			lw.variables = append(lw.variables, variableRefs(base+"/options/tooltipView/source/ref", widget.Options.TooltipView.Source.Ref)...)
 		}
+		lw.colorFields = colorFieldsOf(base, widget)
 		doc.widgets = append(doc.widgets, lw)
 	}
 	return doc, true
+}
+
+// colorFieldsOf lists the authored hex colours of one widget that carry no status or role. A threshold
+// with a status keeps its colour as a hue override, and a series rule names either a hex or a role, so
+// neither is listed as a bare colour. Plugin config is decoded leniently: the schema check has already
+// refused a malformed document, and an unreadable config simply has no colours to check.
+func colorFieldsOf(base string, widget *wireWidget) []colorField {
+	fields := []colorField{}
+	if widget.Color != "" {
+		fields = append(fields, colorField{pointer: base + "/color", what: "widget colour", hex: widget.Color})
+	}
+	if widget.Options != nil {
+		fields = append(fields, optionColorFields(base, widget.Options)...)
+	}
+	var config wireWidgetConfig
+	if len(widget.Config) > 0 && json.Unmarshal(widget.Config, &config) == nil {
+		fields = append(fields, seriesRuleColorFields(base, config.SeriesColors)...)
+		fields = append(fields, mappingColorFields(base, config.CellStyles)...)
+	}
+	return fields
+}
+
+// optionColorFields lists the bare colours in a widget's options.
+func optionColorFields(base string, option *wireWidgetOption) []colorField {
+	var fields []colorField
+	for k, threshold := range option.Thresholds {
+		if threshold.Status == "" && threshold.Color != "" {
+			fields = append(fields, colorField{pointer: base + "/options/thresholds/" + strconv.Itoa(k) + "/color", what: "threshold colour", hex: threshold.Color})
+		}
+	}
+	fields = append(fields, lineAndSeriesColorFields(base, option)...)
+	if option.TooltipView != nil && option.TooltipView.Color != "" {
+		fields = append(fields, colorField{pointer: base + "/options/tooltipView/color", what: "tooltip colour", hex: option.TooltipView.Color})
+	}
+	return fields
+}
+
+// lineAndSeriesColorFields lists the reference line and series colours in a widget's options.
+func lineAndSeriesColorFields(base string, option *wireWidgetOption) []colorField {
+	var fields []colorField
+	for k, line := range option.ReferenceLines {
+		if line.Color != "" {
+			fields = append(fields, colorField{pointer: base + "/options/referenceLines/" + strconv.Itoa(k) + "/color", what: "reference line colour", hex: line.Color})
+		}
+	}
+	for k, rule := range option.SeriesColors {
+		if rule.Role == "" && rule.Color != "" {
+			fields = append(fields, colorField{pointer: base + "/options/seriesColors/" + strconv.Itoa(k) + "/color", what: "series colour", hex: rule.Color})
+		}
+	}
+	return fields
+}
+
+// mappingColorFields lists the status-badge mappings that carry a colour but no status.
+func mappingColorFields(base string, styles []struct {
+	Mappings []wireMapping `json:"mappings"`
+}) []colorField {
+	var fields []colorField
+	for k, style := range styles {
+		for m, mapping := range style.Mappings {
+			if mapping.Status == "" && mapping.Color != "" {
+				fields = append(fields, colorField{pointer: base + "/config/cellStyles/" + strconv.Itoa(k) + "/mappings/" + strconv.Itoa(m) + "/color", what: "status badge colour", hex: mapping.Color})
+			}
+		}
+	}
+	return fields
+}
+
+// seriesRuleColorFields lists the bare colours in a plugin config's series colour rules.
+func seriesRuleColorFields(base string, rules []wireMark) []colorField {
+	var fields []colorField
+	for k, rule := range rules {
+		if rule.Role == "" && rule.Color != "" {
+			fields = append(fields, colorField{pointer: base + "/config/seriesColors/" + strconv.Itoa(k) + "/color", what: "series colour", hex: rule.Color})
+		}
+	}
+	return fields
 }
 
 // variableRefs lists the bindings that read a dashboard variable. Only the

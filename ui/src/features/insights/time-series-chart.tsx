@@ -81,11 +81,17 @@ const CURVES = {
 
 /**
  * Guides participate in autoscaling, but explicit axis bounds win: thresholds, reference lines and the zero line all
- * join the domain, so none of them is clipped.
+ * join the domain, so none of them is clipped. An ok base band (a first threshold with status ok, at or below the lowest
+ * observed value) is the healthy floor, not a level the data must reach, so it does not widen the axis down to it: an
+ * availability base at 0 would otherwise squash the plot. Its guide is not drawn either (see the guide filter below).
  */
 export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions, count = 5): [number, number] | undefined {
+  let dataMin = Infinity;
+  for (const entry of series) for (const point of entry.points) if (validTimestamp(point.timestamp) && typeof point.value === "number" && Number.isFinite(point.value)) dataMin = Math.min(dataMin, point.value);
+  const thresholds = options.thresholds ?? [];
+  const baseBand = thresholds.length && thresholds[0].status === "ok" && Number.isFinite(dataMin) && thresholds[0].value <= dataMin ? thresholds[0] : undefined;
   const guides = [
-    ...(options.thresholds ?? []).map(threshold => threshold.value),
+    ...thresholds.filter(threshold => threshold !== baseBand).map(threshold => threshold.value),
     ...(options.referenceLines ?? []).map(reference => reference.value),
     ...(options.showZeroLine ? [0] : []),
   ].filter(value => Number.isFinite(value));
@@ -592,7 +598,7 @@ export function TimeSeriesChart({
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
           style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
-        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= plotDomain[0] && threshold.value <= plotDomain[1]).map((threshold, index) => {
+        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value > plotDomain[0] && threshold.value <= plotDomain[1]).map((threshold, index) => {
           const top = eventTop + (plotDomain[1] - threshold.value) / (plotDomain[1] - plotDomain[0]) * Math.max(0, height - eventTop - eventBottom);
           // The label sits above its line at the left end, where the newest data on the right is never covered.
           // It moves below the line when there is less than 16px above it inside the plot.

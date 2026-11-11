@@ -7,10 +7,22 @@ type Cell = RecordFrame["rows"][number][number]
 const providers = { metrics: "example-prometheus", traces: "example-tempo", records: "example-records" }
 const fixtures: FixtureDefinition[] = []
 const standardOptions: WidgetOptions = { decimals: 2, showTooltip: true, showLegend: true, showGrid: true, lineWidth: 1.5, fillOpacity: 0.12 }
-const healthThresholds = [
-  { value: 0, color: "#c5584f", label: "Unavailable" },
-  { value: 0.5, color: "#ad7b29", label: "Degraded" },
-  { value: 1, color: "#36876c", label: "Healthy" },
+const healthThresholds: WidgetOptions["thresholds"] = [
+  { value: 0, status: "critical", label: "Unavailable" },
+  { value: 0.5, status: "warning", label: "Degraded" },
+  { value: 1, status: "ok", label: "Healthy" },
+]
+/** Service latency objective: a p95 above 1 s is a warning and above 2 s critical. Normal service sits well below 1 s. */
+const latencyThresholds: WidgetOptions["thresholds"] = [
+  { value: 0, status: "ok", label: "Within 1 s objective" },
+  { value: 1000, status: "warning", label: "Above 1 s" },
+  { value: 2000, status: "critical", label: "Above 2 s" },
+]
+/** Error budget burn on a 99.9 % objective: 2x burn is a warning, 14.4x (a fast burn that spends two days of budget per hour) critical. */
+const burnThresholds: WidgetOptions["thresholds"] = [
+  { value: 0, status: "ok", label: "Within budget" },
+  { value: 2, status: "warning", label: "2× burn" },
+  { value: 14.4, status: "critical", label: "14.4× fast burn" },
 ]
 
 /** Test-only chart scenarios. Never imported by the application or public gallery. */
@@ -112,9 +124,16 @@ function servicePulse(): RepositoryExample {
   const latency = b.scalar("latency", "Service p95 latency", 128.42, 24, 0.72)
   const availability = b.scalar("availability", "Service availability", 99.98, 0.008, 0.9997)
   b.stat("requests", "Request rate", requests, 0, "req/s")
-  b.stat("errors", "Error ratio", errors, 1, "%")
-  b.stat("latency", "p95 latency", latency, 2, "ms")
-  b.stat("availability", "Availability", availability, 3, "%")
+  b.stat("errors", "Error ratio", errors, 1, "%", { thresholds: [
+    { value: 0, status: "ok", label: "Within budget" },
+    { value: 0.2, status: "warning", label: "2× burn" },
+    { value: 1.44, status: "critical", label: "14.4× fast burn" },
+  ] })
+  b.stat("latency", "p95 latency", latency, 2, "ms", { thresholds: latencyThresholds })
+  b.stat("availability", "Availability", availability, 3, "%", { thresholds: [
+    { value: 0, status: "critical", label: "Below 99.9% objective" },
+    { value: 99.9, status: "ok", label: "Meets 99.9% objective" },
+  ] })
   b.add("request-history", "Request rate over time", requests, "timeseries", [0, 3, 8, 6], "req/s", { display: "area" })
   const buckets = [10, 25, 50, 100, 250, 500, "+Inf"]
   // Cumulative counts put p95 in the 100-250 ms bucket early and in 250-500 ms later, as the open +Inf bucket
@@ -146,8 +165,8 @@ function fleetAtlas(): RepositoryExample {
   b.plugin("resources", "Node resource inventory", resources, "record-table", "records", [8, 3, 4, 6], { columns: ["node", "cpu", "memory", "disk", "status"], pageSize: 10 }, "%")
   const states = b.metrics("states", "Node condition history", b.scoped(Array.from({ length: 7 }, (_, index) => ({ name: `node-0${index + 1}`, labels: { node: `node-0${index + 1}` }, base: index === 2 ? 0.75 : 1, variation: index === 2 ? 0.25 : 0, ...(index === 5 ? { gaps: [{ from: 0.64, to: 1 }] } : {}) })), 1).filter(series => series.labels.cluster === "omega" || Number(series.labels.node.slice(-2)) <= 4))
   b.plugin("states", "Node condition history", states, "status-history", "metrics", [0, 9, 6, 5], { maxSeries: 7, maxPoints: 40 }, "", { thresholds: healthThresholds })
-  b.plugin("cpu-meter", "CPU used", cpu, "threshold-gauge", "metrics", [6, 9, 3, 5], { display: "segmented", label: "CPU used", segments: 24 }, "%", { min: 0, max: 100, thresholds: [{ value: 0, color: "#36876c", label: "Within capacity" }, { value: 70, color: "#ad7b29", label: "Elevated" }, { value: 85, color: "#c5584f", label: "Near limit" }] })
-  b.plugin("disk-meter", "Disk used", b.scalar("disk", "Cluster disk utilization", 71.05, 2, 0.51), "threshold-gauge", "metrics", [9, 9, 3, 5], { display: "radial", label: "Used capacity" }, "%", { min: 0, max: 100, thresholds: [{ value: 0, color: "#36876c", label: "Available" }, { value: 75, color: "#ad7b29", label: "Elevated" }, { value: 90, color: "#c5584f", label: "Critical" }] })
+  b.plugin("cpu-meter", "CPU used", cpu, "threshold-gauge", "metrics", [6, 9, 3, 5], { display: "segmented", label: "CPU used", segments: 24 }, "%", { min: 0, max: 100, thresholds: [{ value: 0, status: "ok", label: "Within capacity" }, { value: 70, status: "warning", label: "Elevated" }, { value: 85, status: "critical", label: "Near limit" }] })
+  b.plugin("disk-meter", "Disk used", b.scalar("disk", "Cluster disk utilization", 71.05, 2, 0.51), "threshold-gauge", "metrics", [9, 9, 3, 5], { display: "radial", label: "Used capacity" }, "%", { min: 0, max: 100, thresholds: [{ value: 0, status: "ok", label: "Available" }, { value: 75, status: "warning", label: "Elevated" }, { value: 90, status: "critical", label: "Critical" }] })
   return b.finish()
 }
 
@@ -201,8 +220,8 @@ function reliabilityRoom(): RepositoryExample {
   // A collection gap, then a stale tail: both burn series stop reporting well before the range end.
   const burnGaps = [{ from: 0.38, to: 0.45 }, { from: 0.8, to: 1 }]
   const burn = b.metrics("burn", "Availability burn rates", b.scoped([{ name: "1h burn rate", labels: { window: "1h" }, base: 1.42, variation: 0.9, gaps: burnGaps }, { name: "6h burn rate", labels: { window: "6h" }, base: 0.81, variation: 0.3, gaps: burnGaps }], 1.7))
-  b.add("burn", "Availability burn rate", burn, "timeseries", [0, 3, 8, 6], "×", { min: 0, thresholds: [{ value: 2, color: "#ad7b29", label: "2× burn threshold" }] })
-  b.plugin("budget-meter", "Remaining error budget", budget, "threshold-gauge", "metrics", [8, 3, 4, 6], { display: "segmented", label: "Remaining proportion", segments: 30 }, "%", { min: 0, max: 100, thresholds: [{ value: 0, color: "#c5584f", label: "Exhausting" }, { value: 25, color: "#ad7b29", label: "At risk" }, { value: 50, color: "#36876c", label: "Available" }] })
+  b.add("burn", "Availability burn rate", burn, "timeseries", [0, 3, 8, 6], "×", { min: 0, thresholds: burnThresholds })
+  b.plugin("budget-meter", "Remaining error budget", budget, "threshold-gauge", "metrics", [8, 3, 4, 6], { display: "segmented", label: "Remaining proportion", segments: 30 }, "%", { min: 0, max: 100, thresholds: [{ value: 0, status: "critical", label: "Exhausted" }, { value: 25, status: "warning", label: "At risk" }, { value: 50, status: "ok", label: "Healthy" }] })
   const incidents = b.records("incidents", "October incident records", [time("date", "Started (UTC)"), text("label", "Incident"), number("value", "Duration", "min"), text("status", "State")], (_choice, index) => index ? [["2026-10-10T09:10:00Z", "Queue saturation", 23, "Resolved"], ["2026-10-22T15:00:00Z", "Upstream latency", 14, "Resolved"]] : [["2026-10-05T18:37:00Z", "Connection pool exhaustion", 72, "Resolved"], ["2026-10-10T03:14:00Z", "Elevated error rate", 22, "Resolved"], ["2026-10-16T10:21:00Z", "Third-party latency", 56, "Resolved"]])
   b.plugin("calendar", "Incident duration by day · UTC", incidents, "incident-calendar", "records", [0, 9, 5, 5], { date: "date", value: "value", label: "label", status: "status", aggregation: "sum", months: 1, endDate: "2026-10-31" }, "min")
   b.plugin("incidents-list", "Recorded incidents · October 2026", incidents, "record-table", "records", [5, 9, 7, 5], { columns: ["date", "label", "value", "status"], pageSize: 5 }, "min")
@@ -218,7 +237,7 @@ function collectionControl(): RepositoryExample {
   const throughput = b.metrics("throughput", "Ingestion throughput by signal", b.scoped([{ name: "Metrics", labels: { signal: "metrics" }, base: 124820, variation: 19000 }, { name: "Traces", labels: { signal: "traces" }, base: 61420, variation: 9500 }, { name: "Logs", labels: { signal: "logs" }, base: 38710, variation: 7000 }]))
   b.plugin("throughput", "Ingestion throughput", throughput, "stacked-timeseries", "metrics", [0, 3, 8, 6], { display: "area", maxPoints: 96 }, "obs/s")
   const freshness = b.metrics("source-freshness", "Freshness by source", b.scoped(["prometheus", "tempo", "shorted-api", "brandbrain", "market-sync"].map((name, index) => ({ name, labels: { source: name }, base: [2.14, 3.67, 5.91, 12.38, 42.18][index], variation: index === 4 ? 8 : 0.5 }))))
-  b.add("source-freshness", "Freshness by source", freshness, "bar", [8, 3, 4, 6], "s", { thresholds: [{ value: 30, color: "#ad7b29", label: "Freshness threshold" }] })
+  b.add("source-freshness", "Freshness by source", freshness, "bar", [8, 3, 4, 6], "s", { thresholds: [{ value: 0, status: "ok", label: "Within freshness" }, { value: 30, status: "warning", label: "Freshness threshold" }] })
   const topology = b.records("topology", "Pipeline edge throughput", [text("source", "Source stage"), text("target", "Target stage"), number("value", "Observations", "obs/s"), text("status", "State")], (_choice, index) => ["Sources", "Collector", "Enricher", "Transformer", "Gateway"].map((source, n) => [source, ["Collector", "Enricher", "Transformer", "Gateway", "Storage"][n], (124820 - n * 720) * (index ? 0.64 : 1), n === 2 && !index ? "Delayed" : "Healthy"]))
   b.plugin("topology", "Pipeline flow", topology, "pipeline-topology", "records", [0, 9, 8, 5], { source: "source", target: "target", value: "value", status: "status" }, "obs/s")
   const states = b.metrics("job-states", "Collection job states", b.scoped(["scrape-metrics", "collect-traces", "ingest-logs", "enrich-events", "write-storage"].map((name, index) => ({ name, labels: { job: name }, base: index === 3 ? 0.75 : 1, variation: index === 3 ? 0.24 : 0, ...(index === 4 ? { gaps: [{ from: 0.6, to: 0.7 }] } : {}) })), 1))

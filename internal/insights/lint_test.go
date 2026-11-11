@@ -76,6 +76,7 @@ func TestLintRegistryIsWellFormed(t *testing.T) {
 		"description.provenance": insightsv1.Severity_SEVERITY_WARNING,
 		"axis.unit-in-label":     insightsv1.Severity_SEVERITY_WARNING,
 		"plugin.unknown":         insightsv1.Severity_SEVERITY_WARNING,
+		"color.near-status":      insightsv1.Severity_SEVERITY_WARNING,
 	}
 	if len(lintRules) != len(want) {
 		t.Fatalf("registry has %d rules, want %d", len(lintRules), len(want))

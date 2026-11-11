@@ -12,17 +12,19 @@ describe("provider-backed reference compositions", () => {
       ["locations", 0, 6, 4, 4], ["outcomes", 4, 6, 4, 4], ["risks", 8, 6, 4, 4],
       ["blocked-requests", 0, 10, 12, 4],
     ]],
-    ["reliability-room", ["availability", "target", "budget"], [
-      ["burn", 0, 1, 8, 5], ["services-attention", 8, 1, 4, 5],
-      ["service-timeline", 0, 6, 8, 4], ["calendar", 8, 6, 4, 4],
-      ["incidents-list", 0, 10, 12, 4],
+    ["reliability-room", ["availability", "target", "incidents", "budget"], [
+      ["burn", 0, 3, 8, 5], ["services-attention", 8, 3, 4, 5],
+      ["service-timeline", 0, 8, 8, 4], ["calendar", 8, 8, 4, 4],
+      ["incidents-list", 0, 12, 12, 4],
     ]],
   ] as const)("keeps %s aligned, query-backed, and isolated from source fixtures", (id, stats, panels) => {
     const before = structuredClone(chartFixtureCollections);
     const result = galleryDocuments(providers);
     const board = dashboardSchema.parse(result.dashboards.find(board => board?.id === `local-gallery-${id}`));
+    // Reliability Room keeps a three-row KPI band for its error-budget bar; the other compositions use one row.
+    const statHeight = id === "reliability-room" ? 3 : 1;
     stats.forEach((id, index) => {
-      expect(board.widgets.find(widget => widget.id === id)?.layout).toEqual({ x: index * (12 / stats.length), y: 0, w: 12 / stats.length, h: 1 });
+      expect(board.widgets.find(widget => widget.id === id)?.layout).toEqual({ x: index * (12 / stats.length), y: 0, w: 12 / stats.length, h: statHeight });
     });
     panels.forEach(([id, x, y, w, h]) => {
       expect(board.widgets.find(widget => widget.id === id)?.layout).toEqual({ x, y, w, h });
