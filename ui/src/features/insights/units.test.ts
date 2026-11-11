@@ -5,49 +5,81 @@ describe("auto precision", () => {
   it.each([
     [100, "%", "100%"],
     [99.97, "%", "100%"],
-    [0.04, "%", "0.0400%"],
+    [0.04, "%", "0.04%"],
     [17.58, "req/s", "17.6 req/s"],
     [24.93, "req/s", "24.9 req/s"],
     [812.06, "ms", "812 ms"],
-    [1.5, "x", "1.50 x"],
+    [1.5, "x", "1.5 x"],
     [0.158, "", "0.158"],
     [0.0412, "", "0.0412"],
     [18423, "", "18,423"],
     [100814.88, "", "100,815"],
     [100814.88, "obs/s", "101K obs/s"],
     [1070.4, "req/s", "1.07K req/s"],
-    [5, "", "5.00"],
+    [5, "", "5"],
   ])("formats %s %s as %s", (value, unit, expected) => {
     expect(formatMetric(value, unit)).toBe(expected);
   });
 
   it("keeps the authored unit for percent, multipliers and unknown units", () => {
-    expect(formatMetric(40, "%")).toBe("40.0%");
-    expect(formatMetric(2.5, "×")).toBe("2.50 ×");
+    expect(formatMetric(40, "%")).toBe("40%");
+    expect(formatMetric(2.5, "×")).toBe("2.5 ×");
     expect(formatMetric(123456.78, "requests")).toBe("123,457 requests");
     expect(formatMetric(123456.78, "MB/s")).toBe("123,457 MB/s");
   });
 });
 
+describe("trimmed three-figure rounding", () => {
+  it.each([
+    [999.5, "ms", "1 s"],
+    [812.06, "ms", "812 ms"],
+    [1069, "req/s", "1.07K req/s"],
+    [100, "%", "100%"],
+    [100.0, "%", "100%"],
+    [0.995, "", "0.995"],
+    [1.005, "", "1.01"],
+    [0.0042, "", "0.0042"],
+    [17.58, "", "17.6"],
+    [12.345, "", "12.3"],
+    [1.2345, "", "1.23"],
+    [99.97, "", "100"],
+    [0.04, "%", "0.04%"],
+    [1999.5, "B", "1.95 KiB"],
+    [1000, "B", "1,000 B"],
+    [18423, "obs/s", "18.4K obs/s"],
+    [18423, "", "18,423"],
+  ])("trims %s %s to %s", (value, unit, expected) => {
+    expect(formatMetric(value, unit)).toBe(expected);
+  });
+
+  it("rounds negatives symmetrically", () => {
+    expect(formatMetric(-1.005, "")).toBe("-1.01");
+    expect(formatMetric(-0.995, "")).toBe("-0.995");
+    expect(formatMetric(-999.5, "ms")).toBe("-1 s");
+    expect(formatMetric(-1999.5, "B")).toBe("-1.95 KiB");
+    expect(formatMetric(-0.0042, "")).toBe("-0.0042");
+  });
+});
+
 describe("duration scaling", () => {
   it.each([
-    [999.5, "ms", "1.00 s"],
-    [1000, "ms", "1.00 s"],
+    [999.5, "ms", "1 s"],
+    [1000, "ms", "1 s"],
     [999.4, "ms", "999 ms"],
     [1234.5678, "ms", "1.23 s"],
     [12.345678, "ms", "12.3 ms"],
     [0.5, "ms", "500 us"],
     [0.5, "s", "500 ms"],
     [0.0005, "s", "500 us"],
-    [0.5, "us", "0.500 us"],
-    [999.5, "us", "1.00 ms"],
+    [0.5, "us", "0.5 us"],
+    [999.5, "us", "1 ms"],
     [0, "ms", "0 ms"],
   ])("formats %s %s as %s", (value, unit, expected) => {
     expect(formatMetric(value, unit)).toBe(expected);
   });
 
   it("returns the scaled unit separately for readings", () => {
-    expect(formatReading(999.5, "ms")).toEqual({ value: "1.00", unit: "s" });
+    expect(formatReading(999.5, "ms")).toEqual({ value: "1", unit: "s" });
     expect(formatReading(812.06, "ms")).toEqual({ value: "812", unit: "ms" });
   });
 });
@@ -56,12 +88,12 @@ describe("byte scaling (IEC)", () => {
   it.each([
     [1000, "B", "1,000 B"],
     [1500, "B", "1.46 KiB"],
-    [1023.9, "B", "1.00 KiB"],
-    [1536 * 1024, "B", "1.50 MiB"],
-    [5 * 1024 ** 3, "B", "5.00 GiB"],
-    [2048, "KiB", "2.00 MiB"],
-    [1024, "bytes", "1.00 KiB"],
-    [0.5, "B", "0.500 B"],
+    [1023.9, "B", "1 KiB"],
+    [1536 * 1024, "B", "1.5 MiB"],
+    [5 * 1024 ** 3, "B", "5 GiB"],
+    [2048, "KiB", "2 MiB"],
+    [1024, "bytes", "1 KiB"],
+    [0.5, "B", "0.5 B"],
   ])("formats %s %s as %s", (value, unit, expected) => {
     expect(formatMetric(value, unit)).toBe(expected);
   });
@@ -74,7 +106,7 @@ describe("bit-rate scaling (SI)", () => {
     [1_250_000, "bit/s", "1.25 Mbit/s"],
     [500, "bit/s", "500 bit/s"],
     [0.5, "Mb/s", "500 kb/s"],
-    [999.5, "kbit/s", "1.00 Mbit/s"],
+    [999.5, "kbit/s", "1 Mbit/s"],
   ])("formats %s %s as %s", (value, unit, expected) => {
     expect(formatMetric(value, unit)).toBe(expected);
   });
@@ -83,10 +115,10 @@ describe("bit-rate scaling (SI)", () => {
 describe("per-second rates", () => {
   it.each([
     [18423, "obs/s", "18.4K obs/s"],
-    [999.5, "req/s", "1.00K req/s"],
-    [0.5, "req/s", "0.500 req/s"],
-    [2_500_000, "req/s", "2.50M req/s"],
-    [3, "/s", "3.00 /s"],
+    [999.5, "req/s", "1K req/s"],
+    [0.5, "req/s", "0.5 req/s"],
+    [2_500_000, "req/s", "2.5M req/s"],
+    [3, "/s", "3 /s"],
   ])("formats %s %s as %s", (value, unit, expected) => {
     expect(formatMetric(value, unit)).toBe(expected);
   });
@@ -131,10 +163,10 @@ describe("zero, negatives, non-finite and extreme values", () => {
   });
 
   it("uses exponential notation for very small and very large magnitudes", () => {
-    expect(formatMetric(0.00001, "")).toBe("0.0000100");
-    expect(formatMetric(0.0000001, "")).toBe("1.00e-7");
-    expect(formatMetric(1e-13, "s")).toBe("1.00e-7 us");
-    expect(formatMetric(2e21, "")).toBe("2.00e+21");
+    expect(formatMetric(0.00001, "")).toBe("0.00001");
+    expect(formatMetric(0.0000001, "")).toBe("1e-7");
+    expect(formatMetric(1e-13, "s")).toBe("1e-7 us");
+    expect(formatMetric(2e21, "")).toBe("2e+21");
   });
 
   it("keeps large plain counts whole when not compact", () => {
@@ -143,7 +175,7 @@ describe("zero, negatives, non-finite and extreme values", () => {
 
   it("abbreviates plain counts only when compact", () => {
     expect(formatMetric(1234, "requests", true)).toBe("1.23K requests");
-    expect(formatMetric(1_000_000, "", true)).toBe("1.00M");
+    expect(formatMetric(1_000_000, "", true)).toBe("1M");
   });
 });
 

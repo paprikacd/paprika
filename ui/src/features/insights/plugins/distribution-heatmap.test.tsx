@@ -108,12 +108,12 @@ describe("distribution heatmap states and p95", () => {
     expect(line).not.toBeNull();
     expect(line!.getAttribute("d")!.match(/M/g)).toHaveLength(2);
     expect(line).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByText(/^p95 ≈ 46.0 ms · merged over 4 of 5 windows · 1 missing window excluded/)).toBeInTheDocument();
+    expect(screen.getByText(/^p95 ≈ 46 ms · merged over 4 of 5 windows · 1 missing window excluded/)).toBeInTheDocument();
   });
   it("reports an overflow p95 as above its last finite bound and an unavailable p95 without +Inf", () => {
     const overflow: QueryResult = { series: [series("10", [0, 0]), series("50", [0, 0]), series("+Inf", [5, 5])] };
     const { container, rerender } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={overflow} />);
-    expect(screen.getByText(/^p95 above 50.0 ms · merged over 2 of 2 windows/)).toBeInTheDocument();
+    expect(screen.getByText(/^p95 above 50 ms · merged over 2 of 2 windows/)).toBeInTheDocument();
     expect(container.querySelector("[data-quantile-line]")).not.toBeNull();
     rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={result} />);
     expect(screen.getByText(/^p95 unavailable: no \+Inf bucket/)).toBeInTheDocument();
@@ -161,7 +161,7 @@ describe("distribution heatmap states and p95", () => {
     const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms", config: { ...widget.config, maxBuckets: 2 } }} result={hidden} />);
     expect(container.querySelectorAll("[data-quantile-above]")).toHaveLength(2);
     expect(container.querySelector("[data-quantile-line]")).toBeNull();
-    expect(screen.getByText(/^p95 above 50.0 ms · merged over 2 of 2 windows/)).toBeInTheDocument();
+    expect(screen.getByText(/^p95 above 50 ms · merged over 2 of 2 windows/)).toBeInTheDocument();
   });
   it("hatches a source gap across the full plot height rather than leaving it blank", () => {
     const gap: QueryResult = { series: [

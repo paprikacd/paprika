@@ -75,10 +75,27 @@ function rounded(magnitude: number) {
   return magnitude === 0 ? 0 : Number((magnitude * (1 + 1e-9)).toPrecision(SIGNIFICANT_FIGURES));
 }
 
-/** Fraction digits that show `rounded` with three significant figures. Integer digits are never dropped. */
-function autoPlaces(roundedMagnitude: number) {
+/**
+ * Fraction digits for a value whose three-figure rounding is `roundedMagnitude`. Values of one or more keep at most
+ * two fraction digits and never lose integer digits (18,423 stays whole); smaller values keep three significant
+ * figures (0.0042, 0.995).
+ */
+function autoPlaces(magnitude: number, roundedMagnitude: number) {
   if (roundedMagnitude === 0) return 0;
-  return Math.max(0, SIGNIFICANT_FIGURES - 1 - Math.floor(Math.log10(roundedMagnitude) + 1e-12));
+  const places = Math.max(0, SIGNIFICANT_FIGURES - 1 - Math.floor(Math.log10(roundedMagnitude) + 1e-12));
+  return magnitude >= 1 ? Math.min(2, places) : places;
+}
+
+const trimmedFormat = new Map<number, Intl.NumberFormat>();
+
+/** Up to `places` fraction digits, with trailing zeros and the decimal point trimmed. */
+function trimmed(value: number, places: number) {
+  let format = trimmedFormat.get(places);
+  if (!format) {
+    format = new Intl.NumberFormat("en", { minimumFractionDigits: 0, maximumFractionDigits: places });
+    trimmedFormat.set(places, format);
+  }
+  return format.format(value === 0 ? 0 : value);
 }
 
 function unitsFor(unit: string, compact: boolean): { steps: UnitStep[]; index: number } {
@@ -127,11 +144,15 @@ function inStep(value: number, steps: readonly UnitStep[], index: number, candid
   return (value * steps[index].factor) / steps[candidate].factor;
 }
 
-/** Automatic text for a value already expressed in its step's unit. */
+/**
+ * Automatic text for a value already expressed in its step's unit. The fraction digits come from rounding to three
+ * significant figures; the value is then formatted to those digits and trimmed. Halves round away from zero on the
+ * decimal reading (1.005 becomes 1.01, 0.995 stays 0.995), so the value is nudged by a relative 1e-9 first.
+ */
 function autoNumber(value: number) {
   const magnitude = rounded(Math.abs(value));
-  if (magnitude >= 1e15 || (magnitude > 0 && magnitude < 1e-6)) return (value === 0 ? 0 : value).toExponential(2);
-  return fixed(value, autoPlaces(magnitude));
+  if (magnitude >= 1e15 || (magnitude > 0 && magnitude < 1e-6)) return Number((value === 0 ? 0 : value).toPrecision(SIGNIFICANT_FIGURES)).toExponential();
+  return trimmed(value * (1 + 1e-9), autoPlaces(Math.abs(value), magnitude));
 }
 
 export function unitSuffix(unit: string) {

@@ -104,7 +104,7 @@ describe("bounded tooltip rendering", () => {
     fireEvent.focus(screen.getByRole("button", { name: /api.*No data/ }));
     let child = within(screen.getByRole("tooltip")).getByRole("table");
     expect(within(child).getByText("worker")).toBeVisible();
-    expect(within(child).getAllByText("99.0 req/s")[0]).toBeVisible();
+    expect(within(child).getAllByText("99 req/s")[0]).toBeVisible();
     expect(fetcher).not.toHaveBeenCalled();
     expect(Object.isFrozen(result.series)).toBe(false);
     expect(Object.isFrozen(other.points[0])).toBe(false);
@@ -119,7 +119,7 @@ describe("bounded tooltip rendering", () => {
     fireEvent.focus(screen.getByRole("button", { name: /api.*No data/ }));
     child = within(screen.getByRole("tooltip")).getByRole("table");
     expect(within(child).getAllByText("101 req/s")[0]).toBeVisible();
-    expect(within(child).queryAllByText("99.0 req/s")).toHaveLength(0);
+    expect(within(child).queryAllByText("99 req/s")).toHaveLength(0);
     rerender(host(result, false));
     fireEvent.focus(screen.getByRole("button", { name: /api.*No data/ }));
     child = within(screen.getByRole("tooltip")).getByRole("table");

@@ -24,7 +24,7 @@ describe("configured numeric precision", () => {
 
   it("scales a stat reading and its unit together, and keeps an authored unit under authored decimals", () => {
     const scaled = render(<WidgetVisualization widget={{ ...widget, type: "stat", unit: "ms" }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 999.5 }] }] }} />);
-    expect(scaled.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^1\.00s$/);
+    expect(scaled.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^1s$/);
     scaled.unmount();
     const fixed = render(<WidgetVisualization widget={{ ...widget, type: "stat", unit: "ms", options: { decimals: 2 } }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 999.5 }] }] }} />);
     expect(fixed.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^999\.50ms$/);

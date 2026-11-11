@@ -123,7 +123,7 @@ describe("trusted widget registry", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Widget could not render",
     );
-    expect(screen.getByText("92.0")).toBeInTheDocument();
+    expect(screen.getByText("92")).toBeInTheDocument();
     rerender(
       <>
         <WidgetVisualization
