@@ -90,13 +90,12 @@ describe("multi-series threshold gauges", () => {
     rerender(<ThresholdGauge widget={{ ...bankWidget, options: { ...bankWidget.options, textColor: "#18293a" } }} result={result} />);
     expect(container.querySelector<HTMLElement>("[data-gauge-value]")!.style.color).toBe("#18293a");
   });
-  it("labels status banks with a glyph chip and strokes warning or critical readings, and leaves hex bands unmarked", () => {
+  it("labels status banks with a glyph chip and leaves hex bands unmarked", () => {
     const thresholds = [{ value: 0, status: "critical" as const, label: "Critical" }, { value: 30, status: "ok" as const, label: "Healthy" }];
     const bankWidget = { ...widget, config: { seriesMode: "all", display: "linear", orientation: "horizontal", showStatus: true }, options: { ...widget.options, thresholds } };
     const { container, unmount } = render(<ThresholdGauge widget={bankWidget} result={result} />);
     const status = container.querySelector<HTMLElement>("[data-gauge-status]")!;
     expect(status.querySelector("[data-status]")).toHaveAttribute("data-status", "critical");
-    expect(status.querySelector("[data-status]")).toHaveAttribute("data-status-stroke", "critical");
     expect(status.querySelector('[aria-hidden="true"]')).toHaveTextContent("×");
     unmount();
     const hex = render(<ThresholdGauge widget={{ ...bankWidget, options: { ...widget.options, thresholds: [{ value: 0, color: "#d05b61", label: "Critical" }, { value: 30, color: "#59a56b", label: "Healthy" }] } }} result={result} />);

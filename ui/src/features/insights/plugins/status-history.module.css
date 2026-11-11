@@ -33,7 +33,7 @@
 .mixed { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 3px, var(--gamma-muted) 3px 4px); }
 .legend { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
 .footer.footer { justify-content: flex-start; gap: 4px 12px; font-size: 10px; }
-.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend > span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 10px; height: 8px; border-radius: 1px; flex-shrink: 0; }
 .legend :is(.unknown, .mixed) { border: 1px solid var(--gamma-border); }
 

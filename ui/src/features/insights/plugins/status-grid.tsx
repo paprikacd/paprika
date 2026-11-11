@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, ty
 import { z } from "zod";
 import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, exactMetric, seriesName, thresholdForValue } from "../chart-renderers";
 import { thresholdPaint } from "../status";
-import { StatusChip, statusName, statusStrokeLevel, statusStrokeStyle } from "../status-chip";
+import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle } from "../status-chip";
 import type { Point, Series } from "../chart-data";
 import type { QueryResult } from "../schema";
 import { validTimestamp } from "../widget-context";
@@ -81,7 +81,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
     <div ref={scroll} className={styles.scroll} role="region" aria-label={`${widget.title} monitor statuses`} tabIndex={interactive && overflow ? 0 : undefined} aria-describedby={overflow ? `${id}-overflow` : undefined} data-status-overflow={overflow || undefined}>
       <div ref={grid} className={styles.grid} data-status-grid>
         {cells.map(cell => {
-          const status = cell.value === undefined ? "Unknown" : cell.threshold?.label ?? statusName(cell.threshold);
+          const status = cell.value === undefined ? "Unknown" : bandReading(cell.threshold);
           const label = `${cell.name}: ${cell.value === undefined ? "No data" : exactMetric(cell.value, widget.unit)} · ${status}`;
           const className = `${styles.cell} ${cell.value === undefined ? styles.unknown : ""}`;
           const color = thresholdPaint(cell.threshold) ?? widget.color ?? "var(--gamma-chart-2)";
@@ -115,7 +115,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       onEnter={() => { interaction.current.panel = true; clearHide(); }} onLeave={() => { interaction.current.panel = false; scheduleHide(); }}>
       <MetricDetails widget={widget} series={current.entry} index={current.index} point={current.point} unit={widget.unit} decimals={widget.options?.decimals} description="Latest sample">
         {current.value === undefined
-          ? <StatusChip status="unknown" />
+          ? <span>No data</span>
           : current.threshold?.status
             ? <StatusChip status={current.threshold.status} color={current.threshold.color} label={current.threshold.label} />
             : <span>{current.threshold?.label ?? "Observed"}</span>}

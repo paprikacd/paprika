@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { STATUS_GLYPHS, STATUS_WORDS, StatusChip, statusName, statusStrokeLevel, statusStrokeStyle } from "./status-chip";
+import { STATUS_GLYPHS, STATUS_WORDS, StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle } from "./status-chip";
 import { statusLevels } from "./status";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -13,8 +13,7 @@ describe("StatusChip", () => {
     const { container, unmount } = render(<StatusChip status={level} />);
     const chip = container.querySelector<HTMLElement>("[data-status]")!;
     expect(chip).toHaveAttribute("data-status", level);
-    const glyph = chip.querySelector('[aria-hidden="true"]');
-    expect(glyph).toHaveTextContent(STATUS_GLYPHS[level]);
+    expect(chip.querySelector('[aria-hidden="true"]')).toHaveTextContent(STATUS_GLYPHS[level]);
     expect(chip).toHaveTextContent(STATUS_WORDS[level]);
     unmount();
   });
@@ -25,17 +24,16 @@ describe("StatusChip", () => {
 
   it("announces the status word alongside a custom label", () => {
     const { container } = render(<StatusChip status="warning" label="Elevated" />);
-    expect(container.querySelector("[data-status]")).toHaveTextContent("Warning: Elevated");
-    expect(screen.getByText("Elevated")).toBeInTheDocument();
     const announced = container.querySelector("[data-status] > span:last-child > span");
     expect(announced).toHaveTextContent(/^Warning:\s*$/);
     expect(announced?.className).toMatch(/srOnly/);
+    expect(container.querySelector("[data-status]")).toHaveTextContent("Warning: Elevated");
   });
 
-  it("does not repeat the word when the label is the word", () => {
-    const { container } = render(<StatusChip status="critical" label="critical" />);
-    expect(container.querySelector("[data-status]")!.querySelectorAll("span")).toHaveLength(2);
-    expect(container.querySelector("[data-status]")).toHaveTextContent(/^×critical$/);
+  it.each(["critical", "Critical", "Critical 90%", "90% · critical"])("does not repeat the word when the label already names it (%s)", label => {
+    const { container } = render(<StatusChip status="critical" label={label} />);
+    expect(container.querySelector("[data-status] > span:last-child")!.querySelector("span")).toBeNull();
+    expect(container.querySelector("[data-status]")!.textContent).not.toMatch(/Critical: /);
   });
 
   it("is non-interactive by default", () => {
@@ -55,8 +53,19 @@ describe("StatusChip", () => {
   });
 });
 
-describe("status strokes", () => {
-  it("names only warning and critical as stroke levels", () => {
+describe("band readings", () => {
+  it("reads a status-only band as its word, a labelled band with its word, and a hex band with its label or fallback", () => {
+    expect(bandReading({ status: "warning" })).toBe("Warning");
+    expect(bandReading({ status: "critical", label: "Down" })).toBe("Down · Critical");
+    expect(bandReading({ status: "critical", label: "Critical 90%" })).toBe("Critical 90%");
+    expect(bandReading({ color: "#123456" })).toBe("Observed");
+    expect(bandReading({ color: "#123456", label: "Legacy" })).toBe("Legacy");
+    expect(bandReading(undefined, "")).toBe("");
+  });
+});
+
+describe("status frames", () => {
+  it("names only warning and critical as frame levels", () => {
     expect(statusStrokeLevel({ status: "warning" })).toBe("warning");
     expect(statusStrokeLevel({ status: "critical", color: "#123456" })).toBe("critical");
     for (const status of ["ok", "info", "unknown"] as const) expect(statusStrokeLevel({ status })).toBeUndefined();
@@ -64,22 +73,26 @@ describe("status strokes", () => {
     expect(statusStrokeLevel(undefined)).toBeUndefined();
   });
 
-  it("gives hex-only bands no stroke colour, so their rendering is unchanged", () => {
+  it("needs 2 x frame + 3 px in both directions, so thin marks keep their whole fill", () => {
+    expect(statusStrokeLevel({ status: "critical" }, { width: 6, height: 18 })).toBeUndefined();
+    expect(statusStrokeLevel({ status: "critical" }, { width: 7, height: 18 })).toBe("critical");
+    expect(statusStrokeLevel({ status: "critical" }, { width: 18, height: 6 })).toBeUndefined();
+    expect(statusStrokeLevel({ status: "warning" }, { width: 4, height: 18 })).toBeUndefined();
+    expect(statusStrokeLevel({ status: "warning" }, { width: 5, height: 18 })).toBe("warning");
+    expect(statusStrokeLevel({ status: "warning" }, undefined)).toBe("warning");
+  });
+
+  it("draws an ink frame, so a hex-only band or an ok band gets no frame colour", () => {
     expect(statusStrokeStyle({ color: "#123456" })).toEqual({});
     expect(statusStrokeStyle({ status: "ok" })).toEqual({});
-    expect(statusStrokeStyle({ status: "critical" })).toEqual({ "--status-stroke-color": "var(--gamma-status-critical-on)" });
+    expect(statusStrokeStyle({ status: "critical" }, { width: 3, height: 18 })).toEqual({});
+    expect(statusStrokeStyle({ status: "critical" })).toEqual({ "--status-stroke-color": "var(--gamma-ink)" });
   });
 
-  it("draws a 1 px inset stroke for warning and 2 px for critical, and never hatching", () => {
+  it("uses a 1 px frame for warning and 2 px for critical, each followed by a tile-coloured keyline, and never hatching", () => {
     const css = readFileSync(join(here, "status-chip.module.css"), "utf8");
-    expect(css).toMatch(/:global\(\[data-status-stroke="warning"\]\)[^}]*inset 0 0 0 1px/);
-    expect(css).toMatch(/:global\(\[data-status-stroke="critical"\]\)[^}]*inset 0 0 0 2px/);
+    expect(css).toMatch(/:global\(\[data-status-stroke="warning"\]\)[^}]*inset 0 0 0 1px[^}]*inset 0 0 0 2px var\(--status-keyline\)/);
+    expect(css).toMatch(/:global\(\[data-status-stroke="critical"\]\)[^}]*inset 0 0 0 2px[^}]*inset 0 0 0 3px var\(--status-keyline\)/);
     expect(css).not.toMatch(/repeating-linear-gradient/);
-  });
-
-  it("names a status word for unlabelled bands and keeps the default reading otherwise", () => {
-    expect(statusName({ status: "warning" })).toBe("Warning");
-    expect(statusName({ color: "#123456" })).toBe("Observed");
-    expect(statusName(undefined, "")).toBe("");
   });
 });

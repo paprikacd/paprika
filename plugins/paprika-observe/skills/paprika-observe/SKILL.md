@@ -231,7 +231,7 @@ part of the record-table plugin config, which the same schema describes.
   flap. Do not apply one universal value. A stale
   single value warns, and a stale time series is hatched after its last sample.
 - **Record table:** a text column whose record-table config has a `cellStyles` entry with
-  `display: "status-badge"` and `mappings: [{value,color}]` (at most 16 exact values). Unmapped values stay neutral.
+  `display: "status-badge"` and `mappings: [{value, status?, color?}]` (at most 16 exact values; each mapping names a `status` of ok, info, warning, critical or unknown, a `color`, or both). A status shows a glyph and word chip. Unmapped values stay neutral.
   Sorting is interactive; no default-sort option exists.
 - **Incidents:** a time series can overlay recorded events through
   `annotationSource` (`queryRef`, `timestampColumn`, `labelColumn`, and optional `endColumn`

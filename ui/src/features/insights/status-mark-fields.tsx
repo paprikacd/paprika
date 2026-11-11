@@ -10,15 +10,16 @@ import editorStyles from "./editor.module.css";
 import styles from "./status-chip.module.css";
 
 const LEVEL_OPTIONS = statusLevels.map(level => ({ value: level, label: STATUS_WORDS[level] }));
-/** Shown only for a legacy hex-only band, which is kept as authored until the author picks a status. */
+/**
+ * Option value for "no status": the mark keeps only its hue. It is never written as a status. It appears only when
+ * a colour exists, so picking it cannot leave a band without a mark.
+ */
 const COLOUR_ONLY = "colour-only";
 
 /**
  * Status level plus an optional hue override, shared by threshold bands and record-table mappings. `name` prefixes
- * the accessible names, for example "Threshold 2" gives "Threshold 2 level" and "Threshold 2 hue override".
- * The swatch shows the colour the band draws in `theme`, so an override is visible at a glance and a status
- * colour is shown as its resolved value rather than as a token name.
- * A hex-only mark keeps its hex: it is changed only when the author picks a level or resets a hue.
+ * the visible and accessible labels: "Threshold 2" shows "Threshold 2 status" and "Threshold 2 colour". The swatch
+ * shows the colour the mark draws in `theme`. Choosing a level, colour only or a reset changes only that field.
  */
 export function StatusMarkFields({ name, mark, theme, onChange, className = "" }: {
   name: string
@@ -28,26 +29,35 @@ export function StatusMarkFields({ name, mark, theme, onChange, className = "" }
   className?: string
 }) {
   const drawn = thresholdHex(mark, theme) ?? "#000000";
-  const options = mark.status === undefined ? [{ value: COLOUR_ONLY, label: "Colour only" }, ...LEVEL_OPTIONS] : LEVEL_OPTIONS;
-  const hueName = mark.color === undefined ? "Status colour" : "Hue override";
-  const canReset = mark.color !== undefined && mark.status !== undefined;
+  const hasColour = mark.color !== undefined;
+  const options = hasColour || mark.status === undefined
+    ? [{ value: COLOUR_ONLY, label: "Colour only" }, ...LEVEL_OPTIONS]
+    : LEVEL_OPTIONS;
+  const canReset = hasColour && mark.status !== undefined;
+  const statusLabel = `${name} status`, colourLabel = `${name} colour`;
   return (
     <div className={`${styles.markFields} ${className}`.trim()} data-status-mark-fields="">
-      <label className={editorStyles.field}>Status
+      <label className={editorStyles.field}>{statusLabel}
         <GammaSelect
-          aria-label={`${name} level`}
+          aria-label={statusLabel}
           value={mark.status ?? COLOUR_ONLY}
           options={options}
-          onValueChange={value => onChange({ status: value as StatusLevel, color: mark.color })}
+          onValueChange={value => {
+            if (value === COLOUR_ONLY) {
+              if (hasColour) onChange({ color: mark.color });
+              return;
+            }
+            onChange({ status: value as StatusLevel, color: mark.color });
+          }}
         />
       </label>
-      <div className={`${editorStyles.field} ${styles.hue}`} role="group" aria-label={`${name} colour`}>
-        <span>{mark.status === undefined ? "Colour" : hueName}</span>
+      <div className={`${editorStyles.field} ${styles.hue}`}>
+        <span>{colourLabel}</span>
         <span className={styles.hueControls}>
           <span role="img" aria-label={`${name} drawn colour ${drawn}`} className={styles.swatch} style={{ background: drawn }} data-drawn-colour={drawn} />
           <GammaInput
             type="color"
-            aria-label={`${name} hue override`}
+            aria-label={colourLabel}
             value={drawn}
             onChange={event => onChange({ status: mark.status, color: event.target.value })}
           />

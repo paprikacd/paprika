@@ -127,7 +127,7 @@ describe("table visual cells", () => {
     expect(parseOpenUIDashboard(dashboardToOpenUI(dashboard)).widgets[0].config).toEqual(configured.config)
   })
 
-  it("renders status mappings as glyph chips with a stroke and an optional hue, and keeps hex-only mappings as dots", () => {
+  it("renders status mappings as glyph chips with an optional hue, and keeps hex-only mappings as dots", () => {
     const statusResult: QueryResult = { records: { columns: [{ key: "host", type: "string" }, { key: "status", label: "State", type: "string" }], rows: [["a", "At risk"], ["b", "Healthy"], ["c", "Warm"]] } }
     const mappings: { value: string; status?: "critical" | "ok"; color?: string }[] = [{ value: "At risk", status: "critical" }, { value: "Healthy", status: "ok", color: "#20cba3" }, { value: "Warm", color: "#e6504d" }]
     const cellStyle = { column: "status", display: "status-badge" as const, mappings }
@@ -136,7 +136,7 @@ describe("table visual cells", () => {
     expect(risk).toHaveAttribute("data-status-state", "mapped")
     const riskChip = risk.querySelector<HTMLElement>("[data-status]")!
     expect(riskChip).toHaveAttribute("data-status", "critical")
-    expect(riskChip).toHaveAttribute("data-status-stroke", "critical")
+    expect(risk.querySelector("[data-status]")!.parentElement).toBe(risk)
     expect(riskChip.querySelector('[aria-hidden="true"]')).toHaveTextContent("×")
     expect(riskChip).toHaveTextContent("Critical: At risk")
     const healthy = screen.getByText("Healthy").closest<HTMLElement>('[data-cell-display="status-badge"]')!
@@ -269,7 +269,7 @@ describe("table visual cells", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Column 1 status 1 value" }), { target: { value: "At risk" } })
     const json = () => JSON.parse((screen.getByRole("textbox", { name: "Plugin configuration", hidden: true }) as HTMLTextAreaElement).value)
     expect(json().cellStyles).toEqual([{ column: "host", display: "status-badge", mappings: [{ value: "At risk", status: "ok" }] }])
-    fireEvent.change(screen.getByLabelText("Column 1 status 1 hue override"), { target: { value: "#e6504d" } })
+    fireEvent.change(screen.getByLabelText("Column 1 mapping 1 colour"), { target: { value: "#e6504d" } })
     expect(json().cellStyles).toEqual([{ column: "host", display: "status-badge", mappings: [{ value: "At risk", status: "ok", color: "#e6504d" }] }])
     fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
     fireEvent.click(screen.getByRole("option", { name: "Segmented gauge" }))

@@ -55,6 +55,9 @@ import { useInsightsTheme } from "./insights-theme";
 
 const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
 
+/** New bands start with the healthy band, then escalate: ok, warning, then critical for every later band. */
+const NEW_BAND_STATUSES = ["ok", "warning", "critical"] as const;
+
 /** Replaces a band's status and hue, keeping its value and label and omitting absent keys. */
 function withStatusMark(threshold: Threshold, mark: StatusMark): Threshold {
   const next: Threshold = { value: threshold.value };
@@ -607,7 +610,7 @@ function StyleEditor({
         <fieldset className={styles.thresholds}>
           <legend>Value thresholds</legend>
           <p className={styles.hint}>
-            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its color still applies."}
+            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its status or colour still applies."}
             {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
               " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
           </p>
@@ -687,10 +690,12 @@ function StyleEditor({
               update({
                 thresholds: [
                   ...(options.thresholds ?? []),
-                  // Matches the heatmap default: critical below the first limit, ok from it.
-                  options.thresholds?.length
-                    ? { value: options.thresholds[options.thresholds.length - 1].value + 1, status: "ok" }
-                    : { value: 0, status: "critical" },
+                  {
+                    value: options.thresholds?.length
+                      ? options.thresholds[options.thresholds.length - 1].value + 1
+                      : 0,
+                    status: NEW_BAND_STATUSES[Math.min(options.thresholds?.length ?? 0, NEW_BAND_STATUSES.length - 1)],
+                  },
                 ],
               })
             }

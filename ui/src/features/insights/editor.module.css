@@ -398,14 +398,19 @@
   padding: 0 6px;
   font-weight: 600;
 }
+/* The value sizes to its digits; the status and colour row takes the rest and wraps rather than truncating. */
 .threshold {
-  display: grid;
-  grid-template-columns: 65px minmax(0, 1fr) 44px;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: end;
 }
+.threshold > label:first-child { flex: 0 0 auto; }
+.threshold > label:first-child input { width: 11ch; }
+.threshold > :nth-child(2) { flex: 1 1 15rem; min-width: 0; }
+.threshold > button { flex: 0 0 auto; }
 .thresholdLabel {
-  grid-column: 1/-1;
+  flex-basis: 100%;
   display: flex;
   align-items: center;
   gap: 10px;

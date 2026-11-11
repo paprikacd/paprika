@@ -3,7 +3,7 @@ import { z } from "zod"
 import { exactMetric, formatMetric } from "../chart-data"
 import { thresholdForValue } from "../chart-renderers"
 import { statusHex, statusLevels, statusToken, thresholdInk, thresholdPaint } from "../status"
-import { StatusChip, statusStrokeLevel, statusStrokeStyle } from "../status-chip"
+import { StatusChip } from "../status-chip"
 import { contrastRatio, readableTextColor } from "../appearance"
 import type { RecordFrame, Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
@@ -205,9 +205,10 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   if (style.display === "status-badge") {
     const missing = value === null || value === undefined || value === ""
     const mapping = typeof value === "string" ? style.mappings?.find(entry => entry.value === value) : undefined
-    if (mapping?.status) return <span className={styles.statusBadge} data-cell-display="status-badge" data-status-state="mapped"
+    // The chip is the badge: no second pill around it. Hex-only mappings keep the dot and text below.
+    if (mapping?.status) return <span className={styles.statusChipCell} data-cell-display="status-badge" data-status-state="mapped"
       title={nativeTitle ? `${column.label ?? column.key}: ${String(value)}` : undefined}>
-      <StatusChip status={mapping.status} color={mapping.color} label={String(value)} data-status-stroke={statusStrokeLevel(mapping)} style={statusStrokeStyle(mapping)} />
+      <StatusChip status={mapping.status} color={mapping.color} label={String(value)} />
     </span>
     return <span className={styles.statusBadge} data-cell-display="status-badge" data-status-state={missing ? "missing" : mapping ? "mapped" : "unmapped"}
       title={nativeTitle ? `${column.label ?? column.key}: ${missing ? "No data" : String(value)}` : undefined}>

@@ -1,4 +1,4 @@
-/* Status glyph chips and inset strokes. Colours arrive as --chip-* and --status-stroke-color from status-chip.tsx. */
+/* Status glyph chips and cell frames. Colours arrive as --chip-* and --status-stroke-color from status-chip.tsx. */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -15,6 +15,7 @@
   vertical-align: middle;
 }
 .chip[data-size="tile"] { gap: 6px; padding: 2px 9px 2px 2px; font-size: 12px; }
+/* The glyph is a fixed box with its own centring; legend and bank rules must not restyle its children. */
 .glyph {
   display: inline-grid;
   place-items: center;
@@ -27,14 +28,19 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  font-variant-numeric: normal;
 }
 .chip[data-size="tile"] .glyph { width: 17px; height: 17px; font-size: 12px; }
 .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
-/* Inset strokes on status cells: 1 px for warning, 2 px for critical. Owners add var(--status-inset) to their box-shadow. */
-:global([data-status-stroke="warning"]) { --status-inset: inset 0 0 0 1px var(--status-stroke-color, currentColor); }
-:global([data-status-stroke="critical"]) { --status-inset: inset 0 0 0 2px var(--status-stroke-color, currentColor); }
+/*
+ * Cell frames: an ink frame (1 px warning, 2 px critical), then a 1 px keyline in the tile colour, then the fill.
+ * Owners add var(--status-inset) to their box-shadow. The keyline keeps the fill's own contrast with the tile.
+ */
+:global([data-status-stroke]) { --status-keyline: var(--widget-background, var(--gamma-bg, #ffffff)); }
+:global([data-status-stroke="warning"]) { --status-inset: inset 0 0 0 1px var(--status-stroke-color, var(--gamma-ink)), inset 0 0 0 2px var(--status-keyline); }
+:global([data-status-stroke="critical"]) { --status-inset: inset 0 0 0 2px var(--status-stroke-color, var(--gamma-ink)), inset 0 0 0 3px var(--status-keyline); }
 
 /* Colour swatch that shows the colour actually drawn in the active theme. */
 .swatch { display: inline-block; flex: none; width: 18px; height: 18px; border: 1px solid var(--gamma-border); border-radius: 4px; }
