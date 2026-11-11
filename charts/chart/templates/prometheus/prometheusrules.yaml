@@ -64,15 +64,35 @@ spec:
             summary: Paprika application degraded
             description: Application {{ "{{ $labels.application }}" }} in namespace {{ "{{ $labels.namespace }}" }} is degraded.
 
-        - alert: PaprikaClusterUnhealthy
-          expr: paprika_cluster_phase{phase="Unhealthy"} == 1
+        - alert: PaprikaReleasesStuck
+          expr: paprika_releases_stuck > 0
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: Paprika registered cluster is unhealthy
-            description: Cluster {{ "{{ $labels.cluster }}" }} in namespace {{ "{{ $labels.namespace }}" }} is unhealthy.
+            summary: Paprika releases are stuck
+            description: "{{ "{{ $value }}" }} non-terminal releases are older than the stuck-release threshold (30m)."
 
+        - alert: PaprikaReleaseRetriesExhausted
+          expr: paprika_applications_release_retries_exhausted > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Paprika application release retries exhausted
+            description: "{{ "{{ $value }}" }} applications hold the ReleaseRetriesExhausted condition. The gauge is unlabelled; find them with kubectl get applications -A."
+
+        - alert: PaprikaFleetIndexDegraded
+          expr: paprika_fleet_index_degraded == 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika fleet index is degraded
+            description: The installed fleet index health is degraded; fleet queries may be serving stale data.
+
+        # Not a Paprika metric: container_memory_failures_total is exported by
+        # kubelet/cAdvisor and is only visible in the user's own Prometheus.
         - alert: PaprikaOOMKilled
           expr: rate(container_memory_failures_total{container=~".*paprika.*", failure_type="oom"}[5m]) > 0
           for: 1m
@@ -81,33 +101,6 @@ spec:
           annotations:
             summary: Paprika container OOM killed
             description: Container {{ "{{ $labels.container }}" }} in pod {{ "{{ $labels.pod }}" }} was OOM killed.
-
-        - alert: PaprikaCacheUnreachable
-          expr: paprika_cache_errors_total > 100
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: Paprika cache error rate is high
-            description: Cache errors exceeded 100. Redis may be unreachable.
-
-        - alert: PaprikaWebhookErrors
-          expr: rate(paprika_webhook_errors_total[5m]) > 0.1
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: Paprika webhook processing errors
-            description: Webhook error rate is elevated ({{ "{{ $value | humanizePercentage }}" }}).
-
-        - alert: PaprikaRateLimitExceeded
-          expr: rate(paprika_ratelimit_denials_total[5m]) > 10
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: Paprika rate limit denials
-            description: Rate limit denials exceeded 10 req/s.
 
         - alert: PaprikaApiServerHighRequestLatency
           expr: histogram_quantile(0.95, rate(paprika_api_request_duration_seconds_bucket[5m])) > 5

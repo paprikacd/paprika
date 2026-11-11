@@ -223,21 +223,22 @@ groups:
     rules:
       # Application stuck in a failure state
       - alert: PaprikaApplicationDegraded
-        expr: paprika_application_phase_total{phase="Degraded"} > 0
+        expr: increase(paprika_application_phase_total{phase="Degraded"}[5m]) > 0
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: "Application {{ $labels.application }} is Degraded"
 
-      # Release retries exhausted
+      # Release retries exhausted. The gauge counts applications holding the
+      # condition; it is unlabelled, so the alert cannot name the application.
       - alert: PaprikaReleaseRetriesExhausted
-        expr: paprika_application_phase_total{phase="RolledBack"} > 0
+        expr: paprika_applications_release_retries_exhausted > 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Application {{ $labels.application }} release retries exhausted"
+          summary: "{{ $value }} application(s) hold the ReleaseRetriesExhausted condition"
 ```
 
 ### Warning Alerts

@@ -6,6 +6,84 @@
   "graphTooltip": 1,
   "panels": [
     {
+      "title": "Max Reconcile Lag",
+      "description": "Largest spec-generation gap between an Application and its observed generation. Per application, filtered by $namespace.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "max(paprika_application_reconcile_lag{namespace=~\"$namespace\"})",
+          "legendFormat": "max lag"
+        }
+      ],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0}
+    },
+    {
+      "title": "Stale Applications",
+      "description": "Applications whose observed generation is behind their spec generation. Cluster-wide: the gauge is unlabelled, so $namespace does not filter it.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "paprika_applications_stale",
+          "legendFormat": "stale"
+        }
+      ],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0}
+    },
+    {
+      "title": "Releases Stuck",
+      "description": "Non-terminal releases older than the stuck-release threshold (30 minutes). Cluster-wide: the gauge is unlabelled.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "paprika_releases_stuck",
+          "legendFormat": "stuck"
+        }
+      ],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0}
+    },
+    {
+      "title": "Release Retries Exhausted",
+      "description": "Applications holding the ReleaseRetriesExhausted condition. Cluster-wide: the gauge is unlabelled.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "paprika_applications_release_retries_exhausted",
+          "legendFormat": "exhausted"
+        }
+      ],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0}
+    },
+    {
+      "title": "Out-of-Sync Resources",
+      "description": "Total out-of-sync resources across the applications in $namespace.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(paprika_out_of_sync{namespace=~\"$namespace\"})",
+          "legendFormat": "out of sync"
+        }
+      ],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0}
+    },
+    {
+      "title": "Fleet Index Degraded",
+      "description": "1 when the installed fleet index health is degraded. Absent on components that do not hold a fleet index.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "max(paprika_fleet_index_degraded)",
+          "legendFormat": "degraded"
+        }
+      ],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0}
+    },
+    {
       "title": "Reconcile Rate",
       "type": "stat",
       "targets": [
@@ -14,7 +92,7 @@
           "legendFormat": "{{ controller }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
     },
     {
       "title": "Reconcile Error Rate",
@@ -25,7 +103,7 @@
           "legendFormat": "{{ controller }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
     },
     {
       "title": "P95 Reconcile Latency",
@@ -36,29 +114,31 @@
           "legendFormat": "{{ controller }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12}
     },
     {
-      "title": "Application Phases",
+      "title": "Application Phase Transitions",
+      "description": "Transitions into each phase per $__rate_interval window. These are counters of transitions, not the current phase of any application; there is no current-phase gauge.",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(paprika_application_phase_total) by (phase)",
+          "expr": "sum by (phase) (increase(paprika_application_phase_total{namespace=~\"$namespace\"}[$__rate_interval]))",
           "legendFormat": "{{ phase }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20}
     },
     {
-      "title": "Release Phases",
+      "title": "Release Phase Transitions",
+      "description": "Transitions into each phase per $__rate_interval window. These are counters of transitions, not the current phase of any release; there is no current-phase gauge.",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(paprika_release_phase_total) by (phase)",
+          "expr": "sum by (phase) (increase(paprika_release_phase_total{namespace=~\"$namespace\"}[$__rate_interval]))",
           "legendFormat": "{{ phase }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20}
     }
   ],
   "schemaVersion": 36,
