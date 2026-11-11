@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "namespace-capacity",
+  "title": "Namespace capacity",
+  "description": "CPU, memory and throttling for the containers of one namespace, from the kubelet cAdvisor metrics container_cpu_usage_seconds_total, container_memory_working_set_bytes, container_cpu_cfs_throttled_periods_total and container_cpu_cfs_periods_total, which carry namespace, pod and container labels. Choose the namespace variable after importing.",
+  "timeRange": "6h",
+  "refreshInterval": 60,
+  "variables": [
+    { "name": "namespace", "label": "Namespace", "defaultValue": "default" }
+  ],
+  "widgets": [
+    {
+      "id": "pods",
+      "title": "Pods reporting",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "count(count by (pod) (container_memory_working_set_bytes{namespace={{namespace}},container!=\"\",container!=\"POD\"}))",
+      "unit": "",
+      "options": {
+        "decimals": 0,
+        "showSparkline": true
+      },
+      "layout": { "x": 0, "y": 0, "w": 6, "h": 2 }
+    },
+    {
+      "id": "cpu-throttled",
+      "title": "CPU periods throttled",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "100 * sum(rate(container_cpu_cfs_throttled_periods_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m])) / sum(rate(container_cpu_cfs_periods_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m]))",
+      "unit": "%",
+      "description": "Share of CPU scheduling periods in which containers hit their limit. Sustained throttling means limits are below what the workload needs.",
+      "options": {
+        "decimals": 1,
+        "showSparkline": true
+      },
+      "layout": { "x": 6, "y": 0, "w": 6, "h": 2 }
+    },
+    {
+      "id": "cpu-by-pod",
+      "title": "CPU use by pod",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m]))",
+      "unit": "cores",
+      "options": {
+        "min": 0,
+        "decimals": 2
+      },
+      "layout": { "x": 0, "y": 2, "w": 6, "h": 4 }
+    },
+    {
+      "id": "memory-by-pod",
+      "title": "Memory by pod",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "sum by (pod) (container_memory_working_set_bytes{namespace={{namespace}},container!=\"\",container!=\"POD\"})",
+      "unit": "B",
+      "options": {
+        "min": 0,
+        "decimals": 1
+      },
+      "layout": { "x": 6, "y": 2, "w": 6, "h": 4 }
+    }
+  ]
+}

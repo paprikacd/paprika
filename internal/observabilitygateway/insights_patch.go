@@ -17,6 +17,8 @@ const (
 	insightsSavedQueryPatchBytes = 32 << 10
 	insightsPatchDepth           = 32
 	insightsWidgetEditLimit      = 48
+	// insightsGridColumns is the dashboard grid width the canvas draws.
+	insightsGridColumns = 12
 )
 
 type insightsPatchArgs struct {
@@ -33,6 +35,23 @@ type insightsWidgetEdit struct {
 	ID     string          `json:"id,omitempty"`
 	Patch  json.RawMessage `json:"patch,omitempty"`
 	Widget json.RawMessage `json:"widget,omitempty"`
+}
+
+// insightsGrid is a widget's rectangle on the dashboard grid.
+type insightsGrid struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
+}
+
+// insightsPlacement reports where a widget_edits add landed. Requested is set only
+// when the requested rectangle overlapped a widget, so the widget moved to the first
+// free slot of its size; otherwise the widget keeps the layout it asked for.
+type insightsPlacement struct {
+	ID        string        `json:"id"`
+	Layout    insightsGrid  `json:"layout"`
+	Requested *insightsGrid `json:"requested,omitempty"`
 }
 
 func decodeInsightsPatchArgs(raw json.RawMessage) (*insightsPatchArgs, error) {
@@ -105,12 +124,21 @@ func (c *InsightsAuthoringClient) patch(ctx context.Context, collection string, 
 	if current.ETag != args.ETag {
 		return nil, connect.NewError(connect.CodeAborted, errors.New("document has changed; get the latest document and ETag before retrying"))
 	}
-	document, err := applyInsightsPatch(current.Document, collection, args)
+	document, placements, err := applyInsightsPatch(current.Document, collection, args)
 	if err != nil {
 		return nil, err
 	}
 	putAudits = true
-	return c.put(ctx, collection, insightsAuthoringArgs{Document: document, ETag: args.ETag}, false)
+	result, err = c.put(ctx, collection, insightsAuthoringArgs{Document: document, ETag: args.ETag}, false)
+	return withInsightsPlacements(result, placements), err
+}
+
+// withInsightsPlacements attaches the add placements to a written document's result.
+func withInsightsPlacements(result *insightsDocumentResult, placements []insightsPlacement) *insightsDocumentResult {
+	if result != nil {
+		result.Placements = placements
+	}
+	return result
 }
 
 func validateInsightsPatchTarget(collection, id string) error {
@@ -215,28 +243,29 @@ func validateInsightsWidgetAddition(edit *insightsWidgetEdit) (string, error) {
 	return id, nil
 }
 
-func applyInsightsPatch(current json.RawMessage, collection string, args *insightsPatchArgs) (json.RawMessage, error) {
+func applyInsightsPatch(current json.RawMessage, collection string, args *insightsPatchArgs) (json.RawMessage, []insightsPlacement, error) {
 	document := bytes.Clone(current)
+	var placements []insightsPlacement
 	var err error
 	if len(args.Patch) != 0 {
 		document, err = mergeInsightsObject(document, args.Patch)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if len(args.WidgetEdits) != 0 {
-		document, err = editInsightsWidgets(document, args.WidgetEdits)
+		document, placements, err = editInsightsWidgets(document, args.WidgetEdits)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if len(document) > insightsPatchByteLimit(collection) || validateInsightsPatchJSON(document) != nil {
-		return nil, invalidInsightsPatch("patched document exceeds its size or nesting limit")
+		return nil, nil, invalidInsightsPatch("patched document exceeds its size or nesting limit")
 	}
 	if sameInsightsJSON(current, document) {
-		return nil, invalidInsightsPatch("patch must change the document")
+		return nil, nil, invalidInsightsPatch("patch must change the document")
 	}
-	return document, nil
+	return document, placements, nil
 }
 
 // RawMessage preserves numeric literals in untouched plugin configuration.
@@ -273,26 +302,28 @@ func mergeInsightsObject(current, patch json.RawMessage) (json.RawMessage, error
 	return raw, nil
 }
 
-func editInsightsWidgets(document json.RawMessage, edits []insightsWidgetEdit) (json.RawMessage, error) {
+func editInsightsWidgets(document json.RawMessage, edits []insightsWidgetEdit) (json.RawMessage, []insightsPlacement, error) {
 	fields, err := insightsPatchObject(document)
 	if err != nil {
-		return nil, invalidInsightsPatch("invalid dashboard document")
+		return nil, nil, invalidInsightsPatch("invalid dashboard document")
 	}
 	var widgets []json.RawMessage
 	if json.Unmarshal(fields["widgets"], &widgets) != nil || widgets == nil {
-		return nil, invalidInsightsPatch("dashboard widgets must be an array")
+		return nil, nil, invalidInsightsPatch("dashboard widgets must be an array")
 	}
 	indices, err := insightsWidgetIndices(widgets)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	var placements []insightsPlacement
 	for i := range edits {
-		widgets, err = applyInsightsWidgetEdit(widgets, indices, &edits[i])
+		widgets, err = applyInsightsWidgetEdit(widgets, indices, &edits[i], &placements)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return encodeInsightsWidgets(fields, widgets)
+	encoded, err := encodeInsightsWidgets(fields, widgets)
+	return encoded, placements, err
 }
 
 func insightsWidgetIndices(widgets []json.RawMessage) (map[string]int, error) {
@@ -309,7 +340,7 @@ func insightsWidgetIndices(widgets []json.RawMessage) (map[string]int, error) {
 	return indices, nil
 }
 
-func applyInsightsWidgetEdit(widgets []json.RawMessage, indices map[string]int, edit *insightsWidgetEdit) ([]json.RawMessage, error) {
+func applyInsightsWidgetEdit(widgets []json.RawMessage, indices map[string]int, edit *insightsWidgetEdit, placements *[]insightsPlacement) ([]json.RawMessage, error) {
 	id, err := validateInsightsWidgetEdit(edit)
 	if err != nil {
 		return nil, err
@@ -319,7 +350,11 @@ func applyInsightsWidgetEdit(widgets []json.RawMessage, indices map[string]int, 
 		if exists {
 			return nil, invalidInsightsPatch("cannot add a widget whose id already exists")
 		}
-		return append(widgets, bytes.Clone(edit.Widget)), nil
+		widget, placement := placeInsightsAddition(widgets, id, edit.Widget)
+		if placement != nil {
+			*placements = append(*placements, *placement)
+		}
+		return append(widgets, widget), nil
 	}
 	if !exists {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("widget edit target was not found"))
@@ -333,6 +368,117 @@ func applyInsightsWidgetEdit(widgets []json.RawMessage, indices map[string]int, 
 		return nil, err
 	}
 	return widgets, nil
+}
+
+// placeInsightsAddition returns the widget an add appends. A widget whose requested
+// rectangle is free keeps it. One that overlaps a stored widget moves to the first
+// free slot of its size, scanning rows top to bottom and columns left to right, so
+// a gap a widget left is filled before the grid grows. A widget whose layout cannot
+// be read is returned unchanged for the save to reject, and reports no placement.
+func placeInsightsAddition(widgets []json.RawMessage, id string, widget json.RawMessage) (json.RawMessage, *insightsPlacement) {
+	want, ok := insightsWidgetGrid(widget)
+	if !ok {
+		return bytes.Clone(widget), nil
+	}
+	occupied := make([]insightsGrid, 0, len(widgets))
+	for _, stored := range widgets {
+		if box, found := insightsWidgetGrid(stored); found {
+			occupied = append(occupied, box)
+		}
+	}
+	if !overlapsInsightsGrid(occupied, want) {
+		return bytes.Clone(widget), &insightsPlacement{ID: id, Layout: want}
+	}
+	placed := firstFreeInsightsSlot(occupied, want)
+	moved, ok := insightsWidgetAt(widget, placed)
+	if !ok {
+		return bytes.Clone(widget), nil
+	}
+	requested := want
+	return moved, &insightsPlacement{ID: id, Layout: placed, Requested: &requested}
+}
+
+// insightsWidgetAt returns the widget with its layout x and y set to box's position.
+// Its size and every other member, including exact numeric literals, are kept.
+func insightsWidgetAt(widget json.RawMessage, box insightsGrid) (json.RawMessage, bool) {
+	fields, err := insightsPatchObject(widget)
+	if err != nil {
+		return nil, false
+	}
+	position, err := json.Marshal(map[string]int{"x": box.X, "y": box.Y})
+	if err != nil {
+		return nil, false
+	}
+	layout, err := mergeInsightsObject(fields["layout"], position)
+	if err != nil {
+		return nil, false
+	}
+	fields["layout"] = layout
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return nil, false
+	}
+	return raw, true
+}
+
+// firstFreeInsightsSlot returns the first rectangle of want's size that overlaps
+// none of occupied. The row below every widget is always free, so one is found.
+func firstFreeInsightsSlot(occupied []insightsGrid, want insightsGrid) insightsGrid {
+	bottom := 0
+	for _, box := range occupied {
+		bottom = max(bottom, box.Y+box.H)
+	}
+	for y := 0; y <= bottom; y++ {
+		for x := 0; x+want.W <= insightsGridColumns; x++ {
+			candidate := insightsGrid{X: x, Y: y, W: want.W, H: want.H}
+			if !overlapsInsightsGrid(occupied, candidate) {
+				return candidate
+			}
+		}
+	}
+	return insightsGrid{X: 0, Y: bottom, W: want.W, H: want.H}
+}
+
+// overlapsInsightsGrid reports whether a rectangle shares a cell with any of
+// occupied. Touching edges do not overlap, matching the save-time layout rule.
+func overlapsInsightsGrid(occupied []insightsGrid, box insightsGrid) bool {
+	for _, other := range occupied {
+		if other.X < box.X+box.W && box.X < other.X+other.W && other.Y < box.Y+box.H && box.Y < other.Y+other.H {
+			return true
+		}
+	}
+	return false
+}
+
+// insightsWidgetGrid reads a widget's layout. It reports false unless the layout
+// holds integers within the grid: x and y from zero, w and h from one, and the
+// widget inside the twelve columns.
+func insightsWidgetGrid(widget json.RawMessage) (insightsGrid, bool) {
+	var shape struct {
+		Layout *struct {
+			X *int `json:"x"`
+			Y *int `json:"y"`
+			W *int `json:"w"`
+			H *int `json:"h"`
+		} `json:"layout"`
+	}
+	if json.Unmarshal(widget, &shape) != nil || shape.Layout == nil {
+		return insightsGrid{}, false
+	}
+	return insightsGridWithin(shape.Layout.X, shape.Layout.Y, shape.Layout.W, shape.Layout.H)
+}
+
+// insightsGridWithin returns the rectangle when every member is present and the
+// rectangle lies inside the grid.
+func insightsGridWithin(x, y, w, h *int) (insightsGrid, bool) {
+	if x == nil || y == nil || w == nil || h == nil {
+		return insightsGrid{}, false
+	}
+	box := insightsGrid{X: *x, Y: *y, W: *w, H: *h}
+	if box.X < 0 || box.Y < 0 || box.W < 1 || box.H < 1 || box.X+box.W > insightsGridColumns {
+		return insightsGrid{}, false
+	}
+	return box, true
 }
 
 func encodeInsightsWidgets(fields map[string]json.RawMessage, widgets []json.RawMessage) (json.RawMessage, error) {

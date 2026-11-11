@@ -268,7 +268,7 @@ func TestInsightsPatchRejectsSizeAndEditBounds(t *testing.T) {
 	require.Error(t, validateInsightsPatchArgs("dashboards", &args))
 	for _, collection := range []string{"dashboards", "saved-queries"} {
 		current := json.RawMessage(`{"id":"demo","large":"` + strings.Repeat("x", insightsPatchByteLimit(collection)-30) + `"}`)
-		_, err := applyInsightsPatch(current, collection, &insightsPatchArgs{Patch: json.RawMessage(`{"new":"a much longer additional value"}`)})
+		_, _, err := applyInsightsPatch(current, collection, &insightsPatchArgs{Patch: json.RawMessage(`{"new":"a much longer additional value"}`)})
 		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	}
 }
@@ -358,4 +358,120 @@ func TestInsightsPatchRejectionNamesWidgetPointer(t *testing.T) {
 	require.Len(t, report.GetIssues(), 1)
 	require.Equal(t, "/widgets/0/layout/w", report.GetIssues()[0].GetPointer())
 	require.Equal(t, "rate", report.GetIssues()[0].GetWidgetId())
+}
+
+// placementDashboard is a dashboard whose grid has a gap: two full-width rows at
+// y 0 and y 4, with the rows from y 2 to y 4 free.
+const placementDashboard = `{"schemaVersion":1,"id":"grid","title":"Grid","timeRange":"1h","refreshInterval":0,"variables":[],"widgets":[` +
+	`{"id":"top","title":"Top","type":"timeseries","providerId":"metrics","query":"up","unit":"","layout":{"x":0,"y":0,"w":12,"h":2}},` +
+	`{"id":"bottom","title":"Bottom","type":"timeseries","providerId":"metrics","query":"up","unit":"","layout":{"x":0,"y":4,"w":12,"h":2}}]}`
+
+// widgetLayout reads a widget's grid rectangle from a saved document.
+func widgetLayout(t *testing.T, document json.RawMessage, id string) insightsGrid {
+	t.Helper()
+	var saved struct {
+		Widgets []struct {
+			ID     string       `json:"id"`
+			Layout insightsGrid `json:"layout"`
+		} `json:"widgets"`
+	}
+	require.NoError(t, json.Unmarshal(document, &saved))
+	for _, widget := range saved.Widgets {
+		if widget.ID == id {
+			return widget.Layout
+		}
+	}
+	require.Failf(t, "widget missing", "no widget %q in the saved document", id)
+	return insightsGrid{}
+}
+
+func addWidget(id string, layout string) string {
+	return `{"op":"add","widget":{"id":"` + id + `","title":"` + id + `","type":"stat","providerId":"metrics","query":"up","unit":"","layout":` + layout + `}}`
+}
+
+func TestInsightsPatchAddKeepsARequestedLayoutThatIsFree(t *testing.T) {
+	h := newInsightsPatchHarness(t)
+	initial := h.seed(t, "dashboards", placementDashboard)
+	args := patchArgs(t, "grid", initial.ETag, `"widget_edits":[`+addWidget("side", `{"x":0,"y":2,"w":6,"h":2}`)+`]`)
+	result, err := h.c.patch(patchEditor(t), "dashboards", args)
+	require.NoError(t, err)
+	require.Equal(t, insightsGrid{X: 0, Y: 2, W: 6, H: 2}, widgetLayout(t, result.Document, "side"))
+	require.Len(t, result.Placements, 1)
+	require.Equal(t, "side", result.Placements[0].ID)
+	require.Equal(t, insightsGrid{X: 0, Y: 2, W: 6, H: 2}, result.Placements[0].Layout)
+	require.Nil(t, result.Placements[0].Requested, "a free request is not reported as moved")
+}
+
+func TestInsightsPatchAddMovesAnOverlappingWidgetToTheFirstFreeSlot(t *testing.T) {
+	h := newInsightsPatchHarness(t)
+	initial := h.seed(t, "dashboards", placementDashboard)
+	// The request overlaps "top", so the first free two-row slot is in the gap at y 2.
+	args := patchArgs(t, "grid", initial.ETag, `"widget_edits":[`+addWidget("gap", `{"x":0,"y":0,"w":6,"h":2}`)+`]`)
+	result, err := h.c.patch(patchEditor(t), "dashboards", args)
+	require.NoError(t, err)
+	require.Equal(t, insightsGrid{X: 0, Y: 2, W: 6, H: 2}, widgetLayout(t, result.Document, "gap"))
+	require.Len(t, result.Placements, 1)
+	require.Equal(t, insightsGrid{X: 0, Y: 2, W: 6, H: 2}, result.Placements[0].Layout)
+	require.NotNil(t, result.Placements[0].Requested)
+	require.Equal(t, insightsGrid{X: 0, Y: 0, W: 6, H: 2}, *result.Placements[0].Requested)
+	// The saved grid passes the overlap rule: the save would have been refused otherwise.
+	findings := insights.CheckDocument(result.Document)
+	for _, finding := range findings {
+		require.NotEqual(t, insightsv1.Severity_SEVERITY_ERROR, finding.GetSeverity(), finding.GetRuleId())
+	}
+}
+
+func TestInsightsPatchBatchPlacesEachAddAgainstTheWidgetsBeforeIt(t *testing.T) {
+	h := newInsightsPatchHarness(t)
+	initial := h.seed(t, "dashboards", placementDashboard)
+	edits := addWidget("half", `{"x":0,"y":0,"w":6,"h":2}`) + "," + addWidget("full", `{"x":0,"y":0,"w":12,"h":2}`)
+	result, err := h.c.patch(patchEditor(t), "dashboards", patchArgs(t, "grid", initial.ETag, `"widget_edits":[`+edits+`]`))
+	require.NoError(t, err)
+	require.Equal(t, insightsGrid{X: 0, Y: 2, W: 6, H: 2}, widgetLayout(t, result.Document, "half"))
+	// Once "half" fills the gap, the full-width widget cannot fit beside it or in the gap, so it lands below the grid.
+	require.Equal(t, insightsGrid{X: 0, Y: 6, W: 12, H: 2}, widgetLayout(t, result.Document, "full"))
+	require.Equal(t, []string{"half", "full"}, placementIDs(result.Placements))
+	require.Equal(t, insightsGrid{X: 0, Y: 6, W: 12, H: 2}, result.Placements[1].Layout)
+}
+
+func TestInsightsPatchRemovedWidgetFreesItsSlotForAnAddInTheSameBatch(t *testing.T) {
+	h := newInsightsPatchHarness(t)
+	initial := h.seed(t, "dashboards", placementDashboard)
+	edits := `{"op":"remove","id":"top"},` + addWidget("replacement", `{"x":0,"y":0,"w":12,"h":2}`)
+	result, err := h.c.patch(patchEditor(t), "dashboards", patchArgs(t, "grid", initial.ETag, `"widget_edits":[`+edits+`]`))
+	require.NoError(t, err)
+	require.Equal(t, insightsGrid{X: 0, Y: 0, W: 12, H: 2}, widgetLayout(t, result.Document, "replacement"))
+	require.Nil(t, result.Placements[0].Requested)
+}
+
+func TestPlaceInsightsAdditionOnlyReportsReadableLayouts(t *testing.T) {
+	stored := []json.RawMessage{json.RawMessage(`{"id":"a","layout":{"x":0,"y":0,"w":12,"h":2}}`)}
+	// A layout that cannot be read is left for the save to reject: no move, no placement.
+	widget := json.RawMessage(`{"id":"b","layout":{"x":0,"y":0,"w":12}}`)
+	placed, placement := placeInsightsAddition(stored, "b", widget)
+	require.Equal(t, widget, placed)
+	require.Nil(t, placement)
+	// A layout that runs past the twelfth column is likewise not moved.
+	widget = json.RawMessage(`{"id":"c","layout":{"x":6,"y":5,"w":8,"h":2}}`)
+	placed, placement = placeInsightsAddition(stored, "c", widget)
+	require.Equal(t, widget, placed)
+	require.Nil(t, placement)
+}
+
+func TestInsightsPatchFirstFreeSlotPreservesTheWidgetsOtherMembers(t *testing.T) {
+	stored := []json.RawMessage{json.RawMessage(`{"id":"a","layout":{"x":0,"y":0,"w":12,"h":2}}`)}
+	widget := json.RawMessage(`{"id":"b","title":"Exact 1.50 literal","options":{"decimals":1.50},"layout":{"x":0,"y":0,"w":4,"h":3,"extra":true}}`)
+	placed, placement := placeInsightsAddition(stored, "b", widget)
+	require.NotNil(t, placement)
+	require.Equal(t, insightsGrid{X: 0, Y: 2, W: 4, H: 3}, placement.Layout)
+	require.JSONEq(t, `{"id":"b","title":"Exact 1.50 literal","options":{"decimals":1.50},"layout":{"x":0,"y":2,"w":4,"h":3,"extra":true}}`, string(placed))
+	require.Contains(t, string(placed), `"decimals":1.50`, "untouched numeric literals keep their spelling")
+}
+
+func placementIDs(placements []insightsPlacement) []string {
+	ids := make([]string, 0, len(placements))
+	for _, placement := range placements {
+		ids = append(ids, placement.ID)
+	}
+	return ids
 }

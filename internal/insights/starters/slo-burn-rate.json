@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "slo-burn-rate",
+  "title": "SLO and burn rate",
+  "description": "Error budget for a 99.9% availability objective over 30 days, with fast burn read over 1 and 6 hours. Assumes the common client-library metric http_requests_total, with service and namespace labels and a code label holding the HTTP status; a 5xx code is a failed request. To use another objective, change the 0.001 error allowance in every query. Choose the service and namespace variables after importing.",
+  "timeRange": "6h",
+  "refreshInterval": 60,
+  "variables": [
+    { "name": "service", "label": "Service", "defaultValue": "" },
+    { "name": "namespace", "label": "Namespace", "defaultValue": "default" }
+  ],
+  "widgets": [
+    {
+      "id": "budget-remaining",
+      "title": "Error budget remaining",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "100 * (1 - (1 - sum(increase(http_requests_total{service={{service}},namespace={{namespace}},code!~\"5..\"}[30d])) / sum(increase(http_requests_total{service={{service}},namespace={{namespace}}}[30d]))) / 0.001)",
+      "unit": "%",
+      "description": "Share of the 30-day error budget still unused. A full bar means no failed requests so far; an empty bar means the budget is spent.",
+      "options": {
+        "decimals": 1,
+        "showStatBar": true,
+        "min": 0,
+        "max": 100,
+        "thresholds": [
+          { "value": 0, "status": "critical" },
+          { "value": 25, "status": "warning" },
+          { "value": 50, "status": "ok" }
+        ]
+      },
+      "layout": { "x": 0, "y": 0, "w": 4, "h": 3 }
+    },
+    {
+      "id": "burn-1h",
+      "title": "Burn rate, 1 hour",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "(sum(rate(http_requests_total{service={{service}},namespace={{namespace}},code=~\"5..\"}[1h])) / sum(rate(http_requests_total{service={{service}},namespace={{namespace}}}[1h]))) / 0.001",
+      "unit": "x",
+      "options": {
+        "decimals": 1,
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 2, "status": "warning" },
+          { "value": 14.4, "status": "critical" }
+        ]
+      },
+      "layout": { "x": 4, "y": 0, "w": 4, "h": 3 }
+    },
+    {
+      "id": "burn-6h",
+      "title": "Burn rate, 6 hours",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "(sum(rate(http_requests_total{service={{service}},namespace={{namespace}},code=~\"5..\"}[6h])) / sum(rate(http_requests_total{service={{service}},namespace={{namespace}}}[6h]))) / 0.001",
+      "unit": "x",
+      "options": {
+        "decimals": 1,
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 2, "status": "warning" },
+          { "value": 14.4, "status": "critical" }
+        ]
+      },
+      "layout": { "x": 8, "y": 0, "w": 4, "h": 3 }
+    },
+    {
+      "id": "burn-rate",
+      "title": "Burn rate by window",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace((sum(rate(http_requests_total{service={{service}},namespace={{namespace}},code=~\"5..\"}[1h])) / sum(rate(http_requests_total{service={{service}},namespace={{namespace}}}[1h]))) / 0.001, \"window\", \"1h\", \"\", \"\") or label_replace((sum(rate(http_requests_total{service={{service}},namespace={{namespace}},code=~\"5..\"}[6h])) / sum(rate(http_requests_total{service={{service}},namespace={{namespace}}}[6h]))) / 0.001, \"window\", \"6h\", \"\", \"\")",
+      "unit": "x",
+      "description": "Burn rate over 1 and 6 hours, where 1x spends the budget exactly over 30 days. Shading starts at 2x (warning) and 14.4x (critical): at 14.4x the whole 30-day budget is gone in about two days.",
+      "options": {
+        "min": 0,
+        "decimals": 1,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 2, "status": "warning", "label": "2x" },
+          { "value": 14.4, "status": "critical", "label": "14.4x" }
+        ]
+      },
+      "layout": { "x": 0, "y": 3, "w": 12, "h": 5 }
+    }
+  ]
+}

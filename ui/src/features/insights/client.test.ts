@@ -573,3 +573,52 @@ describe("dashboard checks over the wire", () => {
     expect(result.checks?.warningCount).toBe(1)
   })
 })
+
+describe("starter HTTP contracts", () => {
+  const starter = {
+    id: "service-overview",
+    title: "Service overview",
+    description: "The RED signals.",
+    widgetCount: 1,
+    variables: ["service"],
+    providers: ["metrics"],
+    tiles: [{ type: "timeseries", x: 0, y: 0, w: 12, h: 4 }],
+  };
+  const bundle = {
+    kind: "PaprikaDashboardLibrary",
+    schemaVersion: 1,
+    dashboards: [{ ...dashboard, id: "service-overview", title: "Service overview", widgets: [{ id: "rate", title: "Rate", type: "timeseries", providerId: "metrics-provider-id", query: "up", unit: "", layout: { x: 0, y: 0, w: 12, h: 4 } }] }],
+  };
+
+  it("lists starters through the authenticated read path", async () => {
+    const fetcher = mockFetch(response({ starters: [starter] }, 200, { ETag: '"s1"' }));
+    const list = await createInsightsClient().listStarters!();
+    expect(list).toEqual([starter]);
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/starters");
+    expect(fetcher.mock.calls[0][1].method).toBeUndefined();
+  });
+
+  it("reads one starter as a portable bundle that the import review parses", async () => {
+    const fetcher = mockFetch(response(bundle, 200, { ETag: '"b1"' }));
+    const value = await createInsightsClient().getStarter!("service-overview");
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/starters/service-overview");
+    expect(value.dashboards.map((document) => document.id)).toEqual(["service-overview"]);
+    expect(value.savedQueries).toBeUndefined();
+  });
+
+  it("encodes the starter id in the path", async () => {
+    const fetcher = mockFetch(response(bundle));
+    await createInsightsClient().getStarter!("a/b");
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/starters/a%2Fb");
+  });
+
+  it("surfaces a missing starter with the server's message", async () => {
+    mockFetch(response({ error: "starter not found" }, 404));
+    await expect(createInsightsClient().getStarter!("missing")).rejects.toMatchObject({ status: 404, message: "starter not found" });
+  });
+
+  it("rejects a bundle that the dashboard schema does not accept", async () => {
+    mockFetch(response({ kind: "PaprikaDashboardLibrary", schemaVersion: 1, dashboards: [{ ...dashboard, id: "BAD ID" }] }));
+    await expect(createInsightsClient().getStarter!("service-overview")).rejects.toThrow();
+  });
+});
