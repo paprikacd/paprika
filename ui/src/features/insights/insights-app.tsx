@@ -290,7 +290,7 @@ export default function InsightsApp({
     })
     return () => controller.abort()
   }, [libraryClient, mode, libraryRevision])
-  const { current: currentRoute, apply: applyView, reflect: reflectView } = useDashboardView(dashboard.id)
+  const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id)
   const [returnTo, setReturnTo] = useState<{ state: DashboardNavigation; title: string } | null>(null)
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
   const [editing, setEditing] = useState(false)
@@ -507,10 +507,17 @@ export default function InsightsApp({
     setSources({ status: "ready" })
     setSourceRequest(null)
     setMode("example")
-    applyView(state, error ? "keep" : "load", true)
-    setError(error)
+    let viewError = error
+    try {
+      applyView(state, error ? "keep" : "load", true)
+    } catch (cause) {
+      // A link that parses but cannot be written back keeps its value on screen, and the address keeps the link.
+      showView(state)
+      viewError = cause instanceof Error ? cause.message : "Invalid dashboard link"
+    }
+    setError(viewError)
     setExampleStarting(false)
-  }, [reset, applyView])
+  }, [reset, applyView, showView])
 
   useEffect(() => {
     if (initialExample) {

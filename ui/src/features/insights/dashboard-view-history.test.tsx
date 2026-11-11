@@ -22,7 +22,7 @@ vi.mock("./canvas", () => ({
     const widget = dashboard.widgets[0]
     const link = widget?.drilldowns?.[0]
     return <div>
-      {link && onDrilldown && <button onClick={() => onDrilldown(link, { labels: { service: "api" }, value: 1, series: "api" })}>Follow signal</button>}
+      {link && onDrilldown && <button onClick={() => onDrilldown(link, { labels: { service: followLabel }, value: 1, series: "api" })}>Follow signal</button>}
       {widget?.selectionBindings?.length && onSelection && <button onClick={() => onSelection(widget, { labels: { env: "staging" } })}>Select staging</button>}
       {onTimeRange && <button onClick={() => onTimeRange({ start: Date.parse(RANGE.from), end: Date.parse(RANGE.to) })}>Brush window</button>}
     </div>
@@ -30,6 +30,8 @@ vi.mock("./canvas", () => ({
 }))
 
 const RANGE = { from: "2026-01-01T00:00:00.000Z", to: "2026-01-01T01:00:00.000Z" }
+// The signal label a drilldown carries into the target's variable.
+let followLabel = "api"
 const binding: DrilldownBinding = { variable: "env", source: "label", value: "env" }
 const source: Dashboard = {
   schemaVersion: 1, id: "source", title: "Source", timeRange: "1h", refreshInterval: 0, customTimeRange: RANGE,
@@ -182,6 +184,28 @@ describe("dashboard view history characterisation", () => {
     expect(entries).toEqual(DRILLDOWN_FLOW)
   })
 
+  it("keeps the current dashboard when a drilldown cannot be linked under a base path", async () => {
+    // The default path fits the address limit; the /paprika prefix does not. The check uses the real path.
+    followLabel = "€".repeat(892)
+    try {
+      setURL("/paprika/dashboard/insights/?dashboard=source")
+      render(<InsightsApp client={client()} />)
+      await screen.findByRole("heading", { name: "Source" })
+      record("load under base path")
+      fireEvent.click(screen.getByRole("button", { name: "Follow signal" }))
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("exceeds the 8192-character URL limit"))
+      record("drilldown under base path")
+    } finally {
+      followLabel = "api"
+    }
+
+    expect(screen.getByRole("heading", { name: "Source" })).toBeInTheDocument()
+    expect(entries.map(entry => [entry.step, entry.ops, entry.url])).toEqual([
+      ["load under base path", ["replace /paprika/dashboard/insights/?dashboard=source"], "/paprika/dashboard/insights/?dashboard=source"],
+      ["drilldown under base path", [], "/paprika/dashboard/insights/?dashboard=source"],
+    ])
+  })
+
   it("keeps a missing shared dashboard in the address bar and records no write", async () => {
     setURL("/dashboard/insights/?dashboard=missing")
     render(<InsightsApp client={client()} />)
@@ -225,6 +249,19 @@ describe("dashboard view history characterisation", () => {
     record("new dashboard")
 
     expect(entries).toEqual(VIEW_RESET_FLOW)
+  })
+
+  it("example mode keeps a shared link that cannot be rewritten on screen, leaves the address alone and reports why", async () => {
+    writeExampleWorkspace(localStorage, [source, target], source.id)
+    const link = `/dashboard/insights/?dashboard=target&vars=${encodeURIComponent(JSON.stringify({ service: "€".repeat(903) }))}&example=1`
+    setURL(link)
+    render(<InsightsApp client={client()} initialExample />)
+    await screen.findByRole("heading", { name: "Target" })
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("exceeds the 8192-character URL limit"))
+    expect(screen.getByLabelText("Service")).toHaveValue("€".repeat(903))
+    record("example long link")
+
+    expect(entries).toEqual([{ step: "example long link", ops: [], url: normalise(link), editing: false, dirty: false }])
   })
 
   it("example mode flags every view write, and the copied link carries the flag", async () => {

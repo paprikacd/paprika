@@ -180,6 +180,29 @@ describe("useDashboardView", () => {
     expect(result.current.current).toEqual({ dashboardId: "ops" })
   })
 
+  it("leaves the view unchanged when the address cannot be written", () => {
+    const replaceState = vi.spyOn(window.history, "replaceState")
+    const { result } = renderHook(() => useDashboardView("ops", false))
+    act(() => result.current.apply({ dashboardId: "ops" }, "reset", false))
+    const before = result.current.current
+    // Each value is valid on its own; the nine together exceed the address limit.
+    const tooLong: DashboardNavigation = {
+      dashboardId: "ops",
+      variables: Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`v${index}`, "x".repeat(1000)])),
+    }
+    expect(() => act(() => result.current.apply(tooLong, "variables", false))).toThrow("exceeds the 8192-character URL limit")
+    expect(result.current.current).toBe(before)
+    expect(replaceState).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows a view without writing the address", () => {
+    const replaceState = vi.spyOn(window.history, "replaceState")
+    const { result } = renderHook(() => useDashboardView("ops", false))
+    act(() => result.current.show({ dashboardId: "ops", variables: { env: "prod" } }))
+    expect(result.current.current).toEqual({ dashboardId: "ops", variables: { env: "prod" } })
+    expect(replaceState).not.toHaveBeenCalled()
+  })
+
   it("reflects an address for recovery without changing the current view", () => {
     const replaceState = vi.spyOn(window.history, "replaceState")
     const { result } = renderHook(() => useDashboardView("ops"))

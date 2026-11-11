@@ -76,9 +76,12 @@ export function useDashboardView(dashboardId: string) {
     reflect(state, action, example)
     setRoute(state)
   }, [reflect])
+  // Makes a view current without writing the address. Used when the address must keep the value it came from.
+  const show = useCallback((state: DashboardNavigation) => setRoute(state), [])
   return {
     current: route?.dashboardId === dashboardId ? route : undefined,
     apply,
     reflect,
+    show,
   }
 }
