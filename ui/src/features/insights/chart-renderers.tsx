@@ -55,6 +55,7 @@ import { StatusChip } from "./status-chip";
 import { widgetAttention, useWidgetAttentionContext } from "./widget-attention";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
+import { displaySeriesNames } from "./series-display";
 export { TimeSeriesChart, resolveTimeSeriesDomain } from "./time-series-chart";
 export { BarChart } from "./bar-chart";
 export { ChartDataInspector } from "./chart-data-inspector";
@@ -283,6 +284,8 @@ function MetricTable({
     widget.options?.decimals === undefined
       ? formatSharedScale(values, widget.unit)
       : values.map(value => formatMetric(value, widget.unit, false, widget.options?.decimals));
+  // Rows name themselves with the same compacted labels as the charts; the full identity stays in each row's title.
+  const displayNames = displaySeriesNames(series.slice(0, MAX_ROWS));
   const latestLabels = columnLabels(tableRows.map(row => row.latest?.value ?? NaN));
   const minLabels = columnLabels(tableRows.map(row => row.min));
   const maxLabels = columnLabels(tableRows.map(row => row.max));
@@ -310,10 +313,11 @@ function MetricTable({
         </thead>
         <tbody>
           {tableRows.map(({ entry, latest, min, max }, index) => {
-            const name = seriesName(entry, index);
+            const name = displayNames[index];
+            const fullName = seriesName(entry, index);
             return (
               <tr
-                key={`${name}-${index}`}
+                key={`${fullName}-${index}`}
                 onPointerEnter={(event) => {
                   if (
                     event.pointerType !== "touch" &&
@@ -351,7 +355,7 @@ function MetricTable({
               >
                 <td>
                   <ObservationDetails
-                    label={`Inspect series ${name}`}
+                    label={`Inspect series ${fullName}`}
                     enabled={widget.options?.showTooltip !== false}
                     revision={entry}
                     externalAnchor={
@@ -392,7 +396,7 @@ function MetricTable({
                       </>
                     }
                   >
-                    <span>{name}</span>
+                    <span title={fullName}>{name}</span>
                   </ObservationDetails>
                 </td>
                 <td className={styles.numeric}>

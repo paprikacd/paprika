@@ -85,3 +85,26 @@ describe("compact series names in chart components", () => {
     expect(legend).toHaveTextContent("up{instance");
   });
 });
+
+describe("compact series names in metric tables", () => {
+  const canonical = (labels: Record<string, string>) => `{${Object.keys(labels).sort().map(key => `${key}=${JSON.stringify(labels[key])}`).join(", ")}}`;
+  const applications = ["api-gateway", "catalog", "checkout"].map(application => {
+    const labels = { application, namespace: "prod" };
+    return { name: canonical(labels), labels, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: application === "catalog" ? 2 : 0 }] };
+  });
+
+  it("names rows with the chart's compacted labels and keeps the full identity in the row title", () => {
+    render(<WidgetVisualization widget={{ ...widget, type: "table", unit: "" }} result={{ series: applications }} />);
+    for (const application of ["api-gateway", "catalog", "checkout"]) {
+      const cell = screen.getByText(application);
+      expect(cell.tagName).toBe("SPAN");
+      expect(cell).toHaveAttribute("title", canonical({ application, namespace: "prod" }));
+    }
+    expect(screen.queryByText(/namespace=/)).toBeNull();
+  });
+
+  it("keeps the full series name in the inspect label of each row", () => {
+    render(<WidgetVisualization widget={{ ...widget, type: "table", unit: "" }} result={{ series: applications }} />);
+    expect(screen.getByRole("button", { name: `Inspect series ${canonical({ application: "catalog", namespace: "prod" })}` })).toBeInTheDocument();
+  });
+});
