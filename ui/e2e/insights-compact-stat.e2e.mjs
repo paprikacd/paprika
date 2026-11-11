@@ -48,6 +48,53 @@ try {
       assert.deepEqual({ showStatBar: edited.options.showStatBar, min: edited.options.min, max: edited.options.max }, { showStatBar: true, min: 10, max: 200 });
     } finally { await context.close(); }
   }
+  // Edit mode adds an affordance to every header. It must float over the header, so one-row and two-row
+  // readings keep their full card height and the header height is unchanged from view mode at 1512px.
+  {
+    const context = await browser.newContext({ viewport: { width: 1512, height: 900 } });
+    const page = await context.newPage();
+    await environment.installQueryFixture(page, () => ({ series: [{ name: "api", labels: { service: "api" }, points: [{ timestamp: Date.now() - 60000, value: 14 }, { timestamp: Date.now(), value: 42.34 }] }] }));
+    try {
+      await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" });
+      const ids = ["side", "background", "plain", "roomy"];
+      for (const id of ids) await page.locator(`[data-widget-id="${id}"] [data-metric-value="42.34"]`).waitFor();
+      const measure = () => page.evaluate(widgetIds => widgetIds.map(id => {
+        const card = document.querySelector(`[data-widget-id="${id}"]`);
+        const box = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+        const chip = card.querySelector("[data-widget-edit]");
+        return {
+          id,
+          card: box(card),
+          header: box(card.querySelector("[class*='tileHeader']")),
+          value: box(card.querySelector("[data-metric-value]")),
+          chip: chip ? box(chip) : null,
+        };
+      }), ids);
+      const viewMode = Object.fromEntries((await measure()).map(entry => [entry.id, entry]));
+      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
+      for (const id of ids) await page.locator(`[data-widget-id="${id}"] [data-widget-edit]`).waitFor();
+      const editMode = await measure();
+      const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      for (const entry of editMode) {
+        const { card, value, chip, header } = entry;
+        const label = JSON.stringify(entry);
+        assert.ok(chip, `${entry.id}: edit mode must offer the Edit affordance: ${label}`);
+        assert.ok(value.left >= card.left - 1 && value.right <= card.right + 1 && value.top >= card.top && value.bottom <= card.bottom + 1,
+          `${entry.id}: stat reading must stay inside its tile in edit mode: ${label}`);
+        assert.ok(!overlaps(chip, value), `${entry.id}: Edit affordance must not cover the reading: ${label}`);
+        assert.ok(Math.abs(header.bottom - header.top - (viewMode[entry.id].header.bottom - viewMode[entry.id].header.top)) < .5,
+          `${entry.id}: edit mode must not change the header height: ${label}`);
+      }
+      const chipFocus = page.locator('[data-widget-id="side"] [data-widget-edit]');
+      // Tab away and back gives keyboard modality, so :focus-visible matches the Edit affordance.
+      await chipFocus.focus();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      assert.equal(await chipFocus.evaluate(node => document.activeElement === node), true, "Edit affordance must be keyboard reachable");
+      assert.equal(await chipFocus.evaluate(node => node.matches(":focus-visible")), true, "Edit affordance must take keyboard focus");
+      assert.equal(await chipFocus.getAttribute("aria-label"), "Edit Ingress");
+    } finally { await context.close(); }
+  }
   for (const theme of ["light", "dark"]) for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     const context = await browser.newContext({ viewport, colorScheme: theme, reducedMotion: "reduce", ...(viewport.width < 600 ? { isMobile: true, hasTouch: true } : {}) });
     const page = await context.newPage();

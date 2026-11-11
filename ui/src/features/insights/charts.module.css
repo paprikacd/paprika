@@ -97,7 +97,7 @@
 .chartFooter > .barLegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); align-items: start; gap: 3px 12px; max-height: 98px; }
 .barLegend .legendItem { max-width: none; width: 100%; gap: 5px; }
 .barLegend .swatch { width: 8px; height: 8px; border-radius: 1px; }
-.barLegend:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+.barLegend:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: 2px; }
 /* The hatched key matches the 8px colour keys; "No data" is quieter than a latest value. */
 .barLegend .noDataKey { width: 8px; height: 8px; border-radius: 1px; }
 .barLegend .noDataValue { color: var(--widget-text, var(--gamma-muted, #52636f)); font-weight: 400; }
@@ -163,7 +163,7 @@
    inside a capped height. Escape closes it (see the disclosure's onKeyDown in chart-renderers.tsx). */
 .gapDetails { margin-left: auto; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted, #52636f)); }
 .gapDetails > summary { cursor: pointer; }
-.gapDetails > summary:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+.gapDetails > summary:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: 2px; }
 .gapDetails > ul {
   position: absolute;
   right: 0;
@@ -180,7 +180,7 @@
   background: var(--gamma-surface, #f5f7f7);
   box-shadow: var(--gamma-shadow-mid);
 }
-.gapDetails > ul:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: 2px; }
+.gapDetails > ul:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: 2px; }
 .limitNotice {
   flex: none;
   font-size: 11px;
@@ -664,7 +664,7 @@
   scrollbar-width: thin;
   padding: 4px 3px 3px;
 }
-.chartFooter[data-timeseries-footer]:focus-visible { outline: 2px solid var(--gamma-focus, #b65332); outline-offset: -2px; }
+.chartFooter[data-timeseries-footer]:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: -2px; }
 .chartFooter[data-timeseries-footer]:has(.priorLegend) .gapDetails > ul { position: static; width: 100%; }
 
 /* Short desktop panels share a row while retaining a separate scroll surface

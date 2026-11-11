@@ -365,7 +365,7 @@ const Tile = memo(function Tile({
             iconOnly
             size="sm"
             variant="quiet"
-            className={styles.iconButton}
+            className={`${styles.iconButton} ${styles.editChip}`}
             aria-label={`Edit ${widget.title}`}
             data-widget-edit={widget.id}
             onClick={() => onSelect(widget.id)}

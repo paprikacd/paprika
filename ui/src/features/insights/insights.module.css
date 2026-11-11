@@ -581,6 +581,7 @@
   padding: 12px 16px 4px;
   min-height: 38px;
   flex-shrink: 0;
+  position: relative;
 }
 .tileTitle {
   flex: 1;
@@ -609,6 +610,18 @@
 }
 .tileHeader > button {
   margin: -5px -7px 0 4px;
+}
+/* The edit affordance floats in the header's top-right corner and reserves
+   that strip, so entering edit mode never grows a header or pushes a reading
+   below its card. Stat readings keep their full height in every edit state. */
+.tile[data-widget-type] .tileHeader:has(> .editChip) { padding-right: 36px; }
+.tile .tileHeader > .editChip.editChip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  margin: 0;
+  background: var(--gamma-surface);
 }
 .dragHandle {
   color: var(--widget-text, var(--gamma-muted));
@@ -667,7 +680,6 @@
   .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) .dragHandle { grid-column: 1; grid-row: 1; }
   .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) .tileTitle { grid-column: 1 / -1; grid-row: 2; }
   .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) > button:not([aria-label^="Edit "]) { grid-column: 2; grid-row: 1; justify-self: end; margin: 0; }
-  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) > button[aria-label^="Edit "] { grid-column: 3; grid-row: 1; margin: 0; }
 }
 .canvas :global(.react-grid-item.react-grid-placeholder) {
   background: var(--gamma-surface-2);
@@ -1381,6 +1393,15 @@
 .tile[data-compact-stat="true"] .visualization {
   padding-block: 0;
 }
+/* The compact header is 27px tall, so its edit chip is 24px and sits inside that band. */
+.tile[data-compact-stat="true"] .tileHeader:has(> .editChip) { padding-right: 30px; }
+.tile[data-compact-stat="true"] .tileHeader > .editChip.editChip {
+  top: 2px;
+  right: 3px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+}
 @container insight-tile (max-width: 150px) {
   .statIcon { display: none; }
   .tile[data-stat-icon="true"] .tileHeader { padding-left: 7px; }
@@ -1458,6 +1479,11 @@
   .root[data-compact-shell] .tile[data-compact-stat="true"] .tileHeader {
     min-height: 23px;
     padding-top: 4px;
+  }
+  .root[data-compact-shell] .tile[data-compact-stat="true"] .tileHeader > .editChip.editChip {
+    top: 0;
+    height: 23px;
+    min-height: 23px;
   }
   .compactDescription { font-size: 10px; color: var(--gamma-muted); margin-top: 3px; }
   .compactDescription summary { cursor: pointer; width: fit-content; }
