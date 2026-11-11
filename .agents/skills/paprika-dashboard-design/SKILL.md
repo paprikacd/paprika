@@ -157,6 +157,18 @@ Record each gate as **pass**, **fail**, **unverified**, or **not applicable with
 
 Never average a failed gate into a high beauty score. Never claim runtime verification from a manifest, source scan, screenshot alone, or an unexecuted test command.
 
+## Status and colour vocabulary
+
+Use these terms exactly; the contracts are in `DESIGN.md` and `docs/design/insights/UX-CONTRACT.md`.
+
+- **Statuses:** `ok`, `info`, `warning`, `critical`, `unknown`. A threshold names a status, a hex colour, or both; a hex colour only overrides the hue of its band. Start a threshold list with an `ok` base band, since a reading below the first threshold takes its status.
+- **Status words never decorate.** A status word, glyph or frame appears only where an author-set threshold, status mapping or attention count sets it. Pair every status colour with a glyph and a word.
+- **Series roles:** `traffic`, `success`, `client-error`, `server-error`, `p50`, `p95`, `p99`. A series colour comes from an authored rule, then a well-known label, then the widget colour (single series), then a hashed slot.
+- **`seriesColorMode`:** `name` (default) keys colour to series identity; `index` keeps position-based slots.
+- **Hatching** marks missing data only. Status colour never uses it.
+
+Tool errors need different responses. An HTTP 429 on the transport means stop parallel calls, honour `Retry-After`, and retry later. A `resource_exhausted` tool error is a capacity or queue limit: wait any `RetryInfo` delay and retry serially. A message that a request exceeds its size limit will not succeed unchanged.
+
 ## Repair a live dashboard
 
 Before writing new queries for a dashboard whose data has drifted, use the tested repair
