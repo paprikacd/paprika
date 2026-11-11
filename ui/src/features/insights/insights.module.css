@@ -574,6 +574,15 @@
   border-color: var(--gamma-accent);
   box-shadow: var(--gamma-focus-ring);
 }
+/* A 3px inset rail on the left edge marks a warning or critical tile. The value stays in ink; the rail and the chip carry the status. */
+.tile[data-attention="warning"],
+.tile[data-attention="critical"] {
+  box-shadow: inset 3px 0 0 var(--attention-mark, var(--gamma-accent));
+}
+.tile[data-attention="warning"].selectedTile,
+.tile[data-attention="critical"].selectedTile {
+  box-shadow: inset 3px 0 0 var(--attention-mark, var(--gamma-accent)), var(--gamma-focus-ring);
+}
 .tileHeader {
   display: flex;
   align-items: flex-start;

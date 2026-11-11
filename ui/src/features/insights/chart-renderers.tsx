@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import { useTraceFetcher } from "./trace-waterfall";
 import { TraceDialog } from "./trace-dialog";
@@ -30,7 +31,7 @@ export {
 } from "./chart-data";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { TooltipSubWidget } from "./tooltip-widgets";
-import { StatSparkline } from "./stat-sparkline";
+import { StatSparkline, isSteadySeries } from "./stat-sparkline";
 import sparklineStyles from "./stat-sparkline.module.css";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { ObservationTooltip, ObservationDetails } from "./observation-tooltip";
@@ -48,7 +49,9 @@ import {
 } from "./widget-context";
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { EMPTY_OPTIONS, PALETTE, thresholdForValue, usePlotSize, type Point, type Series } from "./chart-renderer-shared";
-import { thresholdInk, thresholdPaint, thresholdText } from "./status";
+import { thresholdInk, thresholdPaint } from "./status";
+import { StatusChip, statusStrokeStyle } from "./status-chip";
+import { widgetAttention, useWidgetAttentionContext } from "./widget-attention";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
 export { TimeSeriesChart, resolveTimeSeriesDomain } from "./time-series-chart";
@@ -64,6 +67,14 @@ export {
 type Trace = NonNullable<QueryResult["traces"]>[number];
 
 const MAX_ROWS = 100;
+
+/** Heatmap cells take the critical frame only; warning cells keep their fill and label. */
+function critical(threshold: Threshold | undefined) {
+  return threshold?.status === "critical" ? "critical" : undefined;
+}
+function criticalStroke(threshold: Threshold | undefined): CSSProperties {
+  return critical(threshold) ? statusStrokeStyle(threshold) : {};
+}
 
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
   { value: 0, status: "critical", label: "Unhealthy" },
@@ -83,6 +94,10 @@ function Stat({
   const timeZone = useDashboardTimeZone();
   const sampleTime = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }), [timeZone]);
   const { rangeEnd } = useDashboardWindow();
+  // The tile evaluates its widget once and passes the verdict down. An embedded renderer shows another widget, so it evaluates its own.
+  const tileAttention = useWidgetAttentionContext();
+  const ownAttention = useMemo(() => widgetAttention(widget, { series }, undefined, rangeEnd), [widget, series, rangeEnd]);
+  const attention = !embedded && tileAttention ? tileAttention : ownAttention;
   const entries = series
     .map((entry, index) => ({
       entry,
@@ -102,14 +117,12 @@ function Stat({
     if (validTimestamp(point.timestamp) && (!latestObservation || point.timestamp >= latestObservation.timestamp)) latestObservation = point;
   }
   const latestMissing = latestObservation !== undefined && (typeof latestObservation.value !== "number" || !Number.isFinite(latestObservation.value));
-  const ageSeconds = rangeEnd !== undefined && Number.isFinite(rangeEnd)
-    ? Math.max(0, (rangeEnd - first.point.timestamp) / 1000)
-    : undefined;
-  const stale = ageSeconds !== undefined && widget.options?.staleAfterSeconds !== undefined && ageSeconds > widget.options.staleAfterSeconds;
-  const band = thresholdForValue(first.point.value, widget.options?.thresholds);
-  // The sparkline is a mark, so it takes the status mark; the reading is text, so it takes the text token.
-  const color = widgetTextColor(widget.options) ?? thresholdPaint(band) ?? widget.color;
-  const valueText = widgetTextColor(widget.options) ?? thresholdText(band) ?? widget.color;
+  const { ageSeconds, stale, band } = attention;
+  const thresholds = widget.options?.thresholds;
+  // Colour names the threshold's hue on the trend and the bar; the reading stays in ink (or an author's text colour).
+  const textColor = widgetTextColor(widget.options);
+  const color = textColor ?? thresholdPaint(band) ?? widget.color;
+  const steady = !!widget.options?.showSparkline && isSteadySeries(first.entry);
   const minimum = widget.options?.min, maximum = widget.options?.max;
   const showBar = widget.options?.showStatBar === true && minimum !== undefined && maximum !== undefined && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum < maximum;
   const boundedValue = showBar ? Math.max(minimum, Math.min(maximum, first.point.value)) : 0;
@@ -118,12 +131,19 @@ function Stat({
   const fraction = showBar ? Math.max(0, Math.min(1, Number.isFinite(span) ? (boundedValue - minimum) / span : (boundedValue / magnitude - minimum / magnitude) / (maximum / magnitude - minimum / magnitude))) : 0;
   // The reading may rescale its unit (ms to s, bytes to MiB), so the unit span shows the reading's unit, not the authored one.
   // Thresholds stay on their side of the rounded reading: 99.86 never reads 99.9 against a 99.9 threshold.
-  const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (widget.options?.thresholds ?? []).map(threshold => threshold.value) });
-  const barColor = thresholdPaint(thresholdForValue(first.point.value, widget.options?.thresholds)) ?? widget.color ?? "var(--gamma-chart-1)";
+  const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) });
+  const barColor = thresholdPaint(band) ?? widget.color ?? "var(--gamma-chart-1)";
+  // The status chip names a warning or critical band with its glyph and label. A colour-only band above the first one
+  // gets a dot and its label; the first band is the normal state and stays unlabelled.
+  const chip = band?.status === "warning" || band?.status === "critical"
+    ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
+    : band && band.status === undefined && band.color !== undefined && band !== thresholds?.[0]
+      ? <StatBandChip color={band.color} label={band.label?.trim() || `≥ ${formatMetric(band.value, widget.unit, false, widget.options?.decimals)}`} />
+      : null;
   return (
     <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
       {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid · latest missing</div>}
-      {stale && <div className={styles.staleObservation} role="status" data-stale-observation="">
+      {stale && ageSeconds !== undefined && <div className={styles.staleObservation} role="status" data-stale-observation="">
         Last valid sample: {Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`} before range end.
       </div>}
       <div
@@ -131,23 +151,29 @@ function Stat({
         data-stat-summary=""
         data-sparkline-placement={widget.options?.sparklinePlacement ?? "background"}
       >
+        {/* Anatomy, in order: reading and unit, status chip beside it, the latest valid sample's time, then the trend. */}
         <div className={sparklineStyles.value} data-stat-reading="">
-          {/* Plain text: the reading is never a trigger, highlight or details owner. The sparkline inspects recorded samples. */}
-          <span
-            className={styles.statValue}
-            data-metric-value={String(first.point.value)}
-            title={exactMetric(first.point.value, widget.unit)}
-            style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdText(band) : valueText }}
-          >
-            {statReading.value}
-            <span className={styles.statUnit}>{statReading.unit}</span>
-          </span>
+          <div className={styles.statFigure} data-stat-figure="">
+            {/* Plain text: the reading is never a trigger, highlight or details owner. The sparkline inspects recorded samples. */}
+            <span
+              className={styles.statValue}
+              data-metric-value={String(first.point.value)}
+              title={exactMetric(first.point.value, widget.unit)}
+              style={{ color: textColor }}
+            >
+              {statReading.value}
+              <span className={styles.statUnit}>{statReading.unit}</span>
+            </span>
+            {chip}
+          </div>
           <div className={styles.statMeta}>
             {entries.length > 1 ? `${first.name} · ` : ""}Latest valid sample ·{" "}
             <time dateTime={new Date(first.point.timestamp).toISOString()}>{sampleTime.format(new Date(first.point.timestamp))}</time>
           </div>
         </div>
-        {widget.options?.showSparkline && (
+        {widget.options?.showSparkline && (steady ? (
+          <span className={sparklineStyles.steady} data-stat-steady="" title="Every valid sample in this range has the same value.">Steady</span>
+        ) : (
           <StatSparkline widget={embedded ? undefined : widget}
             series={first.entry}
             name={first.name}
@@ -159,7 +185,7 @@ function Stat({
                 : undefined
             }
           />
-        )}
+        ))}
       </div>
       {showBar && <div className={styles.statBar} role="meter" aria-label={`${widget.title} value on configured scale`}
         aria-valuemin={minimum} aria-valuemax={maximum} aria-valuenow={boundedValue}
@@ -171,7 +197,7 @@ function Stat({
         <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
           <span>{entry.name}</span>
           <strong>
-            {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (widget.options?.thresholds ?? []).map(threshold => threshold.value) }))}
+            {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) }))}
           </strong>
         </div>
       ))}
@@ -181,6 +207,16 @@ function Stat({
         </span>
       )}
     </div>
+  );
+}
+
+/** A colour-only band's label: a dot in the band's hue, then the label. Non-interactive, like the status chip. */
+function StatBandChip({ color, label }: { color: string; label: string }) {
+  return (
+    <span className={styles.statBandChip} data-stat-chip="band">
+      <span className={styles.statBandDot} aria-hidden="true" style={{ background: color }} />
+      <span className={styles.statBandText}>{label}</span>
+    </span>
   );
 }
 
@@ -758,11 +794,14 @@ export function Heatmap({
                 role="img"
                 aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
                 className={`${configStyles.cell} ${hasText ? "" : configStyles.colorOnlyCell}`}
+                data-heatmap-cell=""
+                data-status-stroke={critical(threshold)}
                 style={{
                   background: thresholdPaint(threshold) ?? "#e6e9e0",
                   color:
                     options.textColor ??
                     (thresholdInk(threshold) ?? "#69725f"),
+                  ...criticalStroke(threshold),
                 }}
               >
                 {options.showLabels !== false && (
@@ -787,11 +826,14 @@ export function Heatmap({
               key={`${cell.name}-${index}`}
               type="button"
               className={`${configStyles.cell} ${hasText ? "" : configStyles.colorOnlyCell}`}
+              data-heatmap-cell=""
+              data-status-stroke={critical(threshold)}
               style={{
                 background: thresholdPaint(threshold) ?? "#e6e9e0",
                 color:
                   options.textColor ??
                   (thresholdInk(threshold) ?? "#69725f"),
+                ...criticalStroke(threshold),
               }}
               aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
               aria-describedby={

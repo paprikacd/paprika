@@ -134,14 +134,15 @@ describe("bounded chart data", () => {
     expect(screen.getByText("Provider response may be incomplete. Narrow the query or check the data source.")).toBeInTheDocument();
     expect(screen.getByText("0")).toBeInTheDocument();
   });
-  it("paints a status-banded stat reading with its text token, not its mark", () => {
+  it("keeps a status-banded stat reading in ink; the status chip carries the band", () => {
     const result = { series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 0 }] }] };
     const { container, rerender } = render(<WidgetVisualization widget={{ ...widget, type: "stat", options: { thresholds: [{ value: 0, status: "ok" }] } }} result={result} />);
-    // jsdom drops a var() without a fallback when computing styles, so assert the authored declaration.
-    expect(container.querySelector("[data-metric-value]")).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-ok-text)"));
-    // A hex override is text as authored.
+    // The reading takes no band colour; an ok band names nothing, so it shows no chip either.
+    expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
+    expect(container.querySelector("[data-stat-chip]")).toBeNull();
+    // A hex override tints the chip and the trend, never the reading: the reading stays in ink.
     rerender(<WidgetVisualization widget={{ ...widget, type: "stat", options: { thresholds: [{ value: 0, status: "ok", color: "#20cba3" }] } }} result={result} />);
-    expect(container.querySelector("[data-metric-value]")).toHaveStyle({ color: "#20cba3" });
+    expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
   });
   it("reports an incomplete empty records frame inside a registered renderer", () => {
     render(<TooltipWidgetDataProvider kind="records" result={{ records: { columns: [], rows: [], truncated: true } }}><EmptyState /></TooltipWidgetDataProvider>);

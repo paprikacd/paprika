@@ -289,6 +289,31 @@
   letter-spacing: 0;
   font-weight: 450;
 }
+/* Reading row: the value and unit, with the status chip beside them when a band is breached. The chip wraps
+   below only when the card is too narrow for both. */
+.statFigure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  min-width: 0;
+}
+.statFigure > .statValue { min-width: 0; max-width: 100%; }
+.statChip { min-width: 0; max-width: 100%; }
+/* A colour-only band: a dot in the band's hue and its label. Ink text, so the label stays readable on any tile. */
+.statBandChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--widget-text, var(--gamma-ink));
+}
+.statBandDot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.statBandText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
 .statMeta {
   font-size: 11px;
   line-height: 1.5;
@@ -520,6 +545,8 @@
   white-space: nowrap;
 }
 @container insight-widget (max-height: 40px) {
+  .statFigure { flex-wrap: nowrap; }
+  .statChip, .statBandChip { font-size: 10px; }
   .stat.stat { gap: 0; overflow: auto; }
   .stat.stat .statValue { font-size: clamp(16px, 8cqw, 21px); line-height: 1.1; }
   .stat.stat .statMeta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -542,6 +569,9 @@
   .stat[data-stat-bar-enabled="true"] > [data-stat-summary] { min-width: 0; }
   .statBar { margin: 0 8px 0 0; }
 }
+
+/* A critical heatmap cell takes the inset frame; the stroke colour comes from status-chip.tsx. */
+:global([data-heatmap-cell][data-status-stroke="critical"]) { box-shadow: var(--status-inset); }
 
 /* Inline-size containment preserves intrinsic height for narrow summary cards. */
 .visualization.intrinsicStat { height: auto; container-type: inline-size; }
