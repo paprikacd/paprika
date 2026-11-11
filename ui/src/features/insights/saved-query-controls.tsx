@@ -8,7 +8,7 @@ import { GammaSelect, type GammaSelectOption } from "./gamma/select";
 import { savedQueryOption } from "./saved-query-presentation";
 import { GammaInput } from "./gamma/input";
 import { GammaButton } from "./gamma/button";
-import styles from "./saved-query-controls.module.css";
+import styles from "./explorer.module.css";
 import { suggestParameterConnection, type ConnectionContext } from "./query-connections";
 import { GraphLabelPicker, SuggestedConnection } from "./query-connection-controls";
 
