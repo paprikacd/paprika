@@ -24,7 +24,7 @@ const (
 // staleness. Only these two types judge it, and only these two get a stale mark or
 // hatch in the UI, which is the source of truth:
 //   - stat: the Single value warns when its displayed sample is older than the
-//     threshold (ui/src/features/insights/chart-renderers.tsx, the stale flag).
+//     threshold (ui/src/features/insights/widget-attention.ts, the stat freshness fact).
 //   - timeseries: the stale tail after the newest latest-valid sample is hatched
 //     (ui/src/features/insights/time-series-chart.tsx, staleTail).
 //

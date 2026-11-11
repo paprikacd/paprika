@@ -45,7 +45,7 @@ func TestStaleJudgementSetMatchesTheUI(t *testing.T) {
 	}
 
 	for path, marker := range map[string]string{
-		"../../ui/src/features/insights/chart-renderers.tsx":   `widget.options?.staleAfterSeconds`,
+		"../../ui/src/features/insights/widget-attention.ts":   `const explicit = widget.options?.staleAfterSeconds`,
 		"../../ui/src/features/insights/time-series-chart.tsx": `options.staleAfterSeconds`,
 		"../../ui/src/features/insights/widget-editor.tsx":     `widget.type === "stat" || widget.type === "timeseries"`,
 	} {
