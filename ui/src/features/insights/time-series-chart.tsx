@@ -61,7 +61,7 @@ import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
 import { resolveSeriesColor } from "./series-colors";
-import { displaySeriesNames } from "./series-display";
+import { displaySeriesNames, fallbackIdentityTitle } from "./series-display";
 import { alignPriorPeriod, formatWindowDuration, minimumTimeWindow, normalizeTimeWindow, sameTimeWindow, seriesInWindow, timeWindowExtent, type ObservationWindow } from "./time-window";
 import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./chart-window-controls";
 import { TimeWindowLens } from "./time-window-lens";
@@ -182,7 +182,10 @@ export function TimeSeriesChart({
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
     !embedded && options.showTooltip !== false;
-  const displayLabels = useMemo(() => displaySeriesNames(visibleSeries.slice(0, MAX_SERIES), widget.title), [visibleSeries, widget.title]);
+  const displayLabels = useMemo(() => displaySeriesNames(visibleSeries.slice(0, MAX_SERIES)), [visibleSeries]);
+  // A lone generic series is identified by the widget's authored title; see fallbackIdentityTitle.
+  const identityTitle = useMemo(() => fallbackIdentityTitle(widget, visibleSeries), [widget, visibleSeries]);
+  const previousIdentityTitle = useMemo(() => fallbackIdentityTitle(widget, prior.map(entry => entry.original)), [widget, prior]);
   const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels);
   const domain = useMemo(
     () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options),
@@ -545,42 +548,52 @@ export function TimeSeriesChart({
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 ? 0 : undefined}>
-          {data.map((entry, index) => (
-            <span
-              className={styles.legendItem}
-              role="listitem"
-              key={`${entry.name}-${index}`}
-              title={options.showTooltip === false ? undefined : entry.name}
-            >
+          {data.map((entry, index) => {
+            // Deliberately not hidden for one series: DESIGN.md keeps identity footer rows, and this footer
+            // carries the latest reading and its aria labels. A lone generic series shows only its swatch and
+            // reading; the widget title is its accessible name, and the full identity stays in the title.
+            const titled = identityTitle !== undefined;
+            const reading = entry.latest
+              ? `${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
+              : undefined;
+            return (
               <span
-                className={styles.swatch}
-                aria-hidden="true"
-                style={{ background: entry.color }}
-              />
-              <span className={styles.legendName}>{displayLabels[index] === entry.name ? entry.name : <><span aria-hidden="true">{displayLabels[index]}</span><span className={styles.srOnly}>{entry.name}</span></>}</span>
-              <span
-                className={styles.legendValue}
-                title={options.showTooltip === false ? undefined : entry.latest
-                  ? `Latest valid sample · ${timestampFormat.format(new Date(entry.latest.timestamp))}`
-                  : "No valid sample"}
-                aria-label={entry.latest
-                  ? `${entry.name}, latest valid sample: ${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
-                  : `${entry.name}: no valid sample`}
-                data-legend-value={entry.latest?.value}
-                data-legend-timestamp={entry.latest?.timestamp}
+                className={styles.legendItem}
+                role="listitem"
+                key={`${entry.name}-${index}`}
+                title={options.showTooltip === false ? undefined : titled ? `${identityTitle} · ${entry.name}` : entry.name}
+                aria-label={titled ? (reading ? `${identityTitle}, latest valid sample: ${reading}` : `${identityTitle}: no valid sample`) : undefined}
               >
-                {entry.latest
-                  ? formatMetric(entry.latest.value, widget.unit, false, options.decimals)
-                  : "—"}
+                <span
+                  className={styles.swatch}
+                  aria-hidden="true"
+                  style={{ background: entry.color }}
+                />
+                {!titled && <span className={styles.legendName}>{displayLabels[index] === entry.name ? entry.name : <><span aria-hidden="true">{displayLabels[index]}</span><span className={styles.srOnly}>{entry.name}</span></>}</span>}
+                <span
+                  className={styles.legendValue}
+                  title={options.showTooltip === false ? undefined : entry.latest
+                    ? `Latest valid sample · ${timestampFormat.format(new Date(entry.latest.timestamp))}`
+                    : "No valid sample"}
+                  aria-label={titled ? undefined : entry.latest
+                    ? `${entry.name}, latest valid sample: ${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
+                    : `${entry.name}: no valid sample`}
+                  data-legend-value={entry.latest?.value}
+                  data-legend-timestamp={entry.latest?.timestamp}
+                >
+                  {entry.latest
+                    ? formatMetric(entry.latest.value, widget.unit, false, options.decimals)
+                    : "—"}
+                </span>
               </span>
-            </span>
-          ))}
+            );
+          })}
         </div>
       )}
       {previousData.length > 0 && zoom && <div className={styles.priorLegend} role="group" aria-label="Previous period overlay" tabIndex={0}>
         <span>Previous period · dashed · aligned to selected window</span>
         {previousData.map(entry => { const last = latestPoint(entry.original); const first = entry.original.points[0]; return <span key={entry.index} data-prior-series={entry.index} data-prior-original-first={first?.timestamp} data-prior-aligned-first={entry.points[0]?.timestamp} title={last ? `Previous sample: ${formatMetricDetails(last.value, widget.unit)} at ${new Date(last.timestamp).toISOString()}` : "No prior sample"}>
-          <i aria-hidden="true" style={{ borderColor: entry.color }} />{seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : "No data"}
+          <i aria-hidden="true" style={{ borderColor: entry.color }} />{previousIdentityTitle ?? seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : "No data"}
         </span> })}
         {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}

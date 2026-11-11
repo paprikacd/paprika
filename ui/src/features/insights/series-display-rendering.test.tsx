@@ -67,13 +67,21 @@ describe("compact series names in chart components", () => {
     expect(row).toHaveTextContent(first);
     expect(within(row).getByLabelText(new RegExp("latest valid sample"))).toHaveAttribute("data-legend-value", "2");
   });
-  it("names a lone generic series after the widget title and keeps the fallback as its full identity", () => {
+  it("identifies a lone generic series by the authored widget title without restating it as a visible name", () => {
     const lone: QueryResult = { series: [{ name: "Value", labels: {}, points: [{ timestamp: 1000, value: 1.61 }, { timestamp: 2000, value: 1.61 }] }] };
-    render(<WidgetVisualization widget={{ ...widget, title: "Error budget burn rate", type: "timeseries", options: { showLegend: true }, config: undefined }} result={lone} />);
+    render(<WidgetVisualization widget={{ ...widget, id: "error-history", title: "Error budget burn rate · 1h", type: "timeseries", options: { showLegend: true }, config: undefined }} result={lone} />);
     const legend = screen.getByRole("list", { name: "Latest values by series" });
-    // A listitem's accessible name is its title, so the full identity is "Value"; the visible label is the widget title.
-    const row = within(legend).getByRole("listitem", { name: "Value" });
-    expect(row.querySelector('span[aria-hidden="true"]:not([class])')).toHaveTextContent("Error budget burn rate");
-    expect(row).toHaveTextContent("Value");
+    const row = within(legend).getByRole("listitem", { name: /Error budget burn rate · 1h, latest valid sample/ });
+    expect(row).toHaveAttribute("title", "Error budget burn rate · 1h · Value");
+    expect(row).toHaveTextContent("1.61");
+    expect(legend.textContent).not.toMatch(/Value/);
+  });
+  it("keeps an explorer preview's selector as its visible identity", () => {
+    const selector = 'up{instance="api-1:9090", job="api"}';
+    const one: QueryResult = { series: [{ name: selector, labels: { __name__: "up", instance: "api-1:9090", job: "api" }, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 1 }] }] };
+    render(<WidgetVisualization widget={{ ...widget, id: "explore-preview", title: "Query results", type: "timeseries", options: { showLegend: true }, config: undefined }} result={one} />);
+    const legend = screen.getByRole("list", { name: "Latest values by series" });
+    expect(within(legend).getByRole("listitem")).toHaveAttribute("title", selector);
+    expect(legend).toHaveTextContent("up{instance");
   });
 });

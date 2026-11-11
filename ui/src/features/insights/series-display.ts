@@ -1,4 +1,5 @@
 import { seriesName, type Series } from "./chart-data";
+import type { Widget } from "./schema";
 
 // Only shorten the canonical name produced from provider labels. User-authored
 // aliases and unfamiliar naming conventions keep their original text.
@@ -13,7 +14,7 @@ function isGeneratedName(series: Series) {
 // Fallback names the server or chart assigns when a series has no identity of its own.
 // Authored and provider-specific names never match, so they are always kept.
 const GENERIC_NAME = /^(Value|Series \d+)$/;
-export function isGenericSeriesName(name: string) {
+function isGenericSeriesName(name: string) {
   return GENERIC_NAME.test(name);
 }
 
@@ -68,62 +69,59 @@ export function compactSeriesLabels(series: readonly Series[]): string[] {
   return labels.map((label, index) => generated.includes(index) && labels.some((other, otherIndex) => otherIndex !== index && other === label) ? originals[index] : label);
 }
 
-const isSeparator = (char: string) => !/[\p{L}\p{N}]/u.test(char);
+// Group and column labels are joined with this separator (see record-charts.tsx plotData).
+const SEGMENT_SEPARATOR = " · ";
 
 /**
- * Removes one prefix and one suffix that every name shares, cut only at a
- * separator so "cpu_usage"/"cpu_load" loses "cpu_" but "sale"/"rate" with a
- * shared "s" does not lose letters. Gives up on a cut that leaves an empty or
- * duplicate name, so the caller's names are returned unchanged.
+ * Removes one leading and one trailing segment that every name shares. Cuts
+ * fall only between " · " segments, so decimals, addresses, signs, hostnames,
+ * versions, emoji and combining marks are never split. A cut that leaves a
+ * name without a segment, an empty name, or two names that look the same is
+ * rejected and the names are returned as written.
  */
-function stripSharedAffixes(names: readonly string[]): string[] {
-  if (names.length < 2) return [...names];
-  const shared = (values: readonly string[]) => values.reduce((acc, value) => {
-    let i = 0;
-    while (i < acc.length && i < value.length && acc[i] === value[i]) i++;
-    return acc.slice(0, i);
-  });
-  const reversed = (value: string) => [...value].reverse().join("");
-  const usable = (values: readonly string[]) => {
-    const trimmed = values.map(value => value.trim());
-    return trimmed.every(Boolean) && new Set(trimmed).size === trimmed.length;
+function stripSharedSegments(names: readonly string[]): string[] {
+  let parts = names.map(name => name.split(SEGMENT_SEPARATOR));
+  const usable = (candidate: string[][]) => {
+    const labels = candidate.map(segments => segments.join(SEGMENT_SEPARATOR).trim());
+    return labels.every(Boolean) && new Set(labels).size === labels.length;
   };
-  let result = [...names];
-  // Suffix first: " · short_interest" is the shared tail in the Market Lens legend.
-  const tail = reversed(shared(result.map(reversed)));
-  const suffixStart = [...tail].findIndex(isSeparator);
-  if (suffixStart >= 0) {
-    const cut = tail.slice(suffixStart);
-    const next = result.map(name => name.slice(0, name.length - cut.length));
-    if (usable(next)) result = next.map(name => name.trim());
+  if (parts.every(segments => segments.length > 1) && parts.every(segments => segments[0] === parts[0][0])) {
+    const next = parts.map(segments => segments.slice(1));
+    if (usable(next)) parts = next;
   }
-  const head = shared(result);
-  let prefixEnd = -1;
-  [...head].forEach((char, index) => { if (isSeparator(char)) prefixEnd = index; });
-  if (prefixEnd >= 0) {
-    const cut = head.slice(0, prefixEnd + 1);
-    const next = result.map(name => name.slice(cut.length));
-    if (usable(next)) result = next.map(name => name.trim());
+  if (parts.every(segments => segments.length > 1) && parts.every(segments => segments.at(-1) === parts[0].at(-1))) {
+    const next = parts.map(segments => segments.slice(0, -1));
+    if (usable(next)) parts = next;
   }
-  return result;
+  return parts.map(segments => segments.join(SEGMENT_SEPARATOR));
+}
+
+/** Explorer previews are identified by their query selector, never by a title fallback. */
+export const EXPLORER_PREVIEW_WIDGET_ID = "explore-preview";
+
+/**
+ * The authored title that identifies a lone series whose own name is only a
+ * fallback ("Value", "Series N", or an untransformed selector). Only dashboard
+ * widgets with an authored title qualify; the author's words are used, never
+ * a label field guessed from the data. Returns undefined otherwise.
+ */
+export function fallbackIdentityTitle(widget: Pick<Widget, "id" | "title">, series: readonly Series[]): string | undefined {
+  const title = widget.title?.trim() ?? "";
+  if (!title || widget.id === EXPLORER_PREVIEW_WIDGET_ID || series.length !== 1) return undefined;
+  const generic = isGenericSeriesName(seriesName(series[0], 0)) || isGeneratedName(series[0]);
+  return generic ? title : undefined;
 }
 
 /**
- * Names for a chart's legend. A lone series whose name is a fallback (or an
- * untransformed selector) takes the widget's authored title; that is the
- * author's own identity, not a label field guessed from the data. Several
- * series keep compacted labels, or lose a prefix and suffix they all share.
- * Full names stay on the series for tooltips, inspectors and aria-labels.
+ * Visible names for a chart's legend and tooltips. Several series keep
+ * compacted labels, or drop one leading and one trailing " · " segment they
+ * all share. Full names stay on the series for titles, inspectors and aria text.
  */
-export function displaySeriesNames(series: readonly Series[], widgetTitle = ""): string[] {
+export function displaySeriesNames(series: readonly Series[]): string[] {
   const originals = series.map(seriesName);
-  if (series.length === 1) {
-    const title = widgetTitle.trim();
-    const fallback = isGenericSeriesName(originals[0]) || isGeneratedName(series[0]);
-    return fallback && title ? [title] : originals;
-  }
+  if (series.length < 2) return originals;
   const compacted = compactSeriesLabels(series);
   // Compacted labels already name the fields that differ; trimming them again would drop a key.
   if (compacted.some((label, index) => label !== originals[index]) || originals.some(isGenericSeriesName)) return compacted;
-  return stripSharedAffixes(originals);
+  return stripSharedSegments(originals);
 }
