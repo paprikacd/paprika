@@ -129,13 +129,13 @@ function Stat({
     if (validTimestamp(point.timestamp) && (!latestObservation || point.timestamp >= latestObservation.timestamp)) latestObservation = point;
   }
   const latestMissing = latestObservation !== undefined && (typeof latestObservation.value !== "number" || !Number.isFinite(latestObservation.value));
-  // The card holds three lines under the reading: the extra rows and, when series are left over, the note that counts them.
-  // The latest-missing line takes one of those lines. So with four series or fewer every series has its row; beyond that
-  // the card shows two rows and the note, or one row and the note when the latest-missing line is there too.
-  const lines = 3 - (latestMissing ? 1 : 0);
+  // Under the reading the card holds three lines: the extra rows and, when more than three series are left over, the note
+  // that counts the rest. The latest-missing notice takes the caption's place rather than adding a line, so it needs no
+  // room of its own. Measured at 74 px and 148 px (1, 3, 4, 5 and 120 series, shared and older captions, with and
+  // without the missing line, at 390, 768 and 1512 px) every combination fits without scrolling.
   const extraSeries = entries.length - 1;
-  const noteNeeded = extraSeries > lines;
-  const extraRows = noteNeeded ? lines - 1 : extraSeries;
+  const noteNeeded = extraSeries > 3;
+  const extraRows = noteNeeded ? 2 : extraSeries;
   const shownSeries = extraRows + 1;
   const { ageSeconds, stale, band } = attention;
   const thresholds = widget.options?.thresholds;
@@ -167,8 +167,10 @@ function Stat({
     {attention.partial && <StatNoticeChip visible="Partial" full="Provider response may be incomplete. Narrow the query or check the data source." dataAttribute="data-partial-observation" />}
   </>;
   return (
-    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
-      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid · latest missing</div>}
+    // The caption's time is in the missing notice when the latest observation is missing, so the caption is visually
+    // hidden (kept for assistive technology) exactly as for a shared sample.
+    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined} data-caption-merged={latestMissing || undefined}>
+      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid {sampleTime.format(new Date(first.point.timestamp))} · latest missing</div>}
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""

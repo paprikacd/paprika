@@ -202,7 +202,8 @@ async function twoRowStatAudit(width) {
   const { page, context } = await openFixture("normal", width, false, {}, document => ({ ...document, widgets: [...document.widgets,
     { ...document.widgets[2], id: "row-newest", title: "Row newest", query: "audit_row_1_shared", layout: { x: 0, y: 14, w: 4, h: 2 } },
     ...rows.map(row => ({ ...document.widgets[2], id: row.id, title: row.id, query: row.query, layout: { x: row.x, y: row.y, w: 4, h: 2 } }))] }))
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
+    const missing = rowVariants[index][2]
     const tile = page.locator(`[data-widget-id="${row.id}"]`)
     await tile.scrollIntoViewIfNeeded()
     await tile.locator("[data-metric-value]").waitFor()
@@ -211,8 +212,10 @@ async function twoRowStatAudit(width) {
       const caption = tile.locator('[data-stat-reading] > [class*="statMeta"]')
       const shared = await tile.evaluate(element => element.closest("[data-shared-sample]") !== null)
       const box = await caption.boundingBox()
-      if (shared) assert.ok(box && box.width <= 1 && box.height <= 1, `A shared caption is hidden: ${JSON.stringify(box)}`)
+      // The caption shows only for an older sample with the latest observation present; otherwise it is visually hidden.
+      if (shared || missing) assert.ok(box && box.width <= 1 && box.height <= 1, `A ${shared ? "shared" : "merged"} caption is hidden: ${JSON.stringify(box)}`)
       else assert.ok(box && box.height >= 12, `An older caption is visible: ${JSON.stringify(box)}`)
+      if (missing) assert.match(await tile.locator("[data-latest-missing]").innerText(), /Last valid \d\d:\d\d \S+ · latest missing/, "The missing notice must carry the last valid sample's time")
       const measured = await stat.evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }))
       assert.ok(measured.scrollHeight <= measured.clientHeight + 1, `${row.id} must not scroll internally: ${JSON.stringify(measured)}`)
       return { width, shared, ...measured }
