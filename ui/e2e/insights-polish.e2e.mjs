@@ -171,6 +171,8 @@ try {
         await page.getByRole('button', { name: 'Edit Request latency', exact: true }).click();
         const editor = page.getByRole('region', { name: 'Widget editor', exact: true });
         const tabs = editor.getByRole('tablist', { name: 'Widget settings', exact: true });
+        // The editor is lazy-loaded; wait for all four tabs before any geometry is read.
+        await tabs.getByRole('tab').nth(3).waitFor();
         // At 390px all four labels fit. Exercise an actual overflowing touch strip too.
         if (width === 390) {
           await page.setViewportSize({ width: 320, height: 980 });
