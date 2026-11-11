@@ -108,21 +108,14 @@ import gammaTheme from "./gamma/gamma-theme.module.css"
 import { VariableBar } from "./dashboard-variables"
 import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
 import {
-  buildDashboardURL, parseDashboardURL, resolveDashboardVariables,
+  resolveDashboardVariables,
   resolveDrilldown, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext,
 } from "./drilldown"
-
-function writeLocation(state: DashboardNavigation, example: boolean, method: "push" | "replace") {
-  const path = /\/dashboard\/insights\/?$/.test(location.pathname)
-    ? location.pathname : "/dashboard/insights/"
-  const url = buildDashboardURL(state, path) + (example ? "&example=1" : "")
-  if (method === "push") window.history.pushState(window.history.state, "", url)
-  else window.history.replaceState(window.history.state, "", url)
-}
+import { readDashboardView, serialiseDashboardView, useDashboardView } from "./dashboard-view"
 
 function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
   try {
-    const state = parseDashboardURL(location.search)
+    const state = readDashboardView()
     if (!state) return { document: fallback, state: { dashboardId: fallback.id }, error: "" }
     const document = documents.find(item => item.id === state.dashboardId)
     if (!document) throw new Error("The linked dashboard is unavailable. Choose a dashboard from the library.")
@@ -297,7 +290,7 @@ export default function InsightsApp({
     })
     return () => controller.abort()
   }, [libraryClient, mode, libraryRevision])
-  const [routeState, setRouteState] = useState<DashboardNavigation | null>(null)
+  const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id, mode === "example")
   const [returnTo, setReturnTo] = useState<{ state: DashboardNavigation; title: string } | null>(null)
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
   const [editing, setEditing] = useState(false)
@@ -435,7 +428,6 @@ export default function InsightsApp({
       setRemoteDashboard({ id: current.dashboard.id, removed: true })
     } else setRemoteDashboard(undefined)
   })
-  const currentRoute = routeState?.dashboardId === dashboard.id ? routeState : undefined
   const viewDashboard = currentRoute?.customTimeRange
     ? { ...dashboard, customTimeRange: currentRoute.customTimeRange }
     : dashboard
@@ -453,12 +445,10 @@ export default function InsightsApp({
     let active = true
     queueMicrotask(() => {
       if (!active) return
-      const state = { ...currentRoute, variables: Object.fromEntries(retained) }
-      setRouteState(state)
-      writeLocation(state, mode === "example", "replace")
+      applyView({ ...currentRoute, variables: Object.fromEntries(retained) }, "prune")
     })
     return () => { active = false }
-  }, [currentRoute, dashboard.variables, mode])
+  }, [currentRoute, dashboard.variables, applyView])
   const [queryFieldSnapshot, setQueryFieldSnapshot] = useState<QueryFieldSnapshot>();
   const [queryResultSnapshot, setQueryResultSnapshot] = useState<WidgetResultSnapshot>();
   const currentWidget = dashboard.widgets.find(
@@ -517,11 +507,17 @@ export default function InsightsApp({
     setSources({ status: "ready" })
     setSourceRequest(null)
     setMode("example")
-    setRouteState(state)
-    setError(error)
+    let viewError = error
+    try {
+      applyView(state, error ? "keep" : "load", { example: true })
+    } catch (cause) {
+      // A link that parses but cannot be written back keeps its value on screen, and the address keeps the link.
+      showView(state)
+      viewError = cause instanceof Error ? cause.message : "Invalid dashboard link"
+    }
+    setError(viewError)
     setExampleStarting(false)
-    if (!error) writeLocation(state, true, "replace")
-  }, [reset])
+  }, [reset, applyView, showView])
 
   useEffect(() => {
     if (initialExample) {
@@ -553,9 +549,8 @@ export default function InsightsApp({
         setMode("live")
         const state = { ...initial.state, dashboardId: active.dashboard.id }
         resolveDashboardVariables(active.dashboard, state.variables)
-        setRouteState(state)
+        applyView(state, initial.error ? "keep" : "load")
         setError(initial.error)
-        if (!initial.error) writeLocation(state, false, "replace")
       })
       .catch((error) => {
         if (!controller.signal.aborted) {
@@ -564,7 +559,7 @@ export default function InsightsApp({
         }
       })
     return () => controller.abort()
-  }, [client, initialExample, enterExample, reset, retry])
+  }, [client, initialExample, enterExample, reset, retry, applyView])
 
   // One background load, one retry layer: the client replays a busy listing, and a
   // failure that remains is shown with a manual retry. The listing carries the shared
@@ -838,9 +833,7 @@ export default function InsightsApp({
   function syncVariableDefinitions(next: Dashboard) {
     if (!currentRoute?.variables) return
     const variables = Object.fromEntries(Object.entries(currentRoute.variables).filter(([name]) => next.variables?.some(item => item.name === name)))
-    const state = { ...currentRoute, variables }
-    setRouteState(state)
-    writeLocation(state, mode === "example", "replace")
+    applyView({ ...currentRoute, variables }, "prune")
   }
   function addWidget(definition: WidgetDefinition) {
     if (dashboard.widgets.length >= MAX_WIDGETS) {
@@ -930,7 +923,7 @@ export default function InsightsApp({
   async function openDashboard(
     item: Dashboard,
     state: DashboardNavigation | ((target: Dashboard) => DashboardNavigation) = { dashboardId: item.id },
-    method: "push" | "replace" | "none" = "push",
+    action: "navigate" | "popstate" = "navigate",
   ): Promise<boolean> {
     if (busy) return false
     const request = ++openRequest.current
@@ -950,7 +943,7 @@ export default function InsightsApp({
       const nextState = typeof state === "function" ? state(active.dashboard) : state
       resolveDashboardVariables(active.dashboard, nextState.variables)
       // Validate the complete URL before changing the document or view state.
-      buildDashboardURL(nextState)
+      serialiseDashboardView(nextState)
       if (active.etag) etags.current.set(item.id, active.etag)
       if (item.id !== dashboard.id) {
         if (mode === "example")
@@ -959,8 +952,7 @@ export default function InsightsApp({
         setSaved(documentFingerprint(active.dashboard))
         setEditing(false)
       }
-      if (method !== "none") writeLocation(nextState, mode === "example", method)
-      setRouteState(nextState)
+      applyView(nextState, action)
       setEnd(Math.floor(Date.now() / 1000))
       close()
       setError("")
@@ -991,9 +983,7 @@ export default function InsightsApp({
   function selectDashboardContext(widget: Widget, context: DrilldownContext) {
     try {
       const variables = resolveSelectionBindings(widget.selectionBindings ?? [], context, dashboard, variableValues)
-      const state = { ...currentRoute, dashboardId: dashboard.id, variables }
-      writeLocation(state, mode === "example", "replace")
-      setRouteState(state)
+      applyView({ ...currentRoute, dashboardId: dashboard.id, variables }, "selection")
       setError("")
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not apply selection")
@@ -1002,9 +992,7 @@ export default function InsightsApp({
   function selectDashboardTime(window: { start: number; end: number }) {
     try {
       const customTimeRange = customTimeRangeSchema.parse({ from: new Date(window.start).toISOString(), to: new Date(window.end).toISOString() })
-      const state = { ...currentRoute, dashboardId: dashboard.id, variables: variableValues, customTimeRange }
-      writeLocation(state, mode === "example", "replace")
-      setRouteState(state)
+      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: variableValues, customTimeRange }, "brush")
       setError("")
     } catch {
       setError("Choose an increasing time range of at most 31 days.")
@@ -1015,12 +1003,12 @@ export default function InsightsApp({
   const popHandler = useRef<() => void>(() => {})
   useLayoutEffect(() => {
     popHandler.current = () => {
-      const restore = () => writeLocation(currentRoute ?? { dashboardId: dashboard.id }, mode === "example", "replace")
+      const restore = () => reflectView(currentRoute ?? { dashboardId: dashboard.id }, "recover")
       try {
-        const state = parseDashboardURL(location.search)
+        const state = readDashboardView()
         const target = dashboards.find(item => item.id === state?.dashboardId)
         if (!state || !target) throw new Error("The linked dashboard is unavailable.")
-        const pending = openDashboard(target, state, "none")
+        const pending = openDashboard(target, state, "popstate")
         const request = openRequest.current
         void pending.then(opened => {
           if (request !== openRequest.current) return
@@ -1040,9 +1028,8 @@ export default function InsightsApp({
   }, [])
 
   function resetView(next: Dashboard) {
-    setRouteState({ dashboardId: next.id })
+    applyView({ dashboardId: next.id }, "reset")
     setReturnTo(null)
-    writeLocation({ dashboardId: next.id }, mode === "example", "replace")
   }
   function confirmDiscard() {
     return confirmation.ask({ title: "Discard unsaved changes?", description: `Your unsaved changes to “${dashboard.title}” will be lost.`, action: "Discard changes" })
@@ -1582,9 +1569,7 @@ export default function InsightsApp({
             <GammaButton iconOnly size="sm" variant="quiet" aria-label="Copy dashboard link" onClick={async () => {
               try {
                 const state = { ...currentRoute, dashboardId: dashboard.id, variables: variableValues }
-                const path = /\/dashboard\/insights\/?$/.test(location.pathname) ? location.pathname : "/dashboard/insights/"
-                const url = new URL(buildDashboardURL(state, path), location.origin)
-                if (mode === "example") url.searchParams.set("example", "1")
+                const url = new URL(serialiseDashboardView(state, { example: mode === "example" }), location.origin)
                 await navigator.clipboard.writeText(url.href)
                 setError("")
                 setMessage("Dashboard link copied with the current variables and time settings.")
@@ -1682,11 +1667,9 @@ export default function InsightsApp({
         {editing && !widgetDraftValid && <p id={invalidWidgetSaveHintId} className={styles.saveBlockedHint} role="status">Fix the widget settings to save, or close the editor to keep the last valid preview.</p>}
         <div className={styles.toolbar} data-tooltip-obstacle>
           <div className={styles.toolbarLeft}>
-            <VariableBar key={dashboard.id} dashboard={dashboard} values={variableValues} onApply={values => {
+            <VariableBar dashboard={dashboard} values={variableValues} onApply={values => {
               try {
-                const state = { ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }
-                writeLocation(state, mode === "example", "replace")
-                setRouteState(state)
+                applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
                 setError("")
               } catch (error) { setError(error instanceof Error ? error.message : "Invalid variable values") }
             }} />
@@ -1740,9 +1723,7 @@ export default function InsightsApp({
               key={dashboard.id}
               dashboard={viewDashboard}
               onChange={(next) => {
-                const state = { ...currentRoute, dashboardId: dashboard.id, customTimeRange: undefined }
-                setRouteState(state)
-                writeLocation(state, mode === "example", "replace")
+                applyView({ ...currentRoute, dashboardId: dashboard.id, customTimeRange: undefined }, "range")
                 update({ ...dashboard, ...next })
                 setEnd(Math.floor(Date.now() / 1000))
                 setEditing(true)

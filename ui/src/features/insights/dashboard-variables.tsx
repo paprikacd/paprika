@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { GammaButton } from "./gamma/button";
 import { GammaInput } from "./gamma/input";
@@ -290,12 +290,18 @@ function VariableBarDraft({ dashboard, values, onApply }: VariableBarProps) {
   const id = useId();
   const initial = resolveDashboardVariables(dashboard, values);
   const source = JSON.stringify(Object.entries(initial).sort(([a], [b]) => a.localeCompare(b)));
-  const [state, setState] = useState<{ source: string; draft: VariableValues; pendingSource?: string }>(() => ({ source, draft: initial }));
-  if (source !== state.source) setState({ source, draft: source === state.pendingSource ? state.draft : initial });
-  const draft = state.draft;
-  function setDraft(next: VariableValues | ((previous: VariableValues) => VariableValues)) {
-    setState((previous) => ({ ...previous, draft: typeof next === "function" ? next(previous.draft) : next }));
-  }
+  const [draft, setDraft] = useState<VariableValues>(initial);
+  // Set by our own dropdown change: its values are already in the draft when the parent publishes them.
+  const publishing = useRef<string | undefined>(undefined);
+  const adopted = useRef(source);
+  // Adopt externally changed values once the change has committed. A layout effect runs before paint,
+  // so the stale draft is never shown.
+  useLayoutEffect(() => {
+    if (adopted.current === source) return;
+    adopted.current = source;
+    if (source !== publishing.current) setDraft(initial);
+    publishing.current = undefined;
+  }, [source, initial]);
   const [error, setError] = useState("");
   const dirty = (dashboard.variables ?? []).some(
     ({ name }) => draft[name] !== initial[name],
@@ -334,11 +340,8 @@ function VariableBarDraft({ dashboard, values, onApply }: VariableBarProps) {
               value={draft[variable.name]}
               onChange={(value) => {
                 const next = { ...initial, [variable.name]: value };
-                setState((previous) => ({
-                  ...previous,
-                  draft: { ...previous.draft, [variable.name]: value },
-                  pendingSource: JSON.stringify(Object.entries(next).sort(([a], [b]) => a.localeCompare(b))),
-                }));
+                publishing.current = JSON.stringify(Object.entries(next).sort(([a], [b]) => a.localeCompare(b)));
+                setDraft((previous) => ({ ...previous, [variable.name]: value }));
                 apply(next);
               }}
             /> : <GammaInput
