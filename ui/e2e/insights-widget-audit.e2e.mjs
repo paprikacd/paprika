@@ -25,8 +25,10 @@ const range = { from: "2026-10-20T12:00:00.000Z", to: "2026-10-20T13:00:00.000Z"
 const longName = "production-eu-central-1-critical-payments-service-with-a-long-human-readable-observation-name"
 const layouts = {
   stat: { x: 0, y: 0, w: 4, h: 3 }, gauge: { x: 4, y: 0, w: 4, h: 3 }, heatmap: { x: 8, y: 0, w: 4, h: 5 },
-  timeseries: { x: 0, y: 5, w: 6, h: 5 }, bar: { x: 6, y: 5, w: 6, h: 5 },
-  table: { x: 0, y: 10, w: 6, h: 5 }, traces: { x: 6, y: 10, w: 6, h: 5 },
+  // Authored where the canvas draws them. The heatmap leaves rows 3 to 5 empty beside the stat and gauge, and the
+  // canvas closes that gap, so a save stores these positions. Stored layouts equal this fixture.
+  timeseries: { x: 0, y: 3, w: 6, h: 5 }, bar: { x: 6, y: 5, w: 6, h: 5 },
+  table: { x: 0, y: 8, w: 6, h: 5 }, traces: { x: 6, y: 10, w: 6, h: 5 },
 }
 const thresholds = [
   { value: -100, color: "#bd5745", label: "Below target" },
