@@ -115,6 +115,12 @@ type ServerConfig struct {
 	// that only serve non-console tools (the observability gateway) set this.
 	DisableConsoleResources bool
 
+	// AuthoringGuidance is domain guidance appended to the initialize
+	// instructions of an Insights authoring surface (SupportedScopes includes
+	// ScopeInsightsWrite). Clients such as ChatGPT receive no skill text, so
+	// composition rules belong here. Ignored on surfaces without authoring.
+	AuthoringGuidance []string
+
 	// LinkRequestCancellation restores the HTTP carrier's cancellation and
 	// deadline for tool handlers on legacy protocols too. The SDK propagates
 	// those signals only for newer protocols. Enable this for the read-only
@@ -200,6 +206,7 @@ type Server struct {
 	supportedScopes         []Scope
 	disableConsoleResources bool
 	linkRequestCancellation bool
+	authoringGuidance       []string
 
 	// authorizeAuthenticator authenticates GET /mcp/authorize and POST
 	// /mcp/authorize/consent — see ServerConfig.ConsoleAuthenticator. The
@@ -256,6 +263,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		supportedScopes:         shape.supportedScopes,
 		disableConsoleResources: cfg.DisableConsoleResources,
 		linkRequestCancellation: cfg.LinkRequestCancellation,
+		authoringGuidance:       slices.Clone(cfg.AuthoringGuidance),
 		gzipLevel:               cfg.GzipLevel,
 	}
 	// The Invoker is built unconditionally: surfaces without a Connect client
@@ -420,7 +428,7 @@ func validatePublicURL(publicURL string) error {
 // matches this package's request/response tool-call model and lets a caller
 // invoke a tool without first running the initialize handshake.
 func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler {
-	description, instructions := serverDescriptionAndInstructions(s.disableConsoleResources, s.supportedScopes)
+	description, instructions := serverDescriptionAndInstructions(s.disableConsoleResources, s.supportedScopes, s.authoringGuidance)
 	sdkSrv := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:        implementationName,
 		Title:       "Paprika",
@@ -498,7 +506,7 @@ func (s *Server) toolAuthMeta(tool *Tool) sdkmcp.Meta {
 	return meta
 }
 
-func serverDescriptionAndInstructions(disableConsoleResources bool, supportedScopes []Scope) (description, instructions string) {
+func serverDescriptionAndInstructions(disableConsoleResources bool, supportedScopes []Scope, authoringGuidance []string) (description, instructions string) {
 	description = "Application delivery, fleet health, drift, and deployment diagnostics."
 	instructions = "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
 	if disableConsoleResources {
@@ -508,6 +516,9 @@ func serverDescriptionAndInstructions(disableConsoleResources bool, supportedSco
 			description = "Observability discovery, compact dashboard query bundles, and authorized saved-query and dashboard authoring."
 			instructions = "Prefer query_dashboard when a saved dashboard covers the question. Discover its ID with list_dashboards, inspect its variables with get_dashboard when needed, and pass a variables map to query_dashboard for shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing/error/truncation states and document versions; text is a compact synopsis. This read requires paprika:observe and existing Insights/provider read permission, not authoring consent. For standalone provider queries: " + instructions
 			instructions += " Saved-query and dashboard creation or updates additionally require explicit paprika:insights:write consent and Insights write permission. Discover Insights providers and get_insights_schema for canonical dashboard, widget and saved-query schemas. Read current documents first. Create with a new ID; prefer patch_saved_query or patch_dashboard for targeted edits, with widget_edits addressed by widget ID. Every update requires the exact ETag just read; reread and review conflicts. Changes appear in the Insights UI while unsaved drafts remain protected. This scope grants no provider configuration or fleet delivery writes."
+			if len(authoringGuidance) > 0 {
+				instructions += " Dashboard composition rules: " + strings.Join(authoringGuidance, " ")
+			}
 		}
 	}
 	return description, instructions

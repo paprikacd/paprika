@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
 import { useDraftHistory } from "./history";
 import { ChartAppearancePresets } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
@@ -196,16 +196,27 @@ function StyleEditor({
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
+  // Turning on the value bar does not invent bounds. Focus the minimum field
+  // once it renders; the existing draft alert explains what is missing.
+  const barMinimumRef = useRef<HTMLInputElement>(null);
+  const focusBarMinimum = useRef(false);
+  useEffect(() => {
+    if (!focusBarMinimum.current) return;
+    focusBarMinimum.current = false;
+    barMinimumRef.current?.focus();
+  });
   const numeric = (
     label: string,
     field: "min" | "max" | "decimals" | "lineWidth" | "fillOpacity" | "staleAfterSeconds" | "plotInsetLeft" | "plotInsetRight" | "tooltipOffset" | "tooltipMaxWidth" | "tooltipMaxHeight",
     min?: number,
     max?: number,
     step: number | "any" = 1,
+    inputRef?: Ref<HTMLInputElement>,
   ) => (
     <label className={styles.field}>
       {label}
       <GammaInput
+        ref={inputRef}
         type="number"
         value={options[field] ?? ""}
         placeholder="Auto"
@@ -476,12 +487,15 @@ function StyleEditor({
         <>
           <GammaSwitch
             label="Show value bar"
-            description="Shows the current value on an explicit scale. Threshold colors apply to the observed value."
+            description="Shows the current value on an explicit scale. Enter both bounds; threshold colors apply to the observed value."
             checked={options.showStatBar === true}
-            onChange={(showStatBar) => update(showStatBar ? { showStatBar, min: options.min ?? 0, max: options.max ?? 100 } : { showStatBar })}
+            onChange={(showStatBar) => {
+              focusBarMinimum.current = showStatBar && (options.min === undefined || options.max === undefined);
+              update({ showStatBar });
+            }}
           />
           {options.showStatBar && <div className={styles.row}>
-            {numeric("Bar minimum", "min", undefined, undefined, "any")}
+            {numeric("Bar minimum", "min", undefined, undefined, "any", barMinimumRef)}
             {numeric("Bar maximum", "max", undefined, undefined, "any")}
           </div>}
           <GammaSwitch

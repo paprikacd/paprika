@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 )
 
 const maxSchemaResponseBytes = 64 << 10
@@ -18,7 +19,10 @@ type authoringSchemaResponse struct {
 	Notes         []string          `json:"notes"`
 }
 
-const schemaWidgetExample = `{"id":"request-rate","title":"Request rate","type":"stat","providerId":"metrics-provider-id","query":"sum(rate(http_requests_total{service={{service}}}[5m]))","unit":"req/s","queryRef":{"id":"service-request-rate","bindings":[{"parameter":"service","source":"variable","variable":"service"}]},"options":{"decimals":2,"showSparkline":true,"sparklinePlacement":"side","statIcon":"activity","showStatBar":true,"min":0,"max":100},"layout":{"x":0,"y":0,"w":4,"h":2}}`
+const schemaWidgetExample = `{"id":"request-rate","title":"Request rate","type":"stat","providerId":"metrics-provider-id","query":"sum(rate(http_requests_total{service={{service}}}[5m]))","unit":"req/s","queryRef":{"id":"service-request-rate","bindings":[{"parameter":"service","source":"variable","variable":"service"}]},"options":{"decimals":2,"showSparkline":true},"layout":{"x":0,"y":0,"w":4,"h":2}}`
+
+// schemaBoundedStatExample is the only served stat that shows a value bar: an explicit 0-100 objective scale with thresholds, on three rows.
+const schemaBoundedStatExample = `{"id":"availability-slo","title":"Availability (bounded scale)","type":"stat","providerId":"metrics-provider-id","query":"100 * (1 - sum(rate(http_requests_total{code=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])))","unit":"%","options":{"decimals":2,"showStatBar":true,"min":0,"max":100,"thresholds":[{"value":0,"color":"#e8554e","label":"Below 99.9% objective"},{"value":99.9,"color":"#20cba3","label":"Meets 99.9% objective"}]},"layout":{"x":4,"y":0,"w":4,"h":3}}`
 const schemaSavedQueryExample = `{"schemaVersion":1,"id":"service-request-rate","name":"Service request rate","description":"Requests per second for the selected service.","tags":["service","requests"],"metadata":{"signal":"request-rate"},"providerId":"metrics-provider-id","kind":"metrics","query":"sum(rate(http_requests_total{service={{service}}}[5m]))","parameters":[{"name":"service","type":"string","defaultValue":"checkout"}]}`
 const schemaDashboardExample = `{"schemaVersion":1,"id":"service-overview","title":"Service overview","timeRange":"1h","refreshInterval":30,"variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","payments"]}],"widgets":[` + schemaWidgetExample + `]}`
 const schemaRecordWidgetExample = `{"id":"service-records","title":"Service records","type":"plugin","pluginId":"record-table","dataKind":"records","config":{"pageSize":20,"density":"compact","showSearch":false},"providerId":"records-provider-id","query":"SELECT service, requests FROM reporting.service_summary","unit":"","queryRef":{"id":"service-records","bindings":[{"parameter":"service","source":"variable","variable":"service"}]},"layout":{"x":0,"y":2,"w":12,"h":5}}`
@@ -54,6 +58,7 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 			"Dashboard timeZone?:IANA time zone name from the canonical list, spelled exactly as the tz database spells it (for example Europe/London or UTC), sets the zone of chart axes, metric tooltips, observation inspectors, comparison windows, status history and range labels. Matching is case-sensitive: offsets such as +05:30, Local, Factory and lowercase spellings such as europe/london are refused. Omitted, these displays use the viewer's zone; UTC keeps them reproducible across viewers. UTC-based calendar aggregation and raw ISO timestamps are unchanged.",
 			"Time-series rendering options: options.gridX?:boolean draws vertical gridlines at the x ticks (default false; showGrid false turns off every gridline). options.timeAxis?:linear|calendar (default linear) places ticks on the dashboard time zone's local days, weeks and months when calendar; each tick is placed at its true time, so a daylight-saving change shows as a jump in the labels. options.axisUnit?:auto|ticks|caption (default auto, which captions units longer than three characters). options.referenceLines?:[{value:number,label?:string(1..80),color?:six-digit hex}] draws up to 8 labelled horizontal rules, and each value joins the y range. options.showZeroLine?:boolean draws a zero rule, which also joins the range. options.plotInsetLeft?:8..240 and options.plotInsetRight?:8..120 set the plot's horizontal insets in pixels, shared by the cursor, no-sample bands and events. Explicit options.min and options.max still win, so a rule or threshold outside them is hidden.",
 			"Observation inspector placement: options.tooltipPlacement?:auto|top|right|bottom|left, options.tooltipOffset?:0..40 px, options.tooltipMaxWidth?:220..640 px and options.tooltipMaxHeight?:160..800 px. Unset values keep the renderer's defaults. Out-of-range values are refused, and the viewport still limits the inspector.",
+			"Stat examples: the first widget example is a compact stat (layout h:2, title, value, decimals and at most one sparkline, no bar). The availability-slo example is the bounded-scale stat: showStatBar requires explicit min and max and layout h:3 or taller, and it adds thresholds for the objective. Compact stat (h<=2) = title + value + at most one sparkline; showStatBar only for a bounded scale with explicit min and max and h>=3.",
 			"Use get_dashboard or get_saved_query before editing. Preserve unchanged fields and supply the exact current ETag when updating.",
 			"Records examples require a records-capable provider from list_insights_providers and a dashboard service variable. The SQL example needs a PostgreSQL provider with reader access to your reporting view; replace the illustrative table and columns. Bind SQL values with $1 and an unquoted {{service}} in the JSON parameters array, never inside the SQL body.",
 			"PostgreSQL does not automatically filter SQL by the selected dashboard range. To use it, include {\"range\":\"start\"} and/or {\"range\":\"end\"} as values in the SQL envelope's parameters array and reference their positional $n placeholders in the SQL. They bind the requested boundaries as UTC timestamps, not interpolated SQL text. SQL comparison operators determine endpoint inclusivity; a missing referenced boundary or reversed range is an error. The service-history saved-query example shows inclusive boundaries with a service parameter.",
@@ -77,6 +82,9 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 			"incident-calendar uses dataKind=records with config {date?:string,value?:string,label?:string,status?:string,aggregation?:count|sum|max,colorMode?:intensity|thresholds,months?:1..6,endDate?:YYYY-MM-DD}; defaults are date, count, intensity colors and 3 months ending at the latest returned date. Dates use UTC and must be valid calendar dates or ISO timestamps; numeric dates are Unix milliseconds. Sum/max require a numeric value field, while count counts observed rows. In thresholds colorMode, options.thresholds color the aggregated daily value; unmapped values remain neutral. Days without observations stay unknown rather than becoming zero. Explicit endDate controls the visible UTC month window.",
 		},
 	}
+	if kind == "dashboard" || kind == "widget" {
+		response.Notes = append(response.Notes, guidance.DashboardAuthoring()...)
+	}
 	encoded, err := json.Marshal(response)
 	if err != nil || len(encoded) > maxSchemaResponseBytes {
 		writeError(w, http.StatusInternalServerError, "authoring schema exceeds its response limit")
@@ -93,7 +101,7 @@ func authoringSchemaExamples(kind string) []json.RawMessage {
 	examples := []json.RawMessage{authoringSchemaExample(kind)}
 	switch kind {
 	case "widget":
-		return append(examples, json.RawMessage(schemaRecordWidgetExample), json.RawMessage(schemaStackedWidgetExample), json.RawMessage(schemaGaugeBankExample), json.RawMessage(schemaDistributionExample), json.RawMessage(schemaConnectionMapExample), json.RawMessage(schemaStyledTableExample), json.RawMessage(schemaGroupedTreemapExample))
+		return append(examples, json.RawMessage(schemaBoundedStatExample), json.RawMessage(schemaRecordWidgetExample), json.RawMessage(schemaStackedWidgetExample), json.RawMessage(schemaGaugeBankExample), json.RawMessage(schemaDistributionExample), json.RawMessage(schemaConnectionMapExample), json.RawMessage(schemaStyledTableExample), json.RawMessage(schemaGroupedTreemapExample))
 	case "saved_query":
 		return append(examples, json.RawMessage(schemaRecordQueryExample), json.RawMessage(schemaRangeRecordQueryExample))
 	default:

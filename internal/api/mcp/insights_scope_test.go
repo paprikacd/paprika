@@ -59,6 +59,19 @@ func TestInsightsInitializeGuidesReadOnlyClientsToDashboardBundles(t *testing.T)
 	}
 }
 
+func TestAuthoringInstructionsCarryCompositionGuidanceOnlyForInsightsAuthoring(t *testing.T) {
+	rules := []string{"Compact stat cards show a short title.", "Set staleAfterSeconds from the known interval."}
+	_, authoring := serverDescriptionAndInstructions(true, []Scope{ScopeObserve, ScopeInsightsWrite}, rules)
+	for _, rule := range rules {
+		assert.Contains(t, authoring, rule, "an authoring surface must advertise composition rules to every client")
+	}
+	assert.True(t, strings.HasPrefix(authoring, "Prefer query_dashboard"), "the authoring instructions keep their existing opening")
+	_, readOnly := serverDescriptionAndInstructions(true, []Scope{ScopeObserve}, rules)
+	assert.NotContains(t, readOnly, rules[0], "read-only Observe does not advertise authoring rules")
+	_, fleet := serverDescriptionAndInstructions(false, []Scope{ScopeRead, ScopeWrite}, rules)
+	assert.NotContains(t, fleet, rules[0], "the fleet surface never receives Insights guidance")
+}
+
 func TestInsightsAuthoringScopeConsentAndRefreshPreserveExplicitGrant(t *testing.T) {
 	for _, scopes := range [][]string{{string(ScopeObserve)}, {string(ScopeObserve), string(ScopeInsightsWrite)}} {
 		t.Run(strings.Join(scopes, " "), func(t *testing.T) {

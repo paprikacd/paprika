@@ -44,6 +44,7 @@ import (
 	"github.com/benebsworth/paprika/internal/clusterconfig"
 	observecontroller "github.com/benebsworth/paprika/internal/controller/observe"
 	"github.com/benebsworth/paprika/internal/httpx"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
@@ -339,6 +340,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		SupportedScopes:              supportedScopes,
 		DisableConsoleResources:      true,
 		LinkRequestCancellation:      true,
+		AuthoringGuidance:            guidance.DashboardAuthoring(),
 		// Query tool results are large, highly repetitive JSON; level 3 keeps
 		// most of the ratio while cutting the flate CPU several-fold at the
 		// gateway's fan-out rates.

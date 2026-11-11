@@ -67,7 +67,7 @@ func TestRecordAuthoringSchemaExamples(t *testing.T) {
 	require.NoError(t, validateSQLTemplate("postgresql", ranged.Query))
 	require.Contains(t, ranged.Query, `{"range":"start"}`)
 	require.Contains(t, ranged.Query, `{"range":"end"}`)
-	require.Len(t, authoringSchemaExamples("widget"), 8)
+	require.Len(t, authoringSchemaExamples("widget"), 9)
 	require.Len(t, authoringSchemaExamples("saved_query"), 3)
 }
 

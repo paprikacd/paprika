@@ -20,6 +20,7 @@ import {
 import { getWidgetDefinition, getWidgetPlugins } from "./widget-registry"
 import { validateTooltipQueryTemplate } from "./tooltip-context"
 import { resolveSavedQueryReference } from "./saved-queries"
+import { dashboardAuthoringGuidance } from "./authoring-guidance"
 
 const componentNames = {
   timeseries: "TimeSeries",
@@ -284,6 +285,7 @@ export function buildAIContext(
       "Dashboard variables are named strings. Use {{variableName}} as a complete query string literal without surrounding quotes, for example up{service={{service}}}. Never interpolate inside quotes, comments, identifiers, or query fragments. Widget drilldowns reference dashboard IDs and bind declared target variables from label, value, series or constant sources. Preserve existing links and variables unless asked to change them.",
       "Reuse only listed saved queries. The trailing 14th widget argument queryRef is {id,bindings?}; all previous positional arguments remain unchanged. A saved reference is authoritative: use its providerId and kind, keep the required query string as a fallback, and do not copy changes into the shared query. To edit a template, use Explore. Bindings are {parameter,source:'variable',variable} or {parameter,source:'constant',value}. Every variable binding must name a declared dashboard variable; name matching does not automatically bind it. An omitted binding uses the typed saved default; no default means a binding is required. Text and finite numeric parameters must retain their types. Never invent query IDs or parameters.",
       "Tooltip source:{type:'saved',ref:{id,bindings?}} reuses a compatible saved query. Tooltip-only parameter bindings may use {parameter,source:'label',label} or {parameter,source:'field',field:'value'|'timestamp'|'series'}. Numeric value and timestamp fields are finite numbers; timestamp uses Unix seconds. Series and labels are strings. Missing observation data prevents the request. source:{type:'widget'} reuses the complete loaded parent widget result without a request; source:{type:'series'} reuses only the hovered series. Do not nest queries or tooltip definitions.",
+      ...dashboardAuthoringGuidance,
     ],
     examples: [dashboardToOpenUI(dashboard)],
   })}\n\nInstalled trusted widget plugins:\n${JSON.stringify(
