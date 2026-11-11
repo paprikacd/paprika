@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat } from "./responsive-layout"
+import { builderPanelPlan, canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat } from "./responsive-layout"
 import { exampleDashboard } from "./example"
 import type { Widget } from "./schema"
 
@@ -149,9 +149,28 @@ describe("responsive canvas projection", () => {
   })
 
   it("reflows by available canvas width, including space taken by the inspector", () => {
-    expect([320, 599, 600, 959, 960, 2400].map(canvasMode)).toEqual([
+    expect([320, 599, 600, 959, 960, 2400].map(width => canvasMode(width))).toEqual([
       "stacked", "stacked", "compact", "compact", "wide", "wide",
     ])
+  })
+
+  it("keeps the wide grid between 880 and 960px once it is shown, so a narrowing panel cannot flip it", () => {
+    // Entering the wide grid needs the return threshold; leaving it happens only below the lower one.
+    expect([879, 880, 900, 959, 960].map(width => canvasMode(width, "compact"))).toEqual(["compact", "compact", "compact", "compact", "wide"])
+    expect([879, 880, 900, 959, 960].map(width => canvasMode(width, "wide"))).toEqual(["compact", "wide", "wide", "wide", "wide"])
+    // Narrow widths keep their own boundary whichever mode came before.
+    expect([599, 600].map(width => canvasMode(width, "stacked"))).toEqual(["stacked", "compact"])
+    expect([599, 600].map(width => canvasMode(width, "wide"))).toEqual(["stacked", "compact"])
+  })
+
+  it("does not oscillate when widths hover across the band", () => {
+    const seen = (widths: number[], start: "wide" | "compact") => widths.reduce<string[]>((modes, width) => {
+      modes.push(canvasMode(width, (modes.at(-1) as "wide" | "compact" | undefined) ?? start))
+      return modes
+    }, [])
+    // A panel that toggles the canvas between 930 and 880 px keeps whichever mode it started in.
+    expect(seen([930, 880, 930, 878, 930], "wide")).toEqual(["wide", "wide", "wide", "compact", "compact"])
+    expect(seen([930, 960, 930, 880], "compact")).toEqual(["compact", "wide", "wide", "wide"])
   })
 
   it("preserves the saved arrangement after shrinking and growing", () => {
@@ -218,5 +237,77 @@ describe("responsive canvas projection", () => {
     heatmap.options = { showLabels: false, showValues: false }
     expect(canvasLayout([heatmap], "stacked")[0].h).toBe(4)
     expect(heatmap.layout.h).toBe(4)
+  })
+})
+
+describe("builder panels beside the canvas", () => {
+  // Measured the way the app sees it: the canvas, the open panel and the sidebar as currently rendered.
+  // Viewport 1512 with the sidebar open and no panel: canvas 1272 (192 sidebar and 48 gutters).
+  const sidebarOpen = { sidebarWidth: 192, openSidebarWidth: 192 }
+  const request = (wide: boolean) => ({ wide, sidebarCollapsible: true, sidebarPreferred: true })
+
+  it("keeps the sidebar for a standard panel while the canvas stays wide", () => {
+    // Manage at 1512 leaves a 930px canvas beside the open sidebar, which is above the leave threshold.
+    expect(builderPanelPlan({ canvasWidth: 1272, panelWidth: 0, ...sidebarOpen }, request(false))).toEqual({ collapsed: false, widePanel: false })
+  })
+
+  it("collapses the sidebar for the wide Code panel at 1512 and keeps the wide Code panel", () => {
+    // Canvas 1272 at 1512 with the sidebar open and no panel: 832px with the sidebar and a 440px panel, 1024px without the sidebar.
+    expect(builderPanelPlan({ canvasWidth: 1272, panelWidth: 0, ...sidebarOpen }, request(true))).toEqual({ collapsed: true, widePanel: true })
+  })
+
+  it("narrows the Code panel to the standard width at 1280, collapsing the sidebar to fit", () => {
+    // Canvas 1040 at 1280 with the sidebar open and no panel. A 440px panel leaves 792px even with the sidebar collapsed,
+    // short of 880px, so the standard panel is used and the sidebar collapses to keep the wide grid.
+    expect(builderPanelPlan({ canvasWidth: 1040, panelWidth: 0, ...sidebarOpen }, request(true))).toEqual({ collapsed: true, widePanel: false })
+  })
+
+  it("restores the sidebar when a hidden sidebar can be shown again without leaving the wide grid", () => {
+    // Switching from a collapsed Code panel at 1512 to Manage: 1024px canvas with a 440px panel, no sidebar.
+    const fromCode = { canvasWidth: 1024, panelWidth: 440, sidebarWidth: 0, openSidebarWidth: 192 }
+    expect(builderPanelPlan(fromCode, request(false))).toEqual({ collapsed: false, widePanel: false })
+  })
+
+  it("never reopens a sidebar the user closed, and never reports it as collapsed for the panel", () => {
+    // Manage at 1512 would keep the wide grid with the sidebar open, but the user closed it, so it stays closed.
+    const closed = { canvasWidth: 1464, panelWidth: 0, sidebarWidth: 0, openSidebarWidth: 192 }
+    expect(builderPanelPlan(closed, { wide: false, sidebarCollapsible: true, sidebarPreferred: false })).toEqual({ collapsed: false, widePanel: false })
+  })
+
+  it("leaves a non-collapsible sidebar alone and still chooses the panel width from the room", () => {
+    // 1500px with the 60px rail and no panel: the canvas is 1392px, and the Code panel leaves 952px beside the rail.
+    const rail = { canvasWidth: 1500 - 60 - 48, panelWidth: 0, sidebarWidth: 60, openSidebarWidth: 60 }
+    expect(builderPanelPlan(rail, { wide: true, sidebarCollapsible: false, sidebarPreferred: true })).toEqual({ collapsed: false, widePanel: true })
+  })
+
+  it("falls back to the user's sidebar and the standard panel when no layout keeps the wide grid", () => {
+    // 1269px: the Code panel would leave 589px, the standard one 687px. The sidebar is not collapsed for a compact canvas.
+    expect(builderPanelPlan({ canvasWidth: 1269 - 240, panelWidth: 0, ...sidebarOpen }, request(true))).toEqual({ collapsed: false, widePanel: false })
+  })
+
+  it("places the wide-grid thresholds at the viewports the panels need", () => {
+    // Viewport with the sidebar open and no panel, as the app measures it: canvas = viewport - 192 - 48.
+    const plan = (viewport: number, wide: boolean) => builderPanelPlan({ canvasWidth: viewport - 240, panelWidth: 0, ...sidebarOpen }, request(wide))
+    // The canvas after the plan, at its real panel width. The panel is 440px only when that width fits.
+    const outcome = (viewport: number, wide: boolean) => {
+      const { collapsed, widePanel } = plan(viewport, wide)
+      const panel = widePanel ? 440 : 342
+      return { panel, canvas: viewport - 48 - panel - (collapsed ? 0 : 192) }
+    }
+    const firstWide = (wide: boolean, panel?: number) => {
+      for (let viewport = 1000; viewport <= 1700; viewport++) {
+        const result = outcome(viewport, wide)
+        if (result.canvas >= 880 && (panel === undefined || result.panel === panel)) return viewport
+      }
+      return undefined
+    }
+    // Manage and AI: the standard panel keeps the wide grid from 1270px, with the sidebar collapsed.
+    expect(firstWide(false)).toBe(1270)
+    expect(outcome(1269, false).canvas).toBeLessThan(880)
+    // Code: the wide panel needs 1368px. Between 1270 and 1367 it narrows to the standard width and stays wide.
+    expect(firstWide(true, 440)).toBe(1368)
+    expect(firstWide(true)).toBe(1270)
+    expect(outcome(1280, true)).toEqual({ panel: 342, canvas: 890 })
+    expect(outcome(1512, true)).toEqual({ panel: 440, canvas: 1024 })
   })
 })

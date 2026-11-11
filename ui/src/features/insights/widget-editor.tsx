@@ -82,7 +82,6 @@ import {
 import { validateLinkedTooltip } from "./saved-query-editor";
 import { gridPlacement, layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit";
 import type { Layout } from "react-grid-layout";
-import type { CanvasMode } from "./responsive-layout";
 
 export const widgetLabels = {
   timeseries: "Time series",
@@ -852,7 +851,7 @@ export function WidgetEditor({
   onApply: (widget: Widget, layout?: Layout) => void;
   onPreview?: (widget: Widget) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[]; canvasMode?: CanvasMode };
+  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[] };
   onDraftValidityChange?: (valid: boolean) => void;
   onClose: () => void;
   onDuplicate: () => void;
@@ -914,7 +913,7 @@ export function WidgetEditor({
     const placed = stagedLayout?.find(box => box.i === item.id);
     return { ...item, layout: { ...item.layout, ...(placed ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h } : {}), ...(item.id === widget.id ? dimensions : {}) } };
   });
-  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id, workspace?.canvasMode ?? "wide") : moveBlocked;
+  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id) : moveBlocked;
   function move(dx: number, dy: number) {
     if (!layoutWidgets) { onMove(dx, dy); return; }
     const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right";

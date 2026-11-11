@@ -12,6 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react"
+import { flushSync } from "react-dom"
 import {
   Activity,
   ArrowLeft,
@@ -86,7 +87,7 @@ import { useDashboardHistory } from "./history"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
 import { useCanvasDensity } from "./canvas-density"
-import type { CanvasMode } from "./responsive-layout"
+import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
 import { DocumentEditor } from "./document-editor"
 import { ChecksList } from "./checks-list"
@@ -217,6 +218,14 @@ function sharedFailureReason(status: SharedCatalogStatus["status"]): SourceFailu
   return status === "forbidden" ? "access" : "failed"
 }
 
+/** The first visible control that opens the builder panel with this name, if one is on screen. */
+function panelOpenerElement(name: string): HTMLElement | null {
+  for (const element of document.querySelectorAll<HTMLElement>(`[data-panel-opener="${CSS.escape(name)}"]`)) {
+    if (element.isConnected && !element.closest("[inert], [hidden]") && !element.matches(":disabled")) return element
+  }
+  return null
+}
+
 export default function InsightsApp({
   sessionRevision,
   client,
@@ -318,7 +327,19 @@ export default function InsightsApp({
   const [search, setSearch] = useState("")
   const { dense, setDense } = useCanvasDensity()
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("wide")
+  // The user's sidebar preference. A builder panel may hide it for as long as the panel is open, so the canvas keeps the
+  // wide grid; the preference returns when the panel closes. Device-local: it is never written to the URL or document.
   const [sidebar, setSidebar] = useState(true)
+  const [panelHidesSidebar, setPanelHidesSidebar] = useState(false)
+  // The user showed the sidebar over an open panel. It stays until they hide it, so the plan never collapses it again.
+  const [sidebarOverride, setSidebarOverride] = useState(false)
+  const [widePanel, setWidePanel] = useState(false)
+  const [planRevision, setPlanRevision] = useState(0)
+  const layoutRoot = useRef<HTMLDivElement>(null)
+  const sidebarOpenWidth = useRef(192)
+  // The control that opened the current panel, by its data-panel-opener name. Its element may leave the DOM while the
+  // sidebar yields, so focus returns to the same name once the sidebar is back.
+  const panelOpener = useRef<string | undefined>(undefined)
   const [compactNavigationExpanded, setCompactNavigationExpanded] = useState(false)
   const compactDesktop = useSyncExternalStore(subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot)
   const finePointer = useSyncExternalStore(subscribeFinePointer, finePointerSnapshot, compactDesktopServerSnapshot)
@@ -327,6 +348,20 @@ export default function InsightsApp({
   const isMobile = useMobileNavigation()
   const drawerOpen = isMobile && mobileSidebar
   const navigation = useRef<HTMLElement>(null)
+  // A panel lives in the workspace section, which Explore hides. The sidebar carries Explore and Dashboards, so it
+  // is never hidden by a panel that is not on screen.
+  const panelHidden = panelHidesSidebar && !!panel && !exploring
+  const sidebarShown = (compactShell || sidebar) && !panelHidden
+  useLayoutEffect(() => {
+    if (navigation.current) sidebarOpenWidth.current = navigation.current.offsetWidth
+  }, [sidebarShown, isMobile, compactShell])
+  useEffect(() => {
+    // A resize event runs before the canvas observes its new width. Committing the plan synchronously here means the
+    // canvas sees the final room, so the hysteresis is not fed the width from before the sidebar yielded or returned.
+    const replan = () => flushSync(() => setPlanRevision(value => value + 1))
+    window.addEventListener("resize", replan)
+    return () => window.removeEventListener("resize", replan)
+  }, [])
   const navigationToggle = useRef<HTMLButtonElement>(null)
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
   const [retry, setRetry] = useState(0)
@@ -468,8 +503,11 @@ export default function InsightsApp({
     panel && !exploring
       ? `${dashboard.id}:${panel}:${panel === "widget" ? (selected ?? "") : ""}`
       : null,
-    () => widgetOpener.current ? document.querySelector<HTMLElement>(`[data-widget-edit="${CSS.escape(widgetOpener.current)}"]`) ??
-      document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]') : null,
+    () => {
+      if (panelOpener.current) return panelOpenerElement(panelOpener.current) ?? document.querySelector<HTMLElement>('[aria-label="Toggle sidebar"]')
+      return widgetOpener.current ? document.querySelector<HTMLElement>(`[data-widget-edit="${CSS.escape(widgetOpener.current)}"]`) ??
+        document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]') : null
+    },
     panel === "examples" ? galleryMounted : panel === "widget" ? editorMounted : true,
   )
 
@@ -746,6 +784,7 @@ export default function InsightsApp({
   const close = useCallback(() => {
     if (bundleImportActive.current) return
     setPanel(null)
+    setSidebarOverride(false)
     setSelected(undefined)
     setWidgetPreview(undefined)
     setWidgetDraftDirty(false)
@@ -753,6 +792,7 @@ export default function InsightsApp({
   const selectWidget = useCallback((id: string) => {
     if (bundleImportActive.current) return
     widgetOpener.current = id
+    panelOpener.current = undefined
     setMessage("")
     setWidgetPreview(undefined)
     setWidgetDraftDirty(false)
@@ -774,17 +814,48 @@ export default function InsightsApp({
     }).then(accepted => { if (accepted) navigate() })
   }, [widgetDraftDirty, askToDiscardChart])
   const leaveWidget = useCallback(() => navigateFromChart(close), [navigateFromChart, close])
-  function openBuilderPanel(next: Exclude<typeof panel, "widget">) {
+  // Opens a builder panel. The width and sidebar are planned by the layout effect below, before paint.
+  function showPanel(next: typeof panel) {
+    setSidebarOverride(false)
+    setPanel(next)
+  }
+  function openBuilderPanel(next: typeof panel) {
+    // Record the control before any state changes move or remove it. Lookups stay lazy so a deferred confirm still works.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>("[data-panel-opener]") : null
+    panelOpener.current = opener?.dataset.panelOpener
     // Explore keeps the focused chart mounted. Any other panel replaces it,
     // so wait for its unapplied draft to be resolved before changing views.
     navigateFromChart(() => {
       close()
       setExploring(false)
-      setPanel(next)
+      showPanel(next)
       setMobileSidebar(false)
       if (next === "ai") setEditing(true)
     })
   }
+  // Keeps the room for the open panel planned: the canvas, the panel and the sidebar as rendered now. The room does not
+  // depend on the plan's choice, so re-running after any change converges. It runs before paint, and skips the canvas
+  // while Explore or a focused widget hides it.
+  useLayoutEffect(() => {
+    // The plan is a function of the DOM as it is laid out, so it is written here, before paint, rather than during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!panel || panel === "widget") { setPanelHidesSidebar(false); return }
+    const wide = panel === "source" || panel === "examples"
+    if (isMobile) { setPanelHidesSidebar(false); setWidePanel(wide); return }
+    const root = layoutRoot.current
+    const canvas = root?.querySelector<HTMLElement>('[data-testid="dashboard-canvas"]')
+    if (exploring || !canvas || canvas.clientWidth === 0) return
+    const sidebarWidth = navigation.current?.offsetWidth ?? 0
+    if (sidebarWidth) sidebarOpenWidth.current = sidebarWidth
+    const plan = builderPanelPlan({
+      canvasWidth: canvas.clientWidth,
+      panelWidth: root?.querySelector<HTMLElement>('[aria-label="Builder panel"]')?.offsetWidth ?? 0,
+      sidebarWidth,
+      openSidebarWidth: sidebarOpenWidth.current,
+    }, { wide, sidebarCollapsible: !sidebarOverride, sidebarPreferred: compactShell || sidebar })
+    setPanelHidesSidebar(plan.collapsed)
+    setWidePanel(plan.widePanel)
+  }, [panel, exploring, isMobile, compactShell, editing, sidebar, sidebarOverride, planRevision])
   useEffect(() => {
     if (!focusedWidget) return
     const keydown = (event: KeyboardEvent) => {
@@ -1149,7 +1220,8 @@ export default function InsightsApp({
     setSaved("")
     setEditing(true)
     close()
-    setPanel("add")
+    panelOpener.current = undefined
+    showPanel("add")
     setMessage("")
     setMobileSidebar(false)
   }
@@ -1473,7 +1545,7 @@ export default function InsightsApp({
   return (
     <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
     <SourceStatusContext.Provider value={sourceContext}>
-    <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
+    <div ref={layoutRoot} className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />
       {drawerOpen && (
         <button type="button"
@@ -1483,7 +1555,7 @@ export default function InsightsApp({
           onClick={() => setMobileSidebar(false)}
         />
       )}
-      {!focusedWidget && (isMobile ? drawerOpen : compactShell || sidebar) && (
+      {!focusedWidget && (isMobile ? drawerOpen : sidebarShown) && (
         <aside
           ref={navigation}
           id="insights-navigation"
@@ -1547,7 +1619,7 @@ export default function InsightsApp({
             disabled={importingBundle}
             onClick={openQueryExplorer}
           ><Search size={16} /> Explore <span>{savedQueries.length}</span></GammaButton>
-          <GammaButton size="sm" variant="quiet"
+          <GammaButton data-panel-opener="providers" size="sm" variant="quiet"
             className={styles.sideLink}
             title={compactShell ? "Data sources" : undefined}
             disabled={importingBundle}
@@ -1555,7 +1627,7 @@ export default function InsightsApp({
           >
             <Database size={16} /> Data sources <span>{providers.length}</span>
           </GammaButton>
-          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onMouseEnter={preloadExamples} onFocus={preloadExamples} onClick={() => openBuilderPanel("examples")}><FilePlus2 size={16} /> Examples <span>{catalogMeta.count}</span></GammaButton>
+          <GammaButton data-panel-opener="examples" size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onMouseEnter={preloadExamples} onFocus={preloadExamples} onClick={() => openBuilderPanel("examples")}><FilePlus2 size={16} /> Examples <span>{catalogMeta.count}</span></GammaButton>
           <div className={styles.sideSection}>
             <span className={styles.sideLabel}>YOUR DASHBOARDS</span>
             <GammaButton iconOnly size="sm" variant="quiet"
@@ -1608,7 +1680,7 @@ export default function InsightsApp({
                 </span>
               </div>
             </div>
-            <GammaButton size="sm" variant="quiet"
+            <GammaButton data-panel-opener="source" size="sm" variant="quiet"
               className={styles.sideLink}
               disabled={importingBundle}
               onClick={() => openBuilderPanel("source")}
@@ -1625,11 +1697,15 @@ export default function InsightsApp({
               ref={navigationToggle}
               className={styles.iconButton}
               aria-label="Toggle sidebar"
-              aria-expanded={isMobile ? drawerOpen : compactShell ? compactNavigationExpanded : sidebar}
+              aria-expanded={isMobile ? drawerOpen : compactShell ? compactNavigationExpanded && sidebarShown : sidebarShown}
               aria-controls="insights-navigation"
               onClick={() => {
                 if (isMobile) setMobileSidebar(!mobileSidebar)
-                else if (compactShell) setCompactNavigationExpanded(!compactNavigationExpanded)
+                // Showing the sidebar over an open panel is the user's choice; it stays until they hide it again.
+                else if (panelHidden) {
+                  setPanelHidesSidebar(false)
+                  setSidebarOverride(true)
+                } else if (compactShell) setCompactNavigationExpanded(!compactNavigationExpanded)
                 else setSidebar(!sidebar)
               }}
             >
@@ -1654,7 +1730,7 @@ export default function InsightsApp({
               <span />
               {mode === "example" ? "Sample data" : "Live providers"}
             </span>
-            <GammaButton iconOnly size="sm" variant="quiet"
+            <GammaButton data-panel-opener="providers" iconOnly size="sm" variant="quiet"
               className={styles.iconButton}
               aria-label="About data sources"
               disabled={importingBundle}
@@ -1701,7 +1777,7 @@ export default function InsightsApp({
                 { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => openBuilderPanel(panel === "ai" ? null : "ai") },
               ]}
             /> : <>
-            <GammaButton size="sm" variant="secondary"
+            <GammaButton data-panel-opener="manage" size="sm" variant="secondary"
               className={styles.secondary}
               aria-label="Manage dashboards"
               disabled={importingBundle}
@@ -1709,7 +1785,7 @@ export default function InsightsApp({
             >
               <Settings2 size={15} /> Manage
             </GammaButton>
-            <GammaButton size="sm" variant="secondary"
+            <GammaButton data-panel-opener="ai" size="sm" variant="secondary"
               className={styles.secondary}
               disabled={importingBundle}
               onClick={() => openBuilderPanel(panel === "ai" ? null : "ai")}
@@ -1752,7 +1828,7 @@ export default function InsightsApp({
             <span className={styles.canvasTab}>
               <LayoutDashboard size={14} /> Canvas
             </span>
-            <GammaButton size="sm" variant="quiet"
+            <GammaButton data-panel-opener="source" size="sm" variant="quiet"
               className={panel === "source" ? styles.activeTool : ""}
               iconOnly={compactShell} aria-label={compactShell ? "Code" : undefined} title={compactShell ? "Dashboard as code" : undefined}
               disabled={importingBundle}
@@ -1828,7 +1904,7 @@ export default function InsightsApp({
               </GammaButton>
             )}
             {editing && (
-              <GammaButton size="sm" variant="quiet"
+              <GammaButton data-panel-opener="add" size="sm" variant="quiet"
                 className={styles.addButton}
                 onClick={() => openBuilderPanel(panel === "add" ? null : "add")}
                 disabled={importingBundle || dashboard.widgets.length >= MAX_WIDGETS}
@@ -1939,7 +2015,7 @@ export default function InsightsApp({
                     <WidgetEditor
                       key={currentWidget.id}
                       widget={currentWidget}
-                      workspace={{ preview, dashboardTitle: dashboard.title, onDiscard: close, widgets: dashboard.widgets, canvasMode }}
+                      workspace={{ preview, dashboardTitle: dashboard.title, onDiscard: close, widgets: dashboard.widgets }}
                       onPreview={setWidgetPreview}
                       onDirtyChange={setWidgetDraftDirty}
                       dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
@@ -2000,7 +2076,7 @@ export default function InsightsApp({
                         })
                         selectWidget(copy.id)
                       }}
-                      moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id, canvasMode)}
+                      moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id)}
                       onMove={(dx, dy) => {
                         const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
                         const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
@@ -2039,7 +2115,7 @@ export default function InsightsApp({
                   assistant help shape your view.
                 </p>
                 <div className={styles.actions}>
-                  <GammaButton size="sm" variant="primary"
+                  <GammaButton data-panel-opener="add" size="sm" variant="primary"
                     className={styles.primary}
                     disabled={importingBundle}
                     onClick={() => {
@@ -2049,7 +2125,7 @@ export default function InsightsApp({
                   >
                     <Plus size={15} /> Add your first widget
                   </GammaButton>
-                  <GammaButton size="sm" variant="secondary"
+                  <GammaButton data-panel-opener="source" size="sm" variant="secondary"
                     className={styles.secondary}
                     disabled={importingBundle}
                     onClick={() => openBuilderPanel("source")}
@@ -2075,7 +2151,7 @@ export default function InsightsApp({
             <aside
               ref={builderPanel}
               tabIndex={-1}
-              className={`${styles.panel} ${(panel === "source" || panel === "examples") ? styles.widePanel : ""}`}
+              className={`${styles.panel} ${(panel === "source" || panel === "examples") && widePanel ? styles.widePanel : ""}`}
               aria-label="Builder panel"
             >
               {panel === "examples" && (workspaceFailed ? (
