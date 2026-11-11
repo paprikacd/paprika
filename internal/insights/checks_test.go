@@ -54,7 +54,7 @@ func TestSchemaFindingsPointWidgetOptionFailuresAtTheWidget(t *testing.T) {
 	if got.GetPointer() != "/widgets/1" || got.GetRuleId() != "schema.widget.shape" || got.GetWidgetId() != "latency" {
 		t.Fatalf("finding = pointer %q rule %q widget %q", got.GetPointer(), got.GetRuleId(), got.GetWidgetId())
 	}
-	if got.GetMessage() != "thresholds require increasing finite values, hex colors, and labels up to 80 characters" {
+	if got.GetMessage() != "threshold color must be a six-digit hex color" {
 		t.Fatalf("message = %q", got.GetMessage())
 	}
 	if validateDashboard("demo", document).Error() != got.GetMessage() {

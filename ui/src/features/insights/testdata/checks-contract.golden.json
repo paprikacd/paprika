@@ -1,6 +1,6 @@
 {
   "save": {
-    "error": "thresholds require increasing finite values, hex colors, and labels up to 80 characters",
+    "error": "threshold color must be a six-digit hex color",
     "issues": [
       {
         "ruleId": "schema.widget.shape",
@@ -8,7 +8,7 @@
         "source": "SOURCE_SCHEMA",
         "widgetId": "latency",
         "pointer": "/widgets/1",
-        "message": "thresholds require increasing finite values, hex colors, and labels up to 80 characters",
+        "message": "threshold color must be a six-digit hex color",
         "fix": ""
       },
       {
@@ -32,7 +32,7 @@
         "source": "SOURCE_SCHEMA",
         "widgetId": "latency",
         "pointer": "/widgets/1",
-        "message": "thresholds require increasing finite values, hex colors, and labels up to 80 characters",
+        "message": "threshold color must be a six-digit hex color",
         "fix": ""
       },
       {
