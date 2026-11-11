@@ -2,7 +2,8 @@ import {test} from "node:test"
 import assert from "node:assert/strict"
 import {request} from "node:http"
 import {Window} from "happy-dom"
-import {parseRenderRequest,allowedRequest,createRenderServer,RenderError,supportsCapacityRetry,tileNotReadySelector,tileSourceUnavailableSelector,busyListingDelay,replayBusyListing,busyListingReplays} from "./render-worker.mjs"
+import * as worker from "./render-worker.mjs"
+import {parseRenderRequest,allowedRequest,createRenderServer,RenderError,supportsCapacityRetry,tileNotReadySelector,tileSourceUnavailableSelector} from "./render-worker.mjs"
 
 test("strict viewport, identity and no arbitrary URL",()=>{
   assert.deepEqual(parseRenderRequest({id:"board"}),{id:"board",width:1512,theme:"dark",focusWidget:""})
@@ -186,41 +187,14 @@ test("GET /providers is a capacity-retry read, while writes and provider configu
   assert.equal(supportsCapacityRetry("/api/insights/provider-configs","GET"),false)
 })
 
-// A busy listing as the gateway-backed API answers it.
-const busyListingResult=(retryAfter)=>({status:200,headers:{"content-type":"application/json"},body:JSON.stringify({providers:[],sharedCatalog:{status:"busy",code:429,message:"busy",retryAfter}})})
-const readyListingResult={status:200,headers:{"content-type":"application/json"},body:JSON.stringify({providers:[{id:"observe-x"}]})}
-
-test("a busy listing is replayed with the jittered Retry-After, at most three times",async()=>{
-  assert.equal(busyListingDelay(2,0,()=>0.5),2000)
-  assert.equal(busyListingDelay(2,0,()=>0),1400)
-  assert.equal(busyListingDelay(2,0,()=>0.999)>=2599 && busyListingDelay(2,0,()=>0.999)<=2600,true)
-  assert.equal(busyListingDelay(undefined,0,()=>0.5),1000,"no Retry-After means one second")
-  assert.equal(busyListingDelay(1,busyListingReplays,()=>0.5),undefined,"replays are bounded")
+// The page client replays a busy listing; the worker must not add a replay layer.
+test("the worker exports no listing replay, so a busy spell is replayed once, by the page client",()=>{
+  assert.deepEqual(Object.keys(worker).filter(name=>/busy|replay/i.test(name)),[])
 })
 
-test("the worker waits out a delayed busy listing and hands the page the recovered answer",async()=>{
-  const answers=[busyListingResult(1),busyListingResult(1),readyListingResult]
-  const waits=[]
-  let fetches=0
-  const final=await replayBusyListing(async()=>answers[fetches++],{wait:ms=>{waits.push(ms);return Promise.resolve()},random:()=>0.5})
-  assert.equal(fetches,3)
-  assert.deepEqual(waits,[1000,1000])
-  assert.equal(final,readyListingResult)
-})
-
-test("a listing that stays busy is returned after the replays, never retried further",async()=>{
-  let fetches=0
-  const waits=[]
-  const final=await replayBusyListing(async()=>{fetches++;return busyListingResult(1)},{wait:ms=>{waits.push(ms);return Promise.resolve()},random:()=>0.5})
-  assert.equal(fetches,busyListingReplays+1)
-  assert.equal(waits.length,busyListingReplays)
-  assert.equal(JSON.parse(final.body).sharedCatalog.status,"busy")
-})
-
-test("only a 200 busy shared catalog is replayed; ready and failed listings return at once",async()=>{
-  for(const result of [readyListingResult,{status:503,headers:{},body:"{}"},{status:200,headers:{},body:"not json"}]) {
-    let fetches=0
-    assert.equal(await replayBusyListing(async()=>{fetches++;return result},{wait:()=>assert.fail("must not wait")}),result)
-    assert.equal(fetches,1)
-  }
+test("a busy tile waiting on the client's replays is not ready, and a final unavailable tile is rejected",()=>{
+  const waiting=documentWith(pendingTile)
+  assert.equal(tileReady(waiting,"inline"),false,"the worker keeps waiting while the client replays")
+  const unavailable=documentWith(unavailableTile)
+  assert.notEqual(unavailable.querySelector('[data-widget-id="inline"]').querySelector(tileSourceUnavailableSelector),null)
 })
