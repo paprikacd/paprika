@@ -58,18 +58,9 @@
         "pointer": "/widgets/1/layout",
         "message": "\"Widget b\" (b) overlaps \"Widget a\" (a)",
         "fix": "Move or resize one of the two widgets so their grid rectangles do not intersect."
-      },
-      {
-        "ruleId": "layout.hole",
-        "severity": "SEVERITY_WARNING",
-        "source": "SOURCE_LINT",
-        "widgetId": "b",
-        "pointer": "/widgets/1/layout/y",
-        "message": "16 empty grid cells sit above \"Widget b\" (b)",
-        "fix": "Move the widgets below the gap up so that every grid row between the top and bottom widgets holds a widget."
       }
     ],
-    "total": 2,
+    "total": 1,
     "truncated": false
   },
   "checkedSave": {
@@ -109,20 +100,11 @@
           "source": "SOURCE_LINT",
           "widgetId": "a",
           "pointer": "/widgets/0/options/showStatBar",
-          "message": "\"Widget a\" (a) is at most two grid rows tall but shows both a bar and a sparkline",
-          "fix": "Keep one trend on a stat with layout h<=2: remove showStatBar, or give the stat layout h of at least 3."
-        },
-        {
-          "ruleId": "stat.compact-bar",
-          "severity": "SEVERITY_WARNING",
-          "source": "SOURCE_LINT",
-          "widgetId": "a",
-          "pointer": "/widgets/0/options/showStatBar",
-          "message": "\"Widget a\" (a) has a bar on a stat at most two grid rows tall",
-          "fix": "Remove showStatBar from the compact stat, or give the stat layout h of at least 3 when the bar is the reading."
+          "message": "\"Widget a\" (a) is at most two grid rows tall and stacks a bar on a sparkline",
+          "fix": "Keep one trend on a stat with layout h<=2: remove either showStatBar or the sparkline, or give the stat layout h of at least 3."
         }
       ],
-      "total": 2,
+      "total": 1,
       "truncated": false
     }
   }

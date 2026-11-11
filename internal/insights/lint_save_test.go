@@ -44,9 +44,9 @@ func TestSaveRejectsOverlapOnCreateAndUpdate(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	// The push-down that resolves the overlap also leaves cells above widget b, so a
-	// hole warning follows the error. The error leads, and it is the save's message.
-	if body.Error != `"Widget b" (b) overlaps "Widget a" (a)` || body.Total != 2 || body.Truncated || len(body.Issues) != 2 {
+	// A document with an overlap reports no holes: the cells the push-down leaves are
+	// its effect, so the overlap is the only finding.
+	if body.Error != `"Widget b" (b) overlaps "Widget a" (a)` || body.Total != 1 || body.Truncated || len(body.Issues) != 1 {
 		t.Fatalf("rejected create body = %+v", body)
 	}
 	issue := body.Issues[0]
@@ -121,8 +121,9 @@ func TestSuccessfulSaveReturnsWarningsInChecks(t *testing.T) {
 	if err := json.Unmarshal(saved["checks"], &checks); err != nil {
 		t.Fatalf("checks = %s: %v", saved["checks"], err)
 	}
-	// A compact stat with a bar and a sparkline fires both stat rules, in registry order.
-	if checks.Total != 2 || checks.Truncated || len(checks.Issues) != 2 || checks.Issues[0]["ruleId"] != "stat.density" || checks.Issues[1]["ruleId"] != "stat.compact-bar" || checks.Issues[0]["severity"] != "SEVERITY_WARNING" {
+	// A compact stat that stacks a bar on a sparkline fires stat.density alone: the
+	// two stat rules cover disjoint cases.
+	if checks.Total != 1 || checks.Truncated || len(checks.Issues) != 1 || checks.Issues[0]["ruleId"] != "stat.density" || checks.Issues[0]["severity"] != "SEVERITY_WARNING" {
 		t.Fatalf("checks = %+v", checks)
 	}
 

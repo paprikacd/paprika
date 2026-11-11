@@ -3,7 +3,7 @@ package insights
 import "fmt"
 
 // guidanceLayout is the guidance line the layout rules map to.
-const guidanceLayout = "Place widgets without overlaps and fill each row; a gap beside a widget stays empty."
+const guidanceLayout = "Place widgets without overlaps and fill each row; a gap beside a widget is not closed automatically."
 
 var layoutLintRules = []lintRule{
 	{
@@ -17,7 +17,7 @@ var layoutLintRules = []lintRule{
 		ID:       "layout.hole",
 		Severity: warningSeverity,
 		Summary:  guidanceLayout,
-		Fix:      "Move the widgets below the gap up so that every grid row between the top and bottom widgets holds a widget.",
+		Fix:      "Resize the widgets beside the gap, or rearrange the row, so the cells above this widget are filled. Moving this widget up would overlap the widget above it.",
 		check:    checkLayoutHoles,
 	},
 }
@@ -45,13 +45,20 @@ func checkLayoutOverlap(doc *lintDocument) []lintHit {
 
 // checkLayoutHoles fires for each widget that has empty grid cells above it on the
 // layout the canvas draws (see compactBoxes). A cell is empty when no widget covers
-// it and some widget lies below it in the same column. Such a cell is a gap the
-// viewer sees, and a widget can rise into it. A stored gap that the canvas would
-// close is not a hole, so it is not reported. Each widget is reported once, with
-// the count of cells above it. The pointer names its layout y, the member an
-// author moves.
+// it and some widget lies below it in the same column. A stored gap that the
+// canvas closes is not a hole, so it is not reported. Each widget is reported once,
+// with the count of cells above it. The pointer names its layout y. Fixing a hole
+// means resizing a neighbour or rearranging the row: moving the widget up would
+// overlap, which is why the fix text says so.
 func checkLayoutHoles(doc *lintDocument) []lintHit {
 	if len(doc.widgets) == 0 {
+		return nil
+	}
+	// Holes are measured on the drawn layout, which pushes overlapping widgets apart
+	// and leaves cells above the pushed ones. Those cells are an effect of the
+	// overlap, which is the finding to fix, so a document with an overlap reports
+	// no holes.
+	if len(checkLayoutOverlap(doc)) > 0 {
 		return nil
 	}
 	boxes := make([]gridBox, len(doc.widgets))

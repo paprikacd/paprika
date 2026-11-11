@@ -29,15 +29,17 @@ var textLintRules = []lintRule{
 	},
 }
 
-// queryFragment matches query text: a PromQL or TraceQL call, label matcher,
-// range selector or TraceQL attribute filter, a SQL statement, or a placeholder.
-// Plain prose that names a technology does not match.
-var queryFragment = regexp.MustCompile(`(?i)\b(?:rate|irate|increase|histogram_quantile|avg_over_time|sum_over_time|clamp_min|clamp_max|topk|bottomk|sum|avg|min|max|count)\(|\b(?:sum|avg|min|max|count)\s+(?:by|without)\s*\(|[a-z_:][a-z0-9_:]*\{\s*[a-z_][a-z0-9_]*\s*(?:=~|!~|!=|=)|\{\s*(?:span|resource)\.|\[\d+[smhdwy]\]|\bselect\s+(?:\*|[a-z_][\w.]*\s*,\s*[a-z_][\w.]*)\s+from\b|\bselect\s+\*\s+from\b|\bwhere\s+[a-z_][\w.]*\s*(?:=|<|>|!=|<=|>=)|\{\{[a-z_][a-z0-9_]*\}\}`)
+// queryFragment matches query syntax: a PromQL call or aggregation, a label
+// matcher, a range selector, a TraceQL attribute filter, a complete SQL select, or a
+// raw variable placeholder. Plain comparisons ("latency > 500 ms", "status = 5xx")
+// and sentences that happen to use the word select do not match.
+var queryFragment = regexp.MustCompile(`(?i)\b(?:rate|irate|increase|histogram_quantile|avg_over_time|sum_over_time|clamp_min|clamp_max|topk|bottomk|sum|avg|min|max|count)\(|\b(?:sum|avg|min|max|count)\s+(?:by|without)\s*\(|[a-z_:][a-z0-9_:]*\{\s*[a-z_][a-z0-9_]*\s*(?:=~|!~|!=|=)|\{\s*(?:span|resource)\.|\[\d+[smhdwy]\]|\bselect\s+(?:\*|[a-z_][\w.]*(?:\s*,\s*[a-z_][\w.]*)*)\s+from\s+[a-z_][\w.]*(?:\s+(?:where|join|group|order|limit)\b|\s*;?\s*$)|\{\{[a-z_][a-z0-9_]*\}\}`)
 
-// attribution matches a sentence that says where the data came from: a query
-// language or data source named after from, via, through or using, or a labelled
-// source, provider, datasource or query.
-var attribution = regexp.MustCompile(`(?i)\b(?:from|via|through|using)\s+(?:the\s+)?(?:[a-z-]+\s+){0,2}(?:promql|traceql|logql|sql|provider|datasource|data source|saved quer(?:y|ies))\b|\b(?:source|provider|datasource|data source|query)\s*[:=]`)
+// attribution matches a sentence that says where the data came from. Either a
+// query language or a data source is named after from, via, through or using; or a
+// labelled source, provider or datasource names a real connector. A bare "Source:"
+// or "Query:" label is prose and does not match.
+var attribution = regexp.MustCompile(`(?i)\b(?:from|via|through|using)\s+(?:the\s+)?(?:[a-z-]+\s+){0,2}(?:promql|traceql|logql|sql|provider|datasource|data source|saved quer(?:y|ies))\b|\b(?:source|provider|datasource|data source)\s*[:=]\s*(?:the\s+)?(?:prometheus|promql|tempo|traceql|loki|logql|postgres(?:ql)?|clickhouse|sql)\b`)
 
 // checkDescriptionProvenance fires for a widget description that contains query
 // text or attributes its data to a source, provider or saved query. The match is

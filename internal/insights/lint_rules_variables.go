@@ -6,7 +6,7 @@ import (
 )
 
 // guidanceVariables is the guidance line the variable and plugin rules map to.
-const guidanceVariables = "Declare every variable a query placeholder or binding uses, and use plugin ids the schema notes name."
+const guidanceVariables = "Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id."
 
 var variableLintRules = []lintRule{
 	{

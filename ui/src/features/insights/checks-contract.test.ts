@@ -15,7 +15,7 @@ type Report = { issues: JsonValue[]; total: number; truncated: boolean }
 type Golden = {
   save: Report & { error: string }
   dryRun: Report
-  // A dry run of a document whose layout overlaps: the lint error the save rejects on, and the hole it leaves.
+  // A dry run of a document whose layout overlaps: the lint error the save rejects on. Holes are not reported beside it.
   lintDryRun: Report
   // A successful save with ?checks=true: the stored document with its warnings in checks.
   checkedSave: Record<string, JsonValue> & { checks: Report }
@@ -67,9 +67,10 @@ describe("dashboard check wire contract", () => {
     }
   })
 
-  it("reads a lint error and the warning it leaves through the generated types", () => {
+  it("reads a lint error through the generated types, with no hole reported beside it", () => {
     const report = CheckReport.fromJson({ issues: golden.lintDryRun.issues, total: golden.lintDryRun.total, truncated: golden.lintDryRun.truncated })
-    const [overlap, hole] = report.issues
+    expect(report.issues).toHaveLength(1)
+    const [overlap] = report.issues
     expect(overlap.ruleId).toBe("layout.overlap")
     expect(overlap.severity).toBe(Severity.ERROR)
     expect(overlap.source).toBe(Source.LINT)
@@ -77,16 +78,13 @@ describe("dashboard check wire contract", () => {
     expect(overlap.pointer).toBe("/widgets/1/layout")
     expect(overlap.message).toBe('"Widget b" (b) overlaps "Widget a" (a)')
     expect(overlap.fix).not.toBe("")
-    expect(hole.ruleId).toBe("layout.hole")
-    expect(hole.severity).toBe(Severity.WARNING)
-    expect(hole.source).toBe(Source.LINT)
-    expect(report.total).toBe(2)
+    expect(report.total).toBe(1)
   })
 
   it("keeps the checked save's document apart from its checks", () => {
     const { checks, ...document } = golden.checkedSave
     const report = CheckReport.fromJson({ issues: checks.issues, total: checks.total, truncated: checks.truncated })
-    expect(report.issues.map(issue => issue.ruleId)).toEqual(["stat.density", "stat.compact-bar"])
+    expect(report.issues.map(issue => issue.ruleId)).toEqual(["stat.density"])
     expect(report.issues.every(issue => issue.severity === Severity.WARNING)).toBe(true)
     // Without checks the body is the stored document, which the UI reads back with the dashboard schema.
     expect(dashboardSchema.parse(document).id).toBe("warn")

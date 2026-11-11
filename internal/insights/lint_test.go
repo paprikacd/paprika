@@ -276,8 +276,8 @@ func TestLintProvenanceInDescriptions(t *testing.T) {
 	for _, description := range []string{
 		"Live telemetry through the shared saved query",
 		"Plotted from PromQL over five minutes",
-		"Query: sum(rate(requests[5m]))",
 		"Source: the Prometheus scrape",
+		"sum(rate(requests[5m]))",
 		`sum(rate(http_requests_total{service="checkout"}[5m]))`,
 		"SELECT service, requests FROM gallery.requests WHERE cluster = 'omega'",
 		"{ span.http.status_code >= 500 } traces that errored",
@@ -294,6 +294,12 @@ func TestLintProvenanceInDescriptions(t *testing.T) {
 		"Postgres connections in use across the pool",
 		"Prometheus scrape interval is fifteen seconds",
 		"Select a service from the list to filter traces",
+		"Select requests from the list below",
+		"Show requests where latency > 500 ms",
+		"Errors where status = 5xx in the last hour",
+		"Pick a source: the table below",
+		"Query: how many requests failed today",
+		"Source: the quarterly planning deck",
 		"Traces from the checkout service, sorted by duration",
 		"Requests served per second, excluding health checks.",
 	} {
@@ -336,6 +342,31 @@ func TestLintUnknownPlugin(t *testing.T) {
 }
 
 // A finding takes its severity and fix from the rule, never from the document.
+// The two stat rules cover disjoint stats: a bar stacked on a sparkline is
+// stat.density, and a bar without a sparkline is stat.compact-bar.
+func TestLintStatRulesAreDisjoint(t *testing.T) {
+	stacked := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":2}`, `"options":{"showStatBar":true,"min":0,"max":100,"showSparkline":true}`))
+	requireOneHit(t, lintFor(t, stacked), "stat.density", "/widgets/0/options/showStatBar")
+	requireNoHits(t, lintFor(t, stacked), "stat.compact-bar")
+
+	bar := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":2}`, `"options":{"showStatBar":true,"min":0,"max":100}`))
+	requireOneHit(t, lintFor(t, bar), "stat.compact-bar", "/widgets/0/options/showStatBar")
+	requireNoHits(t, lintFor(t, bar), "stat.density")
+}
+
+// An overlap explains the cells beside it, so holes are not reported for the same
+// document. The overlap is the finding to fix.
+func TestLintHolesAreSuppressedByAnOverlap(t *testing.T) {
+	overlapping := documentWithWidgets("demo",
+		widgetJSON("a", `{"x":0,"y":0,"w":4,"h":2}`, ""),
+		widgetJSON("b", `{"x":0,"y":2,"w":8,"h":2}`, ""),
+		widgetJSON("c", `{"x":8,"y":0,"w":4,"h":2}`, ""),
+		widgetJSON("d", `{"x":3,"y":0,"w":2,"h":2}`, ""),
+	)
+	requireOneHit(t, lintFor(t, overlapping), "layout.overlap", "/widgets/3/layout")
+	requireNoHits(t, lintFor(t, overlapping), "layout.hole")
+}
+
 func TestLintFindingsCarryTheRuleSeverityAndFix(t *testing.T) {
 	document := documentWithWidgets("demo",
 		widgetJSON("a", `{"x":0,"y":0,"w":6,"h":4}`, ""),

@@ -88,8 +88,8 @@ func TestLintPrintsFindingsAndASummary(t *testing.T) {
 		t.Fatalf("stdout = %q", stdout)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	// The overlap also leaves cells above widget b, so a hole warning follows the error.
-	if got := lines[len(lines)-1]; got != "paprika-insights lint: 1 documents, 1 errors, 1 warnings, 0 info" {
+	// An overlapping document reports no holes beside its overlap.
+	if got := lines[len(lines)-1]; got != "paprika-insights lint: 1 documents, 1 errors, 0 warnings, 0 info" {
 		t.Fatalf("summary = %q", got)
 	}
 }
@@ -101,11 +101,11 @@ func TestLintCountsWarningsWithoutFailing(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, stdout %q", code, stdout)
 	}
-	if !strings.Contains(stdout, "warning stat.density") || !strings.Contains(stdout, "warning stat.compact-bar") {
+	if !strings.Contains(stdout, "warning stat.density") {
 		t.Fatalf("stdout = %q", stdout)
 	}
-	// The stat is compact with a bar and a sparkline, so both stat rules fire.
-	if !strings.Contains(stdout, "paprika-insights lint: 1 documents, 0 errors, 2 warnings, 0 info") {
+	// A compact stat that stacks a bar on a sparkline is one warning.
+	if !strings.Contains(stdout, "paprika-insights lint: 1 documents, 0 errors, 1 warnings, 0 info") {
 		t.Fatalf("stdout = %q", stdout)
 	}
 }

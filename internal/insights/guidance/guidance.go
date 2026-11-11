@@ -34,8 +34,8 @@ var dashboardComposition = []string{
 	"Keep provenance out of titles and descriptions: source and query detail belongs in tooltips or authoring metadata. Write a description only when it adds meaning the viewer needs.",
 	"Show a unit once, as the widget unit, not in axis labels, tick labels or titles.",
 	"Do not force max to 100 on rate charts unless the full 0 to 100 range is essential.",
-	"Place widgets without overlaps and fill each row; a gap beside a widget stays empty.",
-	"Declare every variable a query placeholder or binding uses, and use plugin ids the schema notes name.",
+	"Place widgets without overlaps and fill each row; a gap beside a widget is not closed automatically.",
+	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id.",
 	"On a stat, set min and max only together with showStatBar, which requires both. A bar that is switched off may keep bounds it already has; do not remove them to tidy the document.",
 	"Avoid widget-internal scrolling; a KPI that needs a scrollbar is too small or too dense.",
 }
