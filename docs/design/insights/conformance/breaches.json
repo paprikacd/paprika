@@ -1,0 +1,272 @@
+{
+  "description": "Shared time-series breach cases. Each case gives thresholds, one or more series (points as {timestamp, value} in epoch milliseconds, value null for a missing sample, and step in milliseconds or null when unknown), and the expected breach intervals and per-level summary. Rules: a sample's band is the highest threshold at or below its value, or the first threshold for a value below all of them; only warning and critical author-set statuses breach; a missing sample ends a run and never breaches; two consecutive samples more than 1.5 steps apart end a run; an interval ends one step after its last breaching sample or at the next sample, whichever is first. Thresholds that are not strictly increasing produce no intervals. The summary's duration per level is the union of that level's spans. ui breaches.test.ts and the Go breach port must both produce exactly these results.",
+  "cases": [
+    {
+      "name": "equal to a threshold takes that band, and warning and critical runs split",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "warning" },
+        { "value": 5, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 1 },
+            { "timestamp": 60000, "value": 2 },
+            { "timestamp": 120000, "value": 4.9 },
+            { "timestamp": 180000, "value": 5 },
+            { "timestamp": 240000, "value": 6 },
+            { "timestamp": 300000, "value": 4 },
+            { "timestamp": 360000, "value": 2 },
+            { "timestamp": 420000, "value": 1.9 }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [
+          { "series": 0, "start": 60000, "end": 180000, "level": "warning", "duration": 120000 },
+          { "series": 0, "start": 180000, "end": 300000, "level": "critical", "duration": 120000 },
+          { "series": 0, "start": 300000, "end": 420000, "level": "warning", "duration": 120000 }
+        ],
+        "summary": [
+          { "level": "critical", "intervals": 1, "duration": 120000 },
+          { "level": "warning", "intervals": 2, "duration": 240000 }
+        ]
+      }
+    },
+    {
+      "name": "a missing sample ends a run and is never counted as breaching",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 1 },
+            { "timestamp": 60000, "value": 3 },
+            { "timestamp": 120000, "value": null },
+            { "timestamp": 180000, "value": 3 },
+            { "timestamp": 240000, "value": 3 },
+            { "timestamp": 300000, "value": 1 }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [
+          { "series": 0, "start": 60000, "end": 120000, "level": "critical", "duration": 60000 },
+          { "series": 0, "start": 180000, "end": 300000, "level": "critical", "duration": 120000 }
+        ],
+        "summary": [{ "level": "critical", "intervals": 2, "duration": 180000 }]
+      }
+    },
+    {
+      "name": "a timestamp gap larger than 1.5 steps ends a run without any null sample",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 0 },
+            { "timestamp": 60000, "value": 3 },
+            { "timestamp": 120000, "value": 3 },
+            { "timestamp": 300000, "value": 3 },
+            { "timestamp": 360000, "value": 1 }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [
+          { "series": 0, "start": 60000, "end": 180000, "level": "critical", "duration": 120000 },
+          { "series": 0, "start": 300000, "end": 360000, "level": "critical", "duration": 60000 }
+        ],
+        "summary": [{ "level": "critical", "intervals": 2, "duration": 180000 }]
+      }
+    },
+    {
+      "name": "an unknown step ends the interval at its last breaching sample",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": null,
+          "points": [
+            { "timestamp": 0, "value": 3 },
+            { "timestamp": 60000, "value": 3 },
+            { "timestamp": 120000, "value": 1 }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [{ "series": 0, "start": 0, "end": 60000, "level": "critical", "duration": 60000 }],
+        "summary": [{ "level": "critical", "intervals": 1, "duration": 60000 }]
+      }
+    },
+    {
+      "name": "a single breaching sample with an unknown step has no duration",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [{ "step": null, "points": [{ "timestamp": 0, "value": 3 }] }],
+      "expected": {
+        "intervals": [{ "series": 0, "start": 0, "end": 0, "level": "critical", "duration": 0 }],
+        "summary": [{ "level": "critical", "intervals": 1, "duration": 0 }]
+      }
+    },
+    {
+      "name": "several series keep their own intervals, and shared time counts once in the summary",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 3 },
+            { "timestamp": 60000, "value": 3 },
+            { "timestamp": 120000, "value": 1 }
+          ]
+        },
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 1 },
+            { "timestamp": 60000, "value": 3 },
+            { "timestamp": 120000, "value": 3 },
+            { "timestamp": 180000, "value": 1 }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [
+          { "series": 0, "start": 0, "end": 120000, "level": "critical", "duration": 120000 },
+          { "series": 1, "start": 60000, "end": 180000, "level": "critical", "duration": 120000 }
+        ],
+        "summary": [{ "level": "critical", "intervals": 2, "duration": 180000 }]
+      }
+    },
+    {
+      "name": "a value below the first threshold uses the first threshold's status",
+      "thresholds": [
+        { "value": 2, "status": "warning" },
+        { "value": 5, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 1 },
+            { "timestamp": 60000, "value": 1 },
+            { "timestamp": 120000, "value": 6 },
+            { "timestamp": 180000, "value": 1 }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [
+          { "series": 0, "start": 0, "end": 120000, "level": "warning", "duration": 120000 },
+          { "series": 0, "start": 120000, "end": 180000, "level": "critical", "duration": 60000 },
+          { "series": 0, "start": 180000, "end": 240000, "level": "warning", "duration": 60000 }
+        ],
+        "summary": [
+          { "level": "critical", "intervals": 1, "duration": 60000 },
+          { "level": "warning", "intervals": 2, "duration": 180000 }
+        ]
+      }
+    },
+    {
+      "name": "a run that reaches the last sample ends one step after it",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 1 },
+            { "timestamp": 60000, "value": 3 },
+            { "timestamp": 120000, "value": 3 }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [{ "series": 0, "start": 60000, "end": 180000, "level": "critical", "duration": 120000 }],
+        "summary": [{ "level": "critical", "intervals": 1, "duration": 120000 }]
+      }
+    },
+    {
+      "name": "an isolated breaching sample between missing samples keeps one step of duration",
+      "thresholds": [
+        { "value": 0, "status": "ok" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": null },
+            { "timestamp": 60000, "value": 3 },
+            { "timestamp": 120000, "value": null }
+          ]
+        }
+      ],
+      "expected": {
+        "intervals": [{ "series": 0, "start": 60000, "end": 120000, "level": "critical", "duration": 60000 }],
+        "summary": [{ "level": "critical", "intervals": 1, "duration": 60000 }]
+      }
+    },
+    {
+      "name": "colour-only thresholds and non-breaching statuses never breach",
+      "thresholds": [
+        { "value": 0, "color": "#e8554e" },
+        { "value": 10, "status": "info" },
+        { "value": 25, "status": "ok" }
+      ],
+      "series": [
+        {
+          "step": 60000,
+          "points": [
+            { "timestamp": 0, "value": 4 },
+            { "timestamp": 60000, "value": 12 },
+            { "timestamp": 120000, "value": 30 }
+          ]
+        }
+      ],
+      "expected": { "intervals": [], "summary": [] }
+    },
+    {
+      "name": "unordered thresholds are rejected, so nothing breaches",
+      "thresholds": [
+        { "value": 5, "status": "critical" },
+        { "value": 2, "status": "warning" }
+      ],
+      "series": [{ "step": 60000, "points": [{ "timestamp": 0, "value": 6 }, { "timestamp": 60000, "value": 3 }] }],
+      "expected": { "intervals": [], "summary": [] }
+    },
+    {
+      "name": "repeated threshold values are rejected, so nothing breaches",
+      "thresholds": [
+        { "value": 2, "status": "warning" },
+        { "value": 2, "status": "critical" }
+      ],
+      "series": [{ "step": 60000, "points": [{ "timestamp": 0, "value": 3 }, { "timestamp": 60000, "value": 3 }] }],
+      "expected": { "intervals": [], "summary": [] }
+    },
+    {
+      "name": "no thresholds means no breaches",
+      "thresholds": [],
+      "series": [{ "step": 60000, "points": [{ "timestamp": 0, "value": 99 }, { "timestamp": 60000, "value": 99 }] }],
+      "expected": { "intervals": [], "summary": [] }
+    }
+  ]
+}

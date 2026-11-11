@@ -1,0 +1,9 @@
+/* Breach bands and the breach summary of a time series. Bands fill with the status -soft tokens, which stay quiet on every
+   surface. The summary's words use the status -text tokens, which meet 4.5:1, and always name the level, so colour is never
+   the only signal. */
+.band { position: absolute; z-index: -1; pointer-events: none; }
+.band[data-level="critical"] { background: var(--gamma-status-critical-soft); }
+.band[data-level="warning"] { background: var(--gamma-status-warning-soft); }
+.summary { font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted, #52636f)); font-variant-numeric: tabular-nums; }
+.level[data-level="critical"] { color: var(--gamma-status-critical-text); }
+.level[data-level="warning"] { color: var(--gamma-status-warning-text); }
