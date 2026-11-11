@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { buildDashboardURL, parseDashboardURL, type DashboardNavigation } from "./drilldown"
 
 /**
@@ -57,23 +57,33 @@ export function serialiseDashboardView(state: DashboardNavigation, options: { ex
   return buildDashboardURL(state, path) + (options.example ? "&example=1" : "")
 }
 
+export interface DashboardViewWrite {
+  /** Overrides the example flag the hook was given, for a write made before that flag has rendered. */
+  example?: boolean
+}
+
 /**
- * Owns the URL-backed view for the dashboard on screen. Callers never touch
- * window.history or the parsed view directly.
+ * Owns the URL writes and the in-memory view for the dashboard on screen. The
+ * example flag is read from the render that last committed, so writes made from
+ * event handlers and effects need no flag at the call site. Reading the address
+ * (initial load, Back and Forward) stays with the caller, through readDashboardView.
  */
-export function useDashboardView(dashboardId: string) {
+export function useDashboardView(dashboardId: string, example: boolean) {
   const [route, setRoute] = useState<DashboardNavigation | null>(null)
+  const exampleMode = useRef(example)
+  useLayoutEffect(() => { exampleMode.current = example })
   // Writes the address for an action without changing the in-memory view.
-  const reflect = useCallback((state: DashboardNavigation, action: ViewAction, example: boolean) => {
+  const reflect = useCallback((state: DashboardNavigation, action: ViewAction, options: DashboardViewWrite = {}) => {
     const method = VIEW_HISTORY[action]
     if (method === "none") return
-    const url = serialiseDashboardView(state, { example })
+    const url = serialiseDashboardView(state, { example: options.example ?? exampleMode.current })
     if (method === "push") window.history.pushState(window.history.state, "", url)
     else window.history.replaceState(window.history.state, "", url)
   }, [])
-  // Records the address for an action, then makes the view current.
-  const apply = useCallback((state: DashboardNavigation, action: ViewAction, example: boolean) => {
-    reflect(state, action, example)
+  // Writes the address for an action, then makes the view current. A write that throws
+  // leaves the view unchanged, so the caller decides what to show.
+  const apply = useCallback((state: DashboardNavigation, action: ViewAction, options?: DashboardViewWrite) => {
+    reflect(state, action, options)
     setRoute(state)
   }, [reflect])
   // Makes a view current without writing the address. Used when the address must keep the value it came from.

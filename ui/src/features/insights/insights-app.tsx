@@ -290,7 +290,7 @@ export default function InsightsApp({
     })
     return () => controller.abort()
   }, [libraryClient, mode, libraryRevision])
-  const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id)
+  const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id, mode === "example")
   const [returnTo, setReturnTo] = useState<{ state: DashboardNavigation; title: string } | null>(null)
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
   const [editing, setEditing] = useState(false)
@@ -445,10 +445,10 @@ export default function InsightsApp({
     let active = true
     queueMicrotask(() => {
       if (!active) return
-      applyView({ ...currentRoute, variables: Object.fromEntries(retained) }, "prune", mode === "example")
+      applyView({ ...currentRoute, variables: Object.fromEntries(retained) }, "prune")
     })
     return () => { active = false }
-  }, [currentRoute, dashboard.variables, mode, applyView])
+  }, [currentRoute, dashboard.variables, applyView])
   const [queryFieldSnapshot, setQueryFieldSnapshot] = useState<QueryFieldSnapshot>();
   const [queryResultSnapshot, setQueryResultSnapshot] = useState<WidgetResultSnapshot>();
   const currentWidget = dashboard.widgets.find(
@@ -509,7 +509,7 @@ export default function InsightsApp({
     setMode("example")
     let viewError = error
     try {
-      applyView(state, error ? "keep" : "load", true)
+      applyView(state, error ? "keep" : "load", { example: true })
     } catch (cause) {
       // A link that parses but cannot be written back keeps its value on screen, and the address keeps the link.
       showView(state)
@@ -549,7 +549,7 @@ export default function InsightsApp({
         setMode("live")
         const state = { ...initial.state, dashboardId: active.dashboard.id }
         resolveDashboardVariables(active.dashboard, state.variables)
-        applyView(state, initial.error ? "keep" : "load", false)
+        applyView(state, initial.error ? "keep" : "load")
         setError(initial.error)
       })
       .catch((error) => {
@@ -833,7 +833,7 @@ export default function InsightsApp({
   function syncVariableDefinitions(next: Dashboard) {
     if (!currentRoute?.variables) return
     const variables = Object.fromEntries(Object.entries(currentRoute.variables).filter(([name]) => next.variables?.some(item => item.name === name)))
-    applyView({ ...currentRoute, variables }, "prune", mode === "example")
+    applyView({ ...currentRoute, variables }, "prune")
   }
   function addWidget(definition: WidgetDefinition) {
     if (dashboard.widgets.length >= MAX_WIDGETS) {
@@ -952,7 +952,7 @@ export default function InsightsApp({
         setSaved(documentFingerprint(active.dashboard))
         setEditing(false)
       }
-      applyView(nextState, action, mode === "example")
+      applyView(nextState, action)
       setEnd(Math.floor(Date.now() / 1000))
       close()
       setError("")
@@ -983,7 +983,7 @@ export default function InsightsApp({
   function selectDashboardContext(widget: Widget, context: DrilldownContext) {
     try {
       const variables = resolveSelectionBindings(widget.selectionBindings ?? [], context, dashboard, variableValues)
-      applyView({ ...currentRoute, dashboardId: dashboard.id, variables }, "selection", mode === "example")
+      applyView({ ...currentRoute, dashboardId: dashboard.id, variables }, "selection")
       setError("")
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not apply selection")
@@ -992,7 +992,7 @@ export default function InsightsApp({
   function selectDashboardTime(window: { start: number; end: number }) {
     try {
       const customTimeRange = customTimeRangeSchema.parse({ from: new Date(window.start).toISOString(), to: new Date(window.end).toISOString() })
-      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: variableValues, customTimeRange }, "brush", mode === "example")
+      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: variableValues, customTimeRange }, "brush")
       setError("")
     } catch {
       setError("Choose an increasing time range of at most 31 days.")
@@ -1003,7 +1003,7 @@ export default function InsightsApp({
   const popHandler = useRef<() => void>(() => {})
   useLayoutEffect(() => {
     popHandler.current = () => {
-      const restore = () => reflectView(currentRoute ?? { dashboardId: dashboard.id }, "recover", mode === "example")
+      const restore = () => reflectView(currentRoute ?? { dashboardId: dashboard.id }, "recover")
       try {
         const state = readDashboardView()
         const target = dashboards.find(item => item.id === state?.dashboardId)
@@ -1028,7 +1028,7 @@ export default function InsightsApp({
   }, [])
 
   function resetView(next: Dashboard) {
-    applyView({ dashboardId: next.id }, "reset", mode === "example")
+    applyView({ dashboardId: next.id }, "reset")
     setReturnTo(null)
   }
   function confirmDiscard() {
@@ -1669,7 +1669,7 @@ export default function InsightsApp({
           <div className={styles.toolbarLeft}>
             <VariableBar key={dashboard.id} dashboard={dashboard} values={variableValues} onApply={values => {
               try {
-                applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables", mode === "example")
+                applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
                 setError("")
               } catch (error) { setError(error instanceof Error ? error.message : "Invalid variable values") }
             }} />
@@ -1723,7 +1723,7 @@ export default function InsightsApp({
               key={dashboard.id}
               dashboard={viewDashboard}
               onChange={(next) => {
-                applyView({ ...currentRoute, dashboardId: dashboard.id, customTimeRange: undefined }, "range", mode === "example")
+                applyView({ ...currentRoute, dashboardId: dashboard.id, customTimeRange: undefined }, "range")
                 update({ ...dashboard, ...next })
                 setEnd(Math.floor(Date.now() / 1000))
                 setEditing(true)
