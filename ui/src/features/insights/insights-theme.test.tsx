@@ -26,11 +26,10 @@ function themeTokenSets() {
 }
 
 /**
- * CIEDE2000 colour difference between two hex colours (Sharma, Wu and Dalal 2005, kL = kC = kH = 1), written out
- * here so the palette test has no colour dependency. Checked against the paper's reference pairs.
+ * CIEDE2000 colour difference (Sharma, Wu and Dalal 2005, kL = kC = kH = 1) between two CIELAB colours, written out so
+ * the palette tests need no colour dependency. insights-theme.test.tsx checks it against the paper's published pairs.
  */
-function deltaE2000(first: string, second: string): number {
-  const [L1, a1, b1] = toLab(first), [L2, a2, b2] = toLab(second);
+function deltaE2000Lab([L1, a1, b1]: readonly number[], [L2, a2, b2]: readonly number[]): number {
   const deg = (radians: number) => (radians * 180) / Math.PI, rad = (degrees: number) => (degrees * Math.PI) / 180;
   const C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cbar = (C1 + C2) / 2;
   const G = 0.5 * (1 - Math.sqrt(Cbar ** 7 / (Cbar ** 7 + 25 ** 7)));
@@ -74,6 +73,32 @@ function toLab(hex: string): [number, number, number] {
   const fx = f(X), fy = f(Y), fz = f(Z);
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 }
+
+const deltaE2000 = (first: string, second: string) => deltaE2000Lab(toLab(first), toLab(second));
+
+/**
+ * Deuteranopia as Machado, Oliveira and Fernandes (2009) model it: severity 1.0 matrix applied to linear sRGB, then
+ * re-encoded. The simulated colours are compared with CIEDE2000, as the rest of the palette tests do.
+ */
+const DEUTERANOPIA = [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.01182, 0.04294, 0.968881]];
+function simulateDeuteranopia(hex: string): string {
+  const linear = [1, 3, 5].map((offset) => {
+    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const encoded = DEUTERANOPIA.map((row) => {
+    const value = Math.min(1, Math.max(0, row[0] * linear[0] + row[1] * linear[1] + row[2] * linear[2]));
+    const channel = value <= 0.0031308 ? 12.92 * value : 1.055 * value ** (1 / 2.4) - 0.055;
+    return Math.round(channel * 255).toString(16).padStart(2, "0");
+  });
+  return `#${encoded.join("")}`;
+}
+
+/** The colour a series tile tint gives when a palette colour is mixed with white (CSS color-mix in srgb). */
+function tintOf(hex: string, share: number): string {
+  return `#${[1, 3, 5].map((offset) => Math.round(parseInt(hex.slice(offset, offset + 2), 16) * share + 255 * (1 - share)).toString(16).padStart(2, "0")).join("")}`;
+}
+
 
 afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
 
@@ -242,6 +267,44 @@ describe("status tokens", () => {
   });
 });
 
+/** The 34 test pairs published with the CIEDE2000 paper (Sharma, Wu and Dalal 2005, Table 1), as [Lab1, Lab2, dE00]. */
+const PUBLISHED_CIEDE2000_PAIRS: [number[], number[], number][] = [
+  [[50.0, 2.6772, -79.7751], [50.0, 0.0, -82.7485], 2.0425],
+  [[50.0, 3.1571, -77.2803], [50.0, 0.0, -82.7485], 2.8615],
+  [[50.0, 2.8361, -74.02], [50.0, 0.0, -82.7485], 3.4412],
+  [[50.0, -1.3802, -84.2814], [50.0, 0.0, -82.7485], 1.0],
+  [[50.0, -1.1848, -84.8006], [50.0, 0.0, -82.7485], 1.0],
+  [[50.0, -0.9009, -85.5211], [50.0, 0.0, -82.7485], 1.0],
+  [[50.0, 0.0, 0.0], [50.0, -1.0, 2.0], 2.3669],
+  [[50.0, -1.0, 2.0], [50.0, 0.0, 0.0], 2.3669],
+  [[50.0, 2.49, -0.001], [50.0, -2.49, 0.0009], 7.1792],
+  [[50.0, 2.49, -0.001], [50.0, -2.49, 0.001], 7.1792],
+  [[50.0, 2.49, -0.001], [50.0, -2.49, 0.0011], 7.2195],
+  [[50.0, 2.49, -0.001], [50.0, -2.49, 0.0012], 7.2195],
+  [[50.0, -0.001, 2.49], [50.0, 0.0009, -2.49], 4.8045],
+  [[50.0, -0.001, 2.49], [50.0, 0.001, -2.49], 4.8045],
+  [[50.0, -0.001, 2.49], [50.0, 0.0011, -2.49], 4.7461],
+  [[50.0, 2.5, 0.0], [50.0, 0.0, -2.5], 4.3065],
+  [[50.0, 2.5, 0.0], [73.0, 25.0, -18.0], 27.1492],
+  [[50.0, 2.5, 0.0], [61.0, -5.0, 29.0], 22.8977],
+  [[50.0, 2.5, 0.0], [56.0, -27.0, -3.0], 31.903],
+  [[50.0, 2.5, 0.0], [58.0, 24.0, 15.0], 19.4535],
+  [[50.0, 2.5, 0.0], [50.0, 3.1736, 0.5854], 1.0],
+  [[50.0, 2.5, 0.0], [50.0, 3.2972, 0.0], 1.0],
+  [[50.0, 2.5, 0.0], [50.0, 1.8634, 0.5757], 1.0],
+  [[50.0, 2.5, 0.0], [50.0, 3.2592, 0.335], 1.0],
+  [[60.2574, -34.0099, 36.2677], [60.4626, -34.1751, 39.4387], 1.2644],
+  [[63.0109, -31.0961, -5.8663], [62.8187, -29.7946, -4.0864], 1.263],
+  [[61.2901, 3.7196, -5.3901], [61.4292, 2.248, -4.962], 1.8731],
+  [[35.0831, -44.1164, 3.7933], [35.0232, -40.0716, 1.5901], 1.8645],
+  [[22.7233, 20.0904, -46.694], [23.0331, 14.973, -42.5619], 2.0373],
+  [[36.4612, 47.858, 18.3852], [36.2715, 50.5065, 21.2231], 1.4146],
+  [[90.8027, -2.0831, 1.441], [91.1528, -1.6435, 0.0447], 1.4441],
+  [[90.9257, -0.5406, -0.9208], [88.6381, -0.8985, -0.7239], 1.5381],
+  [[6.7747, -0.2908, -2.4247], [5.8714, -0.0985, -2.2286], 0.6377],
+  [[2.0776, 0.0795, -1.135], [0.9033, -0.0636, -0.5514], 0.9082],
+];
+
 describe("series palette", () => {
   const css = readFileSync("src/features/insights/gamma/gamma-theme.module.css", "utf8");
   const statusLevels = ["ok", "info", "warning", "critical", "unknown"] as const;
@@ -249,23 +312,30 @@ describe("series palette", () => {
   const statusTokens = ["--gamma-status-ok", "--gamma-status-info", "--gamma-status-warning", "--gamma-status-critical", "--gamma-status-unknown", "--gamma-danger", "--gamma-success", "--gamma-warning"];
   // Every surface a series stroke or tile is drawn on, as in the status legibility tests.
   const surfaces = ["--gamma-bg", "--gamma-surface", "--gamma-surface-2", "--gamma-page", "--gamma-sidebar"];
-  const ADJACENT_MIN_DE = 15;
-  const ALL_PAIRS_MIN_DE = 10;
-  const DISTINCT_STATUS_MIN_DE = 15;
   const sets = themeTokenSets();
+  const slotsOf = (tokens: Record<string, string>) => Array.from({ length: 8 }, (_, index) => tokens[`--gamma-series-${index + 1}`]);
+  const darkBlocks = ["dark", "compact"] as const;
+  const ADJACENT_MIN_DE = 15;
+  const ALL_PAIRS_MIN_DE_DARK = 10;
+  const ALL_PAIRS_MIN_DE_LIGHT = 15;
+  const INK_MIN_DE_DARK = 20;
+  const STATUS_MIN_DE = 15;
+  const DEUTERANOPIA_MIN_DE = 8;
+  const DARK_MAX_LIGHTNESS = 80;
+  const TINT_TEXT = "#23332c";
+  const TINT_MIN_TEXT_CONTRAST = 4.5;
+  const TINT_MIN_DE = 6;
 
-  it("computes CIEDE2000 against the reference pairs the paper publishes", () => {
+  it("matches CIEDE2000 on all 34 published test pairs", () => {
+    expect(PUBLISHED_CIEDE2000_PAIRS).toHaveLength(34);
+    for (const [first, second, expected] of PUBLISHED_CIEDE2000_PAIRS)
+      expect(Math.abs(deltaE2000Lab(first, second) - expected), `${first} vs ${second}`).toBeLessThan(1e-4);
     expect(deltaE2000("#000000", "#000000")).toBe(0);
-    expect(deltaE2000("#3f72b4", "#4b9864")).toBeCloseTo(41.6415, 3);
-    expect(deltaE2000("#003d75", "#0a9192")).toBeCloseTo(35.8782, 3);
-    expect(deltaE2000("#ffffff", "#000000")).toBeCloseTo(100, 3);
-    expect(deltaE2000("#43d0ff", "#1e9faf")).toBeCloseTo(16.5531, 3);
   });
 
   it("mirrors the CSS slots in series-palette.ts for every block", () => {
     for (const block of ["light", "dark", "compact"] as const) {
-      const slots = Array.from({ length: 8 }, (_, index) => sets[block][`--gamma-series-${index + 1}`]);
-      expect(slots, block).toEqual(SERIES_HEX[block]);
+      expect(slotsOf(sets[block]), block).toEqual(SERIES_HEX[block]);
       // Chart tokens predate the series tokens, so each repeats its slot.
       const charts = Array.from({ length: 8 }, (_, index) => sets[block][`--gamma-chart-${index + 1}`]);
       expect(charts, block).toEqual(SERIES_HEX[block]);
@@ -299,28 +369,64 @@ describe("series palette", () => {
       for (let index = 1; index <= 8; index++)
         for (const status of statusTokens) {
           const distance = deltaE2000(tokens[`--gamma-series-${index}`], tokens[status]);
-          expect(distance, `${block} slot ${index} vs ${status}`).toBeGreaterThanOrEqual(DISTINCT_STATUS_MIN_DE);
+          expect(distance, `${block} slot ${index} vs ${status}`).toBeGreaterThanOrEqual(STATUS_MIN_DE);
         }
   });
 
-  it("keeps adjacent slots at least 15 dE2000 apart and every pair at least 10", () => {
+  it("keeps adjacent slots at least 15 dE2000 apart, and every pair apart by 10 in dark blocks and 15 in light", () => {
     for (const [block, tokens] of Object.entries(sets)) {
-      const slots = Array.from({ length: 8 }, (_, index) => tokens[`--gamma-series-${index + 1}`]);
+      const slots = slotsOf(tokens);
       for (let index = 0; index < slots.length; index++)
         for (let other = index + 1; other < slots.length; other++) {
           const distance = deltaE2000(slots[index], slots[other]);
           if (other === index + 1) expect(distance, `${block} slots ${index + 1} and ${other + 1}`).toBeGreaterThanOrEqual(ADJACENT_MIN_DE);
-          expect(distance, `${block} slots ${index + 1} and ${other + 1}`).toBeGreaterThanOrEqual(ALL_PAIRS_MIN_DE);
+          const minimum = block === "light" ? ALL_PAIRS_MIN_DE_LIGHT : ALL_PAIRS_MIN_DE_DARK;
+          expect(distance, `${block} slots ${index + 1} and ${other + 1}`).toBeGreaterThanOrEqual(minimum);
         }
     }
   });
 
-  it("names no status meaning in a role: each role's slot clears every status mark too", () => {
+  it("keeps every slot in the dark blocks at L* 80 or below, so no wedge or line washes out", () => {
+    for (const block of darkBlocks)
+      for (const slot of slotsOf(sets[block])) expect(toLab(slot)[0], `${block} ${slot}`).toBeLessThanOrEqual(DARK_MAX_LIGHTNESS);
+  });
+
+  it("keeps every dark-block slot at least 20 dE2000 from the widget ink", () => {
+    for (const block of darkBlocks)
+      for (const slot of slotsOf(sets[block])) expect(deltaE2000(slot, sets[block]["--gamma-ink"]), `${block} ${slot}`).toBeGreaterThanOrEqual(INK_MIN_DE_DARK);
+  });
+
+  it("keeps the first four slots at least 8 dE2000 apart under simulated deuteranopia, in every block", () => {
+    for (const [block, tokens] of Object.entries(sets)) {
+      const simulated = slotsOf(tokens).slice(0, 4).map(simulateDeuteranopia);
+      for (let index = 0; index < simulated.length; index++)
+        for (let other = index + 1; other < simulated.length; other++)
+          expect(deltaE2000(simulated[index], simulated[other]), `${block} slots ${index + 1} and ${other + 1}`).toBeGreaterThanOrEqual(DEUTERANOPIA_MIN_DE);
+    }
+  });
+
+  it("keeps every role's slot at least 15 dE2000 from every status mark too", () => {
     for (const [block, tokens] of Object.entries(sets))
       for (const role of SERIES_ROLES) {
         const colour = tokens[`--gamma-series-${SERIES_ROLE_SLOT[role]}`];
         for (const level of statusLevels)
-          expect(deltaE2000(colour, tokens[`--gamma-status-${level}`]), `${block} ${role} vs ${level}`).toBeGreaterThanOrEqual(DISTINCT_STATUS_MIN_DE);
+          expect(deltaE2000(colour, tokens[`--gamma-status-${level}`]), `${block} ${role} vs ${level}`).toBeGreaterThanOrEqual(STATUS_MIN_DE);
       }
+  });
+
+  it("keeps the pie and treemap tints legible and distinct: dark tile text at 4.5:1 or better, and no two tints closer than 6 dE2000", () => {
+    // records.module.css mixes each slot 1-6 with white at --record-tint. The light share is the default; dark and compact override it.
+    const records = readFileSync("src/features/insights/plugins/records.module.css", "utf8");
+    const light = Number(records.match(/--record-tint:\s*(\d+)%/)![1]) / 100;
+    const dark = Number(records.match(/:global\(\[data-insights-theme="dark"\]\) \.treemap\s*\{\s*--record-tint:\s*(\d+)%/)![1]) / 100;
+    expect(light).toBeGreaterThan(0);
+    expect(dark).toBeGreaterThan(0);
+    for (const [share, slots] of [[light, SERIES_HEX.light], [dark, SERIES_HEX.dark], [dark, SERIES_HEX.compact]] as const) {
+      const tints = slots.slice(0, 6).map((slot) => tintOf(slot, share));
+      for (const tint of tints) expect(contrastRatio(TINT_TEXT, tint), tint).toBeGreaterThanOrEqual(TINT_MIN_TEXT_CONTRAST);
+      for (let index = 0; index < tints.length; index++)
+        for (let other = index + 1; other < tints.length; other++)
+          expect(deltaE2000(tints[index], tints[other]), `${tints[index]} vs ${tints[other]}`).toBeGreaterThanOrEqual(TINT_MIN_DE);
+    }
   });
 });

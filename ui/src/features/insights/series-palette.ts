@@ -24,9 +24,9 @@ export type SeriesTheme = "light" | "dark" | "compact";
 
 /** Each block's --gamma-series-1..8 values, in slot order. */
 export const SERIES_HEX: Readonly<Record<SeriesTheme, readonly string[]>> = {
-  light: ["#003d75", "#0a9192", "#735f8b", "#007c91", "#a3689f", "#4b4471", "#b76e7f", "#86875d"],
-  dark: ["#3ec8ff", "#92ecec", "#9e8db9", "#1e9faf", "#cc76ae", "#ddd5ff", "#ffa6cc", "#95965f"],
-  compact: ["#a3e4ff", "#61f3e5", "#e3c8f2", "#00bfd3", "#c493d4", "#cad8ff", "#ff9dc7", "#919a4f"],
+  light: ["#003d75", "#0c9a93", "#887fd0", "#127a8b", "#a75fa7", "#61516f", "#b77080", "#86885b"],
+  dark: ["#21ccfe", "#32dcd5", "#ae7ecf", "#29a1a3", "#d76fa1", "#a5a1c9", "#e7a5c4", "#999a66"],
+  compact: ["#14c2e8", "#00d8cf", "#b499aa", "#1fa6a9", "#cf7abf", "#9e9ed1", "#ff92b7", "#8f9e54"],
 };
 
 /** The slot colour for a series index. Indexes wrap after eight; the light value is the fallback outside a Gamma scope. */

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { WidgetVisualization } from "./charts";
 import { PALETTE } from "./chart-renderer-shared";
@@ -25,14 +25,10 @@ const base: Widget = {
   options: { showLegend: true },
 };
 
-/** The raw legend swatch style for each series. jsdom drops var() values, so slot colours read as empty here. */
-function legendSwatches(widget: Widget) {
-  render(<WidgetVisualization widget={widget} result={{ series }} />);
-  const list = screen.getByRole("list", { name: "Latest values by series" });
-  return Object.fromEntries(names.map((name) => {
-    const swatch = within(list).getByRole("listitem", { name: new RegExp(name) }).querySelector<HTMLElement>('[aria-hidden="true"]')!;
-    return [name, swatch.getAttribute("style") ?? ""];
-  }));
+/** The stroke each drawn series line carries, in draw order. jsdom keeps SVG presentation values verbatim, var() included. */
+function drawnStrokes(widget: Widget): string[] {
+  const { container } = render(<WidgetVisualization widget={widget} result={{ series }} />);
+  return [...container.querySelectorAll("path[stroke]")].map((path) => path.getAttribute("stroke") ?? "");
 }
 
 describe("shared series palette in time-series renderers", () => {
@@ -45,29 +41,27 @@ describe("shared series palette in time-series renderers", () => {
     expect(PALETTE[8 % PALETTE.length]).toBe(PALETTE[0]);
   });
 
-  it("leaves series without authored colours to the slots", () => {
-    const swatches = legendSwatches(base);
-    for (const name of names) expect(swatches[name], name).not.toMatch(/#[0-9a-f]{6}/i);
+  it("draws each series in its palette slot, in series order", () => {
+    expect(drawnStrokes(base)).toEqual([seriesSlot(0), seriesSlot(1), seriesSlot(2)]);
   });
 
-  it("lets an authored label rule override the slot for its series only", () => {
+  it("draws an authored label rule for its series only, and leaves the other slots", () => {
     const widget: Widget = { ...base, options: { ...base.options, seriesColors: [{ label: "service", value: "checkout", color: "#15c7a1" }] } };
-    const swatches = legendSwatches(widget);
-    expect(swatches.checkout).toContain("#15c7a1");
-    expect(swatches.catalog).not.toContain("#15c7a1");
-    expect(swatches.worker).not.toContain("#15c7a1");
+    expect(drawnStrokes(widget)).toEqual([seriesSlot(0), "#15c7a1", seriesSlot(2)]);
   });
 
-  it("keeps a widget colour on the first series ahead of the slot", () => {
-    const swatches = legendSwatches({ ...base, color: "#aa1122" });
-    expect(swatches.catalog).toContain("#aa1122");
-    expect(swatches.checkout).not.toContain("#aa1122");
+  it("keeps a widget colour on the first series ahead of its slot", () => {
+    expect(drawnStrokes({ ...base, color: "#aa1122" })).toEqual(["#aa1122", seriesSlot(1), seriesSlot(2)]);
   });
 
-  it("resolves a role rule to its named token ahead of the slot", () => {
+  it("draws a role rule as its named token, ahead of the slot", () => {
+    const widget: Widget = { ...base, options: { ...base.options, seriesColors: [{ label: "service", value: "worker", role: "server-error" }] } };
+    expect(drawnStrokes(widget)).toEqual([seriesSlot(0), seriesSlot(1), seriesRole("server-error")]);
+  });
+
+  it("resolves a role rule to its named token and leaves unmatched series on their slots", () => {
     const rules = [{ label: "service", value: "worker", role: "server-error" as const }];
     expect(resolveSeriesColor({ service: "worker" }, rules, seriesSlot(2))).toBe(seriesRole("server-error"));
     expect(resolveSeriesColor({ service: "catalog" }, rules, seriesSlot(0))).toBe(seriesSlot(0));
-    expect(seriesRole("server-error")).toContain("var(--gamma-series-server-error,");
   });
 });

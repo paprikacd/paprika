@@ -7,13 +7,14 @@
   gap: 8px;
   color: var(--widget-text, var(--gamma-ink));
   font-size: 12px;
-  /* Pale tints of shared series slots 1-6 for pie and treemap tiles (they index modulo six). */
-  --record-color-0: color-mix(in srgb, var(--gamma-series-1) 30%, #ffffff);
-  --record-color-1: color-mix(in srgb, var(--gamma-series-2) 30%, #ffffff);
-  --record-color-2: color-mix(in srgb, var(--gamma-series-3) 30%, #ffffff);
-  --record-color-3: color-mix(in srgb, var(--gamma-series-4) 30%, #ffffff);
-  --record-color-4: color-mix(in srgb, var(--gamma-series-5) 30%, #ffffff);
-  --record-color-5: color-mix(in srgb, var(--gamma-series-6) 30%, #ffffff);
+  /* Pale tints of shared series slots 1-6 for pie and treemap tiles (they index modulo six). The share of colour is per theme. */
+  --record-tint: 45%;
+  --record-color-0: color-mix(in srgb, var(--gamma-series-1) var(--record-tint), #ffffff);
+  --record-color-1: color-mix(in srgb, var(--gamma-series-2) var(--record-tint), #ffffff);
+  --record-color-2: color-mix(in srgb, var(--gamma-series-3) var(--record-tint), #ffffff);
+  --record-color-3: color-mix(in srgb, var(--gamma-series-4) var(--record-tint), #ffffff);
+  --record-color-4: color-mix(in srgb, var(--gamma-series-5) var(--record-tint), #ffffff);
+  --record-color-5: color-mix(in srgb, var(--gamma-series-6) var(--record-tint), #ffffff);
 }
 .scroll {
   overflow: auto;
@@ -184,13 +185,20 @@
   width: 100%;
   min-height: 0;
   flex: 1;
-  /* Pale tints of shared series slots 1-6 for pie and treemap tiles (they index modulo six). */
-  --record-color-0: color-mix(in srgb, var(--gamma-series-1) 30%, #ffffff);
-  --record-color-1: color-mix(in srgb, var(--gamma-series-2) 30%, #ffffff);
-  --record-color-2: color-mix(in srgb, var(--gamma-series-3) 30%, #ffffff);
-  --record-color-3: color-mix(in srgb, var(--gamma-series-4) 30%, #ffffff);
-  --record-color-4: color-mix(in srgb, var(--gamma-series-5) 30%, #ffffff);
-  --record-color-5: color-mix(in srgb, var(--gamma-series-6) 30%, #ffffff);
+  /* Pale tints of shared series slots 1-6 for pie and treemap tiles (they index modulo six). The share of colour is per theme. */
+  --record-tint: 45%;
+  --record-color-0: color-mix(in srgb, var(--gamma-series-1) var(--record-tint), #ffffff);
+  --record-color-1: color-mix(in srgb, var(--gamma-series-2) var(--record-tint), #ffffff);
+  --record-color-2: color-mix(in srgb, var(--gamma-series-3) var(--record-tint), #ffffff);
+  --record-color-3: color-mix(in srgb, var(--gamma-series-4) var(--record-tint), #ffffff);
+  --record-color-4: color-mix(in srgb, var(--gamma-series-5) var(--record-tint), #ffffff);
+  --record-color-5: color-mix(in srgb, var(--gamma-series-6) var(--record-tint), #ffffff);
+}
+:global([data-insights-theme="dark"]) .wrapper {
+  --record-tint: 55%;
+}
+:global([data-insights-theme="dark"]) .treemap {
+  --record-tint: 55%;
 }
 .treemap g[role="button"] {
   cursor: pointer;
