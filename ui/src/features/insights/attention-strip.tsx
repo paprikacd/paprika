@@ -100,6 +100,19 @@ function reducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/**
+ * Scrolls the chip row sideways just enough to show a focused chip. Browsers do not reliably scroll a focused element
+ * inside this row, so the row is adjusted from the rects. Rects are zero outside a layout engine, so tests are unaffected.
+ */
+function keepInRow(chip: HTMLElement) {
+  const row = chip.parentElement;
+  if (!row || row.scrollWidth <= row.clientWidth) return;
+  const element = chip.getBoundingClientRect();
+  const track = row.getBoundingClientRect();
+  if (element.left < track.left) row.scrollLeft -= track.left - element.left;
+  else if (element.right > track.right) row.scrollLeft += element.right - track.right;
+}
+
 function tileElement(scope: HTMLElement | null, widgetId: string): HTMLElement | undefined {
   return Array.from(scope?.querySelectorAll<HTMLElement>("article[data-widget-id]") ?? []).find((element) => element.dataset.widgetId === widgetId);
 }
@@ -237,7 +250,7 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
               aria-label={position === undefined
                 ? `${label}: show first ${reason} widget, ${titleOf(first)}`
                 : `${label}: showing ${titleOf(summary.listed[reason][position])}, ${position + 1} of ${counts[reason]}; activate for the next`}
-              onFocus={() => { focusedReason.current = reason; }}
+              onFocus={(event) => { focusedReason.current = reason; keepInRow(event.currentTarget); }}
               onClick={() => reveal(reason)}
             >
               <StatusChip status={REASON_STATUS[reason]} label={label} />

@@ -129,6 +129,15 @@
   }
   .chip { flex: none; }
   .chip:focus-visible { outline-offset: -2px; }
+  /*
+   * A coarse pointer's hit area reaches 10px above and below each chip. The row's padding makes room for it inside the
+   * scroll container's padding box (which clips it), and the equal negative margin keeps the row's height and the chips'
+   * position unchanged. The horizontal padding does the same for the hit area's 4px sides.
+   */
+  @media (pointer: coarse) {
+    .chips { padding: 10px 4px; margin: -10px -4px; }
+    .chip::before { content: ""; position: absolute; inset: -10px -4px; }
+  }
 }
 @container insights-canvas (width < 600px) {
   .strip { min-height: 77px; }

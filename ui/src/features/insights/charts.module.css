@@ -706,20 +706,16 @@
 .chartFooter[data-timeseries-footer]:has(.priorLegend) [data-chart-events] > ul { position: static; width: 100%; }
 
 /*
- * A stat whose sample is the dashboard's newest does not repeat the time on every card: the attention strip states it
- * once, with its zone. The caption keeps its box in the layout and is faded out, so revealing it on hover or focus moves
- * nothing. It is not hidden with visibility or display, so the time stays in the accessibility tree. A stale stat keeps
- * its own "Stale · age" chip, a separate element, so its age stays visible. Side-sparkline and stat-bar placements still
- * take the caption out of flow (their rules are separate and unchanged).
+ * A card shows its "Latest valid sample · time" caption only when its sample differs from the dashboard's newest sample.
+ * When it matches, the attention strip states that time once, so the caption is visually hidden: absolute, 1px and
+ * clipped, which takes no space in the card. Hovering or focusing never reflows the card. The time stays in the
+ * accessibility tree. A stale stat keeps its own "Stale · age" chip, a separate element.
  */
 [data-shared-sample] .stat .statMeta {
-  opacity: 0;
-  transition: opacity 150ms ease-out;
-}
-[data-shared-sample]:hover .stat .statMeta,
-[data-shared-sample]:focus-within .stat .statMeta {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-shared-sample] .stat .statMeta { transition: none; }
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

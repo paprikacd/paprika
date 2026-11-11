@@ -164,6 +164,8 @@ async function openFixture(state, width = 1512, links = false, extra = {}, trans
       const query = request.postDataJSON()
       requests.push({ state, width, ...query })
       if (state === "error" || query.query.includes("audit_failure")) { status = 502; body = { error: "Audit backend failed. Retry this query." } }
+      // The older stat has one valid sample a minute before the newest, so its caption stays visible without a notice.
+      else if (query.query === "audit_stat_older") body = { series: [{ name: "api-east", labels: { service: "api-east", instance: "pod-0", region: "eu-central-1" }, points: [{ timestamp: stamp - 60000, value: 42.56789 }] }] }
       else body = query.kind === "traces" ? traceData(state) : metricData(query.query.includes("edited") ? "negative" : state)
     } else { status = 404; body = { error: `Unexpected audit route: ${url.pathname}` } }
     await route.fulfill({ status, contentType: "application/json", headers: { ETag: `"audit-${version}"` }, body: JSON.stringify(body) })
@@ -181,6 +183,27 @@ async function openFixture(state, width = 1512, links = false, extra = {}, trans
   await page.evaluate(() => window.scrollTo(0, 0)); await stable(page)
   active = { page, context, documents, source, state, width }
   return active
+}
+async function sharedCaptionAudit(width) {
+  // The audit's stat (older, last valid sample a minute before the newest) and a second stat with the newest sample.
+  const { page, context } = await openFixture("older", width, false, {}, document => ({ ...document, widgets: [...document.widgets, { ...document.widgets[2], id: "stat-newest", title: "Audit newest value", query: "audit_stat_newest", layout: { x: 0, y: 15, w: 4, h: 3 } }] }))
+  const older = page.locator('[data-widget-id="stat"]'), newest = page.locator('[data-widget-id="stat-newest"]')
+  await newest.scrollIntoViewIfNeeded()
+  await newest.locator("[data-metric-value]").waitFor()
+  await check(`older stat keeps its caption visible, newest stat hides its own, at ${width}px`, async () => {
+    const olderCaption = older.locator('[data-stat-reading] > [class*="statMeta"]')
+    const olderBox = await olderCaption.boundingBox()
+    assert.ok(olderBox && olderBox.height >= 12, `An older sample must show its caption: ${JSON.stringify(olderBox)}`)
+    assert.equal(await older.locator("xpath=..").evaluate(element => element.closest("[data-shared-sample]") === null), true, "An older sample must not be marked as shared")
+    assert.equal(await older.locator("[data-stat-summary]").locator("xpath=..").evaluate(element => element.scrollHeight <= element.clientHeight + 1), true, "The older stat must not scroll internally")
+    const newestCaption = newest.locator('[data-stat-reading] > [class*="statMeta"]')
+    const newestBox = await newestCaption.boundingBox()
+    assert.ok(newestBox && newestBox.width <= 1 && newestBox.height <= 1, `The newest sample's caption must be visually hidden: ${JSON.stringify(newestBox)}`)
+    assert.match(await newestCaption.textContent(), /Latest valid sample/, "The newest caption must remain in the DOM")
+    assert.match(await page.locator("[data-attention-strip]").innerText(), /Newest sample/, "The strip must state the newest sample once")
+    return { width, olderCaptionHeight: Math.round(olderBox.height), newestCaptionBox: { width: Math.round(newestBox.width), height: Math.round(newestBox.height) } }
+  }, { viewport: width, state: "older" })
+  await context.close()
 }
 async function screenshot(page, name) {
   await page.evaluate(() => window.scrollTo(0, 0)); await stable(page)
@@ -236,26 +259,21 @@ async function stateAssertions(page, state) {
       } else if (kind === "stat") {
         assert.match(text, state === "zero" ? /0\.00/ : state === "negative" ? /-12\.50/ : /42\.57/)
         assert.match(text, /Latest valid sample/)
-        // The caption keeps its box whether or not the sample is shared with the strip; a shared caption is faded, not removed.
+        // A caption shows only when this stat's sample differs from the dashboard's newest; a shared one is visually hidden
+        // (1px, clipped) and takes no space, so the card fits and the time stays in the accessibility tree.
         const caption = tile.locator('[data-stat-reading] > [class*="statMeta"]')
         const stat = tile.locator("[data-stat-summary]").locator("xpath=..")
+        const shared = await tile.evaluate(element => element.closest("[data-shared-sample]") !== null)
+        assert.match(await caption.textContent(), /Latest valid sample/, "The caption must exist in the DOM even when it is visually hidden")
         const captionBox = await caption.boundingBox()
-        assert.ok(captionBox && captionBox.height >= 12, "Latest valid sample caption must not collapse when inspection controls are present")
-        if (await tile.evaluate(element => element.closest("[data-shared-sample]") !== null)) {
-          assert.equal(await caption.evaluate(element => getComputedStyle(element).opacity), "0", "A shared sample's caption is faded until the tile is hovered or focused")
+        if (shared) {
+          assert.ok(captionBox && captionBox.width <= 1 && captionBox.height <= 1, `A shared sample's caption must be visually hidden: ${JSON.stringify(captionBox)}`)
           assert.match(await page.locator("[data-attention-strip]").innerText(), /Newest sample/, "The attention strip must state the shared sample time")
-          const hiddenScroll = await stat.evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, overflow: getComputedStyle(element).overflow, captionTop: Math.round(element.querySelector("[data-stat-reading] > [class*='statMeta']").getBoundingClientRect().bottom - element.getBoundingClientRect().top), height: Math.round(element.getBoundingClientRect().height)}))
-          assert.ok(hiddenScroll.scrollHeight <= hiddenScroll.clientHeight + 1, `The stat must not scroll internally while its caption is hidden: ${JSON.stringify(hiddenScroll)}`)
-          await tile.hover()
-          await caption.evaluate(element => new Promise((resolve, reject) => {
-            const started = performance.now()
-            const tick = () => getComputedStyle(element).opacity === "1" ? resolve() : performance.now() - started > 2000 ? reject(new Error("Caption did not reveal on hover")) : setTimeout(tick, 30)
-            tick()
-          }))
-          assert.equal(await stat.evaluate(element => element.scrollHeight <= element.clientHeight + 1), true, "The stat must not scroll internally while its caption is revealed")
-          const revealedBox = await caption.boundingBox()
-          assert.ok(revealedBox && revealedBox.height === captionBox.height, "Hidden and revealed captions must have identical layout")
+        } else {
+          assert.ok(captionBox && captionBox.height >= 12, "Latest valid sample caption must not collapse when inspection controls are present")
         }
+        assert.equal(await stat.evaluate(element => element.scrollHeight <= element.clientHeight + 1), true, `The stat must not scroll internally (shared=${shared})`)
+        console.log("STAT", JSON.stringify({ state, width: page.viewportSize().width, shared, captionBox: captionBox && { width: Math.round(captionBox.width), height: Math.round(captionBox.height) } }))
       } else if (kind === "gauge") {
         const meter = tile.getByRole("meter")
         if (["null", "tail-null"].includes(state)) {
@@ -691,6 +709,9 @@ try {
     await chartInspectorAudit(844, 390)
     await missingObservationAudit()
     for (const width of [1512, 390]) for (const kind of kinds) await drilldownAudit(width, kind)
+    // A stat's caption shows only when its sample is older than the newest stat's: the strip is the only place the newest
+    // time is stated for the matching card.
+    for (const width of [1512, 390]) await sharedCaptionAudit(width)
     for (const width of [1512, 390]) await confirmationAudit(width)
   }
 } finally {
