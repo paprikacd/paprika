@@ -25,7 +25,7 @@ export function SeriesColorEditor({ config, onChange }: { config: Record<string,
       <legend>Color rule {index + 1}</legend>
       <label className={editorStyles.field}>Metric label<GammaInput aria-label={`Color rule ${index + 1} label`} maxLength={100} placeholder="direction" value={typeof entry.label === "string" ? entry.label : ""} onChange={event => edit(index, { label: event.target.value })} /></label>
       <label className={editorStyles.field}>Exact value<GammaInput aria-label={`Color rule ${index + 1} value`} maxLength={256} placeholder="inbound" value={typeof entry.value === "string" ? entry.value : ""} onChange={event => edit(index, { value: event.target.value })} /></label>
-      <label className={editorStyles.field}>Color<GammaInput aria-label={`Color rule ${index + 1} color`} maxLength={7} placeholder="#00cee2" value={typeof entry.color === "string" ? entry.color : ""} onChange={event => edit(index, { color: event.target.value })} /></label>
+      <label className={editorStyles.field}>Color<GammaInput aria-label={`Color rule ${index + 1} color`} maxLength={7} placeholder="#00cee2" value={typeof entry.color === "string" ? entry.color : ""} onChange={event => edit(index, { color: event.target.value, role: undefined })} /></label>
       <GammaButton size="sm" variant="quiet" aria-label={`Remove color rule ${index + 1}`} onClick={() => update(entries.filter((_, i) => i !== index))}>Remove color</GammaButton>
     </fieldset>)}
     <GammaButton size="sm" disabled={!editable || entries.length >= 24} onClick={() => update([...entries, { label: "", value: "", color: "#00cee2" }])}>Add series color</GammaButton>

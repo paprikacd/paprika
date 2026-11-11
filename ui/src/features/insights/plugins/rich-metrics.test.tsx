@@ -8,6 +8,7 @@ import { ChartCursorProvider } from "../chart-cursor";
 import { EmbeddedWidgetProvider } from "../widget-presentation";
 import { fullDateTimeFormat } from "../chart-data";
 import type { QueryResult, Widget } from "../schema";
+import { seriesSlot } from "../series-palette";
 
 afterEach(cleanup);
 const widget: Widget = { id: "rich", title: "Request outcomes", type: "plugin", pluginId: "stacked-timeseries", dataKind: "metrics", providerId: "metrics", query: "rate", unit: "req/s", options: { decimals: 2 }, layout: { x: 0, y: 0, w: 6, h: 4 } };
@@ -454,7 +455,7 @@ describe("stacked bars with missing and not-started series", () => {
     expect(cap).toHaveAttribute("height", "6");
     expect(cap).toHaveAttribute("stroke-width", "1");
     expect(cap).toHaveAttribute("stroke-dasharray", "2 2");
-    expect(cap).toHaveAttribute("stroke", "var(--gamma-chart-2, #087f7a)");
+    expect(cap).toHaveAttribute("stroke", seriesSlot(1));
     expect(cap).toHaveAttribute("data-missing-count", "1");
     expect(cap.getAttribute("fill")).toMatch(/-hatch\)$/);
     expect(container.querySelector('pattern[id$="-hatch"]')).toBeInTheDocument();

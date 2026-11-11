@@ -7,12 +7,13 @@
   gap: 8px;
   color: var(--widget-text, var(--gamma-ink));
   font-size: 12px;
-  --record-color-0: #c7dccd;
-  --record-color-1: #c5d6e0;
-  --record-color-2: #e0d9bb;
-  --record-color-3: #e2c9c2;
-  --record-color-4: #d1cee3;
-  --record-color-5: #c7dcd9;
+  /* Pale tints of shared series slots 1-6 for pie and treemap tiles (they index modulo six). */
+  --record-color-0: color-mix(in srgb, var(--gamma-series-1) 30%, #ffffff);
+  --record-color-1: color-mix(in srgb, var(--gamma-series-2) 30%, #ffffff);
+  --record-color-2: color-mix(in srgb, var(--gamma-series-3) 30%, #ffffff);
+  --record-color-3: color-mix(in srgb, var(--gamma-series-4) 30%, #ffffff);
+  --record-color-4: color-mix(in srgb, var(--gamma-series-5) 30%, #ffffff);
+  --record-color-5: color-mix(in srgb, var(--gamma-series-6) 30%, #ffffff);
 }
 .scroll {
   overflow: auto;
@@ -183,12 +184,13 @@
   width: 100%;
   min-height: 0;
   flex: 1;
-  --record-color-0: #c7dccd;
-  --record-color-1: #c5d6e0;
-  --record-color-2: #e0d9bb;
-  --record-color-3: #e2c9c2;
-  --record-color-4: #d1cee3;
-  --record-color-5: #c7dcd9;
+  /* Pale tints of shared series slots 1-6 for pie and treemap tiles (they index modulo six). */
+  --record-color-0: color-mix(in srgb, var(--gamma-series-1) 30%, #ffffff);
+  --record-color-1: color-mix(in srgb, var(--gamma-series-2) 30%, #ffffff);
+  --record-color-2: color-mix(in srgb, var(--gamma-series-3) 30%, #ffffff);
+  --record-color-3: color-mix(in srgb, var(--gamma-series-4) 30%, #ffffff);
+  --record-color-4: color-mix(in srgb, var(--gamma-series-5) 30%, #ffffff);
+  --record-color-5: color-mix(in srgb, var(--gamma-series-6) 30%, #ffffff);
 }
 .treemap g[role="button"] {
   cursor: pointer;

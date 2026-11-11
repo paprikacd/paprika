@@ -5,6 +5,7 @@ import { formatRecordValue } from "../units"
 import { thresholdForValue } from "../chart-renderers"
 import { statusHex, statusToken, thresholdInk, thresholdPaint } from "../status"
 import { contrastRatio, readableTextColor } from "../appearance"
+import { seriesHex } from "../series-palette"
 import type { RecordFrame, Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
 import styles from "./records.module.css"
@@ -49,10 +50,10 @@ export const tableCellStylesSchema = z.array(cellStyle).max(16).superRefine((ent
 })
 export type TableCellStyle = z.infer<typeof cellStyle>
 
-// Match the scoped Gamma panel/chart tokens (guarded by the palette test).
+// Match the scoped Gamma panel and series tokens (guarded by the palette test). Series slot 3 is the default record colour.
 const tableThemes = {
-  light: { background: "#ffffff", color: "#bb5037" },
-  dark: { background: "#182127", color: "#ed8d70" },
+  light: { background: "#ffffff", color: seriesHex(2, "light") },
+  dark: { background: "#182127", color: seriesHex(2, "dark") },
 }
 
 /** Retain an authored hue, changing only its rendered text tone when needed. */

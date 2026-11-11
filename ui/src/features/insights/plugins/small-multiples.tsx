@@ -7,13 +7,13 @@ import { formatSharedScale } from "../units";
 import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName, type Point, type Series } from "../chart-data";
 import { validTimestamp } from "../widget-context";
 import { compactSeriesLabels } from "../series-display";
+import { SERIES_PALETTE } from "../series-palette";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import type { QueryResult, Widget } from "../schema";
 import styles from "./small-multiples.module.css";
 
 const configSchema = z.strictObject({ maxSeries: z.number().int().min(1).max(12).optional(), columns: z.number().int().min(1).max(6).optional(), maxPoints: z.number().int().min(8).max(240).optional() });
-const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 const left = 2, right = 598, top = 8, bottom = 92;
 type Domains = { start: number; end: number; min: number; max: number };
 
@@ -49,7 +49,7 @@ export function smallMultiplesPath(points: readonly Point[], domain: Domains) {
 
 function SmallMultiple({ entry, index, displayName, domain, widget, result, maxPoints, interactive, detailsEnabled, onContextChange }: { entry: Series; index: number; displayName: string; domain: Domains; widget: Widget; result: QueryResult; maxPoints: number; interactive: boolean; detailsEnabled: boolean; onContextChange: WidgetRendererProps["onContextChange"] }) {
   const points = useMemo(() => downsamplePoints(entry.points, maxPoints), [entry.points, maxPoints]);
-  const name = seriesName(entry, index), latest = latestPoint(entry), color = index === 0 && widget.color ? widget.color : palette[index % palette.length];
+  const name = seriesName(entry, index), latest = latestPoint(entry), color = index === 0 && widget.color ? widget.color : SERIES_PALETTE[index % SERIES_PALETTE.length];
   const id = useId(), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), interaction = useRef({ hovered: false, focused: false, panel: false });
   const [active, setActive] = useState<{ index: number; anchor: SVGSVGElement; pinned: boolean; revision: QueryResult }>();
   const current = active?.revision === result ? active : undefined;

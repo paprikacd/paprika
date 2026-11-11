@@ -27,3 +27,25 @@ func TestTimeSeriesColorRulesValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestSeriesColorRoleRules(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		raw   string
+		valid bool
+	}{
+		{"role", `{"seriesColors":[{"label":"quantile","value":"p95","role":"p95"}]}`, true},
+		{"color and role", `{"seriesColors":[{"label":"quantile","value":"p95","color":"#348cf0","role":"p95"}]}`, false},
+		{"neither", `{"seriesColors":[{"label":"quantile","value":"p95"}]}`, false},
+		{"unknown role", `{"seriesColors":[{"label":"code","value":"500","role":"error-5xx"}]}`, false},
+		{"status is not a role", `{"seriesColors":[{"label":"code","value":"500","role":"critical"}]}`, false},
+		{"null role", `{"seriesColors":[{"label":"quantile","value":"p95","role":null}]}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateWidgetOptions(json.RawMessage(tc.raw))
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v; error=%v", tc.valid, err)
+			}
+		})
+	}
+}

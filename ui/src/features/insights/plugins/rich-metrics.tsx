@@ -3,6 +3,7 @@
 import { axisScale, formatRange, ticksWithin } from "../units";
 import type { Widget } from "../schema";
 import { resolveSeriesColor } from "../series-colors";
+import { SERIES_PALETTE } from "../series-palette";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { Pin, X } from "lucide-react";
 import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
@@ -40,7 +41,6 @@ import tooltipStyles from "../chart-styles.module.css";
 import { useChartEntrance } from "../chart-entrance";
 import chartEntrance from "../chart-entrance.module.css";
 
-const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 // The 24-step heat ramp, lowest density first. Fallbacks are the light-theme values.
 import { densityPalette } from "../density-palette";
 /** Histogram rows with at most this many buckets are shown while hovering; pinned rows always show them. */
@@ -330,7 +330,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
       : cell.state === "invalid" ? "Invalid source counts: cumulative counts decrease or are negative here. The cell is not drawn as density and its time is left out of the p95."
       : "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit.";
-    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
+    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: SERIES_PALETTE[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
   };
   // The p95 line sits on each drawable window's bucket row. Non-ok windows, source gaps and hidden buckets break it.
   // An overflow window has no finite estimate, so `quantile` is the whole line and `finite` is its solid part.
@@ -503,7 +503,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   // dashboard filter cannot silently assign a different semantic color.
   const color = (index: number) => {
     const labels = data.tracks[index]?.series.labels ?? {};
-    return resolveSeriesColor(labels, config.seriesColors, index === 0 && widget.color ? widget.color : palette[index % palette.length]);
+    return resolveSeriesColor(labels, config.seriesColors, index === 0 && widget.color ? widget.color : SERIES_PALETTE[index % SERIES_PALETTE.length]);
   };
   // Bar geometry is shared by complete bars, partial stacks, caps and hover, so they stay aligned.
   const barAt = (column: number) => {

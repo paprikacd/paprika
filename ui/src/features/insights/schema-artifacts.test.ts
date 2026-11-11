@@ -14,6 +14,15 @@ function assertAndRemoveThresholdConstraint(widget: Record<string, unknown>) {
   delete items.anyOf
 }
 
+// Zod's JSON Schema exporter cannot emit the exactly-one color-or-role refinement on a series colour rule.
+// Check the published oneOf explicitly, then compare the generated remainder.
+function assertAndRemoveSeriesRuleConstraint(widget: Record<string, unknown>) {
+  const options = (widget.properties as Record<string, Record<string, unknown>>).options
+  const items = (options.properties as Record<string, Record<string, unknown>>).seriesColors.items as Record<string, unknown>
+  expect(items.oneOf).toEqual([{ required: ["color"] }, { required: ["role"] }])
+  delete items.oneOf
+}
+
 // Zod's JSON Schema exporter cannot emit superRefine's cross-field rule.
 // Check the published rule explicitly before comparing the generated remainder.
 function assertAndRemoveStatHeightConstraint(widget: Record<string, unknown>) {
@@ -43,6 +52,7 @@ describe("published dashboard authoring artifacts", () => {
     delete schema.$comment
     assertAndRemoveStatHeightConstraint(schema.properties.widgets.items)
     assertAndRemoveThresholdConstraint(schema.properties.widgets.items)
+    assertAndRemoveSeriesRuleConstraint(schema.properties.widgets.items)
     expect(schema).toEqual(z.toJSONSchema(dashboardSchema))
   })
 
@@ -62,6 +72,7 @@ describe("published dashboard authoring artifacts", () => {
     }
     assertAndRemoveStatHeightConstraint(widget)
     assertAndRemoveThresholdConstraint(widget)
+    assertAndRemoveSeriesRuleConstraint(widget)
     expect(widget).toEqual(z.toJSONSchema(widgetSchema))
   })
 
