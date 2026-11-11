@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createInsightsClient, type InsightsSession } from "./client"
+import { checksFromError, createInsightsClient, InsightsHTTPError, type InsightsSession } from "./client"
+import { Severity } from "@/gen/paprika/insights/v1/checks_pb"
 import type { Dashboard, SavedQuery } from "./schema"
 
 const dashboard: Dashboard = {
@@ -478,5 +481,71 @@ describe("saved query HTTP contracts", () => {
     const api = createInsightsClient()
     await expect(api.listSavedQueries()).rejects.toThrow()
     await expect(api.getSavedQuery(saved.id)).rejects.toThrow()
+  })
+})
+
+// The rejected-save and dry-run bodies the Go handlers write (internal/insights TestCheckWireGolden).
+const checkGolden = JSON.parse(
+  readFileSync(join(process.cwd(), "src/features/insights/testdata/checks-contract.golden.json"), "utf8"),
+) as { save: Record<string, unknown>; dryRun: Record<string, unknown>; checkedSave: Record<string, unknown> & { checks: Record<string, unknown> } }
+
+describe("dashboard checks over the wire", () => {
+  it("posts the document as the save would send it to the dry run and returns its findings", async () => {
+    const fetcher = mockFetch(response(checkGolden.dryRun))
+    const report = await createInsightsClient().validate!(dashboard)
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/dashboards/validate")
+    expect(fetcher.mock.calls[0][1].method).toBe("POST")
+    expect(JSON.parse(fetcher.mock.calls[0][1].body).document).toMatchObject({ id: "production" })
+    expect(report.issues).toHaveLength(2)
+    expect(report.issues[0].severity).toBe(Severity.ERROR)
+    expect(report.errorCount).toBe(2)
+  })
+
+  it("returns the findings of a rejected dry run rather than throwing", async () => {
+    mockFetch(response(checkGolden.dryRun, 400))
+    const report = await createInsightsClient().validate!(dashboard)
+    expect(report.issues.map((issue) => issue.ruleId)).toEqual(["schema.widget.options", "schema.widget.layout"])
+  })
+
+  it("throws a rejected dry run without a findings body, as any other failure", async () => {
+    mockFetch(response({ error: "validation service unavailable" }, 503))
+    const failure = await createInsightsClient().validate!(dashboard).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(InsightsHTTPError)
+    expect(checksFromError(failure)).toBeUndefined()
+  })
+
+  it("carries a rejected save's findings on the error for the caller to show", async () => {
+    mockFetch(response(checkGolden.save, 400))
+    const failure = await createInsightsClient().save(dashboard, '"v1"').catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(InsightsHTTPError)
+    expect((failure as Error).message).toBe(checkGolden.save.error)
+    const checks = checksFromError(failure)
+    expect(checks?.issues.map((issue) => issue.pointer)).toEqual([
+      "/widgets/1/options/thresholds/1/color",
+      "/widgets/0/layout/w",
+    ])
+    expect(checks?.errorCount).toBe(2)
+  })
+
+  it("reads the warnings from a checked save and asks the server for them", async () => {
+    const fetcher = mockFetch(response(checkGolden.checkedSave, 200, { ETag: '"v2"' }))
+    const result = await createInsightsClient().saveChecked!(dashboard, '"v1"')
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/dashboards/production?checks=true")
+    expect(result.etag).toBe('"v2"')
+    expect(result.checks?.issues.map((issue) => issue.ruleId)).toEqual(["stat.density"])
+    expect(result.checks?.warningCount).toBe(1)
+  })
+
+  it("leaves checks absent when a checked save comes from a server without them", async () => {
+    mockFetch(response({ id: "production", title: "Production" }))
+    const result = await createInsightsClient().saveChecked!(dashboard)
+    expect(result.checks).toBeUndefined()
+  })
+
+  it("still replays a checked save that the capacity gate refused", async () => {
+    const fetcher = mockFetch(response({}, 429, { "Retry-After": "0" }), response(checkGolden.checkedSave))
+    const result = await createInsightsClient().saveChecked!(dashboard, '"v1"')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(result.checks?.warningCount).toBe(1)
   })
 })

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, RefreshCw } from "lucide-react";
 import type { Dashboard, DocumentFormat, Provider, SavedQuery } from "./schema";
+import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
+import { ChecksList, hasErrors, type DocumentValidator } from "./checks-list";
+import { dashboardAsSent } from "./layout-compaction";
 import type {
   BundleImportRequest,
   BundleImportResult,
@@ -44,6 +47,22 @@ export interface PortableImportProps {
   onRefreshQueries?: () => Promise<void>;
   onBusyChange?: (busy: boolean) => void;
   initialDocument?: { source: string; format: DocumentFormat };
+  /** Dry-run checks for each incoming dashboard, shown before the import is confirmed. */
+  validateDocument?: DocumentValidator;
+}
+
+type DashboardCheck =
+  | { status: "checking" }
+  | { status: "done"; report: CheckReport; document: Dashboard }
+  | { status: "failed"; message: string };
+
+/** Widgets the canvas would move on save: the source overlaps or leaves gaps that the drawn layout closes. */
+function movedWidgets(source: Dashboard, saved: Dashboard): number {
+  return saved.widgets.filter((widget) => {
+    const original = source.widgets.find((item) => item.id === widget.id);
+    return !original || original.layout.x !== widget.layout.x || original.layout.y !== widget.layout.y ||
+      original.layout.w !== widget.layout.w || original.layout.h !== widget.layout.h;
+  }).length;
 }
 function initialMapping(bundle: DashboardBundle, providers: Provider[]) {
   const mapping: Record<string, string> = Object.create(null);
@@ -133,6 +152,7 @@ export function PortableImportPanel({
   onRefreshQueries,
   onBusyChange,
   initialDocument,
+  validateDocument,
 }: PortableImportProps) {
   const library = useSavedQueryLibrary();
   const [initial] = useState(() => {
@@ -178,6 +198,11 @@ export function PortableImportPanel({
   const [refreshing, setRefreshing] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [remaining, setRemaining] = useState<string[]>();
+  // Results belong to the incoming documents they were run against, so a new review or mapping starts unchecked.
+  const [checkRun, setCheckRun] = useState<{
+    docs: readonly { original: Dashboard; incoming: Dashboard }[];
+    results: Record<string, DashboardCheck>;
+  }>();
   const file = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
   const reviewLoader = useRef(onReviewBundle);
@@ -340,7 +365,7 @@ export function PortableImportPanel({
       };
     }
   }, [activeBundle, mapping, providers, keptQueries]);
-  const dashboards = useMemo(
+  const incomingDocs = useMemo(
     () =>
       (review?.bundle.dashboards ?? []).map((original) => {
         let incoming: Dashboard = original;
@@ -349,21 +374,63 @@ export function PortableImportPanel({
         } catch {
           /* Sources can be selected after choosing Keep. */
         }
+        return { original, incoming };
+      }),
+    [review, mapping, providers],
+  );
+  useEffect(() => {
+    // Each incoming dashboard is checked as a save would send it. A new review or source mapping cancels the older checks.
+    if (!validateDocument || !incomingDocs.length) return;
+    const controller = new AbortController();
+    const docs = incomingDocs;
+    const record = (id: string, result: DashboardCheck) => {
+      if (controller.signal.aborted) return;
+      setCheckRun((previous) => ({
+        docs,
+        results: { ...(previous?.docs === docs ? previous.results : {}), [id]: result },
+      }));
+    };
+    for (const { original, incoming } of docs) {
+      validateDocument(incoming, controller.signal).then(
+        (report) => record(original.id, { status: "done", report, document: incoming }),
+        (error) => record(original.id, {
+          status: "failed",
+          message: error instanceof Error ? error.message : "Unknown error.",
+        }),
+      );
+    }
+    return () => controller.abort();
+  }, [incomingDocs, validateDocument]);
+  // Until a result arrives for these documents, each one reads as still being checked.
+  const checks = checkRun?.docs === incomingDocs ? checkRun.results : undefined;
+  const dashboards = useMemo(
+    () =>
+      incomingDocs.map(({ original, incoming }) => {
         const existing = current.dashboards.find(
           (item) => item.document.id === original.id,
         );
         const comparison = reviewDashboard(incoming, existing);
         const action = selectedAction(dashboardChoices, original.id) ?? "copy";
         const complete = !!remaining && !remaining.includes(original.id);
+        const checked = checks?.[original.id];
         const issue =
           !complete && action === "keep" && !existing
             ? "This dashboard is no longer available to keep. Refresh the comparison."
             : !complete && action === "replace" && !comparison.canReplace
               ? comparison.replaceBlockedReason
-              : undefined;
-        return { original, existing, comparison, action, complete, issue };
+              : !complete && action !== "keep" && checked?.status === "done" && hasErrors(checked.report)
+                ? "Saving this dashboard would be rejected while its checks list errors. Fix the source, or choose Keep existing."
+                : undefined;
+        // The canvas draws a settled layout, so a source that overlaps or leaves gaps is stored at other positions.
+        let moved = 0;
+        try {
+          moved = movedWidgets(incoming, dashboardAsSent(incoming));
+        } catch {
+          /* An invalid dashboard is reported by its checks. */
+        }
+        return { original, incoming, existing, comparison, action, complete, issue, checked, moved };
       }),
-    [review, mapping, providers, current, dashboardChoices, remaining],
+    [incomingDocs, current, dashboardChoices, remaining, checks],
   );
   const usesLibrary = !!activeBundle?.dashboards.some((document) =>
     document.widgets.some(
@@ -679,6 +746,29 @@ export function PortableImportPanel({
                     <p role="alert" className={styles.error}>
                       {item.issue}
                     </p>
+                  )}
+                  {item.moved > 0 && (
+                    <p>
+                      {item.moved === 1
+                        ? "One widget in this source overlaps or leaves a gap."
+                        : `${item.moved} widgets in this source overlap or leave gaps.`}{" "}
+                      Saving stores them where the canvas draws them, so the saved layout can differ from the file.
+                    </p>
+                  )}
+                  {validateDocument && (
+                    item.checked?.status === "done" ? (
+                      <ChecksList
+                        label={`Checks for ${item.original.title}`}
+                        report={item.checked.report}
+                        dashboard={item.checked.document}
+                      />
+                    ) : item.checked?.status === "failed" ? (
+                      <p role="status">
+                        Could not check this dashboard: {item.checked.message}. Saving still validates it on the server.
+                      </p>
+                    ) : (
+                      <p role="status">Checking this dashboard…</p>
+                    )
                   )}
                   {item.existing && !item.complete && (
                     <Comparison

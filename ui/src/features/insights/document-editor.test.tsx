@@ -4,9 +4,13 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { DocumentEditor } from "./document-editor";
+import { parseCheckReport } from "./client";
 import {
   serializeDashboard,
   type Dashboard,
@@ -395,5 +399,77 @@ describe("dashboard source editor", () => {
     expect(
       screen.getByRole("button", { name: "Back to source" }),
     ).toBeEnabled();
+  });
+});
+
+// The live bodies from internal/insights TestCheckWireGolden.
+const checkGolden = JSON.parse(
+  readFileSync(join(process.cwd(), "src/features/insights/testdata/checks-contract.golden.json"), "utf8"),
+) as { save: Record<string, unknown>; checkedSave: Record<string, unknown> & { checks: Record<string, unknown> } };
+
+describe("dashboard source checks", () => {
+  it("is absent without a checker, and Apply stays local", () => {
+    const onApply = vi.fn();
+    render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Check" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    expect(onApply).toHaveBeenCalledWith(dashboard);
+  });
+
+  it("runs the check on demand and lists its findings without blocking typing", async () => {
+    const checkDocument = vi.fn().mockResolvedValue(parseCheckReport(checkGolden.save));
+    render(<DocumentEditor dashboard={dashboard} onApply={vi.fn()} onClose={vi.fn()} checkDocument={checkDocument} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    const region = await screen.findByRole("region", { name: "Dashboard checks" });
+    expect(within(region).getByText("2 errors")).toBeInTheDocument();
+    expect(checkDocument).toHaveBeenCalledWith(expect.objectContaining({ id: "a", title: "Original" }), expect.any(AbortSignal));
+    // Typing is never gated on the check.
+    fireEvent.change(screen.getByLabelText("Dashboard source"), { target: { value: serializeDashboard({ ...dashboard, title: "Typing" }, "yaml") } });
+    expect((screen.getByLabelText("Dashboard source") as HTMLTextAreaElement).value).toContain("Typing");
+    expect(screen.queryByRole("region", { name: "Dashboard checks" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a save the server would reject on the canvas draft, with its findings shown", async () => {
+    const onApply = vi.fn();
+    const checkDocument = vi.fn().mockResolvedValue(parseCheckReport(checkGolden.save));
+    render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    expect(await screen.findByRole("region", { name: "Dashboard checks" })).toBeInTheDocument();
+    expect(checkDocument).toHaveBeenCalledTimes(1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("applies after a check that has only warnings", async () => {
+    const onApply = vi.fn();
+    const checkDocument = vi.fn().mockResolvedValue(parseCheckReport(checkGolden.checkedSave.checks));
+    render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledWith(dashboard));
+    // Warnings stay visible on the draft after it is applied.
+    expect(within(screen.getByRole("region", { name: "Dashboard checks" })).getByText("1 warning")).toBeInTheDocument();
+  });
+
+  it("applies when the check itself is unavailable, and says so", async () => {
+    const onApply = vi.fn();
+    const checkDocument = vi.fn().mockRejectedValue(new Error("offline"));
+    render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not check this dashboard: offline");
+    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledWith(dashboard));
+  });
+
+  it("cancels a running check when the source is edited, and clears its findings", async () => {
+    let signal: AbortSignal | undefined;
+    const checkDocument = vi.fn((_: unknown, abort?: AbortSignal) => {
+      signal = abort;
+      return new Promise<never>(() => {});
+    });
+    render(<DocumentEditor dashboard={dashboard} onApply={vi.fn()} onClose={vi.fn()} checkDocument={checkDocument} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    expect(await screen.findByText("Checking dashboard…")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Dashboard source"), { target: { value: serializeDashboard({ ...dashboard, title: "Edited" }, "yaml") } });
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByText("Checking dashboard…")).not.toBeInTheDocument();
   });
 });

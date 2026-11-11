@@ -19,9 +19,21 @@ import {
   type PortableImportProps,
 } from "./portable-import-panel";
 import { useSavedQueryLibrary } from "./saved-query-context";
+import { ChecksList, hasErrors, type DocumentValidator } from "./checks-list";
+import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
 import styles from "./insights.module.css";
 import { GammaButton } from "./gamma/button";
 import { GammaInput, GammaTextarea } from "./gamma/input";
+
+type CheckState =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "done"; report: CheckReport; document: Dashboard }
+  | { status: "failed"; message: string };
+type CheckOutcome =
+  | { report: CheckReport; document: Dashboard }
+  | { failure: string }
+  | "cancelled";
 
 export function DocumentEditor({
   dashboard,
@@ -31,6 +43,7 @@ export function DocumentEditor({
   onImportBundle,
   onRefreshQueries,
   onReviewBundle,
+  checkDocument,
 }: {
   dashboard: Dashboard;
   onApply: (dashboard: Dashboard) => void;
@@ -39,8 +52,14 @@ export function DocumentEditor({
   onImportBundle?: PortableImportProps["onImportBundle"];
   onRefreshQueries?: PortableImportProps["onRefreshQueries"];
   onReviewBundle?: PortableImportProps["onReviewBundle"];
+  /** Dry-run checks for the draft and for imported dashboards. Without it, the Check action is absent and Apply is local. */
+  checkDocument?: DocumentValidator;
 }) {
   const library = useSavedQueryLibrary();
+  const [checkState, setCheckState] = useState<CheckState>({ status: "idle" });
+  const [applying, setApplying] = useState(false);
+  const checking = useRef<AbortController | null>(null);
+  useEffect(() => () => checking.current?.abort(), []);
   const [importing, setImporting] = useState(false);
   const [review, setReview] = useState<{
     source: string;
@@ -94,8 +113,57 @@ export function DocumentEditor({
       setValid(false);
     }
   }
+  // Editing never waits for a check. An edit cancels a running one, and its findings are cleared because
+  // they describe the text that was replaced.
+  function resetChecks() {
+    checking.current?.abort();
+    checking.current = null;
+    setCheckState({ status: "idle" });
+  }
+  async function runCheck(parsed: Dashboard): Promise<CheckOutcome> {
+    if (!checkDocument) return "cancelled";
+    checking.current?.abort();
+    const controller = new AbortController();
+    checking.current = controller;
+    setCheckState({ status: "checking" });
+    try {
+      const report = await checkDocument(parsed, controller.signal);
+      if (controller.signal.aborted) return "cancelled";
+      setValid(!hasErrors(report));
+      setCheckState({ status: "done", report, document: parsed });
+      return { report, document: parsed };
+    } catch (error) {
+      if (controller.signal.aborted) return "cancelled";
+      const failure = error instanceof Error ? error.message : "Could not check this dashboard.";
+      setCheckState({ status: "failed", message: failure });
+      return { failure };
+    } finally {
+      if (checking.current === controller) checking.current = null;
+    }
+  }
+  function check() {
+    const parsed = validate();
+    if (parsed) void runCheck(parsed);
+  }
+  async function apply() {
+    const parsed = validate();
+    if (!parsed || stale) return;
+    if (!checkDocument) {
+      onApply(parsed);
+      return;
+    }
+    setApplying(true);
+    const outcome = await runCheck(parsed);
+    setApplying(false);
+    // A save the server would reject stays here with its findings. An unavailable check does not
+    // block applying: the canvas is local and the save validates again.
+    if (outcome === "cancelled") return;
+    if ("report" in outcome && hasErrors(outcome.report)) return;
+    onApply(parsed);
+  }
   function changeFormat(next: DocumentFormat) {
     if (format === next) return;
+    resetChecks();
     fileGeneration.current++;
     const parsed = validate();
     if (parsed) {
@@ -175,6 +243,7 @@ export function DocumentEditor({
           onImportBundle={onImportBundle}
           onRefreshQueries={onRefreshQueries}
           onReviewBundle={onReviewBundle}
+          validateDocument={checkDocument}
           onBusyChange={setImporting}
         />
       </section>
@@ -216,6 +285,7 @@ export function DocumentEditor({
             variant="secondary"
             className={styles.secondary}
             onClick={() => {
+              resetChecks();
               fileGeneration.current++;
               setSource(serializeDashboard(dashboard, format));
               setBase(JSON.stringify(dashboard));
@@ -265,6 +335,7 @@ export function DocumentEditor({
           const selected = input.files?.[0];
           input.value = "";
           if (!selected) return;
+          resetChecks();
           const generation = ++fileGeneration.current;
           if (selected.size > MAX_LIBRARY_BYTES) {
             setError("Libraries must be smaller than 4 MiB.");
@@ -302,6 +373,7 @@ export function DocumentEditor({
         spellCheck={false}
         value={source}
         onChange={(event) => {
+          resetChecks();
           fileGeneration.current++;
           setSource(event.target.value);
           setValid(false);
@@ -318,6 +390,24 @@ export function DocumentEditor({
           <Check size={14} /> Valid dashboard · ready to apply
         </p>
       )}
+      {checkDocument && checkState.status === "checking" && (
+        <p className={styles.muted} role="status">
+          Checking dashboard…
+        </p>
+      )}
+      {checkDocument && checkState.status === "failed" && (
+        <p role="alert" className={styles.validationError}>
+          Could not check this dashboard: {checkState.message}. Applying to the
+          canvas does not depend on the check.
+        </p>
+      )}
+      {checkDocument && checkState.status === "done" && (
+        <ChecksList
+          label="Dashboard checks"
+          report={checkState.report}
+          dashboard={checkState.document}
+        />
+      )}
       <div className={styles.panelFooter}>
         <GammaButton
           size="sm"
@@ -327,15 +417,23 @@ export function DocumentEditor({
         >
           Validate document
         </GammaButton>
+        {checkDocument && (
+          <GammaButton
+            size="sm"
+            variant="secondary"
+            className={styles.secondary}
+            disabled={checkState.status === "checking"}
+            onClick={check}
+          >
+            Check
+          </GammaButton>
+        )}
         <GammaButton
           size="sm"
           variant="primary"
           className={styles.primary}
-          disabled={stale}
-          onClick={() => {
-            const parsed = validate();
-            if (parsed && !stale) onApply(parsed);
-          }}
+          disabled={stale || applying}
+          onClick={() => void apply()}
         >
           Apply to canvas
         </GammaButton>
