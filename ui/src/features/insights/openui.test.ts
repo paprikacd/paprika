@@ -8,7 +8,7 @@ import {
 import { dashboardSchema, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
 import { registerWidgetPlugin } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
-import { dashboardAuthoringGuidance } from "./authoring-guidance"
+import { dashboardCompositionGuidance, dashboardWorkflowGuidance } from "./authoring-guidance"
 
 export const fixture: Dashboard = {
   schemaVersion: 1,
@@ -54,12 +54,14 @@ describe("OpenUI dashboard authoring", () => {
   const saved: SavedQuery = { schemaVersion: 1, id: "availability", name: "Service availability", providerId: "metrics", kind: "metrics", query: "up{service={{service}}} * {{factor}}", parameters: [{ name: "service", type: "string" }, { name: "factor", type: "number", defaultValue: 1 }] }
   const linked: Dashboard = { ...fixture, variables: [{ name: "service" }], widgets: [{ ...fixture.widgets[0], providerId: "stale-provider", queryRef: { id: "availability", bindings: [{ parameter: "service", source: "variable", variable: "service" }] } }] }
 
-  it("gives the Build with AI prompt the same composition and breach rules as the served schema", () => {
+  it("gives the Build with AI prompt the composition rules and none of the MCP workflow rules", () => {
     const prompt = buildAIContext(fixture, providers, "Add a requests stat")
-    expect(dashboardAuthoringGuidance.length).toBeGreaterThanOrEqual(8)
-    for (const rule of dashboardAuthoringGuidance) expect(prompt).toContain(rule)
-    expect(prompt).toContain("Compact stat cards (layout h:2)")
-    expect(prompt).toContain("options.staleAfterSeconds from the metric's known scrape or evaluation interval")
+    expect(dashboardCompositionGuidance.length).toBeGreaterThanOrEqual(8)
+    for (const rule of dashboardCompositionGuidance) expect(prompt).toContain(rule)
+    for (const rule of dashboardWorkflowGuidance) expect(prompt).not.toContain(rule)
+    expect(prompt).not.toContain("render_dashboard")
+    expect(prompt).not.toContain("NOT RUN")
+    expect(prompt).toContain("Return a complete OpenUI Lang document for review; nothing is applied automatically.")
   })
 
   it("round trips saved references in the fourteenth optional position and tooltip sources", () => {

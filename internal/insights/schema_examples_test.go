@@ -69,11 +69,12 @@ func TestServedStatExamplesFollowCompactStatRule(t *testing.T) {
 	require.Positive(t, bounded, "the examples must include one labelled bounded-scale stat")
 }
 
-func TestServedDashboardExampleIsValidAndCompact(t *testing.T) {
+func TestServedDashboardExampleIsValidAndShowsBothStatForms(t *testing.T) {
 	dashboard := authoringSchemaExample("dashboard")
 	require.NoError(t, validateDashboard("service-overview", dashboard))
 	var document struct {
 		Widgets []struct {
+			ID     string `json:"id"`
 			Layout struct {
 				H int `json:"h"`
 			} `json:"layout"`
@@ -81,11 +82,15 @@ func TestServedDashboardExampleIsValidAndCompact(t *testing.T) {
 		} `json:"widgets"`
 	}
 	require.NoError(t, json.Unmarshal(dashboard, &document))
-	require.NotEmpty(t, document.Widgets)
+	byID := map[string]int{}
 	for _, widget := range document.Widgets {
-		require.Equal(t, 2, widget.Layout.H, "the dashboard example stays a compact stat")
-		require.NotContains(t, widget.Options, "showStatBar")
+		byID[widget.ID] = widget.Layout.H
+		if widget.Layout.H <= 2 {
+			require.NotContains(t, widget.Options, "showStatBar", widget.ID)
+		}
 	}
+	require.Equal(t, 2, byID["request-rate"], "the dashboard example keeps the compact stat")
+	require.Equal(t, 3, byID["error-budget-remaining"], "the dashboard example also serves the bounded-scale stat")
 }
 
 func TestAuthoringSchemaNotesCarryStatAndCompositionGuidance(t *testing.T) {
@@ -97,9 +102,9 @@ func TestAuthoringSchemaNotesCarryStatAndCompositionGuidance(t *testing.T) {
 			var response authoringSchemaResponse
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 			notes := strings.Join(response.Notes, "\n")
-			require.Contains(t, notes, "Compact stat (h<=2) = title + value + at most one sparkline; showStatBar only for a bounded scale with explicit min and max and h>=3.")
-			for _, line := range guidance.DashboardAuthoring() {
-				require.Contains(t, response.Notes, line, "every authoring surface must carry the composition rule")
+			require.Contains(t, notes, "error-budget-remaining is the bounded-scale stat", "the stat note must point at an example this kind serves")
+			for _, line := range append(guidance.DashboardComposition(), guidance.DashboardWorkflow()...) {
+				require.Contains(t, response.Notes, line, "every schema surface must carry the shared dashboard rules")
 			}
 		})
 	}

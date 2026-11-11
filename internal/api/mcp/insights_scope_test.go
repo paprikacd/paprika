@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 )
 
 func TestInsightsScopeIsExplicitAndIndependent(t *testing.T) {
@@ -59,17 +60,16 @@ func TestInsightsInitializeGuidesReadOnlyClientsToDashboardBundles(t *testing.T)
 	}
 }
 
-func TestAuthoringInstructionsCarryCompositionGuidanceOnlyForInsightsAuthoring(t *testing.T) {
-	rules := []string{"Compact stat cards show a short title.", "Set staleAfterSeconds from the known interval."}
-	_, authoring := serverDescriptionAndInstructions(true, []Scope{ScopeObserve, ScopeInsightsWrite}, rules)
-	for _, rule := range rules {
-		assert.Contains(t, authoring, rule, "an authoring surface must advertise composition rules to every client")
-	}
+func TestAuthoringInstructionsCarryDashboardRulesOnlyForInsightsAuthoring(t *testing.T) {
+	_, authoring := serverDescriptionAndInstructions(true, []Scope{ScopeObserve, ScopeInsightsWrite})
 	assert.True(t, strings.HasPrefix(authoring, "Prefer query_dashboard"), "the authoring instructions keep their existing opening")
-	_, readOnly := serverDescriptionAndInstructions(true, []Scope{ScopeObserve}, rules)
-	assert.NotContains(t, readOnly, rules[0], "read-only Observe does not advertise authoring rules")
-	_, fleet := serverDescriptionAndInstructions(false, []Scope{ScopeRead, ScopeWrite}, rules)
-	assert.NotContains(t, fleet, rules[0], "the fleet surface never receives Insights guidance")
+	for _, rule := range append(guidance.DashboardComposition(), guidance.DashboardWorkflow()...) {
+		assert.Contains(t, authoring, rule, "an authoring surface must advertise every dashboard rule to every client")
+	}
+	_, withoutInsights := serverDescriptionAndInstructions(true, []Scope{ScopeObserve})
+	assert.NotContains(t, withoutInsights, guidance.DashboardComposition()[0], "a server without Insights authoring does not advertise dashboard rules")
+	_, fleet := serverDescriptionAndInstructions(false, []Scope{ScopeRead, ScopeWrite})
+	assert.NotContains(t, fleet, guidance.DashboardComposition()[0], "the fleet surface never receives Insights rules")
 }
 
 func TestInsightsAuthoringScopeConsentAndRefreshPreserveExplicitGrant(t *testing.T) {
