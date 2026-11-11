@@ -284,3 +284,18 @@ describe("table visual cells", () => {
     expect(json()).toEqual({ columns: ["host", "usage"], pageSize: 5 })
   })
 })
+
+describe("status threshold cell paint", () => {
+  it("keeps status text readable on a custom background by adjusting its concrete token hex", () => {
+    const thresholds = [{ value: 0, status: "critical" as const }];
+    const custom = "#1f2a30";
+    const adjusted = tableTextPalette("light", custom, thresholds).get("var(--gamma-status-critical, #7f0a12)");
+    expect(adjusted).toMatch(/^#[\da-f]{6}$/i);
+    expect(contrastRatio(adjusted!, custom)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("uses the theme text token on the theme surface when no custom background is set", () => {
+    const palette = tableTextPalette("dark", undefined, [{ value: 0, status: "critical" }]);
+    expect(palette.get("var(--gamma-status-critical, #7f0a12)")).toBe("var(--gamma-status-critical-text)");
+  });
+});

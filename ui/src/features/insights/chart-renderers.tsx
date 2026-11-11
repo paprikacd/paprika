@@ -47,7 +47,7 @@ import {
 } from "./widget-context";
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { EMPTY_OPTIONS, PALETTE, thresholdForValue, usePlotSize, type Point, type Series } from "./chart-renderer-shared";
-import { thresholdInk, thresholdPaint } from "./status";
+import { thresholdInk, thresholdPaint, thresholdText } from "./status";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
 export { TimeSeriesChart, resolveTimeSeriesDomain } from "./time-series-chart";
@@ -105,10 +105,10 @@ function Stat({
     ? Math.max(0, (rangeEnd - first.point.timestamp) / 1000)
     : undefined;
   const stale = ageSeconds !== undefined && widget.options?.staleAfterSeconds !== undefined && ageSeconds > widget.options.staleAfterSeconds;
-  const color =
-    widgetTextColor(widget.options) ??
-    thresholdPaint(thresholdForValue(first.point.value, widget.options?.thresholds)) ??
-    widget.color;
+  const band = thresholdForValue(first.point.value, widget.options?.thresholds);
+  // The sparkline is a mark, so it takes the status mark; the reading is text, so it takes the text token.
+  const color = widgetTextColor(widget.options) ?? thresholdPaint(band) ?? widget.color;
+  const valueText = widgetTextColor(widget.options) ?? thresholdText(band) ?? widget.color;
   const minimum = widget.options?.min, maximum = widget.options?.max;
   const showBar = widget.options?.showStatBar === true && minimum !== undefined && maximum !== undefined && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum < maximum;
   const boundedValue = showBar ? Math.max(minimum, Math.min(maximum, first.point.value)) : 0;
@@ -132,7 +132,7 @@ function Stat({
           <span
             className={styles.statValue}
             data-metric-value={String(first.point.value)}
-            style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdPaint(thresholdForValue(first.point.value, widget.options?.thresholds)) : color }}
+            style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdText(band) : valueText }}
           >
             {formatMetric(
               first.point.value,

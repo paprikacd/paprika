@@ -1,5 +1,5 @@
 {
-  "description": "Shared threshold conformance cases. Each case is run through the Zod widget schema (ui schema-conformance.test.ts), the Go validateDashboard path and the embedded dashboard JSON Schema (internal/insights/schema_conformance_test.go). Zod and Go must agree with valid on every case. A case with jsonSchemaGap names a rule the published JSON Schema cannot express (strictly increasing values, which JSON Schema has no keyword for); the embedded schema must accept that case, which the Go test pins.",
+  "description": "Shared threshold conformance cases. Each case is run through the Zod widget schema (ui schema-conformance.test.ts), the Go validateDashboard path and the embedded dashboard JSON Schema (internal/insights/schema_conformance_test.go). All three must agree with valid on every case. Label length counts Unicode code points in all three. A case with jsonSchemaGap names a rule the published JSON Schema cannot express (strictly increasing values, which JSON Schema has no keyword for); the embedded schema must accept that case, which the Go test pins.",
   "cases": [
     {
       "name": "status only",
@@ -437,6 +437,70 @@
       "valid": false,
       "thresholds": [
         null
+      ]
+    },
+    {
+      "name": "empty label",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": ""
+        }
+      ]
+    },
+    {
+      "name": "forty emoji label: 40 code points, 80 UTF-16 units",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    },
+    {
+      "name": "forty-one emoji label: 41 code points, 82 UTF-16 units",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    },
+    {
+      "name": "eighty-one emoji label",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    },
+    {
+      "name": "legacy success status name",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "name": "legacy danger status name",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "danger"
+        }
       ]
     }
   ]

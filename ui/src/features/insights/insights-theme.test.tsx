@@ -164,10 +164,11 @@ describe("status tokens", () => {
     expect(mirror.levels).toEqual(levels);
   });
 
-  it("keeps every status mark at least 3:1 against its block background", () => {
+  it("keeps every status mark at least 3:1 against every surface it is drawn on in each block", () => {
     for (const [block, tokens] of Object.entries(themeTokenSets()))
       for (const level of levels)
-        expect(contrastRatio(tokens[`--gamma-status-${level}`], tokens["--gamma-bg"]), `${block} ${level}`).toBeGreaterThanOrEqual(3);
+        for (const surface of surfaces)
+          expect(contrastRatio(tokens[`--gamma-status-${level}`], tokens[surface]), `${block} ${level} on ${surface}`).toBeGreaterThanOrEqual(3);
   });
 
   it("keeps status text at least 4.5:1 on every surface and tint it sits on", () => {

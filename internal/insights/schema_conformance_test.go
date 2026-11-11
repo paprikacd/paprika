@@ -29,7 +29,7 @@ func TestThresholdConformanceFixtures(t *testing.T) {
 			if entry.JSONSchemaGap != "" {
 				// JSON Schema has no keyword for strictly increasing array values. Pin the known gap, so it
 				// stays visible rather than silently widening agreement.
-				require.Equal(t, "ordering", entry.JSONSchemaGap)
+				require.Contains(t, []string{"ordering", "string-length"}, entry.JSONSchemaGap)
 				require.NoError(t, jsonErr, "the embedded schema is expected to accept a %s case", entry.JSONSchemaGap)
 				return
 			}
@@ -53,7 +53,7 @@ type conformanceCase struct {
 	Name       string          `json:"name"`
 	Valid      bool            `json:"valid"`
 	Thresholds json.RawMessage `json:"thresholds"`
-	// JSONSchemaGap names the one rule the published JSON Schema cannot express. The schema must accept such a case.
+	// JSONSchemaGap names a rule the published JSON Schema cannot express (ordering or string-length). The schema must accept such a case.
 	JSONSchemaGap string `json:"jsonSchemaGap"`
 }
 

@@ -1056,6 +1056,22 @@ describe("widget inspector", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("warns about a status band's text in every appearance, not only the active one", () => {
+    // White text is fine on the light critical mark but 1.6:1 on the dark one, so the warning must reach the dark block.
+    render(
+      <WidgetEditor
+        {...props()}
+        widget={{
+          ...widget,
+          type: "heatmap",
+          options: { background: "#000000", textColor: "#ffffff", thresholds: [{ value: 0, status: "critical" }] },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Text needs more contrast on a heatmap color");
+  });
+
   it("configures tooltip history, preserves it while hidden, and deliberately resets it", () => {
     const callbacks = props();
     const view = render(

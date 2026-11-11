@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	// Embedded zone data keeps time.LoadLocation working in the alpine runtime image, which ships no zoneinfo.
 	_ "time/tzdata"
@@ -661,10 +662,8 @@ func validateWidgetThresholds(options map[string]json.RawMessage) error {
 // and the shared status-tokens.json levels. schema_conformance_test.go and ui schema-conformance.test.ts fail if they drift.
 var statusLevels = []string{"ok", "info", "warning", "critical", "unknown"}
 
-const thresholdRuleMessage = "thresholds require increasing finite values, a status or six-digit hex color, and labels up to 80 characters"
-
 // validateWidgetThreshold mirrors thresholdSchema in schema.ts: value is required; status (a semantic level) and
-// color (a hue override) are optional but at least one must be named; label is optional.
+// color (a hue override) are optional but at least one must be named; label is optional and may be empty.
 func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, error) {
 	fields, err := requireObjectShape(raw, []string{"value"}, []string{"status", "color", "label"})
 	if err != nil {
@@ -677,26 +676,31 @@ func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, er
 		Label  string  `json:"label"`
 	}
 	if json.Unmarshal(raw, &threshold) != nil || !finite(threshold.Value) || threshold.Value <= previous {
-		return 0, errors.New(thresholdRuleMessage)
+		return 0, errors.New("thresholds require increasing finite values")
 	}
-	if !validThresholdPaint(fields, threshold.Status, threshold.Color) || stringUnits(threshold.Label) > 80 {
-		return 0, errors.New(thresholdRuleMessage)
+	if err := validateThresholdPaint(fields, threshold.Status, threshold.Color); err != nil {
+		return 0, err
+	}
+	// Count code points, as Zod's string length and the published JSON Schema maxLength do.
+	if utf8.RuneCountInString(threshold.Label) > 80 {
+		return 0, errors.New("threshold labels must be at most 80 characters")
 	}
 	return threshold.Value, nil
 }
 
-// validThresholdPaint requires a threshold to name a status, a hex hue override, or both, and checks each one present.
-func validThresholdPaint(fields map[string]json.RawMessage, status, color string) bool {
+// validateThresholdPaint requires a threshold to name a status, a hex hue override, or both, and checks each one present.
+func validateThresholdPaint(fields map[string]json.RawMessage, status, color string) error {
 	_, hasStatus := fields["status"]
 	_, hasColor := fields["color"]
 	switch {
 	case !hasStatus && !hasColor:
-		return false
+		return errors.New("each threshold must name a status (" + strings.Join(statusLevels, ", ") + ") or a six-digit hex color")
 	case hasStatus && !slices.Contains(statusLevels, status):
-		return false
-	default:
-		return !hasColor || validWidgetColor.MatchString(color)
+		return errors.New("threshold status must be one of " + strings.Join(statusLevels, ", ") + "; success, danger and similar names are not statuses")
+	case hasColor && !validWidgetColor.MatchString(color):
+		return errors.New("threshold color must be a six-digit hex color")
 	}
+	return nil
 }
 
 func validateWidgetPrecisionBounds(numbers map[string]float64) error {

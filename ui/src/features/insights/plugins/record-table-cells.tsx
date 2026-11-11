@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
 import { exactMetric, formatMetric } from "../chart-data"
 import { thresholdForValue } from "../chart-renderers"
-import { statusToken, thresholdPaint } from "../status"
+import { statusHex, statusToken, thresholdInk, thresholdPaint } from "../status"
 import { contrastRatio, readableTextColor } from "../appearance"
 import type { RecordFrame, Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
@@ -76,8 +76,12 @@ export function tableTextPalette(theme: "light" | "dark", background?: string, t
   const colors = new Map<string, string>()
   for (const threshold of thresholds ?? []) {
     const paint = thresholdPaint(threshold)
-    // A hex override keeps its contrast-adjusted hue; a status uses its theme text token.
-    if (paint !== undefined) colors.set(paint, threshold.color !== undefined ? tableTextColor(threshold.color, surface) : statusToken(threshold.status!, "-text"))
+    if (paint === undefined) continue
+    // A hex override keeps its contrast-adjusted hue. A status uses its text token on the theme surface. On a widget
+    // background the concrete token hex is adjusted instead, as hex text is, so the result meets 4.5:1 there.
+    if (threshold.color !== undefined) colors.set(paint, tableTextColor(threshold.color, surface))
+    else if (background === undefined) colors.set(paint, statusToken(threshold.status!, "-text"))
+    else colors.set(paint, tableTextColor(statusHex(theme, threshold.status!, "-text"), surface))
   }
   colors.set(color ?? "var(--gamma-chart-3)", tableTextColor(color ?? tableThemes[theme].color, surface))
   return colors
@@ -210,11 +214,13 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   const exact = finite ? exactMetric(value, unit) : "No data"
   const scale = isBar ? ` · Scale ${exactMetric(style.min!, unit)} to ${exactMetric(style.max!, unit)}${geometry?.outside ? " · Outside scale" : ""}` : ""
   const label = `${column.label ?? column.key}: ${exact}${threshold?.label ? ` · ${threshold.label}` : ""}${scale}`
+  // A threshold band is a solid fill, as a hex band always was, with its on-fill ink; other colours keep the tint.
   const background = finite && style.display === "color-background"
-    ? /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
+    ? threshold !== undefined || /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
     : undefined
   const foreground = finite && style.display === "color-text" ? textColors.get(fill)
-    : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background) : undefined
+    : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background)
+      : background && threshold ? thresholdInk(threshold) : undefined
   return <span className={styles.visualCell} data-cell-display={style.display} data-cell-missing={!finite || undefined}
     role="img" aria-label={label} title={nativeTitle ? label : undefined}
     style={{ "--cell-color": fill, background, color: foreground } as CSSProperties}>

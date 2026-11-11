@@ -48,7 +48,10 @@ import {
   widgetTextColor,
 } from "./appearance";
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
-import { thresholdHex } from "./status";
+import { thresholdHex, type StatusTheme } from "./status";
+import { useInsightsTheme } from "./insights-theme";
+
+const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
 import { TooltipEditor } from "./tooltip-editor";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
 import { useSavedQueryLibrary } from "./saved-query-context";
@@ -194,6 +197,8 @@ function StyleEditor({
   onChange: (widget: Widget) => void;
   onConfigureTooltips: () => void;
 }) {
+  // The swatch shows the appearance the author is viewing.
+  const { resolvedTheme } = useInsightsTheme();
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
@@ -287,11 +292,13 @@ function StyleEditor({
     (options.thresholds?.length
       ? options.thresholds
       : DEFAULT_HEATMAP_THRESHOLDS
-    ).some((threshold) => {
-      // A status names a theme token, so its light-theme mark stands in for the contrast check.
-      const hex = thresholdHex(threshold);
-      return hex !== undefined && contrastRatio(options.textColor!, hex) < 4.5;
-    });
+    ).some((threshold) =>
+      // A status resolves to a different mark in each appearance, so every block is checked, not only the active one.
+      THEME_BLOCKS.some((theme) => {
+        const hex = thresholdHex(threshold, theme);
+        return hex !== undefined && contrastRatio(options.textColor!, hex) < 4.5;
+      }),
+    );
   const defaultColor = gauge
     ? "#53876a"
     : widget.type === "stat"
@@ -618,7 +625,7 @@ function StyleEditor({
                 <GammaInput
                   aria-label={`Threshold ${index + 1} color`}
                   type="color"
-                  value={thresholdHex(threshold)}
+                  value={thresholdHex(threshold, resolvedTheme)}
                   onChange={(event) =>
                     update({
                       thresholds: options.thresholds!.map((item, i) =>
@@ -657,7 +664,7 @@ function StyleEditor({
                     update({
                       thresholds: options.thresholds!.map((item, i) =>
                         i === index
-                          ? { ...item, label: event.target.value }
+                          ? { ...item, label: event.target.value || undefined }
                           : item,
                       ),
                     })

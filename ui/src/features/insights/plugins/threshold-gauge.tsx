@@ -29,7 +29,7 @@ import {
 import styles from "../chart-styles.module.css";
 import { metricContext, validTimestamp } from "../widget-context";
 import { widgetTextColor } from "../appearance";
-import { thresholdPaint } from "../status";
+import { thresholdPaint, thresholdText } from "../status";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { compactSeriesLabels } from "../series-display";
 import meterStyles from "./capacity-meter.module.css";
@@ -275,7 +275,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     </MetricDetails>}>
     <span className={`${styles.gaugeValue} ${display === "radial" ? meterStyles.radialValue : meterStyles.value} ${bank && threshold ? meterStyles.statusValue : ""}`}
       data-gauge-value={value === undefined ? "unknown" : value} title={interactive && options.showTooltip !== false ? undefined : exact}
-      style={{ color: widgetTextColor(options) ?? (bank ? undefined : thresholdPaint(threshold) ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": thresholdPaint(threshold) } : {}) } as CSSProperties}>
+      style={{ color: widgetTextColor(options) ?? (bank ? undefined : thresholdText(threshold) ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": thresholdPaint(threshold) } : {}) } as CSSProperties}>
       {display !== "radial" && rangeCue}
       <span data-gauge-number>{value === undefined ? "No data" : formatMetric(value, "", false, options.decimals)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{widget.unit}</small>}
     </span>
