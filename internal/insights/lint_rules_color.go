@@ -14,13 +14,24 @@ var colorLintRules = []lintRule{
 		ID:       "color.near-status",
 		Severity: warningSeverity,
 		Summary:  guidanceStatusColour,
-		Fix:      "Name a status or a series role instead of this hex, or choose a hue at least 10 dE2000 away from every status colour in each theme.",
+		Fix:      "Name a status or a series role instead of this hex, or choose a hue further from the ok, warning and critical hues.",
 		check:    checkNearStatusColor,
 	},
 }
 
-// nearStatusDeltaE is the CIEDE2000 distance below which an authored hex reads as a status colour.
-const nearStatusDeltaE = 10
+// Status-like colour is judged on hue and chroma, not lightness. The critical marks are very dark in
+// light and very pale in dark, so a lightness distance misses saturated reds and over-flags neutral
+// blues and greys. Only the ok, warning and critical families count: info and unknown hues are never
+// status-like. A colour is flagged when its CIELAB chroma reaches statusMinChroma and its hue lies within
+// statusHueWindow degrees of a family mark in any theme. On the published marks the family hues sit near
+// 150 (ok), 75 (warning) and 33 (critical); the blues sit near 250 and the greys have chroma under 10.
+const (
+	statusMinChroma = 12
+	statusHueWindow = 30
+)
+
+// statusFamilies are the levels whose hue a bare authored colour must not echo.
+var statusFamilies = map[string]bool{"ok": true, "warning": true, "critical": true}
 
 // statusMark is one status colour in one theme: the --gamma-status-<level> mark that paints thresholds.
 type statusMark struct {
@@ -42,45 +53,69 @@ type colorField struct {
 	hex     string
 }
 
-// checkNearStatusColor fires for each authored hex on a field with no status or
-// role that is within nearStatusDeltaE of a status mark in any theme. The
-// nearest mark is named, so an author knows which status the hue would read as.
+// checkNearStatusColor fires for each authored hex on a field with no status or role that reads as a
+// status hue (see statusHueWindow). The message names the nearest family mark and its theme.
 func checkNearStatusColor(doc *lintDocument) []lintHit {
 	var hits []lintHit
 	for i := range doc.widgets {
 		widget := &doc.widgets[i]
 		for _, field := range widget.colorFields {
-			mark, distance, ok := nearestStatusMark(field.hex)
-			if !ok || distance >= nearStatusDeltaE {
+			mark, gap, chroma, ok := nearestStatusHue(field.hex)
+			if !ok || gap > statusHueWindow {
 				continue
 			}
 			hits = append(hits, lintHit{
 				pointer:  field.pointer,
 				widgetID: widget.id,
-				message: fmt.Sprintf("%s %s is %s dE2000 from the %s status colour in the %s theme; name a status or series role, or use a hue further from status colours",
-					widgetLabel(widget), field.what, strconv.FormatFloat(distance, 'f', 1, 64), mark.level, mark.theme),
+				message: fmt.Sprintf("%s %s %s has hue %s degrees from the %s status in the %s theme (chroma %s); name a status or series role, or use a hue further from the ok, warning and critical hues",
+					widgetLabel(widget), field.what, field.hex, strconv.FormatFloat(gap, 'f', 0, 64), mark.level, mark.theme, strconv.FormatFloat(chroma, 'f', 0, 64)),
 			})
 		}
 	}
 	return hits
 }
 
-// nearestStatusMark returns the status mark closest to hex, and its CIEDE2000 distance.
-// ok is false when hex is not a six-digit colour.
-func nearestStatusMark(hex string) (statusMark, float64, bool) {
-	rgb, ok := parseHexRGB(hex)
-	if !ok {
-		return statusMark{}, 0, false
+// nearestStatusHue returns the family mark whose hue is closest to hex, the hue gap in degrees and the
+// chroma of hex. ok is false for a malformed colour or one below statusMinChroma, which is too neutral to
+// read as a status.
+func nearestStatusHue(hex string) (mark statusMark, gap, chroma float64, ok bool) {
+
+	rgb, valid := parseHexRGB(hex)
+	if !valid {
+		return statusMark{}, 0, 0, false
 	}
-	lab := srgbToLab(rgb)
-	best, bestDistance := statusMark{}, math.Inf(1)
-	for _, mark := range statusMarks {
-		markRGB, _ := parseHexRGB(mark.hex)
-		if d := deltaE2000(lab, srgbToLab(markRGB)); d < bestDistance {
-			best, bestDistance = mark, d
+	colour := srgbToLab(rgb)
+	chroma = math.Hypot(colour.a, colour.b)
+	if chroma < statusMinChroma {
+		return statusMark{}, 0, chroma, false
+	}
+	hue := hueDegrees(colour)
+	gap = math.Inf(1)
+	for _, candidate := range statusMarks {
+		if !statusFamilies[candidate.level] {
+			continue
+		}
+		markRGB, _ := parseHexRGB(candidate.hex)
+		if d := hueGap(hue, hueDegrees(srgbToLab(markRGB))); d < gap {
+			mark, gap = candidate, d
 		}
 	}
-	return best, bestDistance, true
+	return mark, gap, chroma, true
+}
+
+// hueDegrees is the CIELAB hue angle, from 0 to 360.
+func hueDegrees(c lab) float64 {
+	h := math.Atan2(c.b, c.a) * 180 / math.Pi
+	if h < 0 {
+		h += 360
+	}
+	return h
+}
+
+// hueGap is the shorter angular distance between two hue angles, from 0 to 180.
+func hueGap(a, b float64) float64 {
+	d := math.Abs(a - b)
+	return math.Min(d, 360-d)
 }
 
 // parseHexRGB reads a six-digit #rrggbb colour into channels from 0 to 255.
@@ -123,71 +158,4 @@ func srgbToLab(rgb [3]float64) lab {
 	}
 	fx, fy, fz := f(x), f(y), f(z)
 	return lab{l: 116*fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz)}
-}
-
-func square(x float64) float64 { return x * x }
-
-// meanHue is the mean hue angle of two colours, taking the short way round the circle.
-// A colour with zero chroma has no hue, so the sum is returned unchanged.
-func meanHue(h1p, h2p float64, chromatic bool) float64 {
-	switch {
-	case !chromatic:
-		return h1p + h2p
-	case math.Abs(h1p-h2p) <= 180:
-		return (h1p + h2p) / 2
-	case h1p+h2p < 360:
-		return (h1p + h2p + 360) / 2
-	default:
-		return (h1p + h2p - 360) / 2
-	}
-}
-
-// deltaE2000 is the CIEDE2000 colour difference with unit weights (kL = kC = kH = 1).
-// It follows Sharma, Wu and Dalal (2005), including the hue-angle wrap rules.
-func deltaE2000(p, q lab) float64 {
-	radians := func(deg float64) float64 { return deg * math.Pi / 180 }
-	degrees := func(rad float64) float64 { return rad * 180 / math.Pi }
-	hueAngle := func(b, a float64) float64 {
-		if a == 0 && b == 0 {
-			return 0
-		}
-		h := degrees(math.Atan2(b, a))
-		if h < 0 {
-			h += 360
-		}
-		return h
-	}
-	c1, c2 := math.Hypot(p.a, p.b), math.Hypot(q.a, q.b)
-	cBar := (c1 + c2) / 2
-	pow7 := math.Pow(cBar, 7)
-	g := 0.5 * (1 - math.Sqrt(pow7/(pow7+math.Pow(25, 7))))
-	a1p, a2p := (1+g)*p.a, (1+g)*q.a
-	c1p, c2p := math.Hypot(a1p, p.b), math.Hypot(a2p, q.b)
-	h1p, h2p := hueAngle(p.b, a1p), hueAngle(q.b, a2p)
-	dLp := q.l - p.l
-	dCp := c2p - c1p
-	dhp := 0.0
-	if c1p*c2p != 0 {
-		dhp = h2p - h1p
-		if dhp > 180 {
-			dhp -= 360
-		} else if dhp < -180 {
-			dhp += 360
-		}
-	}
-	dHp := 2 * math.Sqrt(c1p*c2p) * math.Sin(radians(dhp/2))
-	lBarP := (p.l + q.l) / 2
-	cBarP := (c1p + c2p) / 2
-	hBarP := meanHue(h1p, h2p, c1p*c2p != 0)
-	t := 1 - 0.17*math.Cos(radians(hBarP-30)) + 0.24*math.Cos(radians(2*hBarP)) +
-		0.32*math.Cos(radians(3*hBarP+6)) - 0.20*math.Cos(radians(4*hBarP-63))
-	dTheta := 30 * math.Exp(-square((hBarP-275)/25))
-	cBarP7 := math.Pow(cBarP, 7)
-	rC := 2 * math.Sqrt(cBarP7/(cBarP7+math.Pow(25, 7)))
-	sL := 1 + 0.015*square(lBarP-50)/math.Sqrt(20+square(lBarP-50))
-	sC := 1 + 0.045*cBarP
-	sH := 1 + 0.015*cBarP*t
-	rT := -math.Sin(radians(2*dTheta)) * rC
-	termL, termC, termH := dLp/sL, dCp/sC, dHp/sH
-	return math.Sqrt(termL*termL + termC*termC + termH*termH + rT*termC*termH)
 }

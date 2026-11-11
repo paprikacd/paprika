@@ -159,9 +159,20 @@ type wireMark struct {
 	Role  string `json:"role"`
 }
 
-// wireWidgetConfig holds the plugin config members that carry colours: series colour rules.
+// wireWidgetConfig holds the plugin config members that carry colours: series colour rules and the
+// value mappings of record-table status badges.
 type wireWidgetConfig struct {
 	SeriesColors []wireMark `json:"seriesColors"`
+	CellStyles   []struct {
+		Mappings []wireMapping `json:"mappings"`
+	} `json:"cellStyles"`
+}
+
+// wireMapping is one status-badge mapping. A mapping that names a status keeps its colour as a hue
+// override; a colour-only mapping is a bare colour and is checked.
+type wireMapping struct {
+	Status string `json:"status"`
+	Color  string `json:"color"`
 }
 
 // decodeLintDocument reads the members lint needs. It reports false when the
@@ -221,6 +232,7 @@ func colorFieldsOf(base string, widget *wireWidget) []colorField {
 	var config wireWidgetConfig
 	if len(widget.Config) > 0 && json.Unmarshal(widget.Config, &config) == nil {
 		fields = append(fields, seriesRuleColorFields(base, config.SeriesColors)...)
+		fields = append(fields, mappingColorFields(base, config.CellStyles)...)
 	}
 	return fields
 }
@@ -256,9 +268,22 @@ func lineAndSeriesColorFields(base string, option *wireWidgetOption) []colorFiel
 	return fields
 }
 
-// seriesRuleColorFields lists the bare colours in a plugin config's series colour rules. Status-badge
-// mappings are not listed: a mapping colour is the status display itself, and until mappings can name a
-// status it is the only way to show one. Its status moves into the mapping in a later change.
+// mappingColorFields lists the status-badge mappings that carry a colour but no status.
+func mappingColorFields(base string, styles []struct {
+	Mappings []wireMapping `json:"mappings"`
+}) []colorField {
+	var fields []colorField
+	for k, style := range styles {
+		for m, mapping := range style.Mappings {
+			if mapping.Status == "" && mapping.Color != "" {
+				fields = append(fields, colorField{pointer: base + "/config/cellStyles/" + strconv.Itoa(k) + "/mappings/" + strconv.Itoa(m) + "/color", what: "status badge colour", hex: mapping.Color})
+			}
+		}
+	}
+	return fields
+}
+
+// seriesRuleColorFields lists the bare colours in a plugin config's series colour rules.
 func seriesRuleColorFields(base string, rules []wireMark) []colorField {
 	var fields []colorField
 	for k, rule := range rules {
