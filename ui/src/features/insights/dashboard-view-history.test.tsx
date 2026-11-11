@@ -360,13 +360,15 @@ describe("dashboard view history characterisation", () => {
   })
 })
 
-// Expected traces, recorded from the workspace before the view-state refactor.
+// Expected traces for the view contract in drilldowns.md: filter steps push a Back entry, view
+// controls and corrections replace, and a write that leaves the address unchanged adds no entry.
 const at = (query: string) => `/dashboard/insights/?dashboard=target&${query}`
 const LIVE_FLOW: Entry[] = [
   {step: "load shared link", ops: [`replace ${at("vars=%7B%22service%22%3A%22worker%22%7D")}`], url: at("vars=%7B%22service%22%3A%22worker%22%7D"), editing: false, dirty: false},
   {step: "apply text variable", ops: [`push ${at(`vars=${VARS_CHECKOUT}`)}`], url: at(`vars=${VARS_CHECKOUT}`), editing: false, dirty: false},
   {step: "choose dropdown variable", ops: [`push ${at(`vars=${STAGING}`)}`], url: at(`vars=${STAGING}`), editing: false, dirty: false},
-  {step: "select a signal", ops: [`push ${at(`vars=${STAGING}`)}`], url: at(`vars=${STAGING}`), editing: false, dirty: false},
+  // Re-selecting the value already applied leaves the address unchanged, so it adds no Back entry.
+  {step: "select a signal", ops: [], url: at(`vars=${STAGING}`), editing: false, dirty: false},
   {step: "auto refresh", ops: [`replace ${at(`vars=${STAGING}&refresh=15`)}`], url: at(`vars=${STAGING}&refresh=15`), editing: false, dirty: false},
   {step: "brush a window", ops: [`push ${at(`vars=${STAGING}&${BRUSH}&refresh=15`)}`], url: at(`vars=${STAGING}&${BRUSH}&refresh=15`), editing: false, dirty: false},
   {step: "toolbar preset", ops: [`replace ${at(`vars=${STAGING}&range=6h&refresh=15`)}`], url: at(`vars=${STAGING}&range=6h&refresh=15`), editing: false, dirty: false},
@@ -396,7 +398,7 @@ const EXAMPLE_FLOW: Entry[] = [
   {"step": "example copy link", "ops": [], "url": "/dashboard/insights/?dashboard=target&example=1", "editing": false, "dirty": false},
   {step: "example apply text variable", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
   {step: "example choose dropdown variable", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
-  {step: "example select a signal", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
+  {step: "example select a signal", ops: [], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
   {step: "example brush a window", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1", editing: false, dirty: false},
   {step: "example toolbar preset", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&range=6h&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&range=6h&example=1", editing: false, dirty: false},
   {step: "example remove a declared variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&range=6h&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&range=6h&example=1", editing: true, dirty: true},

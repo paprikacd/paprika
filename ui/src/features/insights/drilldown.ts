@@ -33,15 +33,18 @@ export interface DashboardNavigation {
   /** Auto refresh chosen in the view. Absent means the saved interval applies. */
   refresh?: ViewRefresh
 }
-/** A link as read from the address: its valid view plus the variable names it could not apply. */
+/** A link part that was malformed. It is reported and not applied; the rest of the link still opens. */
+export type RejectedLinkPart =
+  | { kind: "variable"; name: string }
+  | { kind: "setting"; name: "range" | "refresh"; value: string }
+/** A link part the open dashboard did not apply, with the reason shown in the notice. */
+export type IgnoredLink =
+  | { kind: "variable"; name: string; reason: "undeclared" | "invalid" }
+  | { kind: "setting"; name: "range" | "refresh"; value: string }
+/** A link as read from the address: its valid view plus the parts that were malformed. */
 export interface ParsedDashboardLink {
   navigation: DashboardNavigation | null
-  /** Names whose link name or value is malformed. They are reported, never applied. */
-  invalid: string[]
-}
-export interface IgnoredLinkVariable {
-  name: string
-  reason: "undeclared" | "invalid"
+  rejected: RejectedLinkPart[]
 }
 export const MAX_DASHBOARD_URL_LENGTH = 8192
 const RANGE_PRESETS = Object.keys(timeRanges) as ViewTimeRange[]
@@ -298,9 +301,11 @@ export function buildDashboardURL(
 }
 
 /**
- * Reads a link from the address. Structure is strict: a repeated or unknown-shaped
- * parameter, malformed JSON, or an out-of-range window throws. A variable whose name
- * or value is malformed is not fatal; it is listed as invalid so the view can say so.
+ * Reads a link from the address. Structure is strict: a repeated parameter, malformed
+ * variable JSON, too many variable values, a window with only one end, a window
+ * combined with a preset, and links longer than the URL limit throw. A malformed
+ * variable name or value, or an unknown range or refresh value, is not fatal: it is
+ * listed in `rejected` so the view can say so, and the rest of the link still applies.
  */
 export function parseDashboardLink(search: string): ParsedDashboardLink {
   if (search.length > MAX_DASHBOARD_URL_LENGTH || (search && !search.startsWith("?")))
@@ -312,10 +317,10 @@ export function parseDashboardLink(search: string): ParsedDashboardLink {
   if (dashboardId === null) {
     if (["vars", "from", "to", "range", "refresh"].some((name) => params.has(name)))
       throw new Error("Choose a dashboard before passing variables or a time range")
-    return { navigation: null, invalid: [] }
+    return { navigation: null, rejected: [] }
   }
   let variables: VariableValues | undefined
-  const invalid: string[] = []
+  const rejected: RejectedLinkPart[] = []
   if (params.has("vars")) {
     let parsed: unknown
     try {
@@ -332,69 +337,84 @@ export function parseDashboardLink(search: string): ParsedDashboardLink {
     for (const [key, value] of entries) {
       const name = variableNameSchema.safeParse(key), text = variableValueSchema.safeParse(value)
       if (name.success && text.success) variables[key] = text.data
-      else invalid.push(key)
+      else rejected.push({ kind: "variable", name: key })
     }
   }
   const hasFrom = params.has("from"),
-    hasTo = params.has("to"),
-    hasRange = params.has("range")
+    hasTo = params.has("to")
   if (hasFrom !== hasTo) throw new Error("Dashboard URL time ranges require both from and to")
-  if (hasRange && hasFrom) throw new Error("Choose either a time range preset or from and to, not both")
+  const rangeText = params.get("range"), refreshText = params.get("refresh")
+  const range = rangeText === null ? undefined : (RANGE_PRESETS as string[]).includes(rangeText) ? rangeText as ViewTimeRange : undefined
+  if (rangeText !== null && range === undefined) rejected.push({ kind: "setting", name: "range", value: rangeText })
+  const refresh = refreshText === null ? undefined : (REFRESH_SECONDS as readonly string[]).includes(refreshText) ? Number(refreshText) as ViewRefresh : undefined
+  if (refreshText !== null && refresh === undefined) rejected.push({ kind: "setting", name: "refresh", value: refreshText })
+  if (range !== undefined && hasFrom) throw new Error("Choose either a time range preset or from and to, not both")
   const navigation = checkedNavigation({
     dashboardId,
     variables,
     ...(hasFrom ? { customTimeRange: { from: params.get("from")!, to: params.get("to")! } } : {}),
-    ...(hasRange ? { range: checkedRangePreset(params.get("range")) } : {}),
-    ...(params.has("refresh") ? { refresh: checkedRefresh(params.get("refresh")) } : {}),
+    ...(range === undefined ? {} : { range }),
+    ...(refresh === undefined ? {} : { refresh }),
   })
-  return { navigation, invalid }
+  return { navigation, rejected }
 }
 
-/** The view a link describes, for callers that do not show notices. Malformed entries are dropped. */
+/** The view a link describes, for callers that do not show notices. Malformed parts are dropped. */
 export function parseDashboardURL(search: string): DashboardNavigation | null {
   return parseDashboardLink(search).navigation
 }
 
 /**
  * Applies a link to the document it opens. Values for variables the document no
- * longer declares are dropped, so the view keeps only what this dashboard can use.
+ * longer declares are dropped, and malformed parts are reported, so the view keeps
+ * only what this dashboard can use.
  */
 export function resolveLinkView(
   document: Pick<Dashboard, "variables">,
   link: DashboardNavigation,
-  invalid: string[] = [],
-): { state: DashboardNavigation; ignored: IgnoredLinkVariable[] } {
+  rejected: RejectedLinkPart[] = [],
+): { state: DashboardNavigation; ignored: IgnoredLink[] } {
   const declared = new Set((document.variables ?? []).map((variable) => variable.name))
   const { variables, ...rest } = link
-  const ignored: IgnoredLinkVariable[] = [
+  const ignored: IgnoredLink[] = [
     ...Object.keys(variables ?? {})
       .filter((name) => !declared.has(name))
-      .map((name) => ({ name, reason: "undeclared" as const })),
-    ...invalid.map((name) => ({ name, reason: "invalid" as const })),
+      .map((name) => ({ kind: "variable" as const, name, reason: "undeclared" as const })),
+    ...rejected.map((part): IgnoredLink =>
+      part.kind === "variable"
+        ? { kind: "variable", name: part.name, reason: "invalid" }
+        : { kind: "setting", name: part.name, value: part.value }),
   ]
   if (variables === undefined) return { state: rest, ignored }
   const kept = Object.fromEntries(Object.entries(variables).filter(([name]) => declared.has(name)))
   return { state: { ...rest, variables: kept }, ignored }
 }
 
-/** Plain-language notice for link variables that were not applied. Empty when none were ignored. */
-export function describeIgnoredLinkVariables(ignored: IgnoredLinkVariable[]): string {
+const RANGE_CHOICES = "15m, 30m, 1h, 6h, 24h, 7d or 30d"
+const REFRESH_CHOICES = "0, 15, 30 or 60 seconds"
+
+/** Plain-language notice for link parts that were not applied. Empty when none were ignored. */
+export function describeIgnoredLink(ignored: IgnoredLink[]): string {
   const label = (name: string) => `“${name.length > 64 ? `${name.slice(0, 63)}…` : name}”`
-  const undeclared = ignored.filter((item) => item.reason === "undeclared").map((item) => item.name)
-  const invalid = ignored.filter((item) => item.reason === "invalid").map((item) => item.name)
+  const list = (names: string[], noun: [string, string]) => {
+    const shown = names.slice(0, 5).map(label).join(", ")
+    const more = names.length > 5 ? `, and ${names.length - 5} more` : ""
+    return names.length === 1 ? `${noun[0]} ${shown}` : `${noun[1]} ${shown}${more}`
+  }
+  const undeclared = ignored.flatMap(item => item.kind === "variable" && item.reason === "undeclared" ? [item.name] : [])
+  const invalid = ignored.flatMap(item => item.kind === "variable" && item.reason === "invalid" ? [item.name] : [])
+  const settings = ignored.flatMap(item => item.kind === "setting" ? [item] : [])
   const parts: string[] = []
   if (undeclared.length) {
-    const shown = undeclared.slice(0, 5).map(label).join(", ")
-    const more = undeclared.length > 5 ? `, and ${undeclared.length - 5} more` : ""
-    parts.push(undeclared.length === 1
-      ? `Ignored link filter ${shown}: this dashboard no longer declares it.`
-      : `Ignored link filters ${shown}${more}: this dashboard no longer declares them.`)
+    parts.push(`Ignored ${list(undeclared, ["link filter", "link filters"])}: ${undeclared.length === 1 ? "this dashboard no longer declares it." : "this dashboard no longer declares them."}`)
   }
   if (invalid.length) {
-    const shown = invalid.slice(0, 5).map(label).join(", ")
-    parts.push(invalid.length === 1
-      ? `Ignored link filter ${shown} because its name or value is not valid.`
-      : `Ignored link filters ${shown} because their names or values are not valid.`)
+    parts.push(`Ignored ${list(invalid, ["link filter", "link filters"])} because ${invalid.length === 1 ? "its name or value is" : "their names or values are"} not valid.`)
+  }
+  for (const setting of settings) {
+    parts.push(setting.name === "range"
+      ? `Ignored link time range ${label(setting.value)}: use ${RANGE_CHOICES}.`
+      : `Ignored link refresh ${label(setting.value)}: use ${REFRESH_CHOICES}.`)
   }
   return parts.join(" ")
 }

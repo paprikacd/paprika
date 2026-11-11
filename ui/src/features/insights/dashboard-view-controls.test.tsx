@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
@@ -9,7 +9,17 @@ import type { Dashboard } from "./schema"
 // and "Set as dashboard default" is the one way a view writes the document.
 
 vi.mock("./canvas", () => ({
-  DashboardCanvas: () => <div data-testid="canvas" />,
+  DashboardCanvas: ({ dashboard, onSelection, onTimeRange }: {
+    dashboard: Dashboard
+    onSelection?: (widget: Dashboard["widgets"][number], context: { labels?: Record<string, string> }) => void
+    onTimeRange?: (window: { start: number; end: number }) => void
+  }) => {
+    const widget = dashboard.widgets[0]
+    return <div data-testid="canvas">
+      {widget?.selectionBindings?.length && onSelection && <button onClick={() => onSelection(widget, { labels: { env: "staging" } })}>Select staging</button>}
+      {onTimeRange && <button onClick={() => onTimeRange({ start: Date.parse(RANGE.from), end: Date.parse(RANGE.to) })}>Brush window</button>}
+    </div>
+  },
 }))
 
 const RANGE = { from: "2026-01-01T00:00:00.000Z", to: "2026-01-01T01:00:00.000Z" }
@@ -18,9 +28,9 @@ const saved: Dashboard = {
   variables: [{ name: "env", options: ["prod", "staging"], defaultValue: "prod" }],
   widgets: [],
 }
+const other: Dashboard = { schemaVersion: 1, id: "other", title: "Other", timeRange: "1h", refreshInterval: 0, widgets: [] }
 
-function client(): InsightsClient & { save: ReturnType<typeof vi.fn> } {
-  const documents = [saved]
+function client(documents: Dashboard[] = [saved]): InsightsClient & { save: ReturnType<typeof vi.fn> } {
   return {
     list: vi.fn().mockResolvedValue(documents),
     providers: vi.fn().mockResolvedValue([]),
@@ -235,3 +245,171 @@ describe("a view change that cannot be linked", () => {
     expect(screen.getByRole("combobox", { name: "Auto refresh" })).toHaveTextContent("Auto off")
   })
 })
+
+// Review fixes: a new or duplicated dashboard can Back and Forward, a bad refresh or range
+// opens the linked dashboard with a notice, and the notice and focus behave predictably.
+let trace: string[] = []
+let rawReplace: History["replaceState"]
+const here = () => location.pathname + location.search
+// Emulates the browser moving to an entry: the address changes, then popstate fires.
+async function travel(url: string) {
+  await act(async () => {
+    rawReplace(null, "", url)
+    window.dispatchEvent(new PopStateEvent("popstate"))
+  })
+  await settle()
+}
+
+describe("history and link fixes from review", () => {
+  beforeEach(() => {
+    trace = []
+    rawReplace = window.history.replaceState.bind(window.history)
+    const rawPush = window.history.pushState.bind(window.history)
+    vi.spyOn(window.history, "pushState").mockImplementation((data, unused, url) => { trace.push(`push ${String(url)}`); rawPush(data, unused, url) })
+    vi.spyOn(window.history, "replaceState").mockImplementation((data, unused, url) => { trace.push(`replace ${String(url)}`); rawReplace(data, unused, url) })
+  })
+
+  it("steps Back and Forward inside a new dashboard after a pushed variable apply", async () => {
+    setURL("/dashboard/insights/?dashboard=ops")
+    render(<InsightsApp client={client([saved])} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    fireEvent.click(screen.getByRole("button", { name: "New dashboard" }))
+    await screen.findByRole("button", { name: "Save dashboard" })
+    await settle()
+    const blank = here()
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }))
+    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }))
+    await settle()
+    fireEvent.change(screen.getByLabelText("variable_1"), { target: { value: "one" } })
+    fireEvent.click(screen.getByRole("button", { name: "Apply values" }))
+    await settle()
+    const applied = here()
+    expect(applied).not.toBe(blank)
+
+    await travel(blank)
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(here()).toBe(blank)
+    expect(screen.getByRole("button", { name: "Save dashboard" })).toBeInTheDocument()
+
+    await travel(applied)
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(here()).toBe(applied)
+    expect((screen.getByLabelText("variable_1") as HTMLInputElement).value).toBe("one")
+  })
+
+  it("opens the linked dashboard when its refresh or range is malformed, drops it with a notice, and corrects the address", async () => {
+    for (const [extra, notice] of [
+      ["refresh=45", "Ignored link refresh “45”: use 0, 15, 30 or 60 seconds."],
+      ["refresh=5", "Ignored link refresh “5”: use 0, 15, 30 or 60 seconds."],
+      ["range=2h", "Ignored link time range “2h”: use 15m, 30m, 1h, 6h, 24h, 7d or 30d."],
+    ] as const) {
+      cleanup()
+      setURL(`/dashboard/insights/?dashboard=ops&${extra}`)
+      trace = []
+      render(<InsightsApp client={client([other, saved])} />)
+      await screen.findByRole("heading", { name: "Operations" })
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+      expect(document.querySelector("[data-link-notice]")).toHaveTextContent(notice)
+      expect(here()).toBe("/dashboard/insights/?dashboard=ops")
+      expect(trace).toEqual(["replace /dashboard/insights/?dashboard=ops"])
+    }
+  })
+
+  it("keeps a structural link error visible", async () => {
+    setURL("/dashboard/insights/?dashboard=ops&range=6h&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z")
+    render(<InsightsApp client={client([other, saved])} />)
+    await screen.findByRole("alert")
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose either a time range preset or from and to, not both")
+  })
+
+  it("names the URL limit, not the window, when a brushed window cannot be written", async () => {
+    let n = 1024
+    const address = (count: number) => `/dashboard/insights/?dashboard=ops&vars=${encodeURIComponent(JSON.stringify({ env: "€".repeat(count) }))}`
+    while (address(n).length > 8192 - 40) n--
+    setURL(address(n))
+    // The canvas only mounts for a dashboard with widgets; the stub brushes through its first widget.
+    const withWidget: Dashboard = { ...saved, widgets: [{ id: "signal", title: "Signal", type: "stat", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 4, h: 2 } }] }
+    render(<InsightsApp client={client([withWidget])} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    fireEvent.click(screen.getByRole("button", { name: "Brush window" }))
+    await settle()
+    expect(screen.getByRole("alert")).toHaveTextContent("exceeds the 8192-character URL limit")
+    expect(screen.getByRole("alert")).not.toHaveTextContent("increasing time range")
+    expect(here()).toBe(address(n))
+  })
+
+  it("keeps an open panel and its unapplied text when Back stays on the same dashboard", async () => {
+    setURL("/dashboard/insights/?dashboard=ops")
+    render(<InsightsApp client={client([saved])} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    await settle()
+    const start = here()
+    fireEvent.click(screen.getByRole("combobox", { name: "env" }))
+    fireEvent.click(screen.getByRole("option", { name: "staging" }))
+    await settle()
+    fireEvent.click(screen.getByRole("button", { name: "Code" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^JSON$/ }))
+    const code = screen.getByLabelText("Dashboard source") as HTMLTextAreaElement
+    fireEvent.change(code, { target: { value: code.value.replace("Operations", "Operations (edited, not applied)") } })
+    await settle()
+
+    await travel(start)
+    expect(screen.getByRole("combobox", { name: "env" })).toHaveTextContent("prod")
+    expect((screen.getByLabelText("Dashboard source") as HTMLTextAreaElement).value).toContain("Operations (edited, not applied)")
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  })
+
+  it("undoes a range and refresh change made after the last filter step with one Back", async () => {
+    setURL("/dashboard/insights/?dashboard=ops")
+    render(<InsightsApp client={client([saved])} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    await settle()
+    const start = here()
+    fireEvent.click(screen.getByRole("combobox", { name: "env" }))
+    fireEvent.click(screen.getByRole("option", { name: "staging" }))
+    await settle()
+    fireEvent.click(screen.getByRole("combobox", { name: "Time range" }))
+    fireEvent.click(screen.getByRole("option", { name: "Last 6 hours" }))
+    await settle()
+    fireEvent.click(screen.getByRole("combobox", { name: "Auto refresh" }))
+    fireEvent.click(screen.getByRole("option", { name: "15s" }))
+    await settle()
+    expect(trace.filter(entry => entry.startsWith("push"))).toHaveLength(1)
+
+    await travel(start)
+    expect(screen.getByRole("combobox", { name: "env" })).toHaveTextContent("prod")
+    expect(screen.getByRole("combobox", { name: "Time range" })).toHaveTextContent("Last 1 hour")
+    expect(screen.getByRole("combobox", { name: "Auto refresh" })).toHaveTextContent("Auto off")
+  })
+
+  it("keeps focus on Save dashboard after Set as dashboard default, and copies the refresh the select shows", async () => {
+    const api = client([saved])
+    setURL(`/dashboard/insights/?dashboard=ops&from=${encodeURIComponent(RANGE.from)}&to=${encodeURIComponent(RANGE.to)}&refresh=15`)
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    expect(screen.getByRole("combobox", { name: "Auto refresh" })).toHaveTextContent("Auto off")
+    fireEvent.click(screen.getByRole("button", { name: "Set as dashboard default" }))
+    await settle()
+    expect(screen.getByRole("button", { name: "Save dashboard" })).toHaveFocus()
+
+    fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
+    await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1))
+    expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ customTimeRange: RANGE, refreshInterval: 0 }), '"v1"')
+  })
+
+  it("clears the link notice when the workspace moves to a new dashboard", async () => {
+    setURL(`/dashboard/insights/?dashboard=ops&vars=${encodeURIComponent(JSON.stringify({ gone: "x" }))}`)
+    render(<InsightsApp client={client([saved])} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    expect(document.querySelector("[data-link-notice]")).toHaveTextContent("Ignored link filter “gone”")
+    fireEvent.click(screen.getByRole("button", { name: "New dashboard" }))
+    await screen.findByRole("button", { name: "Save dashboard" })
+    await settle()
+    expect(document.querySelector("[data-link-notice]")).toBeEmptyDOMElement()
+    expect(screen.queryByText(/Ignored link filter/)).not.toBeInTheDocument()
+  })
+})
+

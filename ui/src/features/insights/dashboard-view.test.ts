@@ -67,10 +67,16 @@ describe("readDashboardView", () => {
     ["a number value", "%7B%22env%22%3A1%7D", "env"],
     ["a nested value", "%7B%22env%22%3A%7B%22x%22%3A%22y%22%7D%7D", "env"],
     ["an invalid name", "%7B%22bad-name%22%3A%22x%22%7D", "bad-name"],
-  ])("reports variables that are %s as invalid instead of applying them", (_label, encoded, name) => {
+    ["a reserved name", "%7B%22__proto__%22%3A%22x%22%7D", "__proto__"],
+  ])("reports variables that are %s as rejected instead of applying them", (_label, encoded, name) => {
     setAddress(`?dashboard=ops&vars=${encoded}`)
-    expect(readDashboardLink()).toEqual({ navigation: { dashboardId: "ops", variables: {} }, invalid: [name] })
+    expect(readDashboardLink()).toEqual({ navigation: { dashboardId: "ops", variables: {} }, rejected: [{ kind: "variable", name }] })
     expect(readDashboardView()).toEqual({ dashboardId: "ops", variables: {} })
+  })
+
+  it("reports an unknown refresh and keeps the rest of the view", () => {
+    setAddress("?dashboard=ops&range=6h&refresh=45")
+    expect(readDashboardLink()).toEqual({ navigation: { dashboardId: "ops", range: "6h" }, rejected: [{ kind: "setting", name: "refresh", value: "45" }] })
   })
 
   it("rejects an address longer than the URL limit", () => {
@@ -197,6 +203,17 @@ describe("useDashboardView", () => {
     expect(result.current.current).toBeUndefined()
     act(() => result.current.apply({ dashboardId: "ops", customTimeRange: range }, "brush"))
     expect(result.current.current).toEqual({ dashboardId: "ops", customTimeRange: range })
+  })
+
+  it("adds no Back entry when a push would leave the address unchanged", () => {
+    const pushState = vi.spyOn(window.history, "pushState")
+    const { result } = renderHook(() => useDashboardView("ops", false))
+    act(() => result.current.apply({ dashboardId: "ops", variables: { env: "prod" } }, "selection"))
+    act(() => result.current.apply({ dashboardId: "ops", variables: { env: "prod" } }, "selection"))
+    expect(pushState).toHaveBeenCalledTimes(1)
+    act(() => result.current.apply({ dashboardId: "ops", variables: { env: "staging" } }, "selection"))
+    expect(pushState).toHaveBeenCalledTimes(2)
+    expect(result.current.current).toEqual({ dashboardId: "ops", variables: { env: "staging" } })
   })
 
   it("sets the view without writing the address for none-recorded actions", () => {

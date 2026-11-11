@@ -23,8 +23,9 @@ export type ViewAction =
 export type ViewHistory = "push" | "replace" | "none"
 
 /**
- * The one place that decides push versus replace. Values match the workspace
- * before the view-state refactor; changing one changes that action everywhere.
+ * The one place that decides push versus replace, and the contract in drilldowns.md:
+ * deliberate filter steps push a Back entry, view controls and corrections replace.
+ * Changing one value changes that action everywhere it is written.
  */
 export const VIEW_HISTORY: Readonly<Record<ViewAction, ViewHistory>> = {
   // A link or example start rewrites its own canonical URL.
@@ -76,10 +77,15 @@ export function viewedDashboard(dashboard: Dashboard, view: DashboardNavigation 
   return view?.refresh === undefined ? timed : { ...timed, refreshInterval: view.refresh }
 }
 
-/** True when the view's time or refresh would differ from the saved defaults in the document. */
+/** The auto refresh the toolbar shows: a fixed window pauses it, so the select reads off. */
+export function shownRefreshInterval(viewed: Dashboard): Dashboard["refreshInterval"] {
+  return viewed.customTimeRange ? 0 : viewed.refreshInterval
+}
+
+/** True when the view's time or refresh, as shown, would differ from the saved defaults in the document. */
 export function viewDiffersFromDefaults(dashboard: Dashboard, viewed: Dashboard): boolean {
   return viewed.timeRange !== dashboard.timeRange ||
-    viewed.refreshInterval !== dashboard.refreshInterval ||
+    shownRefreshInterval(viewed) !== shownRefreshInterval(dashboard) ||
     JSON.stringify(viewed.customTimeRange ?? null) !== JSON.stringify(dashboard.customTimeRange ?? null)
 }
 
@@ -109,8 +115,10 @@ export function useDashboardView(dashboardId: string, example: boolean) {
     const method = VIEW_HISTORY[action]
     if (method === "none") return
     const url = serialiseDashboardView(state, { example: options.example ?? exampleMode.current })
-    if (method === "push") window.history.pushState(window.history.state, "", url)
-    else window.history.replaceState(window.history.state, "", url)
+    // A step that leaves the address unchanged (re-picking the applied value) adds no Back entry.
+    if (method === "push") {
+      if (new URL(url, location.href).href !== location.href) window.history.pushState(window.history.state, "", url)
+    } else window.history.replaceState(window.history.state, "", url)
   }, [])
   // Writes the address for an action, then makes the view current. A write that throws
   // leaves the view unchanged, so the caller decides what to show.
