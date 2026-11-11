@@ -1,0 +1,204 @@
+# promtool unit tests for the PrometheusRule rendered from
+# charts/chart/templates/prometheus/prometheusrules.yaml. Run them with
+# charts/chart/tests/prometheus/run.sh (or task chart:rules), which renders
+# the chart and copies rules.yaml next to this file.
+rule_files:
+  - rules.yaml
+evaluation_interval: 30s
+tests:
+  # Release failures are transition counters. The first Failed transition makes
+  # a new series at 1, a later increment makes increase() positive, and the
+  # alert resolves once neither holds.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_release_phase_total{release="app-r1",namespace="apps",phase="Failed"}'
+        values: '_x10 1x40'
+      - series: 'paprika_release_phase_total{release="app-r2",namespace="apps",phase="Failed"}'
+        values: '_x40 1x10 2x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: PaprikaReleaseFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              release: app-r1
+              namespace: apps
+              phase: Failed
+            exp_annotations:
+              summary: Paprika release failed
+              description: Release app-r1 in namespace apps failed.
+      - eval_time: 12m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 28m
+        alertname: PaprikaReleaseFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              release: app-r2
+              namespace: apps
+              phase: Failed
+            exp_annotations:
+              summary: Paprika release failed
+              description: Release app-r2 in namespace apps failed.
+      - eval_time: 33m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+
+  # Application rollbacks follow the same first-transition pattern.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_application_phase_total{application="app-1",namespace="apps",phase="RolledBack"}'
+        values: '_x10 1x40'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              application: app-1
+              namespace: apps
+              phase: RolledBack
+            exp_annotations:
+              summary: Paprika application rolled back
+              description: Application app-1 in namespace apps was rolled back.
+      - eval_time: 12m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+
+  # Degraded is current state from the phase gauge. Two replicas report the same
+  # cluster-wide value; max() collapses them, so the alert has no labels and
+  # reports one application, not two. It needs five minutes to fire.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_applications_by_phase_ratio{phase="Degraded",instance="manager-0:8443"}'
+        values: '_x10 1x40'
+      - series: 'paprika_applications_by_phase_ratio{phase="Degraded",instance="manager-1:8443"}'
+        values: '_x10 1x40'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: PaprikaApplicationDegraded
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: PaprikaApplicationDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Paprika applications are degraded
+              description: "1 application(s) are in the Degraded phase. The gauge has no application label; list them with kubectl get applications -A."
+      - eval_time: 32m
+        alertname: PaprikaApplicationDegraded
+        exp_alerts: []
+
+  # Gauge alerts take the max over replicas. One replica reporting 0 does not
+  # hide a 1 from the other.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_releases_stuck{instance="manager-0:8443"}'
+        values: '1x40'
+      - series: 'paprika_releases_stuck{instance="manager-1:8443"}'
+        values: '0x40'
+      - series: 'paprika_applications_release_retries_exhausted{instance="manager-0:8443"}'
+        values: '1x40'
+      - series: 'paprika_applications_release_retries_exhausted{instance="manager-1:8443"}'
+        values: '1x40'
+      - series: 'paprika_fleet_index_degraded{instance="manager-0:8443"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: PaprikaReleasesStuck
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Paprika releases are stuck
+              description: "1 non-terminal releases are older than the stuck-release threshold (30m)."
+      - eval_time: 7m
+        alertname: PaprikaReleaseRetriesExhausted
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: Paprika application release retries exhausted
+              description: "1 applications hold the ReleaseRetriesExhausted condition. The gauge has no application label; find them with kubectl get applications -A."
+      - eval_time: 7m
+        alertname: PaprikaFleetIndexDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Paprika fleet index is degraded
+              description: The installed fleet index health is degraded; fleet queries may be serving stale data.
+
+  # OOM comes from cAdvisor, and only the chart's containers count: a sidecar in
+  # the same pod must not fire.
+  - interval: 30s
+    input_series:
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-controller-manager-7d9f",container="manager",instance="10.0.0.1:10250"}'
+        values: '0x20 1x30'
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-controller-manager-7d9f",container="istio-proxy",instance="10.0.0.1:10250"}'
+        values: '0x20 1x30'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PaprikaOOMKilled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: paprika-system
+              pod: paprika-controller-manager-7d9f
+              container: manager
+            exp_annotations:
+              summary: Paprika container OOM killed
+              description: Container manager in pod paprika-controller-manager-7d9f was OOM killed.
+      - eval_time: 20m
+        alertname: PaprikaOOMKilled
+        exp_alerts: []
+
+  # Dashboard expressions: replicas collapse under max, and out-of-sync counts
+  # each application once.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_applications_by_phase_ratio{phase="Healthy",instance="manager-0:8443"}'
+        values: '2x40'
+      - series: 'paprika_applications_by_phase_ratio{phase="Healthy",instance="manager-1:8443"}'
+        values: '2x40'
+      - series: 'paprika_applications_by_phase_ratio{phase="Degraded",instance="manager-0:8443"}'
+        values: '1x40'
+    promql_expr_test:
+      - expr: max by (phase) (paprika_applications_by_phase_ratio)
+        eval_time: 5m
+        exp_samples:
+          - labels: '{phase="Healthy"}'
+            value: 2
+          - labels: '{phase="Degraded"}'
+            value: 1
+  - interval: 30s
+    input_series:
+      - series: 'paprika_application_reconcile_lag{application="app-1",namespace="apps",instance="manager-0:8443"}'
+        values: '3x40'
+      - series: 'paprika_application_reconcile_lag{application="app-2",namespace="other",instance="manager-0:8443"}'
+        values: '7x40'
+      - series: 'paprika_out_of_sync{app="a1",namespace="apps",instance="manager-0:8443"}'
+        values: '4x40'
+      - series: 'paprika_out_of_sync{app="a1",namespace="apps",instance="manager-1:8443"}'
+        values: '4x40'
+      - series: 'paprika_out_of_sync{app="a2",namespace="apps",instance="manager-0:8443"}'
+        values: '1x40'
+    promql_expr_test:
+      - expr: max(paprika_application_reconcile_lag{namespace=~"apps"})
+        eval_time: 5m
+        exp_samples:
+          - labels: '{}'
+            value: 3
+      - expr: sum(max by (app, namespace) (paprika_out_of_sync{namespace=~"apps"}))
+        eval_time: 5m
+        exp_samples:
+          - labels: '{}'
+            value: 5
