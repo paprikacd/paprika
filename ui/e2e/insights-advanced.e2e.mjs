@@ -171,10 +171,11 @@ try {
       await page.getByRole("button", { name: "Apply time range" }).click()
       assert.equal(await page.getByRole("combobox", { name: "Auto refresh" }).isDisabled(), true)
       await page.getByRole("button", { name: "Refresh data", exact: true }).click()
-      assert.deepEqual((await document()).customTimeRange, {
-        from: "2026-10-20T12:00:00.000Z",
-        to: "2026-10-20T13:30:00.000Z",
-      })
+      // A toolbar window is a view: the saved dashboard keeps its own range until the author sets it as the default.
+      assert.equal((await document()).customTimeRange, undefined)
+      // Earlier checks leave the dashboard in edit mode, where the default action is offered.
+      if (await page.getByRole("button", { name: "Edit dashboard", exact: true }).count()) await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await page.getByRole("button", { name: "Set as dashboard default", exact: true }).click()
       await save()
       await page.reload({ waitUntil: "networkidle" })
       assert.deepEqual((await document()).customTimeRange, {

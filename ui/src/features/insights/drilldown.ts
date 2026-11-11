@@ -2,6 +2,7 @@ import {
   customTimeRangeSchema,
   dashboardSchema,
   drilldownSchema,
+  timeRanges,
   variableNameSchema,
   variableValueSchema,
   MAX_DASHBOARD_VARIABLES,
@@ -18,12 +19,33 @@ export interface DrilldownContext {
   /** Exact selected observation time in milliseconds, when deliberately chosen. */
   timestamp?: number
 }
+/** Relative windows a view can choose; the same presets the saved dashboard uses. */
+export type ViewTimeRange = Dashboard["timeRange"]
+/** Auto refresh in seconds; 0 turns it off for this view. */
+export type ViewRefresh = Dashboard["refreshInterval"]
 export interface DashboardNavigation {
   dashboardId: string
   variables?: VariableValues
+  /** A fixed window. Mutually exclusive with `range`. */
   customTimeRange?: { from: string; to: string }
+  /** A relative window chosen in the view. Overrides the saved preset until cleared. */
+  range?: ViewTimeRange
+  /** Auto refresh chosen in the view. Absent means the saved interval applies. */
+  refresh?: ViewRefresh
+}
+/** A link as read from the address: its valid view plus the variable names it could not apply. */
+export interface ParsedDashboardLink {
+  navigation: DashboardNavigation | null
+  /** Names whose link name or value is malformed. They are reported, never applied. */
+  invalid: string[]
+}
+export interface IgnoredLinkVariable {
+  name: string
+  reason: "undeclared" | "invalid"
 }
 export const MAX_DASHBOARD_URL_LENGTH = 8192
+const RANGE_PRESETS = Object.keys(timeRanges) as ViewTimeRange[]
+const REFRESH_SECONDS = ["0", "15", "30", "60"] as const
 
 function checkedValues(input: unknown): VariableValues {
   if (!input || typeof input !== "object" || Array.isArray(input))
@@ -211,13 +233,30 @@ export function resolveSelectionBindings(
 }
 
 function checkedNavigation(input: DashboardNavigation): DashboardNavigation {
+  if (input.range !== undefined && input.customTimeRange !== undefined)
+    throw new Error("Choose either a time range preset or a fixed window, not both")
   return {
     dashboardId: dashboardSchema.shape.id.parse(input.dashboardId),
     ...(input.variables === undefined ? {} : { variables: checkedValues(input.variables) }),
     ...(input.customTimeRange === undefined
       ? {}
       : { customTimeRange: customTimeRangeSchema.parse(input.customTimeRange) }),
+    ...(input.range === undefined ? {} : { range: checkedRangePreset(input.range) }),
+    ...(input.refresh === undefined ? {} : { refresh: checkedRefresh(input.refresh) }),
   }
+}
+
+function checkedRangePreset(value: unknown): ViewTimeRange {
+  if (typeof value !== "string" || !RANGE_PRESETS.includes(value as ViewTimeRange))
+    throw new Error(`Dashboard URL time range must be one of ${RANGE_PRESETS.join(", ")}`)
+  return value as ViewTimeRange
+}
+
+function checkedRefresh(value: unknown): ViewRefresh {
+  const text = typeof value === "number" ? String(value) : value
+  if (typeof text !== "string" || !(REFRESH_SECONDS as readonly string[]).includes(text))
+    throw new Error("Dashboard URL refresh must be 0, 15, 30 or 60 seconds")
+  return Number(text) as ViewRefresh
 }
 
 export function buildDashboardURL(
@@ -250,38 +289,112 @@ export function buildDashboardURL(
     search.set("from", state.customTimeRange.from)
     search.set("to", state.customTimeRange.to)
   }
+  if (state.range) search.set("range", state.range)
+  if (state.refresh !== undefined) search.set("refresh", String(state.refresh))
   const url = `${basePath.endsWith("/") ? basePath : `${basePath}/`}?${search}`
   if (url.length > MAX_DASHBOARD_URL_LENGTH)
     throw new Error("This dashboard link exceeds the 8192-character URL limit")
   return url
 }
 
-export function parseDashboardURL(search: string): DashboardNavigation | null {
+/**
+ * Reads a link from the address. Structure is strict: a repeated or unknown-shaped
+ * parameter, malformed JSON, or an out-of-range window throws. A variable whose name
+ * or value is malformed is not fatal; it is listed as invalid so the view can say so.
+ */
+export function parseDashboardLink(search: string): ParsedDashboardLink {
   if (search.length > MAX_DASHBOARD_URL_LENGTH || (search && !search.startsWith("?")))
     throw new Error("Dashboard URL parameters are invalid or too long")
   const params = new URLSearchParams(search)
-  for (const name of ["dashboard", "vars", "from", "to"])
+  for (const name of ["dashboard", "vars", "from", "to", "range", "refresh"])
     if (params.getAll(name).length > 1) throw new Error(`Dashboard URL repeats “${name}”`)
   const dashboardId = params.get("dashboard")
   if (dashboardId === null) {
-    if (["vars", "from", "to"].some((name) => params.has(name)))
+    if (["vars", "from", "to", "range", "refresh"].some((name) => params.has(name)))
       throw new Error("Choose a dashboard before passing variables or a time range")
-    return null
+    return { navigation: null, invalid: [] }
   }
   let variables: VariableValues | undefined
+  const invalid: string[] = []
   if (params.has("vars")) {
+    let parsed: unknown
     try {
-      variables = checkedValues(JSON.parse(params.get("vars")!))
+      parsed = JSON.parse(params.get("vars")!)
     } catch {
       throw new Error("Dashboard URL variables must be valid named string values")
     }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("Dashboard URL variables must be valid named string values")
+    const entries = Object.entries(parsed)
+    if (entries.length > MAX_DASHBOARD_VARIABLES)
+      throw new Error("A dashboard can use at most 20 variable values")
+    variables = {}
+    for (const [key, value] of entries) {
+      const name = variableNameSchema.safeParse(key), text = variableValueSchema.safeParse(value)
+      if (name.success && text.success) variables[key] = text.data
+      else invalid.push(key)
+    }
   }
   const hasFrom = params.has("from"),
-    hasTo = params.has("to")
+    hasTo = params.has("to"),
+    hasRange = params.has("range")
   if (hasFrom !== hasTo) throw new Error("Dashboard URL time ranges require both from and to")
-  return checkedNavigation({
+  if (hasRange && hasFrom) throw new Error("Choose either a time range preset or from and to, not both")
+  const navigation = checkedNavigation({
     dashboardId,
     variables,
     ...(hasFrom ? { customTimeRange: { from: params.get("from")!, to: params.get("to")! } } : {}),
+    ...(hasRange ? { range: checkedRangePreset(params.get("range")) } : {}),
+    ...(params.has("refresh") ? { refresh: checkedRefresh(params.get("refresh")) } : {}),
   })
+  return { navigation, invalid }
+}
+
+/** The view a link describes, for callers that do not show notices. Malformed entries are dropped. */
+export function parseDashboardURL(search: string): DashboardNavigation | null {
+  return parseDashboardLink(search).navigation
+}
+
+/**
+ * Applies a link to the document it opens. Values for variables the document no
+ * longer declares are dropped, so the view keeps only what this dashboard can use.
+ */
+export function resolveLinkView(
+  document: Pick<Dashboard, "variables">,
+  link: DashboardNavigation,
+  invalid: string[] = [],
+): { state: DashboardNavigation; ignored: IgnoredLinkVariable[] } {
+  const declared = new Set((document.variables ?? []).map((variable) => variable.name))
+  const { variables, ...rest } = link
+  const ignored: IgnoredLinkVariable[] = [
+    ...Object.keys(variables ?? {})
+      .filter((name) => !declared.has(name))
+      .map((name) => ({ name, reason: "undeclared" as const })),
+    ...invalid.map((name) => ({ name, reason: "invalid" as const })),
+  ]
+  if (variables === undefined) return { state: rest, ignored }
+  const kept = Object.fromEntries(Object.entries(variables).filter(([name]) => declared.has(name)))
+  return { state: { ...rest, variables: kept }, ignored }
+}
+
+/** Plain-language notice for link variables that were not applied. Empty when none were ignored. */
+export function describeIgnoredLinkVariables(ignored: IgnoredLinkVariable[]): string {
+  const label = (name: string) => `“${name.length > 64 ? `${name.slice(0, 63)}…` : name}”`
+  const undeclared = ignored.filter((item) => item.reason === "undeclared").map((item) => item.name)
+  const invalid = ignored.filter((item) => item.reason === "invalid").map((item) => item.name)
+  const parts: string[] = []
+  if (undeclared.length) {
+    const shown = undeclared.slice(0, 5).map(label).join(", ")
+    const more = undeclared.length > 5 ? `, and ${undeclared.length - 5} more` : ""
+    parts.push(undeclared.length === 1
+      ? `Ignored link filter ${shown}: this dashboard no longer declares it.`
+      : `Ignored link filters ${shown}${more}: this dashboard no longer declares them.`)
+  }
+  if (invalid.length) {
+    const shown = invalid.slice(0, 5).map(label).join(", ")
+    parts.push(invalid.length === 1
+      ? `Ignored link filter ${shown} because its name or value is not valid.`
+      : `Ignored link filters ${shown} because their names or values are not valid.`)
+  }
+  return parts.join(" ")
 }

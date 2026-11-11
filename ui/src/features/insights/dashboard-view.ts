@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
-import { buildDashboardURL, parseDashboardURL, type DashboardNavigation } from "./drilldown"
+import { buildDashboardURL, parseDashboardLink, type DashboardNavigation, type ParsedDashboardLink } from "./drilldown"
+import type { Dashboard } from "./schema"
 
 /**
  * What changed the URL-owned view. The action alone decides how browser history
@@ -13,6 +14,7 @@ export type ViewAction =
   | "selection"
   | "brush"
   | "range"
+  | "refresh"
   | "reset"
   | "recover"
   | "navigate"
@@ -31,11 +33,16 @@ export const VIEW_HISTORY: Readonly<Record<ViewAction, ViewHistory>> = {
   keep: "none",
   // A removed declaration drops the values it owned.
   prune: "replace",
-  variables: "replace",
-  selection: "replace",
-  brush: "replace",
-  // The toolbar preset edits the document too; the URL only drops its fixed window.
+  // Deliberate filter steps: each dropdown apply or Apply values is a Back step.
+  variables: "push",
+  // A clicked mark or row is a deliberate filter step too.
+  selection: "push",
+  // A dragged window is a deliberate step in the investigation.
+  brush: "push",
+  // The toolbar preset or custom window is view state, so it does not add a Back step.
   range: "replace",
+  // The toolbar refresh interval is view state, so it does not add a Back step.
+  refresh: "replace",
   // A new, duplicated or deleted dashboard starts a fresh view.
   reset: "replace",
   // A failed Back or Forward rewrites the view that is still on screen.
@@ -46,9 +53,34 @@ export const VIEW_HISTORY: Readonly<Record<ViewAction, ViewHistory>> = {
   popstate: "none",
 }
 
+/** Reads the link in the current address, including variables that could not be applied. */
+export function readDashboardLink(): ParsedDashboardLink {
+  return parseDashboardLink(location.search)
+}
+
 /** Reads the view from the current address. Throws for malformed or conflicting parameters. */
 export function readDashboardView(): DashboardNavigation | null {
-  return parseDashboardURL(location.search)
+  return readDashboardLink().navigation
+}
+
+/**
+ * The dashboard as this viewer sees it. A view time range or refresh interval overrides
+ * the saved default for display only; the document itself is never changed by a view.
+ */
+export function viewedDashboard(dashboard: Dashboard, view: DashboardNavigation | undefined): Dashboard {
+  const timed: Dashboard = view?.customTimeRange
+    ? { ...dashboard, customTimeRange: view.customTimeRange }
+    : view?.range
+      ? { ...dashboard, timeRange: view.range, customTimeRange: undefined }
+      : dashboard
+  return view?.refresh === undefined ? timed : { ...timed, refreshInterval: view.refresh }
+}
+
+/** True when the view's time or refresh would differ from the saved defaults in the document. */
+export function viewDiffersFromDefaults(dashboard: Dashboard, viewed: Dashboard): boolean {
+  return viewed.timeRange !== dashboard.timeRange ||
+    viewed.refreshInterval !== dashboard.refreshInterval ||
+    JSON.stringify(viewed.customTimeRange ?? null) !== JSON.stringify(dashboard.customTimeRange ?? null)
 }
 
 /** Serialises a view for the current Insights route. Throws when the view cannot be linked. */

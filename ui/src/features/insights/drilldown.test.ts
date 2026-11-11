@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
   buildDashboardURL,
+  describeIgnoredLinkVariables,
   interpolateQuery,
   interpolateQueryLiterals,
+  MAX_DASHBOARD_URL_LENGTH,
+  parseDashboardLink,
   parseDashboardURL,
   resolveDashboardVariables,
   resolveDrilldown,
+  resolveLinkView,
 } from "./drilldown"
 import {
   dashboardSchema,
@@ -290,8 +294,7 @@ describe("shareable same-route dashboard navigation", () => {
       "?dashboard=../bad",
       "?dashboard=a&from=2026-10-01T00:00:00Z",
       "?dashboard=a&vars=[]",
-      "?dashboard=a&vars=%7B%22x%22%3A1%7D",
-      "?dashboard=a&vars=%7B%22__proto__%22%3A%22bad%22%7D",
+      "?dashboard=a&vars=%7Bnope",
       "https://example.com/?dashboard=a",
     ])
       expect(() => parseDashboardURL(search)).toThrow()
@@ -303,5 +306,106 @@ describe("shareable same-route dashboard navigation", () => {
         ),
       }),
     ).toThrow(/URL limit/)
+  })
+})
+
+describe("view time range and refresh in the link", () => {
+  const range = { from: "2026-10-01T12:00:00.000Z", to: "2026-10-01T13:00:00.000Z" }
+
+  it.each(["15m", "30m", "1h", "6h", "24h", "7d", "30d"] as const)("round trips the %s preset", (preset) => {
+    const url = buildDashboardURL({ dashboardId: "ops", range: preset })
+    expect(url).toBe(`/dashboard/insights/?dashboard=ops&range=${preset}`)
+    expect(parseDashboardURL(url.slice(url.indexOf("?")))).toEqual({ dashboardId: "ops", range: preset })
+  })
+
+  it.each([0, 15, 30, 60] as const)("round trips auto refresh of %i seconds, including off", (refresh) => {
+    const url = buildDashboardURL({ dashboardId: "ops", refresh })
+    expect(url).toContain(`&refresh=${refresh}`)
+    expect(parseDashboardURL(url.slice(url.indexOf("?")))).toEqual({ dashboardId: "ops", refresh })
+  })
+
+  it("writes the preset, refresh and fixed window in a stable order after the variables", () => {
+    expect(buildDashboardURL({ dashboardId: "ops", variables: { env: "prod" }, range: "6h", refresh: 30 }))
+      .toBe("/dashboard/insights/?dashboard=ops&vars=%7B%22env%22%3A%22prod%22%7D&range=6h&refresh=30")
+    expect(buildDashboardURL({ dashboardId: "ops", customTimeRange: range, refresh: 0 }))
+      .toBe("/dashboard/insights/?dashboard=ops&from=2026-10-01T12%3A00%3A00.000Z&to=2026-10-01T13%3A00%3A00.000Z&refresh=0")
+  })
+
+  it("keeps existing links with only variables or a fixed window exactly as before", () => {
+    const legacy = "?dashboard=ops&vars=%7B%22env%22%3A%22prod%22%7D&from=2026-10-01T12%3A00%3A00.000Z&to=2026-10-01T13%3A00%3A00.000Z"
+    expect(parseDashboardURL(legacy)).toEqual({ dashboardId: "ops", variables: { env: "prod" }, customTimeRange: range })
+    expect(buildDashboardURL({ dashboardId: "ops", variables: { env: "prod" }, customTimeRange: range })).toBe(`/dashboard/insights/${legacy}`)
+  })
+
+  it.each([
+    ["an unknown preset", "?dashboard=ops&range=2h"],
+    ["a capitalised preset", "?dashboard=ops&range=6H"],
+    ["an empty preset", "?dashboard=ops&range="],
+    ["a repeated preset", "?dashboard=ops&range=6h&range=1h"],
+    ["a preset with a fixed window", "?dashboard=ops&range=6h&from=2026-10-01T12%3A00%3A00.000Z&to=2026-10-01T13%3A00%3A00.000Z"],
+    ["an unlisted refresh", "?dashboard=ops&refresh=45"],
+    ["a signed refresh", "?dashboard=ops&refresh=%2B15"],
+    ["a padded refresh", "?dashboard=ops&refresh=015"],
+    ["an empty refresh", "?dashboard=ops&refresh="],
+    ["a repeated refresh", "?dashboard=ops&refresh=15&refresh=30"],
+    ["a view without a dashboard", "?range=6h"],
+  ])("rejects %s", (_label, search) => {
+    expect(() => parseDashboardURL(search)).toThrow()
+  })
+
+  it("refuses to build a preset together with a fixed window or an unknown value", () => {
+    expect(() => buildDashboardURL({ dashboardId: "ops", range: "6h", customTimeRange: range })).toThrow("not both")
+    expect(() => buildDashboardURL({ dashboardId: "ops", range: "2h" as never })).toThrow("time range must be one of")
+    expect(() => buildDashboardURL({ dashboardId: "ops", refresh: 45 as never })).toThrow("refresh must be 0, 15, 30 or 60")
+  })
+
+  it("rejects a very long link at the parser and at the builder", () => {
+    const long = "x".repeat(MAX_DASHBOARD_URL_LENGTH)
+    expect(() => parseDashboardURL(`?dashboard=ops&range=6h&note=${long}`)).toThrow("too long")
+    const values = Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`v${index}`, "x".repeat(1000)]))
+    expect(() => buildDashboardURL({ dashboardId: "ops", variables: values, range: "6h" })).toThrow("URL limit")
+  })
+
+  it("reports link variables whose name or value is malformed without rejecting the link", () => {
+    const parsed = parseDashboardLink(`?dashboard=ops&vars=${encodeURIComponent(JSON.stringify({
+      env: "prod", "bad-name": "x", count: 1, nested: { a: "b" }, service: "s".repeat(1025),
+    }))}&range=1h`)
+    expect(parsed.navigation).toEqual({ dashboardId: "ops", variables: { env: "prod" }, range: "1h" })
+    expect(parsed.invalid.sort()).toEqual(["bad-name", "count", "nested", "service"])
+  })
+
+  it("still rejects malformed variable JSON and too many values", () => {
+    expect(() => parseDashboardLink("?dashboard=ops&vars=%5B%5D")).toThrow("valid named string values")
+    const many = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`v${index}`, "x"]))
+    expect(() => parseDashboardLink(`?dashboard=ops&vars=${encodeURIComponent(JSON.stringify(many))}`)).toThrow("at most 20")
+  })
+})
+
+describe("link resolution against the document it opens", () => {
+  const document = { variables: [{ name: "env" }, { name: "service" }] }
+
+  it("keeps declared values and drops undeclared ones, reporting each", () => {
+    const resolved = resolveLinkView(document, { dashboardId: "ops", variables: { env: "prod", gateway: "edge" }, range: "6h" }, ["bad-name"])
+    expect(resolved.state).toEqual({ dashboardId: "ops", variables: { env: "prod" }, range: "6h" })
+    expect(resolved.ignored).toEqual([
+      { name: "gateway", reason: "undeclared" },
+      { name: "bad-name", reason: "invalid" },
+    ])
+  })
+
+  it("leaves a link without variables unchanged", () => {
+    expect(resolveLinkView(document, { dashboardId: "ops", refresh: 15 })).toEqual({ state: { dashboardId: "ops", refresh: 15 }, ignored: [] })
+  })
+
+  it("describes ignored filters in one plain sentence each kind", () => {
+    expect(describeIgnoredLinkVariables([])).toBe("")
+    expect(describeIgnoredLinkVariables([{ name: "gateway", reason: "undeclared" }]))
+      .toBe("Ignored link filter “gateway”: this dashboard no longer declares it.")
+    expect(describeIgnoredLinkVariables([{ name: "a", reason: "undeclared" }, { name: "b", reason: "undeclared" }]))
+      .toBe("Ignored link filters “a”, “b”: this dashboard no longer declares them.")
+    expect(describeIgnoredLinkVariables([{ name: "x", reason: "invalid" }]))
+      .toBe("Ignored link filter “x” because its name or value is not valid.")
+    const many = Array.from({ length: 7 }, (_, index) => ({ name: `n${index}`, reason: "undeclared" as const }))
+    expect(describeIgnoredLinkVariables(many)).toContain("and 2 more")
   })
 })

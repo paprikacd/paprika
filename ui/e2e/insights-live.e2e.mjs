@@ -427,6 +427,9 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     for (const path of expected) assert.ok(providerRequests.slice(requestStart).some((item) => item.path === path && Number(item.query.start) === start && Number(item.query.end) === end), `Missing exact custom time range for ${path}`)
+    // The toolbar window is a view. Saving the dashboard keeps it only after the author sets it as the default.
+    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await page.getByRole("button", { name: "Set as dashboard default", exact: true }).click()
     await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByText("All changes saved", { exact: true }).waitFor()

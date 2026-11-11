@@ -64,6 +64,9 @@ function client(): InsightsClient {
 
 // Fresh dashboards get random ids; the trace names them once so it stays stable.
 const normalise = (text: string) => text.replace(/dashboard-[0-9a-f-]{36}/g, "dashboard-NEW")
+const VARS_CHECKOUT = "%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D"
+const STAGING = "%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D"
+const BRUSH = "from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z"
 
 interface Entry { step: string; ops: string[]; url: string; editing: boolean; dirty: boolean }
 let entries: Entry[] = []
@@ -139,6 +142,12 @@ describe("dashboard view history characterisation", () => {
     fireEvent.click(screen.getByRole("option", { name: "Last 6 hours" }))
     record("toolbar preset")
 
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    record("enter edit mode")
+
+    fireEvent.click(screen.getByRole("button", { name: "Set as dashboard default" }))
+    record("set view as default")
+
     fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
     await waitFor(() => expect(screen.queryByRole("button", { name: "Save dashboard" })).not.toBeInTheDocument())
     record("save")
@@ -147,7 +156,7 @@ describe("dashboard view history characterisation", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalled())
     record("copy link")
 
-    expect(normalise(String(writeText.mock.calls.at(-1)?.[0]))).toBe(`${location.origin}/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D`)
+    expect(normalise(String(writeText.mock.calls.at(-1)?.[0]))).toBe(`${location.origin}/dashboard/insights/?dashboard=target&vars=${STAGING}&range=6h&refresh=15`)
     expect(entries).toEqual(LIVE_FLOW)
   })
 
@@ -240,13 +249,16 @@ describe("dashboard view history characterisation", () => {
     expect(entries).toEqual(INVALID_LINK_MISSING_FLOW)
   })
 
-  it("keeps a shared link with an undeclared variable in the address bar and records no write", async () => {
+  it("opens a link whose variable is no longer declared, drops it with a notice, and corrects the address", async () => {
     setURL("/dashboard/insights/?dashboard=target&vars=%7B%22gone%22%3A%22x%22%7D")
     render(<InsightsApp client={client()} />)
-    await screen.findByRole("heading", { name: "Source" })
-    expect(screen.getByRole("alert")).toHaveTextContent("Dashboard variable “gone” is not declared by this dashboard")
+    await screen.findByRole("heading", { name: "Target" })
+    expect(screen.getByText("Ignored link filter “gone”: this dashboard no longer declares it.")).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
     record("undeclared variable link")
 
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss link notice" }))
+    expect(screen.queryByText("Ignored link filter “gone”: this dashboard no longer declares it.")).not.toBeInTheDocument()
     expect(entries).toEqual(INVALID_LINK_VARIABLE_FLOW)
   })
 
@@ -349,16 +361,19 @@ describe("dashboard view history characterisation", () => {
 })
 
 // Expected traces, recorded from the workspace before the view-state refactor.
+const at = (query: string) => `/dashboard/insights/?dashboard=target&${query}`
 const LIVE_FLOW: Entry[] = [
-  {step: "load shared link", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22service%22%3A%22worker%22%7D"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22service%22%3A%22worker%22%7D", editing: false, dirty: false},
-  {step: "apply text variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D", editing: false, dirty: false},
-  {step: "choose dropdown variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D", editing: false, dirty: false},
-  {step: "select a signal", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D", editing: false, dirty: false},
-  {step: "auto refresh", ops: [], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D", editing: false, dirty: true},
-  {step: "brush a window", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z", editing: false, dirty: true},
-  {step: "toolbar preset", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D", editing: true, dirty: true},
-  {step: "save", ops: [], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D", editing: false, dirty: false},
-  {step: "copy link", ops: [], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D", editing: false, dirty: false},
+  {step: "load shared link", ops: [`replace ${at("vars=%7B%22service%22%3A%22worker%22%7D")}`], url: at("vars=%7B%22service%22%3A%22worker%22%7D"), editing: false, dirty: false},
+  {step: "apply text variable", ops: [`push ${at(`vars=${VARS_CHECKOUT}`)}`], url: at(`vars=${VARS_CHECKOUT}`), editing: false, dirty: false},
+  {step: "choose dropdown variable", ops: [`push ${at(`vars=${STAGING}`)}`], url: at(`vars=${STAGING}`), editing: false, dirty: false},
+  {step: "select a signal", ops: [`push ${at(`vars=${STAGING}`)}`], url: at(`vars=${STAGING}`), editing: false, dirty: false},
+  {step: "auto refresh", ops: [`replace ${at(`vars=${STAGING}&refresh=15`)}`], url: at(`vars=${STAGING}&refresh=15`), editing: false, dirty: false},
+  {step: "brush a window", ops: [`push ${at(`vars=${STAGING}&${BRUSH}&refresh=15`)}`], url: at(`vars=${STAGING}&${BRUSH}&refresh=15`), editing: false, dirty: false},
+  {step: "toolbar preset", ops: [`replace ${at(`vars=${STAGING}&range=6h&refresh=15`)}`], url: at(`vars=${STAGING}&range=6h&refresh=15`), editing: false, dirty: false},
+  {step: "enter edit mode", ops: [], url: at(`vars=${STAGING}&range=6h&refresh=15`), editing: true, dirty: false},
+  {step: "set view as default", ops: [], url: at(`vars=${STAGING}&range=6h&refresh=15`), editing: true, dirty: true},
+  {step: "save", ops: [], url: at(`vars=${STAGING}&range=6h&refresh=15`), editing: false, dirty: false},
+  {step: "copy link", ops: [], url: at(`vars=${STAGING}&range=6h&refresh=15`), editing: false, dirty: false},
 ]
 const DRILLDOWN_FLOW: Entry[] = [
   {step: "load source", ops: ["replace /dashboard/insights/?dashboard=source"], url: "/dashboard/insights/?dashboard=source", editing: false, dirty: false},
@@ -371,7 +386,7 @@ const DRILLDOWN_FLOW: Entry[] = [
 const VIEW_RESET_FLOW: Entry[] = [
   {step: "load without a link", ops: ["replace /dashboard/insights/?dashboard=source"], url: "/dashboard/insights/?dashboard=source", editing: false, dirty: false},
   {step: "declare a variable", ops: [], url: "/dashboard/insights/?dashboard=source", editing: true, dirty: true},
-  {step: "apply a variable value", ops: ["replace /dashboard/insights/?dashboard=source&vars=%7B%22env%22%3A%22prod%22%2C%22variable_1%22%3A%22active+value%22%7D"], url: "/dashboard/insights/?dashboard=source&vars=%7B%22env%22%3A%22prod%22%2C%22variable_1%22%3A%22active+value%22%7D", editing: true, dirty: true},
+  {step: "apply a variable value", ops: ["push /dashboard/insights/?dashboard=source&vars=%7B%22env%22%3A%22prod%22%2C%22variable_1%22%3A%22active+value%22%7D"], url: "/dashboard/insights/?dashboard=source&vars=%7B%22env%22%3A%22prod%22%2C%22variable_1%22%3A%22active+value%22%7D", editing: true, dirty: true},
   {step: "undo the declaration", ops: ["replace /dashboard/insights/?dashboard=source&vars=%7B%22env%22%3A%22prod%22%7D"], url: "/dashboard/insights/?dashboard=source&vars=%7B%22env%22%3A%22prod%22%7D", editing: true, dirty: false},
   {step: "new dashboard", ops: ["replace /dashboard/insights/?dashboard=dashboard-NEW"], url: "/dashboard/insights/?dashboard=dashboard-NEW", editing: true, dirty: true},
 ]
@@ -379,18 +394,18 @@ const EXAMPLE_FLOW: Entry[] = [
   {"step": "open example", "ops": ["replace /dashboard/insights/?dashboard=source&example=1"], "url": "/dashboard/insights/?dashboard=source&example=1", "editing": false, "dirty": false},
   {"step": "example library open", "ops": ["push /dashboard/insights/?dashboard=target&example=1"], "url": "/dashboard/insights/?dashboard=target&example=1", "editing": false, "dirty": false},
   {"step": "example copy link", "ops": [], "url": "/dashboard/insights/?dashboard=target&example=1", "editing": false, "dirty": false},
-  {step: "example apply text variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
-  {step: "example choose dropdown variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
-  {step: "example select a signal", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
-  {step: "example brush a window", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1", editing: false, dirty: false},
-  {step: "example toolbar preset", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: true, dirty: true},
-  {step: "example remove a declared variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&example=1", editing: true, dirty: true},
-  {step: "example document removes every variable", ops: ["replace /dashboard/insights/?dashboard=target&example=1"], url: "/dashboard/insights/?dashboard=target&example=1", editing: true, dirty: true},
+  {step: "example apply text variable", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
+  {step: "example choose dropdown variable", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
+  {step: "example select a signal", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
+  {step: "example brush a window", ops: ["push /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1", editing: false, dirty: false},
+  {step: "example toolbar preset", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&range=6h&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&range=6h&example=1", editing: false, dirty: false},
+  {step: "example remove a declared variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&range=6h&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&range=6h&example=1", editing: true, dirty: true},
+  {step: "example document removes every variable", ops: ["replace /dashboard/insights/?dashboard=target&range=6h&example=1"], url: "/dashboard/insights/?dashboard=target&range=6h&example=1", editing: true, dirty: true},
   {step: "example new dashboard", ops: ["replace /dashboard/insights/?dashboard=dashboard-NEW&example=1"], url: "/dashboard/insights/?dashboard=dashboard-NEW&example=1", editing: true, dirty: true},
 ]
 const INVALID_LINK_MISSING_FLOW: Entry[] = [
   {step: "missing dashboard link", ops: [], url: "/dashboard/insights/?dashboard=missing", editing: false, dirty: false},
 ]
 const INVALID_LINK_VARIABLE_FLOW: Entry[] = [
-  {step: "undeclared variable link", ops: [], url: "/dashboard/insights/?dashboard=target&vars=%7B%22gone%22%3A%22x%22%7D", editing: false, dirty: false},
+  {step: "undeclared variable link", ops: ["replace /dashboard/insights/?dashboard=target"], url: "/dashboard/insights/?dashboard=target", editing: false, dirty: false},
 ]

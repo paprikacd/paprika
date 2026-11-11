@@ -92,7 +92,7 @@ import { DocumentEditor } from "./document-editor"
 import { layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
-import { TimeRangeControl, dashboardRange } from "./time-range"
+import { TimeRangeControl, dashboardRange, type TimeRangeChoice } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
@@ -108,21 +108,21 @@ import gammaTheme from "./gamma/gamma-theme.module.css"
 import { VariableBar } from "./dashboard-variables"
 import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
 import {
+  describeIgnoredLinkVariables,
   resolveDashboardVariables,
-  resolveDrilldown, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext,
+  resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext,
 } from "./drilldown"
-import { readDashboardView, serialiseDashboardView, useDashboardView } from "./dashboard-view"
+import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewedDashboard } from "./dashboard-view"
 
 function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
   try {
-    const state = readDashboardView()
-    if (!state) return { document: fallback, state: { dashboardId: fallback.id }, error: "" }
-    const document = documents.find(item => item.id === state.dashboardId)
+    const link = readDashboardLink()
+    if (!link.navigation) return { document: fallback, link: { dashboardId: fallback.id }, invalid: [] as string[], error: "" }
+    const document = documents.find(item => item.id === link.navigation!.dashboardId)
     if (!document) throw new Error("The linked dashboard is unavailable. Choose a dashboard from the library.")
-    resolveDashboardVariables(document, state.variables)
-    return { document, state, error: "" }
+    return { document, link: link.navigation, invalid: link.invalid, error: "" }
   } catch (error) {
-    return { document: fallback, state: { dashboardId: fallback.id }, error: error instanceof Error ? error.message : "Invalid dashboard link" }
+    return { document: fallback, link: { dashboardId: fallback.id }, invalid: [] as string[], error: error instanceof Error ? error.message : "Invalid dashboard link" }
   }
 }
 function importIdentity(document: Dashboard) {
@@ -305,6 +305,8 @@ export default function InsightsApp({
   const [selected, setSelected] = useState<string>()
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
+  // Link variables this dashboard could not apply. Dismissible; it never blocks the view.
+  const [linkNotice, setLinkNotice] = useState("")
   const [remoteDashboard, setRemoteDashboard] = useState<{ id: string; removed: boolean }>()
   const [busy, setBusy] = useState(false)
   const [importingBundle, setImportingBundle] = useState(false)
@@ -428,9 +430,9 @@ export default function InsightsApp({
       setRemoteDashboard({ id: current.dashboard.id, removed: true })
     } else setRemoteDashboard(undefined)
   })
-  const viewDashboard = currentRoute?.customTimeRange
-    ? { ...dashboard, customTimeRange: currentRoute.customTimeRange }
-    : dashboard
+  // The view's time range and refresh override the saved defaults for display; the document stays as saved.
+  const viewDashboard = useMemo(() => viewedDashboard(dashboard, currentRoute), [dashboard, currentRoute])
+  const viewDiffers = editing && viewDiffersFromDefaults(dashboard, viewDashboard)
   // Definitions can be removed while editing. Stale view overrides must not
   // make an otherwise valid document impossible to edit.
   const variableKey = JSON.stringify(resolveDashboardVariables(dashboard, Object.fromEntries(
@@ -498,7 +500,7 @@ export default function InsightsApp({
     const fallback =
       stored.dashboards.find((item) => item.id === stored.activeId) ??
       newDashboard()
-    const { document: sample, state, error } = initialNavigation(stored.dashboards, fallback)
+    const { document: sample, link, invalid, error } = initialNavigation(stored.dashboards, fallback)
     reset(sample)
     setSaved(documentFingerprint(sample))
     setDashboards(stored.dashboards)
@@ -507,14 +509,16 @@ export default function InsightsApp({
     setSources({ status: "ready" })
     setSourceRequest(null)
     setMode("example")
+    const linked = resolveLinkView(sample, link, invalid)
     let viewError = error
     try {
-      applyView(state, error ? "keep" : "load", { example: true })
+      applyView(linked.state, error ? "keep" : "load", { example: true })
     } catch (cause) {
       // A link that parses but cannot be written back keeps its value on screen, and the address keeps the link.
-      showView(state)
+      showView(linked.state)
       viewError = cause instanceof Error ? cause.message : "Invalid dashboard link"
     }
+    setLinkNotice(describeIgnoredLinkVariables(linked.ignored))
     setError(viewError)
     setExampleStarting(false)
   }, [reset, applyView, showView])
@@ -547,9 +551,10 @@ export default function InsightsApp({
         reset(active.dashboard)
         setSaved(documentFingerprint(active.dashboard))
         setMode("live")
-        const state = { ...initial.state, dashboardId: active.dashboard.id }
-        resolveDashboardVariables(active.dashboard, state.variables)
-        applyView(state, initial.error ? "keep" : "load")
+        // The fetched document is authoritative: values it no longer declares are dropped, not thrown.
+        const linked = resolveLinkView(active.dashboard, { ...initial.link, dashboardId: active.dashboard.id }, initial.invalid)
+        applyView(linked.state, initial.error ? "keep" : "load")
+        setLinkNotice(describeIgnoredLinkVariables(linked.ignored))
         setError(initial.error)
       })
       .catch((error) => {
@@ -681,10 +686,11 @@ export default function InsightsApp({
   }, [drawerOpen])
 
   useEffect(() => {
-    if (!dashboard.refreshInterval || viewDashboard.customTimeRange) return
+    // A fixed window pauses auto refresh; a relative window keeps refreshing at the view's interval.
+    if (!viewDashboard.refreshInterval || viewDashboard.customTimeRange) return
     const timer = setInterval(() => {
       if (!document.hidden) setEnd(Math.floor(Date.now() / 1000))
-    }, dashboard.refreshInterval * 1000)
+    }, viewDashboard.refreshInterval * 1000)
     const onVisible = () => {
       if (!document.hidden) setEnd(Math.floor(Date.now() / 1000))
     }
@@ -693,7 +699,7 @@ export default function InsightsApp({
       clearInterval(timer)
       document.removeEventListener("visibilitychange", onVisible)
     }
-  }, [dashboard.refreshInterval, viewDashboard.customTimeRange])
+  }, [viewDashboard.refreshInterval, viewDashboard.customTimeRange])
 
   const scheduledFetcher = useMemo(() => {
     // A refresh or provider edit invalidates cached fixed-range observations too.
@@ -956,6 +962,7 @@ export default function InsightsApp({
       setEnd(Math.floor(Date.now() / 1000))
       close()
       setError("")
+      setLinkNotice("")
       setMessage("")
       setMobileSidebar(false)
       return true
@@ -992,7 +999,7 @@ export default function InsightsApp({
   function selectDashboardTime(window: { start: number; end: number }) {
     try {
       const customTimeRange = customTimeRangeSchema.parse({ from: new Date(window.start).toISOString(), to: new Date(window.end).toISOString() })
-      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: variableValues, customTimeRange }, "brush")
+      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: variableValues, range: undefined, customTimeRange }, "brush")
       setError("")
     } catch {
       setError("Choose an increasing time range of at most 31 days.")
@@ -1005,15 +1012,27 @@ export default function InsightsApp({
     popHandler.current = () => {
       const restore = () => reflectView(currentRoute ?? { dashboardId: dashboard.id }, "recover")
       try {
-        const state = readDashboardView()
+        const link = readDashboardLink()
+        const state = link.navigation
         const target = dashboards.find(item => item.id === state?.dashboardId)
         if (!state || !target) throw new Error("The linked dashboard is unavailable.")
-        const pending = openDashboard(target, state, "popstate")
+        // The fresh document decides which link variables still apply; the resolution is kept for the notice.
+        const resolution: { current?: ReturnType<typeof resolveLinkView> } = {}
+        const pending = openDashboard(target, loaded => {
+          resolution.current = resolveLinkView(loaded, state, link.invalid)
+          return resolution.current.state
+        }, "popstate")
         const request = openRequest.current
         void pending.then(opened => {
           if (request !== openRequest.current) return
           if (!opened) restore()
-          else setReturnTo(null)
+          else {
+            setReturnTo(null)
+            const linked = resolution.current
+            setLinkNotice(describeIgnoredLinkVariables(linked?.ignored ?? []))
+            // Back and Forward moved to this entry: correct its stale values in place.
+            if (linked?.ignored.length) reflectView(linked.state, "prune")
+          }
         })
       } catch (error) {
         restore()
@@ -1027,6 +1046,40 @@ export default function InsightsApp({
     return () => window.removeEventListener("popstate", onPop)
   }, [])
 
+  // View controls write the URL view only. They never edit the document or enter edit mode.
+  function changeViewRange(choice: TimeRangeChoice): boolean {
+    try {
+      const view: DashboardNavigation = choice.customTimeRange
+        ? { ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: choice.customTimeRange }
+        : { ...currentRoute, dashboardId: dashboard.id, range: choice.timeRange, customTimeRange: undefined }
+      applyView(view, "range")
+      setEnd(Math.floor(Date.now() / 1000))
+      setError("")
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change the time range")
+      return false
+    }
+  }
+  function changeViewRefresh(refresh: Dashboard["refreshInterval"]) {
+    try {
+      applyView({ ...currentRoute, dashboardId: dashboard.id, refresh }, "refresh")
+      setError("")
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change auto refresh")
+    }
+  }
+  // The one explicit path from a view to the saved dashboard: copy what is on screen into the draft.
+  function setViewAsDefault() {
+    update({
+      ...dashboard,
+      timeRange: viewDashboard.timeRange,
+      customTimeRange: viewDashboard.customTimeRange,
+      refreshInterval: viewDashboard.refreshInterval,
+    })
+    setError("")
+    setMessage("View set as the dashboard default. Save the dashboard to keep it.")
+  }
   function resetView(next: Dashboard) {
     applyView({ dashboardId: next.id }, "reset")
     setReturnTo(null)
@@ -1722,12 +1775,7 @@ export default function InsightsApp({
             <TimeRangeControl
               key={dashboard.id}
               dashboard={viewDashboard}
-              onChange={(next) => {
-                applyView({ ...currentRoute, dashboardId: dashboard.id, customTimeRange: undefined }, "range")
-                update({ ...dashboard, ...next })
-                setEnd(Math.floor(Date.now() / 1000))
-                setEditing(true)
-              }}
+              onChange={changeViewRange}
             />
             <GammaButton iconOnly size="sm" variant="quiet"
               className={styles.iconButton}
@@ -1744,16 +1792,19 @@ export default function InsightsApp({
               className={styles.refreshSelect}
               aria-label="Auto refresh"
               size="sm"
-              value={String(viewDashboard.customTimeRange ? 0 : dashboard.refreshInterval)}
+              value={String(viewDashboard.customTimeRange ? 0 : viewDashboard.refreshInterval)}
               disabled={!!viewDashboard.customTimeRange}
-              onValueChange={(value) => update({
-                ...dashboard, refreshInterval: Number(value) as Dashboard["refreshInterval"],
-              })}
+              onValueChange={(value) => changeViewRefresh(Number(value) as Dashboard["refreshInterval"])}
               options={[
                 {value: "0", label: "Auto off"}, {value: "15", label: "15s"},
                 {value: "30", label: "30s"}, {value: "60", label: "1m"},
               ]}
             />
+            {viewDiffers && (
+              <GammaButton size="sm" variant="quiet" onClick={setViewAsDefault}>
+                Set as dashboard default
+              </GammaButton>
+            )}
             {editing && (
               <GammaButton size="sm" variant="quiet"
                 className={styles.addButton}
@@ -1810,6 +1861,18 @@ export default function InsightsApp({
                 setError("")
                 setMessage("")
               }}
+            >
+              <X size={14} />
+            </GammaButton>
+          </div>
+        )}
+        {linkNotice && (
+          <div className={styles.notice} role="status">
+            <span>{linkNotice}</span>
+            <GammaButton iconOnly size="sm" variant="quiet"
+              className={styles.iconButton}
+              aria-label="Dismiss link notice"
+              onClick={() => setLinkNotice("")}
             >
               <X size={14} />
             </GammaButton>
