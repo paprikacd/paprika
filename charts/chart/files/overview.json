@@ -7,7 +7,7 @@
   "panels": [
     {
       "title": "Max Reconcile Lag",
-      "description": "Largest spec-generation gap between an Application and its observed generation. Per application, filtered by $namespace.",
+      "description": "Largest spec-generation gap across the applications in $namespace (the lag gauge is per application and labelled by namespace).",
       "type": "stat",
       "targets": [
         {
@@ -20,11 +20,11 @@
     },
     {
       "title": "Stale Applications",
-      "description": "Applications whose observed generation is behind their spec generation. Cluster-wide: the gauge is unlabelled, so $namespace does not filter it.",
+      "description": "Applications whose observed generation is behind their spec generation. Ignores $namespace: the gauge has no namespace label.",
       "type": "stat",
       "targets": [
         {
-          "expr": "paprika_applications_stale",
+          "expr": "max(paprika_applications_stale)",
           "legendFormat": "stale"
         }
       ],
@@ -33,11 +33,11 @@
     },
     {
       "title": "Releases Stuck",
-      "description": "Non-terminal releases older than the stuck-release threshold (30 minutes). Cluster-wide: the gauge is unlabelled.",
+      "description": "Non-terminal releases older than the stuck-release threshold (30 minutes). Ignores $namespace: the gauge has no namespace label.",
       "type": "stat",
       "targets": [
         {
-          "expr": "paprika_releases_stuck",
+          "expr": "max(paprika_releases_stuck)",
           "legendFormat": "stuck"
         }
       ],
@@ -46,11 +46,11 @@
     },
     {
       "title": "Release Retries Exhausted",
-      "description": "Applications holding the ReleaseRetriesExhausted condition. Cluster-wide: the gauge is unlabelled.",
+      "description": "Applications holding the ReleaseRetriesExhausted condition. Ignores $namespace: the gauge has no namespace label.",
       "type": "stat",
       "targets": [
         {
-          "expr": "paprika_applications_release_retries_exhausted",
+          "expr": "max(paprika_applications_release_retries_exhausted)",
           "legendFormat": "exhausted"
         }
       ],
@@ -59,11 +59,11 @@
     },
     {
       "title": "Out-of-Sync Resources",
-      "description": "Total out-of-sync resources across the applications in $namespace.",
+      "description": "Out-of-sync resources summed over the applications in $namespace. Each application is taken once, so replicated pods do not double-count.",
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(paprika_out_of_sync{namespace=~\"$namespace\"})",
+          "expr": "sum(max by (app, namespace) (paprika_out_of_sync{namespace=~\"$namespace\"}))",
           "legendFormat": "out of sync"
         }
       ],
@@ -72,7 +72,7 @@
     },
     {
       "title": "Fleet Index Degraded",
-      "description": "1 when the installed fleet index health is degraded. Absent on components that do not hold a fleet index.",
+      "description": "1 when the installed fleet index health is degraded. Ignores $namespace: the gauge has no namespace label.",
       "type": "stat",
       "targets": [
         {
@@ -84,7 +84,32 @@
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0}
     },
     {
+      "title": "Applications by Phase",
+      "description": "Current number of applications in each phase. Ignores $namespace: the gauge has only a phase label. Replicated pods report the same cluster-wide value, so max collapses them.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "max by (phase) (paprika_applications_by_phase_ratio)",
+          "legendFormat": "{{ phase }}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+    },
+    {
+      "title": "Releases by Phase",
+      "description": "Current number of releases in each phase. Ignores $namespace: the gauge has only a phase label. Replicated pods report the same cluster-wide value, so max collapses them.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "max by (phase) (paprika_releases_by_phase_ratio)",
+          "legendFormat": "{{ phase }}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+    },
+    {
       "title": "Reconcile Rate",
+      "description": "Controller reconciliations per second. Ignores $namespace: controller-runtime metrics carry no application namespace.",
       "type": "stat",
       "targets": [
         {
@@ -92,10 +117,11 @@
           "legendFormat": "{{ controller }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
     },
     {
       "title": "Reconcile Error Rate",
+      "description": "Controller reconcile errors per second. Ignores $namespace: controller-runtime metrics carry no application namespace.",
       "type": "stat",
       "targets": [
         {
@@ -103,10 +129,11 @@
           "legendFormat": "{{ controller }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
     },
     {
       "title": "P95 Reconcile Latency",
+      "description": "95th percentile reconcile duration per controller. Ignores $namespace: controller-runtime metrics carry no application namespace.",
       "type": "timeseries",
       "targets": [
         {
@@ -114,31 +141,7 @@
           "legendFormat": "{{ controller }}"
         }
       ],
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12}
-    },
-    {
-      "title": "Application Phase Transitions",
-      "description": "Transitions into each phase per $__rate_interval window. These are counters of transitions, not the current phase of any application; there is no current-phase gauge.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum by (phase) (increase(paprika_application_phase_total{namespace=~\"$namespace\"}[$__rate_interval]))",
-          "legendFormat": "{{ phase }}"
-        }
-      ],
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20}
-    },
-    {
-      "title": "Release Phase Transitions",
-      "description": "Transitions into each phase per $__rate_interval window. These are counters of transitions, not the current phase of any release; there is no current-phase gauge.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum by (phase) (increase(paprika_release_phase_total{namespace=~\"$namespace\"}[$__rate_interval]))",
-          "legendFormat": "{{ phase }}"
-        }
-      ],
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20}
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20}
     }
   ],
   "schemaVersion": 36,
@@ -149,9 +152,10 @@
       {
         "name": "namespace",
         "type": "query",
-        "query": "label_values(paprika_application_phase_total, namespace)",
+        "query": "label_values(paprika_application_reconcile_lag, namespace)",
         "multi": true,
-        "includeAll": true
+        "includeAll": true,
+        "allValue": ".*"
       }
     ]
   },

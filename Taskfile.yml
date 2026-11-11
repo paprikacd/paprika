@@ -838,6 +838,11 @@ tasks:
 
         exit $rc
 
+  chart:rules:
+    desc: Render the PrometheusRule and run promtool check rules and promtool test rules (pinned prom/prometheus image; PROMTOOL=/path overrides docker; HELM_BIN selects helm).
+    cmds:
+      - bash charts/chart/tests/prometheus/run.sh
+
   # ---------------------------------------------------------------------------
   # Multi-cluster fleet rig (task fleet:*). Three kind clusters: a management
   # cluster running Paprika, two `direct` registrations, and one `agent`
