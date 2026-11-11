@@ -1,8 +1,9 @@
 # Local dashboard design loop
 
-From `ui/`, build the production UI and open the disposable playground:
+Working directory: the repository's `ui/` directory. Build the production UI and open the disposable playground:
 
 ```sh
+cd ui
 npm run build
 npm run review:insights
 ```
@@ -52,42 +53,46 @@ Run `node e2e/insights-tooltip-structure.e2e.mjs` for the shared inspector anato
 
 Run `node e2e/run-insights.mjs e2e/insights-editor-focus.e2e.mjs` from `ui/` with `INSIGHTS_E2E_URL` set to the local production export. This exercises both themes at 1512, 768 and 390px: one-chart focus, retained query data, staged changes, invalid drafts, undo/redo, guarded Back, nested Escape, focus restoration, explicit save/reload, and map/honeycomb/table settings. Captures and measurements are under `artifacts/insights/editor-focus/`. The generated layout concepts in `output/imagegen/` are design exploration; the browser captures are the implementation evidence.
 
-## Agent authoring against the local harness
 
-To let an agent author or test saved queries and dashboards against the synthetic
-providers, run the Observe/Insights fixture the gallery uses and attach the agent to its
-`/observe/mcp` endpoint. The result appears in the same local browser session as the
-dashboard you are polishing, and production is never involved.
+## Agent authoring against the gallery stack
+
+`review:insights` starts its own disposable harness, and an agent cannot attach to it.
+Use the gallery stack instead. Its harness (`demo/insights-gallery/serve.mjs`) serves the
+browser proxy and the `/observe/mcp` endpoint from one Insights document store, so a
+document an agent writes appears on the gallery page after a reload. Everything here uses
+synthetic providers, and production is not involved.
+
+1. Start the gallery as `demo/insights-gallery/README.md` describes: `python3
+   demo/insights-gallery/start.py` (Docker), the loopback UI server, then the harness with
+   `--ready-file=artifacts/insights/gallery-ready.json`. Run all of these from the
+   repository root. Wait until the ready file exists.
+
+2. Attach the agent. This block sets all of its own paths, so it runs in any shell. Working
+   directory: the repository root.
+
+   ```sh
+   receipt=artifacts/insights/gallery-ready.json
+   state=$(node -p "require('$PWD/$receipt').state")
+   mcp_url=$(node -p "require('$state/private-connection.json').mcpURL")
+   token=$(node -p "require('$state/private-connection.json').mcpWriteToken")
+   claude mcp add --transport http paprika-gallery "$mcp_url" --header "Authorization: Bearer $token"
+   ```
+
+   `state` is an absolute path, so the block works from any shell in the same repository.
+   `mcpWriteToken` can create and update documents. For read-only checks, read
+   `mcpViewerToken` from the same file instead. Do not print the token into shared logs.
+
+3. Open the gallery page at the receipt's `url` field and reload it after each agent write.
+
+Restarting the gallery or the harness changes the port and the signing secret, so the agent's
+configuration becomes stale. Remove the entry and repeat step 2:
 
 ```sh
-state=artifacts/insights/agent-authoring
-mkdir -p "$state" && chmod 700 "$state"
-go run ./hack/insights-observe-e2e \
-  --ready-file="$state/private-connection.json" \
-  --data-dir="$state/documents" \
-  --token-ttl=1h
+claude mcp remove paprika-gallery
 ```
 
-The harness writes its private ready file only after it is listening. Wait for the line
-`Observe/Insights E2E fixture ready`, then read the endpoint and a token from that file in
-a second shell. Do not print the token into shared logs.
+The token lifetime is set by `--session-duration` on the harness command (default one hour,
+at most 24 hours). When it expires, restart the harness, then repeat step 2.
 
-```sh
-connection="$PWD/$state/private-connection.json"
-export TOKEN="$(node -p "require('$connection').mcpWriteToken")"
-claude mcp add --transport http paprika-local \
-  "$(node -p "require('$connection').mcpURL")" \
-  --header "Authorization: Bearer $TOKEN"
-```
-
-`mcpWriteToken` carries `insights:write` and may create or update documents. For read-only
-checks, use `mcpViewerToken` instead. `mcpURL` points at `http://127.0.0.1:<port>/observe/mcp`
-and the token expires after `--token-ttl`; restart the harness to mint new ones. Remove the
-client with `claude mcp remove paprika-local` when finished. Use a fresh `--data-dir` for a
-clean run, because documents persist between runs.
-
-The `paprika-plugins` installer cannot target this endpoint. It always installs the
-production Observe package with its OAuth configuration. The gallery
-(`demo/insights-gallery/serve.mjs`) starts the same harness and writes the same file under
-its own `artifacts/insights/gallery-insights-*` directory; add `--ui-url=<loopback static UI>`
-to the harness command to serve the UI as well.
+The `paprika-plugins` installer cannot target this endpoint. It always installs the production
+Observe package with its OAuth configuration.
