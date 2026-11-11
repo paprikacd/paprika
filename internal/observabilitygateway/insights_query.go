@@ -58,7 +58,7 @@ const dashboardQueryOutputSchema = `{"type":"object","required":["schemaVersion"
 "observedAt":{"type":"string","format":"date-time"},
 "range":{"type":"object","required":["start","end","stepSeconds"],"properties":{"start":{"type":"string","format":"date-time"},"end":{"type":"string","format":"date-time"},"stepSeconds":{"type":"number"}}},
 "variables":{"type":"object","additionalProperties":{"type":"string"}},
-"widgets":{"type":"array","items":{"type":"object","required":["id","title","type","unit"],"properties":{"id":{"type":"string"},"title":{"type":"string"},"type":{"type":"string"},"pluginId":{"type":"string","description":"Registered visualization ID when type is plugin; configuration remains in the saved dashboard document."},"dataKind":{"enum":["metrics","records","traces"],"description":"Normalized input kind for a plugin visualization."},"savedQueryId":{"type":"string","description":"Saved query referenced by this widget, including failed resolution; see savedQueries for its captured ETag when available."},"annotationSavedQueryId":{"type":"string","description":"Saved query referenced by the widget annotation source, including failed resolution."},"unit":{"type":"string"},"decimals":{"type":"integer"},"signalId":{"type":"string"},"error":{"$ref":"#/$defs/error"},"freshness":{"type":"object","description":"Age of the primary series' latest valid returned sample relative to the selected range end. This is not underlying scrape or ingestion health. Unknown means no usable returned sample.","required":["thresholdSeconds","state"],"properties":{"thresholdSeconds":{"type":"integer"},"state":{"enum":["fresh","stale","unknown"]},"lastTimestamp":{"type":"number","description":"Unix milliseconds"},"ageSeconds":{"type":"number"}}},"threshold":{"type":"object","additionalProperties":false,"description":"A configured Single value visual band for the last valid displayed sample, not an alert or service-health verdict. The first band also applies below its boundary; an authored text color may override the displayed text. A missing latest observation is reported separately on the signal.","required":["state"],"properties":{"state":{"enum":["matched","unknown"]},"boundary":{"type":"number"},"color":{"type":"string"},"label":{"type":"string"}},"oneOf":[{"properties":{"state":{"const":"matched"}},"required":["boundary","color"]},{"properties":{"state":{"const":"unknown"}},"not":{"anyOf":[{"required":["boundary"]},{"required":["color"]},{"required":["label"]}]}}]},"annotationSignalId":{"type":"string"},"annotationError":{"$ref":"#/$defs/error"},"annotationColumns":{"type":"object","required":["timestamp","label"],"properties":{"timestamp":{"type":"string"},"end":{"type":"string","description":"Optional end-time column for interval annotations."},"label":{"type":"string"},"severity":{"type":"string"}}}}}},
+"widgets":{"type":"array","items":{"type":"object","required":["id","title","type","unit"],"properties":{"id":{"type":"string"},"title":{"type":"string"},"type":{"type":"string"},"pluginId":{"type":"string","description":"Registered visualization ID when type is plugin; configuration remains in the saved dashboard document."},"dataKind":{"enum":["metrics","records","traces"],"description":"Normalized input kind for a plugin visualization."},"savedQueryId":{"type":"string","description":"Saved query referenced by this widget, including failed resolution; see savedQueries for its captured ETag when available."},"annotationSavedQueryId":{"type":"string","description":"Saved query referenced by the widget annotation source, including failed resolution."},"unit":{"type":"string"},"decimals":{"type":"integer"},"signalId":{"type":"string"},"error":{"$ref":"#/$defs/error"},"freshness":{"type":"object","description":"Age of the primary series' latest valid returned sample relative to the selected range end. This is not underlying scrape or ingestion health. Unknown means no usable returned sample.","required":["thresholdSeconds","state"],"properties":{"thresholdSeconds":{"type":"integer"},"state":{"enum":["fresh","stale","unknown"]},"lastTimestamp":{"type":"number","description":"Unix milliseconds"},"ageSeconds":{"type":"number"}}},"threshold":{"type":"object","additionalProperties":false,"description":"A configured Single value visual band for the last valid displayed sample, not an alert or service-health verdict. A matched band names a status (ok, info, warning, critical or unknown), a six-digit hex color override, or both. The first band also applies below its boundary. A color override, when present, replaces the status mark for that band. A missing latest observation is reported separately on the signal.","required":["state"],"properties":{"state":{"enum":["matched","unknown"]},"boundary":{"type":"number"},"status":{"enum":["ok","info","warning","critical","unknown"]},"color":{"type":"string"},"label":{"type":"string"}},"oneOf":[{"properties":{"state":{"const":"matched"}},"required":["boundary"],"anyOf":[{"required":["status"]},{"required":["color"]}]},{"properties":{"state":{"const":"unknown"}},"not":{"anyOf":[{"required":["boundary"]},{"required":["status"]},{"required":["color"]},{"required":["label"]}]}}]},"annotationSignalId":{"type":"string"},"annotationError":{"$ref":"#/$defs/error"},"annotationColumns":{"type":"object","required":["timestamp","label"],"properties":{"timestamp":{"type":"string"},"end":{"type":"string","description":"Optional end-time column for interval annotations."},"label":{"type":"string"},"severity":{"type":"string"}}}}}},
 "savedQueries":{"type":"array","items":{"type":"object","required":["id","etag"],"properties":{"id":{"type":"string"},"etag":{"type":"string"}}}},
 "signals":{"type":"array","items":{"type":"object","required":["id","state"],"properties":{
 "id":{"type":"string"},"kind":{"enum":["metrics","records","traces"],"description":"Normalized query kind, including empty and failed results."},"providerId":{"type":"string","description":"Resolved provider ID when the caller is authorized to resolve the provider; omitted when its lookup fails."},"state":{"enum":["ok","partial","empty","error"],"description":"Data availability, not health. A source-limited response without usable observations is partial rather than definitively empty; populated limited responses remain ok and disclose providerTruncated."},"error":{"$ref":"#/$defs/error"},"primarySeries":{"type":"integer"},
@@ -207,12 +207,17 @@ type dashboardTextWidget struct {
 		ThresholdSeconds int      `json:"thresholdSeconds"`
 		AgeSeconds       *float64 `json:"ageSeconds"`
 	} `json:"freshness"`
-	Threshold *struct {
-		State    string   `json:"state"`
-		Boundary *float64 `json:"boundary"`
-		Color    string   `json:"color"`
-		Label    string   `json:"label"`
-	} `json:"threshold"`
+	Threshold *dashboardTextThreshold `json:"threshold"`
+}
+
+// dashboardTextThreshold is a configured stat band in the structured output. A matched band names a status, a colour
+// or both, so status and color are each optional.
+type dashboardTextThreshold struct {
+	State    string   `json:"state"`
+	Boundary *float64 `json:"boundary"`
+	Status   string   `json:"status"`
+	Color    string   `json:"color"`
+	Label    string   `json:"label"`
 }
 
 type dashboardTextSummary struct {
@@ -310,6 +315,21 @@ func appendDashboardWidgetDiagnostics(out *strings.Builder, widgets []dashboardT
 	return false
 }
 
+// appendDashboardBandText writes a matched band's boundary, then its status, colour and label, printing only the
+// fields the band names.
+func appendDashboardBandText(line *strings.Builder, threshold *dashboardTextThreshold) {
+	fmt.Fprintf(line, "; boundary=%s", strconv.FormatFloat(*threshold.Boundary, 'g', -1, 64))
+	if threshold.Status != "" {
+		fmt.Fprintf(line, "; status=%s", strconv.Quote(shortDashboardText(threshold.Status, 16)))
+	}
+	if threshold.Color != "" {
+		fmt.Fprintf(line, "; color=%s", strconv.Quote(shortDashboardText(threshold.Color, 16)))
+	}
+	if threshold.Label != "" {
+		fmt.Fprintf(line, "; label=%s", strconv.Quote(shortDashboardText(threshold.Label, 80)))
+	}
+}
+
 // Keep visual-band context bounded independently of data signals. These are
 // authored thresholds, not inferred health or alert states.
 func appendDashboardThresholdsText(out *strings.Builder, widgets []dashboardTextWidget) {
@@ -324,10 +344,7 @@ func appendDashboardThresholdsText(out *strings.Builder, widgets []dashboardText
 		var line strings.Builder
 		fmt.Fprintf(&line, "widget %s: configured visual band=%s", strconv.Quote(shortDashboardText(widget.ID, 80)), strconv.Quote(shortDashboardText(widget.Threshold.State, 24)))
 		if widget.Threshold.State == "matched" && widget.Threshold.Boundary != nil {
-			fmt.Fprintf(&line, "; boundary=%s; color=%s", strconv.FormatFloat(*widget.Threshold.Boundary, 'g', -1, 64), strconv.Quote(shortDashboardText(widget.Threshold.Color, 16)))
-			if widget.Threshold.Label != "" {
-				fmt.Fprintf(&line, "; label=%s", strconv.Quote(shortDashboardText(widget.Threshold.Label, 80)))
-			}
+			appendDashboardBandText(&line, widget.Threshold)
 		}
 		line.WriteByte('\n')
 		if lines.Len()+line.Len() <= 1000 && out.Len()+lines.Len()+line.Len()+128 <= dashboardQueryTextBytes {

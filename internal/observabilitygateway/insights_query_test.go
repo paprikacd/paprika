@@ -707,3 +707,42 @@ func requireDashboardTextSlice(t *testing.T, value any) []any {
 	require.True(t, ok, "expected a JSON array")
 	return result
 }
+
+// A matched band names a status, a colour or both. Each shape must validate against the published output schema,
+// and its compact text must name only the fields the band has.
+func TestDashboardQueryStatusBandsValidateAndDescribeInText(t *testing.T) {
+	var fixture map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryFixture), &fixture))
+	widgets := requireDashboardTextSlice(t, fixture["widgets"])
+	var schema jsonschema.Schema
+	require.NoError(t, json.Unmarshal(insightsQueryDashboardTool(nil).OutputSchema, &schema))
+	resolved, err := schema.Resolve(nil)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name, text string
+		band       map[string]any
+	}{
+		{"status only", `widget "rate": configured visual band="matched"; boundary=50; status="critical"`, map[string]any{"state": "matched", "boundary": 50, "status": "critical"}},
+		{"colour only", `widget "rate": configured visual band="matched"; boundary=50; color="#ff0000"`, map[string]any{"state": "matched", "boundary": 50, "color": "#ff0000"}},
+		{"status and colour", `widget "rate": configured visual band="matched"; boundary=50; status="ok"; color="#20cba3"; label="Healthy"`, map[string]any{"state": "matched", "boundary": 50, "status": "ok", "color": "#20cba3", "label": "Healthy"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requireDashboardTextMap(t, widgets[0])["threshold"] = tc.band
+			require.NoError(t, resolved.Validate(fixture), "the published output schema must accept the band")
+			encoded, err := json.Marshal(fixture)
+			require.NoError(t, err)
+			text, err := dashboardQueryText(encoded)
+			require.NoError(t, err)
+			require.Contains(t, text, tc.text)
+			if _, hasColor := tc.band["color"]; !hasColor {
+				require.NotContains(t, text, `color=""`, "a status-only band must not print an empty colour")
+			}
+		})
+	}
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "matched", "boundary": 50}
+	require.Error(t, resolved.Validate(fixture), "a matched band must name a status or a colour")
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "matched", "boundary": 50, "status": "success"}
+	require.Error(t, resolved.Validate(fixture), "only the published statuses are accepted")
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "unknown", "status": "ok"}
+	require.Error(t, resolved.Validate(fixture), "an unknown band cannot claim a status")
+}
