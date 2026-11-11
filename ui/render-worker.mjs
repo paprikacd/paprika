@@ -71,6 +71,38 @@ export const tileNotReadySelector='[aria-label="Widget waiting to load"],[aria-b
 // A tile whose shared source failed is final, so it is rejected rather than awaited.
 export const tileSourceUnavailableSelector='[data-widget-state="source-unavailable"]'
 
+// A busy shared catalog is answered 200 with sharedCatalog.status "busy". The
+// worker replays it as the product client does: at most this many replays, each
+// after the gateway's whole-second Retry-After (one second without one), spread by +-30%.
+export const busyListingReplays=3
+
+export function busyListingDelay(retryAfter, attempt, random=Math.random) {
+  if (attempt>=busyListingReplays) return undefined
+  const seconds=Number.isInteger(retryAfter) && retryAfter>=1 ? retryAfter : 1
+  return Math.round(seconds*1000*(0.7+0.6*random()))
+}
+
+function busyListing(result) {
+  if (result.status!==200) return undefined
+  let body
+  try { body=JSON.parse(result.body) } catch { return undefined }
+  return body?.sharedCatalog?.status==="busy" ? body.sharedCatalog : undefined
+}
+
+// Replays a busy listing until it recovers or its replays are spent, and returns
+// the final result, which is what the page sees.
+export async function replayBusyListing(fetchOnce, {wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)), random=Math.random}={}) {
+  let result=await fetchOnce()
+  for (let attempt=0;;attempt++) {
+    const shared=busyListing(result)
+    if (!shared) return result
+    const delay=busyListingDelay(shared.retryAfter, attempt, random)
+    if (delay===undefined) return result
+    await wait(delay)
+    result=await fetchOnce()
+  }
+}
+
 export function supportsCapacityRetry(path,method) {
   return method==="POST" && path==="/api/insights/query" ||
     method==="GET" && /^\/api\/insights\/(providers|dashboards|saved-queries)(\/[a-zA-Z0-9_-]+)?$/.test(path)
@@ -150,6 +182,23 @@ async function render(params, bearer, origin, signal, etag) {
         // Playwright's continue() carries overridden headers through redirects,
         // whose next URL does not run this route handler. Fetch exactly one
         // response so neither credentials nor browser requests leave the allowlist.
+        if (req.method()==="GET" && new URL(target).pathname==="/api/insights/providers") {
+          // The listing is replayed here, so the page sees its final answer and a
+          // busy spell is not mistaken for a missing source.
+          const final=await replayBusyListing(async()=>{
+            const fetched=await route.fetch({headers,maxRedirects:0,timeout:maxTime})
+            return {status:fetched.status(),headers:fetched.headers(),body:await fetched.text()}
+          })
+          if(final.status>=300 && final.status<400 && final.status!==304) {
+            fail(new RenderError("redirect_rejected",422,final.status))
+            await route.abort("blockedbyclient").catch(()=>{})
+            return
+          }
+          // The body is decoded, so its encoding headers no longer describe it.
+          const fulfilled=Object.fromEntries(Object.entries(final.headers).filter(([name])=>name!=="content-encoding" && name!=="content-length"))
+          await route.fulfill({status:final.status,headers:fulfilled,body:final.body})
+          return
+        }
         const response=await route.fetch({headers,maxRedirects:0,timeout:maxTime})
         // Insights uses conditional reads during its regular document refresh.
         // 304 carries no navigation and must retain the UI's cached document.
