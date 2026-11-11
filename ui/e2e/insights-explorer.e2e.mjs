@@ -1134,6 +1134,8 @@ try {
       await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
       await page.getByRole("button", { name: "Edit Parent health", exact: true }).click()
       const settingsTabs = panel().getByRole("tablist", { name: "Widget settings", exact: true })
+      // The editor is lazy-loaded; wait for all tabs before reading their geometry.
+      await settingsTabs.getByRole("tab").nth(3).waitFor()
       const tabGeometry = await settingsTabs.evaluate(element => {
         return [...element.querySelectorAll('[role="tab"]')].map(tab => {
           const box = tab.getBoundingClientRect()
