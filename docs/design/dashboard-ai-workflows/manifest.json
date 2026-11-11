@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "title": "Paprika dashboard AI and workflow design studies",
+  "date": "2026-11-11",
+  "status": "synthetic design concepts",
+  "sourceBaseline": "17a651ab8edf20337ac5319af93ae7fb2c389b47",
+  "studies": [
+    {
+      "number": 1,
+      "title": "Service evidence desk",
+      "path": "images/01-service-evidence-desk.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Initial service-investigation composition with dominant latency evidence and a docked inspector. Superseded for implementation by studies 05 and 06.",
+      "sha256": "65a91c4977506a16ce55ff53c3e365ae6e9c63677e2df0192fd9835abdc22079",
+      "bytes": 1741917,
+      "gitBlobSha": "26484db2a6e02ff137d588c3e8344c2c3820ca23"
+    },
+    {
+      "number": 2,
+      "title": "Shared time signal room",
+      "path": "images/02-shared-time-signal-room.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Initial dark shared-time composition. Retained as exploration history; use studies 05 and 06 for the reconciled fixture.",
+      "sha256": "fb6aa36df46165bf8439635306fd4168748b4cffc6efc182f89f0d0dae8c7d77",
+      "bytes": 1818614,
+      "gitBlobSha": "0ab879ee52c4fb567b380a6c94f441ea4849224b"
+    },
+    {
+      "number": 3,
+      "title": "Capacity ledger",
+      "path": "images/03-capacity-ledger.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Initial resource capacity ledger. Retained as exploration history; use study 07 for common-scale memory/request semantics.",
+      "sha256": "f0b5489e6ccbfca5453112b6cafaa889b73e43ae25ee6e7a3d9abb0cf54cfb01",
+      "bytes": 1579170,
+      "gitBlobSha": "196665d8edcc4b6c278c3f3ca3aa87087dea86e3"
+    },
+    {
+      "number": 4,
+      "title": "Inspection and reflow",
+      "path": "images/04-inspection-and-reflow.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Initial keyboard, touch and reflow study. Retained as exploration history; use study 08 for evidence-preserving state continuity.",
+      "sha256": "cdee248e702e68813e3aa1f714bd762b208c588b07e28e411096c1b3542af0a5",
+      "bytes": 1722859,
+      "gitBlobSha": "8f210cb8462363ed0b4c63a81462fb8971e5448c"
+    },
+    {
+      "number": 5,
+      "title": "Service investigation Light",
+      "path": "images/05-service-investigation-light.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Revised Light service investigation: latest values at 10:30, selected values at 10:18, three missing minute samples and one docked inspector.",
+      "sha256": "d2785cabae8156973e1fd5f04d531b081d77c8051e30f2b05c6884700a29e163",
+      "bytes": 1693776,
+      "gitBlobSha": "06d347e03c1b6d70ea86b0012ebff5b274918df4"
+    },
+    {
+      "number": 6,
+      "title": "Service investigation Dark",
+      "path": "images/06-service-investigation-dark.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Controlled Dark counterpart to study 05. Same composition, scope, time bounds, gaps, values and series identities.",
+      "sha256": "078b669c632a5804329c243618cf8c0cd65d2e5d361f7521c7e2fd5d89c50cb8",
+      "bytes": 1591353,
+      "gitBlobSha": "00ff9b194984da34c7d5bfdc4fa4ad9a6e8d5471"
+    },
+    {
+      "number": 7,
+      "title": "Memory request comparison",
+      "path": "images/07-memory-request-comparison.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Pod-grain memory used/request comparison with a shared 0–500% scale, full resource identities and distinct zero, absent-request, zero-request and unavailable-usage states.",
+      "sha256": "5ad5cc3d38d37e46cbcd2d05bca16b10d467b0f101e50ea368fb62f0648e23b6",
+      "bytes": 1633803,
+      "gitBlobSha": "09923eebe0f9d377a66faa2e7fb8dc331b86870e"
+    },
+    {
+      "number": 8,
+      "title": "Mobile inspection and state continuity",
+      "path": "images/08-mobile-inspection-and-state-continuity.png",
+      "sourcePage": "https://chatgpt.com/space/page_b57407a0fcb88191b32cb70793f780b0",
+      "description": "Mobile investigation ordering and selected-observation continuity through docking, reduced motion and accepted result replacement.",
+      "sha256": "2b67451844f95b771327a1439b74c3f5ac5f72f7aa403745323486d353a7cd10",
+      "bytes": 1777975,
+      "gitBlobSha": "3b07b765492fad38e3a8153d6263b22368c331b5"
+    },
+    {
+      "number": 9,
+      "title": "Incident intelligence",
+      "path": "images/09-incident-intelligence.png",
+      "sourcePage": "https://chatgpt.com/space/page_e4189108edf081919934056aa7e9612b",
+      "description": "AI incident evidence canvas and hypothesis ledger. Observed evidence, working explanations and proposed tests remain distinct.",
+      "sha256": "82c98e68e413dc044f5d5223e6abd86713c7c701605c625efcbaec4e1c4a9249",
+      "bytes": 1717214,
+      "gitBlobSha": "4b907ebc64f8e8ce7e9523ba51a01d79689b8566"
+    },
+    {
+      "number": 10,
+      "title": "Living system atlas",
+      "path": "images/10-living-system-atlas.png",
+      "sourcePage": "https://chatgpt.com/space/page_e4189108edf081919934056aa7e9612b",
+      "description": "Temporal service and revision atlas with stable spatial orientation, cohort evidence and explicit telemetry gaps.",
+      "sha256": "c5f3c6eb2cd25c03993ffec632ede12280455197eb7e52970b2cbe33ab07bd9b",
+      "bytes": 1757840,
+      "gitBlobSha": "f9ddd1d0884758dd6cc40e2e14b0f610a79a5a75"
+    },
+    {
+      "number": 11,
+      "title": "Recovery rehearsal",
+      "path": "images/11-recovery-rehearsal.png",
+      "sourcePage": "https://chatgpt.com/space/page_e4189108edf081919934056aa7e9612b",
+      "description": "Recovery branches with exact proposed changes, assumptions, prerequisites and verification. Conditional outcomes are not calibrated quantitative forecasts.",
+      "sha256": "45d02694e6ab0421f4826e34a38a4b3a8eb94ddb4abdf88c4d005f552502a440",
+      "bytes": 1727221,
+      "gitBlobSha": "3b733c2fd82186ffc0c4b4d244590a5568c6fe9f"
+    },
+    {
+      "number": 12,
+      "title": "Agent operations",
+      "path": "images/12-agent-operations.png",
+      "sourcePage": "https://chatgpt.com/space/page_e4189108edf081919934056aa7e9612b",
+      "description": "Supervision of bounded investigation agents: task states, evidence, disagreements, budgets and pause/cancel controls.",
+      "sha256": "f463cafa18336676eb07165d0c7223524ecfc626aa84cfbbe98af67ee1a2f73c",
+      "bytes": 1705684,
+      "gitBlobSha": "f22c0a3d6b4ba0a56420f93bb67e9557663d90b1"
+    },
+    {
+      "number": 13,
+      "title": "Incident memory",
+      "path": "images/13-incident-memory.png",
+      "sourcePage": "https://chatgpt.com/space/page_e4189108edf081919934056aa7e9612b",
+      "description": "Historical incident retrieval with explained similarity, material differences and reusable investigation templates grounded in retained cases.",
+      "sha256": "c053ae9672116238ab3a0a7889446d015c474c80f5659bd6b474574d325ef6d4",
+      "bytes": 1661333,
+      "gitBlobSha": "af600d84adc4794a9c6ab952de4e9b4dfdda628c"
+    },
+    {
+      "number": 14,
+      "title": "Workflow Studio",
+      "path": "images/14-workflow-studio.png",
+      "sourcePage": "https://chatgpt.com/space/page_ef66eeb7312c8191b608b3589cf306e8",
+      "description": "Workflow authoring with Canvas, Outline and structured source over one typed definition. Draft changes, fixture tests and immutable publication are separate actions.",
+      "sha256": "b14210d841ce0f92f258eaf9e3e7fea7d54e29c44b593209286003627fb22a82",
+      "bytes": 1756587,
+      "gitBlobSha": "e58582f6b7a055ed8dabf8e2023e01a269928a4d"
+    },
+    {
+      "number": 15,
+      "title": "Action Definition workbench",
+      "path": "images/15-action-definition-workbench.png",
+      "sourcePage": "https://chatgpt.com/space/page_ef66eeb7312c8191b608b3589cf306e8",
+      "description": "Reusable action definitions with typed inputs and outputs, target preconditions, supported adapters, effect semantics, fixtures and versioned publication.",
+      "sha256": "7487955fe16900541844dc03d1023010380bda5eee5759ada390bd08bdb3bc98",
+      "bytes": 1715975,
+      "gitBlobSha": "184237baf23702933daad40205465b163baa1758"
+    },
+    {
+      "number": 16,
+      "title": "Run Inspector",
+      "path": "images/16-run-inspector.png",
+      "sourcePage": "https://chatgpt.com/space/page_ef66eeb7312c8191b608b3589cf306e8",
+      "description": "A durable run projection with pinned workflow/action versions, attempts, evidence, waits, operation receipts and verification results.",
+      "sha256": "89fa311bc48b0c02d32facf00a44bcf7d2d3d3e22959fb8362f30ef5e867ef5f",
+      "bytes": 1758255,
+      "gitBlobSha": "d59c8ca7d266a074e5e1fda786f17728f33022d1"
+    }
+  ]
+}
