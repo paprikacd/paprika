@@ -80,17 +80,22 @@ try {
         const mark=criticalMarks.nth(index)
         // A frame belongs to the contiguous critical run that covers the sample; a run of one frames that sample.
         const framed=await mark.evaluate(node=>{const m=node.getBoundingClientRect();return [...node.parentElement.querySelectorAll('[data-status-run="critical"]')].some(run=>{const r=run.getBoundingClientRect();return r.left<=m.left+0.5&&r.right>=m.right-0.5})})
-        marks.push(await markFillEvidence(page,mark,{trimRight:1,framed}))
+        // Sample the focused state (a keyboard user leaves the mark focused) and the resting state. A cover from
+        // either state must fail, so both are composited and both must clear the floor.
+        const focused=await markFillEvidence(page,mark,{trimRight:1,framed})
+        await mark.evaluate(node=>node.blur())
+        const resting=await markFillEvidence(page,mark,{trimRight:1,framed})
+        marks.push({...focused,state:"focused"},{...resting,state:"resting"})
       }
       assert.ok(marks.length>0,`${label}: the fixture has critical marks`)
       for(const mark of marks){
-        assert.equal(mark.centreIsFill,true,`${label}: a critical mark's centre is its fill, not a frame or gap: ${JSON.stringify(mark)}`)
-        assert.ok(mark.total>0&&mark.fill/mark.total>=fillFloor(mark),`${label}: ${mark.framed?"framed":"unframed"} critical mark fill ${(mark.fill/mark.total).toFixed(2)} is below ${fillFloor(mark)}: ${JSON.stringify(mark)}`)
+        assert.equal(mark.centreIsFill,true,`${label} (${mark.state}): a critical mark's centre is its fill, not a frame or gap: ${JSON.stringify(mark)}`)
+        assert.ok(mark.total>0&&mark.fill/mark.total>=fillFloor(mark),`${label} (${mark.state}): ${mark.framed?"framed":"unframed"} critical mark fill ${(mark.fill/mark.total).toFixed(2)} is below ${fillFloor(mark)}: ${JSON.stringify(mark)}`)
       }
-      const framedCount=marks.filter(mark=>mark.framed).length
+      const framedCount=marks.filter(mark=>mark.framed&&mark.state==="resting").length
       if(width===1512) assert.ok(framedCount>0,`${label}: the 30-sample fixture yields framed critical marks`)
       if(width===390) assert.equal(framedCount,0,`${label}: thin marks at 390 px carry no frame`)
-      console.log(`  ${label}: ${marks.length} critical marks, ${framedCount} framed, ${marks.length-framedCount} unframed; fill ${marks.map(mark=>(mark.fill/mark.total).toFixed(2)).join(", ")}`)
+      console.log(`  ${label}: ${marks.filter(mark=>mark.state==="resting").length} critical marks, ${framedCount} framed; fill focused ${marks.filter(mark=>mark.state==="focused").map(mark=>(mark.fill/mark.total).toFixed(2)).join(", ")} / resting ${marks.filter(mark=>mark.state==="resting").map(mark=>(mark.fill/mark.total).toFixed(2)).join(", ")}`)
     }
     await page.mouse.move(0,0)
     await checkCritical(`${theme} ${width}px`)

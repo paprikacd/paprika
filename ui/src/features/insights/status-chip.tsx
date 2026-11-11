@@ -38,6 +38,9 @@ const FRAME_PX: Record<StatusStrokeLevel, number> = { warning: 1, critical: 2 };
  * must be at least 4 px and at least half the size. So a warning frame needs 6 px and a critical frame 8 px.
  * Smaller marks stay unframed and keep their whole fill; their level is carried by the legend chip and the
  * accessible name. Hatching is reserved for missing data, and a hex-only band has no level.
+ *
+ * The guarantee is a floor on the fill that remains, not an ordering. A 2 px critical frame always leaves less
+ * fill than a 1 px warning frame at the same size; the heavier frame is the stronger cue, by design.
  */
 export function statusStrokeLevel(
   mark: StatusMark | undefined,
