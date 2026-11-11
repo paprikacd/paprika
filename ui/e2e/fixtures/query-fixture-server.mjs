@@ -1,6 +1,8 @@
-// Loopback HTTP server for the design playground. The Insights harness forwards
-// chart queries here, so a browser receives the same normalized results that the
-// Playwright review gets from its page.route fixture. Tests may inject a resolver.
+// Loopback HTTP server for the design playground. The Insights harness asks it for
+// Prometheus range data, and the real gateway and Insights normaliser turn that
+// into the chart result. The values and gaps are those of the Playwright review's
+// resolver; series names and labels come from the label set, as they do for a real
+// provider (see docs/guides/local-dashboard-polish.md). Tests may inject a resolver.
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { polishQuery } from "./dashboard-polish.mjs"

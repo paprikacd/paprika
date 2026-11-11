@@ -8,7 +8,7 @@ From the repository's `ui/` directory:
 npm run insights:lab
 ```
 
-`task insights:lab` from the repository root runs the same command. It builds the Insights harness into `artifacts/insights/lab/` and reuses that binary until a Go source or module file changes. It then starts `next dev` for hot reload, serves the synthetic chart data, and prints one link:
+`task insights:lab` from the repository root runs the same command. It runs `go build` into `artifacts/insights/lab/` on every start (the Go build cache keeps an unchanged build fast, and this also picks up embedded files such as the design schemas). It then starts `next dev` for hot reload, serves the synthetic chart data, and prints one link:
 
 ```
 Open once in your browser: http://127.0.0.1:<port>/__lab/enter?ticket=…&next=…
@@ -18,13 +18,13 @@ Open the link in Safari, Chrome or any other browser on this machine. The page s
 
 - The link works once and expires 15 minutes after the lab starts. Restart the lab for another. After it has been used, the dashboard keeps working in that browser until its session expires.
 - Only loopback can redeem it. The request must come from loopback, and its Host must be `127.0.0.1`, `localhost` or `::1`. A phone on the LAN cannot use this path; supporting one would need a separate, explicit change.
-- Chart data comes from the harness over HTTP. It is not route interception in one Playwright page, so any browser that completed the link sees the same synthetic observations as `review:insights`. The browser still goes through the real authenticated proxy and Insights store; only the query answer comes from the fixture server.
-- Edits under `ui/src` apply on save through `next dev`. Go changes take effect at the next start, when the cached binary is rebuilt.
+- Chart data comes from the harness over HTTP, not from route interception in one Playwright page, so any browser that completed the link gets the same synthetic values as `review:insights`. What matches: the same resolver, the same values, the same missing observations (a null sample is "No data" in both). What differs: the lab routes the data as a Prometheus matrix through the real Observe gateway and Insights normaliser, so series names and labels come from the label set (for example `__name__`), not from the resolver's display name, and the query's time range is not applied (the resolver ignores it, as in the review).
+- Edits under `ui/src` apply on save through `next dev`. Go changes take effect at the next start.
 - The session lasts 12 hours. Set `INSIGHTS_LAB_SESSION=<duration>` to change it (at most 24h).
 - Ctrl-C, SIGTERM or SIGHUP stops `next dev`, the harness and the fixture server, then removes the temporary workspace (documents, `ready.json` and the credential in it). Repeated signals during cleanup are ignored. If the lab was killed without that chance, the next `npm run insights:lab` stops and removes that earlier run's processes and workspace. Export a dashboard first if you want to keep it.
 - The lab and `npm run dev` cannot run at the same time: both use `ui/.next`. Stop the other `next dev` first. The lab prints this conflict when `next dev` refuses to start.
 
-Unit tests cover the fixture server (`npm run test:lab`) and the one-time entry ticket (`go test ./hack/insights-observe-e2e/...`: single use, expiry, loopback-only, safe destinations).
+Unit tests cover the fixture server and the process supervisor, and check that stopping an e2e script (by group or by PID) leaves no harness behind (`npm run test:lab`), and the one-time entry ticket (`go test ./hack/insights-observe-e2e/...`: single use, expiry, loopback-only, safe destinations).
 
 ## Playwright review playground
 
