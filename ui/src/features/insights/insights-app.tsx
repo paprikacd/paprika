@@ -86,7 +86,7 @@ import { useDashboardHistory } from "./history"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
 import { useCanvasDensity } from "./canvas-density"
-import type { CanvasMode } from "./responsive-layout"
+import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
 import { DocumentEditor } from "./document-editor"
 import { ChecksList } from "./checks-list"
@@ -318,7 +318,13 @@ export default function InsightsApp({
   const [search, setSearch] = useState("")
   const { dense, setDense } = useCanvasDensity()
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("wide")
+  // The user's sidebar preference. A builder panel may hide it for as long as the panel is open, so the canvas keeps the
+  // wide grid; the preference returns when the panel closes. Device-local: it is never written to the URL or document.
   const [sidebar, setSidebar] = useState(true)
+  const [panelHidesSidebar, setPanelHidesSidebar] = useState(false)
+  const [widePanel, setWidePanel] = useState(false)
+  const layoutRoot = useRef<HTMLDivElement>(null)
+  const sidebarOpenWidth = useRef(192)
   const [compactNavigationExpanded, setCompactNavigationExpanded] = useState(false)
   const compactDesktop = useSyncExternalStore(subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot)
   const finePointer = useSyncExternalStore(subscribeFinePointer, finePointerSnapshot, compactDesktopServerSnapshot)
@@ -327,6 +333,10 @@ export default function InsightsApp({
   const isMobile = useMobileNavigation()
   const drawerOpen = isMobile && mobileSidebar
   const navigation = useRef<HTMLElement>(null)
+  const sidebarShown = sidebar && !(panelHidesSidebar && !!panel)
+  useLayoutEffect(() => {
+    if (navigation.current) sidebarOpenWidth.current = navigation.current.offsetWidth
+  }, [sidebarShown, isMobile, compactShell])
   const navigationToggle = useRef<HTMLButtonElement>(null)
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
   const [retry, setRetry] = useState(0)
@@ -746,6 +756,7 @@ export default function InsightsApp({
   const close = useCallback(() => {
     if (bundleImportActive.current) return
     setPanel(null)
+    setPanelHidesSidebar(false)
     setSelected(undefined)
     setWidgetPreview(undefined)
     setWidgetDraftDirty(false)
@@ -774,13 +785,38 @@ export default function InsightsApp({
     }).then(accepted => { if (accepted) navigate() })
   }, [widgetDraftDirty, askToDiscardChart])
   const leaveWidget = useCallback(() => navigateFromChart(close), [navigateFromChart, close])
+  // Opens a builder panel and chooses its width and the sidebar's share of the room in the same update. The canvas is
+  // measured as it is on screen, so the plan keeps the wide grid instead of reflowing the board to the compact projection.
+  function showPanel(next: Exclude<typeof panel, "widget">) {
+    const wide = next === "source" || next === "examples"
+    const root = layoutRoot.current
+    const canvas = root?.querySelector<HTMLElement>('[data-testid="dashboard-canvas"]')
+    // Focused widget editing hides the sidebar and replaces the canvas, so its width is not the board's.
+    const measurable = !!canvas && !isMobile && !(editingWidget && !exploring)
+    if (measurable) {
+      const sidebarWidth = navigation.current?.offsetWidth ?? 0
+      if (sidebarWidth) sidebarOpenWidth.current = sidebarWidth
+      const plan = builderPanelPlan({
+        canvasWidth: canvas.clientWidth,
+        panelWidth: root?.querySelector<HTMLElement>('[aria-label="Builder panel"]')?.offsetWidth ?? 0,
+        sidebarWidth,
+        openSidebarWidth: sidebarOpenWidth.current,
+      }, { wide, sidebarCollapsible: !compactShell, sidebarPreferred: sidebar })
+      setPanelHidesSidebar(plan.collapsed)
+      setWidePanel(plan.widePanel)
+    } else {
+      setPanelHidesSidebar(false)
+      setWidePanel(wide)
+    }
+    setPanel(next)
+  }
   function openBuilderPanel(next: Exclude<typeof panel, "widget">) {
     // Explore keeps the focused chart mounted. Any other panel replaces it,
     // so wait for its unapplied draft to be resolved before changing views.
     navigateFromChart(() => {
       close()
       setExploring(false)
-      setPanel(next)
+      showPanel(next)
       setMobileSidebar(false)
       if (next === "ai") setEditing(true)
     })
@@ -1149,7 +1185,7 @@ export default function InsightsApp({
     setSaved("")
     setEditing(true)
     close()
-    setPanel("add")
+    showPanel("add")
     setMessage("")
     setMobileSidebar(false)
   }
@@ -1473,7 +1509,7 @@ export default function InsightsApp({
   return (
     <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
     <SourceStatusContext.Provider value={sourceContext}>
-    <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
+    <div ref={layoutRoot} className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />
       {drawerOpen && (
         <button type="button"
@@ -1483,7 +1519,7 @@ export default function InsightsApp({
           onClick={() => setMobileSidebar(false)}
         />
       )}
-      {!focusedWidget && (isMobile ? drawerOpen : compactShell || sidebar) && (
+      {!focusedWidget && (isMobile ? drawerOpen : compactShell || sidebarShown) && (
         <aside
           ref={navigation}
           id="insights-navigation"
@@ -1625,11 +1661,13 @@ export default function InsightsApp({
               ref={navigationToggle}
               className={styles.iconButton}
               aria-label="Toggle sidebar"
-              aria-expanded={isMobile ? drawerOpen : compactShell ? compactNavigationExpanded : sidebar}
+              aria-expanded={isMobile ? drawerOpen : compactShell ? compactNavigationExpanded : sidebarShown}
               aria-controls="insights-navigation"
               onClick={() => {
                 if (isMobile) setMobileSidebar(!mobileSidebar)
                 else if (compactShell) setCompactNavigationExpanded(!compactNavigationExpanded)
+                // Showing the sidebar over an open panel is the user's choice; it stays until they hide it again.
+                else if (panelHidesSidebar && panel) setPanelHidesSidebar(false)
                 else setSidebar(!sidebar)
               }}
             >
@@ -2000,7 +2038,7 @@ export default function InsightsApp({
                         })
                         selectWidget(copy.id)
                       }}
-                      moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id, canvasMode)}
+                      moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id)}
                       onMove={(dx, dy) => {
                         const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
                         const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
@@ -2075,7 +2113,7 @@ export default function InsightsApp({
             <aside
               ref={builderPanel}
               tabIndex={-1}
-              className={`${styles.panel} ${(panel === "source" || panel === "examples") ? styles.widePanel : ""}`}
+              className={`${styles.panel} ${(panel === "source" || panel === "examples") && widePanel ? styles.widePanel : ""}`}
               aria-label="Builder panel"
             >
               {panel === "examples" && (workspaceFailed ? (

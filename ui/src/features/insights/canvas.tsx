@@ -553,7 +553,10 @@ export function DashboardCanvas({
   const { width, containerRef, mounted } = useContainerWidth({
     initialWidth: 1100,
   });
-  const mode = canvasMode(width);
+  // The projection hysteresis needs the mode already on screen, so a width hovering around the threshold keeps it.
+  const [shownMode, setShownMode] = useState<CanvasMode>("wide");
+  const mode = canvasMode(width, shownMode);
+  if (mode !== shownMode) setShownMode(mode);
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
   const draggable = editing && mode === "wide" && !focus;
   const definitions = useWidgetDefinitions();

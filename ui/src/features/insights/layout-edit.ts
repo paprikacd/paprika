@@ -1,5 +1,4 @@
 import type { Layout, LayoutItem } from "react-grid-layout"
-import type { CanvasMode } from "./responsive-layout"
 import type { Widget } from "./schema"
 
 /** Columns in the saved grid. Matches the canvas and the widget schema. */
@@ -41,12 +40,11 @@ export function gridPlacement(box: Box): string {
   return `row ${box.y + 1}, ${columns}`
 }
 
-/** Why each Layout-tab move is unavailable. Layout edits apply only to the wide canvas, where the saved grid is shown. */
-export function layoutMoveBlockers(widgets: readonly Pick<Widget, "id" | "layout">[], id: string, mode: CanvasMode): Partial<Record<LayoutMove, string>> {
-  if (mode !== "wide") {
-    const reason = "Layout moves need the wide canvas, where the saved grid is shown"
-    return { left: reason, right: reason, up: reason, down: reason }
-  }
+/**
+ * Why each Layout-tab move is unavailable. The inspector edits the saved grid, not the projection on screen, so it is
+ * offered at every canvas width; only the saved arrangement's own edges and neighbours block a move.
+ */
+export function layoutMoveBlockers(widgets: readonly Pick<Widget, "id" | "layout">[], id: string): Partial<Record<LayoutMove, string>> {
   const layout = savedLayout(widgets)
   const blockers: Partial<Record<LayoutMove, string>> = {}
   for (const move of ["left", "right", "up", "down"] as const) {

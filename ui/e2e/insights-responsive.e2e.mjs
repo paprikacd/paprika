@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
+import { installChartSystemFixture } from "./fixtures/chart-system.mjs"
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const output = resolve(fileURLToPath(new URL("../../", import.meta.url)), "artifacts/insights")
@@ -99,7 +100,10 @@ async function geometry(width, withEditor, original) {
     const canvas = document.querySelector('[data-testid="dashboard-canvas"]')
     if (!canvas) return false
     const width = canvas.getBoundingClientRect().width
-    return canvas.getAttribute("data-layout-mode") === (width >= 960 ? "wide" : width >= 600 ? "compact" : "stacked")
+    // The mode on screen is the previous one: the wide grid holds down to 880px once shown, and returns at 960px.
+    const previous = canvas.getAttribute("data-layout-mode")
+    const expected = width >= (previous === "wide" ? 880 : 960) ? "wide" : width >= 600 ? "compact" : "stacked"
+    return previous === expected
   })
   await stableGeometry()
   const result = await page.evaluate(() => {
@@ -457,6 +461,200 @@ try {
     activePage = page
     return { tapPins: true, outsideTapDismisses: true, secondTapDismisses: true }
   })
+
+async function editIn(target) {
+  const button = target.getByRole("button", { name: "Edit dashboard", exact: true })
+  if (await button.isVisible()) await button.click()
+}
+async function documentIn(target) {
+  await target.getByRole("button", { name: "Code", exact: true }).click()
+  const source = target.getByRole("region", { name: "Dashboard source editor" })
+  await source.getByRole("button", { name: "JSON", exact: true }).click()
+  const value = JSON.parse(await source.getByRole("textbox", { name: "Dashboard source" }).inputValue())
+  await source.getByRole("button", { name: "Close source editor" }).click()
+  await settle(target)
+  return value
+}
+// Side panels sit beside the canvas. Opening one must keep the wide grid, its drag handles and the tiles themselves,
+// and it must not query again. The sidebar yields only while a panel needs its room, and returns when the panel closes.
+const builderPanels = ["Manage dashboards", "Code", "Build with AI", "Data sources", "Add widget", "Examples"]
+const panelBar = (target) => target.locator('[aria-label="Builder panel"]')
+async function openPanel(target, name) {
+  const loose = name === "Data sources" || name === "Examples"
+  await target.getByRole("button", { name: loose ? new RegExp(`^${name}`) : name, exact: !loose }).first().click()
+  await panelBar(target).waitFor()
+  await stableGeometry(target)
+}
+async function closePanel(target) {
+  await panelBar(target).getByRole("button", { name: /^Close/ }).first().click().catch(() => target.keyboard.press("Escape"))
+  await panelBar(target).waitFor({ state: "detached" })
+  await stableGeometry(target)
+}
+async function canvasState(target) {
+  return target.evaluate(() => {
+    const canvas = document.querySelector('[data-testid="dashboard-canvas"]')
+    const panel = document.querySelector('[aria-label="Builder panel"]')
+    return {
+      mode: canvas.getAttribute("data-layout-mode"),
+      canvas: Math.round(canvas.getBoundingClientRect().width),
+      handles: document.querySelectorAll(".insights-drag-handle").length,
+      panel: panel ? Math.round(panel.getBoundingClientRect().width) : 0,
+      sidebar: !!document.querySelector("#insights-navigation"),
+      overflow: document.documentElement.scrollWidth - innerWidth,
+    }
+  })
+}
+async function resizeCanvasHost(target, width) {
+  await target.setViewportSize({ width, height: 1050 })
+  await settle(target)
+  await target.waitForFunction(() => document.querySelector('[data-testid="dashboard-canvas"]') !== null)
+  await stableGeometry(target)
+}
+const panelContext = await browser.newContext({ viewport: { width: 1512, height: 1050 }, reducedMotion: "reduce", timezoneId: "UTC" })
+const panelPage = await panelContext.newPage()
+observe(panelPage)
+await panelPage.goto(`${baseURL}/dashboard/insights/?example=1`, { waitUntil: "networkidle" })
+await panelPage.getByRole("button", { name: "Edit dashboard", exact: true }).click().catch(() => {})
+await settle(panelPage)
+
+await check("every side panel keeps the wide canvas and its drag handles at 1280, 1512 and 1600", async () => {
+  const evidence = []
+  for (const width of [1512, 1280, 1600]) {
+    await resizeCanvasHost(panelPage, width)
+    await editIn(panelPage)
+    const before = await canvasState(panelPage)
+    assert.equal(before.mode, "wide", `${width}px without a panel must be wide`)
+    assert.ok(before.handles > 0, `${width}px must offer drag handles while editing`)
+    for (const name of builderPanels) {
+      await openPanel(panelPage, name)
+      const open = await canvasState(panelPage)
+      assert.equal(open.mode, "wide", `${width}px with ${name} open: canvas is ${open.canvas}px, which must stay wide`)
+      assert.equal(open.handles, before.handles, `${width}px with ${name} open: every drag handle stays`)
+      assert.ok(open.overflow <= 1, `${width}px with ${name} open: page overflowed by ${open.overflow}px`)
+      evidence.push({ width, panel: name, ...open })
+      await closePanel(panelPage)
+    }
+  }
+  return { checked: evidence.length, evidence }
+})
+
+await check("the wide grid starts at 1270px for Manage and at 1368px for the 440px Code panel", async () => {
+  const rows = []
+  for (const [width, name] of [[1269, "Manage dashboards"], [1270, "Manage dashboards"], [1367, "Code"], [1368, "Code"]]) {
+    await resizeCanvasHost(panelPage, width)
+    await openPanel(panelPage, name)
+    rows.push({ width, name, ...(await canvasState(panelPage)) })
+    await closePanel(panelPage)
+  }
+  const row = (width, name) => rows.find((item) => item.width === width && item.name === name)
+  assert.equal(row(1269, "Manage dashboards").mode, "compact", "Manage must not keep the wide grid at 1269px")
+  assert.equal(row(1270, "Manage dashboards").mode, "wide", "Manage must keep the wide grid at 1270px")
+  assert.equal(row(1367, "Code").panel, 342, "Code narrows to the standard panel below 1368px")
+  assert.equal(row(1367, "Code").mode, "wide", "Narrowed Code keeps the wide grid at 1367px")
+  assert.equal(row(1368, "Code").panel, 440, "Code takes its 440px width from 1368px")
+  return rows
+})
+
+await check("panel open and close keep tile nodes and issue no queries on a live dashboard", async () => {
+  const live = await browser.newContext({ viewport: { width: 1512, height: 1050 }, reducedMotion: "reduce", timezoneId: "UTC" })
+  const target = await live.newPage()
+  observe(target)
+  try {
+    const fixture = await installChartSystemFixture(target, baseURL)
+    await target.goto(`${baseURL}/dashboard/insights/?dashboard=${fixture.dashboard.id}`)
+    await target.locator('[data-widget-id="hex-map"] [data-geo-cell], [data-widget-id="hex-map"] [data-map-plane]').first().waitFor()
+    await target.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await target.locator(".insights-drag-handle").first().waitFor()
+    await target.evaluate(() => {
+      window.__tiles = new Map([...document.querySelectorAll("[data-widget-id]")].map((node) => [node.dataset.widgetId, node]))
+      window.__detached = 0
+      new MutationObserver((records) => {
+        for (const record of records) for (const node of record.removedNodes)
+          if (node instanceof Element && (node.matches("[data-widget-id]") || node.querySelector("[data-widget-id]"))) window.__detached++
+      }).observe(document.querySelector('[data-testid="dashboard-canvas"]'), { childList: true, subtree: true })
+    })
+    const queries = () => fixture.calls.filter((call) => call.path === "/query").length
+    const tilesKept = () => target.evaluate(() => [...window.__tiles.entries()].every(([id, node]) => node.isConnected && document.querySelector(`[data-widget-id="${id}"]`) === node))
+    const report = []
+    for (const name of ["Manage dashboards", "Code", "Build with AI", "Add widget"]) {
+      const before = queries()
+      await openPanel(target, name)
+      const opened = { mode: await target.getAttribute('[data-testid="dashboard-canvas"]', "data-layout-mode").catch(() => null) }
+      assert.equal(await tilesKept(), true, `${name}: opening must keep every tile node`)
+      await closePanel(target)
+      assert.equal(await tilesKept(), true, `${name}: closing must keep every tile node`)
+      assert.equal(queries() - before, 0, `${name}: opening and closing must not query again`)
+      report.push({ name, queriesDuringOpenAndClose: queries() - before, ...opened })
+    }
+    assert.equal(await target.evaluate(() => window.__detached), 0, "No tile subtree may be detached while panels open and close")
+    return { widgets: fixture.dashboard.widgets.length, detached: 0, panels: report }
+  } finally {
+    await live.close()
+  }
+})
+
+await check("the sidebar yields to a panel that needs its room and returns on close, unless the user hid it", async () => {
+  await resizeCanvasHost(panelPage, 1512)
+  const toggle = panelPage.getByRole("button", { name: "Toggle sidebar", exact: true })
+  assert.equal(await toggle.getAttribute("aria-expanded"), "true", "Sidebar starts open at 1512px")
+  await openPanel(panelPage, "Code")
+  assert.equal(await toggle.getAttribute("aria-expanded"), "false", "Code needs the room, so the sidebar yields")
+  assert.equal((await canvasState(panelPage)).sidebar, false, "A yielded sidebar is not in the layout")
+  await closePanel(panelPage)
+  assert.equal(await toggle.getAttribute("aria-expanded"), "true", "Closing Code restores the sidebar")
+  assert.equal((await canvasState(panelPage)).sidebar, true)
+  await openPanel(panelPage, "Manage dashboards")
+  assert.equal(await toggle.getAttribute("aria-expanded"), "true", "Manage fits beside the open sidebar at 1512px")
+  await closePanel(panelPage)
+  // A sidebar the user hid stays hidden through panels, and returns only when the user shows it.
+  await toggle.click()
+  assert.equal(await toggle.getAttribute("aria-expanded"), "false")
+  await openPanel(panelPage, "Code")
+  await closePanel(panelPage)
+  assert.equal(await toggle.getAttribute("aria-expanded"), "false", "A sidebar the user hid is not reopened by a panel")
+  await toggle.click()
+  assert.equal(await toggle.getAttribute("aria-expanded"), "true")
+  return { restoredAfterCode: true, userHiddenStaysHidden: true }
+})
+
+await check("a canvas between 880 and 960px keeps the mode it already shows while a panel is open", async () => {
+  await resizeCanvasHost(panelPage, 1400)
+  await openPanel(panelPage, "Manage dashboards")
+  const steps = []
+  for (const width of [1400, 1300, 1250, 1300, 1400, 1300]) {
+    await resizeCanvasHost(panelPage, width)
+    steps.push({ width, ...(await canvasState(panelPage)) })
+  }
+  const modes = steps.map((step) => step.mode)
+  assert.deepEqual(modes, ["wide", "wide", "compact", "compact", "wide", "wide"], `Hysteresis must hold the mode across 880-960px: ${JSON.stringify(steps)}`)
+  assert.ok(steps[1].canvas >= 880 && steps[1].canvas < 960 && steps[3].canvas >= 880 && steps[3].canvas < 960, "The checkpoints must sit inside the hysteresis band")
+  await closePanel(panelPage)
+  return steps
+})
+
+await check("layout moves from the inspector work on the compact canvas, which is the saved grid", async () => {
+  await resizeCanvasHost(panelPage, 768)
+  await editIn(panelPage)
+  // Read the saved grid before the widget editor takes over the toolbar that holds the Code button.
+  const before = (await documentIn(panelPage)).widgets.find((item) => item.title === "Service health").layout
+  await panelPage.getByRole("button", { name: "Edit Service health", exact: true }).click()
+  const editorRegion = panelPage.getByRole("region", { name: "Widget editor" })
+  await editorRegion.getByRole("tab", { name: "Layout", exact: true }).click()
+  const moves = ["left", "right", "up", "down"].map((direction) => editorRegion.getByRole("button", { name: `Move widget ${direction}`, exact: true }))
+  const enabled = []
+  for (const [index, button] of moves.entries()) if (await button.isEnabled()) enabled.push(["left", "right", "up", "down"][index])
+  assert.ok(enabled.length > 0, "At least one saved-grid move must be offered on the compact canvas")
+  const position = editorRegion.getByRole("status").filter({ hasText: "Dashboard position" })
+  const previous = await position.textContent()
+  await editorRegion.getByRole("button", { name: `Move widget ${enabled[0]}`, exact: true }).click()
+  await settle(panelPage)
+  assert.notEqual(await position.textContent(), previous, "Moving from the inspector updates the staged position")
+  await editorRegion.getByRole("button", { name: "Apply changes", exact: true }).click()
+  await settle(panelPage)
+  const after = (await documentIn(panelPage)).widgets.find((item) => item.title === "Service health").layout
+  assert.notDeepEqual(after, before, "Applying a compact-canvas move saves the new saved-grid position")
+  return { direction: enabled[0], enabled, before, after }
+})
   assert.deepEqual(pageErrors, [], "Responsive browser sessions must not have unhandled errors")
   console.log(`\n${reports.length} responsive integration checks passed.`)
 } finally {

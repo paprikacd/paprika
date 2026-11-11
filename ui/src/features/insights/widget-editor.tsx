@@ -914,7 +914,7 @@ export function WidgetEditor({
     const placed = stagedLayout?.find(box => box.i === item.id);
     return { ...item, layout: { ...item.layout, ...(placed ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h } : {}), ...(item.id === widget.id ? dimensions : {}) } };
   });
-  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id, workspace?.canvasMode ?? "wide") : moveBlocked;
+  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id) : moveBlocked;
   function move(dx: number, dy: number) {
     if (!layoutWidgets) { onMove(dx, dy); return; }
     const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right";
