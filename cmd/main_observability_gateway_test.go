@@ -189,7 +189,7 @@ func TestObservabilityRequestSlotsCoverResponseWriting(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
 	defer close(release)
-	limited := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	limited := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -279,7 +279,7 @@ func TestObservabilityRequestSlotsReleaseOnHTTPDisconnect(t *testing.T) {
 				SupportedScopes: []mcp.Scope{mcp.ScopeObserve}, DisableConsoleResources: true, LinkRequestCancellation: true,
 			})
 			require.NoError(t, err)
-			limited := limitObservabilityProtocolRequests(srv.Handler())
+			limited := limitWithProductionPools(t, srv.Handler())
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				limited.ServeHTTP(w, r)
 				if r.Header.Get("X-Disconnect-Contract") == "blocked" {

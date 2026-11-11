@@ -68,7 +68,7 @@ func TestObservabilityAuthoringReservesBoundedProviderDiscoverySlots(t *testing.
 	completed := make(chan int, 8)
 	release := make(chan struct{}, 8)
 	defer close(release)
-	limited := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	limited := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("hold") == "true" {
 			entered <- struct{}{}
 			<-release

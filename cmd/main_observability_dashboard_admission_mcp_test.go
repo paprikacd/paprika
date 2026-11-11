@@ -52,7 +52,7 @@ func TestObservabilityDashboardOversizedEnvelopeCannotOrchestrateFromWorkPool(t 
 			return &sdkmcp.CallToolResult{StructuredContent: result, Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "saved"}}}, nil
 		})
 	}
-	handler := limitObservabilityProtocolRequests(sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return server }, &sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
+	handler := limitWithProductionPools(t, sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return server }, &sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
 	for _, tc := range []struct {
 		name, body  string
 		unknownSize bool

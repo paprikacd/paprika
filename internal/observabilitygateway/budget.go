@@ -26,14 +26,20 @@ const (
 	maxQueryBytes      = 32 << 10
 )
 
-// RequestTimeout is the execution budget every query runs under, from the
-// moment it is admitted. Queue waits must end before it.
+// RequestTimeout is the execution budget a query gets once it is admitted: the
+// timer in executionBudget.begin starts after the queue wait. A query's worst
+// case through this budget is QueueWait + RequestTimeout. The REST dashboard
+// handler applies RequestTimeout to the whole request, queue wait included
+// (dashboard_api.go, dashboardHandler), so its worst case is RequestTimeout.
 const RequestTimeout = queryTimeout
 
-// BudgetConfig sizes the execution budget that bounds all provider I/O. The
-// zero value is not valid; start from DefaultBudgetConfig and validate the
-// result at startup (cmd/main_observability_gateway.go owns the flag-level
-// checks, with flag names in its error messages).
+// BudgetConfig sizes the execution budget that bounds all provider I/O. When a
+// zero field is built into a budget, Concurrency, ProviderConcurrency and
+// QueueWait fall back to their defaults, because zero is never a usable value
+// for them. Queue and ProviderQueue are taken as given: zero means no waiters.
+// The gateway's startup validation (cmd/main_observability_gateway.go) checks
+// flag values with their flag names in the errors, and starts from
+// DefaultBudgetConfig, so a flag-built config is always complete.
 type BudgetConfig struct {
 	Concurrency         int           // queries executing at once, across all providers
 	ProviderConcurrency int           // queries executing at once per provider
@@ -87,7 +93,17 @@ func newExecutionBudget(concurrency int, timeout time.Duration) *executionBudget
 // nonpositive concurrency is clamped to one, so a bad caller cannot build a
 // budget that admits nothing.
 func newExecutionBudgetFromConfig(cfg BudgetConfig, timeout time.Duration) *executionBudget {
-	concurrency := max(1, cfg.Concurrency)
+	defaults := DefaultBudgetConfig()
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = defaults.Concurrency
+	}
+	if cfg.ProviderConcurrency <= 0 {
+		cfg.ProviderConcurrency = min(2, cfg.Concurrency)
+	}
+	if cfg.QueueWait <= 0 {
+		cfg.QueueWait = defaults.QueueWait
+	}
+	concurrency := cfg.Concurrency
 	providerConcurrency := max(1, min(cfg.ProviderConcurrency, concurrency))
 	return &executionBudget{
 		active:             make(chan struct{}, concurrency),

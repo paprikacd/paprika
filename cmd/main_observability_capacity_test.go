@@ -2,9 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -115,24 +112,30 @@ func TestObservabilityCapacityValidationRejectsNonsense(t *testing.T) {
 		mutate func(*cliConfig)
 		flag   string
 	}{
-		{"zero concurrency", func(c *cliConfig) { c.ObsQueryConcurrency = 0 }, "--observability-query-concurrency must be >= 1, got 0"},
-		{"negative concurrency", func(c *cliConfig) { c.ObsQueryConcurrency = -3 }, "--observability-query-concurrency must be >= 1, got -3"},
+		{"zero concurrency", func(c *cliConfig) { c.ObsQueryConcurrency = 0 }, "--observability-query-concurrency must be between 1 and 1024, got 0"},
+		{"negative concurrency", func(c *cliConfig) { c.ObsQueryConcurrency = -3 }, "--observability-query-concurrency must be between 1 and 1024, got -3"},
 		{"provider concurrency above global", func(c *cliConfig) { c.ObsQueryProviderConcurrency = 5 }, "--observability-query-provider-concurrency must be between 1 and"},
 		{"negative provider concurrency", func(c *cliConfig) { c.ObsQueryProviderConcurrency = -1 }, "--observability-query-provider-concurrency must be between 1 and"},
-		{"negative queue", func(c *cliConfig) { c.ObsQueryQueue = -1 }, "--observability-query-queue must be >= 0"},
+		{"negative queue", func(c *cliConfig) { c.ObsQueryQueue = -1 }, "--observability-query-queue must be between 0 and 65536, got -1"},
 		{"provider queue above global queue", func(c *cliConfig) { c.ObsQueryQueue = 4; c.ObsQueryProviderQueue = 8 }, "--observability-query-provider-queue must be between 0 and --observability-query-queue (4)"},
-		{"zero queue wait", func(c *cliConfig) { c.ObsQueryQueueWait = 0 }, "--observability-query-queue-wait must be > 0 and below the 30s request timeout"},
-		{"queue wait equal to request timeout", func(c *cliConfig) { c.ObsQueryQueueWait = 30 * time.Second }, "--observability-query-queue-wait must be > 0 and below the 30s request timeout"},
-		{"queue wait above request timeout", func(c *cliConfig) { c.ObsQueryQueueWait = 45 * time.Second }, "--observability-query-queue-wait must be > 0 and below the 30s request timeout, got 45s"},
+		{"zero queue wait", func(c *cliConfig) { c.ObsQueryQueueWait = 0 }, "--observability-query-queue-wait must be above 0 and below the 30s request timeout"},
+		{"queue wait equal to request timeout", func(c *cliConfig) { c.ObsQueryQueueWait = 30 * time.Second }, "--observability-query-queue-wait must be above 0 and below the 30s request timeout"},
+		{"queue wait above request timeout", func(c *cliConfig) { c.ObsQueryQueueWait = 45 * time.Second }, "--observability-query-queue-wait must be above 0 and below the 30s request timeout, got 45s"},
 		{"negative admission wait", func(c *cliConfig) { c.ObsHTTPAdmissionWait = -time.Second }, "--observability-http-admission-wait must be >= 0"},
-		{"admission wait above budget queue wait", func(c *cliConfig) { c.ObsHTTPAdmissionWait = 6 * time.Second }, "--observability-http-admission-wait (6s) must not exceed --observability-query-queue-wait (5s)"},
-		{"negative work pool", func(c *cliConfig) { c.ObsHTTPWorkSlots = -1 }, "--observability-http-work-slots must be >= 0"},
-		{"negative catalog pool", func(c *cliConfig) { c.ObsHTTPCatalogSlots = -1 }, "--observability-http-catalog-slots must be >= 0"},
-		{"negative dashboard pool", func(c *cliConfig) { c.ObsHTTPDashboardSlots = -1 }, "--observability-http-dashboard-slots must be >= 0"},
-		{"negative intake pool", func(c *cliConfig) { c.ObsHTTPIntakeSlots = -1 }, "--observability-http-intake-slots must be >= 0"},
+		{"admission wait above budget queue wait", func(c *cliConfig) { c.ObsHTTPAdmissionWait = 6 * time.Second }, "--observability-http-admission-wait must be at most 5s"},
+		{"negative work pool", func(c *cliConfig) { c.ObsHTTPWorkSlots = -1 }, "--observability-http-work-slots must be between 0 and 65536, got -1"},
+		{"negative catalog pool", func(c *cliConfig) { c.ObsHTTPCatalogSlots = -1 }, "--observability-http-catalog-slots must be between 0 and 65536, got -1"},
+		{"negative dashboard pool", func(c *cliConfig) { c.ObsHTTPDashboardSlots = -1 }, "--observability-http-dashboard-slots must be between 0 and 65536, got -1"},
+		{"negative intake pool", func(c *cliConfig) { c.ObsHTTPIntakeSlots = -1 }, "--observability-http-intake-slots must be between 0 and 65536, got -1"},
 		{"work pool above budget admission capacity", func(c *cliConfig) { c.ObsHTTPWorkSlots = 37 }, "--observability-http-work-slots (37) exceeds the execution budget's admission capacity (36 = --observability-query-concurrency 4 + --observability-query-queue 32)"},
 		{"dashboard pool above budget concurrency", func(c *cliConfig) { c.ObsHTTPDashboardSlots = 5 }, "--observability-http-dashboard-slots (5) must not exceed --observability-query-concurrency (4)"},
-		{"intake below largest pool", func(c *cliConfig) { c.ObsHTTPWorkSlots = 10; c.ObsHTTPIntakeSlots = 3 }, "--observability-http-intake-slots (3) must be at least the largest pool (10)"},
+		{"query concurrency overflow is reported against its own flag", func(c *cliConfig) { c.ObsQueryConcurrency = 1 << 62 }, "--observability-query-concurrency must be between 1 and 1024, got 4611686018427387904"},
+		{"pool overflow is reported against its own flag", func(c *cliConfig) { c.ObsHTTPIntakeSlots = 1 << 40 }, "--observability-http-intake-slots must be between 0 and 65536"},
+		{"admission and queue waits exceed the write timeout", func(c *cliConfig) { c.ObsQueryQueueWait = 9 * time.Second; c.ObsHTTPAdmissionWait = 5 * time.Second }, "must stay below the 45s HTTP write timeout"},
+		{"29.999s admission wait", func(c *cliConfig) {
+			c.ObsQueryQueueWait = 29999 * time.Millisecond
+			c.ObsHTTPAdmissionWait = 29999 * time.Millisecond
+		}, "--observability-http-admission-wait must be at most 5s"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -143,6 +146,17 @@ func TestObservabilityCapacityValidationRejectsNonsense(t *testing.T) {
 			assert.True(t, strings.Contains(err.Error(), tc.flag), "error %q does not contain %q", err, tc.flag)
 		})
 	}
+}
+
+// Intake is held only while a body is read, so intake below the work pool is a
+// valid, if slow, configuration rather than a deadlock.
+func TestObservabilityCapacityAcceptsSmallIntake(t *testing.T) {
+	cfg := defaultCapacityConfig()
+	cfg.ObsHTTPWorkSlots = 10
+	cfg.ObsHTTPIntakeSlots = 1
+	capacity, err := resolveObservabilityCapacity(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, 1, capacity.Pools.Intake)
 }
 
 func TestObservabilityCapacityAcceptsBudgetExactlyAtAdmissionCapacity(t *testing.T) {
@@ -160,122 +174,6 @@ func TestObservabilityCapacityRejectsZeroConfig(t *testing.T) {
 	require.Error(t, err)
 }
 
-// The admission wait holds a slot request for a bounded time, then sends 429
-// with Retry-After: 1 and no-store, as before.
-func TestAdmitObservabilityRequestWaitsThenRejects(t *testing.T) {
-	slots := make(chan struct{}, 1)
-	slots <- struct{}{}
-
-	rec := httptest.NewRecorder()
-	start := time.Now()
-	ok := admitObservabilityRequest(t.Context(), rec, slots, 30*time.Millisecond)
-	elapsed := time.Since(start)
-
-	assert.False(t, ok)
-	assert.GreaterOrEqual(t, elapsed, 30*time.Millisecond)
-	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
-	assert.Equal(t, "1", rec.Header().Get("Retry-After"))
-	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
-}
-
-func TestAdmitObservabilityRequestWaitAdmitsWhenSlotFrees(t *testing.T) {
-	slots := make(chan struct{}, 1)
-	slots <- struct{}{}
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		<-slots
-	}()
-
-	rec := httptest.NewRecorder()
-	assert.True(t, admitObservabilityRequest(t.Context(), rec, slots, time.Second))
-	assert.Empty(t, rec.Header().Get("Retry-After"))
-	assert.Equal(t, 1, len(slots))
-}
-
-func TestAdmitObservabilityRequestZeroWaitFailsFast(t *testing.T) {
-	slots := make(chan struct{}, 1)
-	slots <- struct{}{}
-
-	rec := httptest.NewRecorder()
-	start := time.Now()
-	assert.False(t, admitObservabilityRequest(t.Context(), rec, slots, 0))
-	assert.Less(t, time.Since(start), 20*time.Millisecond)
-	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
-}
-
-func TestAdmitObservabilityRequestStopsWaitingWhenClientGoes(t *testing.T) {
-	slots := make(chan struct{}, 1)
-	slots <- struct{}{}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	rec := httptest.NewRecorder()
-	start := time.Now()
-	assert.False(t, admitObservabilityRequest(ctx, rec, slots, time.Minute))
-	assert.Less(t, time.Since(start), time.Second)
-}
-
-// Through the real handler: with one work slot, a second request waits for the
-// first and is served once it frees. With no wait it gets 429 at once.
-func TestLimitObservabilityProtocolRequestsWaitsForWorkSlot(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		wait     time.Duration
-		wantCode int
-	}{
-		{"with wait the second request is admitted", 2 * time.Second, http.StatusOK},
-		{"without wait the second request is rejected", 0, http.StatusTooManyRequests},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			entered := make(chan struct{}, 2)
-			release := make(chan struct{})
-			handler := limitObservabilityProtocolRequestsWith(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				entered <- struct{}{}
-				<-release
-				w.WriteHeader(http.StatusOK)
-			}), observabilityHTTPPools{Work: 1, Catalog: 1, Dashboards: 1, Intake: 4, AdmissionWait: tc.wait})
-
-			first := httptest.NewRecorder()
-			firstDone := make(chan struct{})
-			go func() {
-				defer close(firstDone)
-				handler.ServeHTTP(first, mcpPostRequest(t))
-			}()
-			<-entered
-
-			second := httptest.NewRecorder()
-			secondDone := make(chan struct{})
-			go func() {
-				defer close(secondDone)
-				handler.ServeHTTP(second, mcpPostRequest(t))
-			}()
-			if tc.wait == 0 {
-				<-secondDone
-			} else {
-				// Free the first slot while the second is still waiting for it.
-				time.Sleep(30 * time.Millisecond)
-				close(release)
-				<-secondDone
-			}
-			assert.Equal(t, tc.wantCode, second.Code)
-			if tc.wantCode == http.StatusTooManyRequests {
-				assert.Equal(t, "1", second.Header().Get("Retry-After"))
-			}
-			if tc.wait == 0 {
-				close(release)
-			}
-			<-firstDone
-			assert.Equal(t, http.StatusOK, first.Code)
-		})
-	}
-}
-
-func mcpPostRequest(t *testing.T) *http.Request {
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, observabilityGatewayRoutePrefix+"/mcp", strings.NewReader("not json"))
-	req.Header.Set("Content-Type", "application/json")
-	return req
-}
-
 func defaultCapacityConfig() *cliConfig {
 	return &cliConfig{
 		ObsQueryConcurrency:         4,
@@ -285,4 +183,30 @@ func defaultCapacityConfig() *cliConfig {
 		ObsQueryQueueWait:           5 * time.Second,
 		ObsHTTPAdmissionWait:        time.Second,
 	}
+}
+
+// The dashboard pool is min(2, query concurrency). It must not follow the
+// per-provider flag, so a per-provider limit of 1 does not serialise dashboards.
+func TestObservabilityCapacityDashboardPoolIndependentOfProviderFlag(t *testing.T) {
+	pools := productionAdmissionPools(t, "--observability-query-provider-concurrency=1")
+	assert.Equal(t, 2, pools.Dashboards)
+
+	pools = productionAdmissionPools(t, "--observability-query-concurrency=8")
+	assert.Equal(t, 2, pools.Dashboards)
+	assert.Equal(t, 8, pools.Work)
+	assert.Equal(t, 16, pools.Intake)
+}
+
+// The startup log names where each derived value came from, so an operator can
+// tell an explicit flag from a rule.
+func TestObservabilityCapacitySourcesRecordDerivation(t *testing.T) {
+	cfg, err := parseManagerConfig([]string{"--mode=observability-gateway", "--observability-http-work-slots=6"}, &bytes.Buffer{})
+	require.NoError(t, err)
+	capacity, err := resolveObservabilityCapacity(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "explicit", capacity.Sources.Work)
+	assert.Equal(t, "follows the work pool", capacity.Sources.Catalog)
+	assert.Equal(t, "min(2, --observability-query-concurrency)", capacity.Sources.Dashboards)
+	assert.Equal(t, "2 x work pool", capacity.Sources.Intake)
+	assert.Equal(t, "min(2, --observability-query-concurrency)", capacity.Sources.ProviderConcurrency)
 }

@@ -83,65 +83,106 @@ provider RBAC, saved dashboard versions or query timeout/error semantics.
 
 ### End-to-end capacity
 
-A dashboard query passes six limits between the browser and the provider. The
-tightest one at the current defaults is the gateway's per-provider bulkhead: a
-single provider runs **2** queries at once, not 4, because the per-provider
-slots are checked before the global ones (`internal/observabilitygateway/budget.go`,
-`begin`). The table lists each hop in request order, with its default, where
-it is configured and what a caller sees when it is full. Defaults are the values
-in code; a changed flag or chart value replaces them.
+A dashboard query passes eight hops between the browser and the provider. Each
+row gives the hop's default limit, where it is configured, and what a caller
+sees when the hop is full. The defaults are the values in code. A changed flag
+or chart value replaces them, and the gateway validates the combination at
+startup.
 
-| Hop | Limit (default) | Configured in | When full, the caller sees | Retry |
-|---|---|---|---|---|
-| 1. Browser scheduler | 4 queries in flight per viewer, maximum 16 (`ui/src/features/insights/query.ts:85-88`) | Code only (`concurrency` option) | Nothing is sent; further widgets wait in the local queue | n/a |
-| 2. Browser replay | A 429 is replayed up to 3 times, waiting Retry-After seconds, and not at all if the wait exceeds 10 s (`ui/src/features/insights/client.ts:96-108, 162-170`) | Code only | After the replays fail, the widget shows "Query failed" with a Retry button (`ui/src/features/insights/charts.tsx`) | Manual retry |
-| 3. Console API proxy (`/api/insights`) | No admission limit. Request budget 28 s; response-header timeout 25 s (`internal/api/insights_proxy.go:105-106, 146`). Console connection cap 128 (`--api-max-conns`, `cmd/main.go`) | Code; `--api-max-conns` | A slow or unreachable Insights answers **502** "Insights service is unavailable" (`internal/api/insights_proxy.go:133-134`) | Yes, with backoff |
-| 4. Insights admission | 16 executing, 64 waiting, 2 s wait (`internal/insights/server.go:70`; `acquireQuery` at `server.go:171-196`) | Code only; a later slice adds flags | `/query`: **429** "too many active queries; retry shortly" with `Retry-After: 1` (`server.go:152-155`). Dashboard queries: a per-signal `rate_limited` error inside a 200 response, not an HTTP 429 (`internal/insights/dashboard_query.go:652-653`) | Yes, after Retry-After |
-| 5. Gateway HTTP admission | Pools: MCP work 4 (= query concurrency), catalog 4 (= work), dashboards 2 (= provider concurrency), intake 8 (= 2 x work). Each waits at most 1 s for a slot (`cmd/main_observability_gateway.go`, `resolveObservabilityHTTPPools`; `cmd/main_observability_admission.go`) | `--observability-http-work-slots`, `-catalog-slots`, `-dashboard-slots`, `-intake-slots`, `-admission-wait`; chart `observabilityGateway.capacity.http*` | **429** "observability gateway is at its request limit; retry later", `Retry-After: 1`, `Cache-Control: no-store` | Yes, after Retry-After |
-| 6. Gateway MCP rate limit | 50 requests/s, burst 100 per principal; queue 8 per principal and 64 in total, each waiting at most 2 s (`internal/api/mcp/ratelimit.go:17-22`, `internal/api/mcp/server.go:613-616`) | Code only | **429** "rate limit queue is full; retry shortly", `Retry-After: 1` | Yes, after Retry-After |
-| 7. Gateway execution budget | 4 executing across providers and 2 per provider; 32 queued across providers (admission cap 36) and 8 per provider; a waiter holds its place up to 5 s; each execution has a 30 s budget (`internal/observabilitygateway/budget.go`, `DefaultBudgetConfig`) | `--observability-query-concurrency`, `-provider-concurrency`, `-queue`, `-provider-queue`, `-queue-wait`; chart `observabilityGateway.capacity.query*` | Queue full: `resource_exhausted`. Over REST (`/observe/api/query`) this is **429** `temporarily_unavailable` with `Retry-After: 1` (`internal/observabilitygateway/dashboard_api.go:277-279`). Over MCP it is an error result with code `resource_exhausted` and no retry hint (`internal/api/mcp/server.go:978-983`). Queue wait or the 30 s budget expired: deadline exceeded, **504** over REST, "tool execution timed out" over MCP | 429: yes, after Retry-After. 504: yes, with backoff, because the earlier attempt may have used provider time |
-| 8. Backend connector | Per-connector client timeouts, for example Shorted 10 s (`connector/shorted/shorted.go:30`), Uptime 20 s (`connector/uptime/uptime.go:25`), PostgreSQL connect 5 s (`connector/postgresql/postgresql.go:21`). The 30 s execution budget applies to all of them | Code only | A provider failure is a sanitized error state in the result, or **502** `server_error` over REST. Insights passes a gateway 504 through as 504 with no Retry-After | Yes, with backoff |
+| # | Hop | Limit (default) | Configured in | When full, the caller sees | Retry |
+|---|---|---|---|---|---|
+| 1 | Browser scheduler (`createQueryScheduler`, `ui/src/features/insights/query.ts`) | 4 queries in flight per viewer, maximum 16 | Code only | Nothing is sent; further widgets wait in the local queue | n/a |
+| 2 | Browser replay (`capacityRetryDelay`, `ui/src/features/insights/client.ts`) | A 429 on `/query`, a read or a conditional write is replayed up to 3 times, waiting Retry-After seconds. A wait over 10 s is not retried | Code only | After the replays fail the widget shows "Query failed" with a Retry button (`ui/src/features/insights/charts.tsx`) | Manual |
+| 3 | Console API proxy (`insightsProxyRequestHandler`, `internal/api/insights_proxy.go`) | No admission limit. Request budget 28 s; response-header timeout 25 s. The console's connection cap is `--api-max-conns` (128) | Code; `--api-max-conns` | An unreachable or slow Insights gets **502** "Insights service is unavailable" | Yes, with backoff |
+| 4 | Insights admission (`acquireQuery`, `internal/insights/server.go`) | 16 executing, 64 waiting, 2 s wait | Code only; a later slice adds flags | `/query`: **429** "too many active queries; retry shortly" with `Retry-After: 1`. Dashboard queries: a per-signal `rate_limited` error inside a 200 response, not an HTTP 429 (`dashboardProviderError`) | Yes, after Retry-After |
+| 5 | Gateway HTTP admission (`observabilityAdmissionPool`, `limitObservabilityProtocolRequestsWith`) | Intake 8, MCP work 4, catalog 4, dashboards 2. Each pool has at most its own size of waiters. One deadline of 1 s covers the intake and pool waits | `--observability-http-*` flags; chart `observabilityGateway.capacity.http*` | **429** "observability gateway is at its request limit; retry later", `Retry-After: 1`, `Cache-Control: no-store` | Yes, after Retry-After |
+| 6 | Gateway MCP rate limit (`mcpRatePerSecond`, `mcpRateBurst`, `mcpRateQueueWait` in `internal/api/mcp/ratelimit.go`) | 50 requests/s, burst 100 per principal. Queue: 8 per principal, 64 in total, each waiting at most 2 s | Code only | **429** "rate limit queue is full; retry shortly", `Retry-After: 1` | Yes, after Retry-After |
+| 7 | Gateway execution budget (`DefaultBudgetConfig`, `executionBudget.begin`, `internal/observabilitygateway/budget.go`) | 4 executing across providers, 2 per provider. Queued: 32 across providers, 8 per provider. The admission cap is 36 (concurrency + queue). A waiter holds its place for at most 5 s. Each execution has a 30 s budget that starts when it is admitted | `--observability-query-*` flags; chart `observabilityGateway.capacity.query*` | Queue full, reported as `resource_exhausted`. On REST (`/observe/api/query`) that is **429** `temporarily_unavailable` with `Retry-After: 1` (`writeDashboardError`). On MCP it is an error result with code `resource_exhausted` and no retry hint, text from `operationalToolErrorText`. Queue wait expired, or the 30 s budget used up, is a deadline error: **504** on REST, "tool execution timed out" on MCP | 429: yes, after Retry-After. 504: yes, with backoff, since the earlier attempt may have used provider time |
+| 8 | Backend connector (`internal/observabilitygateway/connector/…`) | Per-connector client timeouts: Shorted `queryTimeout` 10 s (`connector/shorted`), Uptime `queryTimeout` 20 s (`connector/uptime`), PostgreSQL connect 5 s (`connector/postgresql`). The 30 s budget applies to all of them | Code only | A provider failure is a sanitized error state in the result, or **502** `server_error` on REST. Insights passes a gateway 504 through as 504 without Retry-After (`observeHTTPError`) | Yes, with backoff |
 
-Two points follow from the table:
+**What each hop's wait costs.**
 
-- **Edge waits are short; budget waits are longer.** A request waits at most 1 s
-  for an HTTP slot and at most 5 s for an execution slot. Past those waits it
-  gets an answer (429 at the edge, a deadline error from the budget) rather than
-  holding a connection.
-- **Each Insights provider query opens its own MCP connection.** The provider
-  client connects, calls and closes (`internal/insights/observability_provider.go:215-220`).
-  Its `initialize` and `notifications/initialized` requests use the catalog pool,
-  not the work pool (`cmd/main_observability_admission.go`, `isObservabilityCatalogEnvelope`).
-  The catalog pool therefore has to stay large enough for handshakes while
+- **Edge (hops 5 and 6).** The intake and pool waits share one deadline of
+  `--observability-http-admission-wait` (1 s by default), measured from the start
+  of the handler. A request that is refused there has waited at most that long.
+  The MCP rate queue (hop 6) runs after edge admission and adds at most 2 s.
+- **Budget (hop 7).** A query waits at most `--observability-query-queue-wait`
+  (5 s) for a slot. The 30 s execution budget starts when the query is admitted,
+  so after a wait its execution time is still a full 30 s. Over REST the dashboard
+  handler applies its 30 s to the whole request, queue wait included.
+- **Per MCP request, worst case:** admission wait + 2 s rate queue + queue wait +
+  30 s execution. At defaults that is 38 s. The gateway's validator requires the
+  sum to stay below the 45 s HTTP write timeout.
+- **Per Insights `/query`, worst case:** the console proxy stops waiting at 28 s,
+  so a UI query returns by then whatever the gateway is doing. Insights also
+  holds a query for at most 2 s at hop 4, and each provider connection it opens
+  has a 20 s budget (`observe_mcp.go`). A query opens two connections, one to
+  resolve the provider and one for the data, so 40 s is possible, but the proxy
+  ends it at 28 s.
+- **Disconnects.** Once a request's body has been read, a client that leaves
+  while the request waits for its pool is noticed at once, because the server
+  then watches the connection. A request that is still waiting for an intake
+  slot, before its body is read, is noticed only when that wait ends, which is
+  at most the admission wait. A body larger than the classification limit is
+  read only in part, so the same applies to it.
+
+**What is coupled to what.**
+
+- **Dashboard pool** is `min(2, --observability-query-concurrency)`. It does not
+  follow the per-provider flag.
+- **Provider listing** (`ListProviders`) runs under the `catalog` pseudo-provider's
+  bulkhead, which is sized by the per-provider flag. Setting
+  `--observability-query-provider-concurrency=1` therefore also runs listings one
+  at a time.
+- **Catalog pool** is the work pool's size by default. Each Insights provider
+  query opens two MCP connections, resolve and data (`observability_provider.go`).
+  Each connection's `initialize`, `notifications/initialized` and `tools/list`
+  requests, and the `list_observability_providers` call, are classified as
+  catalog requests (`isObservabilityCatalogEnvelope`). Only the data `tools/call`
+  uses the work pool. Keep the catalog pool large enough for handshakes while
   queries run.
+- **Intake** is held only while a request body is read and classified, then
+  released before the pool wait. It is not a cap on all in-flight requests. Its
+  default is twice the work pool.
+- **Work pool** may be sized up to query concurrency + queue. Beyond that the
+  budget would refuse first, so the extra slots would only move the 429.
 
 **Sizing a board.** Let N be the number of distinct queries on a dashboard,
 R the refresh interval in seconds and T the mean provider time per query in
-seconds (measure T on your provider). The board asks for about N / R queries
-per second. One provider can serve about (provider concurrency) / T of those per
+seconds (measure T on your provider). The board asks for about N / R queries per
+second. One provider can serve about (provider concurrency) / T of those per
 second, which is 2 / T at defaults, and all providers together about 4 / T.
 Keep N / R comfortably below the capacity of the providers the board uses. Each
-viewer can run 4 queries at once (hop 1), so several viewers multiply the
-demand on the shared gateway. Duplicate queries on one dashboard run once
+viewer can run 4 queries at once (hop 1), so several viewers multiply the demand
+on the shared gateway. Duplicate queries on one dashboard run once
 (`query_dashboard` executes distinct saved queries once), so N counts distinct
 queries.
 
-**Changing capacity.** Raise the budget first and then the pools, or set pools
-to 0 and let them follow. Every combination below is refused at startup, with
-the flag named in the error:
+**Changing capacity.** Raise the budget first, then the pools, or set pools to 0
+and let them follow. The gateway refuses these combinations at startup, naming
+the flag to change:
 
-- query concurrency at least 1; provider concurrency between 1 and query concurrency (0 means min(2, concurrency));
-- provider queue no larger than the global queue;
+- query concurrency between 1 and 1024; provider concurrency between 1 and query
+  concurrency (0 means min(2, concurrency));
+- queue between 0 and 65536; provider queue between 0 and the queue. With queue
+  0, set the provider queue to 0 too, because its default of 8 would exceed it;
 - queue wait above 0 and below the 30 s request timeout;
-- HTTP admission wait no longer than the queue wait;
-- work pool no larger than query concurrency + query queue;
+- admission wait between 0 and 5 s, and no longer than the queue wait;
+- admission wait + 2 s + queue wait + 30 s below the 45 s write timeout;
+- work pool no larger than query concurrency + queue;
 - dashboard pool no larger than query concurrency;
-- intake pool at least as large as the largest other pool;
-- every pool at least 1, with 0 meaning "follow the budget".
+- every pool between 0 and 65536, where 0 follows its rule.
 
-The chart renders these as `--observability-*` arguments on the gateway
-container (`charts/chart/templates/observability-gateway/deployment.yaml`), and
-`values.schema.json` checks their types and ranges before the gateway starts.
+**Units in config files.** Flags, environment variables and the chart use
+duration strings such as `5s`. In a `--config` file a bare integer is read as
+nanoseconds (the existing loader's behaviour), so `queryQueueWait: 5` means 5 ns
+and fails the range check. Write `5s`. In the chart, `"0s"` rejects at once; the
+schema also accepts `0`.
+
+The gateway logs the resolved budget and pools at startup, with the source of
+each derived value (`Observability gateway capacity`). The chart renders these
+values as `--observability-*` arguments on the gateway container
+(`charts/chart/templates/observability-gateway/deployment.yaml`).
 
 ## The MCP surface
 

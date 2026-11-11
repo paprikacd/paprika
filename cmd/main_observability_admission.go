@@ -133,8 +133,8 @@ func isObservabilityCatalogEnvelope(body []byte) bool {
 }
 
 // observabilityHTTPPools are the gateway's HTTP admission pools. Each count is
-// a slot limit; AdmissionWait is how long a request may wait for a slot before
-// the gateway answers 429. Zero means fail at once.
+// a slot limit. AdmissionWait is the one deadline a request has to get through
+// intake and its pool, measured from the moment the handler starts.
 type observabilityHTTPPools struct {
 	Work          int
 	Catalog       int
@@ -151,27 +151,52 @@ func defaultObservabilityHTTPPools() observabilityHTTPPools {
 	return observabilityHTTPPools{Work: 4, Catalog: 4, Dashboards: 2, Intake: 8}
 }
 
-// admitObservabilityRequest takes a slot from a pool, waiting at most wait for
-// one to free. A request whose client has gone stops waiting. A rejected request
-// gets 429 with Retry-After: 1 and no-store, as before.
-func admitObservabilityRequest(ctx context.Context, w http.ResponseWriter, slots chan struct{}, wait time.Duration) bool {
+// observabilityAdmissionPool is a bounded slot pool with its own bounded waiter
+// queue, the same shape as the execution budget's providerWorkSlots. Each pool
+// bounds its own waiters, so a saturated pool cannot fill a queue another pool
+// needs.
+type observabilityAdmissionPool struct {
+	slots   chan struct{}
+	waiting chan struct{}
+}
+
+// newObservabilityAdmissionPool allows size running requests and size waiting
+// ones. A waiter beyond that is rejected at once.
+func newObservabilityAdmissionPool(size int) observabilityAdmissionPool {
+	return observabilityAdmissionPool{slots: make(chan struct{}, size), waiting: make(chan struct{}, size)}
+}
+
+// acquire takes a slot. If none is free it waits until ctx ends, provided fewer
+// than size requests are already waiting on this pool.
+func (p observabilityAdmissionPool) acquire(ctx context.Context) bool {
 	select {
-	case slots <- struct{}{}:
+	case p.slots <- struct{}{}:
 		return true
 	default:
 	}
-	if wait > 0 {
-		timer := time.NewTimer(wait)
-		defer timer.Stop()
-		select {
-		case slots <- struct{}{}:
-			return true
-		case <-timer.C:
-		case <-ctx.Done():
-		}
+	if ctx.Err() != nil {
+		return false
 	}
+	select {
+	case p.waiting <- struct{}{}:
+	default:
+		return false
+	}
+	defer func() { <-p.waiting }()
+	select {
+	case p.slots <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (p observabilityAdmissionPool) release() { <-p.slots }
+
+// rejectObservabilityAdmission answers a request that did not get a slot:
+// 429 with Retry-After: 1 and no-store, as before.
+func rejectObservabilityAdmission(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "1")
 	w.Header().Set("Cache-Control", "no-store")
 	http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
-	return false
 }

@@ -180,7 +180,7 @@ func TestObservabilityCatalogReserveServesNestedMCPWhileOuterCallsAreHeld(t *tes
 	completed := make(chan int, 8)
 	release := make(chan struct{})
 	defer close(release)
-	limited := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	limited := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -258,7 +258,7 @@ func (*cancelledAdmissionBody) Close() error { return nil }
 
 func TestObservabilityAdmissionBoundsSlowClassificationAndReleasesCancelledIntake(t *testing.T) {
 	started, completed := make(chan struct{}, 8), make(chan struct{}, 8)
-	limited := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	limited := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	cancellations := make([]context.CancelFunc, 0, 8)

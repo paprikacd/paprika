@@ -93,3 +93,18 @@ func TestConfiguredBudgetEnforcesProviderBulkhead(t *testing.T) {
 	require.NoError(t, err, "a different provider is not blocked by the first")
 	release2()
 }
+
+// A partial config must not produce a budget that rejects every query: zero
+// Concurrency, ProviderConcurrency and QueueWait fall back to the defaults.
+func TestPartialBudgetConfigFillsDefaults(t *testing.T) {
+	b := newExecutionBudgetFromConfig(BudgetConfig{Concurrency: 8}, RequestTimeout)
+	assert.Equal(t, 8, cap(b.active))
+	assert.Equal(t, 2, b.perProvider)
+	assert.Equal(t, 5*time.Second, b.queueTimeout)
+	assert.Equal(t, 0, cap(b.waiting), "Queue is taken as given: zero means no waiters")
+
+	empty := newExecutionBudgetFromConfig(BudgetConfig{}, RequestTimeout)
+	assert.Equal(t, 4, cap(empty.active))
+	assert.Equal(t, 2, empty.perProvider)
+	assert.Equal(t, 5*time.Second, empty.queueTimeout)
+}

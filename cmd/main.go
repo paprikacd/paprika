@@ -838,30 +838,34 @@ func registerRepoServerFlags(fs *pflag.FlagSet) {
 
 // registerObservabilityCapacityFlags sizes the observability gateway's query
 // path. The defaults are the built-in values, so an unset flag changes nothing.
-// A pool flag of 0 follows the budget. resolveObservabilityCapacity
-// (cmd/main_observability_gateway.go) checks the combination at startup, and
-// docs/guides/observability-gateway.md has the end-to-end table.
+// resolveObservabilityCapacity (cmd/main_observability_gateway.go) checks the
+// combination at startup and logs where each derived value came from.
+// docs/guides/observability-gateway.md ("End-to-end capacity") has the table.
+// Duration flags in a --config file need a unit: a bare integer is read as
+// nanoseconds.
 func registerObservabilityCapacityFlags(fs *pflag.FlagSet) {
 	fs.Int("observability-query-concurrency", 4,
-		"Observability queries executing at once across all providers, per gateway process (must be >= 1).")
+		"Observability queries executing at once across all providers, per gateway process (1-1024). "+
+			"Also the default for the work pool, and the cap on the dashboard pool.")
 	fs.Int("observability-query-provider-concurrency", 0,
-		"Observability queries executing at once per provider. 0 means min(2, observability-query-concurrency).")
+		"Observability queries executing at once per provider (1 to observability-query-concurrency). "+
+			"0 means min(2, observability-query-concurrency). Provider listing runs under the same per-provider bulkhead as the 'catalog' pseudo-provider, so 1 also serialises listings.")
 	fs.Int("observability-query-queue", 32,
-		"Observability queries waiting for an execution slot across all providers. 0 rejects at once when the budget is full.")
+		"Observability queries waiting for an execution slot across all providers (0-65536). 0 rejects at once when the budget is full, and then the provider queue must also be 0.")
 	fs.Int("observability-query-provider-queue", 8,
 		"Observability queries waiting for one provider's slot. Must not exceed observability-query-queue.")
 	fs.Duration("observability-query-queue-wait", 5*time.Second,
-		"Longest an observability query waits for an execution slot before its deadline error. Must be below the 30s request timeout.")
+		"Longest an observability query waits for an execution slot. Must be above 0 and below the 30s request timeout. The 30s execution budget starts after the wait, so one MCP request can take the admission wait + 2s MCP rate queue + this wait + 30s; the sum must stay below the 45s HTTP write timeout.")
 	fs.Int("observability-http-work-slots", 0,
-		"Gateway HTTP slots for MCP data-tool requests. 0 follows observability-query-concurrency. Must not exceed concurrency + queue.")
+		"HTTP slots for MCP data-tool requests (0-65536). 0 means observability-query-concurrency. Explicit values may go up to concurrency + queue, beyond which the budget refuses first. Each pool has its own waiter queue of the same size.")
 	fs.Int("observability-http-catalog-slots", 0,
-		"Gateway HTTP slots for provider discovery and MCP handshakes. 0 follows observability-http-work-slots.")
+		"HTTP slots for provider discovery and MCP handshakes (0-65536). 0 follows observability-http-work-slots. Keep it large enough that handshakes are not queued behind data requests.")
 	fs.Int("observability-http-dashboard-slots", 0,
-		"Gateway HTTP slots for dashboard orchestration. 0 follows observability-query-provider-concurrency. Must not exceed observability-query-concurrency.")
+		"HTTP slots for dashboard orchestration (0-65536). 0 means min(2, observability-query-concurrency). Explicit values may go up to observability-query-concurrency. This pool does not follow the per-provider flag.")
 	fs.Int("observability-http-intake-slots", 0,
-		"Gateway slots for classifying request bodies before a pool. 0 means twice observability-http-work-slots. Must cover the largest pool.")
+		"Slots held while a request body is read and classified, released before its pool wait (0-65536). 0 means twice observability-http-work-slots. Intake is not a cap on all in-flight requests.")
 	fs.Duration("observability-http-admission-wait", time.Second,
-		"Longest an HTTP request waits for a pool slot before the gateway answers 429 with Retry-After: 1. 0 rejects at once. Must not exceed observability-query-queue-wait.")
+		"One deadline per request, shared by its intake and pool waits. Must be at most 5s. 0s refuses at once. A refused request gets 429 with Retry-After: 1. Must not exceed observability-query-queue-wait.")
 }
 
 func buildAPIServerOptions(

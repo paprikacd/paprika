@@ -391,7 +391,7 @@ report and screenshots in `artifacts/insights/`.
 ## Capacity
 
 Insights admits up to 16 query executions at once and holds up to 64 more for
-at most 2 seconds (`internal/insights/server.go:70`). A query to an
+at most 2 seconds (set in `NewServer`, `internal/insights/server.go`). A query to an
 Observe-backed provider then passes the gateway's HTTP pools and its execution
 budget, so the gateway's own limits, not Insights' 16, usually bind first. At
 defaults a single provider runs 2 queries at once. The full chain, with each

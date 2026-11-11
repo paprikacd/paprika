@@ -80,7 +80,7 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 	var releaseOnce sync.Once
 	releaseWriters := func() { releaseOnce.Do(func() { close(release) }) }
 	defer releaseWriters()
-	handler := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/observe/mcp" && holdProtocolWrites.Load() {
 			w = &nativeGatewayContractBlockedWriter{ResponseWriter: w, entered: entered, release: release}
 		}

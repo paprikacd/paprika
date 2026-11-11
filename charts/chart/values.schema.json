@@ -45,19 +45,19 @@
       "properties": {
         "persistSessions": {"type": "boolean"},
         "capacity": {
-          "description": "Query-path capacity per gateway process. Zero on a pool follows the budget; the gateway validates the combination at startup.",
+          "description": "Query-path capacity per gateway process. Zero on a pool follows the budget; the gateway validates the combination at startup and names the value to change.",
           "type": "object",
           "properties": {
-            "queryConcurrency": {"type": "integer", "minimum": 1},
-            "queryProviderConcurrency": {"type": "integer", "minimum": 0},
-            "queryQueue": {"type": "integer", "minimum": 0},
-            "queryProviderQueue": {"type": "integer", "minimum": 0},
+            "queryConcurrency": {"type": "integer", "minimum": 1, "maximum": 1024},
+            "queryProviderConcurrency": {"type": "integer", "minimum": 0, "maximum": 1024},
+            "queryQueue": {"type": "integer", "minimum": 0, "maximum": 65536},
+            "queryProviderQueue": {"type": "integer", "minimum": 0, "maximum": 65536},
             "queryQueueWait": {"type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"},
-            "httpWorkSlots": {"type": "integer", "minimum": 0},
-            "httpCatalogSlots": {"type": "integer", "minimum": 0},
-            "httpDashboardSlots": {"type": "integer", "minimum": 0},
-            "httpIntakeSlots": {"type": "integer", "minimum": 0},
-            "httpAdmissionWait": {"type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"}
+            "httpWorkSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
+            "httpCatalogSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
+            "httpDashboardSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
+            "httpIntakeSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
+            "httpAdmissionWait": {"type": "string", "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$"}
           }
         },
         "additionalCACertificates": {
