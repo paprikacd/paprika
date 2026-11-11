@@ -1,38 +1,59 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+
+import type { JsonValue } from "@bufbuild/protobuf"
 import { describe, expect, it } from "vitest"
 
-import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
+import { CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
 
-// The Go service emits these exact JSON shapes (protojson, string enum names).
-// This pins that the generated UI types read them and write them back unchanged.
-const savedWidgetLayoutIssue = {
-  ruleId: "schema.widget.layout",
-  severity: "SEVERITY_ERROR",
-  source: "SOURCE_SCHEMA",
-  widgetId: "requests",
-  pointer: "/widgets/0/layout",
-  message: "widget layout is outside the dashboard grid",
-  fix: "Keep x and y at least 0, y at most 1000, w from 1 to 12 with x + w at most 12, and h from 2 to 12 (1 for stat widgets).",
+// Written by internal/insights TestCheckWireGolden from the real HTTP handlers,
+// so this test reads the bytes the service sends. Regenerate it there with
+// UPDATE_CHECKS_GOLDEN=1 when the contract changes.
+type Golden = {
+  save: { error: string; issues: JsonValue[]; total: number; truncated: boolean }
+  dryRun: { issues: JsonValue[]; total: number; truncated: boolean }
 }
 
-describe("generated insights check types", () => {
-  it("exports the severity and source vocabulary", () => {
-    expect(Severity.INFO).toBe(1)
-    expect(Severity.WARNING).toBe(2)
-    expect(Severity.ERROR).toBe(3)
-    expect(Source.SCHEMA).toBe(1)
-    expect(Source.VISUAL).toBe(4)
+const golden: Golden = JSON.parse(
+  readFileSync(join(process.cwd(), "src/features/insights/testdata/checks-contract.golden.json"), "utf8"),
+)
+
+describe("dashboard check wire contract", () => {
+  it("reads the rejected-save body through the generated types", () => {
+    const report = CheckReport.fromJson({
+      issues: golden.save.issues,
+      total: golden.save.total,
+      truncated: golden.save.truncated,
+    })
+    expect(report.issues).toHaveLength(2)
+    expect(report.total).toBe(2)
+    expect(report.truncated).toBe(false)
+
+    const [shape, layout] = report.issues
+    expect(shape.ruleId).toBe("schema.widget.shape")
+    expect(shape.severity).toBe(Severity.ERROR)
+    expect(shape.source).toBe(Source.SCHEMA)
+    expect(shape.widgetId).toBe("latency")
+    expect(shape.pointer).toBe("/widgets/1")
+    expect(shape.message).toBe(golden.save.error)
+
+    expect(layout.ruleId).toBe("schema.widget.layout")
+    expect(layout.pointer).toBe("/widgets/0/layout")
+    expect(layout.fix).not.toBe("")
   })
 
-  it("reads a service check report and keeps its finding pointers", () => {
-    const report = CheckReport.fromJson({ issues: [savedWidgetLayoutIssue], total: 1, truncated: false })
-    expect(report).toBeInstanceOf(CheckReport)
-    expect(report.issues).toHaveLength(1)
-    const finding = report.issues[0]
-    expect(finding).toBeInstanceOf(CheckFinding)
-    expect(finding.severity).toBe(Severity.ERROR)
-    expect(finding.source).toBe(Source.SCHEMA)
-    expect(finding.pointer).toBe("/widgets/0/layout")
-    expect(finding.widgetId).toBe("requests")
-    expect(report.toJson()).toEqual({ issues: [savedWidgetLayoutIssue], total: 1 })
+  it("keeps the dry run in the same list shape as the save body", () => {
+    expect(Object.keys(golden.dryRun).sort()).toEqual(["issues", "total", "truncated"])
+    expect(golden.dryRun).toEqual({
+      issues: golden.save.issues,
+      total: golden.save.total,
+      truncated: golden.save.truncated,
+    })
+  })
+
+  it("writes enum values as their proto names on the wire", () => {
+    for (const issue of golden.save.issues) {
+      expect(issue).toMatchObject({ severity: "SEVERITY_ERROR", source: "SOURCE_SCHEMA" })
+    }
   })
 })

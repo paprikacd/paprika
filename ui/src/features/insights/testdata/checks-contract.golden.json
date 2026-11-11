@@ -1,0 +1,51 @@
+{
+  "save": {
+    "error": "thresholds require increasing finite values, hex colors, and labels up to 80 characters",
+    "issues": [
+      {
+        "ruleId": "schema.widget.shape",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "latency",
+        "pointer": "/widgets/1",
+        "message": "thresholds require increasing finite values, hex colors, and labels up to 80 characters",
+        "fix": ""
+      },
+      {
+        "ruleId": "schema.widget.layout",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "requests",
+        "pointer": "/widgets/0/layout",
+        "message": "widget layout is outside the dashboard grid",
+        "fix": "Keep x and y at least 0, y at most 1000, w from 1 to 12 with x + w at most 12, and h from 2 to 12 (1 for stat widgets)."
+      }
+    ],
+    "total": 2,
+    "truncated": false
+  },
+  "dryRun": {
+    "issues": [
+      {
+        "ruleId": "schema.widget.shape",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "latency",
+        "pointer": "/widgets/1",
+        "message": "thresholds require increasing finite values, hex colors, and labels up to 80 characters",
+        "fix": ""
+      },
+      {
+        "ruleId": "schema.widget.layout",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "requests",
+        "pointer": "/widgets/0/layout",
+        "message": "widget layout is outside the dashboard grid",
+        "fix": "Keep x and y at least 0, y at most 1000, w from 1 to 12 with x + w at most 12, and h from 2 to 12 (1 for stat widgets)."
+      }
+    ],
+    "total": 2,
+    "truncated": false
+  }
+}

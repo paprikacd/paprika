@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -355,5 +356,31 @@ func TestDashboardValidateIsAReadOnlyDryRun(t *testing.T) {
 	doc, _, err := store.Get("demo")
 	if err != nil || !strings.Contains(string(doc), "Original") {
 		t.Fatalf("validate changed the stored dashboard: %s %v", doc, err)
+	}
+}
+
+// The largest allowed document must cost little through both the dry run and a
+// save, so a hostile body cannot hold the service for long.
+func TestLargeDocumentIsCheapThroughDryRunAndSave(t *testing.T) {
+	s, _ := testService(t)
+	h := s.Handler()
+	document := adversarialDocument(t)
+	for name, call := range map[string]func() *httptest.ResponseRecorder{
+		"dry run": func() *httptest.ResponseRecorder {
+			return request(t, h, "POST", "/api/dashboards/validate", checkBody(document), nil)
+		},
+		"save": func() *httptest.ResponseRecorder {
+			return request(t, h, "PUT", "/api/dashboards/demo", document, map[string]string{"If-None-Match": "*"})
+		},
+	} {
+		start := time.Now()
+		w := call()
+		elapsed := time.Since(start)
+		if w.Code != 200 && w.Code != 400 {
+			t.Fatalf("%s status = %d", name, w.Code)
+		}
+		if elapsed > time.Second {
+			t.Fatalf("%s of a %d byte document took %s", name, len(document), elapsed)
+		}
 	}
 }
