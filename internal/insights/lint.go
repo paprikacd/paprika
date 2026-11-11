@@ -3,6 +3,7 @@ package insights
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 
@@ -273,6 +274,44 @@ func CheckDocument(document Dashboard) []*insightsv1.CheckFinding {
 // serves, so the lint command can check exactly what agents are shown.
 func DashboardSchemaExamples() []json.RawMessage {
 	return authoringSchemaExamples("dashboard")
+}
+
+// WidgetSchemaExamples returns the widget examples the schema endpoint serves,
+// each wrapped in a dashboard so the save-path rules can read it. The wrapper
+// declares every variable the widget reads, so the variable rule checks the widget
+// itself. The widget's layout is what the lint sees, so a widget example is
+// checked for its height, its drawn bar and its sparkline like any other widget.
+func WidgetSchemaExamples() ([]Dashboard, error) {
+	var documents []Dashboard
+	for i, raw := range authoringSchemaExamples("widget") {
+		var widget wireWidget
+		if err := json.Unmarshal(raw, &widget); err != nil {
+			return nil, fmt.Errorf("widget schema example %d: %w", i, err)
+		}
+		declared := map[string]bool{}
+		for _, ref := range variableRefs("", widget.QueryRef) {
+			declared[ref.variable] = true
+		}
+		for _, binding := range widget.SelectionBindings {
+			declared[binding.Variable] = true
+		}
+		for _, match := range placeholder.FindAllStringSubmatch(widget.Query, -1) {
+			declared[match[1]] = true
+		}
+		variables := make([]map[string]string, 0, len(declared))
+		for _, name := range slices.Sorted(maps.Keys(declared)) {
+			variables = append(variables, map[string]string{"name": name})
+		}
+		document, err := json.Marshal(map[string]any{
+			"schemaVersion": 1, "id": fmt.Sprintf("served-widget-%d", i), "title": "Served widget example",
+			"timeRange": "1h", "refreshInterval": 30, "variables": variables, "widgets": []json.RawMessage{raw},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("wrap widget schema example %d: %w", i, err)
+		}
+		documents = append(documents, Dashboard(document))
+	}
+	return documents, nil
 }
 
 // lintSummaries returns each rule's summary in registry order. It exists so the

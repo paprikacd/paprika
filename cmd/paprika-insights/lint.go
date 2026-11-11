@@ -42,35 +42,51 @@ type lintInput struct {
 func runLint(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("lint", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	served := flags.Bool("served-schema-examples", false, "also check the dashboard examples the schema endpoint serves")
+	served := flags.Bool("served-schema-examples", false, "also check the dashboard and widget examples the schema endpoint serves")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	paths := flags.Args()
 	errOut := &lineWriter{w: stderr}
-	if len(paths) == 0 && !*served {
+	if len(flags.Args()) == 0 && !*served {
 		errOut.linef("usage: paprika-insights lint [--served-schema-examples] PATH...")
 		return exitUsage
 	}
-	var inputs []lintInput
-	for _, path := range paths {
-		found, err := collectLintInputs(path)
-		if err != nil {
-			errOut.linef("paprika-insights lint: %v", err)
-			return exitUsage
-		}
-		inputs = append(inputs, found...)
-	}
-	if *served {
-		for i, example := range insights.DashboardSchemaExamples() {
-			inputs = append(inputs, lintInput{name: fmt.Sprintf("served schema example %d", i), document: example})
-		}
+	inputs, err := gatherLintInputs(flags.Args(), *served)
+	if err != nil {
+		errOut.linef("paprika-insights lint: %v", err)
+		return exitUsage
 	}
 	if len(inputs) == 0 {
 		errOut.linef("paprika-insights lint: no dashboard documents found")
 		return exitUsage
 	}
 	return reportLint(inputs, stdout)
+}
+
+// gatherLintInputs reads every path and, when asked, the served examples.
+func gatherLintInputs(paths []string, served bool) ([]lintInput, error) {
+	var inputs []lintInput
+	for _, path := range paths {
+		found, err := collectLintInputs(path)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, found...)
+	}
+	if !served {
+		return inputs, nil
+	}
+	for i, example := range insights.DashboardSchemaExamples() {
+		inputs = append(inputs, lintInput{name: fmt.Sprintf("served dashboard example %d", i), document: example})
+	}
+	widgets, err := insights.WidgetSchemaExamples()
+	if err != nil {
+		return nil, fmt.Errorf("served widget examples: %w", err)
+	}
+	for i, example := range widgets {
+		inputs = append(inputs, lintInput{name: fmt.Sprintf("served widget example %d", i), document: example})
+	}
+	return inputs, nil
 }
 
 // lineWriter writes lines and remembers the first write error, so a closed

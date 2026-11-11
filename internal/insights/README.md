@@ -130,8 +130,9 @@ through Paprika. All service API routes require `Authorization: Bearer <token>`.
 | DELETE | `/api/saved-queries/{id}` | 204; `If-Match` required |
 | GET | `/api/dashboards` | `{dashboards:[Dashboard]}` |
 | GET | `/api/dashboards/{id}` | Dashboard and `ETag` |
-| PUT | `/api/dashboards/{id}` | Saved Dashboard and `ETag` |
+| PUT | `/api/dashboards/{id}` | Saved Dashboard and `ETag`; `?checks=true` adds `checks` (see below) |
 | DELETE | `/api/dashboards/{id}` | 204 |
+| POST | `/api/dashboards/validate` | Dry run: `{document}` in, `{issues,total,truncated}` out; never writes |
 
 Query request:
 
@@ -282,6 +283,60 @@ limits responses to 1 MiB, and caches successful results for 30 seconds in a
 bounded per-provider cache. Editing a provider invalidates its cache. Connection
 tests use Prometheus `vector(1)` or Tempo's `/api/echo` endpoint. Tests and discovery
 share the query concurrency and timeout limits, and sanitize upstream failures.
+
+## Dashboard checks and layout rules
+
+Every dashboard write (`PUT /api/dashboards/{id}`, including MCP create, update
+and patch and the portable import) runs the schema checks and then the lint
+rules. A save is rejected with `400 {error,issues,total,truncated}` when a schema
+check fails or a lint rule of error severity fires. Today the only error-severity
+rule is `layout.overlap`: two widgets whose grid rectangles share a cell. `error`
+is the first finding's message, and `issues` holds the findings, errors first, as
+a CheckReport (at most 32, with `total` counting all of them).
+
+Other lint rules are warnings. They never block a save. A successful save returns
+them in a `checks` field, but only when the request asks with `?checks=true`:
+`PUT /api/dashboards/{id}?checks=true` returns the stored document with `checks`
+added after its members. The default body is the document exactly as before, so a
+client that stores it never sends back an unknown member. The dry run lists every
+finding, warnings included, without writing.
+
+Stored documents are read without linting, so a dashboard saved before a rule
+existed still loads and renders. Saving it again runs the rules.
+
+Each finding names its rule (`ruleId`), its severity, its source (schema or
+lint), its widget, and the exact JSON Pointer of the member at fault. Messages
+name widgets by title and id.
+
+The canvas settles every render with react-grid-layout's vertical compactor:
+items rise into empty space and an overlap is pushed apart. The UI saves the
+layout as the canvas draws it, so a stored overlap is corrected by the next UI
+save. The `layout.hole` rule reads the same drawn layout: an empty cell above a
+widget, which the canvas would not close, is a hole. The Go port of the compactor
+and the TypeScript compactor share the parity fixtures in
+[layout-compaction.json](../../docs/design/insights/conformance/layout-compaction.json).
+
+The built-in plugin ids that `plugin.unknown` accepts are listed in
+[widget-plugins.json](../../docs/design/insights/widget-plugins.json), regenerated
+from the UI registry. A host can register more plugins, which the rule reports as
+not built in.
+
+### Lint CLI
+
+`paprika-insights lint` checks dashboard documents offline with the same findings a
+save reports:
+
+```sh
+paprika-insights lint [--served-schema-examples] PATH...
+```
+
+Each path is a JSON file or a directory of them. A file holds one document, an
+array of documents, or a repository-examples catalog, whose sample and live
+dashboards are checked. `--served-schema-examples` adds the dashboard and widget
+examples that the schema endpoint serves. The exit code is 0 when no finding is
+an error, 1 when one is, and 2 for unreadable input or usage. Each finding prints
+on one line, followed by a summary. The CI step runs the command over the
+repository catalog, the served examples and the gallery export.
 
 ## Dashboard extensions
 
