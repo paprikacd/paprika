@@ -42,14 +42,27 @@ describe("stat status chip", () => {
     expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
   });
 
-  it("gives an unlabelled colour-only band a bound as its label", () => {
+  it("shows no chip for an unlabelled colour-only band, which names nothing", () => {
     const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800" }] })} result={one(42)} />);
-    expect(container.querySelector('[data-stat-chip="band"]')).toHaveTextContent("≥ 40");
+    expect(container.querySelector("[data-stat-chip]")).toBeNull();
   });
 
-  it("keeps the first colour-only band unlabelled, as the normal state", () => {
-    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866", label: "Fine" }, { value: 40, color: "#dd8800" }] })} result={one(3)} />);
-    expect(container.querySelector("[data-stat-chip]")).toBeNull();
+  it("shows a labelled colour-only band wherever it sits, so a low-is-bad scale is labelled too", () => {
+    const widget = widgetWith({ thresholds: [{ value: 0, color: "#e8554e", label: "Exhausted" }, { value: 25, color: "#f2b236", label: "Low" }, { value: 60, color: "#20cba3", label: "Healthy" }] });
+    const { container, rerender } = render(<WidgetVisualization widget={widget} result={one(10)} />);
+    expect(container.querySelector('[data-stat-chip="band"]')).toHaveTextContent("Exhausted");
+    rerender(<WidgetVisualization widget={widget} result={one(70)} />);
+    expect(container.querySelector('[data-stat-chip="band"]')).toHaveTextContent("Healthy");
+  });
+
+  it("names a stale sample in the chip slot, with its full sentence for screen readers", () => {
+    const { container } = render(
+      <DashboardWindowProvider value={{ rangeEnd: 1_000_000 + 6 * 60_000 }}>
+        <WidgetVisualization widget={widgetWith({ staleAfterSeconds: 60 })} result={one(3)} />
+      </DashboardWindowProvider>,
+    );
+    expect(container.querySelector("[data-stale-observation]")).toHaveTextContent("Stale · 6 min");
+    expect(screen.getByText("Last valid sample: 6 min before range end.")).toBeInTheDocument();
   });
 
   it("keeps an authored text colour on the reading when one is set", () => {
@@ -59,13 +72,19 @@ describe("stat status chip", () => {
 
   it("takes the verdict of the tile that renders it, and evaluates its own otherwise", () => {
     const widget = widgetWith({ thresholds: [{ value: 0, status: "ok" }, { value: 1, status: "warning", label: "From tile" }] });
-    const tile = widgetAttention(widget, one(2), undefined, undefined);
+    const tile = widgetAttention(widget, { result: one(2) });
     const { container } = render(<WidgetAttentionContext.Provider value={tile}><WidgetVisualization widget={widget} result={one(2)} /></WidgetAttentionContext.Provider>);
     expect(container.querySelector('[data-stat-chip="warning"]')).toHaveTextContent("From tile");
   });
 });
 
 describe("stat trend and freshness", () => {
+  it("never calls a history with a missing sample steady, because the gap is part of the trend", () => {
+    const { container } = render(<WidgetVisualization widget={{ ...base, options: { showSparkline: true } } as never} result={{ series: [{ name: "slo", labels: {}, points: [{ timestamp: 1, value: 99.9 }, { timestamp: 2, value: null }, { timestamp: 3, value: 99.9 }] }] }} />);
+    expect(screen.queryByText("Steady")).toBeNull();
+    expect(container.querySelector("[data-stat-sparkline]")).not.toBeNull();
+  });
+
   it("replaces the flat trend of a constant history with Steady", () => {
     const { container } = render(<WidgetVisualization widget={{ ...base, options: { showSparkline: true } } as never} result={{ series: [{ name: "slo", labels: {}, points: [{ timestamp: 1, value: 99.9 }, { timestamp: 2, value: 99.9 }, { timestamp: 3, value: 99.9 }] }] }} />);
     expect(screen.getByText("Steady")).toHaveAttribute("data-stat-steady");

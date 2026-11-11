@@ -44,3 +44,18 @@ it("leaves a healthy tile at ok with no chip and no rail colour", async () => {
   expect(tile()?.querySelector("[data-stat-chip]")).toBeNull();
   expect(tile()?.getAttribute("style") ?? "").not.toContain("--attention-mark");
 });
+
+it("reports a tile whose shared source is unavailable as failed, not pending", async () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const { SourceStatusContext } = await import("./source-status");
+  const orphan = { ...statWidget, providerId: "not-in-the-catalog" };
+  const fetcher = vi.fn(async (): Promise<QueryResult> => ({ series: [] }));
+  const view = render(
+    <SourceStatusContext.Provider value="unavailable">
+      <DashboardCanvas dashboard={{ ...dashboard, widgets: [orphan] }} providers={exampleProviders} fetcher={fetcher} end={3600} editing={false} selected="" onSelect={vi.fn()} onLayout={vi.fn()} />
+    </SourceStatusContext.Provider>,
+  );
+  const tile = view.container.querySelector<HTMLElement>('[data-widget-id="error-ratio"]');
+  await waitFor(() => expect(tile?.getAttribute("data-attention")).toBe("failed"));
+  expect(fetcher).not.toHaveBeenCalled();
+});

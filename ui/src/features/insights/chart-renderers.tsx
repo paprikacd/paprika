@@ -50,7 +50,7 @@ import {
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { EMPTY_OPTIONS, PALETTE, thresholdForValue, usePlotSize, type Point, type Series } from "./chart-renderer-shared";
 import { thresholdInk, thresholdPaint } from "./status";
-import { StatusChip, statusStrokeStyle } from "./status-chip";
+import { StatusChip } from "./status-chip";
 import { widgetAttention, useWidgetAttentionContext } from "./widget-attention";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
@@ -72,8 +72,12 @@ const MAX_ROWS = 100;
 function critical(threshold: Threshold | undefined) {
   return threshold?.status === "critical" ? "critical" : undefined;
 }
+/**
+ * The frame is drawn in the cell's own text colour, which is the ink that reads on its fill. Page ink has only about
+ * 1.2 to 1.3:1 against the critical fill, so it would not be visible.
+ */
 function criticalStroke(threshold: Threshold | undefined): CSSProperties {
-  return critical(threshold) ? statusStrokeStyle(threshold) : {};
+  return critical(threshold) ? ({ "--status-stroke-color": "currentColor" } as CSSProperties) : {};
 }
 
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
@@ -84,10 +88,13 @@ export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
 function Stat({
   widget,
   series,
+  result,
   onContextChange,
 }: {
   widget: Widget;
   series: Series[];
+  /** The whole result, so a truncated response is seen as well as the series. */
+  result?: QueryResult;
   onContextChange?: (context: DrilldownContext) => void;
 }) {
   const embedded = useEmbeddedWidget();
@@ -95,9 +102,12 @@ function Stat({
   const sampleTime = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }), [timeZone]);
   const { rangeEnd } = useDashboardWindow();
   // The tile evaluates its widget once and passes the verdict down. An embedded renderer shows another widget, so it evaluates its own.
+  // Outside a tile, the renderer evaluates once itself; a tile's verdict is never recomputed here.
   const tileAttention = useWidgetAttentionContext();
-  const ownAttention = useMemo(() => widgetAttention(widget, { series }, undefined, rangeEnd), [widget, series, rangeEnd]);
-  const attention = !embedded && tileAttention ? tileAttention : ownAttention;
+  const attention = useMemo(
+    () => !embedded && tileAttention ? tileAttention : widgetAttention(widget, { result: result ?? { series }, rangeEnd }),
+    [embedded, tileAttention, widget, series, result, rangeEnd],
+  );
   const entries = series
     .map((entry, index) => ({
       entry,
@@ -107,7 +117,7 @@ function Stat({
     }))
     .filter((entry) => entry.point);
   const first = entries[0];
-  if (!first?.point) return <EmptyState />;
+  if (!first?.point) return <EmptyState partial={attention.partial} />;
   // A Single value intentionally displays the last valid observation. A
   // newer missing observation must still be disclosed: otherwise an older
   // healthy value can be mistaken for a current reading. Match the dashboard
@@ -135,17 +145,20 @@ function Stat({
   const barColor = thresholdPaint(band) ?? widget.color ?? "var(--gamma-chart-1)";
   // The status chip names a warning or critical band with its glyph and label. A colour-only band above the first one
   // gets a dot and its label; the first band is the normal state and stays unlabelled.
-  const chip = band?.status === "warning" || band?.status === "critical"
-    ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
-    : band && band.status === undefined && band.color !== undefined && band !== thresholds?.[0]
-      ? <StatBandChip color={band.color} label={band.label?.trim() || `≥ ${formatMetric(band.value, widget.unit, false, widget.options?.decimals)}`} />
-      : null;
+  // A stale sample is a notice, not a breach: it takes the chip slot, so it never pushes the reading out of a one-row card.
+  const sampleAge = ageSeconds === undefined ? "" : Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`;
+  const chip = <>
+    {band?.status === "warning" || band?.status === "critical"
+      ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
+      : band && band.status === undefined && band.color !== undefined && band.label?.trim()
+        ? <StatBandChip color={band.color} label={band.label.trim()} />
+        : null}
+    {stale && <StatNoticeChip visible={`Stale · ${sampleAge}`} full={`Last valid sample: ${sampleAge} before range end.`} dataAttribute="data-stale-observation" />}
+    {attention.partial && <StatNoticeChip visible="Partial" full="Provider response may be incomplete. Narrow the query or check the data source." dataAttribute="data-partial-observation" />}
+  </>;
   return (
     <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
       {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid · latest missing</div>}
-      {stale && ageSeconds !== undefined && <div className={styles.staleObservation} role="status" data-stale-observation="">
-        Last valid sample: {Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`} before range end.
-      </div>}
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""
@@ -216,6 +229,20 @@ function StatBandChip({ color, label }: { color: string; label: string }) {
     <span className={styles.statBandChip} data-stat-chip="band">
       <span className={styles.statBandDot} aria-hidden="true" style={{ background: color }} />
       <span className={styles.statBandText}>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * A neutral notice chip for a stat: a stale value is old, not bad, and a partial response is incomplete, not breached.
+ * The visible text is short; screen readers hear the full sentence.
+ */
+function StatNoticeChip({ visible, full, dataAttribute }: { visible: string; full: string; dataAttribute: string }) {
+  return (
+    <span className={styles.statNoticeChip} role="status" {...{ [dataAttribute]: "" }}>
+      <span className={styles.statBandDot} aria-hidden="true" />
+      <span className={styles.statBandText}>{visible}</span>
+      <span className={styles.statSrOnly}>{full}</span>
     </span>
   );
 }
@@ -1073,6 +1100,7 @@ export function BuiltinWidgetRenderer({
         <Stat
           widget={widget}
           series={series}
+          result={result}
           onContextChange={onContextChange}
         />
       );

@@ -70,7 +70,7 @@ import contextStyles from "./widget-context.module.css";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
 import { AttentionStoreProvider, useAttentionPublisher } from "./attention-store";
-import { isAttentionLevel, widgetAttention, WidgetAttentionContext } from "./widget-attention";
+import { isAttentionLevel, widgetAttention, WidgetAttentionContext, type AttentionFailure } from "./widget-attention";
 import { statusToken, thresholdPaint } from "./status";
 
 const STAT_ICONS = {
@@ -280,9 +280,14 @@ const Tile = memo(function Tile({
     ? `Provider “${widget.providerId}” is not configured.`
     : null);
   // One verdict per tile: the renderer reads it through WidgetAttentionContext, and the dashboard publishes it for an attention strip.
+  // The source outcome decides the verdict's failure: a source that cannot load or a provider that is not configured is
+  // final, so the tile reports it rather than pending. A failed read has no band, so a retained breach is not reported.
+  const sourceFailure: Exclude<AttentionFailure, "none"> | undefined = !savedQueryLoading && (waitingOn === "unavailable" || waitingOn === "signin") ? "provider"
+    : !savedQueryLoading && !provider && !widget.queryRef && sourceStatus === "ready" ? "planning"
+    : !savedQueryLoading && error ? "provider" : undefined;
   const attention = useMemo(
-    () => widgetAttention(widget, savedQueryLoading ? undefined : data, visibleError, end * 1000),
-    [widget, savedQueryLoading, data, visibleError, end],
+    () => widgetAttention(widget, { result: savedQueryLoading ? undefined : data, failure: sourceFailure, rangeEnd: end * 1000 }),
+    [widget, savedQueryLoading, data, sourceFailure, end],
   );
   const attentionPublisher = useAttentionPublisher();
   useEffect(() => {

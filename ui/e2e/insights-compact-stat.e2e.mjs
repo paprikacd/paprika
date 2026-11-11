@@ -24,6 +24,9 @@ try {
   dashboard.widgets.push({ ...widget("explore", 4, { showSparkline: true, decimals: 2 }), title: "Ingress explored", drilldowns: [exploreLink], layout: { x: 4, y: 1, w: 4, h: 1 } });
   dashboard.widgets.push({ ...widget("narrow", 8, { showSparkline: true, decimals: 2 }), title: "Narrow errors", layout: { x: 8, y: 1, w: 1, h: 2 } });
   dashboard.widgets.push({ ...widget("titleFit", 9, { decimals: 2 }), title: "Checkout availability across every region", layout: { x: 9, y: 1, w: 3, h: 1 } });
+  // A breached one-row card with a long label on a narrow column: the reading must stay whole and clear of the chip,
+  // which gives way by ellipsis and then collapses to its glyph (the status word stays for screen readers).
+  dashboard.widgets.push({ ...widget("breach", 0, { showSparkline: true, sparklinePlacement: "side", decimals: 2, thresholds: [{ value: 0, status: "ok" }, { value: 10, status: "critical", label: "Above the monthly error budget of 0.1%" }] }), title: "Errors this month", layout: { x: 0, y: 3, w: 2, h: 1 } });
   await environment.api(`dashboards/${dashboard.id}`, "PUT", dashboard, { "If-None-Match": "*" });
   const saved = (await environment.api(`dashboards/${dashboard.id}`)).document;
   assert.equal(saved.widgets[0].options.sparklinePlacement, "side");
@@ -199,6 +202,20 @@ try {
       assert.equal(await page.locator('[data-widget-id="background"] [data-stat-summary]').getAttribute("data-sparkline-placement"), "background");
       const backdrop = await page.locator('[data-widget-id="background"]').evaluate(card => { const c = card.getBoundingClientRect(), v = card.querySelector('[data-metric-value]').getBoundingClientRect(); const chain = []; for (let p = card.querySelector('[data-metric-value]'); p && p !== card; p = p.parentElement) { const r = p.getBoundingClientRect(), st = getComputedStyle(p); chain.push({ class: p.className, top: r.top, bottom: r.bottom, flex: st.flex, padding:st.padding, minHeight:st.minHeight }); } return { c: { top: c.top, bottom: c.bottom }, v: { top: v.top, bottom: v.bottom }, chain }; });
       assert.ok(backdrop.v.top >= backdrop.c.top && backdrop.v.bottom <= backdrop.c.bottom + 1, `backdrop value must fit: ${JSON.stringify(backdrop)}`);
+      // Stacked phone layouts put this card below the fold, where its tile loads only once it is scrolled into view.
+      const breach = page.locator('[data-widget-id="breach"]');
+      await breach.scrollIntoViewIfNeeded();
+      await breach.locator('[data-metric-value="42.34"]').waitFor();
+      const breached = await breach.evaluate(card => {
+        const box = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width }; };
+        const value = card.querySelector("[data-metric-value]"), chip = card.querySelector("[data-stat-chip]");
+        return { card: box(card), value: box(value), chip: chip ? box(chip) : null, glyph: chip ? box(chip.querySelector('[aria-hidden="true"]')) : null, chipText: chip?.textContent ?? null };
+      });
+      assert.ok(breached.chip && breached.chipText?.includes("Critical"), `breached card must name its critical band: ${JSON.stringify(breached)}`);
+      assert.ok(breached.value.left >= breached.card.left - 1 && breached.value.right <= breached.card.right + 1 && breached.value.top >= breached.card.top - 1 && breached.value.bottom <= breached.card.bottom + 1, `long-label chip must not push the reading out of its card: ${JSON.stringify(breached)}`);
+      assert.ok(breached.value.right <= breached.chip.left + 1, `the reading must not run under the status chip: ${JSON.stringify(breached)}`);
+      assert.ok(breached.chip.right <= breached.card.right + 1 && breached.chip.top >= breached.card.top - 1 && breached.chip.bottom <= breached.card.bottom + 1, `the chip must stay inside its card: ${JSON.stringify(breached)}`);
+      assert.ok(breached.glyph && breached.glyph.width >= 10 && breached.glyph.left >= breached.chip.left - 1, `the status glyph must stay visible when the label collapses: ${JSON.stringify(breached)}`);
       const plain = page.locator('[data-widget-id="plain"]');
       await plain.locator('[data-metric-value="42.34"]').waitFor();
       const plainBounds = await plain.evaluate(card => {
