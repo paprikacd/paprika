@@ -192,3 +192,18 @@ it("marks only the stats whose sample is the dashboard's newest, so the strip ca
   expect(now).toHaveAttribute("data-shared-sample");
   expect(then).toHaveAttribute("data-shared-sample");
 });
+
+it("gives the editor's preview its own caption, even when its sample is the newest, because no strip states it there", async () => {
+  const newest = { ...stat("now", "errors2"), options: {} } as Widget;
+  const older = { ...stat("then", "old"), options: {} } as Widget;
+  const dashboard = dashboardOf({}, [newest, older]);
+  const { view } = mount(dashboard);
+  await waitFor(() => expect(document.querySelector('article[data-widget-id="now"]')).toHaveAttribute("data-shared-sample"));
+  view.rerender(
+    <DashboardCanvas dashboard={dashboard} providers={exampleProviders} fetcher={fetcher} end={3600} editing={false} selected="" onSelect={vi.fn()} onLayout={vi.fn()}
+      focus={{ widget: newest, render: (preview) => <div data-testid="focus-preview">{preview}</div> }} />,
+  );
+  const preview = await screen.findByTestId("focus-preview");
+  await waitFor(() => expect(preview.querySelector('article[data-widget-id="now"]')).toBeTruthy());
+  expect(preview.querySelector('article[data-widget-id="now"]')).not.toHaveAttribute("data-shared-sample");
+});

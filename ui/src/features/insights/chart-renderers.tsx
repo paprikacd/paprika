@@ -119,6 +119,10 @@ function Stat({
     }))
     .filter((entry) => entry.point);
   const first = entries[0];
+  // Up to four series show the reading and up to three rows, with no note. Five or more show the reading and two rows,
+  // and the note counts every series not shown. The row count keeps a visible caption inside the 148px card.
+  const shownSeries = entries.length > 4 ? 3 : 4;
+  const extraRows = shownSeries - 1;
   if (!first?.point) return <EmptyState partial={attention.partial} />;
   // A Single value intentionally displays the last valid observation. A
   // newer missing observation must still be disclosed: otherwise an older
@@ -209,9 +213,10 @@ function Stat({
         <span className={styles.statBarFill} style={{ width: `${fraction * 100}%`, backgroundColor: barColor }} />
       </div>}
       {entries.length > 1 && (
-        // One section for the extra rows and their note, so the card's gap separates the reading from the list once.
+        // With more than four series the reading and two rows fill the card, so the note takes the third row; the
+        // rest are counted in the note. One section for the extra rows and their note, so the card's gap separates the reading from the list once.
         <div className={styles.statExtras} data-stat-extras="">
-          {entries.slice(1, 4).map((entry) => (
+          {entries.slice(1, extraRows + 1).map((entry) => (
             <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
               <span>{entry.name}</span>
               <strong>
@@ -219,9 +224,9 @@ function Stat({
               </strong>
             </div>
           ))}
-          {entries.length > 4 && (
+          {entries.length > shownSeries && (
             <span className={styles.notice} role="status">
-              +{entries.length - 4} more series. Switch to table to inspect.
+              +{entries.length - shownSeries} more series. Switch to table to inspect.
             </span>
           )}
         </div>

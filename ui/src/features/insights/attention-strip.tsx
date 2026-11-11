@@ -100,17 +100,23 @@ function reducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/** The space a keyboard-focused chip keeps from the row's edges, so it is never flush with them. */
+const CHIP_EDGE_MARGIN = 8;
+
 /**
- * Scrolls the chip row sideways just enough to show a focused chip. Browsers do not reliably scroll a focused element
- * inside this row, so the row is adjusted from the rects. Rects are zero outside a layout engine, so tests are unaffected.
+ * Scrolls the chip row sideways so a keyboard-focused chip is visible with a margin at each edge. Mouse focus is left
+ * alone: a pointer press should not move the row. Browsers do not reliably scroll a focused element inside this row, so
+ * the row is adjusted from the rects; rects are zero outside a layout engine, so tests are unaffected.
  */
 function keepInRow(chip: HTMLElement) {
+  let keyboard = false;
+  try { keyboard = chip.matches(":focus-visible"); } catch { keyboard = false; }
   const row = chip.parentElement;
-  if (!row || row.scrollWidth <= row.clientWidth) return;
+  if (!keyboard || !row || row.scrollWidth <= row.clientWidth) return;
   const element = chip.getBoundingClientRect();
   const track = row.getBoundingClientRect();
-  if (element.left < track.left) row.scrollLeft -= track.left - element.left;
-  else if (element.right > track.right) row.scrollLeft += element.right - track.right;
+  if (element.left < track.left + CHIP_EDGE_MARGIN) row.scrollLeft -= track.left + CHIP_EDGE_MARGIN - element.left;
+  else if (element.right > track.right - CHIP_EDGE_MARGIN) row.scrollLeft += element.right - (track.right - CHIP_EDGE_MARGIN);
 }
 
 function tileElement(scope: HTMLElement | null, widgetId: string): HTMLElement | undefined {
@@ -227,13 +233,20 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
   const age = oldestCompletedAt === undefined ? undefined : formatAge(now - oldestCompletedAt);
   const sampleTime = newestSample === undefined ? undefined : new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }).format(new Date(newestSample));
   const titleOf = (widgetId: string) => entries.find((entry) => entry.widgetId === widgetId)?.title ?? widgetId;
+  const ageText = age === undefined ? (notLoaded ? "Loading results" : "No results yet") : `Updated ${age}`;
+  const sampleText = sampleTime === undefined ? undefined : `Newest sample ${sampleTime}`;
+  const refreshText = refreshLabel(autoRefresh);
+  // The full time text sits in a title as well, since the visible text is cut with an ellipsis when it does not fit.
+  const timeText = [ageText, sampleText, refreshText].filter(Boolean).join(" · ");
+  // Counts are one nowrap item, with the separator in its text, so they read as one phrase at every width.
+  const countsText = `${checked} of ${summary.widgets} checked${notLoaded > 0 ? ` · ${notLoaded} not loaded yet` : ""}`;
   return (
     <section ref={sectionRef} tabIndex={-1} aria-label="Dashboard attention" className={styles.strip} data-attention-strip="">
-      <span className={styles.age} data-freshness={oldestCompletedAt === undefined ? "none" : "settled"}>
-        {age === undefined ? (notLoaded ? "Loading results" : "No results yet") : `Updated ${age}`}
-      </span>
-      {sampleTime && <span className={styles.sample}>Newest sample {sampleTime}</span>}
-      <span className={styles.refresh}>{refreshLabel(autoRefresh)}</span>
+      <div className={styles.text} title={timeText}>
+        <span className={styles.age} data-freshness={oldestCompletedAt === undefined ? "none" : "settled"}>{ageText}</span>
+        {sampleText && <span className={styles.sample}>{sampleText}</span>}
+        <span className={styles.refresh}>{refreshText}</span>
+      </div>
       <div className={styles.chips}>
         {!flagged.length && <span className={styles.clear}>{notLoaded ? "Nothing flagged so far" : "Nothing flagged"}</span>}
         {flagged.map((reason) => {
@@ -259,10 +272,7 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
           );
         })}
       </div>
-      <p className={styles.counts}>
-        {checked} of {summary.widgets} checked
-        {notLoaded > 0 && <>{" "}<span className={styles.notLoaded}>{notLoaded} not loaded yet</span></>}
-      </p>
+      <p className={styles.counts}>{countsText}</p>
       {/* Polite regions without the status role, so they do not join other status messages on the page. */}
       <p aria-live="polite" aria-atomic="true" className={styles.srOnly}>{announced}</p>
       <p aria-live="polite" aria-atomic="true" className={styles.notice} data-notice="">{notice}</p>

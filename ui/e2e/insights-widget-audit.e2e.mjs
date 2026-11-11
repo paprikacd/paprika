@@ -166,6 +166,7 @@ async function openFixture(state, width = 1512, links = false, extra = {}, trans
       if (state === "error" || query.query.includes("audit_failure")) { status = 502; body = { error: "Audit backend failed. Retry this query." } }
       // The older stat has one valid sample a minute before the newest, so its caption stays visible without a notice.
       else if (query.query === "audit_stat_older") body = { series: [{ name: "api-east", labels: { service: "api-east", instance: "pod-0", region: "eu-central-1" }, points: [{ timestamp: stamp - 60000, value: 42.56789 }] }] }
+      else if (query.query === "audit_stat_five") body = { series: Array.from({ length: 5 }, (_, index) => ({ name: ["api-east", "worker-west", "queue-zero", "cache-north", "edge-south"][index], labels: { service: `s${index}`, region: "eu-central-1" }, points: [{ timestamp: stamp - 60000, value: 40 + index }] })) }
       else body = query.kind === "traces" ? traceData(state) : metricData(query.query.includes("edited") ? "negative" : state)
     } else { status = 404; body = { error: `Unexpected audit route: ${url.pathname}` } }
     await route.fulfill({ status, contentType: "application/json", headers: { ETag: `"audit-${version}"` }, body: JSON.stringify(body) })
@@ -186,15 +187,22 @@ async function openFixture(state, width = 1512, links = false, extra = {}, trans
 }
 async function sharedCaptionAudit(width) {
   // The audit's stat (older, last valid sample a minute before the newest) and a second stat with the newest sample.
-  const { page, context } = await openFixture("older", width, false, {}, document => ({ ...document, widgets: [...document.widgets, { ...document.widgets[2], id: "stat-newest", title: "Audit newest value", query: "audit_stat_newest", layout: { x: 0, y: 15, w: 4, h: 3 } }] }))
-  const older = page.locator('[data-widget-id="stat"]'), newest = page.locator('[data-widget-id="stat-newest"]')
+  const { page, context } = await openFixture("older", width, false, {}, document => ({ ...document, widgets: [...document.widgets,
+    { ...document.widgets[2], id: "stat-newest", title: "Audit newest value", query: "audit_stat_newest", layout: { x: 0, y: 15, w: 4, h: 3 } },
+    { ...document.widgets[2], id: "stat-five", title: "Audit five series", query: "audit_stat_five", layout: { x: 4, y: 15, w: 4, h: 3 } }] }))
+  const older = page.locator('[data-widget-id="stat"]'), newest = page.locator('[data-widget-id="stat-newest"]'), five = page.locator('[data-widget-id="stat-five"]')
   await newest.scrollIntoViewIfNeeded()
   await newest.locator("[data-metric-value]").waitFor()
+  await five.locator("[data-metric-value]").waitFor()
+  // Five series with a visible caption: two extra rows and the note fit the card without scrolling.
+  assert.equal(await five.locator("[data-stat-summary]").locator("xpath=..").evaluate(element => element.scrollHeight <= element.clientHeight + 1), true, "A five-series stat with a visible caption must not scroll internally")
+  assert.match(await five.innerText(), /\+2 more series/, "A five-series stat must count the two series it does not show")
+  assert.equal(await five.locator('[data-stat-reading] > [class*="statMeta"]').evaluate(element => element.getBoundingClientRect().height >= 12), true, "A five-series older stat keeps its caption visible")
   await check(`older stat keeps its caption visible, newest stat hides its own, at ${width}px`, async () => {
     const olderCaption = older.locator('[data-stat-reading] > [class*="statMeta"]')
     const olderBox = await olderCaption.boundingBox()
     assert.ok(olderBox && olderBox.height >= 12, `An older sample must show its caption: ${JSON.stringify(olderBox)}`)
-    assert.equal(await older.locator("xpath=..").evaluate(element => element.closest("[data-shared-sample]") === null), true, "An older sample must not be marked as shared")
+    assert.equal(await older.evaluate(element => element.closest("[data-shared-sample]") === null), true, "An older sample must not be marked as shared")
     assert.equal(await older.locator("[data-stat-summary]").locator("xpath=..").evaluate(element => element.scrollHeight <= element.clientHeight + 1), true, "The older stat must not scroll internally")
     const newestCaption = newest.locator('[data-stat-reading] > [class*="statMeta"]')
     const newestBox = await newestCaption.boundingBox()
@@ -269,6 +277,22 @@ async function stateAssertions(page, state) {
         if (shared) {
           assert.ok(captionBox && captionBox.width <= 1 && captionBox.height <= 1, `A shared sample's caption must be visually hidden: ${JSON.stringify(captionBox)}`)
           assert.match(await page.locator("[data-attention-strip]").innerText(), /Newest sample/, "The attention strip must state the shared sample time")
+          const reading = tile.locator("[data-stat-reading]")
+          const before = await reading.boundingBox()
+          await tile.hover()
+          await page.waitForTimeout(200)
+          const hovered = await caption.boundingBox()
+          assert.ok(hovered && hovered.width <= 1 && hovered.height <= 1, `Hovering a shared tile must not reveal its caption: ${JSON.stringify(hovered)}`)
+          assert.deepEqual(await reading.boundingBox(), before, "Hovering a shared tile must not move its reading")
+          // Keyboard focus: focus a control inside the tile when it has one, otherwise the stat's own summary (made focusable for the check).
+          const focusable = tile.locator('button, a[href], [tabindex="0"]').first()
+          if (await focusable.count()) await focusable.focus()
+          else await tile.locator("[data-stat-summary]").evaluate(element => { element.setAttribute("tabindex", "-1"); element.focus() })
+          await page.waitForTimeout(200)
+          const focused = await caption.boundingBox()
+          assert.ok(focused && focused.width <= 1 && focused.height <= 1, `Focusing a shared tile must not reveal its caption: ${JSON.stringify(focused)}`)
+          assert.deepEqual(await reading.boundingBox(), before, "Focusing a shared tile must not move its reading")
+          await page.mouse.move(0, 0)
         } else {
           assert.ok(captionBox && captionBox.height >= 12, "Latest valid sample caption must not collapse when inspection controls are present")
         }
