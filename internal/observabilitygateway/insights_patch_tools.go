@@ -32,7 +32,7 @@ func insightsPatchTool(c *InsightsAuthoringClient, singular, collection string) 
 			if err != nil {
 				return nil, err
 			}
-			return c.patch(ctx, collection, args)
+			return insightsWriteResult(c.patch(ctx, collection, args))
 		},
 	}
 }

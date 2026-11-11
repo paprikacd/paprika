@@ -61,6 +61,9 @@ type insightsDocumentResult struct {
 	Document json.RawMessage `json:"document"`
 	ETag     string          `json:"etag"`
 	UIURL    string          `json:"uiUrl"`
+	// Checks is the warnings report of a successful save. It is returned beside
+	// the document, never inside it, so an agent cannot re-PUT it.
+	Checks *insightsv1.CheckReport `json:"-"`
 }
 
 type insightsAuthoringArgs struct {
@@ -243,6 +246,21 @@ func insightsCheckReport(body []byte) *insightsv1.CheckReport {
 	if json.Unmarshal(body, &response) != nil || len(response.Issues) == 0 {
 		return nil
 	}
+	return boundCheckReport(response)
+}
+
+// insightsChecksReport decodes a CheckReport that a successful response or the
+// dry run carries. Unlike insightsCheckReport it keeps an empty report, so a
+// clean document still gets its "Checks passed" verdict.
+func insightsChecksReport(raw []byte) (*insightsv1.CheckReport, error) {
+	var response insightsValidationBody
+	if json.Unmarshal(raw, &response) != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid check report"))
+	}
+	return boundCheckReport(response), nil
+}
+
+func boundCheckReport(response insightsValidationBody) *insightsv1.CheckReport {
 	report := &insightsv1.CheckReport{}
 	for _, raw := range response.Issues {
 		if len(report.GetIssues()) == checkwire.MaxIssues {
@@ -301,6 +319,29 @@ func (c *InsightsAuthoringClient) get(ctx context.Context, collection, id string
 	return c.documentResult(collection, id, body, etag)
 }
 
+// splitInsightsChecks removes the checks member that a checks=true save appends
+// and decodes it. A body without the member (an older service) is returned as is.
+func splitInsightsChecks(body json.RawMessage) (json.RawMessage, *insightsv1.CheckReport, error) {
+	fields, err := insightsPatchObject(body)
+	if err != nil {
+		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid document"))
+	}
+	raw, present := fields["checks"]
+	if !present {
+		return body, nil, nil
+	}
+	report, err := insightsChecksReport(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	delete(fields, "checks")
+	document, err := json.Marshal(fields)
+	if err != nil {
+		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid document"))
+	}
+	return document, report, nil
+}
+
 func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, args insightsAuthoringArgs, create bool) (result *insightsDocumentResult, err error) {
 	var identity struct {
 		ID string `json:"id"`
@@ -318,11 +359,22 @@ func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, ar
 		}
 		headers.Set("If-Match", args.ETag)
 	}
-	body, etag, err := c.request(ctx, http.MethodPut, collection+"/"+identity.ID, args.Document, headers)
+	// checks=true asks for the warnings beside the saved document; the document
+	// itself is returned without them.
+	body, etag, err := c.request(ctx, http.MethodPut, collection+"/"+identity.ID+"?checks=true", args.Document, headers)
 	if err != nil {
 		return nil, err
 	}
-	return c.documentResult(collection, identity.ID, body, etag)
+	document, report, err := splitInsightsChecks(body)
+	if err != nil {
+		return nil, err
+	}
+	result, err = c.documentResult(collection, identity.ID, document, etag)
+	if err != nil {
+		return nil, err
+	}
+	result.Checks = report
+	return result, nil
 }
 
 func (c *InsightsAuthoringClient) documentResult(collection, id string, body json.RawMessage, etag string) (*insightsDocumentResult, error) {

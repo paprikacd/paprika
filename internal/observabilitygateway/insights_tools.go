@@ -17,8 +17,8 @@ const dashboardDocumentSchema = `{"type":"object","description":"Canonical UI da
 // RegisterInsightsTools adds document authoring only when the authenticated
 // Insights proxy is configured. Telemetry tools retain their read-only scope.
 func RegisterInsightsTools(registry *mcp.Registry, c *InsightsAuthoringClient, usage *UsageTracker) error {
-	tools := make([]mcp.Tool, 0, 13)
-	tools = append(tools, insightsListTool(c, "list_insights_providers", "providers"), insightsListTool(c, "list_saved_queries", "saved-queries"), insightsListTool(c, "list_dashboards", "dashboards"), insightsQueryDashboardTool(c), insightsSchemaTool(c))
+	tools := make([]mcp.Tool, 0, 14)
+	tools = append(tools, insightsListTool(c, "list_insights_providers", "providers"), insightsListTool(c, "list_saved_queries", "saved-queries"), insightsListTool(c, "list_dashboards", "dashboards"), insightsQueryDashboardTool(c), insightsSchemaTool(c), insightsValidateTool(c))
 	if c.renderer != nil {
 		tools = append(tools, insightsRenderDashboardTool(c))
 	}
@@ -52,12 +52,13 @@ func insightsListTool(c *InsightsAuthoringClient, name, collection string) mcp.T
 
 // insightsCompositionPointer keeps the dashboard composition rules out of every
 // tool description: clients read them once in the server instructions and in
-// get_insights_schema notes, and only dashboard writes need the reminder.
+// get_insights_schema notes, and only dashboard writes need the reminder. The
+// same writes also point at validate_dashboard and the checks they return.
 func insightsCompositionPointer(singular string) string {
 	if singular != "dashboard" {
 		return ""
 	}
-	return " Follow the dashboard composition rules in the server instructions or get_insights_schema notes."
+	return " Follow the dashboard composition rules in the server instructions or get_insights_schema notes. Call validate_dashboard before saving; warnings come back in checks on every successful write."
 }
 
 func insightsGetTool(c *InsightsAuthoringClient, singular, collection string) mcp.Tool {
@@ -82,6 +83,6 @@ func insightsPutTool(c *InsightsAuthoringClient, singular, collection, documentS
 		if err != nil {
 			return nil, err
 		}
-		return c.put(ctx, collection, args, create)
+		return insightsWriteResult(c.put(ctx, collection, args, create))
 	}}
 }
