@@ -387,3 +387,15 @@ missing reverse proxy in the static Next development server; Go integration
 tests independently exercise the production proxy's authentication and RBAC.
 The script cleans up its service, providers, and temporary files and saves its
 report and screenshots in `artifacts/insights/`.
+
+## Capacity
+
+Insights admits up to 16 query executions at once and holds up to 64 more for
+at most 2 seconds (set in `NewServer`, `internal/insights/server.go`). A query to an
+Observe-backed provider then passes the gateway's HTTP pools and its execution
+budget, so the gateway's own limits, not Insights' 16, usually bind first. At
+defaults a single provider runs 2 queries at once. The full chain, with each
+hop's default, configuration and what a caller sees when it is full, is in
+[docs/guides/observability-gateway.md](../../docs/guides/observability-gateway.md#end-to-end-capacity).
+Insights' own admission is not yet configurable; the gateway's limits are
+(`--observability-query-*` and `--observability-http-*` flags).

@@ -114,7 +114,7 @@ func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
 	completed := make(chan int, 2)
 	release := make(chan struct{})
 	var server *httptest.Server
-	limited := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	limited := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "read failed", http.StatusBadRequest)

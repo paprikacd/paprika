@@ -78,6 +78,7 @@ type k8sBackend struct {
 	client               client.Client
 	budget               *executionBudget
 	budgetOnce           sync.Once
+	budgetConfig         BudgetConfig // zero value means DefaultBudgetConfig
 	credentialAuthorizer auth.Authorizer
 
 	// newConnector builds the Connector for a provider type. It exists so
@@ -99,10 +100,22 @@ func NewBackend(client client.Client) Backend {
 func (b *k8sBackend) executionBudget() *executionBudget {
 	b.budgetOnce.Do(func() {
 		if b.budget == nil {
-			b.budget = newExecutionBudget(maxConcurrentQuery, queryTimeout)
+			cfg := b.budgetConfig
+			if cfg == (BudgetConfig{}) {
+				cfg = DefaultBudgetConfig()
+			}
+			b.budget = newExecutionBudgetFromConfig(cfg, queryTimeout)
 		}
 	})
 	return b.budget
+}
+
+// NewAuthorizedBackendWithBudget is NewAuthorizedBackend with an execution
+// budget sized by the caller. The caller validates cfg; a zero cfg means
+// DefaultBudgetConfig.
+func NewAuthorizedBackendWithBudget(k8sClient client.Client, authorizer auth.Authorizer, cfg BudgetConfig) Backend {
+	inner := &k8sBackend{client: k8sClient, credentialAuthorizer: authorizer, budgetConfig: cfg}
+	return &authorizedBackend{backend: inner, authorizer: authorizer}
 }
 
 // NewConnectorRegistry registers the built-in connectors. It is the

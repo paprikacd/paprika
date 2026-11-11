@@ -790,6 +790,48 @@ observabilityGateway:
   ## status. 0 disables status writes.
   probeInterval: 5m
 
+  ## Query-path capacity per gateway process. The defaults are the built-in
+  ## values. The gateway validates the combination at startup and refuses to
+  ## start on one that cannot work, naming the value to change. Durations need
+  ## a unit ("5s"); "0s" rejects at once. Docs: docs/guides/observability-gateway.md
+  ## ("End-to-end capacity").
+  capacity:
+    ## Queries executing at once across all providers (1-1024). Also the
+    ## default for httpWorkSlots, and the cap on httpDashboardSlots.
+    queryConcurrency: 4
+    ## Queries executing at once per provider (1 to queryConcurrency). 0 means
+    ## min(2, queryConcurrency). Provider listing shares this per-provider
+    ## bulkhead, so 1 also serialises listings.
+    queryProviderConcurrency: 0
+    ## Queries waiting for a slot across all providers (0-65536). With 0, set
+    ## queryProviderQueue to 0 as well.
+    queryQueue: 32
+    ## Queries waiting for one provider's slot. Must not exceed queryQueue.
+    queryProviderQueue: 8
+    ## Longest a query waits for a slot. Above 0 and below the 30s request
+    ## timeout. The sum of httpAdmissionWait, the 2s MCP rate queue, this wait
+    ## and the 30s execution budget must not exceed 40s, which leaves 5s before
+    ## the 45s write timeout. Durations below 1ms are refused.
+    queryQueueWait: 5s
+    ## HTTP slots for MCP data-tool requests (0-65536). 0 means queryConcurrency.
+    ## Explicit values may go up to queryConcurrency + queryQueue. Up to
+    ## queryQueue requests may wait at the edge for a slot, so the edge admits
+    ## the same burst the budget can queue (4 running + 32 waiting at defaults).
+    httpWorkSlots: 0
+    ## HTTP slots for provider discovery and MCP handshakes. 0 follows httpWorkSlots.
+    httpCatalogSlots: 0
+    ## HTTP slots for orchestration tools, query_dashboard and render_dashboard,
+    ## which run nested data requests (0-65536). 0 means min(2, queryConcurrency).
+    ## Explicit values may go up to queryConcurrency. Not tied to queryProviderConcurrency.
+    httpDashboardSlots: 0
+    ## Slots held only while a body is read and classified (0-65536). 0 means
+    ## twice httpWorkSlots. Not a cap on all in-flight requests.
+    httpIntakeSlots: 0
+    ## One deadline per request, shared by its intake and pool waits. At most
+    ## 5s; "0s" refuses at once. Must not exceed queryQueueWait. A refused
+    ## request gets 429 with Retry-After: 1.
+    httpAdmissionWait: 1s
+
   # Avoid overlapping gateways unless every component's state has been
   # configured and verified for the intended replica count.
   strategy:
