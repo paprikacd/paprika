@@ -359,6 +359,31 @@ func in(segment string, err error) error {
 	return &pointedError{pointer: "/" + escapePointerSegment(segment), message: err.Error()}
 }
 
+// decodeMember decodes raw into v for a validator that reports message. encoding/json
+// names the first member of the wrong JSON type in UnmarshalTypeError.Field, so a
+// wrong member is reported at that member and not at a valid neighbour. Any other
+// failure, such as a value that is not an object, names the element itself.
+func decodeMember(raw []byte, v any, message string) error {
+	err := json.Unmarshal(raw, v)
+	if err == nil {
+		return nil
+	}
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) && typeErr.Field != "" {
+		return errAt(fieldPointer(typeErr.Field), message)
+	}
+	return errors.New(message)
+}
+
+// fieldPointer turns the dotted member path encoding/json reports into a JSON Pointer.
+func fieldPointer(path string) string {
+	var pointer strings.Builder
+	for _, segment := range strings.Split(path, ".") {
+		pointer.WriteString("/" + escapePointerSegment(segment))
+	}
+	return pointer.String()
+}
+
 // maxKeyPointerBytes is the longest member name a finding names exactly. A
 // longer submitted key would only make the pointer long, so the finding names
 // the object that holds it.

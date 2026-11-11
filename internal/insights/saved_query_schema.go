@@ -328,12 +328,18 @@ func validateQueryBindings(rawBindings json.RawMessage, tooltip bool) error {
 	return nil
 }
 
-type queryBinding struct{ Parameter, Source, Variable, Label, Field string }
+type queryBinding struct {
+	Parameter string `json:"parameter"`
+	Source    string `json:"source"`
+	Variable  string `json:"variable"`
+	Label     string `json:"label"`
+	Field     string `json:"field"`
+}
 
 func validateQueryBinding(rawBinding json.RawMessage, tooltip bool, seen map[string]bool) error {
 	var binding queryBinding
-	if json.Unmarshal(rawBinding, &binding) != nil {
-		return errors.New("saved query bindings require unique valid parameter names")
+	if err := decodeMember(rawBinding, &binding, "saved query bindings require unique valid parameter names"); err != nil {
+		return err
 	}
 	if !validVariableName(binding.Parameter) || seen[binding.Parameter] {
 		return fieldErr("parameter", "saved query bindings require unique valid parameter names")

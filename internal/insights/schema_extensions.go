@@ -82,8 +82,8 @@ func validateDashboardTimeRange(raw json.RawMessage) error {
 		From string `json:"from"`
 		To   string `json:"to"`
 	}
-	if json.Unmarshal(raw, &bounds) != nil {
-		return errors.New("custom time bounds must be ISO datetimes with timezones")
+	if err := decodeMember(raw, &bounds, "custom time bounds must be ISO datetimes with timezones"); err != nil {
+		return err
 	}
 	if !timezoneDateTime.MatchString(bounds.From) {
 		return errAt("/from", "custom time bounds must be ISO datetimes with timezones")
@@ -319,8 +319,8 @@ func validateTooltipSource(raw json.RawMessage) (string, error) {
 		ProviderID string `json:"providerId"`
 		Query      string `json:"query"`
 	}
-	if json.Unmarshal(raw, &source) != nil {
-		return "", errors.New("tooltip source must be an object")
+	if err := decodeMember(raw, &source, "tooltip source must be an object"); err != nil {
+		return "", err
 	}
 	if source.Type == "series" || source.Type == "widget" {
 		_, err := requireObjectShape(raw, []string{"type"}, nil)
@@ -529,8 +529,8 @@ func validateWidgetReferenceLine(raw json.RawMessage) error {
 		Label string  `json:"label"`
 		Color string  `json:"color"`
 	}
-	if json.Unmarshal(raw, &line) != nil {
-		return errors.New("reference lines require a finite value")
+	if err := decodeMember(raw, &line, "reference lines require a finite value"); err != nil {
+		return err
 	}
 	if !finite(line.Value) {
 		return fieldErr("value", "reference lines require a finite value")
@@ -660,8 +660,8 @@ func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
 		Value string `json:"value"`
 		Color string `json:"color"`
 	}
-	if json.Unmarshal(entry, &rule) != nil {
-		return [2]string{}, errors.New("series colors require a valid metric label, nonempty value, and six-digit hex color")
+	if err := decodeMember(entry, &rule, "series colors require a valid metric label, nonempty value, and six-digit hex color"); err != nil {
+		return [2]string{}, err
 	}
 	if !validPromLabel.MatchString(rule.Label) || len(rule.Label) > 100 {
 		return [2]string{}, fieldErr("label", "series colors require a valid metric label, nonempty value, and six-digit hex color")
@@ -710,8 +710,8 @@ func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, er
 		Color  string  `json:"color"`
 		Label  string  `json:"label"`
 	}
-	if err := json.Unmarshal(raw, &threshold); err != nil {
-		return 0, errors.New("threshold value must be a number, and status, color and label must be strings")
+	if err := decodeMember(raw, &threshold, "threshold value must be a number, and status, color and label must be strings"); err != nil {
+		return 0, err
 	}
 	if !finite(threshold.Value) || threshold.Value <= previous {
 		return 0, fieldErr("value", "thresholds require increasing finite values")
@@ -853,8 +853,8 @@ func validateTooltipBinding(rawBinding json.RawMessage, seen map[string]bool) er
 		Label    string `json:"label"`
 		Field    string `json:"field"`
 	}
-	if json.Unmarshal(rawBinding, &binding) != nil {
-		return errors.New("tooltip bindings require unique valid variable names")
+	if err := decodeMember(rawBinding, &binding, "tooltip bindings require unique valid variable names"); err != nil {
+		return err
 	}
 	if !validVariableName(binding.Variable) || seen[binding.Variable] {
 		return fieldErr("variable", "tooltip bindings require unique valid variable names")
