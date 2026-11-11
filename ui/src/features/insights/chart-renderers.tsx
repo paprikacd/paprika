@@ -48,6 +48,7 @@ import {
 } from "./widget-context";
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { EMPTY_OPTIONS, PALETTE, thresholdForValue, usePlotSize, type Point, type Series } from "./chart-renderer-shared";
+import { widgetSeriesColors } from "./series-colors";
 import { thresholdInk, thresholdPaint, thresholdText } from "./status";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
@@ -152,7 +153,7 @@ function Stat({
             series={first.entry}
             name={first.name}
             unit={widget.unit}
-            color={color ?? PALETTE[0]}
+            color={color ?? widgetSeriesColors(series, widget)[first.index]?.color ?? PALETTE[0]}
             onSelect={
               onContextChange
                 ? () => onContextChange(metricContext(first.entry, first.index))

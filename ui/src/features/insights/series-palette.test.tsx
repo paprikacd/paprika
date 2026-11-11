@@ -26,8 +26,8 @@ const base: Widget = {
 };
 
 /** The stroke each drawn series line carries, in draw order. jsdom keeps SVG presentation values verbatim, var() included. */
-function drawnStrokes(widget: Widget): string[] {
-  const { container } = render(<WidgetVisualization widget={widget} result={{ series }} />);
+function drawnStrokes(widget: Widget, drawn: typeof series = series): string[] {
+  const { container } = render(<WidgetVisualization widget={widget} result={{ series: drawn }} />);
   return [...container.querySelectorAll("path[stroke]")].map((path) => path.getAttribute("stroke") ?? "");
 }
 
@@ -41,9 +41,10 @@ describe("shared series palette in time-series renderers", () => {
     expect(PALETTE[8 % PALETTE.length]).toBe(PALETTE[0]);
   });
 
-  // Name mode (the default): catalog hashes to slot 1, checkout to slot 2 and worker to slot 8 (FNV-1a of each name).
+  // Name mode (the default). The identity is the labels, service=<name>, so catalog, checkout and worker take the
+  // slots their identities hash to (1, 6 and 3), not their positions.
   it("draws each series in its identity slot, not its position", () => {
-    expect(drawnStrokes(base)).toEqual([seriesSlot(0), seriesSlot(1), seriesSlot(7)]);
+    expect(drawnStrokes(base)).toEqual([seriesSlot(1), seriesSlot(6), seriesSlot(3)]);
   });
 
   it("keeps the older position slots when a widget asks for index mode", () => {
@@ -52,17 +53,22 @@ describe("shared series palette in time-series renderers", () => {
 
   it("draws an authored label rule for its series only, and leaves the other slots", () => {
     const widget: Widget = { ...base, options: { ...base.options, seriesColors: [{ label: "service", value: "checkout", color: "#15c7a1" }] } };
-    expect(drawnStrokes(widget)).toEqual([seriesSlot(0), "#15c7a1", seriesSlot(7)]);
+    expect(drawnStrokes(widget)).toEqual([seriesSlot(1), "#15c7a1", seriesSlot(3)]);
   });
 
-  // The widget colour goes to the first series in identity order (catalog), not the first in result order.
-  it("keeps a widget colour on the first series ahead of its slot", () => {
-    expect(drawnStrokes({ ...base, color: "#aa1122" })).toEqual(["#aa1122", seriesSlot(1), seriesSlot(7)]);
+  // A widget colour applies only when the widget draws one series. With three series it is ignored.
+  it("ignores a widget colour on a multi-series widget", () => {
+    expect(drawnStrokes({ ...base, color: "#aa1122" })).toEqual([seriesSlot(1), seriesSlot(6), seriesSlot(3)]);
+  });
+
+  it("applies a widget colour to a single-series widget ahead of its slot", () => {
+    expect(drawnStrokes({ ...base, color: "#aa1122" }, series.slice(1, 2))).toEqual(["#aa1122"]);
   });
 
   it("draws a role rule as its named token, ahead of the slot", () => {
     const widget: Widget = { ...base, options: { ...base.options, seriesColors: [{ label: "service", value: "worker", role: "server-error" }] } };
-    expect(drawnStrokes(widget)).toEqual([seriesSlot(0), seriesSlot(1), seriesRole("server-error")]);
+    // server-error claims slot 7 (zero-based 6), so checkout, whose home is 6, steps to the next free slot.
+    expect(drawnStrokes(widget)).toEqual([seriesSlot(1), seriesSlot(7), seriesRole("server-error")]);
   });
 
   it("resolves a role rule to its named token and leaves unmatched series on their slots", () => {

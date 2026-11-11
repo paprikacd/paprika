@@ -46,14 +46,16 @@ export function resolveSeriesColor(labels: Readonly<Record<string, string>>, rul
 
 /**
  * Well-known labels that name a role without an authored rule. Only these keys are recognised:
- * - status, status_code, http_status, http_status_code or response_code: a three-digit HTTP code, or a 2xx, 4xx or 5xx
- *   class, maps to success, client-error or server-error. 1xx and 3xx codes have no role.
+ * - status, status_code, http_status, http_status_code or response_code, carrying a status class (2xx, 4xx or 5xx).
+ *   Class values only: a numeric code such as 200 or 500 never takes a role, because codes that share a role would
+ *   share a colour. Numeric codes take their identity colour, so 200 and 201 stay distinct.
  * - quantile (0.5, 0.95, 0.99, or p50, p95, p99) or percentile (50, 95, 99, or p50, p95, p99) map to p50, p95 and p99.
  * Histogram bucket bounds (le) are not quantiles and are never read here. Series names are never parsed.
  */
 export const WELL_KNOWN_STATUS_LABELS = ["status", "status_code", "http_status", "http_status_code", "response_code"] as const;
 /** Quantile labels; the value names the percentile, as 0.5 or p50 for quantile, and 50 or p50 for percentile. */
 export const WELL_KNOWN_PERCENTILE_LABELS = ["quantile", "percentile"] as const;
+const STATUS_CLASS = /^([245])xx$/i;
 const STATUS_CLASS_ROLES: Readonly<Record<string, SeriesRole>> = { "2": "success", "4": "client-error", "5": "server-error" };
 const QUANTILE_ROLES = new Map<number, SeriesRole>([[0.5, "p50"], [0.95, "p95"], [0.99, "p99"]]);
 const PERCENTILE_ROLES = new Map<number, SeriesRole>([[50, "p50"], [95, "p95"], [99, "p99"]]);
@@ -64,7 +66,7 @@ const percentileName = (value: string): SeriesRole | undefined => {
 };
 
 function statusClassRole(value: string | undefined): SeriesRole | undefined {
-  const match = /^([1-5])(?:\d{2}|xx)$/i.exec(value ?? "");
+  const match = STATUS_CLASS.exec(value ?? "");
   return match ? STATUS_CLASS_ROLES[match[1]] : undefined;
 }
 
@@ -83,16 +85,39 @@ export function wellKnownSeriesRole(labels: Readonly<Record<string, string>>): S
   return undefined;
 }
 
-/**
- * The identity a series keeps across widgets and refreshes: its name, or its labels when it has none. It is the name
- * series-display.ts shows in full, never a shortened label. Labels are sorted so their order cannot change it.
- */
-export function seriesIdentity(subject: SeriesColorSubject): string {
-  if (subject.name) return subject.name;
-  return Object.keys(subject.labels ?? {}).sort().map(key => `${key}=${subject.labels![key]}`).join(", ");
+export interface SeriesColorSubject {
+  name?: string;
+  labels?: Readonly<Record<string, string>>;
 }
 
-/** FNV-1a, 32 bit, over the UTF-8 bytes of the text. Deterministic across engines; the palette slot is the low three bits. */
+/** The labels that make up identity: every label but __name__, sorted, so label order cannot change it. */
+function identityLabelText(labels: Readonly<Record<string, string>> | undefined): string {
+  return Object.keys(labels ?? {})
+    .filter(key => key !== "__name__")
+    .sort()
+    .map(key => `${key}=${labels![key]}`)
+    .join(", ");
+}
+
+/**
+ * The identity a series keeps across widgets, refreshes and providers. It is its labels (without __name__), so a
+ * Prometheus series {service="checkout"} and a record group whose service is "checkout" share one identity. A series
+ * with no such labels is identified by its name.
+ */
+export function seriesIdentity(subject: SeriesColorSubject): string {
+  return identityLabelText(subject.labels) || subject.name || "";
+}
+
+/**
+ * A series with no identity of its own: no labels besides __name__, and a name that is absent or only a fallback
+ * ("Value", "Series N"). All such series draw the first slot, so a lone unlabelled series reads the same everywhere.
+ */
+const GENERIC_NAME = /^(Value|Series \d+)$/;
+export function isGenericSeries(subject: SeriesColorSubject): boolean {
+  return !identityLabelText(subject.labels) && (!subject.name || GENERIC_NAME.test(subject.name));
+}
+
+/** FNV-1a, 32 bit, over the UTF-8 bytes of the text. */
 export function fnv1a32(text: string): number {
   let hash = 0x811c9dc5;
   for (const byte of new TextEncoder().encode(text)) {
@@ -102,15 +127,30 @@ export function fnv1a32(text: string): number {
   return hash >>> 0;
 }
 
-export interface SeriesColorSubject {
-  name?: string;
-  labels?: Readonly<Record<string, string>>;
+/** The murmur3 finaliser. FNV-1a's low bits depend on few input bits, so the finaliser spreads every bit before the slot is taken. */
+function fmix32(hash: number): number {
+  let h = hash >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/** The home palette slot of an identity. */
+export function identitySlot(identity: string): number {
+  return fmix32(fnv1a32(identity)) % SERIES_SLOTS;
 }
 
 export interface SeriesColorInput {
   mode?: SeriesColorMode;
   rules?: readonly SeriesColorRule[];
-  /** The widget's own colour. It applies to the first series in identity order, unless a rule or a well-known label names one. */
+  /**
+   * The widget's own colour. In name mode it applies only when the widget draws a single series, and then it
+   * overrides that series' hashed slot (not a rule, a well-known role, or the generic slot). In index mode it applies
+   * to the first position, as it always has.
+   */
   widgetColor?: string;
 }
 
@@ -132,12 +172,6 @@ function roleChoice(role: SeriesRole): SeriesColorChoice {
 
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/**
- * One colour per series, in the order of `subjects`. Name mode is independent of that order: series are visited in
- * identity order and a hashed series steps to the next free slot when its home slot is taken, so no two series in
- * one widget share a slot while slots remain. Precedence: an authored rule, then a well-known label role, then the
- * widget colour, then the hashed slot. Index mode keeps the older order-based slots.
- */
 /** Subjects in identity order, ties broken by their labels and then their position. */
 function identityOrder(subjects: readonly SeriesColorSubject[]) {
   return subjects
@@ -154,6 +188,13 @@ export function widgetColorSeriesIndex(subjects: readonly SeriesColorSubject[], 
   return mode === "index" ? 0 : identityOrder(subjects)[0].index;
 }
 
+/**
+ * One colour per series, in the order of `subjects`. Name mode does not depend on that order: series are visited in
+ * identity order, and a hashed series steps to the next free slot when its home slot is taken, so no two series in
+ * one widget share a slot while slots remain. Precedence: an authored rule, a well-known label role, the widget colour
+ * (single-series widgets only), then the hashed slot; a series with no identity takes slot 0. Index mode keeps the
+ * older order-based slots.
+ */
 export function assignSeriesColors(subjects: readonly SeriesColorSubject[], input: SeriesColorInput = {}): SeriesColorChoice[] {
   const rules = input.rules ?? [];
   const widgetColor = input.widgetColor;
@@ -168,7 +209,7 @@ export function assignSeriesColors(subjects: readonly SeriesColorSubject[], inpu
   const order = identityOrder(subjects);
   const choices: (SeriesColorChoice | undefined)[] = new Array(subjects.length);
   const taken = new Set<number>();
-  // Authored rules and well-known labels come first. Roles reserve their slot so hashed series keep off it.
+  // Authored rules and well-known roles first. A role reserves its slot so that hashed series keep off it.
   for (const { index } of order) {
     const labels = subjects[index].labels ?? {};
     const rule = matchingSeriesRule(labels, rules);
@@ -183,11 +224,17 @@ export function assignSeriesColors(subjects: readonly SeriesColorSubject[], inpu
       taken.add(SERIES_ROLE_SLOT[role] - 1);
     }
   }
-  // The widget colour goes to the first series in identity order, when nothing above names that series.
-  if (widgetColor && order.length && choices[order[0].index] === undefined) choices[order[0].index] = { color: widgetColor };
+  // The widget colour applies only when the widget draws one series, and only where nothing above names it.
+  if (widgetColor && subjects.length === 1 && choices[0] === undefined) choices[0] = { color: widgetColor };
+  // Series with no identity take slot 0 before any hashed series is placed, so hashed series step around it.
+  for (const { index } of order) {
+    if (choices[index] || !isGenericSeries(subjects[index])) continue;
+    choices[index] = { color: seriesSlot(0), slot: 0 };
+    taken.add(0);
+  }
   for (const { index, identity } of order) {
     if (choices[index]) continue;
-    const home = fnv1a32(identity) % SERIES_SLOTS;
+    const home = identitySlot(identity);
     let slot = home;
     for (let step = 0; step < SERIES_SLOTS && taken.has(slot); step++) slot = (slot + 1) % SERIES_SLOTS;
     // Every slot is taken: repeat the home slot rather than the next one, so the repeat is still this series' own.
@@ -207,8 +254,8 @@ export interface SeriesColorWidget {
 /**
  * The colour of every series in a result, in result order. Renderers call this with the whole result, never a
  * zoomed, filtered or truncated slice, so hiding or zooming a series cannot recolour the others.
+ * `rules` replaces the widget's options.seriesColors; rich metrics passes the rules from its plugin configuration.
  */
-/** `rules` replaces the widget's options.seriesColors; rich metrics passes the rules from its plugin configuration. */
 export function widgetSeriesColors(series: readonly SeriesColorSubject[], widget: SeriesColorWidget, rules?: readonly SeriesColorRule[]): SeriesColorChoice[] {
   return assignSeriesColors(series, { mode: widget.options?.seriesColorMode, rules: rules ?? widget.options?.seriesColors, widgetColor: widget.color });
 }

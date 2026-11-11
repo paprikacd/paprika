@@ -26,7 +26,7 @@ const configSchema = z.strictObject({
 })
 type Config = z.infer<typeof configSchema>
 type Datum = { x:number; value:number|null; row:RecordFrame["rows"][number] }
-type PlotSeries = {name:string;key:string;right:boolean;unit:string;points:Datum[]}
+type PlotSeries = {name:string;key:string;group?:string;right:boolean;unit:string;points:Datum[]}
 
 function plotData(frame:RecordFrame, config:Config) {
   const locate = (name:string) => {const index=frame.columns.findIndex(c=>c.key===name);if(index<0)throw new Error(`Missing chart column “${name}”.`);return index}
@@ -42,13 +42,13 @@ function plotData(frame:RecordFrame, config:Config) {
       const at=position(row[x]);if(!Number.isFinite(at)){omitted++;continue}
       const groupName=group>=0?String(row[group]??"Unknown"):"", id=JSON.stringify([name,group>=0?row[group]:null])
       let series=groups.get(id)
-      if(!series){series={name:[groupName,frame.columns[y].label??name].filter(Boolean).join(" · "),key:name,right:config.rightAxis?.includes(name)??false,unit:frame.columns[y].unit??"",points:[]};groups.set(id,series)}
+      if(!series){series={name:[groupName,frame.columns[y].label??name].filter(Boolean).join(" · "),key:name,group:group>=0?groupName:undefined,right:config.rightAxis?.includes(name)??false,unit:frame.columns[y].unit??"",points:[]};groups.set(id,series)}
       if(series.points.some(point=>point.x===at))throw new Error("Duplicate chart coordinates. Aggregate the source query or choose a grouping column.")
       series.points.push({x:at,value:typeof row[y]==="number"?row[y] as number:null,row})
     }
   }
   const series=[...groups.values()].map(entry=>({...entry,points:entry.points.toSorted((a,b)=>a.x-b.x)}))
-  return {series,position,category,categories,omitted,xColumn:frame.columns[x]}
+  return {series,position,category,categories,omitted,xColumn:frame.columns[x],groupKey:config.group}
 }
 
 function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererProps & {bar?:boolean}) {
@@ -68,7 +68,9 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const accessiblePoints=useMemo(()=>data?.series.slice(0,24).flatMap((entry,seriesIndex)=>entry.points.filter(point=>!zoom||point.x>=zoom.start&&point.x<=zoom.end).slice(0,bar?100:1000).filter(point=>point.value!==null).map(point=>({seriesIndex,point})))??[],[data,zoom,bar])
   const lensSeries=useMemo(()=>data?.xColumn.type==="timestamp"?data.series.slice(0,24).map(entry=>({name:entry.name,labels:{},points:entry.points.map(point=>({timestamp:point.x,value:point.value}))})):[],[data])
   // Each column keeps its colour across zoom and refresh. Records carry no labels, so the series name is its identity.
-  const seriesColors=useMemo(()=>assignSeriesColors(data?.series.map(entry=>({name:entry.name}))??[],{mode:widget.options?.seriesColorMode,widgetColor:widget.color}),[data,widget.color,widget.options?.seriesColorMode])
+  // Identity is the group's label, so a record group "checkout" shares a colour with the Prometheus series {service="checkout"}.
+  // Without a group, the column is the identity.
+  const seriesColors=useMemo(()=>assignSeriesColors(data?.series.map(entry=>({name:entry.key,labels:entry.group!==undefined&&data.groupKey?{[data.groupKey]:entry.group}:undefined}))??[],{mode:widget.options?.seriesColorMode,widgetColor:widget.color}),[data,widget.color,widget.options?.seriesColorMode])
   const colorOf=(index:number)=>seriesColors[index]?.color??seriesSlot(index)
   useEffect(()=>{
     const element=plot.current
