@@ -50,6 +50,6 @@ export function SeriesColorEditor({ config, onChange }: { config: Record<string,
         <GammaButton size="sm" variant="quiet" aria-label={`Remove color rule ${index + 1}`} onClick={() => update(entries.filter((_, i) => i !== index))}>Remove color</GammaButton>
       </fieldset>;
     })}
-    <GammaButton size="sm" disabled={!editable || entries.length >= 24} onClick={() => update([...entries, { label: "", value: "", color: DEFAULT_HEX }])}>Add series color</GammaButton>
+    <GammaButton size="sm" disabled={!editable || entries.length >= 24} onClick={() => update([...entries, { label: "", value: "", role: "traffic" }])}>Add series color</GammaButton>
   </section>;
 }
