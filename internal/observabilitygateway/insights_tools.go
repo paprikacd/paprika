@@ -50,6 +50,16 @@ func insightsListTool(c *InsightsAuthoringClient, name, collection string) mcp.T
 	}}
 }
 
+// insightsCompositionPointer keeps the dashboard composition rules out of every
+// tool description: clients read them once in the server instructions and in
+// get_insights_schema notes, and only dashboard writes need the reminder.
+func insightsCompositionPointer(singular string) string {
+	if singular != "dashboard" {
+		return ""
+	}
+	return " Follow the dashboard composition rules in the server instructions or get_insights_schema notes."
+}
+
 func insightsGetTool(c *InsightsAuthoringClient, singular, collection string) mcp.Tool {
 	return mcp.Tool{Name: "get_" + singular, Description: "Get the current canonical " + singular + ", its exact ETag and UI URL. Keep all unchanged fields when constructing an update. Changes saved through MCP use the same storage as the UI.", Scope: mcp.ScopeObserve, InputSchema: json.RawMessage(`{"type":"object","properties":{"id":` + insightsIDSchema + `},"required":["id"],"additionalProperties":false}`), Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
 		args, err := decodeInsightsAuthoringArgs(raw)
@@ -67,7 +77,7 @@ func insightsPutTool(c *InsightsAuthoringClient, singular, collection, documentS
 		action, required, extra = "update", `["document","etag"]`, `,"etag":`+insightsETagSchema
 		description = "Update a document only if its exact ETag is still current. Get the latest first; a conflict requires reviewing and rebuilding the change, never blindly retrying."
 	}
-	return mcp.Tool{Name: action + "_" + singular, Description: description + " Requires paprika:observe, paprika:insights:write and human Insights write permission. The document is validated by the same service as the UI. Active clean UI views refresh automatically; unsaved drafts are preserved.", Scope: mcp.ScopeInsightsWrite, InputSchema: json.RawMessage(`{"type":"object","properties":{"document":` + documentSchema + extra + `},"required":` + required + `,"additionalProperties":false}`), Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
+	return mcp.Tool{Name: action + "_" + singular, Description: description + " Requires paprika:observe, paprika:insights:write and human Insights write permission. The document is validated by the same service as the UI. Active clean UI views refresh automatically; unsaved drafts are preserved." + insightsCompositionPointer(singular), Scope: mcp.ScopeInsightsWrite, InputSchema: json.RawMessage(`{"type":"object","properties":{"document":` + documentSchema + extra + `},"required":` + required + `,"additionalProperties":false}`), Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
 		args, err := decodeInsightsAuthoringArgs(raw)
 		if err != nil {
 			return nil, err

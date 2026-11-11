@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 )
 
 const maxSchemaResponseBytes = 64 << 10
@@ -18,9 +19,12 @@ type authoringSchemaResponse struct {
 	Notes         []string          `json:"notes"`
 }
 
-const schemaWidgetExample = `{"id":"request-rate","title":"Request rate","type":"stat","providerId":"metrics-provider-id","query":"sum(rate(http_requests_total{service={{service}}}[5m]))","unit":"req/s","queryRef":{"id":"service-request-rate","bindings":[{"parameter":"service","source":"variable","variable":"service"}]},"options":{"decimals":2,"showSparkline":true,"sparklinePlacement":"side","statIcon":"activity","showStatBar":true,"min":0,"max":100},"layout":{"x":0,"y":0,"w":4,"h":2}}`
+const schemaWidgetExample = `{"id":"request-rate","title":"Request rate","type":"stat","providerId":"metrics-provider-id","query":"sum(rate(http_requests_total{service={{service}}}[5m]))","unit":"req/s","queryRef":{"id":"service-request-rate","bindings":[{"parameter":"service","source":"variable","variable":"service"}]},"options":{"decimals":2,"showSparkline":true},"layout":{"x":0,"y":0,"w":4,"h":2}}`
+
+// schemaBoundedStatExample is the bounded-scale stat. Its bar length is the reading (the share of an error budget that remains), so the explicit 0-100 scale and budget thresholds are meaningful; it sits beside the compact stat in both the widget and dashboard examples.
+const schemaBoundedStatExample = `{"id":"error-budget-remaining","title":"Error budget remaining","description":"Share of the 30-day downtime allowance for a 99.9% availability objective that is still unused.","type":"stat","providerId":"metrics-provider-id","query":"100 * (1 - (1 - sum(rate(http_requests_total{code!~\"5..\"}[30d])) / sum(rate(http_requests_total[30d]))) / 0.001)","unit":"%","options":{"decimals":1,"showStatBar":true,"min":0,"max":100,"thresholds":[{"value":0,"color":"#e8554e"},{"value":25,"color":"#f2b236"},{"value":50,"color":"#20cba3"}]},"layout":{"x":4,"y":0,"w":4,"h":3}}`
 const schemaSavedQueryExample = `{"schemaVersion":1,"id":"service-request-rate","name":"Service request rate","description":"Requests per second for the selected service.","tags":["service","requests"],"metadata":{"signal":"request-rate"},"providerId":"metrics-provider-id","kind":"metrics","query":"sum(rate(http_requests_total{service={{service}}}[5m]))","parameters":[{"name":"service","type":"string","defaultValue":"checkout"}]}`
-const schemaDashboardExample = `{"schemaVersion":1,"id":"service-overview","title":"Service overview","timeRange":"1h","refreshInterval":30,"variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","payments"]}],"widgets":[` + schemaWidgetExample + `]}`
+const schemaDashboardExample = `{"schemaVersion":1,"id":"service-overview","title":"Service overview","timeRange":"1h","refreshInterval":30,"variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","payments"]}],"widgets":[` + schemaWidgetExample + `,` + schemaBoundedStatExample + `]}`
 const schemaRecordWidgetExample = `{"id":"service-records","title":"Service records","type":"plugin","pluginId":"record-table","dataKind":"records","config":{"pageSize":20,"density":"compact","showSearch":false},"providerId":"records-provider-id","query":"SELECT service, requests FROM reporting.service_summary","unit":"","queryRef":{"id":"service-records","bindings":[{"parameter":"service","source":"variable","variable":"service"}]},"layout":{"x":0,"y":2,"w":12,"h":5}}`
 const schemaStyledTableExample = `{"id":"service-capacity","title":"Service capacity","type":"plugin","pluginId":"record-table","dataKind":"records","providerId":"records-provider-id","query":"{\"sql\":\"SELECT service, utilization, health FROM reporting.service_summary\"}","unit":"","config":{"columns":["service","utilization","health"],"density":"compact","showSearch":false,"cellStyles":[{"column":"utilization","display":"bar","min":0,"max":100,"unit":"%","barColorMode":"value"},{"column":"health","display":"status-badge","mappings":[{"value":"Healthy","color":"#20cba3"},{"value":"At risk","color":"#e8554e"}]}]},"options":{"thresholds":[{"value":0,"color":"#20cba3","label":"Normal"},{"value":80,"color":"#e8554e","label":"High"}]},"layout":{"x":0,"y":2,"w":6,"h":4}}`
 const schemaGroupedTreemapExample = `{"id":"market-composition","title":"Market composition","type":"plugin","pluginId":"record-treemap","dataKind":"records","providerId":"records-provider-id","query":"{\"sql\":\"SELECT symbol, sector, market_cap, short_interest FROM reporting.companies\"}","unit":"","config":{"label":"symbol","value":"market_cap","group":"sector","colorField":"short_interest","colorMin":0,"colorMax":20},"options":{"decimals":1,"showTooltip":true},"layout":{"x":6,"y":2,"w":6,"h":4}}`
@@ -77,6 +81,11 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 			"incident-calendar uses dataKind=records with config {date?:string,value?:string,label?:string,status?:string,aggregation?:count|sum|max,colorMode?:intensity|thresholds,months?:1..6,endDate?:YYYY-MM-DD}; defaults are date, count, intensity colors and 3 months ending at the latest returned date. Dates use UTC and must be valid calendar dates or ISO timestamps; numeric dates are Unix milliseconds. Sum/max require a numeric value field, while count counts observed rows. In thresholds colorMode, options.thresholds color the aggregated daily value; unmapped values remain neutral. Days without observations stay unknown rather than becoming zero. Explicit endDate controls the visible UTC month window.",
 		},
 	}
+	if kind == "dashboard" || kind == "widget" {
+		response.Notes = append(response.Notes, "Stat examples (widget and dashboard kinds): request-rate is the compact stat (layout h<=2, title, value, decimals and at most one sparkline, no bar). error-budget-remaining is the bounded-scale stat: showStatBar with explicit min and max, thresholds at the budget bands and layout h>=3. Compact stat (h<=2) = title + value + at most one sparkline. showStatBar is for a bounded quantity with explicit min and max; the h>=3 height is an authoring rule that the validator does not enforce.")
+		response.Notes = append(response.Notes, guidance.DashboardComposition()...)
+		response.Notes = append(response.Notes, guidance.DashboardWorkflow()...)
+	}
 	encoded, err := json.Marshal(response)
 	if err != nil || len(encoded) > maxSchemaResponseBytes {
 		writeError(w, http.StatusInternalServerError, "authoring schema exceeds its response limit")
@@ -93,7 +102,7 @@ func authoringSchemaExamples(kind string) []json.RawMessage {
 	examples := []json.RawMessage{authoringSchemaExample(kind)}
 	switch kind {
 	case "widget":
-		return append(examples, json.RawMessage(schemaRecordWidgetExample), json.RawMessage(schemaStackedWidgetExample), json.RawMessage(schemaGaugeBankExample), json.RawMessage(schemaDistributionExample), json.RawMessage(schemaConnectionMapExample), json.RawMessage(schemaStyledTableExample), json.RawMessage(schemaGroupedTreemapExample))
+		return append(examples, json.RawMessage(schemaBoundedStatExample), json.RawMessage(schemaRecordWidgetExample), json.RawMessage(schemaStackedWidgetExample), json.RawMessage(schemaGaugeBankExample), json.RawMessage(schemaDistributionExample), json.RawMessage(schemaConnectionMapExample), json.RawMessage(schemaStyledTableExample), json.RawMessage(schemaGroupedTreemapExample))
 	case "saved_query":
 		return append(examples, json.RawMessage(schemaRecordQueryExample), json.RawMessage(schemaRangeRecordQueryExample))
 	default:

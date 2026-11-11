@@ -25,7 +25,7 @@ func insightsPatchTool(c *InsightsAuthoringClient, singular, collection string) 
 	}
 	return mcp.Tool{
 		Name: "patch_" + singular, Scope: mcp.ScopeInsightsWrite,
-		Description: "Edit selected fields without resending the whole document. Requires the exact current ETag, paprika:observe, paprika:insights:write and human Insights write permission. Nested objects merge, null removes optional fields, arrays replace. " + detail + " Discover the canonical schema first. The resulting document uses the same validation and persistence as the UI. Clean views refresh automatically; unsaved drafts remain protected. A conflict requires rereading and reviewing; never retry blindly.",
+		Description: "Edit selected fields without resending the whole document. Requires the exact current ETag, paprika:observe, paprika:insights:write and human Insights write permission. Nested objects merge, null removes optional fields, arrays replace. " + detail + " Discover the canonical schema first. The resulting document uses the same validation and persistence as the UI. Clean views refresh automatically; unsaved drafts remain protected. A conflict requires rereading and reviewing; never retry blindly." + insightsCompositionPointer(singular),
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` + properties + `},"required":` + required + `,"additionalProperties":false` + extra + `}`),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
 			args, err := decodeInsightsPatchArgs(raw)

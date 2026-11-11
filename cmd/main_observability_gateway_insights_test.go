@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 )
 
 func TestObservabilityInsightsRegistrationRequiresExplicitConfiguration(t *testing.T) {
@@ -119,4 +122,46 @@ func TestObservabilityAuthoringReservesBoundedProviderDiscoverySlots(t *testing.
 	}
 	check(http.MethodGet, "/observe/api/providers", http.StatusOK)
 	check(http.MethodPost, "/observe/mcp", http.StatusOK)
+}
+
+// The production gateway with Insights configured must answer initialize with
+// the shared dashboard rules. Every Observe MCP server that serves dashboard
+// write tools gets them from mcp.NewServer, so this guards that default end to end.
+func TestObservabilityGatewayInitializeCarriesDashboardRulesWhenInsightsConfigured(t *testing.T) {
+	secret := []byte("insights-guidance-initialize-secret")
+	t.Setenv("PAPRIKA_INSIGHTS_URL", "http://127.0.0.1:1")
+	t.Setenv("PAPRIKA_INSIGHTS_TOKEN", strings.Repeat("fixture", 8))
+	store, err := cache.New(t.Context(), cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	cfg := &cliConfig{MCPPublicURL: usageTestIssuer, AuthEnabled: true}
+	require.NoError(t, validateObservabilityGatewayConfig(cfg))
+	srv, authenticator, usage, backend, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: secret}, nil, store)
+	require.NoError(t, err)
+	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
+	token := usageTestToken(t, secret, string(mcp.ScopeObserve), string(mcp.ScopeInsightsWrite))
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"guidance-test","version":"1"}}}`
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/mcp", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+	var envelope struct {
+		Result struct {
+			Instructions string `json:"instructions"`
+		} `json:"result"`
+		Error json.RawMessage `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope), recorder.Body.String())
+	require.Empty(t, envelope.Error)
+	instructions := envelope.Result.Instructions
+	require.Contains(t, instructions, "Dashboard composition rules:")
+	require.Contains(t, instructions, "MCP dashboard workflow:")
+	for _, rule := range append(guidance.DashboardComposition(), guidance.DashboardWorkflow()...) {
+		require.Contains(t, instructions, rule, "production initialize must carry every shared dashboard rule")
+	}
 }

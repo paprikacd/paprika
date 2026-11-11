@@ -199,6 +199,60 @@ describe("widget inspector", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
     expect(toggle).not.toBeChecked();
   });
+  it("does not invent bar bounds: it focuses the minimum and explains what is missing in plain words", () => {
+    const callbacks = props();
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    fireEvent.click(screen.getByRole("switch", { name: /^Show value bar/ }));
+    const minimum = screen.getByLabelText("Bar minimum") as HTMLInputElement;
+    const maximum = screen.getByLabelText("Bar maximum") as HTMLInputElement;
+    expect(minimum).toHaveFocus();
+    expect(minimum.value).toBe("");
+    expect(maximum.value).toBe("");
+    expect(minimum).not.toHaveAttribute("placeholder", "Auto");
+    expect(maximum).not.toHaveAttribute("placeholder", "Auto");
+    for (const input of [minimum, maximum]) {
+      expect(input).toBeRequired();
+      expect(input).toHaveAttribute("aria-invalid", "true");
+    }
+    expect(minimum).toHaveAccessibleDescription("Enter the minimum for the bar.");
+    expect(maximum).toHaveAccessibleDescription("Enter the maximum for the bar.");
+    expect(screen.getAllByRole("alert").some(alert => alert.textContent?.includes("A stat bar requires explicit minimum and maximum values"))).toBe(true);
+    expect(screen.getAllByRole("alert").every(alert => !alert.textContent?.includes("options."))).toBe(true);
+    expect(screen.getByRole("button", { name: "Apply widget" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(callbacks.onApply).not.toHaveBeenCalled();
+    fireEvent.change(minimum, { target: { value: "0" } });
+    fireEvent.change(maximum, { target: { value: "100" } });
+    expect(minimum).not.toBeInvalid();
+    expect(maximum).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryAllByRole("alert").some(alert => alert.textContent?.includes("explicit minimum"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ showStatBar: true, min: 0, max: 100 }) }));
+  });
+
+  it("focuses the maximum when only the maximum is missing", () => {
+    render(<WidgetEditor {...props()} widget={{ ...widget, type: "stat", options: { min: 5 } }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    fireEvent.click(screen.getByRole("switch", { name: /^Show value bar/ }));
+    expect(screen.getByLabelText("Bar maximum")).toHaveFocus();
+    expect(screen.getByLabelText("Bar minimum")).toHaveValue(5);
+    expect(screen.getByLabelText("Bar minimum")).not.toBeRequired();
+  });
+
+  it("keeps focus on the switch when bounds already exist, and switching the bar off yields a valid draft", () => {
+    const callbacks = props();
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat", options: { showStatBar: true, min: 0, max: 10 } }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    const toggle = screen.getByRole("switch", { name: /^Show value bar/ });
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveFocus();
+    expect(screen.queryByRole("switch", { name: /^Show value bar/ })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ showStatBar: false }) }));
+  });
+
   it("configures an explicit single-value bar scale", () => {
     const callbacks = props();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat" }} />);

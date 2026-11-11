@@ -209,6 +209,18 @@
   align-items: end;
   flex-wrap: wrap;
 }
+.row > .boundField {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.boundHint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--gamma-danger);
+}
 .row > .field {
   flex: 1;
   min-width: 85px;

@@ -31,6 +31,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/version"
 )
@@ -508,6 +509,9 @@ func serverDescriptionAndInstructions(disableConsoleResources bool, supportedSco
 			description = "Observability discovery, compact dashboard query bundles, and authorized saved-query and dashboard authoring."
 			instructions = "Prefer query_dashboard when a saved dashboard covers the question. Discover its ID with list_dashboards, inspect its variables with get_dashboard when needed, and pass a variables map to query_dashboard for shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing/error/truncation states and document versions; text is a compact synopsis. This read requires paprika:observe and existing Insights/provider read permission, not authoring consent. For standalone provider queries: " + instructions
 			instructions += " Saved-query and dashboard creation or updates additionally require explicit paprika:insights:write consent and Insights write permission. Discover Insights providers and get_insights_schema for canonical dashboard, widget and saved-query schemas. Read current documents first. Create with a new ID; prefer patch_saved_query or patch_dashboard for targeted edits, with widget_edits addressed by widget ID. Every update requires the exact ETag just read; reread and review conflicts. Changes appear in the Insights UI while unsaved drafts remain protected. This scope grants no provider configuration or fleet delivery writes."
+			// Clients such as ChatGPT receive no skill text, so the shared dashboard
+			// rules travel with every authoring surface's initialize response.
+			instructions += " Dashboard composition rules: " + strings.Join(guidance.DashboardComposition(), " ") + " MCP dashboard workflow: " + strings.Join(guidance.DashboardWorkflow(), " ")
 		}
 	}
 	return description, instructions

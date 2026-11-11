@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
 import { useDraftHistory } from "./history";
 import { ChartAppearancePresets } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
@@ -196,6 +196,18 @@ function StyleEditor({
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
+  // Turning on the value bar does not invent bounds. Focus the minimum field
+  // once it renders; the existing draft alert explains what is missing.
+  const barHintId = useId();
+  const barMinimumRef = useRef<HTMLInputElement>(null);
+  const barMaximumRef = useRef<HTMLInputElement>(null);
+  const focusBarBound = useRef<"min" | "max" | null>(null);
+  useEffect(() => {
+    const target = focusBarBound.current;
+    if (!target) return;
+    focusBarBound.current = null;
+    (target === "min" ? barMinimumRef : barMaximumRef).current?.focus();
+  });
   const numeric = (
     label: string,
     field: "min" | "max" | "decimals" | "lineWidth" | "fillOpacity" | "staleAfterSeconds" | "plotInsetLeft" | "plotInsetRight" | "tooltipOffset" | "tooltipMaxWidth" | "tooltipMaxHeight",
@@ -223,6 +235,39 @@ function StyleEditor({
       />
     </label>
   );
+  // A value bar has no default scale. A missing bound stays empty, says what is
+  // missing next to the input, and is wired to it for assistive technology.
+  const barBound = (label: string, field: "min" | "max", inputRef: Ref<HTMLInputElement>) => {
+    const missing = options[field] === undefined;
+    const hintId = `${barHintId}-${field}`;
+    return (
+      <div className={styles.boundField}>
+        <label className={styles.field}>
+          {label}
+          <GammaInput
+            ref={inputRef}
+            type="number"
+            value={options[field] ?? ""}
+            placeholder="Required"
+            step="any"
+            required={missing}
+            aria-invalid={missing || undefined}
+            aria-describedby={missing ? hintId : undefined}
+            onChange={(event) =>
+              update({
+                [field]: event.target.value === "" ? undefined : Number(event.target.value),
+              })
+            }
+          />
+        </label>
+        {missing && (
+          <small id={hintId} className={styles.boundHint}>
+            {field === "min" ? "Enter the minimum for the bar." : "Enter the maximum for the bar."}
+          </small>
+        )}
+      </div>
+    );
+  };
   const chart = widget.type === "timeseries" || widget.type === "bar";
   const gauge =
     widget.type === "plugin" && widget.pluginId === "threshold-gauge";
@@ -476,13 +521,18 @@ function StyleEditor({
         <>
           <GammaSwitch
             label="Show value bar"
-            description="Shows the current value on an explicit scale. Threshold colors apply to the observed value."
+            description="Shows the current value on an explicit scale. Enter both bounds; threshold colors apply to the observed value."
             checked={options.showStatBar === true}
-            onChange={(showStatBar) => update(showStatBar ? { showStatBar, min: options.min ?? 0, max: options.max ?? 100 } : { showStatBar })}
+            onChange={(showStatBar) => {
+              focusBarBound.current = showStatBar
+                ? options.min === undefined ? "min" : options.max === undefined ? "max" : null
+                : null;
+              update({ showStatBar });
+            }}
           />
           {options.showStatBar && <div className={styles.row}>
-            {numeric("Bar minimum", "min", undefined, undefined, "any")}
-            {numeric("Bar maximum", "max", undefined, undefined, "any")}
+            {barBound("Bar minimum", "min", barMinimumRef)}
+            {barBound("Bar maximum", "max", barMaximumRef)}
           </div>}
           <GammaSwitch
             label="Show sparkline"
@@ -821,7 +871,7 @@ export function WidgetEditor({
     if (!parsed.success) {
       throw new Error(
         parsed.error.issues
-          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+          .map((issue) => issue.path.at(-1) === "showStatBar" ? issue.message : `${issue.path.join(".")}: ${issue.message}`)
           .join("\n"),
       );
     }
