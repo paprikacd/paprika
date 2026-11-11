@@ -89,6 +89,8 @@ import { useCanvasDensity } from "./canvas-density"
 import type { CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
 import { DocumentEditor } from "./document-editor"
+import { ChecksList } from "./checks-list"
+import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
@@ -97,7 +99,7 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { classifySourceFailure, InsightsHTTPError, loadProviderCatalog, type ProviderCatalog, type SharedCatalogStatus } from "./client"
+import { checksFromError, classifySourceFailure, InsightsHTTPError, loadProviderCatalog, type ProviderCatalog, type SharedCatalogStatus } from "./client"
 import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -305,6 +307,8 @@ export default function InsightsApp({
   const [selected, setSelected] = useState<string>()
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
+  // Findings a rejected save carried. They show only while their error message is the one on screen.
+  const [saveFindings, setSaveFindings] = useState<{ message: string; report: CheckReport }>()
   // Link variables this dashboard could not apply. Dismissible; it never blocks the view.
   const [linkNotice, setLinkNotice] = useState("")
   const [remoteDashboard, setRemoteDashboard] = useState<{ id: string; removed: boolean }>()
@@ -889,6 +893,7 @@ export default function InsightsApp({
     }
     const request = openRequest.current
     setError("")
+    setSaveFindings(undefined)
     setBusy(true)
     try {
       // The document as the save writes it, so the stored copy and the editor agree with what the server holds.
@@ -920,10 +925,12 @@ export default function InsightsApp({
       setEditing(false)
       close()
     } catch (error) {
-      if (request === openRequest.current)
-        setError(
-          error instanceof Error ? error.message : "Could not save dashboard",
-        )
+      if (request === openRequest.current) {
+        const message = error instanceof Error ? error.message : "Could not save dashboard"
+        const report = checksFromError(error)
+        setError(message)
+        setSaveFindings(report ? { message, report } : undefined)
+      }
     } finally {
       setBusy(false)
     }
@@ -1881,6 +1888,9 @@ export default function InsightsApp({
             </GammaButton>
           </div>
         )}
+        {saveFindings && error === saveFindings.message && (
+          <ChecksList label="Save checks" report={saveFindings.report} dashboard={dashboard} onFocusWidget={selectWidget} />
+        )}
         {/* Always mounted, so a notice is announced when its content appears. */}
         <div role="status" data-link-notice>
           {linkNotice && (
@@ -2073,7 +2083,7 @@ export default function InsightsApp({
               ) : workspace ? (
                 <LazyPanelBoundary label="Dashboard examples" unsaved={dirty || widgetDraftDirty} onClose={close}>
                   <Suspense fallback={<p className={styles.loading} role="status">Loading examples…</p>}>
-                    <RepositoryGallery entries={workspace.repositoryExamples} mode={mode === "example" ? "example" : "live"} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} onRefreshQueries={refreshSavedQueries} onClose={close} />
+                    <RepositoryGallery entries={workspace.repositoryExamples} mode={mode === "example" ? "example" : "live"} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} validateDocument={client.validate} onRefreshQueries={refreshSavedQueries} onClose={close} />
                     <MountSignal onMount={markGalleryMounted} />
                   </Suspense>
                 </LazyPanelBoundary>
@@ -2086,6 +2096,8 @@ export default function InsightsApp({
                   onImportBundle={importBundle}
                   onReviewBundle={reviewBundle}
                   onRefreshQueries={refreshSavedQueries}
+                  checkDocument={client.validate}
+                  onFocusWidget={selectWidget}
                   onApply={applyDocument}
                   onClose={close}
                 />
@@ -2147,6 +2159,7 @@ export default function InsightsApp({
                   onImport={importDashboards}
                   onImportBundle={importBundle}
                   onReviewBundle={reviewBundle}
+                  validateDocument={client.validate}
                   onRefreshQueries={refreshSavedQueries}
                 />
               )}
