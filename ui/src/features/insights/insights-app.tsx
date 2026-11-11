@@ -68,9 +68,9 @@ import {
   writeExampleWorkspace,
 } from "./example-storage"
 import { assertProviderQueryTemplate } from "./provider-query-template"
-import { repositoryExamples } from "./repository-examples"
-import { RepositoryGallery } from "./repository-gallery"
-import { readRepositoryExampleWorkspace as readExampleWorkspace, repositoryWorkspaceProviders as exampleProviders, repositoryWorkspaceQuery as exampleQuery, repositoryWorkspaceMetadata as exampleMetadata, repositoryWorkspaceQueries } from "./repository-workspace"
+import catalogMeta from "./repository-examples/catalog-meta.json"
+import type * as RepositoryWorkspaceModule from "./repository-workspace"
+type RepositoryWorkspace = typeof RepositoryWorkspaceModule
 import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey, type QueryFieldSnapshot } from "./query-connections"
 import { createExampleSavedQueryClient } from "./saved-query-storage"
@@ -87,7 +87,6 @@ import { useCanvasDensity } from "./canvas-density"
 import type { CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
 import { DocumentEditor } from "./document-editor"
-import { WidgetEditor } from "./widget-editor"
 import { layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
@@ -149,6 +148,14 @@ const NO_VARIABLES: NonNullable<Dashboard["variables"]> = []
 const AIBuilder = lazy(() =>
   import("./ai").then((module) => ({ default: module.AIBuilder })),
 )
+const WidgetEditor = lazy(() =>
+  import("./widget-editor").then((module) => ({ default: module.WidgetEditor })),
+)
+const RepositoryGallery = lazy(() =>
+  import("./repository-gallery").then((module) => ({ default: module.RepositoryGallery })),
+)
+// The example catalog (about 1 MB of JSON) and its query engine load only for example mode or the Examples panel.
+const loadRepositoryWorkspace = (): Promise<RepositoryWorkspace> => import("./repository-workspace")
 registerDefaultWidgetPlugins()
 
 export interface InsightsAppProps {
@@ -186,10 +193,11 @@ export default function InsightsApp({
   useLayoutEffect(() => { latestDocument.current = dashboard }, [dashboard])
   const [mode, setMode] = useState<
     "loading" | "live" | "example" | "unavailable"
-  >(initialExample ? "example" : "loading")
-  const [providers, setProviders] = useState<Provider[]>(
-    initialExample ? exampleProviders : [],
-  )
+  >("loading")
+  const [providers, setProviders] = useState<Provider[]>([])
+  // Loaded on first use. Example mode reads it; the Examples panel needs it even in live mode.
+  const [workspace, setWorkspace] = useState<RepositoryWorkspace | null>(null)
+  const activeExample = mode === "example" ? workspace : null
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [exploring, setExploring] = useState(false)
   const [explorerOpened, setExplorerOpened] = useState(false)
@@ -209,16 +217,16 @@ export default function InsightsApp({
   }, [])
   const libraryClient = useMemo<InsightsClient>(() => {
     // A draft must not hide a dependency that still exists in saved storage.
-    const currentDocuments = () => [...readExampleWorkspace(localStorage).dashboards, latestDocument.current]
-    const scoped = mode === "example" && typeof window !== "undefined"
-      ? { ...client, ...createExampleSavedQueryClient(localStorage, currentDocuments, repositoryWorkspaceQueries.filter(query => currentDocuments().some(document => dashboardUsesSavedQuery(document, query.id)))), metadata: exampleMetadata, query: exampleQuery }
+    const currentDocuments = () => [...(activeExample?.readRepositoryExampleWorkspace(localStorage).dashboards ?? []), latestDocument.current]
+    const scoped = activeExample && typeof window !== "undefined"
+      ? { ...client, ...createExampleSavedQueryClient(localStorage, currentDocuments, activeExample.repositoryWorkspaceQueries.filter(query => currentDocuments().some(document => dashboardUsesSavedQuery(document, query.id)))), metadata: activeExample.repositoryWorkspaceMetadata, query: activeExample.repositoryWorkspaceQuery }
       : client
     return { ...scoped, removeSavedQuery: async (id, etag) => {
       if (dashboardUsesSavedQuery(latestDocument.current, id))
         throw new Error("This saved query is used by the current dashboard. Switch its widgets to custom queries before deleting it.")
       return scoped.removeSavedQuery(id, etag)
     } }
-  }, [client, mode])
+  }, [client, activeExample])
   useEffect(() => {
     if (mode !== "live" && mode !== "example") return
     const controller = new AbortController()
@@ -355,17 +363,37 @@ export default function InsightsApp({
       document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]') : null,
   )
 
-  const enterExample = useCallback(() => {
-    const workspace = readExampleWorkspace(localStorage)
-    if (localStorage.getItem(EXAMPLE_STORAGE_KEY) === null) writeExampleWorkspace(localStorage, workspace.dashboards, workspace.activeId)
+  useEffect(() => {
+    // Opening the Examples panel loads the catalog without changing the live workspace.
+    if (panel !== "examples" || workspace) return
+    let active = true
+    loadRepositoryWorkspace().then(
+      (runtime) => { if (active) setWorkspace(runtime) },
+      () => { if (active) setError("The examples could not load. Close the panel and try again.") },
+    )
+    return () => { active = false }
+  }, [panel, workspace])
+
+  const enterExample = useCallback(async () => {
+    let runtime: RepositoryWorkspace
+    try {
+      runtime = await loadRepositoryWorkspace()
+    } catch {
+      setError("The example workspace could not load. Refresh the page and try again.")
+      setMode("unavailable")
+      return
+    }
+    const stored = runtime.readRepositoryExampleWorkspace(localStorage)
+    if (localStorage.getItem(EXAMPLE_STORAGE_KEY) === null) writeExampleWorkspace(localStorage, stored.dashboards, stored.activeId)
     const fallback =
-      workspace.dashboards.find((item) => item.id === workspace.activeId) ??
+      stored.dashboards.find((item) => item.id === stored.activeId) ??
       newDashboard()
-    const { document: sample, state, error } = initialNavigation(workspace.dashboards, fallback)
+    const { document: sample, state, error } = initialNavigation(stored.dashboards, fallback)
     reset(sample)
     setSaved(documentFingerprint(sample))
-    setDashboards(workspace.dashboards)
-    setProviders(exampleProviders)
+    setDashboards(stored.dashboards)
+    setProviders(runtime.repositoryWorkspaceProviders)
+    setWorkspace(runtime)
     setMode("example")
     setRouteState(state)
     setError(error)
@@ -499,9 +527,9 @@ export default function InsightsApp({
   const scheduledFetcher = useMemo(() => {
     // A refresh or provider edit invalidates cached fixed-range observations too.
     void queryRevision
-    const query = mode === "example" ? exampleQuery : client.query
+    const query = activeExample ? activeExample.repositoryWorkspaceQuery : client.query
     return createQueryScheduler(query)
-  }, [client, mode, queryRevision])
+  }, [client, activeExample, queryRevision])
   // Resolve each authoring scope once, before sharing the bounded scheduler.
   // Tooltip label values may themselves contain {{text}}; never interpolate
   // those resolved query literals again as dashboard variables.
@@ -523,10 +551,10 @@ export default function InsightsApp({
   const range = dashboardRange(viewDashboard, end)
   const builderClient = useMemo(
     () =>
-      mode === "example"
-        ? { ...client, metadata: exampleMetadata, query: exampleQuery }
+      activeExample
+        ? { ...client, metadata: activeExample.repositoryWorkspaceMetadata, query: activeExample.repositoryWorkspaceQuery }
         : client,
-    [client, mode],
+    [client, activeExample],
   )
   const close = useCallback(() => {
     if (bundleImportActive.current) return
@@ -687,8 +715,8 @@ export default function InsightsApp({
       // never overwrites edits made while the request was in flight.
       if (documentFingerprint(parsed) !== documentFingerprint(dashboard))
         update(parsed)
-      if (mode === "example") {
-        const persisted = readExampleWorkspace(localStorage).dashboards.find(item => item.id === parsed.id)
+      if (activeExample) {
+        const persisted = activeExample.readRepositoryExampleWorkspace(localStorage).dashboards.find(item => item.id === parsed.id)
         if (persisted && documentFingerprint(persisted) !== saved)
           throw new Error("The saved dashboard changed. Open another dashboard and return to review it before saving, or duplicate your draft to keep these edits.")
         saveExampleWorkspace(localStorage, dashboards, parsed)
@@ -1273,7 +1301,7 @@ export default function InsightsApp({
           >
             <Database size={16} /> Data sources <span>{providers.length}</span>
           </GammaButton>
-          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onClick={() => openBuilderPanel("examples")}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
+          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onClick={() => openBuilderPanel("examples")}><FilePlus2 size={16} /> Examples <span>{catalogMeta.count}</span></GammaButton>
           <div className={styles.sideSection}>
             <span className={styles.sideLabel}>YOUR DASHBOARDS</span>
             <GammaButton iconOnly size="sm" variant="quiet"
@@ -1629,77 +1657,79 @@ export default function InsightsApp({
                 focus={editingWidget && currentWidget && previewWidget ? {
                   widget: previewWidget,
                   render: preview => <section ref={builderPanel} tabIndex={-1}>
-                <WidgetEditor
-                  key={currentWidget.id}
-                  widget={currentWidget}
-                  workspace={{ preview, dashboardTitle: dashboard.title, onDiscard: close, widgets: dashboard.widgets, canvasMode }}
-                  onPreview={setWidgetPreview}
-                  onDirtyChange={setWidgetDraftDirty}
-                  dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
-                  providers={providers}
-                  client={builderClient}
-                  range={range}
-                  queryFetcher={fetcher}
-                  queryFields={currentWidget.id === queryFieldSnapshot?.widgetId && queryFieldSnapshot.fetcher === fetcher && queryFieldSnapshot.key === queryConnectionKey(previewWidget ?? currentWidget, range) ? queryFieldSnapshot.fields : undefined}
-                  result={currentWidget.id === queryResultSnapshot?.widgetId && queryResultSnapshot.fetcher === fetcher ? queryResultSnapshot.result : undefined}
-                  onClose={leaveWidget}
-                  onDraftValidityChange={setWidgetDraftValid}
-                  onApply={(next, layout) => {
-                    update(current => ({
-                      ...current,
-                      widgets: current.widgets.map(w => {
-                        if (w.id === next.id) return next
-                        const placed = layout?.find(item => item.i === w.id)
-                        return placed ? { ...w, layout: { ...w.layout, x: placed.x, y: placed.y, w: placed.w, h: placed.h } } : w
-                      }),
-                    }))
-                    close()
-                    setMessage("Chart changes applied. Save the dashboard to keep them.")
-                  }}
-                  onDelete={() => {
-                    update({
-                      ...dashboard,
-                      widgets: dashboard.widgets.filter(
-                        (w) => w.id !== currentWidget.id,
-                      ),
-                    })
-                    close()
-                  }}
-                  onDuplicate={() => {
-                    if (dashboard.widgets.length >= MAX_WIDGETS) {
-                      setError("A dashboard supports up to 48 widgets.")
-                      return
-                    }
-                    const copy = {
-                      ...(previewWidget ?? currentWidget),
-                      id: `widget-${crypto.randomUUID()}`,
-                      title: `${(previewWidget ?? currentWidget).title.slice(0, 113)} (copy)`,
-                      layout: {
-                        ...(previewWidget ?? currentWidget).layout,
-                        x: 0,
-                        y: Math.min(
-                          1000,
-                          Math.max(
-                            ...dashboard.widgets.map(
-                              (w) => w.layout.y + w.layout.h,
+                <Suspense fallback={<div className={styles.loading} role="status" aria-busy="true">Loading editor…</div>}>
+                  <WidgetEditor
+                    key={currentWidget.id}
+                    widget={currentWidget}
+                    workspace={{ preview, dashboardTitle: dashboard.title, onDiscard: close, widgets: dashboard.widgets, canvasMode }}
+                    onPreview={setWidgetPreview}
+                    onDirtyChange={setWidgetDraftDirty}
+                    dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
+                    providers={providers}
+                    client={builderClient}
+                    range={range}
+                    queryFetcher={fetcher}
+                    queryFields={currentWidget.id === queryFieldSnapshot?.widgetId && queryFieldSnapshot.fetcher === fetcher && queryFieldSnapshot.key === queryConnectionKey(previewWidget ?? currentWidget, range) ? queryFieldSnapshot.fields : undefined}
+                    result={currentWidget.id === queryResultSnapshot?.widgetId && queryResultSnapshot.fetcher === fetcher ? queryResultSnapshot.result : undefined}
+                    onClose={leaveWidget}
+                    onDraftValidityChange={setWidgetDraftValid}
+                    onApply={(next, layout) => {
+                      update(current => ({
+                        ...current,
+                        widgets: current.widgets.map(w => {
+                          if (w.id === next.id) return next
+                          const placed = layout?.find(item => item.i === w.id)
+                          return placed ? { ...w, layout: { ...w.layout, x: placed.x, y: placed.y, w: placed.w, h: placed.h } } : w
+                        }),
+                      }))
+                      close()
+                      setMessage("Chart changes applied. Save the dashboard to keep them.")
+                    }}
+                    onDelete={() => {
+                      update({
+                        ...dashboard,
+                        widgets: dashboard.widgets.filter(
+                          (w) => w.id !== currentWidget.id,
+                        ),
+                      })
+                      close()
+                    }}
+                    onDuplicate={() => {
+                      if (dashboard.widgets.length >= MAX_WIDGETS) {
+                        setError("A dashboard supports up to 48 widgets.")
+                        return
+                      }
+                      const copy = {
+                        ...(previewWidget ?? currentWidget),
+                        id: `widget-${crypto.randomUUID()}`,
+                        title: `${(previewWidget ?? currentWidget).title.slice(0, 113)} (copy)`,
+                        layout: {
+                          ...(previewWidget ?? currentWidget).layout,
+                          x: 0,
+                          y: Math.min(
+                            1000,
+                            Math.max(
+                              ...dashboard.widgets.map(
+                                (w) => w.layout.y + w.layout.h,
+                              ),
                             ),
                           ),
-                        ),
-                      },
-                    }
-                    update({
-                      ...dashboard,
-                      widgets: [...dashboard.widgets, copy],
-                    })
-                    selectWidget(copy.id)
-                  }}
-                  moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id, canvasMode)}
-                  onMove={(dx, dy) => {
-                    const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
-                    const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
-                    if ("layout" in edit) layoutUpdate(edit.layout)
-                  }}
-                />
+                        },
+                      }
+                      update({
+                        ...dashboard,
+                        widgets: [...dashboard.widgets, copy],
+                      })
+                      selectWidget(copy.id)
+                    }}
+                    moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id, canvasMode)}
+                    onMove={(dx, dy) => {
+                      const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
+                      const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
+                      if ("layout" in edit) layoutUpdate(edit.layout)
+                    }}
+                  />
+                </Suspense>
                   </section>,
                 } : undefined}
                 active={!exploring}
@@ -1768,7 +1798,11 @@ export default function InsightsApp({
               className={`${styles.panel} ${(panel === "source" || panel === "examples") ? styles.widePanel : ""}`}
               aria-label="Builder panel"
             >
-              {panel === "examples" && <RepositoryGallery entries={repositoryExamples} mode={mode === "example" ? "example" : "live"} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} onRefreshQueries={refreshSavedQueries} onClose={close} />}
+              {panel === "examples" && (workspace ? (
+                <Suspense fallback={<p className={styles.loading}>Loading examples…</p>}>
+                  <RepositoryGallery entries={workspace.repositoryExamples} mode={mode === "example" ? "example" : "live"} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} onRefreshQueries={refreshSavedQueries} onClose={close} />
+                </Suspense>
+              ) : <p className={styles.loading}>Loading examples…</p>)}
               {panel === "source" && (
                 <DocumentEditor
                   key={dashboard.id}

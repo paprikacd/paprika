@@ -368,6 +368,6 @@ for e in CATALOG:
   b=e[mode];assert len(b['dashboards'][0]['widgets'])<=48
   assert len(b['savedQueries'])==len(b['dashboards'][0]['widgets'])
   assert all(len(q['query'])<=8192 for q in b['savedQueries'])
-for path,data in [(OUT/'catalog.json',CATALOG),(OUT/'fixtures.json',FIXTURES),(DOC/'source-coverage.json',{'version':1,'canonicalDashboardCount':14,'supplementalCollections':2,'sourceGrafanaTargets':96,'entries':[{k:e[k] for k in ['id','title','project','source','liveStatus','coverage','limitations']} for e in CATALOG]})]:
+for path,data in [(OUT/'catalog.json',CATALOG),(OUT/'catalog-meta.json',{'count':len(CATALOG),'ids':[e['id'] for e in CATALOG]}),(OUT/'fixtures.json',FIXTURES),(DOC/'source-coverage.json',{'version':1,'canonicalDashboardCount':14,'supplementalCollections':2,'sourceGrafanaTargets':96,'entries':[{k:e[k] for k in ['id','title','project','source','liveStatus','coverage','limitations']} for e in CATALOG]})]:
  path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n')
 print(f'Generated {len(CATALOG)} entries, {len(FIXTURES)} fixtures and all 96 Grafana targets.')

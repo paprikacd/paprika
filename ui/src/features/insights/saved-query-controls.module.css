@@ -1,0 +1,20 @@
+/* Rules copied verbatim from explorer.module.css for the classes saved-query-controls.tsx renders.
+   Kept here so the widget editor, tooltip and annotation paths do not import the explorer stylesheet. */
+.bindingEditor { border: 0; padding: 0; margin: 0; min-width: 0; }
+.bindingEditor { display: grid; gap: 14px; }
+.bindingEditor legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.field { display: flex; flex-direction: column; gap: 7px; font-size: 12px; font-weight: 600; min-width: 0; }
+.field > p { margin: 0; font-weight: 400; }
+.field > button { text-align: left; }
+.binding { border: 1px solid var(--gamma-border); border-radius: 6px; padding: 12px; display: grid; gap: 12px; min-width: 0; margin-top: 12px; }
+.twoColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.binding .twoColumns { grid-template-columns: minmax(0, 1fr); }
+.bindingTitle { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
+.bindingTitle code, .bindingTitle span { color: var(--gamma-muted); font-weight: 400; overflow-wrap: anywhere; }
+.hint { color: var(--gamma-muted); font-size: 12px; line-height: 1.6; margin: 12px 0 0; overflow-wrap: anywhere; }
+.hint code, .bindingTitle code { font-family: var(--gamma-font-code, monospace); }
+.error { font-size: 12px; line-height: 1.6; color: var(--gamma-danger); margin: 12px 0 0; overflow-wrap: anywhere; }
+.error p { margin: 0 0 10px; }
+@media (max-width: 760px) {
+  .twoColumns { grid-template-columns: minmax(0, 1fr); }
+}

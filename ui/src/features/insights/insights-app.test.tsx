@@ -76,7 +76,7 @@ async function chartDraftInExplorer(api = client(), dashboardDirty = false) {
   fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
   if (dashboardDirty) fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Unsaved dashboard title" } })
   fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
-  const title = screen.getByRole("textbox", { name: "Title", exact: true })
+  const title = await screen.findByRole("textbox", { name: "Title", exact: true }, { timeout: 5000 })
   fireEvent.change(title, { target: { value: "Unapplied latency title" } })
   fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }))
   fireEvent.click(screen.getByRole("button", { name: "Use saved query" }))
@@ -133,7 +133,7 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("button",{name:"Edit dashboard"}));
     fireEvent.click(screen.getByRole("button",{name:"Add your first widget"}));
     fireEvent.click(screen.getByRole("button",{name:/^Time series/}));
-    fireEvent.change(screen.getByLabelText("Title"),{target:{value:"Retained unapplied widget draft"}});
+    fireEvent.change(await screen.findByLabelText("Title", {}, { timeout: 5000 }),{target:{value:"Retained unapplied widget draft"}});
     expect(screen.queryByRole("complementary", { name: "Insights navigation" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
     fireEvent.click(screen.getByRole("button", { name: "Use saved query" }));
@@ -170,9 +170,9 @@ describe("Insights application state", () => {
     expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: close }))
     fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
-    expect(screen.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Request latency")
+    expect(await screen.findByRole("textbox", { name: "Title", exact: true }, { timeout: 5000 })).toHaveValue("Request latency")
     expect(api.save).not.toHaveBeenCalled()
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it.each([false, true])("asks once before creating a dashboard with an unapplied chart (dashboard dirty: %s)", async dashboardDirty => {
     const { api, title } = await chartDraftInExplorer(client(), dashboardDirty)
@@ -188,7 +188,7 @@ describe("Insights application state", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
     expect(api.save).not.toHaveBeenCalled()
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it("keeps Explore and the chart draft intact when cancelling dashboard navigation", async () => {
     const { title } = await chartDraftInExplorer()
@@ -202,7 +202,7 @@ describe("Insights application state", () => {
     fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })).getByRole("button", { name: "Discard changes" }))
     expect(await screen.findByRole("heading", { name: "Dashboard B" })).toBeVisible()
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it("waits for chart discard before adding a saved query from Explore", async () => {
     const api = client()
@@ -232,7 +232,7 @@ describe("Insights application state", () => {
       expect(api.save).toHaveBeenCalledOnce()
     })
     expect(vi.mocked(api.save).mock.calls[0][0].widgets.map(widget => widget.title)).toEqual(["Request latency", "Saved signal"])
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it("creates a saved query from a fresh tooltip and returns to the same unapplied tooltip draft", async () => {
     const api = client()
@@ -248,7 +248,7 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
     fireEvent.click(screen.getByRole("button", { name: "Add your first widget" }))
     fireEvent.click(screen.getByRole("button", { name: /^Time series/ }))
-    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Unapplied source widget" } })
+    fireEvent.change(await screen.findByLabelText("Title", {}, { timeout: 5000 }), { target: { value: "Unapplied source widget" } })
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }))
     fireEvent.click(screen.getByRole("button", { name: "Use saved query" }))
     fireEvent.change(screen.getByLabelText("Tooltip title"), { target: { value: "Retained tooltip draft" } })
