@@ -40,9 +40,9 @@ export const Source = /*@__PURE__*/ proto3.makeEnum(
 
 /**
  * CheckFinding locates one problem in a submitted dashboard document. Pointer
- * is an RFC 6901 JSON Pointer into that document, for example
- * /widgets/2/options/thresholds/1; it is empty when the problem concerns the
- * whole document. Message and fix are short, fixed text, never upstream output.
+ * is an RFC 6901 JSON Pointer into that document: /widgets/2 names a widget,
+ * /widgets/2/layout a field of it, and the empty string the whole document.
+ * Message and fix are short, fixed text, never upstream output.
  *
  * @generated from message paprika.insights.v1.CheckFinding
  */
@@ -60,15 +60,16 @@ export const CheckFinding = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
- * CheckReport is the result of a dry run. Findings holds at most 32 entries;
- * total counts every finding, so truncated is true when some were omitted.
+ * CheckReport is the one list shape for issues: the 400 response to a rejected
+ * save and the validate dry run both carry it. Issues holds at most 32 entries;
+ * total counts every finding, and truncated is true when some were omitted.
  *
  * @generated from message paprika.insights.v1.CheckReport
  */
 export const CheckReport = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.insights.v1.CheckReport",
   () => [
-    { no: 1, name: "findings", kind: "message", T: CheckFinding, repeated: true },
+    { no: 1, name: "issues", kind: "message", T: CheckFinding, repeated: true },
     { no: 2, name: "total", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 3, name: "truncated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
   ],

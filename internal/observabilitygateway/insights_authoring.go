@@ -7,24 +7,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/audit"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 var insightsDocumentID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$`)
@@ -224,65 +222,40 @@ func insightsStatusError(status int, body []byte, header http.Header) *connect.E
 	return err
 }
 
-// Limits mirror the service's own bounds. Each finding is cut down again here, so
-// a changed or misbehaving upstream still cannot widen what an agent receives.
-const (
-	maxInsightsIssues         = 32
-	maxInsightsIssueRunes     = 200
-	maxInsightsIssuePointer   = 256
-	maxInsightsRetryAfterSecs = 300
-)
-
 // insightsValidationBody is the 400 body of a rejected save: Error keeps the
-// single historical message, Issues lists the findings and Total counts them.
+// single historical message, and the rest is the CheckReport list shape.
 type insightsValidationBody struct {
-	Error  string            `json:"error"`
-	Issues []json.RawMessage `json:"issues"`
-	Total  uint32            `json:"total"`
+	Error     string            `json:"error"`
+	Issues    []json.RawMessage `json:"issues"`
+	Total     uint32            `json:"total"`
+	Truncated bool              `json:"truncated"`
 }
 
+// insightsCheckReport decodes the issue list of a 400 and bounds every finding,
+// so a changed or misbehaving service cannot widen what an agent receives.
 func insightsCheckReport(body []byte) *insightsv1.CheckReport {
 	var response insightsValidationBody
 	if json.Unmarshal(body, &response) != nil || len(response.Issues) == 0 {
 		return nil
 	}
 	report := &insightsv1.CheckReport{}
-	decoder := protojson.UnmarshalOptions{DiscardUnknown: true}
 	for _, raw := range response.Issues {
-		if len(report.Findings) == maxInsightsIssues {
+		if len(report.GetIssues()) == checkwire.MaxIssues {
 			break
 		}
 		var finding insightsv1.CheckFinding
-		if decoder.Unmarshal(raw, &finding) != nil {
+		if checkwire.Unmarshal(raw, &finding) != nil {
 			continue
 		}
-		finding.Message = truncateInsightsText(finding.GetMessage(), maxInsightsIssueRunes)
-		finding.Fix = truncateInsightsText(finding.GetFix(), maxInsightsIssueRunes)
-		if len(finding.GetPointer()) > maxInsightsIssuePointer {
-			finding.Pointer = ""
-		}
-		report.Findings = append(report.Findings, &finding)
+		report.Issues = append(report.Issues, checkwire.Bound(&finding))
 	}
-	report.Total = max(response.Total, countOfInsights(len(response.Issues)))
-	report.Truncated = report.Total > countOfInsights(len(report.Findings))
+	report.Total = max(response.Total, checkwire.Count(len(response.Issues)))
+	report.Truncated = response.Truncated || report.GetTotal() > checkwire.Count(len(report.GetIssues()))
 	return report
 }
 
-// countOfInsights converts a length to a uint32 count, saturating for any value
-// a response could reach.
-func countOfInsights(n int) uint32 {
-	if n < 0 {
-		return 0
-	}
-	return uint32(min(n, math.MaxUint32))
-}
-
-func truncateInsightsText(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
-}
+// maxInsightsRetryAfterSecs bounds the delay a Retry-After may ask an agent to wait.
+const maxInsightsRetryAfterSecs = 300
 
 // insightsRetryDelay reads a Retry-After in seconds from a throttling or
 // unavailable response. A date-form or out-of-range value is ignored.

@@ -21,6 +21,7 @@ import (
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 type Config struct {
@@ -264,12 +265,26 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, doc)
 }
 
+// maxCheckRequestBytes allows the envelope and whitespace around a document at
+// the size limit. The document itself is still checked against maxDocumentBytes.
+const maxCheckRequestBytes = maxDocumentBytes + 4<<10
+
+// checkRequest is the dry-run body. The document sits under a key so that
+// later options (execute, variables) can join it without a second route.
+type checkRequest struct {
+	Document json.RawMessage `json:"document"`
+}
+
 // checkDashboard is the dry run: it reports what a save would reject and never
 // writes. It reads the same document a PUT takes, and a read-only caller may use it.
 func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
-	var doc json.RawMessage
-	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
-		writeError(w, 400, "invalid dashboard document")
+	var request checkRequest
+	if err := decodeBody(w, r, &request, maxCheckRequestBytes); err != nil {
+		writeError(w, 400, "invalid dashboard check request")
+		return
+	}
+	if len(request.Document) == 0 {
+		writeError(w, 400, "dashboard document is required")
 		return
 	}
 	// The identity comes from the document itself, because there is no path id.
@@ -277,26 +292,27 @@ func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
 	var identity struct {
 		ID string `json:"id"`
 	}
-	if json.Unmarshal(doc, &identity) != nil {
+	if json.Unmarshal(request.Document, &identity) != nil {
 		identity.ID = ""
 	}
-	writeCheckReport(w, 200, capCheckReport(schemaFindings(identity.ID, doc)))
+	writeCheckReport(w, 200, capCheckReport(schemaFindings(identity.ID, request.Document)))
 }
 
 // validationErrorBody is the 400 response to a rejected save. Error keeps the
-// single message clients have always read. Issues lists the findings, at most
-// 32, and Total counts them all so a caller can tell when some were omitted.
+// single message clients have always read. The rest is the CheckReport list
+// shape the dry run uses, so one parser reads both.
 type validationErrorBody struct {
-	Error  string            `json:"error"`
-	Issues []json.RawMessage `json:"issues"`
-	Total  uint32            `json:"total"`
+	Error     string            `json:"error"`
+	Issues    []json.RawMessage `json:"issues"`
+	Total     uint32            `json:"total"`
+	Truncated bool              `json:"truncated"`
 }
 
 func writeSchemaFindings(w http.ResponseWriter, findings []*insightsv1.CheckFinding) {
 	report := capCheckReport(findings)
-	body := validationErrorBody{Error: findings[0].GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetFindings())), Total: report.GetTotal()}
-	for _, finding := range report.GetFindings() {
-		issue, err := checkJSON.Marshal(finding)
+	body := validationErrorBody{Error: findings[0].GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetIssues())), Total: report.GetTotal(), Truncated: report.GetTruncated()}
+	for _, finding := range report.GetIssues() {
+		issue, err := checkwire.Marshal(finding)
 		if err != nil {
 			writeError(w, 500, "dashboard validation failed")
 			return
@@ -307,7 +323,7 @@ func writeSchemaFindings(w http.ResponseWriter, findings []*insightsv1.CheckFind
 }
 
 func writeCheckReport(w http.ResponseWriter, status int, report *insightsv1.CheckReport) {
-	data, err := checkJSON.Marshal(report)
+	data, err := checkwire.Marshal(report)
 	if err != nil {
 		writeError(w, 500, "dashboard validation failed")
 		return

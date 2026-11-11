@@ -2,26 +2,18 @@ package insights
 
 import (
 	"encoding/json"
-	"math"
 	"strconv"
 	"unicode/utf8"
 
-	"google.golang.org/protobuf/encoding/protojson"
-
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
-// maxCheckFindings bounds every issue list the service returns: the 400
-// response to a rejected save and the validate dry run.
-const maxCheckFindings = 32
-
-// Findings are copied into responses and tool errors, so their text stays small
-// even when a submitted key is long.
+// maxFindingMessageRunes bounds the message the service writes for a finding.
+// A submitted key can appear in a message, so the bound keeps it short.
 const maxFindingMessageRunes = 200
 
 const maxDashboardWidgets = 48
-
-var checkJSON = protojson.MarshalOptions{EmitUnpopulated: true}
 
 // Rule ids are fixed per check. A rule never depends on the submitted keys or
 // on which widget failed, so agents and dashboards can match on it.
@@ -229,22 +221,13 @@ func truncateRunes(value string, limit int) string {
 	return string(runes[:limit])
 }
 
-// capCheckReport keeps the first maxCheckFindings findings and counts the rest.
+// capCheckReport keeps the first checkwire.MaxIssues findings and counts the rest.
 func capCheckReport(findings []*insightsv1.CheckFinding) *insightsv1.CheckReport {
-	report := &insightsv1.CheckReport{Total: countOf(len(findings))}
-	if len(findings) > maxCheckFindings {
-		findings = findings[:maxCheckFindings]
+	report := &insightsv1.CheckReport{Total: checkwire.Count(len(findings))}
+	if len(findings) > checkwire.MaxIssues {
+		findings = findings[:checkwire.MaxIssues]
 		report.Truncated = true
 	}
-	report.Findings = findings
+	report.Issues = findings
 	return report
-}
-
-// countOf converts a length to the uint32 a report carries, saturating rather
-// than wrapping for any value a document could reach.
-func countOf(n int) uint32 {
-	if n < 0 {
-		return 0
-	}
-	return uint32(min(n, math.MaxUint32))
 }

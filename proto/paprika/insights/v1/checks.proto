@@ -4,6 +4,11 @@ package paprika.insights.v1;
 
 option go_package = "github.com/benebsworth/paprika/internal/api/paprika/insights/v1;insightsv1";
 
+// Wire form: every JSON encoding of these messages is protojson with the
+// standard names. Enum values appear as their proto names (SEVERITY_ERROR,
+// SOURCE_SCHEMA) and fields as lowerCamelCase (ruleId). Lowercase words such
+// as "error" appear only in prose: MCP text and UI labels.
+
 // Severity ranks a finding. Only error findings reject a save; warnings and
 // info are advisory and never change whether a dashboard is stored.
 enum Severity {
@@ -24,9 +29,9 @@ enum Source {
 }
 
 // CheckFinding locates one problem in a submitted dashboard document. Pointer
-// is an RFC 6901 JSON Pointer into that document, for example
-// /widgets/2/options/thresholds/1; it is empty when the problem concerns the
-// whole document. Message and fix are short, fixed text, never upstream output.
+// is an RFC 6901 JSON Pointer into that document: /widgets/2 names a widget,
+// /widgets/2/layout a field of it, and the empty string the whole document.
+// Message and fix are short, fixed text, never upstream output.
 message CheckFinding {
   string rule_id = 1;
   Severity severity = 2;
@@ -37,10 +42,11 @@ message CheckFinding {
   string fix = 7;
 }
 
-// CheckReport is the result of a dry run. Findings holds at most 32 entries;
-// total counts every finding, so truncated is true when some were omitted.
+// CheckReport is the one list shape for issues: the 400 response to a rejected
+// save and the validate dry run both carry it. Issues holds at most 32 entries;
+// total counts every finding, and truncated is true when some were omitted.
 message CheckReport {
-  repeated CheckFinding findings = 1;
+  repeated CheckFinding issues = 1;
   uint32 total = 2;
   bool truncated = 3;
 }

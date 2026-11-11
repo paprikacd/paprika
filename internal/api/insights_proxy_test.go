@@ -370,7 +370,7 @@ func TestInsightsValidateDryRunTakesReadPermissionOnly(t *testing.T) {
 	var upstreamPaths []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamPaths = append(upstreamPaths, r.Method+" "+r.URL.Path)
-		_, _ = io.WriteString(w, `{"findings":[],"total":0,"truncated":false}`)
+		_, _ = io.WriteString(w, `{"issues":[],"total":0,"truncated":false}`)
 	}))
 	defer upstream.Close()
 	cfg := insightsAuthConfig("read")

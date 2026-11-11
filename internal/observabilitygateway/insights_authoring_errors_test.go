@@ -14,6 +14,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 func detailValues(t *testing.T, err error) []any {
@@ -45,12 +46,12 @@ func TestInsightsStatusErrorCarriesBoundedIssues(t *testing.T) {
 	require.Len(t, values, 1)
 	report, ok := values[0].(*insightsv1.CheckReport)
 	require.True(t, ok)
-	require.Len(t, report.GetFindings(), maxInsightsIssues)
+	require.Len(t, report.GetIssues(), checkwire.MaxIssues)
 	require.Equal(t, uint32(41), report.GetTotal())
 	require.True(t, report.GetTruncated())
-	require.Equal(t, "/widgets/0/layout", report.GetFindings()[0].GetPointer())
-	require.Equal(t, "w00", report.GetFindings()[0].GetWidgetId())
-	require.Empty(t, report.GetFindings()[0].GetFix())
+	require.Equal(t, "/widgets/0/layout", report.GetIssues()[0].GetPointer())
+	require.Equal(t, "w00", report.GetIssues()[0].GetWidgetId())
+	require.Empty(t, report.GetIssues()[0].GetFix())
 
 	malformed := insightsStatusError(http.StatusBadRequest, []byte(`{"error":"x","issues":[{"pointer":"/widgets/0"}]`), nil)
 	require.Empty(t, detailValues(t, malformed))
@@ -61,8 +62,8 @@ func TestInsightsStatusErrorTruncatesLongFindingText(t *testing.T) {
 	values := detailValues(t, insightsStatusError(http.StatusBadRequest, body, nil))
 	report, ok := values[0].(*insightsv1.CheckReport)
 	require.True(t, ok)
-	finding := report.GetFindings()[0]
-	require.Len(t, finding.GetMessage(), maxInsightsIssueRunes)
+	finding := report.GetIssues()[0]
+	require.Len(t, finding.GetMessage(), checkwire.MaxMessageRunes)
 	require.Empty(t, finding.GetPointer(), "an over-long pointer is dropped rather than cut")
 }
 
@@ -86,4 +87,18 @@ func TestInsightsStatusErrorCarriesOnlyNamedRetryDelays(t *testing.T) {
 	internal.Set("Retry-After", "5")
 	require.Empty(t, detailValues(t, insightsStatusError(http.StatusInternalServerError, []byte("secret upstream body"), internal)))
 	require.Equal(t, "insights request failed", insightsStatusError(http.StatusInternalServerError, []byte("secret upstream body"), internal).Message())
+}
+
+func TestInsightsStatusErrorBoundsEveryEchoedField(t *testing.T) {
+	body := []byte(`{"error":"bad","issues":[{"ruleId":"` + strings.Repeat("r", 300) + `","severity":"SEVERITY_WARNING","source":"SOURCE_SCHEMA","widgetId":"` + strings.Repeat("w", 200) + `","pointer":"/widgets/0/layout","message":"` + strings.Repeat("m", 500) + `","fix":"` + strings.Repeat("f", 500) + `"}],"total":1}`)
+	values := detailValues(t, insightsStatusError(http.StatusBadRequest, body, nil))
+	report, ok := values[0].(*insightsv1.CheckReport)
+	require.True(t, ok)
+	finding := report.GetIssues()[0]
+	require.Len(t, finding.GetRuleId(), checkwire.MaxRuleIDBytes)
+	require.Empty(t, finding.GetWidgetId())
+	require.Equal(t, "/widgets/0/layout", finding.GetPointer())
+	require.Len(t, finding.GetMessage(), checkwire.MaxMessageRunes)
+	require.Len(t, finding.GetFix(), checkwire.MaxMessageRunes)
+	require.Equal(t, insightsv1.Severity_SEVERITY_WARNING, finding.GetSeverity())
 }

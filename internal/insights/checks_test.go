@@ -1,11 +1,14 @@
 package insights
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 // widgetJSON builds one widget object. The extra fragment is spliced into the
@@ -30,7 +33,7 @@ func findingsFor(t *testing.T, document Dashboard) []json.RawMessage {
 	findings := schemaFindings("demo", document)
 	out := make([]json.RawMessage, 0, len(findings))
 	for _, f := range findings {
-		data, err := checkJSON.Marshal(f)
+		data, err := checkwire.Marshal(f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,10 +164,10 @@ func TestSchemaFindingsCapReportAtThirtyTwo(t *testing.T) {
 		t.Fatalf("collected %d findings, want 40", len(findings))
 	}
 	report := capCheckReport(findings)
-	if len(report.GetFindings()) != maxCheckFindings || report.GetTotal() != 40 || !report.GetTruncated() {
-		t.Fatalf("report = %d findings, total %d, truncated %t", len(report.GetFindings()), report.GetTotal(), report.GetTruncated())
+	if len(report.GetIssues()) != checkwire.MaxIssues || report.GetTotal() != 40 || !report.GetTruncated() {
+		t.Fatalf("report = %d findings, total %d, truncated %t", len(report.GetIssues()), report.GetTotal(), report.GetTruncated())
 	}
-	if report.GetFindings()[31].GetWidgetId() != "w31" {
+	if report.GetIssues()[31].GetWidgetId() != "w31" {
 		t.Fatalf("cap must keep the first findings in order")
 	}
 }
@@ -257,7 +260,7 @@ func TestDashboardSaveRejectionCarriesBoundedIssues(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Error != "widget layout is outside the dashboard grid" || body.Total != 40 || len(body.Issues) != maxCheckFindings {
+	if body.Error != "widget layout is outside the dashboard grid" || body.Total != 40 || len(body.Issues) != checkwire.MaxIssues {
 		t.Fatalf("body = error %q total %d issues %d", body.Error, body.Total, len(body.Issues))
 	}
 	first := body.Issues[0]
@@ -278,31 +281,57 @@ func TestDashboardSaveRejectionCarriesBoundedIssues(t *testing.T) {
 	}
 }
 
-func TestDashboardValidateEndpointIsReadOnlyDryRun(t *testing.T) {
-	s, store := testService(t)
+// checkBody wraps a document in the dry-run envelope.
+func checkBody(document Dashboard) []byte {
+	return []byte(`{"document":` + string(document) + `}`)
+}
+
+func TestDashboardValidateRejectsUnauthenticatedAndMalformedRequests(t *testing.T) {
+	s, _ := testService(t)
 	h := s.Handler()
-	if w := request(t, h, "POST", "/api/dashboards/validate", documentWithWidgets("demo"), map[string]string{"Authorization": "Bearer wrong"}); w.Code != 401 {
+	if w := request(t, h, "POST", "/api/dashboards/validate", checkBody(documentWithWidgets("demo")), map[string]string{"Authorization": "Bearer wrong"}); w.Code != 401 {
 		t.Fatalf("unauthenticated validate returned %d", w.Code)
 	}
-	if w := request(t, h, "POST", "/api/dashboards/validate", []byte(`{"id":`), nil); w.Code != 400 {
-		t.Fatalf("malformed validate returned %d", w.Code)
+	for name, body := range map[string]string{
+		"malformed JSON":   `{"document":`,
+		"bare document":    string(dashboard("demo", "Demo")),
+		"missing document": `{}`,
+		"unknown key":      `{"document":` + string(dashboard("demo", "Demo")) + `,"execute":true}`,
+	} {
+		if w := request(t, h, "POST", "/api/dashboards/validate", []byte(body), nil); w.Code != 400 {
+			t.Fatalf("%s returned %d: %s", name, w.Code, w.Body)
+		}
+	}
+}
+
+func TestDashboardValidateIsAReadOnlyDryRun(t *testing.T) {
+	s, store := testService(t)
+	h := s.Handler()
+
+	// A document that is not an object is a finding, not a malformed request.
+	if w := request(t, h, "POST", "/api/dashboards/validate", []byte(`{"document":"nope"}`), nil); w.Code != 200 || !strings.Contains(w.Body.String(), `"ruleId":"schema.document"`) {
+		t.Fatalf("non-object document = %d %s", w.Code, w.Body)
 	}
 
 	invalid := documentWithWidgets("demo", widgetJSON("requests", `{"x":0,"y":0,"w":0,"h":4}`, ""))
-	w := request(t, h, "POST", "/api/dashboards/validate", invalid, nil)
+	w := request(t, h, "POST", "/api/dashboards/validate", checkBody(invalid), nil)
 	if w.Code != 200 {
 		t.Fatalf("invalid dry run status = %d, body %s", w.Code, w.Body)
 	}
 	var report struct {
-		Findings  []map[string]any `json:"findings"`
+		Issues    []map[string]any `json:"issues"`
 		Total     uint32           `json:"total"`
 		Truncated bool             `json:"truncated"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Findings) != 1 || report.Findings[0]["pointer"] != "/widgets/0/layout" || report.Total != 1 || report.Truncated {
+	if len(report.Issues) != 1 || report.Issues[0]["pointer"] != "/widgets/0/layout" || report.Total != 1 || report.Truncated {
 		t.Fatalf("report = %s", w.Body)
+	}
+	again := request(t, h, "POST", "/api/dashboards/validate", checkBody(invalid), nil)
+	if !bytes.Equal(w.Body.Bytes(), again.Body.Bytes()) {
+		t.Fatalf("dry run bytes changed between identical calls:\n%s\n%s", w.Body, again.Body)
 	}
 	if got := store.List(); len(got) != 0 {
 		t.Fatalf("validate wrote %d dashboards", len(got))
@@ -311,8 +340,8 @@ func TestDashboardValidateEndpointIsReadOnlyDryRun(t *testing.T) {
 		t.Fatalf("validate created a dashboard: %d", missing.Code)
 	}
 
-	w = request(t, h, "POST", "/api/dashboards/validate", dashboard("demo", "Demo"), nil)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"findings":[]`) || !strings.Contains(w.Body.String(), `"total":0`) {
+	w = request(t, h, "POST", "/api/dashboards/validate", checkBody(dashboard("demo", "Demo")), nil)
+	if w.Code != 200 || w.Body.String() != `{"issues":[],"total":0,"truncated":false}` {
 		t.Fatalf("valid dry run = %d %s", w.Code, w.Body)
 	}
 
@@ -320,7 +349,7 @@ func TestDashboardValidateEndpointIsReadOnlyDryRun(t *testing.T) {
 	if created.Code != 200 {
 		t.Fatalf("create = %d", created.Code)
 	}
-	if w := request(t, h, "POST", "/api/dashboards/validate", dashboard("demo", "Changed"), nil); w.Code != 200 {
+	if w := request(t, h, "POST", "/api/dashboards/validate", checkBody(dashboard("demo", "Changed")), nil); w.Code != 200 {
 		t.Fatalf("validate existing = %d", w.Code)
 	}
 	doc, _, err := store.Get("demo")

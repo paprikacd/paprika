@@ -69,9 +69,9 @@ export declare enum Source {
 
 /**
  * CheckFinding locates one problem in a submitted dashboard document. Pointer
- * is an RFC 6901 JSON Pointer into that document, for example
- * /widgets/2/options/thresholds/1; it is empty when the problem concerns the
- * whole document. Message and fix are short, fixed text, never upstream output.
+ * is an RFC 6901 JSON Pointer into that document: /widgets/2 names a widget,
+ * /widgets/2/layout a field of it, and the empty string the whole document.
+ * Message and fix are short, fixed text, never upstream output.
  *
  * @generated from message paprika.insights.v1.CheckFinding
  */
@@ -127,16 +127,17 @@ export declare class CheckFinding extends Message<CheckFinding> {
 }
 
 /**
- * CheckReport is the result of a dry run. Findings holds at most 32 entries;
- * total counts every finding, so truncated is true when some were omitted.
+ * CheckReport is the one list shape for issues: the 400 response to a rejected
+ * save and the validate dry run both carry it. Issues holds at most 32 entries;
+ * total counts every finding, and truncated is true when some were omitted.
  *
  * @generated from message paprika.insights.v1.CheckReport
  */
 export declare class CheckReport extends Message<CheckReport> {
   /**
-   * @generated from field: repeated paprika.insights.v1.CheckFinding findings = 1;
+   * @generated from field: repeated paprika.insights.v1.CheckFinding issues = 1;
    */
-  findings: CheckFinding[];
+  issues: CheckFinding[];
 
   /**
    * @generated from field: uint32 total = 2;

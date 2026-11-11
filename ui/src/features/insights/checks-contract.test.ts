@@ -24,15 +24,15 @@ describe("generated insights check types", () => {
   })
 
   it("reads a service check report and keeps its finding pointers", () => {
-    const report = CheckReport.fromJson({ findings: [savedWidgetLayoutIssue], total: 1, truncated: false })
+    const report = CheckReport.fromJson({ issues: [savedWidgetLayoutIssue], total: 1, truncated: false })
     expect(report).toBeInstanceOf(CheckReport)
-    expect(report.findings).toHaveLength(1)
-    const finding = report.findings[0]
+    expect(report.issues).toHaveLength(1)
+    const finding = report.issues[0]
     expect(finding).toBeInstanceOf(CheckFinding)
     expect(finding.severity).toBe(Severity.ERROR)
     expect(finding.source).toBe(Source.SCHEMA)
     expect(finding.pointer).toBe("/widgets/0/layout")
     expect(finding.widgetId).toBe("requests")
-    expect(report.toJson()).toEqual({ findings: [savedWidgetLayoutIssue], total: 1 })
+    expect(report.toJson()).toEqual({ issues: [savedWidgetLayoutIssue], total: 1 })
   })
 })

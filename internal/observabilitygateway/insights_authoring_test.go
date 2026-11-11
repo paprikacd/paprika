@@ -257,8 +257,8 @@ func TestInsightsAuthoringRejectedSaveNamesWidgetPointers(t *testing.T) {
 	require.NoError(t, valueErr)
 	report, ok := message.(*insightsv1.CheckReport)
 	require.True(t, ok)
-	require.Len(t, report.GetFindings(), 1)
-	require.Equal(t, "/widgets/0/layout", report.GetFindings()[0].GetPointer())
-	require.Equal(t, "requests", report.GetFindings()[0].GetWidgetId())
+	require.Len(t, report.GetIssues(), 1)
+	require.Equal(t, "/widgets/0/layout", report.GetIssues()[0].GetPointer())
+	require.Equal(t, "requests", report.GetIssues()[0].GetWidgetId())
 	require.Equal(t, uint32(1), report.GetTotal())
 }

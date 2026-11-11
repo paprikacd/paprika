@@ -133,9 +133,9 @@ func (Source) EnumDescriptor() ([]byte, []int) {
 }
 
 // CheckFinding locates one problem in a submitted dashboard document. Pointer
-// is an RFC 6901 JSON Pointer into that document, for example
-// /widgets/2/options/thresholds/1; it is empty when the problem concerns the
-// whole document. Message and fix are short, fixed text, never upstream output.
+// is an RFC 6901 JSON Pointer into that document: /widgets/2 names a widget,
+// /widgets/2/layout a field of it, and the empty string the whole document.
+// Message and fix are short, fixed text, never upstream output.
 type CheckFinding struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RuleId        string                 `protobuf:"bytes,1,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
@@ -228,11 +228,12 @@ func (x *CheckFinding) GetFix() string {
 	return ""
 }
 
-// CheckReport is the result of a dry run. Findings holds at most 32 entries;
-// total counts every finding, so truncated is true when some were omitted.
+// CheckReport is the one list shape for issues: the 400 response to a rejected
+// save and the validate dry run both carry it. Issues holds at most 32 entries;
+// total counts every finding, and truncated is true when some were omitted.
 type CheckReport struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Findings      []*CheckFinding        `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
+	Issues        []*CheckFinding        `protobuf:"bytes,1,rep,name=issues,proto3" json:"issues,omitempty"`
 	Total         uint32                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
 	Truncated     bool                   `protobuf:"varint,3,opt,name=truncated,proto3" json:"truncated,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -269,9 +270,9 @@ func (*CheckReport) Descriptor() ([]byte, []int) {
 	return file_paprika_insights_v1_checks_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *CheckReport) GetFindings() []*CheckFinding {
+func (x *CheckReport) GetIssues() []*CheckFinding {
 	if x != nil {
-		return x.Findings
+		return x.Issues
 	}
 	return nil
 }
@@ -302,9 +303,9 @@ const file_paprika_insights_v1_checks_proto_rawDesc = "" +
 	"\twidget_id\x18\x04 \x01(\tR\bwidgetId\x12\x18\n" +
 	"\apointer\x18\x05 \x01(\tR\apointer\x12\x18\n" +
 	"\amessage\x18\x06 \x01(\tR\amessage\x12\x10\n" +
-	"\x03fix\x18\a \x01(\tR\x03fix\"\x80\x01\n" +
-	"\vCheckReport\x12=\n" +
-	"\bfindings\x18\x01 \x03(\v2!.paprika.insights.v1.CheckFindingR\bfindings\x12\x14\n" +
+	"\x03fix\x18\a \x01(\tR\x03fix\"|\n" +
+	"\vCheckReport\x129\n" +
+	"\x06issues\x18\x01 \x03(\v2!.paprika.insights.v1.CheckFindingR\x06issues\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\rR\x05total\x12\x1c\n" +
 	"\ttruncated\x18\x03 \x01(\bR\ttruncated*a\n" +
 	"\bSeverity\x12\x18\n" +
@@ -342,7 +343,7 @@ var file_paprika_insights_v1_checks_proto_goTypes = []any{
 var file_paprika_insights_v1_checks_proto_depIdxs = []int32{
 	0, // 0: paprika.insights.v1.CheckFinding.severity:type_name -> paprika.insights.v1.Severity
 	1, // 1: paprika.insights.v1.CheckFinding.source:type_name -> paprika.insights.v1.Source
-	2, // 2: paprika.insights.v1.CheckReport.findings:type_name -> paprika.insights.v1.CheckFinding
+	2, // 2: paprika.insights.v1.CheckReport.issues:type_name -> paprika.insights.v1.CheckFinding
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
