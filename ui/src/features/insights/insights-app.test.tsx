@@ -4,6 +4,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
+import { InsightsHTTPError } from "./client"
+import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
 import type { Dashboard, SavedQuery } from "./schema"
 import { readExampleWorkspace, writeExampleWorkspace } from "./example-storage"
 import { EXAMPLE_SAVED_QUERIES_KEY } from "./saved-query-storage"
@@ -685,5 +687,79 @@ describe("Insights application state", () => {
       screen.getByRole("button", { name: "Close dashboard manager" }),
     )
     expect(opener).toHaveFocus()
+  })
+})
+
+describe("Insights findings wiring", () => {
+  const latency: Dashboard = {
+    ...first,
+    widgets: [{ id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } }],
+  }
+  function finding(overrides: Partial<ConstructorParameters<typeof CheckFinding>[0]> = {}) {
+    return new CheckFinding({ ruleId: "schema.widget.layout", severity: Severity.WARNING, source: Source.SCHEMA, widgetId: "latency", pointer: "/widgets/0/layout/w", message: "Widget is narrower than its legend.", fix: "Widen it to 6 columns.", ...overrides })
+  }
+  function report(issues: CheckFinding[]) {
+    return new CheckReport({
+      issues, total: issues.length,
+      errorCount: issues.filter(issue => issue.severity === Severity.ERROR).length,
+      warningCount: issues.filter(issue => issue.severity === Severity.WARNING).length,
+      infoCount: 0,
+    })
+  }
+  function clientWithLatency() {
+    const api = { ...client(), validate: vi.fn().mockResolvedValue(report([finding()])) }
+    vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
+    vi.mocked(api.list).mockResolvedValue([latency, second])
+    vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === latency.id ? latency : second, etag: '"v1"' }))
+    return api
+  }
+  async function renderLatency(api: InsightsClient) {
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+  }
+  async function openCode() {
+    fireEvent.click(screen.getByRole("button", { name: "Code" }))
+    return screen.findByRole("region", { name: "Dashboard source editor" })
+  }
+
+  it("runs the document validator from the Code panel and Show widget opens that widget", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    const editor = await openCode()
+    fireEvent.click(within(editor).getByRole("button", { name: "Check" }))
+    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(expect.objectContaining({ id: latency.id }), expect.any(AbortSignal)))
+    const checks = await within(editor).findByRole("region", { name: "Dashboard checks" })
+    expect(within(checks).getByText("Widget is narrower than its legend.")).toBeInTheDocument()
+    fireEvent.click(within(checks).getByRole("button", { name: "Show widget Request latency" }))
+    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Request latency")
+  })
+
+  it("keeps the save error text and lists a rejected save's findings, errors first, beneath it", async () => {
+    const api = clientWithLatency()
+    vi.mocked(api.save).mockRejectedValue(new InsightsHTTPError("Dashboard rejected by checks", 400, null, report([
+      finding({ message: "Only a warning here.", severity: Severity.WARNING, ruleId: "stat.density" }),
+      finding({ message: "Layout overlaps another widget.", severity: Severity.ERROR }),
+    ])))
+    await renderLatency(api)
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Renamed dashboard" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
+    expect(await screen.findByText("Dashboard rejected by checks")).toBeInTheDocument()
+    const checks = await screen.findByRole("region", { name: "Save checks" })
+    const [errorItem, warningItem] = within(checks).getAllByRole("listitem")
+    expect(errorItem).toHaveTextContent("Layout overlaps another widget.")
+    expect(warningItem).toHaveTextContent("Only a warning here.")
+    fireEvent.click(within(errorItem).getByRole("button", { name: "Show widget Request latency" }))
+    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Request latency")
+  })
+
+  it("validates the dashboards in an imported library before they are written", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    const incoming: Dashboard = { ...first, id: "incoming", title: "Incoming library dashboard", widgets: [] }
+    const text = serializeDashboardLibrary([incoming], "json")
+    const editor = await openCode()
+    fireEvent.change(within(editor).getByLabelText("Import dashboard document"), { target: { files: [new File([text], "library.json", { type: "application/json" })] } })
+    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(expect.objectContaining({ title: "Incoming library dashboard" }), expect.any(AbortSignal)))
   })
 })
