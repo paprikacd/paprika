@@ -82,6 +82,30 @@ describe("starter picker", () => {
     expect((thumbnail.querySelector("[data-tile]") as HTMLElement).style.left).toBe("0%");
   });
 
+  it("names each card by its title and describes it by its summary and needs", async () => {
+    renderPicker();
+    const card = await screen.findByRole("button", { name: "Service overview" });
+    expect(card).toHaveAccessibleDescription(/The RED signals for one service/);
+    expect(card).toHaveAccessibleDescription(/5 widgets · needs metrics/);
+  });
+
+  it("keeps the template thumbnail's proportions when the grid is tall", async () => {
+    renderPicker();
+    const card = await screen.findByRole("button", { name: "Paprika control plane" });
+    // The control plane grid is 15 rows tall. Its thumbnail is capped by width, never squashed.
+    expect((card.querySelector('[data-testid="starter-thumbnail"]') as HTMLElement).style.maxWidth).toBe("112px");
+  });
+
+  it("moves focus to the stable heading when a template is chosen and when the list returns", async () => {
+    renderPicker();
+    const heading = await screen.findByRole("heading", { name: /Start from a template/ });
+    fireEvent.click(screen.getByRole("button", { name: "Namespace capacity" }));
+    await waitFor(() => expect(heading).toHaveFocus());
+    fireEvent.click(screen.getByRole("button", { name: /All templates/ }));
+    expect(heading).toHaveFocus();
+    expect(screen.getByRole("list", { name: "Templates" })).toBeInTheDocument();
+  });
+
   it("hands the chosen starter's bundle to the import review and saves nothing itself", async () => {
     const props = renderPicker();
     fireEvent.click(await screen.findByRole("button", { name: /^SLO and burn rate/ }));
@@ -89,7 +113,7 @@ describe("starter picker", () => {
     expect(props.getStarter).toHaveBeenCalledWith("slo-burn-rate");
     const reviewed = vi.mocked(props.onReviewBundle!).mock.calls[0][0];
     expect(reviewed.dashboards.map((dashboard) => dashboard.id)).toEqual(["slo-burn-rate"]);
-    expect(reviewed.dashboards[0].widgets).toHaveLength(4);
+    expect(reviewed.dashboards[0].widgets).toHaveLength(5);
     expect(props.onImportBundle).not.toHaveBeenCalled();
   });
 
@@ -109,7 +133,7 @@ describe("starter picker", () => {
         throw new Error("Starter service is unavailable.");
       }),
     });
-    fireEvent.click(await screen.findByRole("button", { name: /^Service overview/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Service overview" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Starter service is unavailable.");
     expect(props.onReviewBundle).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /All templates/ }));

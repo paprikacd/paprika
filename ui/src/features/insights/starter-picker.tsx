@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowLeft, LayoutTemplate, X } from "lucide-react";
 import type { StarterSummary } from "./client";
 import {
@@ -28,13 +28,20 @@ function messageOf(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+// A thumbnail keeps its grid proportions and is never taller than this, so a tall
+// template is narrower rather than squashed.
+const THUMBNAIL_MAX_HEIGHT = 140;
+
 /** A schematic of the starter's grid: each widget is a rectangle at its layout. */
 export function StarterThumbnail({ tiles }: { tiles: StarterSummary["tiles"] }) {
   const rows = Math.max(1, ...tiles.map((tile) => tile.y + tile.h));
   return (
     <div
       className={styles.thumbnail}
-      style={{ aspectRatio: `12 / ${rows}` }}
+      style={{
+        aspectRatio: `12 / ${rows}`,
+        maxWidth: `${Math.round((THUMBNAIL_MAX_HEIGHT * 12) / rows)}px`,
+      }}
       aria-hidden="true"
       data-testid="starter-thumbnail"
     >
@@ -73,6 +80,10 @@ export function StarterPicker({
   const [chosen, setChosen] = useState<ChosenStarter>();
   const [loadError, setLoadError] = useState("");
   const [importing, setImporting] = useState(false);
+  const idBase = useId();
+  // The heading stays mounted in every view, so focus lands on it when a card or
+  // "All templates" removes the element that had focus.
+  const heading = useRef<HTMLHeadingElement>(null);
   // The latest request wins: a bundle that arrives after the user chose another starter is dropped.
   const generation = useRef(0);
   const loaders = useRef({ listStarters, getStarter });
@@ -96,6 +107,7 @@ export function StarterPicker({
     setSelected(id);
     setChosen(undefined);
     setLoadError("");
+    heading.current?.focus();
     loaders.current.getStarter(id).then(
       (bundle) => {
         if (current !== generation.current) return;
@@ -113,12 +125,13 @@ export function StarterPicker({
     setSelected(undefined);
     setChosen(undefined);
     setLoadError("");
+    heading.current?.focus();
   }
 
   return (
     <section className={styles.picker} aria-label="Start from a template">
       <div className={shared.panelHeading}>
-        <h2>
+        <h2 ref={heading} tabIndex={-1} className={styles.heading}>
           <LayoutTemplate size={17} /> Start from a template
         </h2>
         <GammaButton
@@ -166,8 +179,10 @@ export function StarterPicker({
       ) : (
         <>
           <p className={styles.intro}>
-            Each template is a complete dashboard. Choose one, then pick your
-            providers and variables in the review before anything is saved.
+            Each template is a complete dashboard. Choose one, then map its
+            providers in the review. Its variables keep their defaults and can
+            be changed on the dashboard afterwards. Nothing is saved until you
+            confirm.
           </p>
           {listError ? (
             <p role="alert" className={styles.unavailable}>
@@ -179,19 +194,25 @@ export function StarterPicker({
             </p>
           ) : (
             <ul className={styles.list} aria-label="Templates">
-              {starters.map((starter) => (
+              {starters.map((starter, index) => {
+                const titleId = `${idBase}-${index}-title`;
+                const descriptionId = `${idBase}-${index}-description`;
+                const metaId = `${idBase}-${index}-meta`;
+                return (
                 <li key={starter.id}>
                   <button
                     type="button"
                     className={styles.card}
+                    aria-labelledby={titleId}
+                    aria-describedby={`${descriptionId} ${metaId}`}
                     onClick={() => choose(starter.id)}
                   >
                     <StarterThumbnail tiles={starter.tiles} />
-                    <strong>{starter.title}</strong>
-                    <span className={styles.description}>
+                    <strong id={titleId}>{starter.title}</strong>
+                    <span id={descriptionId} className={styles.description}>
                       {starter.description}
                     </span>
-                    <small className={styles.meta}>
+                    <small id={metaId} className={styles.meta}>
                       {starter.widgetCount} widget
                       {starter.widgetCount === 1 ? "" : "s"}
                       {starter.providers.length
@@ -203,7 +224,8 @@ export function StarterPicker({
                     </small>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </>

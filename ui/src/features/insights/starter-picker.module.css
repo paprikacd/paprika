@@ -66,10 +66,12 @@
   margin-top: auto;
   padding-top: 4px;
 }
+.heading {
+  outline: none;
+}
 .thumbnail {
   position: relative;
   width: 100%;
-  max-height: 120px;
   border: 1px solid var(--gamma-border);
   border-radius: 4px;
   background: var(--gamma-surface);
