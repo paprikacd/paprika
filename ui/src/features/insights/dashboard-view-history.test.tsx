@@ -23,7 +23,7 @@ vi.mock("./canvas", () => ({
     const link = widget?.drilldowns?.[0]
     return <div>
       {link && onDrilldown && <button onClick={() => onDrilldown(link, { labels: { service: followLabel }, value: 1, series: "api" })}>Follow signal</button>}
-      {widget?.selectionBindings?.length && onSelection && <button onClick={() => onSelection(widget, { labels: { env: "staging" } })}>Select staging</button>}
+      {widget?.selectionBindings?.length && onSelection && <button onClick={() => onSelection(widget, { labels: { env: selectLabel } })}>Select staging</button>}
       {onTimeRange && <button onClick={() => onTimeRange({ start: Date.parse(RANGE.from), end: Date.parse(RANGE.to) })}>Brush window</button>}
     </div>
   },
@@ -32,6 +32,8 @@ vi.mock("./canvas", () => ({
 const RANGE = { from: "2026-01-01T00:00:00.000Z", to: "2026-01-01T01:00:00.000Z" }
 // The signal label a drilldown carries into the target's variable.
 let followLabel = "api"
+// The environment a selection carries; a long value makes the selected link too long to write.
+let selectLabel = "staging"
 const binding: DrilldownBinding = { variable: "env", source: "label", value: "env" }
 const source: Dashboard = {
   schemaVersion: 1, id: "source", title: "Source", timeRange: "1h", refreshInterval: 0, customTimeRange: RANGE,
@@ -182,6 +184,28 @@ describe("dashboard view history characterisation", () => {
     record("popstate to a missing dashboard")
 
     expect(entries).toEqual(DRILLDOWN_FLOW)
+  })
+
+  it("keeps the view and reports the limit when a selection cannot be linked", async () => {
+    // The shared link is just under the limit; the selected value pushes the address over it.
+    selectLabel = "€".repeat(300)
+    try {
+      setURL(`/dashboard/insights/?dashboard=target&vars=${encodeURIComponent(JSON.stringify({ service: "€".repeat(880) }))}`)
+      render(<InsightsApp client={client()} />)
+      await screen.findByRole("heading", { name: "Target" })
+      record("load near the limit")
+      fireEvent.click(screen.getByRole("button", { name: "Select staging" }))
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("exceeds the 8192-character URL limit"))
+      record("selection past the limit")
+    } finally {
+      selectLabel = "staging"
+    }
+
+    expect(screen.getByRole("combobox", { name: "env" })).toHaveTextContent("prod")
+    expect(entries.map(entry => [entry.step, entry.ops])).toEqual([
+      ["load near the limit", [`replace /dashboard/insights/?dashboard=target&vars=${encodeURIComponent(JSON.stringify({ service: "€".repeat(880) }))}`]],
+      ["selection past the limit", []],
+    ])
   })
 
   it("keeps the current dashboard when a drilldown cannot be linked under a base path", async () => {

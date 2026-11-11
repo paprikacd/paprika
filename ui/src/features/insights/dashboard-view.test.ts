@@ -207,7 +207,13 @@ describe("useDashboardView", () => {
       dashboardId: "ops",
       variables: Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`v${index}`, "x".repeat(1000)])),
     }
-    expect(() => act(() => result.current.apply(tooLong, "variables"))).toThrow("exceeds the 8192-character URL limit")
+    // Catch inside act so any update queued before the failure is flushed and visible.
+    let failure: unknown
+    act(() => {
+      try { result.current.apply(tooLong, "variables") } catch (error) { failure = error }
+    })
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain("exceeds the 8192-character URL limit")
     expect(result.current.current).toBe(before)
     expect(replaceState).toHaveBeenCalledTimes(1)
   })
