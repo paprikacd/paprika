@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoAxisDomain, axisScale, formatMetric, formatRange, formatReading, formatRecordValue, niceDomain, symmetricDomain } from "./units";
+import { autoAxisDomain, axisScale, formatMetric, formatRange, formatReading, formatRecordValue, niceAxis, niceDomain, symmetricDomain, ticksWithin } from "./units";
 
 describe("auto precision", () => {
   it.each([
@@ -125,6 +125,29 @@ describe("per-second rates", () => {
 });
 
 describe("authored decimals", () => {
+it("never picks a tick step below the last authored decimal, so labels cannot collide", () => {
+  // A 0 to 1 count axis with decimals 0 used to pick a 0.5 step, printing "1, 1, 0".
+  expect(axisScale([0, 1], "", { decimals: 0 }).ticks).toEqual([0, 1]);
+  const domains: [number, number][] = [[0, 1], [0, 0.3], [0, 2.5], [-3, 7], [0, 100], [0, 525], [0.02, 0.07], [5, 5.4]];
+  for (const decimals of [0, 1, 2]) {
+    const minStep = 10 ** -decimals;
+    for (const domain of domains) {
+      const axis = axisScale(domain, "", { decimals });
+      const labels = axis.ticks.map(tick => axis.label(tick, false));
+      expect(new Set(labels).size, `${domain} at ${decimals} decimals`).toBe(labels.length);
+      for (let i = 1; i < axis.ticks.length; i++) expect(axis.ticks[i] - axis.ticks[i - 1]).toBeGreaterThanOrEqual(minStep * (1 - 1e-9));
+    }
+  }
+});
+
+it("applies the minimum step to the nice and within-domain tick helpers", () => {
+  expect(niceAxis([0, 1], 5, 1).ticks).toEqual([0, 1]);
+  expect(ticksWithin([0, 1], 5, 1)).toEqual([0, 1]);
+  expect(ticksWithin([0, 10], 5, 1).every(tick => Number.isInteger(tick))).toBe(true);
+  // Without a minimum the helpers keep their previous, finer steps.
+  expect(niceAxis([0, 1], 5).ticks).toEqual([0, 0.25, 0.5, 0.75, 1]);
+});
+
   it("honours decimals exactly, without scaling or precision loss", () => {
     expect(formatMetric(124820, "obs/s", false, 2)).toBe("124,820.00 obs/s");
     expect(formatMetric(1234.5678, "ms", false, 2)).toBe("1,234.57 ms");
