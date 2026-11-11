@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -23,32 +24,64 @@ import (
 // passes.
 var exporterNamer = otlptranslator.NewMetricNamer("", otlptranslator.UnderscoreEscapingWithSuffixes)
 
-// scanExportedMetricNames returns the Prometheus series names that the paprika
-// instruments defined in the non-test Go sources under root/internal and
-// root/cmd are exported as.
-//
-// Two kinds of definition are read from the AST:
-//   - Prometheus client options: the Name field of CounterOpts, GaugeOpts,
-//     HistogramOpts and SummaryOpts literals is used verbatim.
-//   - OTel instruments: the first string literal starting with "paprika." or
-//     "paprika_" passed to a constructor (Int64Counter, Float64Histogram,
-//     Int64ObservableGauge, the repo's mustCounter-style helpers, ...). Its unit
-//     comes from the constructor's unit argument or metric.WithUnit. Entries of
-//     a literal table of []struct{name, unit, ...} are treated as observable
-//     gauges, which is how newHealthInstruments creates them.
-//
-// The OTel names are passed through the exporter's own namer, so suffixes such
-// as _total, _ratio and unit suffixes match what Prometheus sees. Histograms
-// also contribute _bucket, _sum and _count.
-//
-// Not covered: names that are not string literals, instruments created by
-// computed names or by unit values that are not literals (an error is returned
-// for units the namer cannot handle), and metrics emitted by other binaries or
-// dependencies (controller-runtime, client-go, cAdvisor, kube-state-metrics).
+// metricDefinition is one paprika metric definition found in the Go sources.
+type metricDefinition struct {
+	Source   string   // the OTel dotted name, or the Prometheus name for client collectors
+	Exported string   // the base Prometheus name after the exporter's naming rules
+	Kind     string   // Counter, Gauge or Histogram: the exported Prometheus type
+	Series   []string // every exported series: Exported, plus _bucket/_sum/_count for histograms
+	File     string   // source path relative to root, for diagnostics
+}
+
+// scanExportedMetricNames returns every Prometheus series name that the paprika
+// metric definitions under root/internal and root/cmd export, including the
+// _bucket, _sum and _count series of histograms.
 func scanExportedMetricNames(root string) (map[string]bool, error) {
-	defined := map[string]bool{}
+	defs, err := scanMetricDefinitions(root)
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, def := range defs {
+		for _, series := range def.Series {
+			names[series] = true
+		}
+	}
+	return names, nil
+}
+
+// scanMetricDefinitions reads every paprika metric definition from the non-test
+// Go sources under root/internal and root/cmd. Two kinds of definition are read
+// from the AST:
+//   - Prometheus client options: CounterOpts, GaugeOpts and HistogramOpts literals
+//     whose Name, optionally joined with Namespace and Subsystem, starts with
+//     "paprika". The result is used verbatim.
+//   - OTel instruments: the first argument starting with "paprika." or "paprika_"
+//     passed to a constructor (Int64Counter, Float64Histogram, ...) or to any
+//     must* helper. The unit is a string literal in the constructor's unit
+//     position, a metric.WithUnit argument, or "1" for mustCounter. The name is
+//     then passed through the exporter's namer, so suffixes match what
+//     Prometheus sees.
+//   - Entries of a literal table of []struct{name, unit, ...} are treated as
+//     observable gauges, which is how newHealthInstruments creates them.
+//
+// String values are resolved through package-level string constants in the
+// same package directory and through "+" concatenation. A name or unit that
+// cannot be resolved to a value is an error, so a definition cannot disappear
+// silently.
+//
+// Not covered: constants defined in another package and referenced with a
+// selector (pkg.Const), computed names, metrics emitted by dependencies
+// (controller-runtime, client-go, cAdvisor), and metric types that the
+// constructor name does not reveal (a must* helper whose name has no Counter,
+// Gauge or Histogram in it is rejected rather than guessed).
+func scanMetricDefinitions(root string) ([]metricDefinition, error) {
 	fset := token.NewFileSet()
+	var parsed []parsedSource
 	for _, dir := range []string{"internal", "cmd"} {
+		if _, err := os.Stat(filepath.Join(root, dir)); os.IsNotExist(err) {
+			continue
+		}
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -69,34 +102,113 @@ func scanExportedMetricNames(root string) (map[string]bool, error) {
 			if err != nil {
 				return fmt.Errorf("parse %s: %w", path, err)
 			}
-			return collectMetricDefinitions(file, defined)
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			parsed = append(parsed, parsedSource{file: file, dir: filepath.Dir(path), rel: rel})
+			return nil
 		})
 		if err != nil {
 			return nil, err
 		}
 	}
-	return defined, nil
+	c := &collector{consts: map[string]string{}}
+	for _, src := range parsed {
+		c.collectConsts(src)
+	}
+	var defs []metricDefinition
+	for _, src := range parsed {
+		found, err := c.collectDefinitions(src)
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, found...)
+	}
+	sort.Slice(defs, func(i, j int) bool { return defs[i].Exported < defs[j].Exported })
+	return defs, nil
 }
 
-// collectMetricDefinitions adds the exported names defined in one file to defined.
-func collectMetricDefinitions(file *ast.File, defined map[string]bool) error {
-	var firstErr error
-	record := func(names []string, err error) {
-		if err != nil && firstErr == nil {
-			firstErr = err
+type parsedSource struct {
+	file *ast.File
+	dir  string
+	rel  string
+}
+
+type collector struct {
+	consts map[string]string // key: package directory + "\x00" + constant name
+}
+
+// collectConsts records package-level string constants of one file.
+func (c *collector) collectConsts(src parsedSource) {
+	for _, decl := range src.file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
 		}
-		for _, n := range names {
-			defined[n] = true
+		for _, spec := range gen.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for i, id := range vs.Names {
+				if i >= len(vs.Values) {
+					continue
+				}
+				if v, ok := c.str(vs.Values[i], src.dir); ok {
+					c.consts[src.dir+"\x00"+id.Name] = v
+				}
+			}
 		}
 	}
-	ast.Inspect(file, func(n ast.Node) bool {
+}
+
+// str resolves an expression to a string value within the package directory dir.
+func (c *collector) str(expr ast.Expr, dir string) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		if e.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(e.Value)
+		return s, err == nil
+	case *ast.Ident:
+		v, ok := c.consts[dir+"\x00"+e.Name]
+		return v, ok
+	case *ast.ParenExpr:
+		return c.str(e.X, dir)
+	case *ast.BinaryExpr:
+		if e.Op != token.ADD {
+			return "", false
+		}
+		l, lok := c.str(e.X, dir)
+		r, rok := c.str(e.Y, dir)
+		return l + r, lok && rok
+	}
+	return "", false
+}
+
+// collectDefinitions returns the paprika metric definitions in one file.
+func (c *collector) collectDefinitions(src parsedSource) ([]metricDefinition, error) {
+	var defs []metricDefinition
+	var firstErr error
+	add := func(source, exported string, kind string) {
+		def := metricDefinition{Source: source, Exported: exported, Kind: kind, File: src.rel, Series: []string{exported}}
+		if kind == "Histogram" {
+			def.Series = append(def.Series, exported+"_bucket", exported+"_sum", exported+"_count")
+		}
+		defs = append(defs, def)
+	}
+	ast.Inspect(src.file, func(n ast.Node) bool {
 		if firstErr != nil {
 			return false
 		}
 		switch node := n.(type) {
 		case *ast.CompositeLit:
 			if typeName := selectorOrIdentName(node.Type); strings.HasSuffix(typeName, "Opts") {
-				record(prometheusOptNames(node, typeName))
+				if name, kind, ok := c.prometheusOpts(node, typeName, src.dir); ok {
+					add(name, name, kind)
+				}
 				return true
 			}
 			if isInstrumentTable(node.Type) {
@@ -105,15 +217,21 @@ func collectMetricDefinitions(file *ast.File, defined map[string]bool) error {
 					if !ok || len(lit.Elts) < 2 {
 						continue
 					}
-					name, ok := stringLit(lit.Elts[0])
+					name, ok := c.str(lit.Elts[0], src.dir)
 					if !ok || !isPaprikaInstrumentName(name) {
 						continue
 					}
-					unit, ok := stringLit(lit.Elts[1])
+					unit, ok := c.str(lit.Elts[1], src.dir)
 					if !ok {
-						continue
+						firstErr = fmt.Errorf("%s: unit of health table entry %s is not a string value", src.rel, name)
+						return false
 					}
-					record(exportedInstrumentNames(name, unit, otlptranslator.MetricTypeGauge))
+					exported, kind, err := exportedInstrument(name, unit, otlptranslator.MetricTypeGauge)
+					if err != nil {
+						firstErr = fmt.Errorf("%s: %w", src.rel, err)
+						return false
+					}
+					add(name, exported, kind)
 				}
 			}
 		case *ast.CallExpr:
@@ -122,54 +240,72 @@ func collectMetricDefinitions(file *ast.File, defined map[string]bool) error {
 			if !ok {
 				return true
 			}
-			name, unit, found, err := instrumentNameAndUnit(node, callee)
+			name, unit, found, err := c.instrumentNameAndUnit(node, callee, src.dir)
 			if err != nil {
-				record(nil, err)
+				firstErr = fmt.Errorf("%s: %w", src.rel, err)
 				return false
 			}
 			if found {
-				record(exportedInstrumentNames(name, unit, typ))
+				exported, kind, err := exportedInstrument(name, unit, typ)
+				if err != nil {
+					firstErr = fmt.Errorf("%s: %w", src.rel, err)
+					return false
+				}
+				add(name, exported, kind)
 			}
 		}
 		return true
 	})
-	return firstErr
+	return defs, firstErr
 }
 
-// prometheusOptNames reads the Name field of a Prometheus client options literal.
-func prometheusOptNames(lit *ast.CompositeLit, typeName string) ([]string, error) {
+// prometheusOpts reads a Prometheus client options literal. The full name is
+// Namespace_Subsystem_Name with empty parts dropped; only names starting with
+// "paprika" are paprika metrics.
+func (c *collector) prometheusOpts(lit *ast.CompositeLit, typeName string, dir string) (string, string, bool) {
+	fields := map[string]string{}
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok || selectorOrIdentName(kv.Key) != "Name" {
+		if !ok {
 			continue
 		}
-		name, ok := stringLit(kv.Value)
-		if !ok || !strings.HasPrefix(name, "paprika_") {
+		key := selectorOrIdentName(kv.Key)
+		if key != "Name" && key != "Namespace" && key != "Subsystem" {
 			continue
 		}
-		names := []string{name}
-		switch typeName {
-		case "HistogramOpts":
-			names = append(names, name+"_bucket", name+"_sum", name+"_count")
-		case "SummaryOpts":
-			names = append(names, name+"_sum", name+"_count")
+		if v, ok := c.str(kv.Value, dir); ok {
+			fields[key] = v
 		}
-		return names, nil
 	}
-	return nil, nil
+	var parts []string
+	for _, key := range []string{"Namespace", "Subsystem", "Name"} {
+		if fields[key] != "" {
+			parts = append(parts, fields[key])
+		}
+	}
+	name := strings.Join(parts, "_")
+	if !strings.HasPrefix(name, "paprika") || fields["Name"] == "" {
+		return "", "", false
+	}
+	kinds := map[string]string{"CounterOpts": "Counter", "GaugeOpts": "Gauge", "HistogramOpts": "Histogram"}
+	kind, ok := kinds[typeName]
+	return name, kind, ok
 }
 
-// exportedInstrumentNames runs one OTel instrument through the exporter's namer.
-// Histograms also yield their _bucket, _sum and _count series.
-func exportedInstrumentNames(otelName, unit string, typ otlptranslator.MetricType) ([]string, error) {
+// exportedInstrument runs one OTel instrument through the exporter's namer and
+// returns its Prometheus base name and type.
+func exportedInstrument(otelName, unit string, typ otlptranslator.MetricType) (string, string, error) {
 	name, err := exporterNamer.Build(otlptranslator.Metric{Name: otelName, Unit: unit, Type: typ})
 	if err != nil {
-		return nil, fmt.Errorf("name instrument %s (unit %q): %w", otelName, unit, err)
+		return "", "", fmt.Errorf("name instrument %s (unit %q): %w", otelName, unit, err)
 	}
-	if typ == otlptranslator.MetricTypeHistogram {
-		return []string{name, name + "_bucket", name + "_sum", name + "_count"}, nil
+	kinds := map[otlptranslator.MetricType]string{
+		otlptranslator.MetricTypeMonotonicCounter:    "Counter",
+		otlptranslator.MetricTypeNonMonotonicCounter: "Gauge",
+		otlptranslator.MetricTypeGauge:               "Gauge",
+		otlptranslator.MetricTypeHistogram:           "Histogram",
 	}
-	return []string{name}, nil
+	return name, kinds[typ], nil
 }
 
 // instrumentType classifies an OTel instrument constructor by name. It matches
@@ -193,14 +329,15 @@ func instrumentType(callee string) (otlptranslator.MetricType, bool) {
 	return 0, false
 }
 
-// instrumentNameAndUnit extracts the literal instrument name and unit of a
-// constructor call. must* helpers take the name as their second argument and
-// the unit as their third, except mustCounter, which always uses unit "1".
-// Meter methods take the name first and the unit via metric.WithUnit.
-func instrumentNameAndUnit(call *ast.CallExpr, callee string) (name, unit string, found bool, err error) {
+// instrumentNameAndUnit extracts the name and unit of a constructor call.
+// The name is the first argument that resolves to a paprika instrument name.
+// The unit is, in order: "1" for mustCounter; the string at the position after
+// the name for must* helpers; a metric.WithUnit argument anywhere in the call.
+// A missing unit is "". A unit that is present but not a value is an error.
+func (c *collector) instrumentNameAndUnit(call *ast.CallExpr, callee, dir string) (name, unit string, found bool, err error) {
 	nameIdx := -1
 	for i, arg := range call.Args {
-		if s, ok := stringLit(arg); ok && isPaprikaInstrumentName(s) {
+		if s, ok := c.str(arg, dir); ok && isPaprikaInstrumentName(s) {
 			name, nameIdx = s, i
 			break
 		}
@@ -208,27 +345,24 @@ func instrumentNameAndUnit(call *ast.CallExpr, callee string) (name, unit string
 	if nameIdx < 0 {
 		return "", "", false, nil
 	}
-	if strings.HasPrefix(callee, "must") {
-		if callee == "mustCounter" {
-			return name, "1", true, nil
+	if callee == "mustCounter" {
+		return name, "1", true, nil
+	}
+	if strings.HasPrefix(callee, "must") && nameIdx+1 < len(call.Args) {
+		if u, ok := c.str(call.Args[nameIdx+1], dir); ok {
+			return name, u, true, nil
 		}
-		if nameIdx+1 >= len(call.Args) {
-			return "", "", false, nil
-		}
-		u, ok := stringLit(call.Args[nameIdx+1])
-		if !ok {
-			return "", "", false, nil // unit comes from a variable: not a literal definition
-		}
-		return name, u, true, nil
 	}
 	for _, arg := range call.Args {
 		inner, ok := arg.(*ast.CallExpr)
 		if !ok || selectorOrIdentName(inner.Fun) != "WithUnit" || len(inner.Args) != 1 {
 			continue
 		}
-		if u, ok := stringLit(inner.Args[0]); ok {
-			return name, u, true, nil
+		u, ok := c.str(inner.Args[0], dir)
+		if !ok {
+			return "", "", false, fmt.Errorf("metric.WithUnit for %s must be a string value", name)
 		}
+		return name, u, true, nil
 	}
 	return name, "", true, nil
 }
@@ -266,16 +400,4 @@ func selectorOrIdentName(expr ast.Expr) string {
 		return e.Sel.Name
 	}
 	return ""
-}
-
-func stringLit(expr ast.Expr) (string, bool) {
-	lit, ok := expr.(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		return "", false
-	}
-	s, err := strconv.Unquote(lit.Value)
-	if err != nil {
-		return "", false
-	}
-	return s, true
 }
