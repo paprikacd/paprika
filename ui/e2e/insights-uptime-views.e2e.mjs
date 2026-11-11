@@ -54,6 +54,10 @@ try {
       assert.equal(await detail.evaluate(element => element.parentElement === document.body), true, "Details must escape the widget");
       await empty.click({ force: true }); assert.equal(await empty.getAttribute("aria-pressed"), "true");
       await page.keyboard.press("Escape"); await detail.waitFor({ state: "hidden" });
+      // A day frame needs 7 px in both directions. Narrow days keep their fill, and wide critical days carry the frame.
+      const days = await widget.locator('[data-uptime-state="observed"]').evaluateAll(nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return { width: box.width, height: box.height, stroke: node.getAttribute("data-status-stroke") } }))
+      assert.ok(days.every(day => day.stroke === null || (day.width >= 7 && day.height >= 7)), `${id}: no frame on a day under 7 px`)
+      if (width >= 1200) assert.ok(days.some(day => day.stroke === "critical"), `${id}: wide critical days carry the frame`)
       const known = widget.locator('[data-uptime-state="observed"]').first();
       await known.focus(); const prior = await known.getAttribute("data-uptime-key");
       await page.keyboard.press("ArrowRight");

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
+import { markFillEvidence } from "./fixtures/mark-fill.mjs"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const output = join(root,"artifacts/insights/status-history-axis")
@@ -14,7 +15,7 @@ await mkdir(output,{recursive:true})
 const browser=await chromium.launch({headless:true}), errors=[]
 try {
   for (const width of [1512,390]) for (const theme of ["Light","Dark"]) {
-    const context=await browser.newContext({viewport:{width,height:width===390?844:1100},hasTouch:width===390,reducedMotion:"reduce"})
+    const context=await browser.newContext({viewport:{width,height:width===390?844:1100},hasTouch:width===390,reducedMotion:"reduce",deviceScaleFactor:2})
     const page=await context.newPage(), fixture=await installRichChartFixtureAPI(page,base)
     page.on("pageerror",error=>errors.push(error.message))
     const dashboard=fixture.documents.get("example-artboard-service-pulse"), widget=dashboard.widgets.find(widget=>widget.id==="states")
@@ -24,7 +25,7 @@ try {
     chart.annotationSource={queryRef:{id:"test-incidents"},timestampColumn:"started_at",endColumn:"ended_at",labelColumn:"label",severityColumn:"severity"}
     chart.options={...chart.options,thresholds:[{value:2,color:"#e0a527",label:"2× threshold"}]}
     widget.title="Service SLO state timeline"; widget.pluginId="status-history"; widget.config={maxSeries:8,maxPoints:60,labelField:"service",showTimeAxis:true,segmented:true}
-    widget.options={thresholds:[{value:0,color:"#21c890",label:"Healthy"},{value:1,color:"#efb530",label:"At risk"},{value:2,color:"#e45757",label:"Breaching"}],showLegend:true,showTooltip:true}
+    widget.options={thresholds:[{value:0,status:"ok",label:"Healthy"},{value:1,status:"warning",label:"At risk"},{value:2,status:"critical",label:"Breaching"}],showLegend:true,showTooltip:true}
     await page.route("**/api/insights/query",async route=>{
       const request=route.request().postDataJSON()
       if(request.query === '{"fixture":"test-incident"}') {
@@ -35,7 +36,7 @@ try {
       }
       if(!request.query.startsWith("paprika_example_ab_service_pulse_states{")) return route.fallback()
       const end=request.end*1000, start=end-30*24*60*60*1000
-      const series=["uptime-api","payment-api","auth-api","catalog-api","worker"].map((name,row)=>({name:`up{service="${name}"}`,labels:{service:name},points:Array.from({length:30},(_,i)=>({timestamp:start+i*(end-start)/29,value:i===10&&row===1?2:i===16&&row===2?1:0}))}))
+      const series=["uptime-api","payment-api","auth-api","catalog-api","worker"].map((name,row)=>({name:`up{service="${name}"}`,labels:{service:name},points:Array.from({length:60},(_,i)=>({timestamp:start+i*(end-start)/59,value:i===10&&row===1?2:i===16&&row===2?1:0}))}))
       await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({series})})
     })
     await page.goto(`${base}/dashboard/insights/?dashboard=example-artboard-service-pulse`,{waitUntil:"networkidle"})
@@ -69,6 +70,29 @@ try {
     assert.equal(await tooltip.locator("[data-metric-value]").getAttribute("data-metric-value"),"2")
     await page.keyboard.press("Escape"); await tooltip.waitFor({state:"hidden"})
     assert.deepEqual(fixture.failures,[])
+    // Critical fill, counted from pixels: framed marks keep a fill centre, unframed marks are almost all fill.
+    // Frames only appear on marks 7 px or wider, so the 60-point series exercises both branches at 390 px.
+    const criticalMarks=host.locator('[data-history-value="2"]')
+    const checkCritical=async label=>{
+      const marks=[]
+      for(let index=0;index<await criticalMarks.count();index++) marks.push(await markFillEvidence(page,criticalMarks.nth(index),{trimRight:1}))
+      assert.ok(marks.length>0,`${label}: the fixture has critical marks`)
+      for(const mark of marks){
+        assert.equal(mark.framed,mark.width>=7,`${label}: a frame appears exactly on marks of 7 px or wider: ${JSON.stringify(mark)}`)
+        assert.equal(mark.centreIsFill,true,`${label}: a critical mark's centre is its fill, not a frame or gap: ${JSON.stringify(mark)}`)
+        // Unframed marks are 2-4 CSS px, so one device column of edge is noise; a covered mark would fall far below 60%.
+        if(!mark.framed) assert.ok(mark.fill/mark.total>=0.6,`${label}: an unframed critical mark is mostly fill: ${JSON.stringify(mark)}`)
+      }
+      console.log(`  ${label}: ${marks.length} critical marks, ${marks.filter(mark=>mark.framed).length} framed, ${marks.filter(mark=>!mark.framed).length} unframed`)
+    }
+    await checkCritical(`${theme} ${width}px`)
+    if(width===1512&&theme==="Dark"){
+      const compact=page.getByRole("button",{name:"Compact view",exact:true})
+      assert.equal(await compact.isEnabled(),true,"Compact view is available on the wide canvas")
+      await compact.click()
+      await page.waitForFunction(()=>document.querySelector('[data-insights-theme="dark"][data-density="compact"]')!==null)
+      await checkCritical("Compact dark 1512px")
+    }
     await page.screenshot({path:join(output,`${theme.toLowerCase()}-${width}.png`),animations:"disabled"})
     await context.close(); console.log(`PASS ${theme} ${width}px status history`)
   }

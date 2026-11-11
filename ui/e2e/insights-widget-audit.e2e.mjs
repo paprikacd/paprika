@@ -332,7 +332,7 @@ async function editingAudit() {
       await editor(page).getByLabel("Minimum", { exact: true }).fill("-50")
       await editor(page).getByLabel("Maximum", { exact: true }).fill("150")
       await editor(page).getByRole("switch", { name: "Show legend", exact: true }).uncheck()
-      await editor(page).getByLabel("Threshold 3 hue override", { exact: true }).fill("#507e6b")
+      await editor(page).getByLabel("Threshold 3 colour", { exact: true }).fill("#507e6b")
     }
     const apply = editor(page).getByRole("button", { name: "Apply changes", exact: true })
     await apply.scrollIntoViewIfNeeded(); await page.waitForLoadState("networkidle")
