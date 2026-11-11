@@ -849,10 +849,18 @@ tasks:
           --set deploymentMode=weird
         expect_fail bad-port \
           --set metrics.port=99999
+        check_render gateway-capacity-zero-integer --set deploymentMode=split \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://capacity.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.httpAdmissionWait=0
         expect_fail capacity-zero-concurrency \
           --set observabilityGateway.capacity.queryConcurrency=0
         expect_fail capacity-bare-duration \
           --set observabilityGateway.capacity.queryQueueWait=5
+        expect_fail capacity-bare-admission-wait \
+          --set observabilityGateway.capacity.httpAdmissionWait=5
         expect_fail capacity-nonnumeric-pool \
           --set observabilityGateway.capacity.httpWorkSlots=many
 

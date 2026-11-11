@@ -101,6 +101,9 @@ func insightsRenderDashboardTool(c *InsightsAuthoringClient) mcp.Tool {
 		Description: "Read-only browser screenshot of an authorized saved dashboard. Returns image/png alongside the source ETag and viewport. Requires the operator's isolated screenshot worker; no arbitrary URLs and no saved-document mutations.",
 		Scope:       mcp.ScopeObserve, InputSchema: json.RawMessage(dashboardRenderSchema),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
+			if err := requireDashboardQueryAdmission(ctx); err != nil {
+				return nil, err
+			}
 			args, err := parseDashboardRenderArgs(raw)
 			if err != nil {
 				return nil, err

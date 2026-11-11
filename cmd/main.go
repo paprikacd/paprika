@@ -855,13 +855,13 @@ func registerObservabilityCapacityFlags(fs *pflag.FlagSet) {
 	fs.Int("observability-query-provider-queue", 8,
 		"Observability queries waiting for one provider's slot. Must not exceed observability-query-queue.")
 	fs.Duration("observability-query-queue-wait", 5*time.Second,
-		"Longest an observability query waits for an execution slot. Must be above 0 and below the 30s request timeout. The 30s execution budget starts after the wait, so one MCP request can take the admission wait + 2s MCP rate queue + this wait + 30s; the sum must stay below the 45s HTTP write timeout.")
+		"Longest an observability query waits for an execution slot. Must be above 0 and below the 30s request timeout. The 30s execution budget starts after the wait, so one MCP request can take the admission wait + 2s MCP rate queue + this wait + 30s. The sum must not exceed 40s, which leaves 5s before the 45s HTTP write timeout.")
 	fs.Int("observability-http-work-slots", 0,
 		"HTTP slots for MCP data-tool requests (0-65536). 0 means observability-query-concurrency. Explicit values may go up to concurrency + queue, beyond which the budget refuses first. Up to observability-query-queue requests may wait at the edge for a slot, so the edge holds the same burst the budget can queue (4 running + 32 waiting at defaults).")
 	fs.Int("observability-http-catalog-slots", 0,
 		"HTTP slots for provider discovery and MCP handshakes (0-65536). 0 follows observability-http-work-slots. Keep it large enough that handshakes are not queued behind data requests.")
 	fs.Int("observability-http-dashboard-slots", 0,
-		"HTTP slots for dashboard orchestration (0-65536). 0 means min(2, observability-query-concurrency). Explicit values may go up to observability-query-concurrency. This pool does not follow the per-provider flag.")
+		"HTTP slots for orchestration tools, query_dashboard and render_dashboard, which run nested data requests (0-65536). 0 means min(2, observability-query-concurrency). Explicit values may go up to observability-query-concurrency. This pool does not follow the per-provider flag.")
 	fs.Int("observability-http-intake-slots", 0,
 		"Slots held while a request body is read and classified, released before its pool wait (0-65536). 0 means twice observability-http-work-slots. Intake is not a cap on all in-flight requests.")
 	fs.Duration("observability-http-admission-wait", time.Second,

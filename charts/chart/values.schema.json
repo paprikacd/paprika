@@ -57,7 +57,7 @@
             "httpCatalogSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
             "httpDashboardSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
             "httpIntakeSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
-            "httpAdmissionWait": {"type": "string", "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$"}
+            "httpAdmissionWait": {"description": "A duration with a unit, such as 1s. YAML 0 or \"0s\" rejects at once. A bare integer other than 0 is refused: it would mean nanoseconds.", "anyOf": [{"const": 0}, {"type": "string", "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$"}]}
           }
         },
         "additionalCACertificates": {

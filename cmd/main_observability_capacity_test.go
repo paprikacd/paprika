@@ -131,7 +131,13 @@ func TestObservabilityCapacityValidationRejectsNonsense(t *testing.T) {
 		{"dashboard pool above budget concurrency", func(c *cliConfig) { c.ObsHTTPDashboardSlots = 5 }, "--observability-http-dashboard-slots (5) must not exceed --observability-query-concurrency (4)"},
 		{"query concurrency overflow is reported against its own flag", func(c *cliConfig) { c.ObsQueryConcurrency = 1 << 62 }, "--observability-query-concurrency must be between 1 and 1024, got 4611686018427387904"},
 		{"pool overflow is reported against its own flag", func(c *cliConfig) { c.ObsHTTPIntakeSlots = 1 << 40 }, "--observability-http-intake-slots must be between 0 and 65536"},
-		{"admission and queue waits exceed the write timeout", func(c *cliConfig) { c.ObsQueryQueueWait = 9 * time.Second; c.ObsHTTPAdmissionWait = 5 * time.Second }, "must stay below the 45s HTTP write timeout"},
+		{"admission and queue waits exceed the write timeout", func(c *cliConfig) { c.ObsQueryQueueWait = 9 * time.Second; c.ObsHTTPAdmissionWait = 5 * time.Second }, "must not exceed 40s, which leaves 5s for reading, serialising and writing before the 45s HTTP write timeout"},
+		{"sum just over the 40s ceiling", func(c *cliConfig) {
+			c.ObsQueryQueueWait = 6100 * time.Millisecond
+			c.ObsHTTPAdmissionWait = 3 * time.Second
+		}, "must not exceed 40s"},
+		{"queue wait in nanoseconds (bare 5 in a config file)", func(c *cliConfig) { c.ObsQueryQueueWait = 5 }, "--observability-query-queue-wait must be at least 1ms, got 5ns"},
+		{"admission wait in nanoseconds (bare 1 in a config file)", func(c *cliConfig) { c.ObsHTTPAdmissionWait = 1 }, "--observability-http-admission-wait must be at least 1ms, got 1ns"},
 		{"29.999s admission wait", func(c *cliConfig) {
 			c.ObsQueryQueueWait = 29999 * time.Millisecond
 			c.ObsHTTPAdmissionWait = 29999 * time.Millisecond
@@ -209,4 +215,20 @@ func TestObservabilityCapacitySourcesRecordDerivation(t *testing.T) {
 	assert.Equal(t, "min(2, --observability-query-concurrency)", capacity.Sources.Dashboards)
 	assert.Equal(t, "2 x work pool", capacity.Sources.Intake)
 	assert.Equal(t, "min(2, --observability-query-concurrency)", capacity.Sources.ProviderConcurrency)
+}
+
+// defaultObservabilityHTTPPools are the built-in pool sizes, the same values
+// resolveObservabilityCapacity derives from the default execution budget.
+func defaultObservabilityHTTPPools() observabilityHTTPPools {
+	return observabilityHTTPPools{Work: 4, WorkWaiters: 32, Catalog: 4, Dashboards: 2, Intake: 8}
+}
+
+// The 40 s ceiling is inclusive: 3 s admission + 2 s rate queue + 5 s queue wait +
+// 30 s execution is exactly 40 s, and leaves the 5 s response margin.
+func TestObservabilityCapacityTimingCeilingIsInclusive(t *testing.T) {
+	cfg := defaultCapacityConfig()
+	cfg.ObsHTTPAdmissionWait = 3 * time.Second
+	cfg.ObsQueryQueueWait = 5 * time.Second
+	_, err := resolveObservabilityCapacity(cfg)
+	require.NoError(t, err)
 }

@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
 const maxObserveCatalogEnvelopeBytes = 4 << 10
@@ -93,6 +95,8 @@ func readObservabilityEnvelope(r *http.Request, limit int) ([]byte, bool) {
 	return prefix, err == nil && len(prefix) <= limit
 }
 
+// isObservabilityDashboardEnvelope recognises the orchestration tools: the ones
+// that run nested data requests through this gateway's own work pool.
 func isObservabilityDashboardEnvelope(body []byte) bool {
 	var envelope map[string]json.RawMessage
 	var version, method, name string
@@ -101,7 +105,7 @@ func isObservabilityDashboardEnvelope(body []byte) bool {
 		json.Unmarshal(envelope["jsonrpc"], &version) == nil && version == "2.0" &&
 		json.Unmarshal(envelope["method"], &method) == nil && method == "tools/call" &&
 		json.Unmarshal(envelope["params"], &params) == nil &&
-		json.Unmarshal(params["name"], &name) == nil && name == "query_dashboard"
+		json.Unmarshal(params["name"], &name) == nil && (name == "query_dashboard" || name == "render_dashboard")
 }
 
 type observabilityBodyError struct{ err error }
@@ -146,14 +150,6 @@ type observabilityHTTPPools struct {
 	// there before the budget sees it.
 	WorkWaiters   int
 	AdmissionWait time.Duration
-}
-
-// defaultObservabilityHTTPPools are the built-in pool sizes, the same values
-// resolveObservabilityCapacity derives from the default execution budget. The
-// zero wait keeps the historical fail-fast behaviour for callers that do not
-// pass a configured set.
-func defaultObservabilityHTTPPools() observabilityHTTPPools {
-	return observabilityHTTPPools{Work: 4, Catalog: 4, Dashboards: 2, Intake: 8, WorkWaiters: 32}
 }
 
 // observabilityAdmissionPool is a bounded slot pool with its own bounded waiter
@@ -204,4 +200,87 @@ func rejectObservabilityAdmission(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "1")
 	w.Header().Set("Cache-Control", "no-store")
 	http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
+}
+
+// observabilityEdge is the gateway's HTTP admission. Four pools guard it:
+//
+//   - intake is held only while a request body is read and the request is
+//     classified, then released before the class's pool wait. Its waiters cover
+//     every request the pools can hold, so intake refuses only a request that
+//     arrives while intake and all pool capacity are already taken.
+//   - work holds MCP data-tool requests. Its waiters equal the budget queue.
+//   - catalog holds discovery and handshakes, and dashboards holds orchestration
+//     (query_dashboard and render_dashboard), whose nested data requests need the
+//     work pool. Neither waits behind data requests.
+//
+// Each request has one deadline, AdmissionWait from the start of the handler,
+// shared by its intake and pool waits.
+type observabilityEdge struct {
+	wait       time.Duration
+	intake     observabilityAdmissionPool
+	work       observabilityAdmissionPool
+	catalog    observabilityAdmissionPool
+	dashboards observabilityAdmissionPool
+}
+
+func newObservabilityEdge(pools observabilityHTTPPools) *observabilityEdge {
+	// Intake waiters cover every request the pools can hold: the work pool and
+	// its waiters, plus catalog and dashboards each with waiters equal to size.
+	intakeWaiters := pools.Work + pools.WorkWaiters + 2*pools.Catalog + 2*pools.Dashboards
+	return &observabilityEdge{
+		wait:       pools.AdmissionWait,
+		intake:     newObservabilityAdmissionPool(pools.Intake, intakeWaiters),
+		work:       newObservabilityAdmissionPool(pools.Work, pools.WorkWaiters),
+		catalog:    newObservabilityAdmissionPool(pools.Catalog, pools.Catalog),
+		dashboards: newObservabilityAdmissionPool(pools.Dashboards, pools.Dashboards),
+	}
+}
+
+// classify reads and classifies a protocol request while holding an intake slot.
+// The bounded body is read to its end, so the server watches the connection for
+// a departed client before the request waits for its pool. REST POST bodies are
+// read the same way.
+func (e *observabilityEdge) classify(ctx context.Context, r *http.Request) (observabilityRequestClass, bool) {
+	if !e.intake.acquire(ctx) {
+		return 0, false
+	}
+	defer e.intake.release()
+	if r.URL.Path != observabilityGatewayRoutePrefix+"/mcp" && r.Method == http.MethodPost && r.Body != nil {
+		_, _ = readObservabilityEnvelope(r, maxObserveDashboardEnvelopeBytes)
+	}
+	return classifyObservabilityProtocolRequest(r), true
+}
+
+func (e *observabilityEdge) middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isObservabilityProtocolRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		admitCtx, cancel := context.WithTimeout(r.Context(), e.wait)
+		defer cancel()
+		requestClass, ok := e.classify(admitCtx, r)
+		if !ok {
+			rejectObservabilityAdmission(w)
+			return
+		}
+		pool := e.work
+		switch requestClass {
+		case observabilityCatalogRequest:
+			pool = e.catalog
+		case observabilityDashboardRequest:
+			pool = e.dashboards
+		case observabilityWorkRequest:
+		}
+		if !pool.acquire(admitCtx) {
+			rejectObservabilityAdmission(w)
+			return
+		}
+		defer pool.release()
+		// Oversized or unclassifiable envelopes may still contain valid small
+		// orchestration arguments. They must not run nested work while holding a
+		// data-work slot; the tools check this trusted context marker.
+		r = r.WithContext(observabilitygateway.WithDashboardQueryAdmission(r.Context(), requestClass == observabilityDashboardRequest))
+		next.ServeHTTP(w, r)
+	})
 }

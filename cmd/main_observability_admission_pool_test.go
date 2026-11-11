@@ -20,6 +20,7 @@ const (
 	admissionWorkBody    = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_metrics"}}`
 	admissionCatalogBody = `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
 	admissionAuthorBody  = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_dashboard"}}`
+	admissionRenderBody  = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"render_dashboard","arguments":{"id":"ops"}}}`
 )
 
 // productionAdmissionPools are the pools and wait the gateway starts with by
@@ -169,7 +170,8 @@ func TestSaturatedWorkPoolDoesNotBlockCatalogOrDashboards(t *testing.T) {
 	require.Equal(t, 32, pools.WorkWaiters)
 	release := make(chan struct{})
 	entered := make(chan struct{}, 64)
-	h := limitObservabilityProtocolRequestsWith(blockingHandler(release, entered), pools)
+	edge := newObservabilityEdge(pools)
+	h := edge.middleware(blockingHandler(release, entered))
 
 	var holders sync.WaitGroup
 	for range pools.Work {
@@ -189,7 +191,8 @@ func TestSaturatedWorkPoolDoesNotBlockCatalogOrDashboards(t *testing.T) {
 			waiterCodes[i], _ = admissionServe(t.Context(), h, "/observe/mcp", admissionWorkBody)
 		}()
 	}
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, func() bool { return len(edge.work.waiting) == pools.WorkWaiters },
+		2*time.Second, time.Millisecond, "every work waiter must be queued before probing")
 
 	code, elapsed := admissionServe(t.Context(), h, "/observe/mcp", admissionWorkBody)
 	assert.Equal(t, http.StatusTooManyRequests, code, "a request beyond the work pool's waiters must be refused")
@@ -218,11 +221,11 @@ func TestBudgetSizedBurstAdmittedWithinEdgeWait(t *testing.T) {
 	pools := productionAdmissionPools(t)
 	budgetCapacity := 4 + 32
 	require.Equal(t, budgetCapacity, pools.Work+pools.WorkWaiters)
-	h := limitObservabilityProtocolRequestsWith(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)
 		time.Sleep(5 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-	}), pools)
+	}))
 
 	codes := make([]int, budgetCapacity)
 	var wg sync.WaitGroup
@@ -329,7 +332,13 @@ func nestedAdmission(t *testing.T, pools observabilityHTTPPools, outerBody, nest
 		}()
 	}
 	for range n {
-		<-entered
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			close(gate)
+			outer.Wait()
+			t.Fatalf("only some of %d outer requests reached the handler: a request class is queued behind the wrong pool", n)
+		}
 	}
 	close(gate)
 	outer.Wait()
@@ -369,4 +378,27 @@ func TestNestedDashboardQueriesAdmittedWhenWorkIsOneAndIntakeEqualsDashboards(t 
 func limitWithProductionPools(t *testing.T, next http.Handler) http.Handler {
 	t.Helper()
 	return limitObservabilityProtocolRequestsWith(next, productionAdmissionPools(t))
+}
+
+// Four concurrent renders at defaults: the dashboard pool admits two and queues
+// two. Each render's nested data requests still get through the work pool.
+func TestNestedRenderQueriesAdmittedAtDefaults(t *testing.T) {
+	pools := productionAdmissionPools(t)
+	codes := nestedAdmission(t, pools, admissionRenderBody, admissionWorkBody, pools.Dashboards)
+	require.Len(t, codes, pools.Dashboards)
+	for _, c := range codes {
+		assert.Equal(t, http.StatusOK, c, "render nested data request")
+	}
+}
+
+// With one work slot (accepted), two concurrent renders still get their nested
+// data requests through: render_dashboard is an orchestration class, not a data
+// request holding the work pool for up to 24 s.
+func TestNestedRenderQueriesAdmittedWhenWorkIsOne(t *testing.T) {
+	pools := productionAdmissionPools(t, "--observability-http-work-slots=1")
+	codes := nestedAdmission(t, pools, admissionRenderBody, admissionWorkBody, pools.Dashboards)
+	require.Len(t, codes, pools.Dashboards)
+	for _, c := range codes {
+		assert.Equal(t, http.StatusOK, c, "render nested data request with one work slot")
+	}
 }

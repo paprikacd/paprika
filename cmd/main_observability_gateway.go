@@ -183,6 +183,14 @@ const (
 	// observabilityMCPRateQueueWait mirrors mcpRateQueueWait in
 	// internal/api/mcp/ratelimit.go, which runs after edge admission.
 	observabilityMCPRateQueueWait = 2 * time.Second
+	// observabilityResponseMargin is left before the write timeout for reading,
+	// serialising and writing the response. Worst cases must end before
+	// WriteTimeout minus this margin.
+	observabilityResponseMargin = 5 * time.Second
+	// observabilityMinDuration is the shortest non-zero duration a flag may take.
+	// Below it a value is almost always a unit typo, such as a bare integer that
+	// a config file reads as nanoseconds.
+	observabilityMinDuration = time.Millisecond
 )
 
 // observabilityCapacity is the execution budget and HTTP admission pools the
@@ -199,6 +207,7 @@ type observabilityCapacity struct {
 type observabilityCapacitySources struct {
 	ProviderConcurrency string
 	Work                string
+	WorkWaiters         string
 	Catalog             string
 	Dashboards          string
 	Intake              string
@@ -224,18 +233,17 @@ func resolveObservabilityCapacity(cfg *cliConfig) (observabilityCapacity, error)
 		ProviderQueue: cfg.ObsQueryProviderQueue,
 		QueueWait:     cfg.ObsQueryQueueWait,
 	}
-	sources := observabilityCapacitySources{ProviderConcurrency: "explicit"}
-	if cfg.ObsQueryProviderConcurrency == 0 {
-		budget.ProviderConcurrency = min(2, budget.Concurrency)
-		sources.ProviderConcurrency = "min(2, --observability-query-concurrency)"
-	} else {
-		if err := requireRange("observability-query-provider-concurrency", cfg.ObsQueryProviderConcurrency, 1, budget.Concurrency); err != nil {
-			return observabilityCapacity{}, fmt.Errorf("--observability-query-provider-concurrency must be between 1 and --observability-query-concurrency (%d), got %d; use 0 for min(2, concurrency)", budget.Concurrency, cfg.ObsQueryProviderConcurrency)
-		}
-		budget.ProviderConcurrency = cfg.ObsQueryProviderConcurrency
+	providerConcurrency, providerSource, perr := resolveProviderConcurrency(cfg, budget.Concurrency)
+	if perr != nil {
+		return observabilityCapacity{}, perr
 	}
+	budget.ProviderConcurrency = providerConcurrency
+	sources := observabilityCapacitySources{ProviderConcurrency: providerSource}
 	if budget.QueueWait <= 0 || budget.QueueWait >= observabilitygateway.RequestTimeout {
 		return observabilityCapacity{}, fmt.Errorf("--observability-query-queue-wait must be above 0 and below the %s request timeout, got %s", observabilitygateway.RequestTimeout, budget.QueueWait)
+	}
+	if err := requireObservabilityUnit("observability-query-queue-wait", budget.QueueWait); err != nil {
+		return observabilityCapacity{}, err
 	}
 	if err := validateObservabilityEdgeTiming(cfg, budget.QueueWait); err != nil {
 		return observabilityCapacity{}, err
@@ -244,13 +252,33 @@ func resolveObservabilityCapacity(cfg *cliConfig) (observabilityCapacity, error)
 	if err != nil {
 		return observabilityCapacity{}, err
 	}
-	sources.Work, sources.Catalog, sources.Dashboards, sources.Intake = poolSources.work, poolSources.catalog, poolSources.dashboards, poolSources.intake
+	sources.Work, sources.WorkWaiters, sources.Catalog, sources.Dashboards, sources.Intake = poolSources.work, "budget queue (--observability-query-queue)", poolSources.catalog, poolSources.dashboards, poolSources.intake
 	return observabilityCapacity{Budget: budget, Pools: pools, Sources: sources}, nil
+}
+
+// resolveProviderConcurrency derives the per-provider limit: 0 means
+// min(2, concurrency), and an explicit value must be between 1 and concurrency.
+func resolveProviderConcurrency(cfg *cliConfig, concurrency int) (limit int, source string, err error) {
+	if cfg.ObsQueryProviderConcurrency == 0 {
+		return min(2, concurrency), "min(2, --observability-query-concurrency)", nil
+	}
+	if err := requireRange("observability-query-provider-concurrency", cfg.ObsQueryProviderConcurrency, 1, concurrency); err != nil {
+		return 0, "", fmt.Errorf("--observability-query-provider-concurrency must be between 1 and --observability-query-concurrency (%d), got %d; use 0 for min(2, concurrency)", concurrency, cfg.ObsQueryProviderConcurrency)
+	}
+	return cfg.ObsQueryProviderConcurrency, "explicit", nil
 }
 
 func requireRange(flag string, value, lo, hi int) error {
 	if value < lo || value > hi {
 		return fmt.Errorf("--%s must be between %d and %d, got %d", flag, lo, hi, value)
+	}
+	return nil
+}
+
+// requireObservabilityUnit rejects a non-zero duration below observabilityMinDuration.
+func requireObservabilityUnit(flag string, d time.Duration) error {
+	if d > 0 && d < observabilityMinDuration {
+		return fmt.Errorf("--%s must be at least %s, got %s; durations need a unit such as 5s (in a --config file a bare 5 is 5 nanoseconds)", flag, observabilityMinDuration, d)
 	}
 	return nil
 }
@@ -264,6 +292,9 @@ func validateObservabilityEdgeTiming(cfg *cliConfig, queueWait time.Duration) er
 	if cfg.ObsHTTPAdmissionWait < 0 {
 		return fmt.Errorf("--observability-http-admission-wait must be >= 0, got %s; 0s rejects at once", cfg.ObsHTTPAdmissionWait)
 	}
+	if err := requireObservabilityUnit("observability-http-admission-wait", cfg.ObsHTTPAdmissionWait); err != nil {
+		return err
+	}
 	if cfg.ObsHTTPAdmissionWait > maxObservabilityAdmissionWait {
 		return fmt.Errorf("--observability-http-admission-wait must be at most %s (a third of the %s read timeout, which a request's body read follows), got %s", maxObservabilityAdmissionWait, observabilityReadTimeout, cfg.ObsHTTPAdmissionWait)
 	}
@@ -271,8 +302,8 @@ func validateObservabilityEdgeTiming(cfg *cliConfig, queueWait time.Duration) er
 		return fmt.Errorf("--observability-http-admission-wait (%s) must not exceed --observability-query-queue-wait (%s): waiting at the edge longer than the budget would queue is wasted", cfg.ObsHTTPAdmissionWait, queueWait)
 	}
 	worst := cfg.ObsHTTPAdmissionWait + observabilityMCPRateQueueWait + queueWait + observabilitygateway.RequestTimeout
-	if worst >= observabilityWriteTimeout {
-		return fmt.Errorf("--observability-http-admission-wait (%s) + the %s MCP rate-limit wait + --observability-query-queue-wait (%s) + the %s request timeout = %s must stay below the %s HTTP write timeout; reduce --observability-http-admission-wait or --observability-query-queue-wait", cfg.ObsHTTPAdmissionWait, observabilityMCPRateQueueWait, queueWait, observabilitygateway.RequestTimeout, worst, observabilityWriteTimeout)
+	if limit := observabilityWriteTimeout - observabilityResponseMargin; worst > limit {
+		return fmt.Errorf("--observability-http-admission-wait (%s) + the %s MCP rate-limit wait + --observability-query-queue-wait (%s) + the %s request timeout = %s must not exceed %s, which leaves %s for reading, serialising and writing before the %s HTTP write timeout; reduce --observability-http-admission-wait or --observability-query-queue-wait", cfg.ObsHTTPAdmissionWait, observabilityMCPRateQueueWait, queueWait, observabilitygateway.RequestTimeout, worst, limit, observabilityResponseMargin, observabilityWriteTimeout)
 	}
 	return nil
 }
@@ -366,6 +397,8 @@ func prepareObservabilityGateway(cfg *cliConfig, setupLog logr.Logger) (observab
 		"queryQueueWait", capacity.Budget.QueueWait.String(),
 		"httpWorkSlots", capacity.Pools.Work,
 		"httpWorkSource", capacity.Sources.Work,
+		"httpWorkWaiters", capacity.Pools.WorkWaiters,
+		"httpWorkWaitersSource", capacity.Sources.WorkWaiters,
 		"httpCatalogSlots", capacity.Pools.Catalog,
 		"httpCatalogSource", capacity.Sources.Catalog,
 		"httpDashboardSlots", capacity.Pools.Dashboards,
@@ -440,55 +473,9 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 // Keep the request slot through serialization and the final response write.
 // The backend's I/O budget alone releases too early to bound large responses
 // retained by slow clients. Metadata and health remain available under load.
-//
-// A request holds an intake slot only while its body is read and classified,
-// then releases it before waiting for its class's pool. Each pool bounds its
-// own waiters, so a saturated pool cannot starve another class. One deadline,
-// AdmissionWait from the start of the handler, covers both waits.
+// The admission rules are described on observabilityEdge.
 func limitObservabilityProtocolRequestsWith(next http.Handler, pools observabilityHTTPPools) http.Handler {
-	intake := newObservabilityAdmissionPool(pools.Intake, pools.Intake)
-	work := newObservabilityAdmissionPool(pools.Work, pools.WorkWaiters)
-	catalog := newObservabilityAdmissionPool(pools.Catalog, pools.Catalog)
-	// Dashboard orchestration waits on nested data-tool requests. Giving it a
-	// separate small pool leaves data slots available and bounds aggregate work.
-	dashboards := newObservabilityAdmissionPool(pools.Dashboards, pools.Dashboards)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isObservabilityProtocolRequest(r) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		admitCtx, cancel := context.WithTimeout(r.Context(), pools.AdmissionWait)
-		defer cancel()
-		// Bound body classification: a slow MCP upload must not allocate an
-		// unbounded number of readers before it reaches a work pool. Reading the
-		// bounded body to its end also lets the server notice a client that
-		// leaves while this request waits for its pool.
-		if !intake.acquire(admitCtx) {
-			rejectObservabilityAdmission(w)
-			return
-		}
-		requestClass := classifyObservabilityProtocolRequest(r)
-		intake.release()
-
-		pool := work
-		switch requestClass {
-		case observabilityCatalogRequest:
-			pool = catalog
-		case observabilityDashboardRequest:
-			pool = dashboards
-		case observabilityWorkRequest:
-		}
-		if !pool.acquire(admitCtx) {
-			rejectObservabilityAdmission(w)
-			return
-		}
-		defer pool.release()
-		// Oversized or unclassifiable envelopes may still contain valid small
-		// query_dashboard arguments. They must not orchestrate nested work while
-		// holding a data-work slot; the tool checks this trusted context marker.
-		r = r.WithContext(observabilitygateway.WithDashboardQueryAdmission(r.Context(), requestClass == observabilityDashboardRequest))
-		next.ServeHTTP(w, r)
-	})
+	return newObservabilityEdge(pools).middleware(next)
 }
 
 // buildObservabilityServer assembles the MCP server and its collaborators:
