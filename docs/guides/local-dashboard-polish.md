@@ -14,13 +14,15 @@ npm run insights:lab
 Open once in your browser: http://127.0.0.1:<port>/__lab/enter?ticket=…&next=…
 ```
 
-Open the link in Safari, Chrome or any other browser on this machine. The page stores the session in that browser's local storage and opens **Service investigation**. The bearer token is never printed, written to a file or put on the command line.
+Open the link in Safari, Chrome or any other browser on this machine. The page stores the session in that browser's local storage and opens **Service investigation**. The bearer token is never printed or put on the command line. It is written to one place: `ready.json` (mode 0600) inside this run's temporary workspace, under a directory that `mkdtemp` makes private. The entry page carries it once, and the browser stores it in local storage. The workspace is removed on exit.
 
 - The link works once and expires 15 minutes after the lab starts. Restart the lab for another. After it has been used, the dashboard keeps working in that browser until its session expires.
 - Only loopback can redeem it. The request must come from loopback, and its Host must be `127.0.0.1`, `localhost` or `::1`. A phone on the LAN cannot use this path; supporting one would need a separate, explicit change.
 - Chart data comes from the harness over HTTP. It is not route interception in one Playwright page, so any browser that completed the link sees the same synthetic observations as `review:insights`. The browser still goes through the real authenticated proxy and Insights store; only the query answer comes from the fixture server.
 - Edits under `ui/src` apply on save through `next dev`. Go changes take effect at the next start, when the cached binary is rebuilt.
-- The session lasts 12 hours. Set `INSIGHTS_LAB_SESSION=<duration>` to change it (at most 24h). Ctrl-C stops `next dev`, the harness and the fixture server. Documents live in a temporary directory and are removed on exit, so export a dashboard first if you want to keep it.
+- The session lasts 12 hours. Set `INSIGHTS_LAB_SESSION=<duration>` to change it (at most 24h).
+- Ctrl-C, SIGTERM or SIGHUP stops `next dev`, the harness and the fixture server, then removes the temporary workspace (documents, `ready.json` and the credential in it). Repeated signals during cleanup are ignored. If the lab was killed without that chance, the next `npm run insights:lab` stops and removes that earlier run's processes and workspace. Export a dashboard first if you want to keep it.
+- The lab and `npm run dev` cannot run at the same time: both use `ui/.next`. Stop the other `next dev` first. The lab prints this conflict when `next dev` refuses to start.
 
 Unit tests cover the fixture server (`npm run test:lab`) and the one-time entry ticket (`go test ./hack/insights-observe-e2e/...`: single use, expiry, loopback-only, safe destinations).
 
