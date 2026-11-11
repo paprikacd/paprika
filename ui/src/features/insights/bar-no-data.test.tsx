@@ -70,7 +70,7 @@ describe("bar chart series with no valid sample", () => {
     const empty = within(legend).getByRole("listitem", { name: /worker/ });
     expect(empty).toHaveAttribute("data-no-data-series", "worker");
     expect(empty).toHaveTextContent("No data");
-    expect(within(legend).getByRole("listitem", { name: /api/ })).toHaveTextContent("10%");
+    expect(within(legend).getByRole("listitem", { name: /api/ })).toHaveTextContent("10.0%");
   });
 
   it("never focuses the empty slot: keyboard navigation visits only the valid bars", () => {

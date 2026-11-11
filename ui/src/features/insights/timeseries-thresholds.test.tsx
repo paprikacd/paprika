@@ -20,7 +20,7 @@ describe("time-series threshold guides",()=>{
   it("renders named, pointer-transparent guides and respects explicit axis bounds",()=>{
     const configured={...widget,options:{thresholds}};
     const {container,rerender}=render(<WidgetVisualization widget={configured} result={result}/>);
-    const guide=screen.getByRole("img",{name:"2× threshold: 2 x"});
+    const guide=screen.getByRole("img",{name:"2× threshold: 2.00 x"});
     expect(guide).toHaveAttribute("data-threshold-value","2");
     expect((guide as HTMLElement).style.borderColor).toBe("#e0a527");
     expect(parseFloat((guide as HTMLElement).style.top)).toBeGreaterThan(10);

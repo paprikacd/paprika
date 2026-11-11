@@ -19,6 +19,7 @@ export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
+import { formatReading } from "./units";
 export {
   downsamplePoints,
   latestPoint,
@@ -114,6 +115,8 @@ function Stat({
   const span = showBar ? maximum - minimum : 1;
   const magnitude = showBar ? Math.max(Math.abs(minimum), Math.abs(maximum), 1) : 1;
   const fraction = showBar ? Math.max(0, Math.min(1, Number.isFinite(span) ? (boundedValue - minimum) / span : (boundedValue / magnitude - minimum / magnitude) / (maximum / magnitude - minimum / magnitude))) : 0;
+  // The reading may rescale its unit (ms to s, bytes to MiB), so the unit span shows the reading's unit, not the authored one.
+  const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals });
   const barColor = thresholdForValue(first.point.value, widget.options?.thresholds)?.color ?? widget.color ?? "var(--gamma-chart-1)";
   return (
     <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
@@ -133,13 +136,8 @@ function Stat({
             data-metric-value={String(first.point.value)}
             style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdForValue(first.point.value, widget.options?.thresholds)?.color : color }}
           >
-            {formatMetric(
-              first.point.value,
-              "",
-              false,
-              widget.options?.decimals,
-            )}
-            <span className={styles.statUnit}>{widget.unit}</span>
+            {statReading.value}
+            <span className={styles.statUnit}>{statReading.unit}</span>
           </span>
           <div className={styles.statMeta}>
             {entries.length > 1 ? `${first.name} · ` : ""}Latest valid sample ·{" "}

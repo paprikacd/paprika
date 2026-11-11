@@ -131,7 +131,7 @@ describe("axis unit", () => {
 describe("reference lines and the zero line", () => {
   it("draws a labelled guide in the threshold style, and keeps its value inside the y range", () => {
     const { container } = render(<WidgetVisualization widget={{ ...timeseries, options: { referenceLines: [{ value: 50, label: "Target", color: "#c08a2b" }] } }} result={small} />);
-    const guide = screen.getByRole("img", { name: "Target: 50 ms" });
+    const guide = screen.getByRole("img", { name: "Target: 50.0 ms" });
     expect(guide).toHaveAttribute("data-reference-value", "50");
     expect((guide as HTMLElement).style.borderColor).toBe("#c08a2b");
     const top = parseFloat((guide as HTMLElement).style.top);
@@ -142,8 +142,8 @@ describe("reference lines and the zero line", () => {
 
   it("labels an unlabelled reference line with its value, in the warning colour by default", () => {
     render(<WidgetVisualization widget={{ ...timeseries, options: { referenceLines: [{ value: 50 }] } }} result={small} />);
-    const guide = screen.getByRole("img", { name: "Reference: 50 ms" });
-    expect(guide).toHaveTextContent("50 ms");
+    const guide = screen.getByRole("img", { name: "Reference: 50.0 ms" });
+    expect(guide).toHaveTextContent("50.0 ms");
     expect((guide as HTMLElement).style.borderColor).toBe("var(--gamma-warning)");
   });
 

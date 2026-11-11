@@ -301,7 +301,7 @@ describe("bounded chart data", () => {
     expect(formatMetric(NaN)).toBe("—");
     expect(formatMetric(12.5, "ms")).toBe("12.5 ms");
     expect(formatMetric(0.0000123, "req/s")).toBe("0.0000123 req/s");
-    expect(formatMetric(99.95, "%")).toBe("99.95%");
+    expect(formatMetric(99.95, "%")).toBe("100%");
     expect(formatMetric(12.3, "ms", false, 3)).toBe("12.300 ms");
     expect(formatMetric(0.12, "", false, 0)).toBe("0");
   });
@@ -426,7 +426,7 @@ describe("widget visualizations", () => {
         }}
       />,
     );
-    expect(screen.getByText("14")).toBeInTheDocument();
+    expect(screen.getByText("14.0")).toBeInTheDocument();
     expect(screen.getByText("ms")).toBeInTheDocument();
   });
 
@@ -437,8 +437,8 @@ describe("widget visualizations", () => {
         result={result}
       />,
     );
-    const row = screen.getByRole("row", { name: "api 12 ms 5 ms 12 ms" });
-    expect(within(row).getAllByText("12 ms")).toHaveLength(2);
+    const row = screen.getByRole("row", { name: "api 12.0 ms 5.00 ms 12.0 ms" });
+    expect(within(row).getAllByText("12.0 ms")).toHaveLength(2);
   });
 
   it("retains all-null table identities and ignores invalid-date values when calculating ranges", () => {
@@ -478,7 +478,7 @@ describe("widget visualizations", () => {
       />,
     );
     expect(
-      screen.getByRole("row", { name: "api 0 ms -5 ms 0 ms" }),
+      screen.getByRole("row", { name: "api 0 ms -5.00 ms 0 ms" }),
     ).toBeInTheDocument();
   });
 
@@ -599,7 +599,7 @@ describe("widget visualizations", () => {
     );
     expect(screen.getByText("checkout")).toBeInTheDocument();
     expect(screen.getByText("POST /orders")).toBeInTheDocument();
-    expect(screen.getByText("132.5 ms")).toBeInTheDocument();
+    expect(screen.getByText("133 ms")).toBeInTheDocument();
     expect(screen.getByText("error")).toBeInTheDocument();
   });
 
@@ -774,7 +774,7 @@ describe("widget visualizations", () => {
       screen.queryByLabelText("Heatmap thresholds"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "healthy-api: 1 ms · All" }),
+      screen.getByRole("button", { name: "healthy-api: 1.00 ms · All" }),
     ).toHaveStyle({
       background: "#ffffff",
       color: "#27332e",
@@ -804,8 +804,8 @@ describe("widget visualizations", () => {
   });
 
   it.each([
-    [true, true, "api12 ms"],
-    [false, true, "12 ms"],
+    [true, true, "api12.0 ms"],
+    [false, true, "12.0 ms"],
     [true, false, "api"],
     [false, false, ""],
   ] as const)(
@@ -821,9 +821,9 @@ describe("widget visualizations", () => {
           result={result}
         />,
       );
-      const cell = screen.getByRole("button", { name: "api: 12 ms · Healthy" });
+      const cell = screen.getByRole("button", { name: "api: 12.0 ms · Healthy" });
       expect(cell.textContent).toBe(visibleText);
-      expect(cell).toHaveAccessibleName("api: 12 ms · Healthy");
+      expect(cell).toHaveAccessibleName("api: 12.0 ms · Healthy");
     },
   );
 
@@ -916,7 +916,7 @@ describe("widget visualizations", () => {
         result={result}
       />,
     );
-    const cell = screen.getByRole("button", { name: "api: 12 ms · Healthy" });
+    const cell = screen.getByRole("button", { name: "api: 12.0 ms · Healthy" });
     fireEvent.pointerEnter(cell, { pointerType: "mouse" });
     const tip = screen.getByRole("tooltip");
     fireEvent.pointerLeave(cell);

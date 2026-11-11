@@ -1,5 +1,6 @@
 "use client";
 
+import { axisScale } from "../units";
 import type { Widget } from "../schema";
 import { resolveSeriesColor } from "../series-colors";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
@@ -484,7 +485,8 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     // Weighted endpoints remain finite when max - min overflows.
     return domain[0] * (1 - fraction) + domain[1] * fraction;
   });
-  const tickLabels = ticks.map(value => formatMetric(value, widget.unit, true, widget.options?.decimals));
+  const tickAxis = axisScale(domain, widget.unit, { compact: true, decimals: widget.options?.decimals, ticks });
+  const tickLabels = ticks.map(value => tickAxis.label(value));
   const gutter = useAxisGutter(tickLabels, ref, width);
   const left = showAxis ? gutter : 4, right = 12, top = showAxis ? 14 : 4, bottom = showAxis ? 29 : 4;
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);

@@ -1,18 +1,13 @@
 import type { QueryResult } from "./schema";
 import { validTimestamp } from "./widget-context";
+import { formatMetric } from "./units";
+
+export { formatMetric };
 
 export type Series = NonNullable<QueryResult["series"]>[number];
 export type Point = Series["points"][number];
 const MAX_POINTS = 480;
 
-const numberFormat = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
-const smallNumberFormat = new Intl.NumberFormat("en", {
-  maximumSignificantDigits: 3,
-});
-const compactFormat = new Intl.NumberFormat("en", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
 export const timeFormat = new Intl.DateTimeFormat("en", {
   hour: "2-digit",
   minute: "2-digit",
@@ -60,38 +55,6 @@ export const fullDateTimeOptions: Intl.DateTimeFormatOptions = {
   hour12: false,
 };
 export const fullDateTimeFormat = new Intl.DateTimeFormat("en", fullDateTimeOptions);
-
-const decimalFormats = new Map<string, Intl.NumberFormat>();
-export function formatMetric(
-  value: number,
-  unit = "",
-  compact = false,
-  decimals?: number,
-): string {
-  if (!Number.isFinite(value)) return "—";
-  let formatter =
-    value !== 0 && Math.abs(value) < 1
-      ? smallNumberFormat
-      : compact
-        ? compactFormat
-        : numberFormat;
-  if (decimals !== undefined && Number.isFinite(decimals)) {
-    const places = Math.max(0, Math.min(8, Math.floor(decimals)));
-    const key = `${compact}-${places}`;
-    if (!decimalFormats.has(key))
-      decimalFormats.set(
-        key,
-        new Intl.NumberFormat("en", {
-          notation: compact ? "compact" : "standard",
-          minimumFractionDigits: places,
-          maximumFractionDigits: places,
-        }),
-      );
-    formatter = decimalFormats.get(key)!;
-  }
-  const formatted = formatter.format(value);
-  return `${formatted}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`;
-}
 
 /**
  * Min/max buckets preserve short incidents that stride sampling would miss.

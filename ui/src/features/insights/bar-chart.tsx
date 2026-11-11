@@ -126,7 +126,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
         : undefined),
     [domain, noDataRows.length, values, showAxis, ticks.y, height],
   );
-  const { left: axisLeft, separateUnit } = chartYAxisLayout(values.concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel, options.axisUnit);
+  const { left: axisLeft, separateUnit, scale: yScale } = chartYAxisLayout(values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, yDomain ?? barDomain(values, ticks.y), ticks.y);
   const definition = useMemo(
     () =>
       defineChart({
@@ -213,7 +213,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
                     count: ticks.y,
                     line: false,
                     format: (value: number) =>
-                      formatMetric(value, separateUnit ? "" : widget.unit, true, options.decimals),
+                      yScale.label(value, !separateUnit),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -259,6 +259,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       widget.unit,
       axisLeft,
       separateUnit,
+      yScale,
       options,
       ticks.y,
       width,
@@ -307,7 +308,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
-        {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
         <Chart
           definition={definition}
           height={height}

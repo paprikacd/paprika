@@ -66,6 +66,7 @@ import { alignPriorPeriod, formatWindowDuration, minimumTimeWindow, normalizeTim
 import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./chart-window-controls";
 import { TimeWindowLens } from "./time-window-lens";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
+import { autoAxisDomain, niceDomain } from "./units";
 import { validTimestamp } from "./widget-context";
 import { useWidgetPresentation } from "./widget-presentation";
 
@@ -79,7 +80,7 @@ const CURVES = {
  * Guides participate in autoscaling, but explicit axis bounds win: thresholds, reference lines and the zero line all
  * join the domain, so none of them is clipped.
  */
-export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions): [number, number] | undefined {
+export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions, count = 5): [number, number] | undefined {
   const guides = [
     ...(options.thresholds ?? []).map(threshold => threshold.value),
     ...(options.referenceLines ?? []).map(reference => reference.value),
@@ -95,7 +96,9 @@ export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions
     if (options.min !== undefined && options.max === undefined) max = min + Math.max(1, Math.abs(min) * .1);
     else if (options.max !== undefined && options.min === undefined) min = max - Math.max(1, Math.abs(max) * .1);
   }
-  return [min, max];
+  // Derived bounds round outwards to readable ticks; authored bounds stay exact.
+  const [niceMin, niceMax] = niceDomain([min, max], count);
+  return [options.min ?? niceMin, options.max ?? niceMax];
 }
 
 /**
@@ -188,8 +191,8 @@ export function TimeSeriesChart({
   const previousIdentityTitle = useMemo(() => fallbackIdentityTitle(widget, prior.map(entry => entry.original)), [widget, prior]);
   const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels);
   const domain = useMemo(
-    () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options),
-    [visibleSeries, prior, options],
+    () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options, ticks.y),
+    [visibleSeries, prior, options, ticks.y],
   );
   const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: resolveSeriesColor(entry.original.labels, options.seriesColors, entry.index === 0 && widget.color ? widget.color : PALETTE[entry.index % PALETTE.length]), points: downsamplePoints(entry.shifted.points), plotPoints: downsamplePoints(withGapBreaks(entry.shifted.points, sampleCadence(entry.shifted.points))) })), [prior, widget.color, options.seriesColors]);
   const data = useMemo(
@@ -266,7 +269,10 @@ export function TimeSeriesChart({
   // Calendar ticks sit on the dashboard zone's own boundaries and are placed by true instant. Only the calendar axis reads them.
   const calendarTickList = useMemo(() => options.timeAxis === "calendar" && timeDomain ? calendarTicks(timeDomain[0], timeDomain[1], ticks.x, timeZone) : undefined, [options.timeAxis, timeDomain, ticks.x, timeZone]);
   const calendarLabels = useMemo(() => new Map((calendarTickList ?? []).map(tick => [tick.value, calendarTickLabel(tick, timeZone)] as const)), [calendarTickList, timeZone]);
-  const { left: axisLeft, separateUnit } = chartYAxisLayout([...data, ...previousData].flatMap(entry => entry.points.map(point => point.value ?? 0)).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel, options.axisUnit);
+  // The axis labels follow the domain the chart draws: the resolved one, or the nice extent of the plotted values.
+  const plottedValues = [...data, ...previousData].flatMap(entry => entry.points.flatMap(point => typeof point.value === "number" ? [point.value] : []));
+  const axisDomain = domain ?? autoAxisDomain(plottedValues, ticks.y, options.display === "area");
+  const { left: axisLeft, separateUnit, scale: yScale } = chartYAxisLayout(plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, ticks.y);
   // Plot insets: the TanStack margins and every overlay (cursor, bands, events, brush) map time through these bounds.
   const { left: plotLeft, right: plotRight, plotWidth } = horizontalPlotBounds(width, !showAxis ? 8 : options.plotInsetLeft ?? axisLeft, !showAxis ? 8 : options.plotInsetRight ?? 12);
   const xAt = (time: number) => timeDomain ? temporalPosition(time, timeDomain[0], timeDomain[1], plotLeft, plotLeft + plotWidth) : 0;
@@ -402,8 +408,7 @@ export function TimeSeriesChart({
                   ticks: {
                     count: ticks.y,
                     line: false,
-                    format: (value: number) =>
-                      formatMetric(value, separateUnit ? "" : widget.unit, true, options.decimals),
+                    format: (value: number) => yScale.label(value, !separateUnit),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -445,6 +450,7 @@ export function TimeSeriesChart({
       previousData,
       widget.unit,
       separateUnit,
+      yScale,
       options,
       domain,
       ticks.x,
@@ -480,7 +486,7 @@ export function TimeSeriesChart({
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
-        {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
         {visibleBands.map((band) => {
           const box = bandBox(band.from, band.to);
           // A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times.
