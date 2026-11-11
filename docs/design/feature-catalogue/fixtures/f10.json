@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F10",
+  "featureName": "SLO decision workbench",
+  "synthetic": true,
+  "summary": "Request-based 30-day SLO, target 99.9%. Of 1,000,000 eligible requests, 1,000 failures are allowed; 400 have been used, leaving 600 failures, or 60% of the budget. One hour: 250 errors / 50,000 eligible requests = 0.5%, or 5× burn. Six hours: 320 errors / 200,000 eligible requests = 0.16%, or 1.6× burn.",
+  "data": {
+    "sloType": "request ratio",
+    "targetPercent": 99.9,
+    "period": "30 days",
+    "eligibleRequests": 1000000,
+    "allowedFailures": 1000,
+    "usedFailures": 400,
+    "remainingFailures": 600,
+    "remainingBudgetPercent": 60,
+    "windows": [
+      {
+        "window": "1 hour",
+        "errors": 250,
+        "eligibleRequests": 50000,
+        "errorPercent": 0.5,
+        "burnMultiple": 5
+      },
+      {
+        "window": "6 hours",
+        "errors": 320,
+        "eligibleRequests": 200000,
+        "errorPercent": 0.16,
+        "burnMultiple": 1.6
+      }
+    ],
+    "selectedWindow": "1 hour"
+  },
+  "constraints": [
+    "Request-based and HTTP-probe-based SLIs remain distinct.",
+    "Aggregate counts within the same population and bounds before computing ratios. The 1-hour population is contained in the 6-hour and 30-day populations.",
+    "The historical 6-hour observations must be adequate; do not substitute coarsened display buckets.",
+    "Missing, stale, zero-volume and insufficient-coverage states are distinct. Never infer a depletion date.",
+    "Investigation retains the exact source, scope and bounds."
+  ],
+  "actions": {
+    "enabled": [
+      "Investigate window",
+      "Inspect population"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Activate alert policy",
+      "Dispatch notification"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/226",
+    "https://github.com/paprikacd/paprika/issues/216"
+  ]
+}

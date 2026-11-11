@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F25",
+  "featureName": "Target-aware deployment preflight",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Native primary mixed-evidence fixture.",
+    "application": "checkout",
+    "version": "v2.8.1",
+    "plan": "pln-042",
+    "target": "mel-prod / production",
+    "observed": "14:25 AEDT",
+    "resources": [
+      {
+        "kind": "Deployment",
+        "name": "checkout-api",
+        "operation": "Update"
+      },
+      {
+        "kind": "ConfigMap",
+        "name": "checkout-config",
+        "operation": "Create"
+      },
+      {
+        "kind": "Service",
+        "name": "checkout-legacy",
+        "operation": "Proposed prune",
+        "selected": true
+      }
+    ],
+    "capabilities": {
+      "apply": "Supported",
+      "read": "Supported",
+      "verification": "Supported",
+      "hooks": "Unsupported",
+      "rollout": "Not checked"
+    },
+    "admission": "2 checks passed",
+    "requiredHook": "Unsupported",
+    "imageText": [
+      "Deployment preflight",
+      "checkout v2.8.1 · pln-042",
+      "mel-prod / production",
+      "Observed 14:25 AEDT",
+      "Deployment checkout-api · Update",
+      "ConfigMap checkout-config · Create",
+      "Service checkout-legacy · Proposed prune",
+      "Admission · 2 checks passed",
+      "Required hook · Unsupported",
+      "Rollout · Not checked",
+      "Inspect prune",
+      "No changes applied",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "The selected prune is proposed only; inspection performs no persistent mutation.",
+    "Use the resolved target, not management-cluster observations or the legacy ApplyBundle dry-run path.",
+    "Admission results require an authorized supported dryRun=All path; unsupported checks remain explicit.",
+    "Two admission passes do not override the unsupported required hook or imply overall deployability.",
+    "No Deploy now action, automatic namespace creation or claim of atomic apply/eventual health."
+  ],
+  "actions": null,
+  "clarification": "Proposed prune means a proposed removal that has not been applied. Resource kinds do not establish transport or operation capabilities.",
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/242"
+  ]
+}

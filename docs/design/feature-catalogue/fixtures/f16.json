@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F16",
+  "featureName": "Dashboard revision diff",
+  "synthetic": true,
+  "summary": "Revision r12 → r13 has 3 changes: global window, 30 → 60 minutes; query service, checkout-api → payment-svc; series color, blue → teal. Two affect data and one affects appearance. Previews are schematic definitions, not historical telemetry.",
+  "data": {
+    "fromRevision": "r12",
+    "toRevision": "r13",
+    "changes": [
+      {
+        "field": "Global window",
+        "before": "30 minutes",
+        "after": "60 minutes",
+        "category": "Data"
+      },
+      {
+        "field": "Query service",
+        "before": "checkout-api",
+        "after": "payment-svc",
+        "category": "Data"
+      },
+      {
+        "field": "Series color",
+        "before": "blue",
+        "after": "teal",
+        "category": "Appearance"
+      }
+    ],
+    "changeCount": 3,
+    "dataChanges": 2,
+    "appearanceChanges": 1,
+    "previewData": "schematic definition previews"
+  },
+  "constraints": [
+    "Durable immutable saved revisions are proposed. Existing in-memory undo is not durable persistence.",
+    "Restore creates a new guarded revision through a draft using the current ETag, retaining local work on conflicts.",
+    "Keep saved-query dependency references separate. Restoring a dashboard does not mutate those definitions.",
+    "Retention and migration are explicit.",
+    "Missing providers, permissions and history remain explicit. An old definition is not an evidence capture."
+  ],
+  "actions": {
+    "enabled": [
+      "Inspect change",
+      "Restore r12 as draft"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Overwrite current revision directly",
+      "Restore historical telemetry",
+      "Silently restore referenced saved-query definitions"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/231",
+    "https://github.com/paprikacd/paprika/issues/219",
+    "https://github.com/paprikacd/paprika/issues/221"
+  ]
+}

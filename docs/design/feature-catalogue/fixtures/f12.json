@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F12",
+  "featureName": "Observed dependency changes",
+  "synthetic": true,
+  "summary": "Before, 09:00–09:15 UTC: 5 edges. After, 09:15–09:30 UTC: 6 edges. Four edges persist, two are newly observed, and one is no longer observed. The payment → bank edge is no longer observed; payment → risk and risk → bank are newly observed.",
+  "data": {
+    "beforeWindowUTC": "09:00–09:15",
+    "afterWindowUTC": "09:15–09:30",
+    "beforeEdges": [
+      [
+        "checkout",
+        "payment"
+      ],
+      [
+        "checkout",
+        "inventory"
+      ],
+      [
+        "checkout",
+        "orders"
+      ],
+      [
+        "payment",
+        "bank"
+      ],
+      [
+        "orders",
+        "fulfilment"
+      ]
+    ],
+    "afterEdges": [
+      [
+        "checkout",
+        "payment"
+      ],
+      [
+        "checkout",
+        "inventory"
+      ],
+      [
+        "checkout",
+        "orders"
+      ],
+      [
+        "orders",
+        "fulfilment"
+      ],
+      [
+        "payment",
+        "risk"
+      ],
+      [
+        "risk",
+        "bank"
+      ]
+    ],
+    "beforeCount": 5,
+    "afterCount": 6,
+    "newlyObserved": 2,
+    "noLongerObserved": 1,
+    "persisting": 4,
+    "selectedPath": [
+      "payment",
+      "risk",
+      "bank"
+    ]
+  },
+  "constraints": [
+    "Compare compatible supplied edge records. Automatic discovery is separate work.",
+    "Canonical identity retains the service, environment and provider.",
+    "Positions and camera remain stable. Graph limits and collapsed content are disclosed.",
+    "The existing renderer limit is 64 nodes and 200 edges. Sampling, pairing failures and partial coverage remain inspectable.",
+    "A missing edge means no longer observed, not deleted or zero traffic. Metric deltas require compatible definitions, units and populations."
+  ],
+  "actions": {
+    "enabled": [
+      "Inspect path",
+      "Open edge table"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Discover services automatically",
+      "Delete missing edge",
+      "Change routing"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/228",
+    "https://github.com/paprikacd/paprika/issues/216",
+    "https://github.com/paprikacd/paprika/issues/218"
+  ]
+}

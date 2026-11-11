@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F14",
+  "featureName": "Telemetry cardinality changes",
+  "synthetic": true,
+  "summary": "Complete captures contain 10,000 then 14,000 series: 40% growth. requests_total changes from 6,000 to 10,000; duration_bucket remains at 4,000. Projecting 10,000 request identities without request_id yields 2,000 keys and 8,000 excess rows. Including 4,000 unchanged histogram identities, 14,000 input rows yield 6,000 keys.",
+  "data": {
+    "captureCompleteness": "complete synthetic captures",
+    "beforeSeries": 10000,
+    "afterSeries": 14000,
+    "growthPercent": 40,
+    "metrics": [
+      {
+        "name": "requests_total",
+        "beforeSeries": 6000,
+        "afterSeries": 10000
+      },
+      {
+        "name": "duration_bucket",
+        "beforeSeries": 4000,
+        "afterSeries": 4000
+      }
+    ],
+    "projection": {
+      "omittedLabel": "request_id",
+      "requestInputIdentities": 10000,
+      "requestProjectedKeys": 2000,
+      "excessRows": 8000,
+      "allInputRows": 14000,
+      "allProjectedKeys": 6000
+    }
+  },
+  "constraints": [
+    "Series, distinct label values, projected keys, collision-group count and excess rows are different quantities.",
+    "Two truncated lower bounds cannot yield exact growth. Unmatched scopes are ineligible.",
+    "A complete or imported synthetic 14,000-row capture does not bypass the existing 1,000-series bounded reader.",
+    "Retain the full original identities in collision groups.",
+    "Projection does not change collection, prove semantic validity or predict savings."
+  ],
+  "actions": {
+    "enabled": [
+      "Inspect collisions",
+      "Inspect source identities"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Drop label",
+      "Mutate collector",
+      "Apply collection change",
+      "Claim cost savings"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/229",
+    "https://github.com/paprikacd/paprika/issues/220"
+  ]
+}

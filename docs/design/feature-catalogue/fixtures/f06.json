@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F06",
+  "featureName": "Related trace and log evidence",
+  "synthetic": true,
+  "summary": "Synthetic trace starts 09:46:59.000 UTC and lasts 1,892 ms. Selected bank-gateway client span begins at +873 ms, lasts 612 ms, and ends at 09:47:00.485 UTC. The expected heartbeat-log gap is [09:47, 09:50).",
+  "data": {
+    "traceStartUTC": "09:46:59.000",
+    "traceDurationMs": 1892,
+    "selectedClientSpan": {
+      "destination": "bank-gateway",
+      "startOffsetMs": 873,
+      "durationMs": 612,
+      "endUTC": "09:47:00.485"
+    },
+    "expectedHeartbeatLogGapUTC": {
+      "start": "09:47",
+      "endExclusive": "09:50"
+    },
+    "externalServiceInstrumentation": "Not established by a client span"
+  },
+  "constraints": [
+    "Keep relative elapsed offsets, span duration and absolute UTC timestamps distinct and arithmetically consistent.",
+    "A client span to bank-gateway does not imply instrumentation inside the external bank service.",
+    "Run related-log query is an explicit bounded action; selection or hover does not silently query a provider.",
+    "A verified trace/span-ID match is distinct from an approximate service-and-time search.",
+    "No matching logs, absent identifiers, a query error and missing collection are separate states; a gap is not evidence of no errors.",
+    "Preserve authorized source boundaries and exact scope. Real parent and child spans may overlap rather than being sequential."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/217",
+    "https://github.com/paprikacd/paprika/issues/216"
+  ]
+}

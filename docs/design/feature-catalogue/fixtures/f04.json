@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F04",
+  "featureName": "Source compatibility explorer",
+  "synthetic": true,
+  "summary": "Synthetic Prometheus production source, checkout-api and eu-west-1. Selected metric http_server_request_duration_seconds_bucket; cumulative histogram buckets; source unit seconds. Select le to inspect upper-bound semantics. 128 inspected series is a bounded sample; global cardinality is unknown.",
+  "data": {
+    "providerKind": "Prometheus",
+    "environment": "production",
+    "service": "checkout-api",
+    "region": "eu-west-1",
+    "metric": "http_server_request_duration_seconds_bucket",
+    "representation": "cumulative histogram buckets",
+    "sourceUnit": "seconds",
+    "selectedSourceLabel": {
+      "name": "le",
+      "sourceType": "string",
+      "meaning": "bucket upper bound; a numeric view requires explicit parsing"
+    },
+    "inspectedSeries": 128,
+    "inspectionScope": "bounded sample",
+    "globalCardinality": "Unknown"
+  },
+  "constraints": [
+    "Observed metadata is distinct from inference; visualization compatibility checks type, unit, grain and required roles.",
+    "The p95 view requires an actual derived query rather than renaming a bucket field.",
+    "128 inspected series is not global cardinality.",
+    "Use in panel transfers the source/query and valid bindings to the existing editor; it does not silently save a dashboard.",
+    "Partial discovery retains inspected bounds and truncation; authentication errors remain attached to their source.",
+    "Cancelled discovery cannot replace a newer selected scope."
+  ],
+  "actions": null,
+  "clarification": "The source le label is a string. A numerical upper-bound view explicitly parses that value and retains the original label. The 128 inspected series remain a bounded sample.",
+  "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/220"
+  ]
+}

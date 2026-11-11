@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F09",
+  "featureName": "Saved investigation casebook",
+  "synthetic": true,
+  "summary": "Synthetic Checkout release investigation, captured at 09:53 UTC for [09:41, 09:53) UTC. Saved partial snapshot: 72 metric observations = 12 timestamps × 3 series × 2 cohorts; 5 traces; logs not captured because the source was unavailable.",
+  "data": {
+    "case": "Checkout release investigation",
+    "capturedUTC": "09:53",
+    "windowUTC": {
+      "start": "09:41",
+      "endExclusive": "09:53"
+    },
+    "captureState": "Saved partial snapshot",
+    "metricObservations": 72,
+    "timestamps": 12,
+    "series": 3,
+    "cohorts": 2,
+    "traces": 5,
+    "logs": {
+      "state": "Not captured",
+      "reason": "Source unavailable"
+    }
+  },
+  "constraints": [
+    "Observation, candidate explanation and next action are separate note types.",
+    "Captured evidence is immutable; editable notes can evolve independently.",
+    "Selecting captured evidence restores its recorded query identity, bounds, units, revision and selected observation.",
+    "Compare with current creates a separate current observation and cannot overwrite the saved capture.",
+    "Logs not captured is a source-unavailable state, not zero logs or no errors. Keep partial capture visibly partial.",
+    "Sharing a case does not broaden source authorization; reopening preserves exact captured results and gaps."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/221",
+    "https://github.com/paprikacd/paprika/issues/222"
+  ]
+}

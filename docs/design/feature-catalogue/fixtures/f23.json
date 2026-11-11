@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F23",
+  "featureName": "Versioned artifact release composer",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Positive selected-target variation of the native composer fixture; manifest IDs are synthetic display aliases.",
+    "application": "checkout",
+    "version": "v2.8.1",
+    "repository": "example/checkout",
+    "revision": "f7b4d6a",
+    "components": [
+      {
+        "name": "checkout-api",
+        "digest": "sha256:8ac4…91bf",
+        "binding": "Matches"
+      },
+      {
+        "name": "checkout-worker",
+        "digest": "sha256:0ed2…b462",
+        "binding": "Matches"
+      }
+    ],
+    "targets": [
+      {
+        "name": "staging",
+        "configuration": "cfg-041",
+        "manifestAlias": "mf-stg",
+        "selected": false
+      },
+      {
+        "name": "production",
+        "configuration": "cfg-042",
+        "manifestAlias": "mf-prod",
+        "selected": true
+      }
+    ],
+    "publication": "Not published",
+    "imageText": [
+      "Compose artifact",
+      "checkout v2.8.1",
+      "example/checkout · f7b4d6a",
+      "Components",
+      "checkout-api · sha256:8ac4…91bf",
+      "checkout-worker · sha256:0ed2…b462",
+      "Bindings match",
+      "Staging · cfg-041 · mf-stg",
+      "Production · cfg-042 · mf-prod",
+      "Selected production manifest",
+      "Not published",
+      "Review publication",
+      "Export manifest",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "Shared artifact identity and target manifest identity remain distinct; staging and production have different immutable content.",
+    "The proposed publication endpoint preserves the legacy ApplyBundle guard.",
+    "Review/publication binds exact content, Application identity and expected current intent with revalidation.",
+    "Publishing alone does not request deployment; do not show rollout progress or a deployed badge.",
+    "Bindings match describes component correspondence only, not universal policy or deployment readiness."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/240"
+  ]
+}
