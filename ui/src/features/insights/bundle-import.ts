@@ -1,5 +1,6 @@
 import type { InsightsClient } from "./client"
 import { documentFingerprint } from "./fingerprint"
+import { compactDashboardLayout } from "./layout-compaction"
 import { dashboardSchema, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
 import {
   buildDashboardBundle, parseDashboardBundle, queryImportStatus,
@@ -226,12 +227,13 @@ export function createBundleImporter() {
               verified.push(fresh.query)
             }
             buildDashboardBundle([resolved], verified)
-            const target = dashboardSchema.parse({
+            // The target is the layout the save writes, so its fingerprint is the one a confirming read returns.
+            const target = compactDashboardLayout(dashboardSchema.parse({
               ...resolved, id: session.dashboardIds.get(document.id)!,
               widgets: resolved.widgets.map(widget => ({ ...widget, ...(widget.drilldowns ? {
                 drilldowns: widget.drilldowns.map(link => ({ ...link, dashboardId: session!.dashboardIds.get(link.dashboardId) ?? link.dashboardId })),
               } : {}) })),
-            })
+            }))
             const fingerprint = documentFingerprint(target)
             const receipt = `dashboard:${target.id}:${fingerprint}`
             const action = session.dashboardActions.get(document.id)!

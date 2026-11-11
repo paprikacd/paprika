@@ -51,6 +51,18 @@ describe("canvas layout compaction", () => {
     expect(dashboard.widgets[1].layout.y).toBe(0)
   })
 
+  it("is idempotent, so a saved layout compacts to itself on the next save", () => {
+    const dashboard = {
+      id: "d", title: "Overlapping", widgets: [
+        { id: "a", title: "A", layout: { x: 0, y: 0, w: 6, h: 4 } },
+        { id: "b", title: "B", layout: { x: 4, y: 0, w: 6, h: 4 } },
+        { id: "c", title: "C", layout: { x: 0, y: 1, w: 12, h: 2 } },
+      ],
+    }
+    const once = compactDashboardLayout(dashboard)
+    expect(compactDashboardLayout(once)).toEqual(once)
+  })
+
   it("returns a dashboard that is already drawn unchanged", () => {
     const dashboard = { id: "d", widgets: [{ id: "a", layout: { x: 0, y: 0, w: 12, h: 2 } }] }
     expect(compactDashboardLayout(dashboard)).toEqual(dashboard)

@@ -9,6 +9,7 @@ import {
   type SavedQuery,
   type SavedQueryEntry,
 } from "./schema"
+import { compactDashboardLayout } from "./layout-compaction"
 import { validateSavedQueryTemplate } from "./saved-queries"
 import { parseRecordFrame } from "./record-data"
 
@@ -316,10 +317,12 @@ export function createInsightsClient(
     get: (id, signal) => cachedRead(`/dashboards/${encodeURIComponent(id)}`, (body, etag) => ({
       dashboard: storedDashboardSchema.parse(body), etag,
     }), signal),
+    // Every dashboard save goes through here, so the layout is sent as the canvas draws it. The server rejects
+    // overlapping widgets, and a stored dashboard can overlap while the canvas still shows it settled.
     save: async (dashboard, etag) => {
       const response = await request(`/dashboards/${encodeURIComponent(dashboard.id)}`, {
         method: "PUT",
-        body: JSON.stringify(dashboardSchema.parse(dashboard)),
+        body: JSON.stringify(dashboardSchema.parse(compactDashboardLayout(dashboard))),
         headers: etag ? { "If-Match": etag } : { "If-None-Match": "*" },
       })
       return documentETag(response)
