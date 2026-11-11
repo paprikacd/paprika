@@ -8,10 +8,12 @@ export const dashboardCompositionGuidance: readonly string[] = [
   "When a metric has a supplied or named objective, encode the breach: give the stat options.thresholds in ascending order, each naming a status. Start with the lowest meaningful value and the status that applies there, since a reading below the first threshold takes that threshold's status; for latency use 0 ok, then 300 warning and 500 critical, so a healthy reading stays ok. Escalate with warning at the objective and critical at the breach. A hex color is only an optional hue override. Draw the objective as a labelled referenceLines entry on a time series.",
   "Set options.staleAfterSeconds only when the metric's scrape or evaluation interval is known, and make it at least twice that interval so one late sample does not flap. It applies to stat and time-series widgets and measures returned samples, not source health.",
   "Keep provenance out of titles and descriptions: source and query detail belongs in tooltips or authoring metadata. Write a description only when it adds meaning the viewer needs.",
-  "Do not repeat units across axis captions, tick labels and titles. Do not force max to 100 on rate charts unless the full 0 to 100 range is essential.",
-  "Do not combine a bar, a sparkline, a long description and a compact height (h\u003c=2) on one KPI card.",
-  "Avoid overlapping widgets and widget-internal scrolling; a KPI that needs a scrollbar is too small or too dense.",
+  "Show a unit once, as the widget unit, not in axis labels, tick labels or titles.",
+  "Do not force max to 100 on rate charts unless the full 0 to 100 range is essential.",
+  "Place widgets without overlaps and fill each row; a gap beside a widget is not closed automatically.",
+  "Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id.",
   "On a stat, set min and max only together with showStatBar, which requires both. A bar that is switched off may keep bounds it already has; do not remove them to tidy the document.",
+  "Avoid widget-internal scrolling; a KPI that needs a scrollbar is too small or too dense.",
 ]
 
 export const dashboardWorkflowGuidance: readonly string[] = [

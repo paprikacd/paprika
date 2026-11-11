@@ -356,6 +356,6 @@ func TestInsightsPatchRejectionNamesWidgetPointer(t *testing.T) {
 	report, ok := message.(*insightsv1.CheckReport)
 	require.True(t, ok)
 	require.Len(t, report.GetIssues(), 1)
-	require.Equal(t, "/widgets/0/layout", report.GetIssues()[0].GetPointer())
+	require.Equal(t, "/widgets/0/layout/w", report.GetIssues()[0].GetPointer())
 	require.Equal(t, "rate", report.GetIssues()[0].GetWidgetId())
 }

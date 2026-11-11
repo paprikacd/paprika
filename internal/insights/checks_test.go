@@ -43,7 +43,7 @@ func findingsFor(t *testing.T, document Dashboard) []json.RawMessage {
 	return out
 }
 
-func TestSchemaFindingsPointWidgetOptionFailuresAtTheWidget(t *testing.T) {
+func TestSchemaFindingsPointOptionFailuresAtTheirMember(t *testing.T) {
 	thresholds := `"options":{"thresholds":[{"value":10,"color":"#111111"},{"value":20,"color":"red"}]}`
 	document := documentWithWidgets("demo", widgetJSON("requests", "", ""), widgetJSON("latency", "", thresholds))
 	findings := schemaFindings("demo", document)
@@ -51,7 +51,7 @@ func TestSchemaFindingsPointWidgetOptionFailuresAtTheWidget(t *testing.T) {
 		t.Fatalf("findings = %d, want 1", len(findings))
 	}
 	got := findings[0]
-	if got.GetPointer() != "/widgets/1" || got.GetRuleId() != "schema.widget.shape" || got.GetWidgetId() != "latency" {
+	if got.GetPointer() != "/widgets/1/options/thresholds/1/color" || got.GetRuleId() != "schema.widget.options" || got.GetWidgetId() != "latency" {
 		t.Fatalf("finding = pointer %q rule %q widget %q", got.GetPointer(), got.GetRuleId(), got.GetWidgetId())
 	}
 	if got.GetMessage() != "threshold color must be a six-digit hex color" {
@@ -69,7 +69,7 @@ func TestSchemaFindingsNameWidgetLayoutAndDuplicateIDs(t *testing.T) {
 		t.Fatalf("findings = %d, want 2", len(findings))
 	}
 	layout := findings[0]
-	if layout.GetPointer() != "/widgets/0/layout" || layout.GetRuleId() != "schema.widget.layout" || layout.GetFix() == "" {
+	if layout.GetPointer() != "/widgets/0/layout/w" || layout.GetRuleId() != "schema.widget.layout" || layout.GetFix() == "" {
 		t.Fatalf("layout finding = %+v", layout)
 	}
 	duplicate := findings[1]
@@ -92,11 +92,11 @@ func TestSchemaFindingsReportEveryWidgetWhoseShapePasses(t *testing.T) {
 	// Shape failures come first, in widget order, so the first finding is the
 	// one the save reported before; content findings follow for the other widgets.
 	expected := []want{
-		{"/widgets/0", "schema.widget.shape"},
-		{"/widgets/3", "schema.widget.shape"},
-		{"/widgets/1/layout", "schema.widget.layout"},
+		{"/widgets/0/options/decimals", "schema.widget.options"},
+		{"/widgets/3/unknownField", "schema.widget.shape"},
+		{"/widgets/1/layout/w", "schema.widget.layout"},
 		{"/widgets/2/type", "schema.widget.type"},
-		{"/widgets/4/layout", "schema.widget.layout"},
+		{"/widgets/4/layout/w", "schema.widget.layout"},
 	}
 	if len(findings) != len(expected) {
 		t.Fatalf("findings = %d, want %d", len(findings), len(expected))
@@ -133,7 +133,7 @@ func TestSchemaFindingsStopAtDocumentLevelFailures(t *testing.T) {
 	}
 	unknown := json.RawMessage(`{"schemaVersion":1,"id":"demo","title":"Checks","timeRange":"1h","refreshInterval":30,"widgets":[],"extra":true}`)
 	findings = schemaFindings("demo", unknown)
-	if len(findings) != 1 || findings[0].GetPointer() != "" || findings[0].GetRuleId() != "schema.document" {
+	if len(findings) != 1 || findings[0].GetPointer() != "/extra" || findings[0].GetRuleId() != "schema.document" {
 		t.Fatalf("unknown field finding = %v", findings)
 	}
 }
@@ -268,7 +268,7 @@ func TestDashboardSaveRejectionCarriesBoundedIssues(t *testing.T) {
 		t.Fatalf("body = error %q total %d issues %d", body.Error, body.Total, len(body.Issues))
 	}
 	first := body.Issues[0]
-	if first["pointer"] != "/widgets/0/layout" || first["widgetId"] != "w00" || first["severity"] != "SEVERITY_ERROR" || first["source"] != "SOURCE_SCHEMA" {
+	if first["pointer"] != "/widgets/0/layout/w" || first["widgetId"] != "w00" || first["severity"] != "SEVERITY_ERROR" || first["source"] != "SOURCE_SCHEMA" {
 		t.Fatalf("first issue = %v", first)
 	}
 	if _, _, err := store.Get("demo"); err == nil {
@@ -280,7 +280,7 @@ func TestDashboardSaveRejectionCarriesBoundedIssues(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != 400 {
 		t.Fatalf("nested status %d body %s err %v", w.Code, w.Body, err)
 	}
-	if len(body.Issues) != 1 || body.Issues[0]["pointer"] != "/widgets/0" || body.Total != 1 {
+	if len(body.Issues) != 1 || body.Issues[0]["pointer"] != "/widgets/0/options/thresholds/1/color" || body.Total != 1 {
 		t.Fatalf("nested body = %+v", body)
 	}
 }
@@ -330,7 +330,7 @@ func TestDashboardValidateIsAReadOnlyDryRun(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Issues) != 1 || report.Issues[0]["pointer"] != "/widgets/0/layout" || report.Total != 1 || report.Truncated {
+	if len(report.Issues) != 1 || report.Issues[0]["pointer"] != "/widgets/0/layout/w" || report.Total != 1 || report.Truncated {
 		t.Fatalf("report = %s", w.Body)
 	}
 	again := request(t, h, "POST", "/api/dashboards/validate", checkBody(invalid), nil)

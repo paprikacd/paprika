@@ -42,8 +42,8 @@ import {
 import { GammaActionMenu } from "./gamma/action-menu"
 import { verticalCompactor, type Layout } from "react-grid-layout"
 import type { InsightsClient } from "./client"
+import { dashboardAsSent } from "./layout-compaction"
 import {
-  dashboardSchema,
   customTimeRangeSchema,
   newDashboard,
   newWidget,
@@ -884,7 +884,8 @@ export default function InsightsApp({
     setError("")
     setBusy(true)
     try {
-      const parsed = dashboardSchema.parse(dashboard)
+      // The document as the save writes it, so the stored copy and the editor agree with what the server holds.
+      const parsed = dashboardAsSent(dashboard)
       // Normalize trimmed form values before the request, so a completed save
       // never overwrites edits made while the request was in flight.
       if (documentFingerprint(parsed) !== documentFingerprint(dashboard))
@@ -1151,7 +1152,7 @@ export default function InsightsApp({
         mode === "example"
           ? { dashboard: existing, etag: undefined }
           : await client.get(id)
-      const moved = writableDashboard({ ...loaded.dashboard, folder })
+      const moved = dashboardAsSent(writableDashboard({ ...loaded.dashboard, folder }))
       if (mode === "example")
         writeExampleWorkspace(
           localStorage,
@@ -1273,7 +1274,7 @@ export default function InsightsApp({
               importReceipts.current.keys().next().value!,
             )
         }
-        const copy = dashboardSchema.parse({
+        const copy = dashboardAsSent({
           ...document,
           id: copyId,
           widgets: document.widgets.map(widget => ({

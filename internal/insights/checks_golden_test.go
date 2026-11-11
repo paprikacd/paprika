@@ -3,6 +3,7 @@ package insights
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,11 +29,30 @@ func TestCheckWireGolden(t *testing.T) {
 	if dryRun.Code != 200 {
 		t.Fatalf("dry run status = %d, body %s", dryRun.Code, dryRun.Body)
 	}
+	// A lint finding: the layout overlaps, so the dry run reports the error the save rejects on.
+	overlap := documentWithWidgets("demo",
+		widgetJSON("a", `{"x":0,"y":0,"w":6,"h":4}`, ""),
+		widgetJSON("b", `{"x":4,"y":0,"w":6,"h":4}`, ""),
+	)
+	lintDryRun := request(t, h, "POST", "/api/dashboards/validate", checkBody(overlap), nil)
+	if lintDryRun.Code != http.StatusOK {
+		t.Fatalf("lint dry run status = %d, body %s", lintDryRun.Code, lintDryRun.Body)
+	}
+	// A successful save that asks for its checks: the document plus the warnings.
+	warning := documentWithWidgets("warn", widgetJSON("a", `{"x":0,"y":0,"w":4,"h":2}`, `"type":"stat","options":{"showStatBar":true,"min":0,"max":100,"showSparkline":true}`))
+	checkedSave := request(t, h, "PUT", "/api/dashboards/warn?checks=true", warning, map[string]string{"If-None-Match": "*"})
+	if checkedSave.Code != http.StatusOK {
+		t.Fatalf("checked save status = %d, body %s", checkedSave.Code, checkedSave.Body)
+	}
 	var contract bytes.Buffer
 	contract.WriteString(`{"save":`)
 	contract.Write(bytes.TrimSpace(save.Body.Bytes()))
 	contract.WriteString(`,"dryRun":`)
 	contract.Write(bytes.TrimSpace(dryRun.Body.Bytes()))
+	contract.WriteString(`,"lintDryRun":`)
+	contract.Write(bytes.TrimSpace(lintDryRun.Body.Bytes()))
+	contract.WriteString(`,"checkedSave":`)
+	contract.Write(bytes.TrimSpace(checkedSave.Body.Bytes()))
 	contract.WriteString("}")
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, contract.Bytes(), "", "  "); err != nil {

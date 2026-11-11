@@ -2,6 +2,7 @@ package insights
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -23,12 +24,12 @@ const (
 	ruleDocumentTimeRange = "schema.document.timeRange"
 	ruleDocumentRefresh   = "schema.document.refreshInterval"
 	ruleWidgets           = "schema.widgets"
-	ruleWidget            = "schema.widget"
 	ruleWidgetShape       = "schema.widget.shape"
 	ruleWidgetID          = "schema.widget.id"
 	ruleWidgetText        = "schema.widget.text"
 	ruleWidgetType        = "schema.widget.type"
 	ruleWidgetLayout      = "schema.widget.layout"
+	ruleWidgetOptions     = "schema.widget.options"
 )
 
 var dashboardRequiredFields = []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}
@@ -65,29 +66,99 @@ type dashboardHeader struct {
 // stop the check, as they always have. Widget failures are collected for every
 // widget: a widget whose shape is broken is reported as a shape finding, and
 // the content checks still run on every widget whose shape passed.
+//
+// Each finding names its own JSON Pointer: the validator that failed reports
+// the member it concerns, and its parents add their segments. See pointedError.
 func schemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
+	findings := unanchoredSchemaFindings(id, document)
+	if len(findings) == 0 {
+		return findings
+	}
+	return anchorFindings(document, findings)
+}
+
+// anchorFindings moves a finding whose pointer names a member the document does
+// not have to the nearest ancestor it does have. A required member that is
+// missing, or an element that is null, is reported at the object that should
+// hold it, so every pointer resolves against the document it was checked from.
+func anchorFindings(document Dashboard, findings []*insightsv1.CheckFinding) []*insightsv1.CheckFinding {
+	var tree any
+	if json.Unmarshal(document, &tree) != nil {
+		return findings
+	}
+	for _, finding := range findings {
+		finding.Pointer = nearestPresentPointer(tree, finding.GetPointer())
+	}
+	return findings
+}
+
+// nearestPresentPointer returns pointer if the tree holds the node it names,
+// and otherwise the longest ancestor of it that the tree holds.
+func nearestPresentPointer(tree any, pointer string) string {
+	for !pointerPresent(tree, pointer) {
+		cut := strings.LastIndex(pointer, "/")
+		if cut <= 0 {
+			return ""
+		}
+		pointer = pointer[:cut]
+	}
+	return pointer
+}
+
+// pointerPresent reports whether the tree holds the node at an RFC 6901 pointer.
+// The empty pointer names the root, which is always present.
+func pointerPresent(tree any, pointer string) bool {
+	node := tree
+	if pointer == "" {
+		return true
+	}
+	for _, segment := range strings.Split(pointer[1:], "/") {
+		segment = strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
+		switch current := node.(type) {
+		case map[string]any:
+			next, ok := current[segment]
+			if !ok {
+				return false
+			}
+			node = next
+		case []any:
+			index, err := strconv.Atoi(segment)
+			if err != nil || index < 0 || index >= len(current) {
+				return false
+			}
+			node = current[index]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// unanchoredSchemaFindings runs the schema checks and reports each finding at the
+// pointer its validator named. schemaFindings anchors those pointers.
+func unanchoredSchemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
 	if !validID.MatchString(id) || len(document) > maxDocumentBytes {
-		return []*insightsv1.CheckFinding{schemaFinding(ruleDocument, "", "dashboard id or size is invalid", "")}
+		return []*insightsv1.CheckFinding{findingAt("", errAt("", "dashboard id or size is invalid"), "")}
 	}
 	root, err := requireObjectShape(document, dashboardRequiredFields, dashboardOptionalFields)
 	if err != nil {
-		return []*insightsv1.CheckFinding{schemaFinding(ruleDocument, "", err.Error(), "")}
+		return []*insightsv1.CheckFinding{findingAt("", err, "")}
 	}
 	if finding := extensionFinding(root); finding != nil {
 		return []*insightsv1.CheckFinding{finding}
 	}
 	var widgets []json.RawMessage
 	if json.Unmarshal(root["widgets"], &widgets) != nil {
-		return []*insightsv1.CheckFinding{schemaFinding(ruleWidgets, "/widgets", "widgets must be an array", "")}
+		return []*insightsv1.CheckFinding{findingAt("", errAt("/widgets", "widgets must be an array"), "")}
 	}
 	findings, shapeOK := widgetShapeFindings(widgets)
 	var header dashboardHeader
 	if json.Unmarshal(document, &header) != nil {
-		return append(findings, schemaFinding(ruleDocument, "", "dashboard must be a valid JSON object", ""))
+		return append(findings, findingAt("", errAt("", "dashboard must be a valid JSON object"), ""))
 	}
 	findings = append(findings, identityFindings(id, &header)...)
 	if len(widgets) > maxDashboardWidgets {
-		return append(findings, schemaFinding(ruleWidgets, "/widgets", "dashboard requires an array of at most 48 widgets", ""))
+		return append(findings, findingAt("", errAt("/widgets", "dashboard requires an array of at most 48 widgets"), ""))
 	}
 	return append(findings, widgetContentFindings(widgets, shapeOK)...)
 }
@@ -101,7 +172,7 @@ func extensionFinding(root map[string]json.RawMessage) *insightsv1.CheckFinding 
 			continue
 		}
 		if err := validateDashboardExtensions(map[string]json.RawMessage{field: raw}); err != nil {
-			return schemaFinding("schema.document."+field, "/"+field, err.Error(), "")
+			return findingAt("", err, "")
 		}
 	}
 	return nil
@@ -112,7 +183,7 @@ func extensionFinding(root map[string]json.RawMessage) *insightsv1.CheckFinding 
 func identityFindings(id string, header *dashboardHeader) []*insightsv1.CheckFinding {
 	identity := &dashboardDocument{SchemaVersion: header.SchemaVersion, ID: header.ID, Title: header.Title, Description: header.Description, TimeRange: header.TimeRange, RefreshInterval: header.RefreshInterval}
 	if err := validateDashboardIdentity(identity, id); err != nil {
-		return []*insightsv1.CheckFinding{identityFinding(err)}
+		return []*insightsv1.CheckFinding{findingAt("", err, "")}
 	}
 	return nil
 }
@@ -123,7 +194,7 @@ func widgetShapeFindings(widgets []json.RawMessage) (findings []*insightsv1.Chec
 	shapeOK = make([]bool, len(widgets))
 	for i, widget := range widgets {
 		if err := validateDashboardWidgetShape(widget); err != nil {
-			findings = append(findings, schemaFinding(ruleWidgetShape, widgetPointer(i, ""), err.Error(), widgetIDOf(widget)))
+			findings = append(findings, findingAt(widgetBase(i), err, widgetIDOf(widget)))
 			continue
 		}
 		shapeOK[i] = true
@@ -143,48 +214,78 @@ func widgetContentFindings(widgets []json.RawMessage, shapeOK []bool) []*insight
 		}
 		var widget dashboardWidget
 		if json.Unmarshal(raw, &widget) != nil {
-			findings = append(findings, schemaFinding(ruleWidgetShape, widgetPointer(i, ""), "dashboard must be a valid JSON object", widgetIDOf(raw)))
+			findings = append(findings, findingAt(widgetBase(i), errAt("", "dashboard must be a valid JSON object"), widgetIDOf(raw)))
 			continue
 		}
 		if err := validateDashboardWidget(&widget, seen); err != nil {
-			rule, field := widgetContentRule(err)
-			findings = append(findings, schemaFinding(rule, widgetPointer(i, field), err.Error(), widget.ID))
+			findings = append(findings, findingAt(widgetBase(i), err, widget.ID))
 		}
 	}
 	return findings
 }
 
-// widgetContentRule names the rule and the field a widget content message
-// describes. Messages that span several fields point at the widget itself.
-func widgetContentRule(err error) (rule, field string) {
-	switch err.Error() {
-	case "widget ids must be valid and unique":
-		return ruleWidgetID, "/id"
-	case "unsupported widget type":
-		return ruleWidgetType, "/type"
-	case "widget layout is outside the dashboard grid":
-		return ruleWidgetLayout, "/layout"
-	case "widget title or metadata is invalid", "widget provider and query are required":
-		return ruleWidgetText, ""
+// findingAt turns a validator error into an error-severity schema finding. base
+// is the pointer of the value the validator checked; the error's own pointer,
+// relative to that value, is appended to it. An error that names no pointer
+// concerns the value itself. The rule id follows from the final pointer, so it
+// never depends on a submitted key. The widget id is checked before it is used.
+func findingAt(base string, err error, widgetID string) *insightsv1.CheckFinding {
+	pointer, message := base, err.Error()
+	var pointed *pointedError
+	if errors.As(err, &pointed) {
+		pointer += pointed.pointer
+	}
+	pointer = boundPointer(pointer)
+	return schemaFinding(ruleFor(pointer), pointer, message, widgetID)
+}
+
+// ruleFor names the rule for a schema finding from where it points. The set of
+// rule ids is closed: a submitted key only ever changes the pointer, and an
+// unknown widget member is reported as the shape rule.
+func ruleFor(pointer string) string {
+	if pointer == "" {
+		return ruleDocument
+	}
+	segments := strings.Split(strings.TrimPrefix(pointer, "/"), "/")
+	switch segments[0] {
+	case "timeRange":
+		return ruleDocumentTimeRange
+	case "refreshInterval":
+		return ruleDocumentRefresh
+	case "variables", "folder", "customTimeRange", "timeZone":
+		return "schema.document." + segments[0]
+	case "widgets":
+		if len(segments) == 1 {
+			return ruleWidgets
+		}
+		if len(segments) == 2 {
+			return ruleWidgetShape
+		}
+		return widgetRule(segments[2])
 	default:
-		return ruleWidget, ""
+		return ruleDocument
 	}
 }
 
-// identityFinding names the identity rule for a document-level identity failure.
-func identityFinding(err error) *insightsv1.CheckFinding {
-	switch err.Error() {
-	case "unsupported dashboard time range":
-		return schemaFinding(ruleDocumentTimeRange, "/timeRange", err.Error(), "")
-	case "unsupported refresh interval":
-		return schemaFinding(ruleDocumentRefresh, "/refreshInterval", err.Error(), "")
+// widgetRule names the rule for a widget member. Members that are not part of
+// the widget contract report the shape rule.
+func widgetRule(member string) string {
+	switch member {
+	case "id":
+		return ruleWidgetID
+	case "type":
+		return ruleWidgetType
+	case "layout":
+		return ruleWidgetLayout
+	case "title", "description", "unit", "providerId", "query":
+		return ruleWidgetText
+	case "options":
+		return ruleWidgetOptions
+	case "color", "pluginId", "dataKind", "config", "drilldowns", "queryRef", "selectionBindings", "annotationSource":
+		return "schema.widget." + member
 	default:
-		return schemaFinding(ruleDocument, "", err.Error(), "")
+		return ruleWidgetShape
 	}
-}
-
-func widgetPointer(index int, field string) string {
-	return "/widgets/" + strconv.Itoa(index) + field
 }
 
 // schemaFinding builds an error-severity schema finding. It bounds the message
@@ -204,6 +305,11 @@ func schemaFinding(rule, pointer, message, widgetID string) *insightsv1.CheckFin
 	}
 }
 
+// widgetBase is the JSON Pointer of the widget at index.
+func widgetBase(index int) string {
+	return "/widgets/" + strconv.Itoa(index)
+}
+
 func widgetIDOf(raw json.RawMessage) string {
 	var head struct {
 		ID string `json:"id"`
@@ -212,6 +318,102 @@ func widgetIDOf(raw json.RawMessage) string {
 		return ""
 	}
 	return head.ID
+}
+
+// pointedError is a validation failure that names the member it concerns.
+// pointer is an RFC 6901 JSON Pointer relative to the value the validator
+// checked; the empty string means that value itself. message is the text the
+// service has always reported, so wrapping the error never changes it.
+//
+// A validator reports the pointer of the member that failed. A parent places
+// the child's error under its own member or element with in, so the pointer
+// grows as the error travels up and always names the exact node.
+type pointedError struct {
+	pointer string
+	message string
+}
+
+func (e *pointedError) Error() string { return e.message }
+
+// errAt reports message at a pointer relative to the value being checked.
+func errAt(pointer, message string) error {
+	return &pointedError{pointer: pointer, message: message}
+}
+
+// fieldErr reports message at a named member of the value being checked.
+func fieldErr(field, message string) error {
+	return errAt("/"+escapePointerSegment(field), message)
+}
+
+// in places an error from a child value under its member or element segment.
+// An error that names no pointer concerns the child itself, so it lands on the
+// child's own pointer.
+func in(segment string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var pointed *pointedError
+	if errors.As(err, &pointed) {
+		return &pointedError{pointer: "/" + escapePointerSegment(segment) + pointed.pointer, message: pointed.message}
+	}
+	return &pointedError{pointer: "/" + escapePointerSegment(segment), message: err.Error()}
+}
+
+// decodeMember decodes raw into v for a validator that reports message. encoding/json
+// names the first member of the wrong JSON type in UnmarshalTypeError.Field, so a
+// wrong member is reported at that member and not at a valid neighbour. Any other
+// failure, such as a value that is not an object, names the element itself.
+func decodeMember(raw []byte, v any, message string) error {
+	err := json.Unmarshal(raw, v)
+	if err == nil {
+		return nil
+	}
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) && typeErr.Field != "" {
+		return errAt(fieldPointer(typeErr.Field), message)
+	}
+	return errors.New(message)
+}
+
+// fieldPointer turns the dotted member path encoding/json reports into a JSON Pointer.
+func fieldPointer(path string) string {
+	var pointer strings.Builder
+	for _, segment := range strings.Split(path, ".") {
+		pointer.WriteString("/" + escapePointerSegment(segment))
+	}
+	return pointer.String()
+}
+
+// maxKeyPointerBytes is the longest member name a finding names exactly. A
+// longer submitted key would only make the pointer long, so the finding names
+// the object that holds it.
+const maxKeyPointerBytes = 96
+
+// keyPointer is the pointer error for a submitted member name, relative to its
+// object. Long names fall back to the object itself, as described above.
+func keyPointer(key string) string {
+	escaped := escapePointerSegment(key)
+	if len(escaped) > maxKeyPointerBytes {
+		return ""
+	}
+	return "/" + escaped
+}
+
+// escapePointerSegment applies RFC 6901 escaping: "~" becomes "~0" and "/" becomes "~1".
+func escapePointerSegment(segment string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(segment, "~", "~0"), "/", "~1")
+}
+
+// boundPointer keeps a pointer within the wire bound. A longer pointer is cut
+// back to its nearest ancestor that fits, which still names a real node.
+func boundPointer(pointer string) string {
+	limit := checkwire.MaxPointerBytes
+	if len(pointer) <= limit {
+		return pointer
+	}
+	// Search one byte past the limit: a slash at the limit starts the next
+	// segment, so the segments before it fit and the cut lands on it.
+	return pointer[:strings.LastIndex(pointer[:limit+1], "/")]
 }
 
 func truncateRunes(value string, limit int) string {
@@ -237,7 +439,7 @@ func dryRunFindings(document Dashboard) []*insightsv1.CheckFinding {
 	if json.Unmarshal(document, &head) == nil && head.ID != nil {
 		id = *head.ID
 	}
-	return schemaFindings(id, document)
+	return saveFindings(id, document)
 }
 
 // capCheckReport keeps the first checkwire.MaxIssues findings and counts the rest.
