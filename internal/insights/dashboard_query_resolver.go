@@ -28,14 +28,16 @@ type dashboardReadVariable struct {
 }
 
 type dashboardReadWidget struct {
-	ID               string                   `json:"id"`
-	Title            string                   `json:"title"`
-	Type             string                   `json:"type"`
-	PluginID         string                   `json:"pluginId"`
-	Unit             string                   `json:"unit"`
-	ProviderID       string                   `json:"providerId"`
-	Query            string                   `json:"query"`
-	DataKind         string                   `json:"dataKind"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Type       string `json:"type"`
+	PluginID   string `json:"pluginId"`
+	Unit       string `json:"unit"`
+	ProviderID string `json:"providerId"`
+	Query      string `json:"query"`
+	DataKind   string `json:"dataKind"`
+	// Config is the plugin's declared config, read only for the series a band widget draws.
+	Config           json.RawMessage          `json:"config"`
 	QueryRef         *dashboardReadReference  `json:"queryRef"`
 	AnnotationSource *dashboardReadAnnotation `json:"annotationSource"`
 	Options          struct {

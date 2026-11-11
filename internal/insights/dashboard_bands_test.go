@@ -78,9 +78,9 @@ func TestDashboardQueryDeclaresTheBandOfEachSeriesWidget(t *testing.T) {
 	putReadDashboard(t, s, gauge, grid, heat, colour)
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
 
-	assertSeriesBand(t, "gauge", result.Widgets[0].Threshold, "critical", "Down", 0, 4)
-	assertSeriesBand(t, "status grid", result.Widgets[1].Threshold, "warning", "Slow", 1, 2)
-	assertSeriesBand(t, "heatmap", result.Widgets[2].Threshold, "warning", "Slow", 0, 2)
+	assertSeriesBand(t, "gauge", &result.Widgets[0], "critical", "Down", 0, 4)
+	assertSeriesBand(t, "status grid", &result.Widgets[1], "warning", "Slow", 1, 2)
+	assertSeriesBand(t, "heatmap", &result.Widgets[2], "warning", "Slow", 0, 2)
 	if result.Widgets[3].Threshold != nil {
 		t.Fatalf("colour-only thresholds name no status, so they declare no band: %+v", result.Widgets[3].Threshold)
 	}
@@ -90,10 +90,14 @@ func TestDashboardQueryDeclaresTheBandOfEachSeriesWidget(t *testing.T) {
 }
 
 // assertSeriesBand checks a multi-series band: its status, label, the series that set it and its boundary.
-func assertSeriesBand(t *testing.T, name string, got *DashboardStatThreshold, status, label string, series int, boundary float64) {
+func assertSeriesBand(t *testing.T, name string, widget *DashboardQueryWidget, status, label string, series int, boundary float64) {
 	t.Helper()
-	if got == nil || got.State != "matched" || got.Status != status || got.Label != label || got.Series == nil || *got.Series != series || got.Boundary == nil || *got.Boundary != boundary {
-		t.Fatalf("%s: want %s %q from series %d at %v: %+v", name, status, label, series, boundary, got)
+	got := widget.Threshold
+	if got == nil || got.State != "matched" || got.Status != status || got.Label != label || got.Boundary == nil || *got.Boundary != boundary {
+		t.Fatalf("%s: want %s %q at %v: %+v", name, status, label, boundary, got)
+	}
+	if widget.BandSeries == nil || widget.BandSeries.Series == nil || *widget.BandSeries.Series != series {
+		t.Fatalf("%s: band must name series %d in its bandSeries sibling: %+v", name, series, widget.BandSeries)
 	}
 }
 
@@ -107,7 +111,7 @@ func TestDashboardQueryUnknownSeriesBandWhenNoLatestSampleIsValid(t *testing.T) 
 	grid["type"], grid["pluginId"], grid["dataKind"], grid["options"] = "plugin", "status-grid", "metrics", severityBands()
 	putReadDashboard(t, s, grid)
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
-	if got := result.Widgets[0].Threshold; got == nil || got.State != "unknown" || got.Status != "" || got.Series != nil {
+	if got := result.Widgets[0].Threshold; got == nil || got.State != "unknown" || got.Status != "" || result.Widgets[0].BandSeries.Series != nil {
 		t.Fatalf("a missing latest recorded sample is unknown: %+v", got)
 	}
 	if result.Attention.Critical != 0 || result.Attention.Warning != 0 || result.Attention.Checked != 1 {
@@ -162,8 +166,13 @@ func TestDashboardQueryBreachesAndFreshnessForTimeSeries(t *testing.T) { //nolin
 	if got := result.Widgets[2].Freshness; got == nil || got.State != "fresh" || got.ThresholdSeconds == nil || *got.ThresholdSeconds != 3600 {
 		t.Fatalf("staleAfterSeconds still judges freshness: %+v", got)
 	}
-	if got := result.Widgets[0].Freshness; got == nil || got.State != "no_threshold" || got.ThresholdSeconds != nil || got.AgeSeconds == nil || *got.AgeSeconds != 3360 {
-		t.Fatalf("a metric widget without a threshold reports its age unjudged: %+v", got)
+	// The trend series has no staleAfterSeconds, so the UI's cadence fallback applies: its samples
+	// are 60 s apart, the limit is 120 s, and the newest sample is 3360 s old, so the tail is stale.
+	if got := result.Widgets[0].Sample; got == nil || got.State != "stale" || got.Basis != sampleBasisCadence || got.StaleAfterSeconds == nil || *got.StaleAfterSeconds != 120 || got.AgeSeconds == nil || *got.AgeSeconds != 3360 {
+		t.Fatalf("a time series without an option is judged by the UI's cadence fallback: %+v", got)
+	}
+	if result.Widgets[0].Freshness != nil {
+		t.Fatalf("the first-contract freshness is reported only for an explicit staleAfterSeconds: %+v", result.Widgets[0].Freshness)
 	}
 	if result.Attention != (DashboardAttention{Basis: dashboardAttentionBasis, Widgets: 3, Checked: 2, Critical: 1, Failed: 1}) {
 		t.Fatalf("attention rollup: %+v", result.Attention)
@@ -191,8 +200,11 @@ func TestDashboardQueryJudgesStalenessOnlyWhereTheUIDoes(t *testing.T) {
 	putReadDashboard(t, s, bar, series)
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
 
-	if got := result.Widgets[0].Freshness; got == nil || got.State != "no_threshold" || got.ThresholdSeconds != nil || got.AgeSeconds == nil || *got.AgeSeconds != 3360 {
+	if got := result.Widgets[0].Sample; got == nil || got.State != "no_threshold" || got.Basis != "" || got.StaleAfterSeconds != nil || got.AgeSeconds == nil || *got.AgeSeconds != 3360 {
 		t.Fatalf("a bar reports its age without a stale judgement: %+v", got)
+	}
+	if result.Widgets[0].Freshness != nil {
+		t.Fatalf("a bar has no first-contract freshness: %+v", result.Widgets[0].Freshness)
 	}
 	if got := result.Widgets[1].Freshness; got == nil || got.State != "fresh" || got.AgeSeconds == nil || *got.AgeSeconds != 3360 || got.ThresholdSeconds == nil || *got.ThresholdSeconds != 3400 {
 		t.Fatalf("a time series is judged on its newest sample across series: %+v", got)

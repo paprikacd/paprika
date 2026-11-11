@@ -125,8 +125,8 @@ func TestDashboardBreachesBoundIntervalsAndSeries(t *testing.T) {
 	breaches := dashboardBreaches(series, thresholds)
 	require.Equal(t, maxBreachSeries, breaches.SeriesEvaluated)
 	require.Equal(t, 2, breaches.SeriesOmitted)
-	require.Len(t, breaches.Intervals, maxBreachIntervals)
-	require.Equal(t, (maxBreachSeries*10)-maxBreachIntervals, breaches.IntervalsOmitted)
+	require.Len(t, breaches.Intervals, breachIntervalsPerLevel)
+	require.Equal(t, (maxBreachSeries*10)-breachIntervalsPerLevel, breaches.IntervalsOmitted)
 	// The most recent intervals are kept, in chronological order.
 	last := breaches.Intervals[len(breaches.Intervals)-1]
 	require.Equal(t, "critical", last.Level)

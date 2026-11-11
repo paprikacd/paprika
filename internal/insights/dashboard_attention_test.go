@@ -72,7 +72,7 @@ func attentionResult(t *testing.T, fixture attentionConformance, index int) *Das
 			}
 		}
 		if entry.Freshness != nil {
-			widget.Freshness = &DashboardObservationFreshness{State: *entry.Freshness}
+			widget.Sample = &DashboardSample{State: *entry.Freshness}
 		}
 		result.Widgets = append(result.Widgets, widget)
 	}

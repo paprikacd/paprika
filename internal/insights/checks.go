@@ -557,14 +557,13 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 		Widgets: make([]DashboardQueryWidget, 0, len(doc.Widgets)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
 	}
 	s.runDashboardPlan(r, &result, doc.Widgets, saved, doc.Variables, start, end, dryRunSummaryOptions)
-	return dryRunWidgets(&doc, &result, saved, end), nil
+	return dryRunWidgets(&doc, &result, saved), nil
 }
 
 // dryRunWidgets joins each planned widget to its executed query and derives the
 // data.* findings and per-widget states. Planned widgets keep the document's
-// order, so result.Widgets[i] is the widget at /widgets/i. end is the query range
-// end, which the freshness of the widgets the query path does not judge is measured from.
-func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, end float64) dryRunOutcome {
+// order, so result.Widgets[i] is the widget at /widgets/i.
+func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot) dryRunOutcome {
 	signals := make(map[string]*DashboardSignal, len(result.Signals))
 	for i := range result.Signals {
 		signals[result.Signals[i].ID] = &result.Signals[i]
@@ -577,7 +576,7 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, sav
 			index: i, id: planned.ID, title: planned.Title, widgetType: declared.Type, pluginID: declared.PluginID, unit: planned.Unit,
 			queryRef: declared.QueryRef != nil, expression: dryRunExpression(declared, saved),
 			options: dataOptionsOf(declared), failure: planned.Error, annotation: planned.AnnotationError,
-			signal: signals[planned.SignalID], freshness: dryRunWidgetFreshness(planned, declared, signals[planned.SignalID]),
+			signal: signals[planned.SignalID], freshness: dryRunWidgetSample(planned, signals[planned.SignalID]),
 		}
 		if widget.failure == nil && widget.signal != nil {
 			widget.failure = widget.signal.Error
@@ -591,14 +590,13 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, sav
 	return dryRunOutcome{findings: dataFindings(widgets), widgets: states}
 }
 
-// dryRunWidgetFreshness is the freshness a widget's data state and data.stale read. It is
-// the query path's judgement, for the widgets that judge staleAfterSeconds (see
-// judgesStaleAfter). Other widgets have no stale judgement to report.
-func dryRunWidgetFreshness(planned *DashboardQueryWidget, declared *dashboardReadWidget, signal *DashboardSignal) *DashboardObservationFreshness {
-	if signal == nil || !judgesStaleAfter(declared.Type) {
+// dryRunWidgetSample is the sample a widget's data state and data.stale read: the query
+// path's judgement, shared by both, so the dry run and the query cannot disagree.
+func dryRunWidgetSample(planned *DashboardQueryWidget, signal *DashboardSignal) *DashboardSample {
+	if signal == nil {
 		return nil
 	}
-	return planned.Freshness
+	return planned.Sample
 }
 
 // dryRunExpression is the query text a widget reads: its own, or its saved query's.

@@ -72,23 +72,31 @@ type DashboardQueryWidget struct {
 	AnnotationSignalID     string                          `json:"annotationSignalId,omitempty"`
 	AnnotationError        *DashboardQueryError            `json:"annotationError,omitempty"`
 	AnnotationColumns      *dashboardReadAnnotationColumns `json:"annotationColumns,omitempty"`
+	// Sample reports the age of the widget's latest observation and whether a staleness
+	// limit judges it. Every metric widget carries it. It is the version-tolerant home of
+	// the staleness judgement; freshness is kept for clients of the first contract.
+	Sample *DashboardSample `json:"sample,omitempty"`
+	// BandSeries names the series that set a multi-series band, and how many series the
+	// visualization draws. It sits beside threshold so the band keeps its first-contract shape.
+	BandSeries *DashboardBandSeries `json:"bandSeries,omitempty"`
 	// Attention is set only when this widget needs it: critical, warning, failed or stale.
 	Attention string `json:"attention,omitempty"`
 	// Breaches is set for time-series widgets with an author-declared warning or critical status.
 	Breaches *DashboardBreaches `json:"breaches,omitempty"`
+	// seriesCap is how many leading series the visualization draws, for band widgets.
+	seriesCap int
 }
 
 // A configured visual band, not an inferred alert or service-health verdict.
 // A stat is evaluated on its last valid observation, as displayed. Gauges, status
-// views and heatmaps are evaluated per series on the latest recorded sample, and
-// Series names the series that set the band when several were evaluated.
+// views and heatmaps are evaluated per drawn series on its latest recorded sample;
+// DashboardBandSeries names the series that set the band.
 type DashboardStatThreshold struct {
 	State    string   `json:"state"`
 	Boundary *float64 `json:"boundary,omitempty"`
 	Status   string   `json:"status,omitempty"`
 	Color    string   `json:"color,omitempty"`
 	Label    string   `json:"label,omitempty"`
-	Series   *int     `json:"series,omitempty"`
 }
 
 // Freshness describes the latest valid returned sample relative to the query
@@ -175,6 +183,7 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 		return nil
 	})
 	s.executeDashboardQueries(r, queries, options, result, &cache)
+	budgetDashboardBreaches(result)
 	result.Attention = applyDashboardAttention(result)
 }
 
@@ -224,27 +233,17 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 		output.PluginID, output.DataKind = widget.PluginID, widget.DataKind
 	}
 	if dashboardWidgetKind(widget) == "metrics" {
-		output.Freshness = &DashboardObservationFreshness{State: "unknown"}
+		output.Sample = &DashboardSample{State: "unknown"}
 		if judgesStaleAfter(widget.Type) && widget.Options.StaleAfterSeconds != nil {
-			threshold := int(*widget.Options.StaleAfterSeconds)
-			output.Freshness.ThresholdSeconds = &threshold
+			seconds := *widget.Options.StaleAfterSeconds
+			output.Sample.Basis, output.Sample.StaleAfterSeconds = sampleBasisStaleAfter, &seconds
+			// The first contract's freshness object, kept for clients that read it.
+			threshold := int(seconds)
+			output.Freshness = &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "unknown"}
 		}
 	}
 	dashboardWidgetBandOutput(&output, widget)
 	return output
-}
-
-// dashboardWidgetBandOutput prepares a widget's band and breach evaluation. A stat keeps any
-// band; the multi-series types need a status; a time series needs a warning or critical one.
-func dashboardWidgetBandOutput(output *DashboardQueryWidget, widget *dashboardReadWidget) {
-	switch {
-	case widget.Type == "stat" && len(widget.Options.Thresholds) > 0,
-		dashboardMultiSeriesBandWidget(widget) && dashboardHasStatusThreshold(widget.Options.Thresholds):
-		output.Threshold = &DashboardStatThreshold{State: "unknown"}
-		output.thresholds = widget.Options.Thresholds
-	case widget.Type == "timeseries" && dashboardHasBreachThreshold(widget.Options.Thresholds):
-		output.thresholds = widget.Options.Thresholds
-	}
 }
 
 func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, validators []func(string, string) *DashboardQueryError) {
@@ -542,180 +541,6 @@ func dashboardPrimaryObservation(signal *DashboardSignal, requireValue bool) *Po
 		return series.Last
 	}
 	return nil
-}
-
-// applyDashboardSignal applies one executed signal to a widget bound to it. Stat
-// bands read the displayed summary; the other evaluations need every returned series,
-// so they read the raw result, which is nil when the provider did not answer.
-func applyDashboardSignal(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult, end float64) {
-	if widget.SignalID != signal.ID {
-		return
-	}
-	if widget.Type == "stat" {
-		applyDashboardThreshold(widget, signal)
-	} else {
-		applyDashboardSeriesBand(widget, signal, raw)
-	}
-	applyDashboardFreshness(widget, signal, raw, end)
-	applyDashboardBreaches(widget, signal, raw)
-}
-
-func applyDashboardThreshold(widget *DashboardQueryWidget, signal *DashboardSignal) {
-	if widget.SignalID != signal.ID || widget.Threshold == nil {
-		return
-	}
-	last := dashboardPrimaryObservation(signal, true)
-	if last == nil {
-		return
-	}
-	match := matchDashboardBand(*last.Value, widget.thresholds)
-	widget.Threshold = &DashboardStatThreshold{State: "matched", Boundary: &match.Value, Status: match.Status, Color: match.Color, Label: match.Label}
-}
-
-// matchDashboardBand is the band a value falls in: the highest threshold it reaches.
-// The first threshold also applies below its boundary. Thresholds are sorted.
-func matchDashboardBand(value float64, thresholds []dashboardReadThreshold) dashboardReadThreshold {
-	match := thresholds[0]
-	for _, threshold := range thresholds {
-		if threshold.Value > value {
-			break
-		}
-		match = threshold
-	}
-	return match
-}
-
-// applyDashboardSeriesBand evaluates a gauge, status view or heatmap. Each series'
-// latest recorded sample sets its band, as the UI draws it: a missing latest sample is
-// unknown and sets no band. The widget reports the most severe declared band among the
-// series, with the lowest series position winning a tie.
-func applyDashboardSeriesBand(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult) {
-	if widget.SignalID != signal.ID || widget.Threshold == nil || signal.Error != nil || raw == nil {
-		return
-	}
-	if worst := worstSeriesBand(raw.Series, widget.thresholds); worst != nil {
-		widget.Threshold = worst
-	}
-}
-
-// worstSeriesBand is the most severe matched band across the series' latest recorded
-// samples, or nil when no series has a valid latest sample.
-func worstSeriesBand(series []Series, thresholds []dashboardReadThreshold) *DashboardStatThreshold {
-	var worst *DashboardStatThreshold
-	worstRank := 0
-	for index := range series {
-		latest := latestRecordedPoint(series[index].Points)
-		if latest == nil || !dashboardFiniteValue(latest.Value) {
-			continue
-		}
-		match := matchDashboardBand(*latest.Value, thresholds)
-		seriesIndex, boundary := index, match.Value
-		band := &DashboardStatThreshold{State: "matched", Boundary: &boundary, Status: match.Status, Color: match.Color, Label: match.Label, Series: &seriesIndex}
-		if rank := dashboardStatusRank(match.Status); worst == nil || rank > worstRank {
-			worst, worstRank = band, rank
-		}
-	}
-	return worst
-}
-
-// latestRecordedPoint is the point with the latest valid timestamp. A tie keeps the
-// later point, as the UI's status grid does. The value may be missing.
-func latestRecordedPoint(points []Point) *Point {
-	var latest *Point
-	for index := range points {
-		point := &points[index]
-		if dashboardTimestamp(point.Timestamp) && (latest == nil || point.Timestamp >= latest.Timestamp) {
-			latest = point
-		}
-	}
-	return latest
-}
-
-// dashboardStatusRank orders declared statuses by severity for a multi-series band.
-// A colour-only band has no status and ranks lowest.
-func dashboardStatusRank(status string) int {
-	switch status {
-	case "critical":
-		return 4
-	case "warning":
-		return 3
-	case "unknown":
-		return 2
-	case "info":
-		return 1
-	case "ok":
-		return 0
-	default:
-		return -1
-	}
-}
-
-// applyDashboardBreaches evaluates a time series against its declared warning and critical
-// bands. A failed or missing signal reports no breaches rather than an empty result.
-func applyDashboardBreaches(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult) {
-	if widget.SignalID != signal.ID || widget.Type != "timeseries" || !dashboardHasBreachThreshold(widget.thresholds) || signal.Error != nil || raw == nil {
-		return
-	}
-	widget.Breaches = dashboardBreaches(raw.Series, widget.thresholds)
-}
-
-// dashboardMultiSeriesBandWidget names the visualizations whose band is evaluated per
-// series on its latest recorded sample. Their bands are authored in options.thresholds.
-func dashboardMultiSeriesBandWidget(widget *dashboardReadWidget) bool {
-	return widget.Type == "heatmap" || (widget.Type == "plugin" && (widget.PluginID == "threshold-gauge" || widget.PluginID == "status-grid" || widget.PluginID == "status-history"))
-}
-
-// dashboardHasStatusThreshold reports whether any authored threshold names a status.
-// A colour-only threshold has no status to report.
-func dashboardHasStatusThreshold(thresholds []dashboardReadThreshold) bool {
-	for _, threshold := range thresholds {
-		if threshold.Status != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// dashboardHasBreachThreshold reports whether any authored threshold is a warning or
-// critical status, the only statuses that breach.
-func dashboardHasBreachThreshold(thresholds []dashboardReadThreshold) bool {
-	for _, threshold := range thresholds {
-		if threshold.Status == "warning" || threshold.Status == "critical" {
-			return true
-		}
-	}
-	return false
-}
-
-// applyDashboardFreshness reports the age of the widget's observation at the range end. A
-// stat reads its displayed (primary) series; a time series reads the newest sample of any
-// series, as the UI's stale tail does. Only judgesStaleAfter widgets with a threshold are
-// judged stale.
-func applyDashboardFreshness(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult, end float64) {
-	if widget.SignalID != signal.ID || widget.Freshness == nil {
-		return
-	}
-	var last *Point
-	switch {
-	case widget.Type != "timeseries":
-		last = dashboardPrimaryObservation(signal, false)
-	case raw != nil && signal.Error == nil:
-		last = newestValidPoint(raw.Series)
-	}
-	if last == nil {
-		return
-	}
-	timestamp := last.Timestamp
-	age := math.Max(0, end-timestamp/1000)
-	widget.Freshness.LastTimestamp, widget.Freshness.AgeSeconds = &timestamp, &age
-	switch {
-	case widget.Freshness.ThresholdSeconds == nil:
-		widget.Freshness.State = "no_threshold"
-	case age > float64(*widget.Freshness.ThresholdSeconds):
-		widget.Freshness.State = "stale"
-	default:
-		widget.Freshness.State = "fresh"
-	}
 }
 
 func applyDashboardAnnotation(widget *DashboardQueryWidget, signal *DashboardSignal, columns []dataframe.Column, result *DashboardQueryResult) {

@@ -50,7 +50,7 @@ type dataWidget struct {
 	annotation *DashboardQueryError
 	// signal is the widget's executed query. It is nil when the query did not run.
 	signal    *DashboardSignal
-	freshness *DashboardObservationFreshness
+	freshness *DashboardSample
 }
 
 // dataOptions are the author's declared options the data rules compare with.
@@ -276,11 +276,13 @@ func checkDataStale(widgets []dataWidget) []dataHit {
 	for i := range widgets {
 		widget := &widgets[i]
 		freshness := widget.freshness
-		if freshness == nil || freshness.State != "stale" || freshness.AgeSeconds == nil || freshness.ThresholdSeconds == nil {
+		// Only an explicit staleAfterSeconds is the option the data.stale message names; a
+		// cadence-derived limit is the UI's own stale tail and is not a declared option.
+		if freshness == nil || freshness.State != "stale" || freshness.AgeSeconds == nil || freshness.Basis != sampleBasisStaleAfter || freshness.StaleAfterSeconds == nil {
 			continue
 		}
 		hits = append(hits, newDataHit(widget, widgetBase(widget.index)+"/options/staleAfterSeconds",
-			fmt.Sprintf("%s newest sample is %s s old, past its staleAfterSeconds of %d", dataLabel(widget), strconv.FormatFloat(math.Round(*freshness.AgeSeconds), 'f', 0, 64), *freshness.ThresholdSeconds)))
+			fmt.Sprintf("%s newest sample is %s s old, past its staleAfterSeconds of %d", dataLabel(widget), strconv.FormatFloat(math.Round(*freshness.AgeSeconds), 'f', 0, 64), int(*freshness.StaleAfterSeconds))))
 	}
 	return hits
 }

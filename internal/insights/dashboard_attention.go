@@ -64,7 +64,7 @@ func dashboardWidgetAttention(widget *DashboardQueryWidget, failed bool) string 
 		return "warning"
 	case failed:
 		return "failed"
-	case widget.Freshness != nil && widget.Freshness.State == "stale":
+	case widget.Sample != nil && widget.Sample.State == "stale":
 		return "stale"
 	}
 	return ""

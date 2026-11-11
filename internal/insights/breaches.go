@@ -12,9 +12,10 @@ import (
 const (
 	// maxBreachSeries matches the UI's MAX_SERIES: series beyond it are not evaluated.
 	maxBreachSeries = 12
-	// maxBreachIntervals bounds the intervals listed per widget. The most recent are kept,
-	// as the UI keeps its most recent bands, and the rest are counted.
-	maxBreachIntervals = 12
+	// breachIntervalsPerLevel bounds the intervals listed per widget and level. The most recent
+	// are kept, as the UI keeps its most recent bands per level, so one critical interval is
+	// never crowded out by later warning flaps. The rest are counted.
+	breachIntervalsPerLevel = 12
 )
 
 // breachInterval is one contiguous stretch of breaching samples. Start is the first
@@ -47,24 +48,50 @@ type breachLevelSummary struct {
 
 type breachSpan struct{ start, end float64 }
 
-// DashboardBreaches reports the time-series stretches inside warning or critical
-// bands that the author declared. It is a window fact, not a health verdict.
+// DashboardBreaches reports the time-series stretches inside warning or critical bands that
+// the author declared, within the returned window. It is a window fact: LatestLevel says
+// what the newest sample is doing now, and the summary says what happened in the window.
 type DashboardBreaches struct {
 	SeriesEvaluated  int                       `json:"seriesEvaluated"`
 	SeriesOmitted    int                       `json:"seriesOmitted,omitempty"`
+	LatestLevel      string                    `json:"latestLevel,omitempty"`
 	Intervals        []DashboardBreachInterval `json:"intervals"`
 	IntervalsOmitted int                       `json:"intervalsOmitted,omitempty"`
 	Summary          []DashboardBreachLevel    `json:"summary"`
 }
 
 // DashboardBreachInterval times are Unix milliseconds. DurationMs is End minus Start;
-// zero marks one breaching sample with no observed time after it.
+// zero marks one breaching sample with no observed time after it. Name identifies the
+// series, since a signal summary may not include it.
 type DashboardBreachInterval struct {
 	Series     int     `json:"series"`
+	Name       string  `json:"name,omitempty"`
 	Level      string  `json:"level"`
 	Start      float64 `json:"start"`
 	End        float64 `json:"end"`
 	DurationMs float64 `json:"durationMs"`
+}
+
+// trimToPerLevel keeps the most recent limit intervals of each level, in chronological order,
+// and counts the rest as omitted.
+func (b *DashboardBreaches) trimToPerLevel(limit int) {
+	keep := make([]bool, len(b.Intervals))
+	counts := make(map[string]int, 2)
+	for index := len(b.Intervals) - 1; index >= 0; index-- {
+		if level := b.Intervals[index].Level; counts[level] < limit {
+			keep[index] = true
+			counts[level]++
+		}
+	}
+	kept := make([]DashboardBreachInterval, 0, len(b.Intervals))
+	for index, interval := range b.Intervals {
+		if keep[index] {
+			kept = append(kept, interval)
+		} else {
+			b.IntervalsOmitted++
+		}
+	}
+	b.Intervals = kept
 }
 
 // DashboardBreachLevel merges intervals across series: Intervals counts merged spans with
@@ -320,7 +347,8 @@ func sampleCadence(points []Point) float64 {
 }
 
 // dashboardBreaches builds the bounded output for one time-series signal. Every returned
-// series up to maxBreachSeries is evaluated with its own cadence, as the UI does.
+// series up to maxBreachSeries is evaluated with its own cadence, as the UI does. Each level
+// keeps its most recent breachIntervalsPerLevel intervals; the summary counts all of them.
 func dashboardBreaches(series []Series, thresholds []dashboardReadThreshold) *DashboardBreaches {
 	evaluated := min(len(series), maxBreachSeries)
 	inputs := make([]breachSeries, 0, evaluated)
@@ -332,11 +360,29 @@ func dashboardBreaches(series []Series, thresholds []dashboardReadThreshold) *Da
 	for _, interval := range all {
 		intervals = append(intervals, interval.breachInterval)
 	}
-	breaches := &DashboardBreaches{SeriesEvaluated: evaluated, SeriesOmitted: len(series) - evaluated, Intervals: []DashboardBreachInterval{}, Summary: []DashboardBreachLevel{}}
-	shown := all[max(0, len(all)-maxBreachIntervals):]
-	breaches.IntervalsOmitted = len(all) - len(shown)
-	for _, interval := range shown {
-		breaches.Intervals = append(breaches.Intervals, DashboardBreachInterval{Series: interval.Series, Level: interval.Level, Start: interval.Start, End: interval.End, DurationMs: interval.Duration})
+	breaches := &DashboardBreaches{SeriesEvaluated: evaluated, SeriesOmitted: len(series) - evaluated, LatestLevel: latestBreachLevel(series[:evaluated], thresholds), Intervals: []DashboardBreachInterval{}, Summary: []DashboardBreachLevel{}}
+	recent := make(map[string][]seriesBreachInterval, 2)
+	for _, interval := range all {
+		kept := recent[interval.Level]
+		kept = append(kept, interval)
+		if len(kept) > breachIntervalsPerLevel {
+			kept = kept[1:]
+		}
+		recent[interval.Level] = kept
+	}
+	listed := make([]seriesBreachInterval, 0, len(recent["critical"])+len(recent["warning"]))
+	for _, level := range []string{"critical", "warning"} {
+		listed = append(listed, recent[level]...)
+	}
+	sort.SliceStable(listed, func(i, j int) bool {
+		if listed[i].Start != listed[j].Start {
+			return listed[i].Start < listed[j].Start
+		}
+		return listed[i].Series < listed[j].Series
+	})
+	breaches.IntervalsOmitted = len(all) - len(listed)
+	for _, interval := range listed {
+		breaches.Intervals = append(breaches.Intervals, DashboardBreachInterval{Series: interval.Series, Name: seriesDisplayName(series[interval.Series]), Level: interval.Level, Start: interval.Start, End: interval.End, DurationMs: interval.Duration})
 	}
 	for _, level := range breachSummary(intervals) {
 		breaches.Summary = append(breaches.Summary, DashboardBreachLevel{Level: level.Level, Intervals: level.Intervals, Samples: level.Samples, DurationMs: level.Duration})
