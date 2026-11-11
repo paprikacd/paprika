@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -135,44 +134,103 @@ func TestLabEntryPageRequiresLoopbackAndSafeDestination(t *testing.T) {
 	}
 }
 
-func TestQueryFixtureAnswersChartQueriesOnlyFromLoopback(t *testing.T) {
+func TestLabEntryHeadDoesNotConsumeTicket(t *testing.T) {
 	t.Parallel()
-	var seen []byte
-	fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	lab := newLabEntry(time.Now, time.Minute)
+	ticket, err := lab.issue("bearer-for-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := lab.wrap(http.NotFoundHandler())
+	target := "/__lab/enter?ticket=" + ticket
+	loopback := func(method string) *http.Request {
+		request := httptest.NewRequestWithContext(t.Context(), method, target, http.NoBody)
+		request.RemoteAddr, request.Host = "127.0.0.1:4000", "127.0.0.1:8080"
+		return request
+	}
+	head := httptest.NewRecorder()
+	handler.ServeHTTP(head, loopback(http.MethodHead))
+	if head.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("HEAD status = %d, want 405", head.Code)
+	}
+	get := httptest.NewRecorder()
+	handler.ServeHTTP(get, loopback(http.MethodGet))
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET after HEAD status = %d, want 200 (HEAD must not spend the ticket)", get.Code)
+	}
+}
+
+func TestQueryFixtureRangeConversion(t *testing.T) {
+	t.Parallel()
+	var received map[string]any
+	resolver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/query" {
 			http.NotFound(w, r)
 			return
 		}
-		seen, _ = io.ReadAll(r.Body)
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Errorf("decode fixture request: %v", err)
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"series":[{"name":"p50","labels":{},"points":[{"timestamp":1,"value":2}]}]}`))
+		_, _ = w.Write([]byte(`{"series":[{"name":"p50","labels":{"quantile":"p50"},"points":[{"timestamp":60000,"value":22},{"timestamp":120000,"value":null},{"timestamp":180000,"value":24.5}]}]}`))
 	}))
-	defer fixture.Close()
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "service", http.StatusTeapot) })
-	handler, err := withQueryFixture(next, fixture.URL)
+	defer resolver.Close()
+	fixture, err := newTelemetryFixture(resolver.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/query", strings.NewReader(`{"providerId":"p","kind":"metrics","query":"fixture_requests"}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/query_range?query=fixture_percentiles&start=0&end=200&step=60", http.NoBody)
+	request.Header.Set("Authorization", "Bearer fixture-provider-secret")
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Body.String() != `{"series":[{"name":"p50","labels":{},"points":[{"timestamp":1,"value":2}]}]}` {
-		t.Fatalf("query status/body = %d/%s", response.Code, response.Body.String())
+	fixture.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("range status = %d body %s", response.Code, response.Body.String())
 	}
-	if !strings.Contains(string(seen), `"query":"fixture_requests"`) {
-		t.Fatalf("fixture received %s", seen)
+	var matrix struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
 	}
-	for _, body := range []string{`not json`, `{"providerId":"p"}`} {
-		response = httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/query", strings.NewReader(body)))
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("body %q status = %d, want 400", body, response.Code)
-		}
+	if err := json.Unmarshal(response.Body.Bytes(), &matrix); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := withQueryFixture(next, "http://fixtures.example:9000"); err == nil {
+	if len(matrix.Data.Result) != 1 || matrix.Data.Result[0].Metric["quantile"] != "p50" || len(matrix.Data.Result[0].Values) != 2 {
+		t.Fatalf("matrix = %s", response.Body.String())
+	}
+	if matrix.Data.Result[0].Values[0][0] != 60.0 || matrix.Data.Result[0].Values[0][1] != "22" {
+		t.Fatalf("first sample = %v", matrix.Data.Result[0].Values[0])
+	}
+	if received["query"] != "fixture_percentiles" || received["kind"] != "metrics" {
+		t.Fatalf("resolver received %v", received)
+	}
+}
+
+func TestQueryFixtureFailuresAndTargets(t *testing.T) {
+	t.Parallel()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://fixtures.example:9000/query", http.StatusFound)
+	}))
+	defer redirect.Close()
+	fixture, err := newTelemetryFixture(redirect.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/query_range?query=fixture_requests", http.NoBody)
+	request.Header.Set("Authorization", "Bearer fixture-provider-secret")
+	response := httptest.NewRecorder()
+	fixture.ServeHTTP(response, request)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("redirected fixture status = %d, want 502", response.Code)
+	}
+	if _, err := newTelemetryFixture("http://fixtures.example:9000"); err == nil {
 		t.Fatal("accepted a non-loopback query fixture")
 	}
-	if passthrough, err := withQueryFixture(next, ""); err != nil || passthrough == nil {
-		t.Fatalf("empty fixture URL: %v", err)
+	unauthenticated := httptest.NewRecorder()
+	fixture.ServeHTTP(unauthenticated, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/query_range?query=fixture_requests", http.NoBody))
+	if unauthenticated.Code != http.StatusForbidden {
+		t.Fatalf("unauthenticated provider status = %d, want 403", unauthenticated.Code)
 	}
 }

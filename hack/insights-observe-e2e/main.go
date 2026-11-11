@@ -57,6 +57,13 @@ func main() {
 
 const fixtureIssuer = "https://observe-e2e.example.test"
 
+func requireRunPaths(ready, dataDir string) error {
+	if ready == "" || dataDir == "" {
+		return errors.New("ready-file and data-dir are required")
+	}
+	return nil
+}
+
 func run() error {
 	ready := flag.String("ready-file", "", "Private JSON connection file")
 	uiURL := flag.String("ui-url", "", "Optional local frontend server")
@@ -66,16 +73,18 @@ func run() error {
 	applicationFixtures := flag.Bool("application-fixtures", false, "Include deterministic Shorted and Uptime source APIs")
 	applicationProviders := flag.String("application-providers", "", "Private optional application provider fixture file")
 	applicationProvidersStdin := flag.Bool("application-providers-stdin", false, "Read private optional provider fixtures from stdin without persisting credentials")
-	queryFixtureURL := flag.String("query-fixture-url", "", "Optional loopback server that answers Insights chart queries; authentication and the Insights store stay real")
+	queryFixtureURL := flag.String("query-fixture-url", "", "Optional loopback server that supplies Prometheus range data; the Insights service, Observe gateway and authorization stay real")
 	labEntryFlag := flag.Bool("lab-entry", false, "Write a one-time loopback /__lab/enter ticket to the ready file for a browser session")
 	flag.Parse()
-	if *ready == "" || *dataDir == "" {
-		return errors.New("ready-file and data-dir are required")
+	if err := requireRunPaths(*ready, *dataDir); err != nil {
+		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	fixture := &telemetryFixture{}
-	upstream := httptest.NewServer(fixture)
+	upstream, fixture, err := newTelemetryUpstream(*queryFixtureURL)
+	if err != nil {
+		return err
+	}
 	defer upstream.Close()
 	k8s, err := newFixtureClient(upstream.URL, *applicationFixtures, *applicationProviders, *applicationProvidersStdin)
 	if err != nil {
@@ -98,7 +107,7 @@ func run() error {
 	gateway := httptest.NewServer(fixture.recordGateway(gatewayMux))
 	defer gateway.Close()
 	serviceToken := rand.Text() + rand.Text()
-	serviceHTTP, err := newInsightsFixture(*dataDir, gateway.URL, serviceToken, *queryFixtureURL)
+	serviceHTTP, err := newInsightsFixture(*dataDir, gateway.URL, serviceToken)
 	if err != nil {
 		return err
 	}
@@ -202,7 +211,7 @@ func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret 
 	return gatewayMux, nil
 }
 
-func newInsightsFixture(dataDir, gatewayURL, token, queryFixtureURL string) (*httptest.Server, error) {
+func newInsightsFixture(dataDir, gatewayURL, token string) (*httptest.Server, error) {
 	documents, err := insights.OpenStore(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("open fixture Insights store: %w", err)
@@ -211,72 +220,7 @@ func newInsightsFixture(dataDir, gatewayURL, token, queryFixtureURL string) (*ht
 	if err != nil {
 		return nil, fmt.Errorf("configure fixture Insights server: %w", err)
 	}
-	handler, err := withQueryFixture(service.Handler(), queryFixtureURL)
-	if err != nil {
-		return nil, err
-	}
-	return httptest.NewServer(handler), nil
-}
-
-// withQueryFixture answers the Insights chart query endpoint from a loopback
-// fixture server. The request has already passed the real authenticated proxy,
-// and the response body is returned unchanged, so a browser receives the same
-// normalized QueryResult the Playwright fixtures return.
-func withQueryFixture(next http.Handler, fixtureURL string) (http.Handler, error) {
-	if fixtureURL == "" {
-		return next, nil
-	}
-	target, err := parseLoopbackURL(fixtureURL, "query-fixture-url")
-	if err != nil {
-		return nil, err
-	}
-	client := &http.Client{Timeout: 15 * time.Second}
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/query", queryFixtureHandler(target, client))
-	mux.Handle("/", next)
-	return mux, nil
-}
-
-// queryFixtureHandler forwards one Insights query body to the fixture server
-// and returns its status and JSON unchanged.
-func queryFixtureHandler(target *url.URL, client *http.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
-		if err != nil {
-			http.Error(w, "invalid query request", http.StatusBadRequest)
-			return
-		}
-		var query struct {
-			ProviderID string `json:"providerId"`
-			Query      string `json:"query"`
-		}
-		if json.Unmarshal(body, &query) != nil || query.ProviderID == "" || query.Query == "" {
-			http.Error(w, "invalid query request", http.StatusBadRequest)
-			return
-		}
-		request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.JoinPath("query").String(), bytes.NewReader(body))
-		if err != nil {
-			http.Error(w, "query fixture unavailable", http.StatusBadGateway)
-			return
-		}
-		request.Header.Set("Content-Type", "application/json")
-		response, err := client.Do(request)
-		if err != nil {
-			http.Error(w, "query fixture unavailable", http.StatusBadGateway)
-			return
-		}
-		defer func() {
-			if err := response.Body.Close(); err != nil {
-				slog.Warn("close fixture query response", "error", err)
-			}
-		}()
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(response.StatusCode)
-		if _, err := io.Copy(w, io.LimitReader(response.Body, 8<<20)); err != nil {
-			slog.Warn("write fixture query response", "error", err)
-		}
-	}
+	return httptest.NewServer(service.Handler()), nil
 }
 
 // parseLoopbackURL accepts only an HTTP(S) URL whose host is loopback. Local
@@ -461,6 +405,12 @@ func (l *labEntry) serveEnter(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// The Go router matches GET patterns for HEAD too. Only GET may spend the ticket.
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "The lab entry page accepts GET only.", http.StatusMethodNotAllowed)
+		return
+	}
 	if !isLoopbackRequest(r) {
 		http.Error(w, "The lab entry page is available only on loopback.", http.StatusForbidden)
 		return
@@ -542,6 +492,93 @@ type telemetryFixture struct {
 	mu              sync.Mutex
 	requests        []map[string]string
 	gatewayRequests []gatewayRequest
+	// queryFixture, when set, supplies Prometheus range data from the JavaScript
+	// resolvers. Only the provider's HTTP response is replaced: the Insights
+	// service, Observe gateway, authorization and normalization stay real.
+	queryFixture *url.URL
+	client       *http.Client
+}
+
+// newTelemetryUpstream serves the fake provider endpoint that the Kubernetes
+// fixture points at.
+func newTelemetryUpstream(queryFixtureURL string) (*httptest.Server, *telemetryFixture, error) {
+	fixture, err := newTelemetryFixture(queryFixtureURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	return httptest.NewServer(fixture), fixture, nil
+}
+
+func newTelemetryFixture(queryFixtureURL string) (*telemetryFixture, error) {
+	fixture := &telemetryFixture{}
+	if queryFixtureURL == "" {
+		return fixture, nil
+	}
+	target, err := parseLoopbackURL(queryFixtureURL, "query-fixture-url")
+	if err != nil {
+		return nil, err
+	}
+	fixture.queryFixture = target
+	// A fixture response is data, never a redirect to follow.
+	fixture.client = &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return fixture, nil
+}
+
+// serveFixtureRange asks the JavaScript resolver for the query and returns it in
+// the Prometheus matrix shape the gateway already decodes.
+func (f *telemetryFixture) serveFixtureRange(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	body, err := json.Marshal(map[string]any{"providerId": "fixture-prometheus", "kind": "metrics", "query": q.Get("query"), "start": q.Get("start"), "end": q.Get("end"), "step": q.Get("step")})
+	if err != nil {
+		http.Error(w, "invalid fixture query", http.StatusInternalServerError)
+		return
+	}
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, f.queryFixture.JoinPath("query").String(), bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, "query fixture unavailable", http.StatusBadGateway)
+		return
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := f.client.Do(request)
+	if err != nil {
+		http.Error(w, "query fixture unavailable", http.StatusBadGateway)
+		return
+	}
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			slog.Warn("close fixture query response", "error", err)
+		}
+	}()
+	if response.StatusCode != http.StatusOK {
+		// The resolver rejects unknown or unresolved queries; the gateway sees a provider error.
+		http.Error(w, "query fixture rejected the query", http.StatusBadGateway)
+		return
+	}
+	var result struct {
+		Series []struct {
+			Labels map[string]string `json:"labels"`
+			Points []struct {
+				Timestamp float64  `json:"timestamp"`
+				Value     *float64 `json:"value"`
+			} `json:"points"`
+		} `json:"series"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&result); err != nil {
+		http.Error(w, "invalid query fixture response", http.StatusBadGateway)
+		return
+	}
+	matrix := make([]any, 0, len(result.Series))
+	for _, series := range result.Series {
+		values := make([]any, 0, len(series.Points))
+		for _, point := range series.Points {
+			if point.Value == nil {
+				continue // Prometheus has no null samples: a gap is an absent point.
+			}
+			values = append(values, []any{point.Timestamp / 1000, strconv.FormatFloat(*point.Value, 'f', -1, 64)})
+		}
+		matrix = append(matrix, map[string]any{"metric": series.Labels, "values": values})
+	}
+	jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": matrix}})
 }
 
 // Capture the protocol boundary without retaining authorization headers or
@@ -597,6 +634,10 @@ func (f *telemetryFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.requests = append(f.requests, map[string]string{"path": r.URL.Path, "query": q.Get("query"), "traceQuery": q.Get("q"), "start": q.Get("start"), "end": q.Get("end"), "step": q.Get("step")})
 	f.mu.Unlock()
 	if f.serveApplicationFixture(w, r) {
+		return
+	}
+	if f.queryFixture != nil && r.URL.Path == "/api/v1/query_range" {
+		f.serveFixtureRange(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
