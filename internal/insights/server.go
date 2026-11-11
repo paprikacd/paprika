@@ -50,8 +50,11 @@ type Server struct {
 	catalogPhases      chan struct{}
 	catalogWaiting     chan struct{}
 	catalogWaitTimeout time.Duration
-	queryCount         metric.Int64Counter
-	queryDuration      metric.Float64Histogram
+	// queryBudget bounds one /api/query end to end: every phase (catalog wait,
+	// admission wait, listing, data call) is capped by what remains of it.
+	queryBudget   time.Duration
+	queryCount    metric.Int64Counter
+	queryDuration metric.Float64Histogram
 }
 
 func NewServer(config Config, store *Store) (*Server, error) {
@@ -73,7 +76,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second}
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second}
 	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
 	if err != nil {
 		return nil, fmt.Errorf("create query counter: %w", err)
@@ -145,6 +148,11 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	// The whole query shares one deadline, so it answers inside the API proxy's
+	// header timeout. Each phase below draws on what remains of it.
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryBudget)
+	defer cancel()
+	r = r.WithContext(ctx)
 	var (
 		p       *providerClient
 		release func()
@@ -164,7 +172,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
-	result, err := s.executeProviderQuery(r.Context(), p, &q)
+	result, err := s.executeProviderQuery(ctx, p, &q)
 	if err != nil {
 		writeProviderError(w, err)
 		return

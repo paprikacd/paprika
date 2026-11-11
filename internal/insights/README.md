@@ -71,11 +71,29 @@ catalog or session is retained across requests, so removing access takes effect
 on the next request. The adapter discovers read-only tools, calls
 provider/query/exploration tools and requires structured results; it never
 parses the truncated text preview or falls back to REST. Each shared gateway
-operation (session setup, discovery, each tool call) is capped at 20 seconds and
-at the time left on its request's own deadline, so a dashboard keeps its
-22-second budget and `/query` has no extra deadline of its own. `/providers` has
-a 20-second budget end to end, inside the API proxy's 25-second response-header
-timeout.
+Each shared gateway operation (session setup, discovery, each tool call) is
+capped at 20 seconds and at the time left on its request's own deadline, so a
+dashboard keeps its 22-second budget. `/providers` has a 20-second budget end to
+end, inside the API proxy's 25-second response-header timeout.
+
+A `/query` has one 22-second budget that every phase draws on, in order:
+
+- waiting for one of four catalog phases, up to 5 seconds, at most 16 waiters,
+  and only when the query is shared; no admission slot is held while waiting;
+- waiting for an admission slot, up to 2 seconds;
+- the catalog listing, capped at 10 seconds;
+- the data call, capped at 20 seconds.
+
+Each phase is capped by what remains of the budget. A phase that runs out returns
+504 `query exceeded its time budget`. A full waiter queue, or a catalog wait that
+times out, returns 429 with `Retry-After: 1` before any listing. Local queries
+never wait for a catalog phase.
+
+A busy shared catalog is answered 200 with `sharedCatalog.status: "busy"` and
+`retryAfter` in seconds (the gateway's Retry-After, or 1). The UI client and the
+render worker both replay it at most three times, each after a delay of
+`retryAfter` spread by +-30%. A listing still busy after those replays stays a
+banner with a manual retry.
 
 Measured at the default timeouts against a gateway that never answers or stalls:
 
@@ -85,13 +103,10 @@ Measured at the default timeouts against a gateway that never answers or stalls:
 - `/query`, catalog never answers: 504 after 10 seconds (the catalog phase cap).
 - `/query`, catalog answers, data call stalls: 504 after 15 seconds. The
   gateway transport's response-header timeout ends a silent response first.
-- `/query`, catalog takes 9 seconds, then data stalls: 504 after 24 seconds.
+- `/query`, catalog takes 9 seconds, then data stalls: 504 after 22 seconds (the
+  overall budget; before this change it was 24 seconds).
 
-A shared query first waits up to 5 seconds for one of four catalog phases (at
-most 16 waiters) without holding an admission slot. A full waiter queue, or a
-wait that times out, returns 429 with `Retry-After: 1` before any listing. Local
-queries never wait for a catalog phase. Bounded responses, no redirects and no
-retries.
+Bounded responses, no redirects and no retries.
 
 Shared provider IDs are `observe-` plus the full SHA-256 of their canonical
 `namespace/name`, preserving namespace identity within the existing dashboard

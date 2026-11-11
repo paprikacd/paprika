@@ -37,6 +37,9 @@ type observeProvider struct {
 type observeError struct {
 	status  int
 	message string
+	// retryAfter is the gateway's Retry-After in seconds for a 429, or zero when
+	// the gateway gave none.
+	retryAfter int
 }
 
 func (e *observeError) Error() string { return e.message }
@@ -80,7 +83,7 @@ func observeProviderID(reference string) string {
 func delegatedObserveToken(r *http.Request) (string, error) {
 	token := r.Header.Get(observeTokenHeader)
 	if token == "" || len(token) > 32<<10 || strings.TrimSpace(token) != token || strings.ContainsAny(token, "\r\n") {
-		return "", &observeError{http.StatusForbidden, "caller authorization is required for shared observability providers"}
+		return "", &observeError{http.StatusForbidden, "caller authorization is required for shared observability providers", 0}
 	}
 	return token, nil
 }
@@ -92,7 +95,13 @@ type sharedCatalogFailure struct {
 	Status  string `json:"status"`
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	// RetryAfter is the seconds a busy listing should wait before a replay: the
+	// gateway's Retry-After when it sent one, otherwise a one-second default.
+	RetryAfter int `json:"retryAfter,omitempty"`
 }
+
+// defaultSharedRetryAfter is used when the gateway gives no Retry-After.
+const defaultSharedRetryAfter = 1
 
 func sharedCatalogFailureFor(err error) *sharedCatalogFailure {
 	failure := &sharedCatalogFailure{Code: http.StatusBadGateway, Message: errUpstream.Error()}
@@ -100,18 +109,35 @@ func sharedCatalogFailureFor(err error) *sharedCatalogFailure {
 	switch {
 	case errors.As(err, &remote):
 		failure.Code, failure.Message = remote.status, remote.message
+		failure.RetryAfter = remote.retryAfter
 	case errors.Is(err, ErrNotFound):
 		failure.Code, failure.Message = http.StatusNotFound, "provider not found"
 	}
 	switch failure.Code {
 	case http.StatusTooManyRequests:
 		failure.Status = "busy"
+		if failure.RetryAfter == 0 {
+			failure.RetryAfter = defaultSharedRetryAfter
+		}
 	case http.StatusForbidden:
 		failure.Status = "forbidden"
 	default:
 		failure.Status = "unavailable"
 	}
 	return failure
+}
+
+// observeHTTPErrorFor maps a gateway HTTP status and its Retry-After header.
+// Only a whole-second delay between 1 and 60 is kept; anything else is ignored.
+func observeHTTPErrorFor(status int, retryAfter string) error {
+	err := observeHTTPError(status)
+	var remote *observeError
+	if errors.As(err, &remote) && status == http.StatusTooManyRequests {
+		if seconds, parseErr := strconv.Atoi(strings.TrimSpace(retryAfter)); parseErr == nil && seconds >= 1 && seconds <= 60 {
+			remote.retryAfter = seconds
+		}
+	}
+	return err
 }
 
 // listProviders always returns the local providers. A shared-catalog failure
@@ -270,17 +296,17 @@ func decodeObserveCatalog(body []byte, failed bool) ([]observeCatalogProvider, e
 func observeHTTPError(status int) error {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return &observeError{http.StatusForbidden, "shared observability provider access denied"}
+		return &observeError{http.StatusForbidden, "shared observability provider access denied", 0}
 	case http.StatusNotFound:
 		return ErrNotFound
 	case http.StatusBadRequest:
-		return &observeError{http.StatusBadRequest, "observability gateway rejected the provider request"}
+		return &observeError{http.StatusBadRequest, "observability gateway rejected the provider request", 0}
 	case http.StatusTooManyRequests:
-		return &observeError{http.StatusTooManyRequests, "too many active observability requests; retry shortly"}
+		return &observeError{http.StatusTooManyRequests, "too many active observability requests; retry shortly", 0}
 	case http.StatusGatewayTimeout:
-		return &observeError{http.StatusGatewayTimeout, "observability gateway request timed out"}
+		return &observeError{http.StatusGatewayTimeout, "observability gateway request timed out", 0}
 	default:
-		return &observeError{http.StatusBadGateway, "observability gateway is unavailable"}
+		return &observeError{http.StatusBadGateway, "observability gateway is unavailable", 0}
 	}
 }
 
@@ -309,11 +335,11 @@ func decodeObserveData(body []byte, failed bool, limit int64) ([]byte, error) {
 		}
 		return response.Data, nil
 	case "Forbidden":
-		return nil, &observeError{http.StatusForbidden, "observability provider refused the configured credentials"}
+		return nil, &observeError{http.StatusForbidden, "observability provider refused the configured credentials", 0}
 	case "NotConfigured":
-		return nil, &observeError{http.StatusServiceUnavailable, "observability provider is not configured"}
+		return nil, &observeError{http.StatusServiceUnavailable, "observability provider is not configured", 0}
 	case "NotAvailable":
-		return nil, &observeError{http.StatusServiceUnavailable, "observability provider does not support this request"}
+		return nil, &observeError{http.StatusServiceUnavailable, "observability provider does not support this request", 0}
 	default:
 		return nil, errUpstream
 	}
@@ -382,6 +408,9 @@ func writeProviderError(w http.ResponseWriter, err error) {
 		writeError(w, remoteErr.status, remoteErr.message)
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "provider not found")
+	case errors.Is(err, context.DeadlineExceeded):
+		// The request's own deadline, such as the query budget, not a provider fault.
+		writeError(w, http.StatusGatewayTimeout, "query exceeded its time budget")
 	default:
 		writeError(w, http.StatusBadGateway, errUpstream.Error())
 	}

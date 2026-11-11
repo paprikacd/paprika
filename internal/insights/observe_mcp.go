@@ -220,7 +220,7 @@ func (c *observeMCPConnection) addTools(tools []*sdkmcp.Tool, seenNames map[stri
 
 func (c *observeMCPConnection) requireTool(name string) error {
 	if _, ok := c.tools[name]; !ok || !observeDataTools[name] {
-		return &observeError{http.StatusServiceUnavailable, "observability MCP does not expose the required read-only data tool"}
+		return &observeError{http.StatusServiceUnavailable, "observability MCP does not expose the required read-only data tool", 0}
 	}
 	return nil
 }
@@ -325,7 +325,7 @@ func (t *observeMCPTransport) RoundTrip(request *http.Request) (*http.Response, 
 	}
 	defer closeReadBody(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, observeHTTPError(response.StatusCode)
+		return nil, observeHTTPErrorFor(response.StatusCode, response.Header.Get("Retry-After"))
 	}
 	if response.ContentLength > maxResponseBytes {
 		return nil, errUpstream
@@ -376,7 +376,7 @@ func sanitizeObserveMCPError(err error) error {
 		case sdkjsonrpc.CodeInvalidParams:
 			return observeHTTPError(http.StatusBadRequest)
 		case sdkjsonrpc.CodeMethodNotFound:
-			return &observeError{http.StatusServiceUnavailable, "observability MCP does not expose the required data tool"}
+			return &observeError{http.StatusServiceUnavailable, "observability MCP does not expose the required data tool", 0}
 		}
 	}
 	if errors.Is(err, ErrNotFound) {
@@ -385,7 +385,7 @@ func sanitizeObserveMCPError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return observeHTTPError(http.StatusGatewayTimeout)
 	}
-	return &observeError{http.StatusBadGateway, "observability MCP is unavailable"}
+	return &observeError{http.StatusBadGateway, "observability MCP is unavailable", 0}
 }
 
 // Connect machine codes are part of Paprika's trusted MCP contract. Messages
@@ -403,9 +403,9 @@ func observeMCPDomainError(code string) error {
 	case "deadline_exceeded":
 		return observeHTTPError(http.StatusGatewayTimeout)
 	case "canceled":
-		return &observeError{http.StatusRequestTimeout, "observability request was canceled"}
+		return &observeError{http.StatusRequestTimeout, "observability request was canceled", 0}
 	case "failed_precondition":
-		return &observeError{http.StatusServiceUnavailable, "observability provider is not fully configured"}
+		return &observeError{http.StatusServiceUnavailable, "observability provider is not fully configured", 0}
 	default:
 		return errUpstream
 	}

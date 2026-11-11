@@ -15,6 +15,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 // observeWireCounts observes the MCP wire without changing the fixtures: each
@@ -434,31 +437,6 @@ func TestObserveRequestBudgetBoundsSharedWork(t *testing.T) {
 	assert.Zero(t, len(s.queries))
 }
 
-// A handler's own deadline bounds shared work and is inherited, not replaced.
-func TestObserveOperationsInheritHandlerDeadline(t *testing.T) {
-	release := make(chan struct{})
-	gateway := observeHeldGateway(t, nil, release, nil)
-	defer gateway.Close()
-	defer close(release)
-	s := observeTestService(t, gateway.URL)
-	s.observe.timeouts.operation = 5 * time.Second
-	s.observe.timeouts.catalog = 5 * time.Second
-	handler := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
-		defer cancel()
-		started := time.Now()
-		_, err := s.observe.providers(ctx, "alice")
-		require.NoError(t, err) // The catalog answers; only the data call is held.
-		p, err := s.resolveProvider(r.WithContext(ctx), observeProviderID("prod/prom"))
-		require.NoError(t, err)
-		_, err = p.query(ctx, &Query{ProviderID: observeProviderID("prod/prom"), Kind: "metrics", Query: "up", Start: 1, End: 2, Step: 1})
-		assert.Error(t, err)
-		assert.Less(t, time.Since(started), 3*time.Second, "the handler deadline was not inherited")
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	require.Equal(t, http.StatusNoContent, request(t, handler, http.MethodGet, "/", nil, observeHeaders("alice")).Code)
-}
-
 // Each operation is capped at the operation limit even when the request
 // budget has plenty of time left.
 func TestObserveOperationCapIsMinimumOfOperationAndRemainingBudget(t *testing.T) {
@@ -706,4 +684,145 @@ func TestObserveProvidersKeepLocalWhenSharedCatalogFails(t *testing.T) {
 			assert.NotEqual(t, http.StatusNotFound, local.Code)
 		})
 	}
+}
+
+// Every /query phase draws on one overall budget. Each case holds one phase
+// open far past the budget, so a phase that ignores the budget answers late.
+// The query budget is a Server field added with this test, so this file does
+// not build against 8527505e, where the budget did not exist.
+func TestObserveQueryBudgetCapsEveryPhase(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, s *Server, release chan struct{})
+	}{
+		{"catalog wait", func(t *testing.T, s *Server, release chan struct{}) {
+			// Every catalog phase is held, so the query waits for one.
+			gateway := observeHeldGateway(t, release, nil, nil)
+			t.Cleanup(gateway.Close)
+			s.observe = mustObserveGateway(t, gateway.URL)
+			s.catalogWaitTimeout = 10 * time.Second
+			for range cap(s.catalogPhases) {
+				s.catalogPhases <- struct{}{}
+			}
+		}},
+		{"admission wait", func(t *testing.T, s *Server, release chan struct{}) {
+			gateway := observeHeldGateway(t, nil, nil, nil)
+			t.Cleanup(gateway.Close)
+			s.observe = mustObserveGateway(t, gateway.URL)
+			s.queryWaitTimeout = 10 * time.Second
+			for range cap(s.queries) {
+				s.queries <- struct{}{}
+			}
+		}},
+		{"data call", func(t *testing.T, s *Server, release chan struct{}) {
+			gateway := observeHeldGateway(t, nil, release, nil)
+			t.Cleanup(gateway.Close)
+			s.observe = mustObserveGateway(t, gateway.URL)
+			s.observe.timeouts.operation = 10 * time.Second
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			release := make(chan struct{})
+			defer close(release)
+			s := observeTestService(t, "")
+			s.queryBudget = 300 * time.Millisecond
+			tc.setup(t, s, release)
+			started := time.Now()
+			w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+			elapsed := time.Since(started)
+			assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
+			assert.Less(t, elapsed, 2*time.Second, "the query outlived its budget")
+		})
+	}
+}
+
+// mustObserveGateway builds the gateway client that observeTestService would,
+// for a test that must choose the gateway after building the service.
+func mustObserveGateway(t *testing.T, rawURL string) *observeGateway {
+	t.Helper()
+	g, err := newObserveGateway(rawURL)
+	require.NoError(t, err)
+	return g
+}
+
+// A busy listing carries the gateway's Retry-After, or one second without it.
+func TestObserveBusyListingCarriesRetryAfter(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		retryAfter string
+		want       int
+	}{
+		{"gateway sent a delay", "3", 3},
+		{"no delay sent", "", defaultSharedRetryAfter},
+		{"unusable delay ignored", "soon", defaultSharedRetryAfter},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.retryAfter != "" {
+					w.Header().Set("Retry-After", tc.retryAfter)
+				}
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "catalog saturated"})
+			}))
+			defer gateway.Close()
+			s := observeTestService(t, gateway.URL)
+			w := request(t, s.Handler(), http.MethodGet, "/api/providers", nil, observeHeaders("alice"))
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var listing struct {
+				SharedCatalog *sharedCatalogFailure `json:"sharedCatalog"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &listing))
+			require.NotNil(t, listing.SharedCatalog)
+			assert.Equal(t, "busy", listing.SharedCatalog.Status)
+			assert.Equal(t, tc.want, listing.SharedCatalog.RetryAfter)
+		})
+	}
+}
+
+// Every catalog-phase rejection is counted once under the existing query
+// counter, with the catalog_busy outcome.
+func TestObserveCatalogBusyIsCountedByOutcome(t *testing.T) {
+	release := make(chan struct{})
+	var listings atomic.Int64
+	gateway := observeHeldGateway(t, release, nil, &listings)
+	defer gateway.Close()
+	open := sync.OnceFunc(func() { close(release) })
+	defer open()
+	s := observeTestService(t, gateway.URL)
+	reader := sdkmetric.NewManualReader()
+	meter := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)).Meter("test")
+	counter, err := meter.Int64Counter("paprika_insights_queries")
+	require.NoError(t, err)
+	s.queryCount = counter
+	s.catalogWaitTimeout = 50 * time.Millisecond
+	var wg sync.WaitGroup
+	for range cap(s.catalogPhases) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+		}()
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for listings.Load() < int64(cap(s.catalogPhases)) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+	open()
+	wg.Wait()
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(t.Context(), &rm))
+	busy := int64(0)
+	for _, scope := range rm.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			require.True(t, ok)
+			for _, point := range sum.DataPoints {
+				if outcome, _ := point.Attributes.Value(attribute.Key("outcome")); outcome.AsString() == "catalog_busy" {
+					busy += point.Value
+				}
+			}
+		}
+	}
+	assert.Equal(t, int64(1), busy, "one catalog-phase rejection, counted once")
 }
