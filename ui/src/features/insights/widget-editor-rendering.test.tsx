@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { WidgetEditor } from "./widget-editor";
+import { SourceStatusContext, type SourceStatus } from "./source-status";
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge";
 import type { Provider, Widget } from "./schema";
 
@@ -116,5 +117,26 @@ describe("time-series rendering controls", () => {
     fireEvent.change(screen.getByLabelText("Maximum width (px)"), { target: { value: "320" } });
     expect(onDraftValidityChange).toHaveBeenLastCalledWith(true);
     expect(handlers.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up", providerId: "production", options: { tooltipMaxWidth: 320 } }));
+  });
+});
+
+describe("widget editor while shared sources load", () => {
+  // The selected provider is not in the list yet: it is loading, not incompatible.
+  function selectSource(status: SourceStatus) {
+    render(
+      <SourceStatusContext.Provider value={status}>
+        <WidgetEditor {...callbacks()} widget={timeseries} providers={[]} />
+      </SourceStatusContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Query" }));
+    return screen.getByLabelText("Data source");
+  }
+
+  it("says data sources are loading while the list is pending", () => {
+    expect(selectSource("pending")).toHaveTextContent("Data sources are loading");
+  });
+
+  it("keeps the compatible-provider copy once the list is ready", () => {
+    expect(selectSource("ready")).toHaveTextContent("Choose a compatible provider");
   });
 });

@@ -14,6 +14,7 @@ const dashboard: Dashboard = {
   widgets: [
     { id: "inline", title: "Inline latency", type: "timeseries", providerId: shared, query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } },
     { id: "saved", title: "Saved latency", type: "timeseries", providerId: shared, query: "up", unit: "", queryRef: { id: "requests" }, layout: { x: 6, y: 0, w: 6, h: 4 } },
+    { id: "localtile", title: "Local requests", type: "timeseries", providerId: "local", query: "up", unit: "", layout: { x: 0, y: 4, w: 6, h: 4 } },
   ],
 }
 const busy = () => new InsightsHTTPError("too many active observability requests; retry shortly", 429, "1")
@@ -34,6 +35,14 @@ function api(providers: InsightsClient["providers"]): InsightsClient {
 }
 function bodyText() {
   return document.body.textContent ?? ""
+}
+// A mock whose listing is the full ProviderCatalog, so the shared status can be exercised.
+function catalogApi(catalog: { providers: Provider[]; sharedCatalog?: { status: "busy" | "forbidden" | "unavailable"; code: number; message: string } }) {
+  const client = api(() => Promise.resolve(catalog.providers))
+  return Object.assign(client, { providerCatalog: vi.fn().mockResolvedValue(catalog) })
+}
+function queriedWith(client: InsightsClient, providerId: string) {
+  return vi.mocked(client.query).mock.calls.some(([request]) => request?.providerId === providerId)
 }
 function queriedShared(client: InsightsClient) {
   return vi.mocked(client.query).mock.calls.some(([request]) => request?.providerId === shared)
@@ -77,7 +86,7 @@ describe("tiles and banner while shared sources are busy", () => {
     const api = api_(() => new Promise<Provider[]>(resolve => { finish = resolve }))
     render(createElement(InsightsApp, { client: api }))
     await screen.findAllByText("Waiting for data sources…")
-    await act(async () => finish([sharedProvider]))
+    await act(async () => finish([sharedProvider, { id: "local", name: "Local metrics", type: "prometheus", capabilities: ["metrics"] } as Provider]))
     await waitFor(() => expect(queriedShared(api)).toBe(true))
     expect(screen.queryByText("Waiting for data sources…")).not.toBeInTheDocument()
     expectNoMissingSourceCopy()
@@ -137,6 +146,77 @@ describe("tiles and banner while shared sources are busy", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry data sources" }))
     await waitFor(() => expect(screen.queryByText("Data sources are busy.")).not.toBeInTheDocument(), { timeout: 5000 })
     expect(providerFetches).toBe(5)
+  })
+})
+
+describe("a shared catalog failure keeps local sources working", () => {
+  const localProvider: Provider = { id: "local", name: "Local metrics", type: "prometheus", capabilities: ["metrics"] } as Provider
+  const busyCatalog = { providers: [localProvider], sharedCatalog: { status: "busy" as const, code: 429, message: "too many active observability requests; retry shortly" } }
+
+  it("local tiles query at once while the banner covers the shared tiles", async () => {
+    const client = catalogApi(busyCatalog)
+    render(createElement(InsightsApp, { client }))
+    await screen.findByText("Data sources are busy.")
+    await waitFor(() => expect(queriedWith(client, "local")).toBe(true))
+    const local = document.querySelector<HTMLElement>('[data-widget-id="localtile"]')!
+    expect(local.querySelector('[data-widget-state="waiting-for-sources"], [data-widget-state="source-unavailable"]')).toBeNull()
+    expect(queriedShared(client)).toBe(false)
+    expect(document.querySelector('[data-widget-id="inline"] [data-widget-state="source-unavailable"]')).not.toBeNull()
+    expect(client.providers).not.toHaveBeenCalled()
+  })
+
+  it("a forbidden shared catalog is an access banner, not a whole-workspace failure", async () => {
+    const client = catalogApi({ providers: [localProvider], sharedCatalog: { status: "forbidden", code: 403, message: "shared observability provider access denied" } })
+    render(createElement(InsightsApp, { client }))
+    expect(await screen.findByText("Your account cannot load data sources. Check its Observability permissions.")).toBeInTheDocument()
+    await waitFor(() => expect(queriedWith(client, "local")).toBe(true))
+    expect(screen.getByRole("heading", { name: "Dashboard A" })).toBeInTheDocument()
+  })
+})
+
+describe("live region, focus, and waiting markup", () => {
+  it("keeps focus on the banner's live region when a retry starts", async () => {
+    let calls = 0
+    const client = api(() => { calls++; return calls === 1 ? Promise.reject(busy()) : new Promise<Provider[]>(() => undefined) })
+    render(createElement(InsightsApp, { client }))
+    const retry = await screen.findByRole("button", { name: "Retry data sources" })
+    const region = document.querySelector<HTMLElement>('[role="status"][tabindex="-1"]')!
+    expect(region).toContainElement(retry)
+    fireEvent.click(retry)
+    expect(document.activeElement).toBe(region)
+    expect(region.isConnected).toBe(true)
+  })
+
+  it("has one persistent live region for the banner and none inside any tile", async () => {
+    const client = api(() => new Promise<Provider[]>(() => undefined))
+    render(createElement(InsightsApp, { client }))
+    await screen.findAllByText("Waiting for data sources…")
+    expect(document.querySelectorAll('[role="status"][tabindex="-1"]')).toHaveLength(1)
+    // Waiting and unavailable tiles carry data state and busy markers, never a status of their own.
+    expect(document.querySelectorAll('[data-widget-state] [role="status"]')).toHaveLength(0)
+  })
+
+  it("marks a waiting tile busy and an unavailable tile final, with neither an alert nor a status", async () => {
+    const pending = api(() => new Promise<Provider[]>(() => undefined))
+    const view = render(createElement(InsightsApp, { client: pending }))
+    await screen.findAllByText("Waiting for data sources…")
+    const waiting = document.querySelector<HTMLElement>('[data-widget-id="inline"]')!
+    expect(waiting.querySelector('[data-widget-state="waiting-for-sources"][aria-busy="true"]')).not.toBeNull()
+    expect(waiting.querySelector('[role="alert"], [role="status"]')).toBeNull()
+    view.unmount()
+    render(createElement(InsightsApp, { client: api(() => Promise.reject(busy())) }))
+    await screen.findByText("Data sources are busy.")
+    const unavailable = document.querySelector<HTMLElement>('[data-widget-id="inline"]')!
+    expect(unavailable.querySelector('[data-widget-state="source-unavailable"]')).not.toBeNull()
+    expect(unavailable.querySelector('[aria-busy="true"]')).toBeNull()
+  })
+
+  it("copy names the action that exists: sign-in tiles say sign in, not retry", async () => {
+    const client = api(() => Promise.reject(new InsightsHTTPError("Sign in to access your dashboards.", 401, null)))
+    render(createElement(InsightsApp, { client }))
+    await screen.findByText("Your session has expired. Sign in again to load data sources.")
+    expect(screen.getAllByText("Sign in again to load this tile.").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Data sources are unavailable. Retry data sources to load this tile.")).not.toBeInTheDocument()
   })
 })
 

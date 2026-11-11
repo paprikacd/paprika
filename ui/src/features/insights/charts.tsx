@@ -41,8 +41,11 @@ export interface WidgetVisualizationProps {
   naturalHeight?: boolean;
   deferred?: boolean;
   error?: string | null;
-  /** Shown in place of the loading placeholder while a shared source list is still loading. */
-  waitingLabel?: string;
+  /**
+   * The tile needs a shared source that is not loaded yet. "pending" is busy
+   * (aria-busy) so the render worker and tests wait for it; the others are final.
+   */
+  sourceState?: { status: "pending" | "unavailable" | "signin"; label: string };
   onRetry?: () => void;
   onContextChange?: (context: DrilldownContext) => void;
 }
@@ -117,7 +120,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   naturalHeight = false,
   deferred,
   error,
-  waitingLabel,
+  sourceState,
   onRetry,
   onContextChange,
 }: WidgetVisualizationProps) {
@@ -147,12 +150,16 @@ export const WidgetVisualization = memo(function WidgetVisualization({
         {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}
       </div></WidgetStateFrame>
     );
-  if (waitingLabel && !result)
+  if (sourceState && !result) {
+    const pending = sourceState.status === "pending";
     return (
-      <WidgetStateFrame><div className={styles.state} role="status" aria-label="Widget waiting for data sources">
-        <span>{waitingLabel}</span>
-      </div></WidgetStateFrame>
+      <WidgetStateFrame busy={pending}>
+        <div className={styles.state} data-widget-state={pending ? "waiting-for-sources" : "source-unavailable"} aria-busy={pending || undefined}>
+          <span>{sourceState.label}</span>
+        </div>
+      </WidgetStateFrame>
     );
+  }
   if (deferred && !result)
     return (
       <WidgetStateFrame><div className={styles.state} role="status" aria-label="Widget waiting to load">

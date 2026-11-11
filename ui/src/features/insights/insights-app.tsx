@@ -96,8 +96,8 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { classifySourceFailure, InsightsHTTPError } from "./client"
-import { SourceStatusContext, sourceWaitMessage } from "./source-status"
+import { classifySourceFailure, InsightsHTTPError, type ProviderCatalog, type SharedCatalogStatus } from "./client"
+import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
@@ -200,6 +200,11 @@ function sourceFailureReason(error: unknown): SourceFailureReason {
   return "failed"
 }
 
+function sharedFailureReason(status: SharedCatalogStatus["status"]): SourceFailureReason {
+  if (status === "busy") return "busy"
+  return status === "forbidden" ? "access" : "failed"
+}
+
 export default function InsightsApp({
   client,
   initialExample = false,
@@ -294,6 +299,18 @@ export default function InsightsApp({
   // The shared source list loads behind a rendered workspace. Only tiles that need it wait.
   const [sources, setSources] = useState<SourceState>({ status: "ready" })
   const [sourceRequest, setSourceRequest] = useState<object | null>(null)
+  const sourceNoticeRef = useRef<HTMLDivElement>(null)
+  // The sign-in action only exists when the host can start sign-in.
+  const sourceContext: SourceStatus = sources.status === "unavailable"
+    ? (sources.reason === "signin" && client.signIn ? "signin" : "unavailable")
+    : sources.status
+  // Retry leaves the button out of the DOM as the load starts, so focus moves to the
+  // persistent live region, which stays mounted for the whole episode.
+  const retrySources = () => {
+    sourceNoticeRef.current?.focus()
+    setSources({ status: "pending" })
+    setSourceRequest({})
+  }
   const [queryRevision, setQueryRevision] = useState(0)
   const etags = useRef(new Map<string, string>())
   const openRequest = useRef(0)
@@ -446,15 +463,22 @@ export default function InsightsApp({
   }, [client, initialExample, enterExample, reset, retry])
 
   // One background load, one retry layer: the client replays a busy 429 by
-  // Retry-After, and a failure that remains is shown with a manual retry.
+  // Retry-After, and a failure that remains is shown with a manual retry. The
+  // listing carries the shared catalog's own status, so local sources still load.
   useEffect(() => {
     if (!sourceRequest || mode !== "live") return
     const controller = new AbortController()
-    client.providers(controller.signal).then(
-      (available) => {
+    const load: Promise<ProviderCatalog> = client.providerCatalog
+      ? client.providerCatalog(controller.signal)
+      : client.providers(controller.signal).then((providers) => ({ providers }))
+    load.then(
+      (catalog) => {
         if (controller.signal.aborted) return
-        setProviders(available)
-        setSources({ status: "ready" })
+        setProviders(catalog.providers)
+        const shared = catalog.sharedCatalog
+        setSources(shared
+          ? { status: "unavailable", reason: sharedFailureReason(shared.status), message: shared.message }
+          : { status: "ready" })
       },
       (error: unknown) => {
         if (controller.signal.aborted) return
@@ -557,23 +581,26 @@ export default function InsightsApp({
   // Resolve each authoring scope once, before sharing the bounded scheduler.
   // Tooltip label values may themselves contain {{text}}; never interpolate
   // those resolved query literals again as dashboard variables.
-  const sourceStatus = sources.status
+  // A saved query whose source is loaded runs even when the shared catalog failed.
   const fetcher = useMemo(() => createResolvedQueryFetcher(scheduledFetcher, (request: QueryRequest) => {
     const { queryRef, ...resolved } = request
     if (queryRef) {
       if (queriesLoading) throw new Error("Loading the saved-query library…")
       if (queriesError) throw new Error(queriesError)
-      if (sourceStatus !== "ready") throw new Error(sourceWaitMessage(sourceStatus))
       const authored = savedQueries.find(query => query.id === queryRef.id)
       if (authored) assertProviderQueryTemplate(providers.find(provider => provider.id === authored.providerId)?.type, authored.query)
       const definition = resolveSavedQueryReference(queryRef, savedQueries, variableValues, request.kind)
+      if (!providers.some(provider => provider.id === definition.providerId)) {
+        if (sourceContext !== "ready") throw new Error(sourceWaitMessage(sourceContext))
+        throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
+      }
       if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
         throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
       return { ...resolved, ...definition }
     }
     assertProviderQueryTemplate(providers.find(provider => provider.id === request.providerId)?.type, request.query)
     return { ...resolved, query: interpolateQuery(request.query, variableValues) }
-  }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers, sourceStatus])
+  }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers, sourceContext])
   const range = dashboardRange(viewDashboard, end)
   const builderClient = useMemo(
     () =>
@@ -1245,7 +1272,7 @@ export default function InsightsApp({
 
   return (
     <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
-    <SourceStatusContext.Provider value={sources.status}>
+    <SourceStatusContext.Provider value={sourceContext}>
     <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />
       {drawerOpen && (
@@ -1637,19 +1664,19 @@ export default function InsightsApp({
           </div>
         )}
         {syncError && <p className={styles.notice} role="status">Workspace updates paused: {syncError} Retrying automatically.</p>}
-        {sources.status === "unavailable" && (
-          <div className={styles.notice} role="status">
-            <span>{sourceBannerCopy(sources)}</span>
-            {sources.reason === "signin" && client.signIn ? (
-              <GammaButton size="sm" variant="secondary" onClick={() => client.signIn?.()}>Sign in again</GammaButton>
-            ) : (
-              <GammaButton size="sm" variant="secondary" onClick={() => {
-                setSources({ status: "pending" })
-                setSourceRequest({})
-              }}>Retry data sources</GammaButton>
-            )}
-          </div>
-        )}
+        {/* One persistent live region for the source banner: it exists before its content changes. */}
+        <div ref={sourceNoticeRef} role="status" tabIndex={-1} className={sources.status === "unavailable" ? styles.notice : undefined}>
+          {sources.status === "unavailable" && (
+            <>
+              <span>{sourceBannerCopy(sources)}</span>
+              {sources.reason === "signin" && client.signIn ? (
+                <GammaButton size="sm" variant="secondary" onClick={() => client.signIn?.()}>Sign in again</GammaButton>
+              ) : (
+                <GammaButton size="sm" variant="secondary" onClick={retrySources}>Retry data sources</GammaButton>
+              )}
+            </>
+          )}
+        </div>
         {(error || message) && (
           <div
             className={`${styles.notice} ${error ? styles.errorNotice : ""}`}

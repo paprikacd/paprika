@@ -191,9 +191,12 @@ const Tile = memo(function Tile({
   // A focused editor stays engaged while its author scrolls down to query controls.
   const engaged = visible || focused;
   const memoryOf = useMemo(() => memoryFor(memory, memoryKey), [memory, memoryKey]);
-  // Without a loaded source list, a tile that needs a shared source is waiting on it, not misconfigured.
+  // A tile whose source is not in the loaded list waits while the list is pending or
+  // unavailable. A loaded source queries even when the shared catalog failed, so local
+  // tiles keep working beside the banner.
   const sourceStatus = useSourceStatus();
-  const awaitingSources = sourceStatus !== "ready" && (!!widget.queryRef || !provider);
+  const waitingOn = sourceStatus !== "ready" && !provider ? sourceStatus : null;
+  const awaitingSources = waitingOn !== null;
   const { data, loading, error, refresh } = useWidgetQuery(widget, {
     fetcher,
     start,
@@ -422,7 +425,7 @@ const Tile = memo(function Tile({
             result={savedQueryLoading ? undefined : data}
             loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
             deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
-            waitingLabel={!savedQueryLoading && awaitingSources ? (sourceStatus === "pending" ? "Waiting for data sources…" : sourceWaitMessage(sourceStatus)) : undefined}
+            sourceState={!savedQueryLoading && waitingOn ? { status: waitingOn, label: waitingOn === "pending" ? "Waiting for data sources…" : sourceWaitMessage(waitingOn) } : undefined}
             error={
               savedQueryLoading ? null : error ??
               (!provider && !widget.queryRef && sourceStatus === "ready"

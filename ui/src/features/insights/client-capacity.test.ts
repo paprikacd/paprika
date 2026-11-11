@@ -21,8 +21,14 @@ function mockFetch(...responses: Response[]) {
   vi.stubGlobal("fetch", fetcher)
   return fetcher
 }
-beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-29T12:00:00Z")) })
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+// The replay jitter is +-30%. Exact-delay assertions use the neutral factor;
+// the jitter test below pins both ends.
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date("2026-10-29T12:00:00Z"))
+  vi.spyOn(Math, "random").mockReturnValue(0.5)
+})
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe("document capacity backoff", () => {
   it.each([undefined, '"query-revision"'])("retries a rejected saved query with the exact body and precondition %s", async etag => {
@@ -174,6 +180,19 @@ describe("provider catalog capacity backoff", () => {
   })
 })
 
+describe("retry jitter", () => {
+  it.each([[0, 700], [1, 1300]])("spreads a Retry-After replay with random %s to %s ms", async (random, expected) => {
+    vi.mocked(Math.random).mockReturnValue(random)
+    const fetcher = mockFetch(limited("1"), response({ series: [] }))
+    const pending = createInsightsClient().query({ providerId: "metrics", kind: "metrics", query: "up", start: 0, end: 1000, step: 1 }, new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(expected - 1)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    await pending
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe("catalog session expiry", () => {
   it("does not navigate the host for a catalog 401, but still does for other reads", async () => {
     const onUnauthorized = vi.fn()
@@ -189,6 +208,26 @@ describe("catalog session expiry", () => {
     createInsightsClient("/api/insights", () => "token", onUnauthorized).signIn?.()
     expect(onUnauthorized).toHaveBeenCalledOnce()
     expect(createInsightsClient().signIn).toBeUndefined()
+  })
+})
+
+describe("shared catalog status", () => {
+  it("returns the local listing with a busy shared catalog and no whole-request failure", async () => {
+    mockFetch(response({ providers: [{ id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }], sharedCatalog: { status: "busy", code: 429, message: "too many active observability requests; retry shortly" } }))
+    const catalog = await createInsightsClient().providerCatalog?.(new AbortController().signal)
+    expect(catalog?.providers.map(provider => provider.id)).toEqual(["local"])
+    expect(catalog?.sharedCatalog).toMatchObject({ status: "busy", code: 429 })
+  })
+  it("keeps the plain providers() contract for callers that do not need the status", async () => {
+    mockFetch(response({ providers: [{ id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }], sharedCatalog: { status: "forbidden", code: 403, message: "x" } }))
+    expect(await createInsightsClient().providers()).toEqual([{ id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }])
+  })
+  it("never renews or clears the session for the catalog read", async () => {
+    const session = { ensureToken: vi.fn().mockResolvedValue("token"), recoverUnauthorized: vi.fn().mockResolvedValue(null), clearRejectedSession: vi.fn(), identity: () => "same" }
+    mockFetch(response({ error: "expired" }, 401))
+    await expect(createInsightsClient("/api/insights", undefined, undefined, session).providerCatalog?.()).rejects.toMatchObject({ status: 401 })
+    expect(session.recoverUnauthorized).not.toHaveBeenCalled()
+    expect(session.clearRejectedSession).not.toHaveBeenCalled()
   })
 })
 

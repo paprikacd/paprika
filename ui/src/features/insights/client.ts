@@ -45,7 +45,19 @@ export interface MetricSeriesMetadata {
   sample?: boolean
   labels: { name: string; cardinality: number; values: string[]; valuesTruncated?: boolean }[]
 }
+/** Why the shared catalog is missing from a listing that still has the local providers. */
+export interface SharedCatalogStatus {
+  status: "busy" | "forbidden" | "unavailable"
+  code: number
+  message: string
+}
+export interface ProviderCatalog {
+  providers: Provider[]
+  sharedCatalog?: SharedCatalogStatus
+}
 export interface InsightsClient {
+  /** The listing with its shared-catalog status. Absent for hosts that predate it; providers() still works. */
+  providerCatalog?(signal?: AbortSignal): Promise<ProviderCatalog>
   /** Starts the host's sign-in flow, returning to this view afterwards. Absent when the host has no sign-in. */
   signIn?(): void
   /** Optional for embedded hosts that do not expose Paprika Observe. */
@@ -106,7 +118,9 @@ function capacityRetryDelay(response: Response, attempt: number): number | undef
     if (!Number.isNaN(requested)) delay = Math.max(100, requested)
   }
   // A long server cooldown should surface the error, never retry prematurely.
-  return delay <= 10_000 ? delay : undefined
+  // Spread the actual wait by +-30% so viewers blocked by one busy spell do
+  // not all replay in the same instant.
+  return delay <= 10_000 ? Math.round(delay * (0.7 + 0.6 * Math.random())) : undefined
 }
 
 function waitForCapacity(delay: number, signal?: AbortSignal | null): Promise<void> {
@@ -176,7 +190,7 @@ export function createInsightsClient(
     }
     return { bearer, principal }
   }
-  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false, notifyUnauthorized = true) {
+  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false, deferSession = false) {
     const current = context ?? requestContext(session ? await session.ensureToken() : token?.() ?? null)
     let bearer = current.bearer
     const send = async () => {
@@ -202,7 +216,10 @@ export function createInsightsClient(
       return response
     }
     let response = await send()
-    if (response.status === 401 && session && identity() === current.principal) {
+    // A deferred read never renews or clears the session. Renewal that fails
+    // clears it, which changes the identity and remounts the workspace. Its
+    // 401 is shown as a banner that the user resolves with an explicit sign-in.
+    if (response.status === 401 && session && !deferSession && identity() === current.principal) {
       const renewed = await session.recoverUnauthorized(bearer)
       if (renewed) {
         if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
@@ -222,7 +239,7 @@ export function createInsightsClient(
         // A late response from a previous session must not sign out a newer one.
         // A caller that can show its own sign-in prompt may defer the host's
         // navigation, so unsaved work stays mounted until the user chooses.
-        if (notifyUnauthorized && !authenticationRequested && ((token?.() ?? null) === bearer || (session && !(token?.() ?? null)))) {
+        if (!deferSession && !authenticationRequested && ((token?.() ?? null) === bearer || (session && !(token?.() ?? null)))) {
           authenticationRequested = true
           onUnauthorized?.()
         }
@@ -312,7 +329,13 @@ export function createInsightsClient(
       await request(`/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "If-Match": etag } })
     },
     // The shared catalog loads behind a rendered workspace; its 401 becomes a banner, not a navigation.
-    providers: async (signal) => (await readJSON<{ providers: Provider[] }>(await request("/providers", { signal }, undefined, false, false))).providers,
+    providerCatalog: async (signal) => {
+      const body = await readJSON<{ providers: Provider[]; sharedCatalog?: SharedCatalogStatus }>(
+        await request("/providers", { signal }, undefined, false, true),
+      )
+      return { providers: body.providers, ...(body.sharedCatalog ? { sharedCatalog: body.sharedCatalog } : {}) }
+    },
+    providers: async (signal) => (await readJSON<{ providers: Provider[] }>(await request("/providers", { signal }, undefined, false, true))).providers,
     providerConfigs: async (signal) =>
       (await readJSON<{ providers: ProviderConfig[] }>(await request("/provider-configs", { signal }))).providers,
     saveProvider: async ({ managed: _managed, etag, ...config }) => {
