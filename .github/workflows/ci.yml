@@ -139,6 +139,10 @@ jobs:
         run: npm run build
         working-directory: ui
 
+      - name: Check Insights first-view size budget
+        run: node scripts/check-insights-budget.mjs
+        working-directory: ui
+
   mcp-console:
     name: MCP console and plugin
     runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}

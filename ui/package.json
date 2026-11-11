@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:gh-pages": "PAPRIKA_BASE_PATH=/paprika next build",
+    "check:insights-budget": "node scripts/check-insights-budget.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

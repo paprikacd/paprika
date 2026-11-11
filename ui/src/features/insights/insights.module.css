@@ -1514,3 +1514,39 @@
   .compactDescription summary:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: 3px; }
   .compactDescription p { font-size: 11px; line-height: 1.5; }
 }
+
+.lazyFailure {
+  display: grid;
+  gap: 10px;
+  margin: 12px;
+  padding: 20px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 6px;
+  background: var(--gamma-surface);
+  color: var(--gamma-ink);
+}
+.lazyFailure h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.lazyFailure p { margin: 0; color: var(--gamma-muted); font-size: 12px; line-height: 1.6; }
+.lazyFailure h3:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: 3px; }
+
+/* Footprint of the focused widget editor (editor.module.css: 100dvh, 76px header, preview and settings columns) while its chunk loads. */
+.editorSkeleton { display: flex; flex-direction: column; min-height: 100dvh; min-width: 0; background: var(--gamma-page); }
+.editorSkeletonHeader {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 76px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--gamma-border);
+  background: var(--gamma-surface);
+}
+.editorSkeletonHeader p { margin: 0; color: var(--gamma-muted); font-size: 12px; }
+.editorSkeletonBody { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 31vw, 460px); flex: 1; min-height: 0; }
+.editorSkeletonMain { display: grid; grid-template-rows: minmax(280px, 1fr) minmax(220px, .8fr); min-width: 0; }
+.editorSkeletonPreview { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; padding: 20px 24px 24px; }
+.editorSkeletonPreviewHeading { display: flex; align-items: center; height: 1.45em; font-size: 12px; }
+.editorSkeletonPreviewCanvas { flex: 1; min-height: 0; min-width: 0; }
+.editorSkeletonQuery { min-width: 0; padding: 16px 24px; border-top: 1px solid var(--gamma-border); }
+.editorSkeletonSettings { display: grid; align-content: start; gap: 12px; padding: 16px; border-left: 1px solid var(--gamma-border); min-width: 0; }
+.skeletonBar { display: block; height: 10px; width: 160px; border-radius: 4px; background: var(--gamma-surface-2); }
+.skeletonBlock { display: block; height: 180px; border-radius: 6px; background: var(--gamma-surface-2); }
