@@ -294,7 +294,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
     [descriptionId, emptyNoticeId, noDataRows.length],
   );
   return (
-    <div className={styles.chart}>
+    <div className={styles.chart} data-series-count={rows.length}>
       <div
         className={`${styles.plot} ${chartEntrance.tanstackPlot}`}
         ref={ref}

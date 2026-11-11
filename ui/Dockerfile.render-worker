@@ -3,6 +3,7 @@ FROM mcr.microsoft.com/playwright:v1.61.1-noble
 WORKDIR /renderer
 RUN npm install --no-save --ignore-scripts playwright@1.61.1
 COPY ui/render-worker.mjs ./render-worker.mjs
+COPY ui/dashboard-probe.mjs ./dashboard-probe.mjs
 RUN chown -R pwuser:pwuser /renderer
 USER pwuser
 ENV NODE_ENV=production

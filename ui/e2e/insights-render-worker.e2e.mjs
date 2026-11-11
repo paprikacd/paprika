@@ -9,7 +9,9 @@ import {mkdir,mkdtemp,readFile,rm,writeFile} from "node:fs/promises"
 import {tmpdir} from "node:os"
 import {join,resolve} from "node:path"
 import {fileURLToPath} from "node:url"
+import {chromium} from "playwright"
 import {createRenderServer,closeRenderBrowser} from "../render-worker.mjs"
+import {dashboardProbe} from "../dashboard-probe.mjs"
 
 const repository=resolve(fileURLToPath(new URL("../../",import.meta.url)))
 const temporary=await mkdtemp(join(tmpdir(),"paprika-render-e2e-"))
@@ -217,6 +219,181 @@ async function verifyDenseDashboard(dashboard) {
   }
 }
 
+// The JSON envelope is what the gateway asks for: visual findings beside the PNG,
+// or findings alone with checks_only.
+async function renderChecks(args,etag,token=fixture.viewerToken) {
+  const response=await fetch(workerURL+"/render",{method:"POST",headers:{Authorization:"Bearer "+token,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":etag,"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify(args),signal:AbortSignal.timeout(25_000)})
+  assert.equal(response.status,200,`visual checks ${JSON.stringify(args)} failed: ${response.headers.get("x-paprika-render-failure")}`)
+  assert.equal(response.headers.get("content-type"),"application/json")
+  assert.equal(response.headers.get("x-paprika-dashboard-etag"),etag)
+  return response.json()
+}
+const summarise=report=>report.issues.map(issue=>`${issue.severity.replace("SEVERITY_","")} ${issue.ruleId} ${issue.widgetId||"(page)"}`)
+
+// Document and listing reads are the render's source of truth. When one fails, the
+// probe would judge a screen that never loaded its data, so the render fails closed
+// even with checks. A failed query is different: the UI shows the error on its own
+// tile, so the probe attributes it to that widget and the render still returns.
+function failingProxy(matches,status) {
+  return createServer((req,res)=>{
+    if(matches(req)) {
+      req.resume()
+      res.writeHead(status,{"Content-Type":"application/json"}).end('{"error":"fixture read failed"}')
+      return
+    }
+    const target=new URL(req.url,fixture.baseURL)
+    const upstream=httpRequest(target,{method:req.method,headers:{...req.headers,host:target.host}},response=>{
+      res.writeHead(response.statusCode,response.headers)
+      response.pipe(res)
+    })
+    upstream.on("error",()=>{if(!res.headersSent)res.writeHead(502);res.end()})
+    res.on("close",()=>upstream.destroy())
+    req.pipe(upstream)
+  })
+}
+async function renderThroughFailingProxy(dashboard,matches,status,{checks=true}={}) {
+  let proxy,worker
+  try {
+    proxy=failingProxy(matches,status)
+    await new Promise(resolve=>proxy.listen(0,"127.0.0.1",resolve))
+    worker=createRenderServer({secret,uiOrigin:"http://127.0.0.1:"+proxy.address().port})
+    await new Promise(resolve=>worker.listen(0,"127.0.0.1",resolve))
+    const headers={Authorization:"Bearer "+fixture.viewerToken,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":dashboard.etag,"Content-Type":"application/json"}
+    if(checks)headers.Accept="application/json"
+    const response=await fetch("http://127.0.0.1:"+worker.address().port+"/render",{method:"POST",headers,body:JSON.stringify({id:dashboard.document.id,...(checks?{checks_only:true}:{})}),signal:AbortSignal.timeout(25_000)})
+    const body=response.status===200&&checks?await response.json():null
+    if(!body)await response.arrayBuffer()
+    return {response,body}
+  } finally {
+    for(const server of [worker,proxy])if(server?.listening) {
+      server.closeAllConnections();await new Promise(resolve=>server.close(resolve))
+    }
+  }
+}
+async function verifyChecksFailClosed(dashboard) {
+  const created=await tool("create_dashboard",{document:{...dashboard,id:"mcp-render-checks-fail",widgets:[dashboard.widgets[1]]}})
+  const document={document:created.document,etag:created.etag}
+  const listing=await renderThroughFailingProxy(document,req=>req.method==="GET"&&req.url.startsWith("/api/insights/providers"),500)
+  assert.equal(listing.response.status,422,"a failed listing read must fail the render even with checks")
+  assert.equal(listing.response.headers.get("x-paprika-render-failure"),"insights_http")
+  console.log("PASS checks fail closed when a listing read fails")
+  const query=await renderThroughFailingProxy(document,req=>req.method==="POST"&&req.url==="/api/insights/query",500)
+  assert.equal(query.response.status,200,"a failed query is attributed by the probe, not treated as a failed render")
+  const attributed=query.body.checks.issues.filter(issue=>issue.widgetId===dashboard.widgets[1].id&&issue.ruleId==="visual.widget-error")
+  assert.equal(attributed.length,1,`the failed query is a widget error on its own widget: ${JSON.stringify(query.body.checks.issues)}`)
+  assert.equal(attributed[0].severity,"SEVERITY_ERROR")
+  console.log("PASS a failed query is a visual.widget-error on its own widget, and the render still returns")
+  const legacy=await renderThroughFailingProxy(document,req=>req.method==="POST"&&req.url==="/api/insights/query",500,{checks:false})
+  assert.equal(legacy.response.status,422,"a PNG-only caller still fails closed on a failed query")
+  assert.equal(legacy.response.headers.get("x-paprika-render-failure"),"insights_http")
+  console.log("PASS PNG-only renders keep failing closed on a failed query")
+}
+
+// Fixture dashboards trigger one visual condition each, on a widget that is
+// otherwise healthy. ok-stat and plot-ok must stay clean in every case.
+function visualWidget(id,providerId,query,extras) {
+  return {id,title:id,type:"stat",providerId,query,unit:"req/s",color:"#557EAA",...extras}
+}
+async function verifyVisualChecks(providerId) {
+  const query='sum(rate(http_requests_total{service="api-gateway"}[5m]))'
+  const healthy=[
+    visualWidget("ok-stat",providerId,query,{options:{decimals:2,showSparkline:true,sparklinePlacement:"side",showTooltip:true},layout:{x:6,y:0,w:4,h:2}}),
+    {id:"plot-ok",title:"Plot ok",type:"timeseries",providerId,query,unit:"req/s",color:"#557EAA",options:{display:"area",showTooltip:true,showGrid:true,showLegend:false},layout:{x:4,y:2,w:8,h:5}},
+  ]
+  const clean=await tool("create_dashboard",{document:{schemaVersion:1,id:"mcp-render-visual-clean",title:"Visual checks clean fixture",description:"Deterministic telemetry; no visual defects expected",timeRange:"1h",refreshInterval:0,widgets:healthy}})
+  const defects=await tool("create_dashboard",{document:{schemaVersion:1,id:"mcp-render-visual-defects",title:"Visual checks defect fixture",description:"Deterministic telemetry; one visual defect per widget",timeRange:"1h",refreshInterval:0,widgets:[
+    ...healthy,
+    visualWidget("scroll-stat",providerId,query,{description:"Live telemetry through the shared pre-existing saved query for the whole regional fleet. ".repeat(3),options:{decimals:2,showSparkline:true,sparklinePlacement:"side",showTooltip:true,showStatBar:false},layout:{x:0,y:0,w:4,h:1}}),
+    visualWidget("clip-stat",providerId,query,{unit:"req per second long unit",options:{decimals:2,showSparkline:true,sparklinePlacement:"side",showTooltip:true},layout:{x:4,y:0,w:2,h:2}}),
+    visualWidget("missing-provider",providerId,query,{providerId:"missing-provider-fixture",options:{decimals:2},layout:{x:0,y:2,w:4,h:2}}),
+    {id:"plot-range",title:"Plot out of range",type:"timeseries",providerId,query,unit:"req/s",color:"#557EAA",options:{display:"line",min:1000,max:2000,showTooltip:true,showGrid:true,showLegend:true},layout:{x:0,y:6,w:4,h:5}},
+    {id:"table-short",title:"Table short",type:"table",providerId,query,unit:"req/s",color:"#557EAA",options:{},layout:{x:0,y:11,w:4,h:2}},
+  ]}})
+  const cleanReports={}
+  for (const width of [1512,390]) {
+    const report=await renderChecks({id:clean.document.id,width,theme:"dark",checks_only:true},clean.etag)
+    assert.deepEqual(report.checks.issues,[],`clean dashboard at ${width}px must report no visual findings: ${summarise(report.checks).join("; ")}`)
+    assert.equal(report.checks.total,0)
+    assert.ok(Number.isInteger(report.timings.readyMs)&&Number.isInteger(report.timings.probeMs)&&Number.isInteger(report.timings.renderMs))
+    cleanReports[width]=report.timings
+  }
+  const report=await renderChecks({id:defects.document.id,width:1512,theme:"dark",checks_only:true},defects.etag)
+  const found=(widget,rule)=>report.checks.issues.filter(issue=>issue.widgetId===widget&&issue.ruleId===rule)
+  const severityOf=name=>report.checks.issues.filter(issue=>issue.severity===name).length
+  assert.equal(report.checks.errorCount,severityOf("SEVERITY_ERROR"),"the error count matches the listed errors when nothing is truncated")
+  assert.equal(report.checks.warningCount,severityOf("SEVERITY_WARNING"))
+  assert.equal(report.checks.truncated,false)
+  assert.equal(found("scroll-stat","visual.clipped-text").length,1,`stat value cut off: ${summarise(report.checks).join("; ")}`)
+  assert.equal(found("scroll-stat","visual.clipped-text")[0].severity,"SEVERITY_ERROR")
+  assert.equal(found("scroll-stat","visual.internal-scroll").length,1,"a collapsed stat body is a scroller")
+  assert.equal(found("clip-stat","visual.clipped-text")[0]?.severity,"SEVERITY_ERROR","a unit cut at the tile edge")
+  assert.equal(found("missing-provider","visual.widget-error")[0]?.severity,"SEVERITY_ERROR","an unbound provider is a widget error with its id")
+  assert.equal(found("plot-range","visual.empty-plot")[0]?.severity,"SEVERITY_WARNING","data scaled outside the plot draws nothing")
+  // A table body is a focusable, named region (role=region, aria-label), so its scrolling is designed and not a finding.
+  assert.equal(found("table-short","visual.internal-scroll").length,0,"a named table region is an intentional scroll region")
+  for (const widget of ["ok-stat","plot-ok"]) assert.deepEqual(report.checks.issues.filter(issue=>issue.widgetId===widget),[],`${widget} is healthy`)
+  assert.ok(report.checks.issues.every(issue=>issue.source===undefined||issue.source==="SOURCE_VISUAL"),"visual findings carry the visual source")
+  assert.ok(report.checks.issues.every(issue=>issue.ruleId.startsWith("visual.")))
+  assert.equal("png" in report,false,"checks_only never returns an image")
+  // Image and findings together: the same render returns the PNG and the report.
+  const both=await renderChecks({id:defects.document.id,width:390,theme:"dark"},defects.etag)
+  const png=Buffer.from(both.png,"base64")
+  assert.deepEqual([...png.subarray(0,8)],[137,80,78,71,13,10,26,10])
+  assert.equal(png.readUInt32BE(16),390)
+  assert.ok(both.checks.issues.some(issue=>issue.ruleId==="visual.widget-error"&&issue.widgetId==="missing-provider"),"a narrow render still reports the widget error")
+  assert.ok(!both.checks.issues.some(issue=>["ok-stat","plot-ok"].includes(issue.widgetId)))
+  const after=await tool("get_dashboard",{id:defects.document.id},fixture.mcpViewerToken)
+  assert.equal(after.etag,defects.etag,"visual checks must not mutate the saved document")
+  console.log(`PASS visual checks: clean fixture has no findings at 1512 and 390; defect fixture reports ${report.checks.total} findings with ids, severities and widgets`)
+  return {clean:cleanReports,defects:summarise(report.checks),defectTimings:report.timings}
+}
+
+// Real layout, synthetic markup: each rule has a positive and a negative page, so
+// the rule conditions are exercised without the Insights stack.
+const detailRows="<p style=\"margin:0\">Row of text</p>".repeat(8)
+const probeCases=[
+  {name:"page overflow",width:390,positive:'<div data-widget-id="wide" style="width:700px;height:30px">wide</div>',negative:'<div data-widget-id="wide" style="width:300px;height:30px">fits</div>',rule:"visual.page-overflow@:SEVERITY_ERROR"},
+  {name:"metric value clipped",width:390,positive:'<article data-widget-id="kpi" style="width:150px;height:60px;overflow:hidden"><div data-metric-value="1" style="white-space:nowrap;font-size:28px">101.23 <span style="font-size:14px">req per second long unit</span></div></article>',negative:'<article data-widget-id="kpi" style="width:400px;height:60px;overflow:hidden"><div data-metric-value="1" style="white-space:nowrap;font-size:28px">101.23 <span style="font-size:14px">req/s</span></div></article>',rule:"visual.clipped-text@kpi:SEVERITY_ERROR"},
+  {name:"description clipped",width:390,positive:'<article data-widget-id="note" style="width:150px;height:60px;overflow:hidden"><p style="margin:0;white-space:nowrap">A long description that runs out of the card entirely.</p></article>',negative:'<article data-widget-id="note" style="width:400px;height:60px;overflow:hidden"><p style="margin:0">Short text.</p></article>',rule:"visual.clipped-text@note:SEVERITY_WARNING"},
+  {name:"title ellipsis without an ellipsis",width:390,positive:'<article data-widget-id="title" style="width:120px"><h3 style="margin:0;overflow:hidden;white-space:nowrap">A title that is much too long for its box</h3></article>',negative:'<article data-widget-id="title" style="width:120px"><h3 style="margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">A title that is much too long for its box</h3></article>',rule:"visual.clipped-text@title:SEVERITY_WARNING"},
+  {name:"body scrolls",width:390,positive:'<article data-widget-id="rows" style="width:300px;height:60px"><div style="height:60px;overflow-y:auto">'+"<p style=\"margin:0\">Row of text</p>".repeat(8)+'</div></article>',negative:'<article data-widget-id="rows" style="width:300px;height:60px"><div style="height:60px;overflow-y:auto"><p style="margin:0">Row</p></div></article>',rule:"visual.internal-scroll@rows:SEVERITY_WARNING"},
+  {name:"plot has data but draws nothing",width:390,positive:'<div data-widget-id="flat" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"><line x1="0" y1="140" x2="300" y2="140" stroke="#999"/></svg></div>',negative:'<div data-widget-id="flat" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"><line x1="0" y1="140" x2="300" y2="140" stroke="#999"/><path d="M0,100 L300,50" stroke="#557EAA" stroke-width="1.8" fill="none"/></svg></div>',rule:"visual.empty-plot@flat:SEVERITY_WARNING"},
+  {name:"widget error state",width:390,positive:'<article data-widget-id="broken" style="width:300px"><div role="alert" style="height:30px">Query failed</div></article>',negative:'<article data-widget-id="broken" style="width:300px"><p>Fine</p></article>',rule:"visual.widget-error@broken:SEVERITY_ERROR"},
+  // Closed details: Chromium lays out a closed body, but it is not visible, so it is not a scroller.
+  {name:"closed details body is not visible",width:390,positive:'<article data-widget-id="closed" style="width:300px"><details open><summary>More</summary><div style="height:40px;overflow-y:auto">'+detailRows+'</div></details></article>',negative:'<article data-widget-id="closed" style="width:300px"><details><summary>More</summary><div style="height:40px;overflow-y:auto">'+detailRows+'</div></details></article>',rule:"visual.internal-scroll@closed:SEVERITY_WARNING"},
+  // A focusable, named region scrolls by design (records, traces, events). An unnamed body is a defect.
+  {name:"named scroll region is intentional",width:390,positive:'<article data-widget-id="records" style="width:300px;height:60px"><div style="height:60px;overflow-y:auto">'+detailRows+'</div></article>',negative:'<article data-widget-id="records" style="width:300px;height:60px"><div role="region" tabindex="0" aria-label="Recent records" style="height:60px;overflow-y:auto">'+detailRows+'</div></article>',rule:"visual.internal-scroll@records:SEVERITY_WARNING"},
+  // Line-clamped text is truncated on purpose, like text-overflow ellipsis.
+  {name:"line-clamped description is intentional",width:390,positive:'<article data-widget-id="clamp" style="width:150px"><p style="margin:0;height:40px;overflow:hidden">A description that wraps over several lines and runs past the height of its box.</p></article>',negative:'<article data-widget-id="clamp" style="width:150px"><p style="margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">A description that wraps over several lines and runs past the height of its box.</p></article>',rule:"visual.clipped-text@clamp:SEVERITY_WARNING"},
+  // An all-zero bar chart draws nothing because its values are zero, not because the plot is broken.
+  {name:"all-zero bars are not an empty plot",width:390,positive:'<div data-widget-id="bars" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"></svg><span data-legend-value="5">5</span></div>',negative:'<div data-widget-id="bars" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"></svg><span data-legend-value="0">0</span></div>',rule:"visual.empty-plot@bars:SEVERITY_WARNING"},
+  // A time series with its legend hidden still reports its series on the chart root.
+  {name:"time series without a legend is checked",width:390,positive:'<div data-widget-id="noleg" data-series-count="2" style="width:300px"><svg role="img" width="300" height="150"><line x1="0" y1="140" x2="300" y2="140" stroke="#999"/></svg></div>',negative:'<div data-widget-id="noleg" data-series-count="2" style="width:300px"><svg role="img" width="300" height="150"><path d="M0,100 L300,50" stroke="#557EAA" stroke-width="1.8" fill="none"/></svg></div>',rule:"visual.empty-plot@noleg:SEVERITY_WARNING"},
+]
+async function verifyProbeRuleMatrix() {
+  const browser=await chromium.launch({headless:true,args:["--no-sandbox"]})
+  const results=[]
+  try {
+    for (const probeCase of probeCases) {
+      for (const [kind,markup] of [["positive",probeCase.positive],["negative",probeCase.negative]]) {
+        const context=await browser.newContext({viewport:{width:probeCase.width,height:800}})
+        const page=await context.newPage()
+        try {
+          await page.setContent('<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>body{margin:0;font:14px sans-serif}</style></head><body>'+markup+'</body></html>')
+          const probed=await page.evaluate(dashboardProbe,{})
+          const ids=probed.findings.map(f=>f.ruleId+"@"+f.widgetId+":"+f.severity)
+          if (kind==="positive") assert.ok(ids.includes(probeCase.rule),`${probeCase.name} must report ${probeCase.rule}: ${JSON.stringify(ids)}`)
+          else assert.deepEqual(ids.filter(id=>id.startsWith(probeCase.rule.split("@")[0])),[],`${probeCase.name} must not report ${probeCase.rule.split("@")[0]}: ${JSON.stringify(ids)}`)
+          results.push({rule:probeCase.rule.split("@")[0],kind,ok:true})
+        } finally { await context.close() }
+      }
+    }
+  } finally { await browser.close() }
+  assert.equal(new Set(results.map(r=>r.rule)).size,5,"every visual rule has a matrix case")
+  console.log(`PASS visual probe rule matrix: ${results.length} real-layout cases, a positive and a negative for each of 5 rules`)
+  return results
+}
+
 try {
   await mkdir(output,{recursive:true})
   await verifyResponseIsolation()
@@ -272,7 +449,10 @@ try {
   assert.deepEqual(after.document,created.document,"screenshot inspection must not mutate saved documents")
   await verifyCanonicalCapacityRetry(dashboard)
   const denseDashboard=await verifyDenseDashboard(dashboard)
-  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,denseDashboard,redirectIsolationVerified:true,conditionalReadVerified:true,queryErrorRejected:true,focusedInspectionVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true,capacityRetryVerified:true,persistentCapacityRejected:true},null,2))
+  const visualChecks=await verifyVisualChecks(provider.id)
+  await verifyChecksFailClosed(dashboard)
+  const probeMatrix=await verifyProbeRuleMatrix()
+  await writeFile(join(output,"evidence.json"),JSON.stringify({source:"deterministic authenticated fixture",screenshots:evidence,denseDashboard,visualChecks,probeMatrix,redirectIsolationVerified:true,conditionalReadVerified:true,queryErrorRejected:true,focusedInspectionVerified:true,revisionConflictRejected:true,providerDenialRejected:true,documentUnchanged:true,capacityRetryVerified:true,persistentCapacityRejected:true},null,2))
   console.log("PASS focused inspection, revision conflict, provider denial and read-only document preservation")
 } finally {
   await closeRenderBrowser()

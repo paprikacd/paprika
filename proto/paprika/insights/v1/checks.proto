@@ -45,8 +45,13 @@ message CheckFinding {
 // CheckReport is the one list shape for issues: the 400 response to a rejected
 // save and the validate dry run both carry it. Issues holds at most 32 entries;
 // total counts every finding, and truncated is true when some were omitted.
+// The per-severity counts cover every finding, not only the listed ones, so a
+// truncated list never understates how many errors a check found.
 message CheckReport {
   repeated CheckFinding issues = 1;
   uint32 total = 2;
   bool truncated = 3;
+  uint32 error_count = 4;
+  uint32 warning_count = 5;
+  uint32 info_count = 6;
 }

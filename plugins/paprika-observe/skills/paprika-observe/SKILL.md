@@ -310,20 +310,31 @@ Apply these checks to **every** new or edited dashboard, especially bulk
 
 ### Visual acceptance gate
 
-Mark visual QA **PASS** only with actual browser/screenshot evidence. Mark
-**NOT RUN** when the connected MCP lacks `render_dashboard` or the browser
-is unavailable. Mark **FAIL** for clipped/scrolling KPIs, redundant bars,
-overlapping or out-of-bounds tooltips, unreadable legends/axes, or page
-overflow. Report data-query success and visual-QA status separately.
+Read the first line of a `render_dashboard` result and its `visualStatus`:
 
-`render_dashboard` is an **optional** capability, not always deployed:
-discover the advertised tools first. Its draft implementation is tracked
-separately, and it must not be presumed ready on production from a source
-branch or CI. When it is truly available, use real Chromium screenshots
-and `focus_widget` to inspect pointer and keyboard states. Without it,
-the existing Playwright Insights E2E suite can provide actual visual
-evidence in a properly authenticated test environment; those fixtures
-must never be misrepresented as live production screenshots.
+- **failed**: at least one error finding (`SEVERITY_ERROR`). Fix every error,
+  then render again. A widget error, such as an unbound provider or a failed
+  query, is a finding on its own widget. The capture still returns, so it is
+  never a pass.
+- **passed**: no error findings. Each warning still needs a look at its widget
+  before you claim a pass.
+- **not_run**: the renderer ran no checks. Report visual QA NOT RUN.
+
+Mark visual QA **PASS** only when the latest render is `passed` and you looked
+at its screenshot. Mark **FAIL** for any error finding, and for a clipped or
+scrolling KPI, redundant bars, overlapping or out-of-bounds tooltips, unreadable
+legends or axes, or page overflow that you saw. Mark **NOT RUN** when the
+connected MCP lacks `render_dashboard`, the browser is unavailable, or
+`visualStatus` is `not_run`. Report data-query success and visual-QA status
+separately. The checks are DOM heuristics, so a `passed` status does not prove
+the design is good.
+
+`render_dashboard` is an **optional** capability, not always deployed. Discover
+it in `tools/list` first. An advertised `render_dashboard` is available. When it
+is, use its screenshot and `focus_widget` to inspect pointer and keyboard
+states. Without it, the existing Playwright Insights E2E suite can provide
+actual visual evidence in a properly authenticated test environment. Those
+fixtures must never be misrepresented as live production screenshots.
 
 **Local authoring loop.** To author or test against synthetic providers without
 touching production, start the gallery stack and attach an agent client to its

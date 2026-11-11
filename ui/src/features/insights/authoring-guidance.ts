@@ -23,5 +23,5 @@ export const dashboardWorkflowGuidance: readonly string[] = [
   "When render_dashboard is available, render the dashboard at 1512px and 390px in light and dark, and check each compact KPI for a widget-internal scrollbar, a clipped value or unit, an overlap, a clipped chart or horizontal page overflow.",
   "Inspect a real hover or pinned observation tooltip in the UI; accepting tooltip options in a schema does not show how they render.",
   "Before editing, record the previous rendering when a screenshot is available. Revert any regression with another targeted, ETag-safe patch rather than restyling other widgets.",
-  "Report visual QA as PASS only with screenshot evidence from render_dashboard or a browser. Without that evidence, report visual QA as NOT RUN, and never claim visual verification from a valid schema, a saved ETag or query_dashboard.",
+  "Read the first line of a render_dashboard result and its visualStatus. failed means at least one error finding: fix every error and render again. passed means no error findings, but each warning still needs a look. not_run means the renderer ran no checks. Report visual QA as PASS only when the latest render has visualStatus passed and you looked at its screenshot; otherwise report NOT RUN. Never claim visual verification from a valid schema, a saved ETag or query_dashboard.",
 ]
