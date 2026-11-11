@@ -606,7 +606,7 @@ export function EmptyState({ partial = false }: { partial?: boolean }) {
   const contextualPartial = !!(source?.result.truncated || source?.result.records?.truncated);
   const incomplete = partial || contextualPartial;
   return (
-    <div className={styles.state}>
+    <div className={styles.state} data-widget-state="empty">
       <strong>{incomplete ? "No observations returned" : "No data in this time range"}</strong>
       <p>{partial ? "The provider response may be incomplete. Narrow the query or check the data source." : contextualPartial ? "No observations were included in this incomplete response." : "Try a wider time range or adjust this widget’s query."}</p>
     </div>
