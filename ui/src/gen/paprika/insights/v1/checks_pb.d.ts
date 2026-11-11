@@ -130,6 +130,8 @@ export declare class CheckFinding extends Message<CheckFinding> {
  * CheckReport is the one list shape for issues: the 400 response to a rejected
  * save and the validate dry run both carry it. Issues holds at most 32 entries;
  * total counts every finding, and truncated is true when some were omitted.
+ * The per-severity counts cover every finding, not only the listed ones, so a
+ * truncated list never understates how many errors a check found.
  *
  * @generated from message paprika.insights.v1.CheckReport
  */
@@ -148,6 +150,21 @@ export declare class CheckReport extends Message<CheckReport> {
    * @generated from field: bool truncated = 3;
    */
   truncated: boolean;
+
+  /**
+   * @generated from field: uint32 error_count = 4;
+   */
+  errorCount: number;
+
+  /**
+   * @generated from field: uint32 warning_count = 5;
+   */
+  warningCount: number;
+
+  /**
+   * @generated from field: uint32 info_count = 6;
+   */
+  infoCount: number;
 
   constructor(data?: PartialMessage<CheckReport>);
 

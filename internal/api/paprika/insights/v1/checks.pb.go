@@ -231,11 +231,16 @@ func (x *CheckFinding) GetFix() string {
 // CheckReport is the one list shape for issues: the 400 response to a rejected
 // save and the validate dry run both carry it. Issues holds at most 32 entries;
 // total counts every finding, and truncated is true when some were omitted.
+// The per-severity counts cover every finding, not only the listed ones, so a
+// truncated list never understates how many errors a check found.
 type CheckReport struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Issues        []*CheckFinding        `protobuf:"bytes,1,rep,name=issues,proto3" json:"issues,omitempty"`
 	Total         uint32                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
 	Truncated     bool                   `protobuf:"varint,3,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	ErrorCount    uint32                 `protobuf:"varint,4,opt,name=error_count,json=errorCount,proto3" json:"error_count,omitempty"`
+	WarningCount  uint32                 `protobuf:"varint,5,opt,name=warning_count,json=warningCount,proto3" json:"warning_count,omitempty"`
+	InfoCount     uint32                 `protobuf:"varint,6,opt,name=info_count,json=infoCount,proto3" json:"info_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -291,6 +296,27 @@ func (x *CheckReport) GetTruncated() bool {
 	return false
 }
 
+func (x *CheckReport) GetErrorCount() uint32 {
+	if x != nil {
+		return x.ErrorCount
+	}
+	return 0
+}
+
+func (x *CheckReport) GetWarningCount() uint32 {
+	if x != nil {
+		return x.WarningCount
+	}
+	return 0
+}
+
+func (x *CheckReport) GetInfoCount() uint32 {
+	if x != nil {
+		return x.InfoCount
+	}
+	return 0
+}
+
 var File_paprika_insights_v1_checks_proto protoreflect.FileDescriptor
 
 const file_paprika_insights_v1_checks_proto_rawDesc = "" +
@@ -303,11 +329,16 @@ const file_paprika_insights_v1_checks_proto_rawDesc = "" +
 	"\twidget_id\x18\x04 \x01(\tR\bwidgetId\x12\x18\n" +
 	"\apointer\x18\x05 \x01(\tR\apointer\x12\x18\n" +
 	"\amessage\x18\x06 \x01(\tR\amessage\x12\x10\n" +
-	"\x03fix\x18\a \x01(\tR\x03fix\"|\n" +
+	"\x03fix\x18\a \x01(\tR\x03fix\"\xe1\x01\n" +
 	"\vCheckReport\x129\n" +
 	"\x06issues\x18\x01 \x03(\v2!.paprika.insights.v1.CheckFindingR\x06issues\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\rR\x05total\x12\x1c\n" +
-	"\ttruncated\x18\x03 \x01(\bR\ttruncated*a\n" +
+	"\ttruncated\x18\x03 \x01(\bR\ttruncated\x12\x1f\n" +
+	"\verror_count\x18\x04 \x01(\rR\n" +
+	"errorCount\x12#\n" +
+	"\rwarning_count\x18\x05 \x01(\rR\fwarningCount\x12\x1d\n" +
+	"\n" +
+	"info_count\x18\x06 \x01(\rR\tinfoCount*a\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rSEVERITY_INFO\x10\x01\x12\x14\n" +

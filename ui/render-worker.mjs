@@ -14,7 +14,7 @@ const failureCategories=new Set([
   "render_failed","request_invalid","request_bounds","render_deadline",
   "browser_start","browser_context","ui_navigation","ui_readiness",
   "widget_readiness","widget_error","focus_unavailable","network_error",
-  "redirect_rejected","insights_http","query_error","script_error",
+  "redirect_rejected","insights_http","query_error","script_error","visual_check_failed",
   "revision_conflict","screenshot_bounds","screenshot_failed",
 ])
 
@@ -133,6 +133,8 @@ function readBody(req,signal) {
 
 async function render(params, bearer, origin, signal, etag) {
   const started=performance.now()
+  // Visual checks change what a failed query means, so the flag is read by the route handler too.
+  const checking=params.checks===true
   signal.throwIfAborted()
   browserPromise ??= chromium.launch({headless:true,timeout:8000,args:["--no-sandbox"]}).catch(()=>{browserPromise=undefined;throw new RenderError("browser_start")})
   const b=await abortable(browserPromise,signal)
@@ -173,7 +175,9 @@ async function render(params, bearer, origin, signal, etag) {
           await route.abort("blockedbyclient").catch(()=>{})
           return
         }
-        if(new URL(target).pathname==="/api/insights/query" && response.ok()) {
+        // With visual checks, a query error envelope is shown by its widget and attributed by the
+        // probe, so the render continues. Document and listing reads still fail the render.
+        if(!checking && new URL(target).pathname==="/api/insights/query" && response.ok()) {
           const result=await response.json()
           if(typeof result?.error==="string" && result.error.trim()) {
             fail(new RenderError("query_error",422,response.status()))
@@ -195,7 +199,9 @@ async function render(params, bearer, origin, signal, etag) {
       // read paths. Let it finish its bounded retry; persistent failures still
       // fail the widget/error/deadline checks below, never produce a PNG.
       const retry=response.status()===429 && supportsCapacityRetry(path,response.request().method())
-      if (path.startsWith("/api/insights/") && response.status()>=400 && !retry) fail(new RenderError("insights_http",422,response.status()))
+      // A failed query under visual checks is attributed to its widget by the probe; see the route handler.
+      const attributable=checking && path==="/api/insights/query" && response.request().method()==="POST"
+      if (path.startsWith("/api/insights/") && response.status()>=400 && !retry && !attributable) fail(new RenderError("insights_http",422,response.status()))
       if(path==="/api/insights/dashboards/"+params.id && response.request().method()==="GET" && response.ok()) {
         observedETag=response.headers()["x-paprika-document-etag"]??response.headers().etag
         if(observedETag!==etag)fail(new RenderError("revision_conflict",409))
@@ -209,7 +215,6 @@ async function render(params, bearer, origin, signal, etag) {
     const tiles=page.locator("[data-widget-id]")
     // With visual checks a widget error is a finding with its widget id, and the
     // render continues. A PNG-only capture still fails on it, as it always has.
-    const checking=params.checks===true
     const rejectWidgetErrors=async target=>{
       // An authorized dashboard can reference a provider the viewer cannot
       // read. That is rendered as an alert without making a failing HTTP call.
@@ -237,7 +242,9 @@ async function render(params, bearer, origin, signal, etag) {
     let checks=null,probeMs=0
     if (checking) {
       phase="visual_checks"
-      const probed=await page.evaluate(dashboardProbe,{})
+      let probed
+      try { probed=await page.evaluate(dashboardProbe,{}) }
+      catch { throw new RenderError("visual_check_failed") }
       if(failure)throw failure
       checks=probed.findings
       probeMs=probed.probeMs
@@ -293,12 +300,20 @@ async function render(params, bearer, origin, signal, etag) {
   }
 }
 
-// checkReport bounds the visual findings to the CheckReport list shape: the first
-// maxCheckIssues findings, the total count and whether any were omitted.
+// Severity rank for the report order: errors first, then warnings, then info.
+const severityRank={SEVERITY_ERROR:0,SEVERITY_WARNING:1,SEVERITY_INFO:2}
+
+// checkReport is the CheckReport list shape. Issues are ordered errors first, then
+// page-level findings before widget findings, then probe order. The per-severity
+// counts cover every finding, so a truncated list never hides how many errors there are.
 export function checkReport(findings) {
   if (findings===null) return null
-  const issues=findings.slice(0,maxCheckIssues)
-  return {issues,total:findings.length,truncated:findings.length>issues.length}
+  const ordered=findings.map((finding,index)=>({finding,index})).sort((a,b)=>
+    (severityRank[a.finding.severity]??3)-(severityRank[b.finding.severity]??3) ||
+    (a.finding.widgetId?1:0)-(b.finding.widgetId?1:0) || a.index-b.index).map(item=>item.finding)
+  const issues=ordered.slice(0,maxCheckIssues)
+  const count=severity=>findings.filter(finding=>finding.severity===severity).length
+  return {issues,total:findings.length,errorCount:count("SEVERITY_ERROR"),warningCount:count("SEVERITY_WARNING"),infoCount:count("SEVERITY_INFO"),truncated:findings.length>issues.length}
 }
 
 export function createRenderServer({secret,uiOrigin,renderPage=render,timeoutMs=maxTime}) {

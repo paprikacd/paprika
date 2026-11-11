@@ -230,33 +230,63 @@ async function renderChecks(args,etag,token=fixture.viewerToken) {
 }
 const summarise=report=>report.issues.map(issue=>`${issue.severity.replace("SEVERITY_","")} ${issue.ruleId} ${issue.widgetId||"(page)"}`)
 
-// A failed Insights query must fail a checks-only render too. The probe would
-// otherwise report a clean page for a screen that never loaded its data.
-async function verifyChecksFailClosed(dashboard) {
-  const created=await tool("create_dashboard",{document:{...dashboard,id:"mcp-render-checks-fail",widgets:[dashboard.widgets[1]]}})
-  const proxy=fixtureProxy((req,res)=>{
-    req.resume()
-    res.writeHead(500,{"Content-Type":"application/json"}).end('{"error":"fixture query failed"}')
-    return true
-  })
-  let failing
-  try {
-    await new Promise(resolve=>proxy.listen(0,"127.0.0.1",resolve))
-    failing=createRenderServer({secret,uiOrigin:"http://127.0.0.1:"+proxy.address().port})
-    await new Promise(resolve=>failing.listen(0,"127.0.0.1",resolve))
-    const response=await fetch("http://127.0.0.1:"+failing.address().port+"/render",{
-      method:"POST",headers:{Authorization:"Bearer "+fixture.viewerToken,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":created.etag,"Content-Type":"application/json",Accept:"application/json"},
-      body:JSON.stringify({id:created.document.id,checks_only:true}),signal:AbortSignal.timeout(25_000),
+// Document and listing reads are the render's source of truth. When one fails, the
+// probe would judge a screen that never loaded its data, so the render fails closed
+// even with checks. A failed query is different: the UI shows the error on its own
+// tile, so the probe attributes it to that widget and the render still returns.
+function failingProxy(matches,status) {
+  return createServer((req,res)=>{
+    if(matches(req)) {
+      req.resume()
+      res.writeHead(status,{"Content-Type":"application/json"}).end('{"error":"fixture read failed"}')
+      return
+    }
+    const target=new URL(req.url,fixture.baseURL)
+    const upstream=httpRequest(target,{method:req.method,headers:{...req.headers,host:target.host}},response=>{
+      res.writeHead(response.statusCode,response.headers)
+      response.pipe(res)
     })
-    assert.notEqual(response.status,200,"a checks-only render over a failed query must not return a clean report")
-    assert.equal(response.headers.get("x-paprika-render-failure"),"insights_http")
-    await response.arrayBuffer()
-    console.log("PASS checks-only render fails closed when the Insights query fails")
+    upstream.on("error",()=>{if(!res.headersSent)res.writeHead(502);res.end()})
+    res.on("close",()=>upstream.destroy())
+    req.pipe(upstream)
+  })
+}
+async function renderThroughFailingProxy(dashboard,matches,status,{checks=true}={}) {
+  let proxy,worker
+  try {
+    proxy=failingProxy(matches,status)
+    await new Promise(resolve=>proxy.listen(0,"127.0.0.1",resolve))
+    worker=createRenderServer({secret,uiOrigin:"http://127.0.0.1:"+proxy.address().port})
+    await new Promise(resolve=>worker.listen(0,"127.0.0.1",resolve))
+    const headers={Authorization:"Bearer "+fixture.viewerToken,"X-Paprika-Render-Secret":secret,"X-Paprika-Dashboard-ETag":dashboard.etag,"Content-Type":"application/json"}
+    if(checks)headers.Accept="application/json"
+    const response=await fetch("http://127.0.0.1:"+worker.address().port+"/render",{method:"POST",headers,body:JSON.stringify({id:dashboard.document.id,...(checks?{checks_only:true}:{})}),signal:AbortSignal.timeout(25_000)})
+    const body=response.status===200&&checks?await response.json():null
+    if(!body)await response.arrayBuffer()
+    return {response,body}
   } finally {
-    for(const server of [failing,proxy])if(server?.listening) {
+    for(const server of [worker,proxy])if(server?.listening) {
       server.closeAllConnections();await new Promise(resolve=>server.close(resolve))
     }
   }
+}
+async function verifyChecksFailClosed(dashboard) {
+  const created=await tool("create_dashboard",{document:{...dashboard,id:"mcp-render-checks-fail",widgets:[dashboard.widgets[1]]}})
+  const document={document:created.document,etag:created.etag}
+  const listing=await renderThroughFailingProxy(document,req=>req.method==="GET"&&req.url.startsWith("/api/insights/providers"),500)
+  assert.equal(listing.response.status,422,"a failed listing read must fail the render even with checks")
+  assert.equal(listing.response.headers.get("x-paprika-render-failure"),"insights_http")
+  console.log("PASS checks fail closed when a listing read fails")
+  const query=await renderThroughFailingProxy(document,req=>req.method==="POST"&&req.url==="/api/insights/query",500)
+  assert.equal(query.response.status,200,"a failed query is attributed by the probe, not treated as a failed render")
+  const attributed=query.body.checks.issues.filter(issue=>issue.widgetId===dashboard.widgets[1].id&&issue.ruleId==="visual.widget-error")
+  assert.equal(attributed.length,1,`the failed query is a widget error on its own widget: ${JSON.stringify(query.body.checks.issues)}`)
+  assert.equal(attributed[0].severity,"SEVERITY_ERROR")
+  console.log("PASS a failed query is a visual.widget-error on its own widget, and the render still returns")
+  const legacy=await renderThroughFailingProxy(document,req=>req.method==="POST"&&req.url==="/api/insights/query",500,{checks:false})
+  assert.equal(legacy.response.status,422,"a PNG-only caller still fails closed on a failed query")
+  assert.equal(legacy.response.headers.get("x-paprika-render-failure"),"insights_http")
+  console.log("PASS PNG-only renders keep failing closed on a failed query")
 }
 
 // Fixture dashboards trigger one visual condition each, on a widget that is
@@ -289,13 +319,18 @@ async function verifyVisualChecks(providerId) {
   }
   const report=await renderChecks({id:defects.document.id,width:1512,theme:"dark",checks_only:true},defects.etag)
   const found=(widget,rule)=>report.checks.issues.filter(issue=>issue.widgetId===widget&&issue.ruleId===rule)
+  const severityOf=name=>report.checks.issues.filter(issue=>issue.severity===name).length
+  assert.equal(report.checks.errorCount,severityOf("SEVERITY_ERROR"),"the error count matches the listed errors when nothing is truncated")
+  assert.equal(report.checks.warningCount,severityOf("SEVERITY_WARNING"))
+  assert.equal(report.checks.truncated,false)
   assert.equal(found("scroll-stat","visual.clipped-text").length,1,`stat value cut off: ${summarise(report.checks).join("; ")}`)
   assert.equal(found("scroll-stat","visual.clipped-text")[0].severity,"SEVERITY_ERROR")
   assert.equal(found("scroll-stat","visual.internal-scroll").length,1,"a collapsed stat body is a scroller")
   assert.equal(found("clip-stat","visual.clipped-text")[0]?.severity,"SEVERITY_ERROR","a unit cut at the tile edge")
   assert.equal(found("missing-provider","visual.widget-error")[0]?.severity,"SEVERITY_ERROR","an unbound provider is a widget error with its id")
   assert.equal(found("plot-range","visual.empty-plot")[0]?.severity,"SEVERITY_WARNING","data scaled outside the plot draws nothing")
-  assert.equal(found("table-short","visual.internal-scroll").length,1,"a table body that scrolls internally")
+  // A table body is a focusable, named region (role=region, aria-label), so its scrolling is designed and not a finding.
+  assert.equal(found("table-short","visual.internal-scroll").length,0,"a named table region is an intentional scroll region")
   for (const widget of ["ok-stat","plot-ok"]) assert.deepEqual(report.checks.issues.filter(issue=>issue.widgetId===widget),[],`${widget} is healthy`)
   assert.ok(report.checks.issues.every(issue=>issue.source===undefined||issue.source==="SOURCE_VISUAL"),"visual findings carry the visual source")
   assert.ok(report.checks.issues.every(issue=>issue.ruleId.startsWith("visual.")))
@@ -315,6 +350,7 @@ async function verifyVisualChecks(providerId) {
 
 // Real layout, synthetic markup: each rule has a positive and a negative page, so
 // the rule conditions are exercised without the Insights stack.
+const detailRows="<p style=\"margin:0\">Row of text</p>".repeat(8)
 const probeCases=[
   {name:"page overflow",width:390,positive:'<div data-widget-id="wide" style="width:700px;height:30px">wide</div>',negative:'<div data-widget-id="wide" style="width:300px;height:30px">fits</div>',rule:"visual.page-overflow@:SEVERITY_ERROR"},
   {name:"metric value clipped",width:390,positive:'<article data-widget-id="kpi" style="width:150px;height:60px;overflow:hidden"><div data-metric-value="1" style="white-space:nowrap;font-size:28px">101.23 <span style="font-size:14px">req per second long unit</span></div></article>',negative:'<article data-widget-id="kpi" style="width:400px;height:60px;overflow:hidden"><div data-metric-value="1" style="white-space:nowrap;font-size:28px">101.23 <span style="font-size:14px">req/s</span></div></article>',rule:"visual.clipped-text@kpi:SEVERITY_ERROR"},
@@ -323,6 +359,16 @@ const probeCases=[
   {name:"body scrolls",width:390,positive:'<article data-widget-id="rows" style="width:300px;height:60px"><div style="height:60px;overflow-y:auto">'+"<p style=\"margin:0\">Row of text</p>".repeat(8)+'</div></article>',negative:'<article data-widget-id="rows" style="width:300px;height:60px"><div style="height:60px;overflow-y:auto"><p style="margin:0">Row</p></div></article>',rule:"visual.internal-scroll@rows:SEVERITY_WARNING"},
   {name:"plot has data but draws nothing",width:390,positive:'<div data-widget-id="flat" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"><line x1="0" y1="140" x2="300" y2="140" stroke="#999"/></svg></div>',negative:'<div data-widget-id="flat" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"><line x1="0" y1="140" x2="300" y2="140" stroke="#999"/><path d="M0,100 L300,50" stroke="#557EAA" stroke-width="1.8" fill="none"/></svg></div>',rule:"visual.empty-plot@flat:SEVERITY_WARNING"},
   {name:"widget error state",width:390,positive:'<article data-widget-id="broken" style="width:300px"><div role="alert" style="height:30px">Query failed</div></article>',negative:'<article data-widget-id="broken" style="width:300px"><p>Fine</p></article>',rule:"visual.widget-error@broken:SEVERITY_ERROR"},
+  // Closed details: Chromium lays out a closed body, but it is not visible, so it is not a scroller.
+  {name:"closed details body is not visible",width:390,positive:'<article data-widget-id="closed" style="width:300px"><details open><summary>More</summary><div style="height:40px;overflow-y:auto">'+detailRows+'</div></details></article>',negative:'<article data-widget-id="closed" style="width:300px"><details><summary>More</summary><div style="height:40px;overflow-y:auto">'+detailRows+'</div></details></article>',rule:"visual.internal-scroll@closed:SEVERITY_WARNING"},
+  // A focusable, named region scrolls by design (records, traces, events). An unnamed body is a defect.
+  {name:"named scroll region is intentional",width:390,positive:'<article data-widget-id="records" style="width:300px;height:60px"><div style="height:60px;overflow-y:auto">'+detailRows+'</div></article>',negative:'<article data-widget-id="records" style="width:300px;height:60px"><div role="region" tabindex="0" aria-label="Recent records" style="height:60px;overflow-y:auto">'+detailRows+'</div></article>',rule:"visual.internal-scroll@records:SEVERITY_WARNING"},
+  // Line-clamped text is truncated on purpose, like text-overflow ellipsis.
+  {name:"line-clamped description is intentional",width:390,positive:'<article data-widget-id="clamp" style="width:150px"><p style="margin:0;height:40px;overflow:hidden">A description that wraps over several lines and runs past the height of its box.</p></article>',negative:'<article data-widget-id="clamp" style="width:150px"><p style="margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">A description that wraps over several lines and runs past the height of its box.</p></article>',rule:"visual.clipped-text@clamp:SEVERITY_WARNING"},
+  // An all-zero bar chart draws nothing because its values are zero, not because the plot is broken.
+  {name:"all-zero bars are not an empty plot",width:390,positive:'<div data-widget-id="bars" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"></svg><span data-legend-value="5">5</span></div>',negative:'<div data-widget-id="bars" data-series-count="1" style="width:300px"><svg role="img" width="300" height="150"></svg><span data-legend-value="0">0</span></div>',rule:"visual.empty-plot@bars:SEVERITY_WARNING"},
+  // A time series with its legend hidden still reports its series on the chart root.
+  {name:"time series without a legend is checked",width:390,positive:'<div data-widget-id="noleg" data-series-count="2" style="width:300px"><svg role="img" width="300" height="150"><line x1="0" y1="140" x2="300" y2="140" stroke="#999"/></svg></div>',negative:'<div data-widget-id="noleg" data-series-count="2" style="width:300px"><svg role="img" width="300" height="150"><path d="M0,100 L300,50" stroke="#557EAA" stroke-width="1.8" fill="none"/></svg></div>',rule:"visual.empty-plot@noleg:SEVERITY_WARNING"},
 ]
 async function verifyProbeRuleMatrix() {
   const browser=await chromium.launch({headless:true,args:["--no-sandbox"]})

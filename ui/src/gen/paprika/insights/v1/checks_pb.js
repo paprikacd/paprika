@@ -63,6 +63,8 @@ export const CheckFinding = /*@__PURE__*/ proto3.makeMessageType(
  * CheckReport is the one list shape for issues: the 400 response to a rejected
  * save and the validate dry run both carry it. Issues holds at most 32 entries;
  * total counts every finding, and truncated is true when some were omitted.
+ * The per-severity counts cover every finding, not only the listed ones, so a
+ * truncated list never understates how many errors a check found.
  *
  * @generated from message paprika.insights.v1.CheckReport
  */
@@ -72,6 +74,9 @@ export const CheckReport = /*@__PURE__*/ proto3.makeMessageType(
     { no: 1, name: "issues", kind: "message", T: CheckFinding, repeated: true },
     { no: 2, name: "total", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 3, name: "truncated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 4, name: "error_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "warning_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "info_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
   ],
 );
 

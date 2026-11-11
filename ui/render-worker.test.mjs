@@ -214,7 +214,7 @@ test("check reports keep at most the wire bound and count every finding",()=>{
   assert.equal(report.issues.length,maxCheckIssues)
   assert.equal(report.total,maxCheckIssues+8)
   assert.equal(report.truncated,true)
-  assert.deepEqual(checkReport([]),{issues:[],total:0,truncated:false})
+  assert.deepEqual(checkReport([]),{issues:[],total:0,errorCount:0,warningCount:0,infoCount:0,truncated:false})
 })
 
 test("visual checks return JSON with findings, timings and the image, and checks_only omits the image",async()=>{
@@ -230,7 +230,7 @@ test("visual checks return JSON with findings, timings and the image, and checks
     assert.equal(withImage.headers.get("x-paprika-dashboard-etag"),etag)
     const body=await withImage.json()
     assert.equal(Buffer.from(body.png,"base64").toString(),"fixture PNG")
-    assert.deepEqual(body.checks,{issues:[finding],total:1,truncated:false})
+    assert.deepEqual(body.checks,{issues:[finding],total:1,errorCount:0,warningCount:1,infoCount:0,truncated:false})
     assert.deepEqual(body.timings,{readyMs:3,probeMs:1,renderMs:9})
     assert.equal(seen.at(-1).checks,true)
 
@@ -246,4 +246,21 @@ test("visual checks return JSON with findings, timings and the image, and checks
     assert.equal(seen.at(-1).checks,false,"PNG-only callers do not pay for the probe")
     await plain.arrayBuffer()
   })
+})
+
+test("truncation keeps errors and page-level findings first, and counts every severity before truncating",()=>{
+  const warning=widgetId=>({ruleId:"visual.internal-scroll",severity:"SEVERITY_WARNING",source:"SOURCE_VISUAL",widgetId,pointer:"",message:"m",fix:"f"})
+  const error=(ruleId,widgetId)=>({ruleId,severity:"SEVERITY_ERROR",source:"SOURCE_VISUAL",widgetId,pointer:"",message:"m",fix:"f"})
+  const findings=[...Array.from({length:40},(_,i)=>warning("w"+i)),error("visual.widget-error","broken"),error("visual.page-overflow","")]
+  const report=checkReport(findings)
+  assert.deepEqual(report.issues.slice(0,2).map(item=>item.ruleId),["visual.page-overflow","visual.widget-error"],"errors come first, page-level before widget")
+  assert.equal(report.issues.length,maxCheckIssues)
+  assert.equal(report.total,42)
+  assert.equal(report.errorCount,2,"the error count is true even when the list is cut")
+  assert.equal(report.warningCount,40)
+  assert.equal(report.infoCount,0)
+  assert.equal(report.truncated,true)
+  const onlyErrors=checkReport(Array.from({length:40},(_,i)=>error("visual.clipped-text","c"+i)))
+  assert.equal(onlyErrors.errorCount,40)
+  assert.equal(onlyErrors.issues.every(item=>item.severity==="SEVERITY_ERROR"),true)
 })
