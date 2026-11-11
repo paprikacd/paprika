@@ -1200,6 +1200,119 @@ func toolResult(v any) (*sdkmcp.CallToolResult, error) {
 	}, nil
 }
 
+// CheckedResult renders a successful dashboard write or check. structuredContent
+// is the payload with a checks member holding the report, and content[0] is that
+// same JSON, as the MCP spec expects, so a client that drops structuredContent
+// can still parse content[0]. content[1] is the checks verdict and the bounded
+// issue list as text. A nil payload makes the checks object the whole result
+// (validate_dashboard). A nil report on a write leaves the payload as toolResult
+// renders it, for a service that does not send checks.
+func CheckedResult(payload any, report *insightsv1.CheckReport) (*sdkmcp.CallToolResult, error) {
+	if report == nil && payload != nil {
+		return toolResult(payload)
+	}
+	if report == nil {
+		report = &insightsv1.CheckReport{}
+	}
+	section, structured, err := renderCheckSection(report)
+	if err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return checksOnlyResult(section, structured)
+	}
+	return checkedWriteResult(payload, section, structured)
+}
+
+// checksOnlyResult is the validate_dashboard result: the report as structured
+// content and as its JSON text, then the verdict and issue lines.
+func checksOnlyResult(section string, structured map[string]any) (*sdkmcp.CallToolResult, error) {
+	data, err := json.Marshal(structured)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checks: %w", err)
+	}
+	return checkedContent(data, section), nil
+}
+
+// checkedWriteResult is a successful write: the payload object with a checks
+// member, as structured content and as its JSON text, then the verdict and
+// issue lines. checks sits beside the document and never inside it.
+func checkedWriteResult(payload any, section string, structured map[string]any) (*sdkmcp.CallToolResult, error) {
+	data, err := marshalToolResult(payload)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil || fields == nil {
+		return nil, errors.New("mcp: checked result payload must be a JSON object")
+	}
+	checks, err := json.Marshal(structured)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checks: %w", err)
+	}
+	fields["checks"] = checks
+	withChecks, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checked result: %w", err)
+	}
+	return checkedContent(withChecks, section), nil
+}
+
+// checkedContent pairs the structured JSON, repeated as the first text block,
+// with the checks section as the second.
+func checkedContent(structuredJSON []byte, section string) *sdkmcp.CallToolResult {
+	return &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: string(structuredJSON)},
+			&sdkmcp.TextContent{Text: section},
+		},
+		StructuredContent: json.RawMessage(structuredJSON),
+	}
+}
+
+// renderCheckSection is the agent-facing checks section: a verdict line, then
+// the same bounded, escaped issue list a failed save renders. The verdict counts
+// come from the report's severity counts, which cover findings past the cap.
+func renderCheckSection(report *insightsv1.CheckReport) (section string, structured map[string]any, err error) {
+	list, err := newIssueList(report)
+	if err != nil {
+		return "", nil, err
+	}
+	errorsCount, warnings, infos := report.GetErrorCount(), report.GetWarningCount(), report.GetInfoCount()
+	verdict := fmt.Sprintf("Checks: %s, %s", countWord(errorsCount, "error"), countWord(warnings, "warning"))
+	if errorsCount == 0 && warnings == 0 {
+		verdict = "Checks passed"
+	}
+	if infos > 0 {
+		verdict += " (" + countWord(infos, "info note") + ")"
+	}
+	lines := []string{verdict}
+	if len(list.structured) > 0 {
+		lines = append(lines, list.lines...)
+	}
+	issues := list.structured
+	if issues == nil {
+		issues = []json.RawMessage{}
+	}
+	structured = map[string]any{
+		"errorCount":   errorsCount,
+		"warningCount": warnings,
+		"infoCount":    infos,
+		"total":        list.total,
+		"truncated":    list.truncated,
+		"issues":       issues,
+	}
+	return strings.Join(lines, "\n"), structured, nil
+}
+
+// countWord writes a count with its word, pluralised for anything but one.
+func countWord(n uint32, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
+}
+
 // PreviewToolResult is toolResult for tools whose payload can be large (the
 // observability gateway's query tools): structuredContent carries the full
 // value verbatim, while the TextContent fallback renders at most maxTextBytes

@@ -101,6 +101,10 @@ func (h *authoringHarness) call(t *testing.T, p *auth.Principal, name string, ar
 	require.NoError(t, err)
 	var object map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(encoded, &object))
+	// A write returns a CallToolResult; its fields are the structured content.
+	if structured, ok := object["structuredContent"]; ok {
+		require.NoError(t, json.Unmarshal(structured, &object))
+	}
 	return object, nil
 }
 
@@ -232,7 +236,7 @@ func TestInsightsAuthoringListsAreCompactAndToolsDoNotExposeDeletion(t *testing.
 	require.NoError(t, err)
 	require.Contains(t, string(dashboards["dashboards"]), `"widgetCount":0`)
 	require.NotContains(t, string(dashboards["dashboards"]), `"widgets"`)
-	require.Len(t, h.registry.All(), 13)
+	require.Len(t, h.registry.All(), 14)
 	for _, tool := range h.registry.All() {
 		require.False(t, strings.HasPrefix(tool.Name, "delete_"))
 		require.True(t, json.Valid(tool.InputSchema))

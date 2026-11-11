@@ -195,8 +195,10 @@ try {
     assert.ok(empty.signals.every(s => s.state === "empty"))
     const broken = structuredClone(dashboard)
     broken.id = "machine-partial"
-    broken.widgets.push({ ...structuredClone(dashboard.widgets[0]), id: "missing", queryRef: { id: "does-not-exist" } })
-    const failing = { ...structuredClone(dashboard.widgets[0]), id: "failure", query: "unavailable_fixture_metric" }
+    // The base grid fills rows 0-7, so the extra widgets sit in the next free row,
+    // as the canvas would place them. Overlapping layouts are rejected on save.
+    broken.widgets.push({ ...structuredClone(dashboard.widgets[0]), id: "missing", queryRef: { id: "does-not-exist" }, layout: { x: 0, y: 8, w: 6, h: 4 } })
+    const failing = { ...structuredClone(dashboard.widgets[0]), id: "failure", query: "unavailable_fixture_metric", layout: { x: 6, y: 8, w: 6, h: 4 } }
     delete failing.queryRef
     broken.widgets.push(failing)
     await tool("create_dashboard", { document: broken }, fixture.mcpWriteToken)
