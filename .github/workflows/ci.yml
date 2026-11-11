@@ -239,8 +239,8 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all)"
 
       - name: Lint Insights dashboard documents
-        # Checks the repository examples catalog, the served schema examples, the gallery
-        # export and the reference e2e fixtures with the save-path rules. Error findings fail the step;
+        # Checks the repository examples catalog, the served schema examples, the first-party
+        # starters, the gallery export and the reference e2e fixtures with the save-path rules. Error findings fail the step;
         # warnings are printed and do not.
         run: |
           set -euo pipefail
@@ -248,7 +248,7 @@ jobs:
           trap 'rm -rf -- "$work"' EXIT
           node --experimental-strip-types demo/insights-gallery/export-documents.mjs "$work/gallery"
           node --experimental-strip-types ui/e2e/fixtures/export-reference-documents.mjs "$work/reference"
-          go run ./cmd/paprika-insights lint --served-schema-examples ui/src/features/insights/repository-examples/catalog.json "$work/gallery" "$work/reference"
+          go run ./cmd/paprika-insights lint --served-schema-examples ui/src/features/insights/repository-examples/catalog.json internal/insights/starters "$work/gallery" "$work/reference"
 
   chart:
     name: Helm chart

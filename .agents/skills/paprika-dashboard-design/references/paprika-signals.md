@@ -90,7 +90,7 @@ is in the block below the table.
 | `paprika_build_info` | `paprika_build_info` | Gauge | `version`, `commit`, `go_version` | Build identity of the running paprika binary (version, commit, go toolchain) | — | — |
 | `paprika_canary_step_total` | `paprika_canary_step_total` | Counter | `release`, `namespace`, `stage` | Number of canary weight step transitions | — | — |
 | `paprika_canary_weight_current` | `paprika_canary_weight_current` | Gauge | `release`, `namespace`, `stage` | Current canary traffic weight percentage | — | — |
-| `paprika_controller_last_reconcile_timestamp_seconds` | `paprika.controller.last_reconcile.timestamp` | Gauge | `controller`, `result` | Unix timestamp of the last reconcile attempt, by controller and result | `metrics.md` query flags more than 5 minutes without a successful or requeued reconcile | See the query below the table. |requeue_after"}) > 300` |
+| `paprika_controller_last_reconcile_timestamp_seconds` | `paprika.controller.last_reconcile.timestamp` | Gauge | `controller`, `result` | Unix timestamp of the last reconcile attempt, by controller and result | `metrics.md` query flags more than 300 s without a successful reconcile | See the query below the table. |
 | `paprika_coordinator_heartbeat_failures_total` | `paprika_coordinator_heartbeat_failures_total` | Counter | — | Number of failed coordinator heartbeat attempts | — | — |
 | `paprika_coordinator_heartbeat_seconds` | `paprika_coordinator_heartbeat_seconds` | Histogram | — | Coordinator heartbeat round-trip latency in seconds | — | — |
 | `paprika_coordinator_replicas` | `paprika_coordinator_replicas` | Gauge | — | Number of active replicas in the coordinator ring | — | — |
@@ -176,7 +176,8 @@ From the "Useful queries" block in `docs/guides/metrics.md`. These are queries, 
 
 ```promql
 # Controllers that have not completed a reconcile in five minutes.
+# Controllers record result="success", "error", or "fail" (releases only); only success counts.
 time() - max by (controller) (
-  paprika_controller_last_reconcile_timestamp_seconds{result=~"success|requeue_after"}
+  paprika_controller_last_reconcile_timestamp_seconds{result="success"}
 ) > 300
 ```

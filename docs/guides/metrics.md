@@ -104,8 +104,9 @@ Useful queries:
 
 ```promql
 # Controllers that have not completed a reconcile in five minutes.
+# Controllers record result="success", "error", or "fail" (releases only); only success counts.
 time() - max by (controller) (
-  paprika_controller_last_reconcile_timestamp_seconds{result=~"success|requeue_after"}
+  paprika_controller_last_reconcile_timestamp_seconds{result="success"}
 ) > 300
 
 # Applications with unreconciled spec changes.
