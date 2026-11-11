@@ -2,7 +2,9 @@ package insights
 
 import (
 	"encoding/json"
+	"math"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -29,7 +31,7 @@ func TestThresholdConformanceFixtures(t *testing.T) {
 			if entry.JSONSchemaGap != "" {
 				// JSON Schema has no keyword for strictly increasing array values. Pin the known gap, so it
 				// stays visible rather than silently widening agreement.
-				require.Contains(t, []string{"ordering", "string-length"}, entry.JSONSchemaGap)
+				require.Equal(t, "ordering", entry.JSONSchemaGap)
 				require.NoError(t, jsonErr, "the embedded schema is expected to accept a %s case", entry.JSONSchemaGap)
 				return
 			}
@@ -53,7 +55,7 @@ type conformanceCase struct {
 	Name       string          `json:"name"`
 	Valid      bool            `json:"valid"`
 	Thresholds json.RawMessage `json:"thresholds"`
-	// JSONSchemaGap names a rule the published JSON Schema cannot express (ordering or string-length). The schema must accept such a case.
+	// JSONSchemaGap names the rule the published JSON Schema cannot express: strictly increasing values. The schema must accept such a case.
 	JSONSchemaGap string `json:"jsonSchemaGap"`
 }
 
@@ -82,4 +84,31 @@ func compileEmbeddedDashboardSchema(t *testing.T) *jsonschema.Schema {
 	schema, err := compiler.Compile(url)
 	require.NoError(t, err)
 	return schema
+}
+
+// A field of the wrong JSON type gets its own message, not the value-order message.
+func TestThresholdFieldTypeErrorsNameTheType(t *testing.T) {
+	for _, raw := range []string{
+		`{"value":0,"status":5}`,
+		`{"value":0,"color":5}`,
+		`{"value":0,"status":"ok","label":5}`,
+		`{"value":"0","status":"ok"}`,
+	} {
+		_, err := validateWidgetThreshold(json.RawMessage(raw), math.Inf(-1))
+		require.EqualError(t, err, "threshold value must be a number, and status, color and label must be strings", raw)
+	}
+	_, err := validateWidgetThreshold(json.RawMessage(`{"value":1,"status":"ok"}`), 1)
+	require.EqualError(t, err, "thresholds require increasing finite values")
+}
+
+// When several options are invalid at once, the reported field must be the same on every call. Map iteration order
+// is random in Go, so these two cases used to vary between calls.
+func TestOptionErrorsAreDeterministicWhenSeveralFieldsAreInvalid(t *testing.T) {
+	long, _ := json.Marshal(strings.Repeat("x", 121))
+	tooltip := map[string]json.RawMessage{"tooltipTitle": long, "tooltipValueLabel": json.RawMessage(`"` + strings.Repeat("y", 81) + `"`)}
+	appearance := map[string]json.RawMessage{"sparklinePlacement": json.RawMessage(`"top"`), "statIcon": json.RawMessage(`"rocket"`)}
+	for i := 0; i < 200; i++ {
+		require.EqualError(t, validateWidgetTooltipPresentation(tooltip), "tooltipTitle must be a string of at most 120 characters")
+		require.EqualError(t, validateWidgetAppearance(appearance), "invalid sparklinePlacement")
+	}
 }

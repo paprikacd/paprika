@@ -12,7 +12,7 @@ import { UTC_DAY, uptimeObservations, type ObservationDay } from "./uptime-obser
 import styles from "./uptime-views.module.css";
 
 const configSchema = z.strictObject({ maxDays: z.number().int().min(7).max(366).optional(), maxSeries: z.number().int().min(1).max(24).optional() });
-const defaultThresholds = [{ value: 0, status: "critical" as const, label: "Down" }, { value: 1, status: "ok" as const, label: "Up" }];
+export const defaultThresholds = [{ value: 0, status: "critical" as const, label: "Down" }, { value: 1, status: "ok" as const, label: "Up" }];
 const dayText = (day: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day * UTC_DAY));
 const monthText = (day: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", timeZone: "UTC" }).format(new Date(day * UTC_DAY));
 const stateText = (day: ObservationDay) => day.kind === "unknown" ? "No recorded value" : day.kind === "mixed" ? "Mixed or incomplete observations" : day.label ?? "Observed";

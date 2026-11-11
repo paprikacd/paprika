@@ -228,7 +228,8 @@ describe("trusted widget registry", () => {
       "aria-valuetext",
       "92% · Critical",
     );
-    expect(screen.getByText("92.0")).toHaveStyle({ color: "var(--gamma-status-critical, #881418)" });
+    // The reading is text, so it takes the critical text token, not the mark.
+    expect(screen.getByText("92.0").closest("[style]")).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-critical-text)"));
   });
 
   it("lets a plugin render its own all-null and empty result semantics", () => {

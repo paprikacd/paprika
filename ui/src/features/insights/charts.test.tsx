@@ -20,6 +20,7 @@ import chartStyles from "./charts.module.css";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
 import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
 import {
+  DEFAULT_HEATMAP_THRESHOLDS,
   contrastText,
   balancedHeatmapColumns,
   heatmapTooltipSizeLimit,
@@ -751,12 +752,12 @@ describe("widget visualizations", () => {
     const healthy = screen.getByRole("button", {
       name: "healthy-api: 1.0 · Healthy",
     });
-    expect(healthy).toHaveStyle({ background: "var(--gamma-status-ok, #59a26f)" });
+    // jsdom drops a var() background, so the status band is checked through its on-fill ink and the default bands' statuses.
+    expect(DEFAULT_HEATMAP_THRESHOLDS.map(({ status }) => status)).toEqual(["critical", "ok"]);
+    expect(healthy).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-ok-on)"));
     expect(
       screen.getByRole("button", { name: "failed-worker: 0.0 · Unhealthy" }),
-    ).toHaveStyle({
-      background: "var(--gamma-status-critical, #881418)",
-    });
+    ).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-critical-on)"));
     expect(
       screen.getByRole("button", { name: "missing-job: No data" }),
     ).toHaveStyle({

@@ -23,12 +23,12 @@
 .gridLine { stroke: var(--gamma-chart-grid, var(--gamma-border)); stroke-width: 1; }
 .baseline { stroke: var(--gamma-muted); stroke-width: 1; opacity: .5; }
 .crosshair { stroke: var(--gamma-ink); stroke-width: 1; stroke-dasharray: 4 4; pointer-events: none; }
-.annotationLine { stroke: var(--gamma-chart-1, #2867b9); stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .8; }
+.annotationLine { stroke: var(--gamma-status-info, #3f72b4); stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .8; }
 .annotationRange { fill: var(--gamma-muted, #697c73); opacity: .16; }
 .annotationRange[data-severity="info"] { fill: var(--gamma-status-info, #3f72b4); }
 .annotationRange[data-severity="warning"] { fill: var(--gamma-status-warning, #986111); }
 .annotationRange[data-severity="critical"] { fill: var(--gamma-status-critical, #7f0a12); }
-.annotationMarker { fill: var(--gamma-chart-1, #2867b9); }
+.annotationMarker { fill: var(--gamma-status-info, #3f72b4); }
 .annotationLine[data-severity="warning"] { stroke: var(--gamma-status-warning, #986111); }
 .annotationMarker[data-severity="warning"] { fill: var(--gamma-status-warning, #986111); }
 .annotationLine[data-severity="critical"] { stroke: var(--gamma-status-critical, #7f0a12); }

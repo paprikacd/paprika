@@ -52,7 +52,7 @@ export const STATUS_HEX: Record<StatusTheme, Record<string, string>> = {
     "--gamma-status-critical-soft": "#422b28",
     "--gamma-status-critical-text": "#f29c8e",
     "--gamma-status-critical-on": "#000000",
-    "--gamma-status-unknown": "#8d9ca6",
+    "--gamma-status-unknown": "#aab7bf",
     "--gamma-status-unknown-soft": "#26353e",
     "--gamma-status-unknown-text": "#b8c6cd",
     "--gamma-status-unknown-on": "#000000",

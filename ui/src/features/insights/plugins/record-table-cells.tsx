@@ -105,6 +105,14 @@ export function tableBarGeometry(value: number, min: number, max: number) {
   return { baseline, start: Math.min(baseline, end), end: Math.max(baseline, end), outside: value < min || value > max }
 }
 
+/**
+ * A threshold band is a solid fill, as a hex band always was, and carries its on-fill ink. Other colours keep the
+ * 18 % tint. Exported so the decision is testable where the DOM cannot show a var() background.
+ */
+export function colorBackgroundFill(fill: string, banded: boolean) {
+  return banded || /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
+}
+
 function paintOf(threshold: Threshold) {
   return thresholdPaint(threshold) ?? "var(--gamma-muted)"
 }
@@ -214,10 +222,7 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   const exact = finite ? exactMetric(value, unit) : "No data"
   const scale = isBar ? ` · Scale ${exactMetric(style.min!, unit)} to ${exactMetric(style.max!, unit)}${geometry?.outside ? " · Outside scale" : ""}` : ""
   const label = `${column.label ?? column.key}: ${exact}${threshold?.label ? ` · ${threshold.label}` : ""}${scale}`
-  // A threshold band is a solid fill, as a hex band always was, with its on-fill ink; other colours keep the tint.
-  const background = finite && style.display === "color-background"
-    ? threshold !== undefined || /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
-    : undefined
+  const background = finite && style.display === "color-background" ? colorBackgroundFill(fill, threshold !== undefined) : undefined
   const foreground = finite && style.display === "color-text" ? textColors.get(fill)
     : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background)
       : background && threshold ? thresholdInk(threshold) : undefined

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordTable, registerRecordWidgetPlugins } from "./records"
-import { tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
+import { StyledRecordCell, colorBackgroundFill, tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
 import { PluginConfigEditor } from "../plugin-config-editor"
 import { getWidgetDefinition } from "../widget-registry"
 import { contrastRatio } from "../appearance"
@@ -297,5 +297,31 @@ describe("status threshold cell paint", () => {
   it("uses the theme text token on the theme surface when no custom background is set", () => {
     const palette = tableTextPalette("dark", undefined, [{ value: 0, status: "critical" }]);
     expect(palette.get("var(--gamma-status-critical, #7f0a12)")).toBe("var(--gamma-status-critical-text)");
+  });
+});
+
+describe("status band cell fill", () => {
+  it("makes a banded colour-background cell solid and keeps the tint for a plain colour", () => {
+    expect(colorBackgroundFill("var(--gamma-status-critical, #7f0a12)", true)).toBe("var(--gamma-status-critical, #7f0a12)");
+    expect(colorBackgroundFill("#20cba3", false)).toBe("#20cba3");
+    expect(colorBackgroundFill("var(--gamma-chart-3)", false)).toBe("color-mix(in srgb, var(--gamma-chart-3) 18%, var(--widget-background, var(--gamma-bg)))");
+  });
+
+  it("renders a status band with its on-fill ink and the solid mark as the cell colour", () => {
+    const column = { key: "usage", label: "Usage", type: "number" as const };
+    const { container } = render(
+      <StyledRecordCell
+        value={92}
+        formatted="92"
+        column={column}
+        style={{ column: "usage", display: "color-background" }}
+        thresholds={[{ value: 0, status: "ok" }, { value: 90, status: "critical" }]}
+        textColors={new Map()}
+      />,
+    );
+    const cell = container.querySelector("[data-cell-display='color-background']") as HTMLElement;
+    // jsdom does not keep a var() background, so the fill is asserted through its custom property and ink.
+    expect(cell.style.getPropertyValue("--cell-color")).toBe("var(--gamma-status-critical, #7f0a12)");
+    expect(cell.getAttribute("style")).toContain("color: var(--gamma-status-critical-on)");
   });
 });

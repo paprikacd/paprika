@@ -400,7 +400,12 @@ func validateWidgetAxisLabels(options map[string]json.RawMessage) error {
 }
 
 func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error {
-	for field, limit := range map[string]int{"tooltipTitle": 120, "tooltipValueLabel": 80} {
+	// An ordered slice, not a map: when several fields are invalid, the reported field must not vary between calls.
+	for _, bound := range []struct {
+		field string
+		limit int
+	}{{"tooltipTitle", 120}, {"tooltipValueLabel", 80}} {
+		field, limit := bound.field, bound.limit
 		if value, ok := options[field]; ok {
 			var text string
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || stringUnits(text) > limit {
@@ -431,11 +436,15 @@ func validateWidgetAppearance(options map[string]json.RawMessage) error {
 	if err := validateWidgetEnum(options, "display", []string{"line", "area"}, "display must be line or area"); err != nil {
 		return err
 	}
-	for field, allowed := range map[string][]string{
-		"sparklinePlacement": {"background", "side"},
-		"statIcon":           {"arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"},
+	// Ordered, so the first invalid field reported is the same on every call.
+	for _, choice := range []struct {
+		field   string
+		allowed []string
+	}{
+		{"sparklinePlacement", []string{"background", "side"}},
+		{"statIcon", []string{"arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"}},
 	} {
-		if err := validateWidgetEnum(options, field, allowed, "invalid "+field); err != nil {
+		if err := validateWidgetEnum(options, choice.field, choice.allowed, "invalid "+choice.field); err != nil {
 			return err
 		}
 	}
@@ -675,7 +684,10 @@ func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, er
 		Color  string  `json:"color"`
 		Label  string  `json:"label"`
 	}
-	if json.Unmarshal(raw, &threshold) != nil || !finite(threshold.Value) || threshold.Value <= previous {
+	if err := json.Unmarshal(raw, &threshold); err != nil {
+		return 0, errors.New("threshold value must be a number, and status, color and label must be strings")
+	}
+	if !finite(threshold.Value) || threshold.Value <= previous {
 		return 0, errors.New("thresholds require increasing finite values")
 	}
 	if err := validateThresholdPaint(fields, threshold.Status, threshold.Color); err != nil {
@@ -759,7 +771,11 @@ func validateTooltipFlags(view map[string]json.RawMessage) error {
 }
 
 func validateTooltipText(view map[string]json.RawMessage) error {
-	for field, maximum := range map[string]int{"title": 120, "unit": 24} {
+	for _, bound := range []struct {
+		field   string
+		maximum int
+	}{{"title", 120}, {"unit", 24}} {
+		field, maximum := bound.field, bound.maximum
 		value, ok := view[field]
 		if !ok {
 			continue
