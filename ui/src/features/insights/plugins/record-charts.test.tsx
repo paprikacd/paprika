@@ -76,12 +76,19 @@ describe("record charts", () => {
     expect(entry.querySelector('[aria-hidden="true"]')).toHaveTextContent(/^Energy$/)
     expect(screen.getByTitle("Materials · short_interest")).toHaveTextContent("Materials")
   })
-  it("identifies a lone fallback record series by the widget title without restating it", () => {
+  it("omits the legend for a lone generic record series and keeps the chart name and full identity", () => {
     const result: QueryResult = {records:{columns:[{key:"day",type:"string"},{key:"value",label:"Value",type:"number"}],rows:[["Mon",1.61]]}}
-    render(<RecordLine widget={{...widget,id:"error-history",title:"Error budget burn rate",config:{x:"day",y:["value"]}}} result={result}/>)
-    const item = screen.getByRole("listitem", {name: "Error budget burn rate"})
-    expect(item).toHaveAttribute("title", "Error budget burn rate · Value")
-    expect(item).not.toHaveTextContent("Value")
+    const {container} = render(<RecordLine widget={{...widget,id:"error-history",title:"Error budget burn rate",config:{x:"day",y:["value"]}}} result={result}/>)
+    expect(screen.queryByRole("list",{name:"Plotted series"})).not.toBeInTheDocument()
+    expect(screen.queryByText("Value")).not.toBeInTheDocument()
+    const plot = screen.getByRole("group",{name:"Error budget burn rate"})
+    expect(plot.querySelector("title")).toHaveTextContent("Error budget burn rate · Value")
+    expect(container.querySelector('[data-record-mark]')).toHaveAttribute("aria-label", expect.stringContaining("Value"))
+  })
+  it("keeps the legend for a lone record series that is not a generic fallback", () => {
+    const result: QueryResult = {records:{columns:[{key:"day",type:"string"},{key:"latency",label:"latency",type:"number"}],rows:[["Mon",1.61]]}}
+    render(<RecordLine widget={{...widget,title:"Latency",config:{x:"day",y:["latency"]}}} result={result}/>)
+    expect(screen.getByRole("list",{name:"Plotted series"})).toHaveTextContent("latency")
   })
   it("uses separate numeric scales for the right axis and exposes annotations with exact timestamps", () => {
     const start="2026-10-27T01:00:00Z", end="2026-10-27T02:00:00Z"
