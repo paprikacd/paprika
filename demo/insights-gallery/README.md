@@ -30,7 +30,7 @@ With a new stack and its local gallery harness running, the read-only live
 check waits for a later worker tick and verifies both clusters' saved queries:
 
 ```sh
-node demo/insights-gallery/check-edge-continuation-live.mjs http://127.0.0.1:<harness-port>/
+node demo/insights-gallery/check-edge-continuation-live.mjs $PAPRIKA_GALLERY_BASE_URL
 ```
 
 ```sh
@@ -49,99 +49,145 @@ slower on macOS. Stopping the stack retains these files, including when
 `--delete-data` is requested; remove the selected state directory explicitly
 when finished. This mode never removes other Docker images, volumes or data.
 
-To seed the seven local gallery dashboards, the availability and query stress labs, and their saved queries into a
-separate Insights store, first build and serve the UI on loopback (use a free
-port and leave that server running):
+## One command: the gallery in a browser
+
+From the repository root, run:
 
 ```sh
-cd ui
-npm run build -- --webpack
-python3 -m http.server 3062 --bind 127.0.0.1 --directory out
+node demo/insights-gallery/up.mjs
 ```
 
-From the repository root, start the isolated Insights/Observe harness, using
-the private provider file printed by `start.py`:
+It starts the Docker providers with `start.py`, serves the UI export on a
+loopback port, and starts `serve.mjs` with a 12-hour session. It seeds the
+gallery dashboards into a fresh private store and prints one dashboard URL.
+The static export is built once with plain `npm run build` (the same command
+CI uses) and reused on later runs; pass `--rebuild-ui` after UI changes. The
+export is built by the default Turbopack compiler, so the old `--webpack` flag
+is no longer needed.
+
+No bearer token is printed, written to an environment file or given to the
+browser. The proxy adds its short-lived credential server-side. The run writes
+`gallery-env.sh` to its state directory. It exports only URLs and file paths:
+`INSIGHTS_E2E_URL` (static UI), `PAPRIKA_GALLERY_BASE_URL` (the proxy),
+`PAPRIKA_GALLERY_READY` (the receipt) and `PAPRIKA_GALLERY_PROVIDERS` (the
+private provider file that `start.py` wrote with mode 0600). Source it once in the
+shell where you run the checks below; every command in this README then works as
+written. `up.mjs` prints the receipt path and the environment file path.
+
+Each run's bearer-token state (`private-connection.json`, inside
+`artifacts/insights/gallery-insights-*`, directory mode 0700), the receipt, the
+environment file and the provider file are removed when the run stops. The Prometheus
+volume is kept.
+
+Press Ctrl-C (or send SIGTERM or SIGHUP) to stop everything the command started:
+the proxy, the harness, the static server and this run's containers. A second
+signal while cleanup runs is ignored. If the command was killed without a chance to
+clean up, the next `up.mjs` run stops and removes that earlier run's processes,
+containers and credential files, and only those it can identify. To stop a run
+containers-only from another shell, use the state directory printed at startup:
 
 ```sh
+python3 demo/insights-gallery/stop.py artifacts/insights/gallery-live-<id>
+```
+
+`stop.py` stops only the containers named in that run's state file, so another
+gallery stack on the same machine is left alone.
+
+## Manual steps
+
+These are the same steps `up.mjs` runs, for debugging one part at a time. The
+static export must exist first (`cd ui && npm run build`). Then export the variables
+the checks read, from the values the commands print:
+
+```sh
+export INSIGHTS_E2E_URL=http://127.0.0.1:3062/
+export PAPRIKA_GALLERY_BASE_URL=<url printed by serve.mjs>
+export PAPRIKA_GALLERY_READY=artifacts/insights/gallery-ready.json
+export PAPRIKA_GALLERY_PROVIDERS=$PAPRIKA_GALLERY_PROVIDERS
+```
+
+```sh
+python3 demo/insights-gallery/start.py
+python3 -m http.server 3062 --bind 127.0.0.1 --directory ui/out &
 node --experimental-strip-types demo/insights-gallery/serve.mjs \
-  --providers=artifacts/insights/gallery-live-<id>/providers.json \
+  --providers=$PAPRIKA_GALLERY_PROVIDERS \
   --ui-url=http://127.0.0.1:3062/ \
-  --ready-file=artifacts/insights/gallery-ready.json
+  --ready-file=artifacts/insights/gallery-ready.json \
+  --session-duration=12h
 ```
 
 Use the loopback URL printed by the harness to open **Local gallery demos**.
 Keep both servers and the Docker stack running. The proxy attaches a short-lived
 local test credential server-side; restart the harness for a fresh session.
-The default session lasts one hour. For a longer local review, add
-`--session-duration=12h` to the harness command (maximum 24 hours).
+The default session lasts one hour; `up.mjs` uses 12 hours. The maximum is 24 hours.
 The harness creates a fresh private document store each time and never writes
 to the production dashboard store. To exercise the saved queries with both
 default and alternate filters against the local providers:
 
 ```sh
-node demo/insights-gallery/check-providers.mjs http://127.0.0.1:<harness-port>/
+node demo/insights-gallery/check-providers.mjs $PAPRIKA_GALLERY_BASE_URL
 node demo/insights-gallery/check-mcp-duplicate-observations.mjs
-node demo/insights-gallery/check-reliability.mjs http://127.0.0.1:<harness-port>/
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-incident-severity-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-event-range-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-market-range-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-record-tooltip-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-record-scale-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-heatmap-scale-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-metric-pie-tooltip-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-pie-extreme-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-heatmap-scale-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-mobile-inspector-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-signal-pie-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-gauge-extremes-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-drilldown-destination-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-signal-traces-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-series-comparison-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-edge-network-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-directional-axis-authoring-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-record-table-inspector-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-record-treemap-tooltip-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-tooltip-placement-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-observation-placement-live.e2e.mjs
+node demo/insights-gallery/check-reliability.mjs $PAPRIKA_GALLERY_BASE_URL
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-incident-severity-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-event-range-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-market-range-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-record-tooltip-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-record-scale-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-heatmap-scale-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-metric-pie-tooltip-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-pie-extreme-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-heatmap-scale-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-mobile-inspector-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-signal-pie-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-gauge-extremes-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-drilldown-destination-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-signal-traces-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-series-comparison-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-edge-network-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-directional-axis-authoring-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-record-table-inspector-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-record-treemap-tooltip-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-tooltip-placement-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-observation-placement-live.e2e.mjs
 PAPRIKA_TRACE_CONNECTION=artifacts/insights/gallery-insights-<id>/private-connection.json node ui/e2e/insights-trace-waterfall-live.e2e.mjs
-node demo/insights-gallery/check-network-history.mjs http://127.0.0.1:<harness-port>/
-node demo/insights-gallery/check-trace-shapes.mjs http://127.0.0.1:<harness-port>/
-node ui/e2e/insights-legend-mean-live.e2e.mjs artifacts/insights/gallery-ready.json
-node ui/e2e/insights-stacked-extremes-live.e2e.mjs artifacts/insights/gallery-ready.json
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-compact-canvas-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-inactive-selection-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-inactive-tooltip-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-event-conversion-live.e2e.mjs
-node demo/insights-gallery/check-geography.mjs http://127.0.0.1:<harness-port>/
-node demo/insights-gallery/check-sample-age.mjs http://127.0.0.1:<harness-port>/
-python3 demo/insights-gallery/check-bootstrap.py artifacts/insights/gallery-live-<id>/
-node demo/insights-gallery/check-postgres-refresh-live.mjs http://127.0.0.1:<harness-port>/
-node demo/insights-gallery/check-fleet-conditions.mjs http://127.0.0.1:<harness-port>/
-node demo/insights-gallery/check-collection-throughput.mjs http://127.0.0.1:<harness-port>/
-node demo/insights-gallery/check-mcp-bundles.mjs artifacts/insights/gallery-ready.json
-node demo/insights-gallery/check-mcp-mean.mjs artifacts/insights/gallery-ready.json
-node demo/insights-gallery/check-mcp-mean-cancellation.mjs artifacts/insights/gallery-ready.json
-node demo/insights-gallery/check-authoring-schema.mjs artifacts/insights/gallery-ready.json
-node demo/insights-gallery/check-mcp-feedback.mjs artifacts/insights/gallery-ready.json
-node demo/insights-gallery/run-partial-empty-mcp.mjs --providers=artifacts/insights/gallery-live-<id>/providers.json --ui-url=http://127.0.0.1:<ui-port>/
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-save-guidance-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-gallery-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-tooltip-drilldown-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-fleet-conditions-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-small-multiples-labels-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-ai-context-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-connection-map-accessibility-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-map-overlap-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-treemap-responsive-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-record-fields-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-link-labels-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-topology-layout-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-sample-freshness-live.e2e.mjs
-INSIGHTS_E2E_URL=http://127.0.0.1:<ui-port>/ PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-query-retry-live.e2e.mjs
-PAPRIKA_GALLERY_READY=artifacts/insights/gallery-ready.json node ui/e2e/insights-annotation-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-gallery-stress-live.e2e.mjs
-PAPRIKA_GALLERY_BASE_URL=http://127.0.0.1:<harness-port>/ node ui/e2e/insights-collection-live.e2e.mjs
-node demo/insights-gallery/rapid-scroll.mjs http://127.0.0.1:<harness-port>/ 3
+node demo/insights-gallery/check-network-history.mjs $PAPRIKA_GALLERY_BASE_URL
+node demo/insights-gallery/check-trace-shapes.mjs $PAPRIKA_GALLERY_BASE_URL
+node ui/e2e/insights-legend-mean-live.e2e.mjs $PAPRIKA_GALLERY_READY
+node ui/e2e/insights-stacked-extremes-live.e2e.mjs $PAPRIKA_GALLERY_READY
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-compact-canvas-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-inactive-selection-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-inactive-tooltip-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-event-conversion-live.e2e.mjs
+node demo/insights-gallery/check-geography.mjs $PAPRIKA_GALLERY_BASE_URL
+node demo/insights-gallery/check-sample-age.mjs $PAPRIKA_GALLERY_BASE_URL
+python3 demo/insights-gallery/check-bootstrap.py "$(dirname "$PAPRIKA_GALLERY_PROVIDERS")"/
+node demo/insights-gallery/check-postgres-refresh-live.mjs $PAPRIKA_GALLERY_BASE_URL
+node demo/insights-gallery/check-fleet-conditions.mjs $PAPRIKA_GALLERY_BASE_URL
+node demo/insights-gallery/check-collection-throughput.mjs $PAPRIKA_GALLERY_BASE_URL
+node demo/insights-gallery/check-mcp-bundles.mjs $PAPRIKA_GALLERY_READY
+node demo/insights-gallery/check-mcp-mean.mjs $PAPRIKA_GALLERY_READY
+node demo/insights-gallery/check-mcp-mean-cancellation.mjs $PAPRIKA_GALLERY_READY
+node demo/insights-gallery/check-authoring-schema.mjs $PAPRIKA_GALLERY_READY
+node demo/insights-gallery/check-mcp-feedback.mjs $PAPRIKA_GALLERY_READY
+node demo/insights-gallery/run-partial-empty-mcp.mjs --providers=$PAPRIKA_GALLERY_PROVIDERS --ui-url=$INSIGHTS_E2E_URL
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-save-guidance-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-gallery-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-tooltip-drilldown-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-fleet-conditions-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-small-multiples-labels-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-ai-context-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-connection-map-accessibility-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-map-overlap-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-treemap-responsive-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-record-fields-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-link-labels-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-topology-layout-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-sample-freshness-live.e2e.mjs
+INSIGHTS_E2E_URL=$INSIGHTS_E2E_URL PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-query-retry-live.e2e.mjs
+PAPRIKA_GALLERY_READY=$PAPRIKA_GALLERY_READY node ui/e2e/insights-annotation-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-gallery-stress-live.e2e.mjs
+PAPRIKA_GALLERY_BASE_URL=$PAPRIKA_GALLERY_BASE_URL node ui/e2e/insights-collection-live.e2e.mjs
+node demo/insights-gallery/rapid-scroll.mjs $PAPRIKA_GALLERY_BASE_URL 3
 ```
 
 The trace-waterfall test and MCP bundle check read the harness's private
