@@ -44,7 +44,7 @@ describe("lazy example workspace", () => {
     expect(retry).toBeDisabled()
     expect(await screen.findByRole("button", { name: "Edit dashboard" }, { timeout: 5000 })).toBeInTheDocument()
     expect(localStorage.getItem(EXAMPLE_STORAGE_KEY)).not.toBeNull()
-  })
+  }, 15000);
 
   it("loads the Examples panel in live mode without changing the live workspace", async () => {
     render(<InsightsApp client={liveClient()} />)

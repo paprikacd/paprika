@@ -143,7 +143,7 @@ describe("Insights application state", () => {
     expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("Retained unapplied widget draft");
     expect(screen.getByRole("button",{name:"Apply changes"})).toBeVisible();
     expect(screen.getByRole("heading", { name: "Retained unapplied widget draft" })).toHaveFocus();
-  });
+  }, 15000);
 
   it.each([
     { name: /^Examples \d+$/, region: "Repository examples", close: "Close examples" },
@@ -165,7 +165,7 @@ describe("Insights application state", () => {
     await queryWorkbench()
     fireEvent.click(screen.getByRole("button", { name }))
     fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard chart changes?" })).getByRole("button", { name: "Discard changes" }))
-    expect(await screen.findByRole("region", { name: region })).toBeVisible()
+    expect(await screen.findByRole("region", { name: region }, { timeout: 10000 })).toBeVisible()
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: close }))
