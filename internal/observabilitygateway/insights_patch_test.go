@@ -268,7 +268,7 @@ func TestInsightsPatchRejectsSizeAndEditBounds(t *testing.T) {
 	require.Error(t, validateInsightsPatchArgs("dashboards", &args))
 	for _, collection := range []string{"dashboards", "saved-queries"} {
 		current := json.RawMessage(`{"id":"demo","large":"` + strings.Repeat("x", insightsPatchByteLimit(collection)-30) + `"}`)
-		_, _, err := applyInsightsPatch(current, collection, &insightsPatchArgs{Patch: json.RawMessage(`{"new":"a much longer additional value"}`)})
+		_, _, err := applyInsightsPatch(t.Context(), current, collection, &insightsPatchArgs{Patch: json.RawMessage(`{"new":"a much longer additional value"}`)})
 		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	}
 }
@@ -448,12 +448,14 @@ func TestPlaceInsightsAdditionOnlyReportsReadableLayouts(t *testing.T) {
 	stored := []json.RawMessage{json.RawMessage(`{"id":"a","layout":{"x":0,"y":0,"w":12,"h":2}}`)}
 	// A layout that cannot be read is left for the save to reject: no move, no placement.
 	widget := json.RawMessage(`{"id":"b","layout":{"x":0,"y":0,"w":12}}`)
-	placed, placement := placeInsightsAddition(stored, "b", widget)
+	placed, placement, err := placeInsightsAddition(t.Context(), stored, "b", widget)
+	require.NoError(t, err)
 	require.Equal(t, widget, placed)
 	require.Nil(t, placement)
 	// A layout that runs past the twelfth column is likewise not moved.
 	widget = json.RawMessage(`{"id":"c","layout":{"x":6,"y":5,"w":8,"h":2}}`)
-	placed, placement = placeInsightsAddition(stored, "c", widget)
+	placed, placement, err = placeInsightsAddition(t.Context(), stored, "c", widget)
+	require.NoError(t, err)
 	require.Equal(t, widget, placed)
 	require.Nil(t, placement)
 }
@@ -461,7 +463,8 @@ func TestPlaceInsightsAdditionOnlyReportsReadableLayouts(t *testing.T) {
 func TestInsightsPatchFirstFreeSlotPreservesTheWidgetsOtherMembers(t *testing.T) {
 	stored := []json.RawMessage{json.RawMessage(`{"id":"a","layout":{"x":0,"y":0,"w":12,"h":2}}`)}
 	widget := json.RawMessage(`{"id":"b","title":"Exact 1.50 literal","options":{"decimals":1.50},"layout":{"x":0,"y":0,"w":4,"h":3,"extra":true}}`)
-	placed, placement := placeInsightsAddition(stored, "b", widget)
+	placed, placement, err := placeInsightsAddition(t.Context(), stored, "b", widget)
+	require.NoError(t, err)
 	require.NotNil(t, placement)
 	require.Equal(t, insightsGrid{X: 0, Y: 2, W: 4, H: 3}, placement.Layout)
 	require.JSONEq(t, `{"id":"b","title":"Exact 1.50 literal","options":{"decimals":1.50},"layout":{"x":0,"y":2,"w":4,"h":3,"extra":true}}`, string(placed))
@@ -474,4 +477,75 @@ func placementIDs(placements []insightsPlacement) []string {
 		ids = append(ids, placement.ID)
 	}
 	return ids
+}
+
+// halfDashboard has one widget on the left half of its first row.
+const halfDashboard = `{"schemaVersion":1,"id":"half","title":"Half","timeRange":"1h","refreshInterval":0,"variables":[],"widgets":[` +
+	`{"id":"a","title":"A","type":"timeseries","providerId":"metrics","query":"up","unit":"","layout":{"x":0,"y":0,"w":6,"h":2}}]}`
+
+func TestInsightsPatchUpdatesLandBeforeAddsArePlaced(t *testing.T) {
+	h := newInsightsPatchHarness(t)
+	initial := h.seed(t, "dashboards", halfDashboard)
+	// The add is listed first, but "a" moves out of the way before the add is placed,
+	// so the requested rectangle is free and keeps its place.
+	edits := addWidget("x", `{"x":0,"y":0,"w":6,"h":2}`) + `,{"op":"update","id":"a","patch":{"layout":{"x":6}}}`
+	result, err := h.c.patch(patchEditor(t), "dashboards", patchArgs(t, "half", initial.ETag, `"widget_edits":[`+edits+`]`))
+	require.NoError(t, err)
+	require.Equal(t, insightsGrid{X: 6, Y: 0, W: 6, H: 2}, widgetLayout(t, result.Document, "a"))
+	require.Equal(t, insightsGrid{X: 0, Y: 0, W: 6, H: 2}, widgetLayout(t, result.Document, "x"))
+	require.Len(t, result.Placements, 1)
+	require.Nil(t, result.Placements[0].Requested, "the requested slot was free once the update ran")
+}
+
+func TestInsightsPatchRejectsLayoutsPastTheSaveBounds(t *testing.T) {
+	h := newInsightsPatchHarness(t)
+	initial := h.seed(t, "dashboards", halfDashboard)
+	// A row or height past the save-time bounds cannot be stored, so the batch is refused
+	// and the stored document keeps its revision, however the placement scan would have behaved.
+	for _, edits := range []string{
+		`{"op":"update","id":"a","patch":{"layout":{"h":1000000000}}},` + addWidget("x", `{"x":0,"y":0,"w":6,"h":2}`),
+		`{"op":"update","id":"a","patch":{"layout":{"y":100000000}}},` + addWidget("x", `{"x":0,"y":0,"w":6,"h":2}`),
+		addWidget("x", `{"x":0,"y":100000000,"w":6,"h":2}`),
+	} {
+		_, err := h.c.patch(patchEditor(t), "dashboards", patchArgs(t, "half", initial.ETag, `"widget_edits":[`+edits+`]`))
+		require.Error(t, err, edits)
+		stored, err := h.c.get(patchEditor(t), "dashboards", "half")
+		require.NoError(t, err)
+		require.Equal(t, initial.ETag, stored.ETag, "a refused layout must not change the stored document")
+	}
+}
+
+func TestInsightsGridWithinUsesTheSaveTimeBounds(t *testing.T) {
+	at := func(v int) *int { return &v }
+	for _, tc := range []struct {
+		name       string
+		x, y, w, h int
+		ok         bool
+	}{
+		{"largest row and height", 0, insightsMaxGridRow, 12, insightsMaxGridHeight, true},
+		{"row past the bound", 0, insightsMaxGridRow + 1, 12, 2, false},
+		{"height past the bound", 0, 0, 6, insightsMaxGridHeight + 1, false},
+		{"past the twelfth column", 6, 0, 7, 2, false},
+		{"zero width", 0, 0, 0, 2, false},
+		{"negative row", 0, -1, 6, 2, false},
+	} {
+		_, ok := insightsGridWithin(at(tc.x), at(tc.y), at(tc.w), at(tc.h))
+		require.Equal(t, tc.ok, ok, tc.name)
+	}
+}
+
+func TestInsightsFirstFreeSlotStopsWhenTheRequestIsCancelled(t *testing.T) {
+	occupied := make([]insightsGrid, 0, insightsMaxGridRow)
+	for row := range insightsMaxGridRow {
+		occupied = append(occupied, insightsGrid{X: 0, Y: row, W: insightsGridColumns, H: 1})
+	}
+	want := insightsGrid{X: 0, Y: 0, W: 6, H: 2}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := firstFreeInsightsSlot(ctx, occupied, want)
+	require.ErrorIs(t, err, context.Canceled)
+	// A live request finds the row below the grid.
+	slot, err := firstFreeInsightsSlot(t.Context(), occupied, want)
+	require.NoError(t, err)
+	require.Equal(t, insightsGrid{X: 0, Y: insightsMaxGridRow, W: 6, H: 2}, slot)
 }
