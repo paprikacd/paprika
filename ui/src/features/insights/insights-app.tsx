@@ -96,7 +96,8 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { classifyBootFailure, retryWhileBusy } from "./client"
+import { classifySourceFailure } from "./client"
+import { SourceStatusContext, sourceWaitMessage } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
@@ -174,6 +175,11 @@ function subscribeFinePointer(listener: () => void) {
   return () => media.removeEventListener("change", listener);
 }
 const finePointerSnapshot = () => window.matchMedia("(pointer: fine)").matches;
+
+type SourceState =
+  | { status: "pending" }
+  | { status: "ready" }
+  | { status: "unavailable"; busy: boolean; message: string }
 
 export default function InsightsApp({
   client,
@@ -266,9 +272,9 @@ export default function InsightsApp({
   const navigationToggle = useRef<HTMLButtonElement>(null)
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
   const [retry, setRetry] = useState(0)
-  // A busy provider catalog never blocks the workspace: it leaves providers empty and retries here.
-  const [sourceNotice, setSourceNotice] = useState("")
-  const [sourceRetry, setSourceRetry] = useState<{ observed?: { error: unknown } } | null>(null)
+  // The shared source list loads behind a rendered workspace. Only tiles that need it wait.
+  const [sources, setSources] = useState<SourceState>({ status: "ready" })
+  const [sourceRequest, setSourceRequest] = useState<object | null>(null)
   const [queryRevision, setQueryRevision] = useState(0)
   const etags = useRef(new Map<string, string>())
   const openRequest = useRef(0)
@@ -370,6 +376,8 @@ export default function InsightsApp({
     setSaved(documentFingerprint(sample))
     setDashboards(workspace.dashboards)
     setProviders(exampleProviders)
+    setSources({ status: "ready" })
+    setSourceRequest(null)
     setMode("example")
     setRouteState(state)
     setError(error)
@@ -387,26 +395,18 @@ export default function InsightsApp({
       }
     }
     const controller = new AbortController()
-    Promise.allSettled([
-      client.providers(controller.signal),
-      client.list(controller.signal),
-    ])
-      .then(async ([sources, listed]) => {
+    client.list(controller.signal)
+      .then(async (documents) => {
         if (controller.signal.aborted) return
-        // The dashboard list and permanent catalog failures keep the setup landing.
-        // A busy catalog keeps the workspace on a retrying banner instead.
-        if (listed.status === "rejected") throw listed.reason
-        if (sources.status === "rejected" && classifyBootFailure(sources.reason) === "unavailable") throw sources.reason
-        const documents = listed.value
         const initial = initialNavigation(documents, documents[0] ?? newDashboard())
         const active = documents.length
           ? await client.get(initial.document.id)
           : { dashboard: newDashboard(), etag: undefined }
         if (controller.signal.aborted) return
         if (active.etag) etags.current.set(active.dashboard.id, active.etag)
-        setProviders(sources.status === "fulfilled" ? sources.value : [])
-        setSourceNotice(sources.status === "rejected" ? "Data sources are busy. Retrying shortly…" : "")
-        setSourceRetry(sources.status === "rejected" ? { observed: { error: sources.reason } } : null)
+        // The workspace renders now; the shared source list loads behind it.
+        setSources({ status: "pending" })
+        setSourceRequest({})
         setDashboards(documents)
         reset(active.dashboard)
         setSaved(documentFingerprint(active.dashboard))
@@ -426,28 +426,32 @@ export default function InsightsApp({
     return () => controller.abort()
   }, [client, initialExample, enterExample, reset, retry])
 
+  // One background load, one retry layer: the client replays a busy 429 by
+  // Retry-After, and a failure that remains is shown with a manual retry.
   useEffect(() => {
-    if (!sourceRetry) return
+    if (!sourceRequest || mode !== "live") return
     const controller = new AbortController()
-    retryWhileBusy(
-      signal => client.providers(signal),
-      controller.signal,
-      delay => setSourceNotice(`Data sources are busy. Retrying in ${Math.ceil(delay / 1000)} s…`),
-      sourceRetry.observed,
-    ).then(available => {
-      if (controller.signal.aborted) return
-      setProviders(available)
-      setSourceNotice("")
-      setSourceRetry(null)
-    }, (error: unknown) => {
-      if (controller.signal.aborted) return
-      setSourceNotice(classifyBootFailure(error) === "busy"
-        ? "Data sources are still busy."
-        : error instanceof Error ? error.message : "Data sources are unavailable.")
-      setSourceRetry(null)
-    })
+    client.providers(controller.signal).then(
+      (available) => {
+        if (controller.signal.aborted) return
+        setProviders(available)
+        setSources({ status: "ready" })
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted) return
+        const message = error instanceof Error ? error.message : "Data sources are unavailable."
+        const failure = classifySourceFailure(error)
+        if (failure === "access") {
+          // Without Observability access, Insights cannot serve this viewer: the setup landing.
+          setMode("unavailable")
+          setError(message)
+          return
+        }
+        setSources({ status: "unavailable", busy: failure === "busy", message })
+      },
+    )
     return () => controller.abort()
-  }, [client, sourceRetry])
+  }, [client, mode, sourceRequest])
 
   useEffect(() => {
     if (!dirty && !widgetDraftDirty && !explorerDirty && !importingBundle) return
@@ -539,11 +543,13 @@ export default function InsightsApp({
   // Resolve each authoring scope once, before sharing the bounded scheduler.
   // Tooltip label values may themselves contain {{text}}; never interpolate
   // those resolved query literals again as dashboard variables.
+  const sourceStatus = sources.status
   const fetcher = useMemo(() => createResolvedQueryFetcher(scheduledFetcher, (request: QueryRequest) => {
     const { queryRef, ...resolved } = request
     if (queryRef) {
       if (queriesLoading) throw new Error("Loading the saved-query library…")
       if (queriesError) throw new Error(queriesError)
+      if (sourceStatus !== "ready") throw new Error(sourceWaitMessage(sourceStatus))
       const authored = savedQueries.find(query => query.id === queryRef.id)
       if (authored) assertProviderQueryTemplate(providers.find(provider => provider.id === authored.providerId)?.type, authored.query)
       const definition = resolveSavedQueryReference(queryRef, savedQueries, variableValues, request.kind)
@@ -553,7 +559,7 @@ export default function InsightsApp({
     }
     assertProviderQueryTemplate(providers.find(provider => provider.id === request.providerId)?.type, request.query)
     return { ...resolved, query: interpolateQuery(request.query, variableValues) }
-  }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers])
+  }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers, sourceStatus])
   const range = dashboardRange(viewDashboard, end)
   const builderClient = useMemo(
     () =>
@@ -1225,6 +1231,7 @@ export default function InsightsApp({
 
   return (
     <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
+    <SourceStatusContext.Provider value={sources.status}>
     <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />
       {drawerOpen && (
@@ -1616,10 +1623,13 @@ export default function InsightsApp({
           </div>
         )}
         {syncError && <p className={styles.notice} role="status">Workspace updates paused: {syncError} Retrying automatically.</p>}
-        {sourceNotice && (
+        {sources.status === "unavailable" && (
           <div className={styles.notice} role="status">
-            <span>{sourceNotice}</span>
-            <GammaButton size="sm" variant="secondary" onClick={() => setSourceRetry({})}>Retry data sources</GammaButton>
+            <span>{sources.busy ? "Data sources are busy." : `Data sources did not load: ${sources.message}`}</span>
+            <GammaButton size="sm" variant="secondary" onClick={() => {
+              setSources({ status: "pending" })
+              setSourceRequest({})
+            }}>Retry data sources</GammaButton>
           </div>
         )}
         {(error || message) && (
@@ -1852,6 +1862,9 @@ export default function InsightsApp({
                   onExplore={exploreProvider}
                   onChange={(next) => {
                     setProviders(next)
+                    // The manager's list is authoritative now: it replaces any failed or pending load.
+                    setSources({ status: "ready" })
+                    setSourceRequest(null)
                     setQueryRevision((value) => value + 1)
                     setLibraryRevision((value) => value + 1)
                   }}
@@ -1885,6 +1898,7 @@ export default function InsightsApp({
         </section>
       </div>
     </div>
+    </SourceStatusContext.Provider>
     </SavedQueryLibraryProvider>
   )
 }

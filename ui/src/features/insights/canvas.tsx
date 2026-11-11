@@ -19,6 +19,7 @@ import ReactGridLayout, {
 } from "react-grid-layout";
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
+import { sourceWaitMessage, useSourceStatus } from "./source-status";
 import { useWidgetDefinitions } from "./widget-registry";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
 import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
@@ -190,12 +191,15 @@ const Tile = memo(function Tile({
   // A focused editor stays engaged while its author scrolls down to query controls.
   const engaged = visible || focused;
   const memoryOf = useMemo(() => memoryFor(memory, memoryKey), [memory, memoryKey]);
+  // Without a loaded source list, a tile that needs a shared source is waiting on it, not misconfigured.
+  const sourceStatus = useSourceStatus();
+  const awaitingSources = sourceStatus !== "ready" && (!!widget.queryRef || !provider);
   const { data, loading, error, refresh } = useWidgetQuery(widget, {
     fetcher,
     start,
     end,
     step: Math.max(1, Math.ceil((end - start) / 300)),
-    enabled: active && engaged && !savedQueryLoading && (!!widget.queryRef || !!provider),
+    enabled: active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
     retention: memoryOf.retention,
   });
@@ -418,9 +422,11 @@ const Tile = memo(function Tile({
             result={savedQueryLoading ? undefined : data}
             loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
             deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
+            waitingLabel={!savedQueryLoading && awaitingSources && sourceStatus === "pending" ? "Waiting for data sources…" : undefined}
             error={
               savedQueryLoading ? null : error ??
-              (!provider && !widget.queryRef
+              (awaitingSources && sourceStatus === "unavailable" ? sourceWaitMessage(sourceStatus) : null) ??
+              (!provider && !widget.queryRef && sourceStatus === "ready"
                 ? `Provider “${widget.providerId}” is not configured.`
                 : null)
             }

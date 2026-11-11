@@ -41,6 +41,8 @@ export interface WidgetVisualizationProps {
   naturalHeight?: boolean;
   deferred?: boolean;
   error?: string | null;
+  /** Shown in place of the loading placeholder while a shared source list is still loading. */
+  waitingLabel?: string;
   onRetry?: () => void;
   onContextChange?: (context: DrilldownContext) => void;
 }
@@ -115,6 +117,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   naturalHeight = false,
   deferred,
   error,
+  waitingLabel,
   onRetry,
   onContextChange,
 }: WidgetVisualizationProps) {
@@ -142,6 +145,12 @@ export const WidgetVisualization = memo(function WidgetVisualization({
         <strong>Query failed</strong>
         <p>{error}</p>
         {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}
+      </div></WidgetStateFrame>
+    );
+  if (waitingLabel && !result)
+    return (
+      <WidgetStateFrame><div className={styles.state} role="status" aria-label="Widget waiting for data sources">
+        <span>{waitingLabel}</span>
       </div></WidgetStateFrame>
     );
   if (deferred && !result)

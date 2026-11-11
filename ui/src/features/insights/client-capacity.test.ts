@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { classifyBootFailure, createInsightsClient, InsightsHTTPError, retryWhileBusy } from "./client"
+import { classifySourceFailure, createInsightsClient, InsightsHTTPError } from "./client"
 import type { Dashboard, SavedQuery } from "./schema"
 
 const dashboard: Dashboard = {
@@ -162,7 +162,7 @@ describe("provider catalog capacity backoff", () => {
     const error = await rejected
     expect(error).toBeInstanceOf(InsightsHTTPError)
     expect(error).toMatchObject({ status: 429, message: "too many active observability requests; retry shortly" })
-    expect(classifyBootFailure(error)).toBe("busy")
+    expect(classifySourceFailure(error)).toBe("busy")
     expect(fetcher).toHaveBeenCalledTimes(4)
     expect(vi.getTimerCount()).toBe(0)
   })
@@ -174,72 +174,35 @@ describe("provider catalog capacity backoff", () => {
   })
 })
 
-describe("boot failure classification", () => {
-  it.each([429, 503])("treats HTTP %s as a busy gateway", status => {
-    expect(classifyBootFailure(new InsightsHTTPError("busy", status, "1"))).toBe("busy")
+describe("shared source failure classification", () => {
+  it.each([401, 403])("treats HTTP %s as an access failure", status => {
+    expect(classifySourceFailure(new InsightsHTTPError("denied", status, null))).toBe("access")
   })
-  it.each([401, 403, 404, 500, 502])("keeps HTTP %s on the setup landing", status => {
-    expect(classifyBootFailure(new InsightsHTTPError("rejected", status, null))).toBe("unavailable")
+  it("treats a 429 as busy, with or without Retry-After", () => {
+    expect(classifySourceFailure(new InsightsHTTPError("busy", 429, null))).toBe("busy")
+    expect(classifySourceFailure(new InsightsHTTPError("busy", 429, "1"))).toBe("busy")
   })
-  it("keeps a plain error and a refused connection on the setup landing", () => {
-    expect(classifyBootFailure(new Error("Sign in to access your dashboards."))).toBe("unavailable")
-    expect(classifyBootFailure(new TypeError("Failed to fetch"))).toBe("unavailable")
+  it("treats any response carrying Retry-After as busy", () => {
+    expect(classifySourceFailure(new InsightsHTTPError("cooling down", 503, "2"))).toBe("busy")
   })
-  it("keeps a permanent HTTP rejection from the real client on the setup landing", async () => {
-    mockFetch(response({ error: "Provider not found" }, 404))
+  it.each([500, 502, 503, 504])("treats HTTP %s without Retry-After as an unavailable source", status => {
+    expect(classifySourceFailure(new InsightsHTTPError("unavailable", status, null))).toBe("unavailable")
+  })
+  it("treats a refused connection and a plain error as unavailable", () => {
+    expect(classifySourceFailure(new TypeError("Failed to fetch"))).toBe("unavailable")
+    expect(classifySourceFailure(new Error("Something else"))).toBe("unavailable")
+  })
+  it("classifies a real 403 from the client as an access failure", async () => {
+    mockFetch(response({ error: "Your account does not have access to Insights." }, 403))
     const failure = await createInsightsClient().providers().catch((error: unknown) => error)
-    expect(classifyBootFailure(failure)).toBe("unavailable")
+    expect(classifySourceFailure(failure)).toBe("access")
+    expect(failure).toMatchObject({ status: 403, message: "Your account does not have access to Insights." })
   })
-})
-
-describe("busy source retry loop", () => {
-  const busy = () => new InsightsHTTPError("too many active observability requests; retry shortly", 429, "1")
-  it("waits for the observed busy failure before the first retry, then reports the wait", async () => {
-    const load = vi.fn().mockResolvedValue(["metrics"])
-    const waits: number[] = []
-    const pending = retryWhileBusy(load, new AbortController().signal, delay => waits.push(delay), { error: busy() })
-    await vi.advanceTimersByTimeAsync(999)
-    expect(load).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1)
-    expect(await pending).toEqual(["metrics"])
-    expect(waits).toEqual([1000])
-    expect(load).toHaveBeenCalledOnce()
-  })
-  it("starts an unobserved load immediately and returns its result without waiting", async () => {
-    const load = vi.fn().mockResolvedValue(["metrics"])
-    const waits: number[] = []
-    expect(await retryWhileBusy(load, new AbortController().signal, delay => waits.push(delay))).toEqual(["metrics"])
-    expect(waits).toEqual([])
-  })
-  it("retries at most three times with the backoff, then rethrows the busy error", async () => {
-    const failure = new InsightsHTTPError("too many active observability requests; retry shortly", 429, null)
-    const load = vi.fn().mockRejectedValue(failure)
-    const waits: number[] = []
-    const pending = expect(retryWhileBusy(load, new AbortController().signal, delay => waits.push(delay))).rejects.toBe(failure)
-    await vi.advanceTimersByTimeAsync(7000)
-    await pending
-    expect(load).toHaveBeenCalledTimes(4)
-    expect(waits).toEqual([1000, 2000, 4000])
-    expect(vi.getTimerCount()).toBe(0)
-  })
-  it("does not retry a permanent failure", async () => {
-    const failure = new InsightsHTTPError("Provider not found", 404, null)
-    const load = vi.fn().mockRejectedValue(failure)
-    await expect(retryWhileBusy(load, new AbortController().signal, () => undefined)).rejects.toBe(failure)
-    expect(load).toHaveBeenCalledOnce()
-    expect(vi.getTimerCount()).toBe(0)
-  })
-  it("cancels a pending wait without another load", async () => {
-    const load = vi.fn().mockRejectedValue(busy())
-    const abort = new AbortController()
-    const rejected = expect(retryWhileBusy(load, abort.signal, () => undefined)).rejects.toMatchObject({ name: "AbortError" })
-    await vi.advanceTimersByTimeAsync(0)
-    expect(vi.getTimerCount()).toBe(1)
-    abort.abort()
-    await rejected
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(load).toHaveBeenCalledOnce()
-    expect(vi.getTimerCount()).toBe(0)
+  it("classifies a real 503 with a server message as unavailable, keeping the message", async () => {
+    mockFetch(response({ error: "observability MCP does not expose the required read-only data tool" }, 503))
+    const failure = await createInsightsClient().providers().catch((error: unknown) => error)
+    expect(classifySourceFailure(failure)).toBe("unavailable")
+    expect(failure).toMatchObject({ message: "observability MCP does not expose the required read-only data tool" })
   })
 })
 

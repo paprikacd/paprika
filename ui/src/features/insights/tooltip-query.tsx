@@ -26,6 +26,7 @@ import {
   type SavedQueryLibrary,
 } from "./saved-query-context";
 import { resolveSavedQueryReference } from "./saved-queries";
+import { sourceWaitMessage, useSourceStatus, type SourceStatus } from "./source-status";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
 
 export type TooltipQuerySource = Extract<
@@ -38,6 +39,8 @@ export interface TooltipQueryEnvironment {
   start: number;
   end: number;
   step: number;
+  /** Absent means the source list is loaded. */
+  sourceStatus?: SourceStatus;
 }
 const Environment = createContext<TooltipQueryEnvironment | null>(null);
 
@@ -49,11 +52,12 @@ export function TooltipQueryProvider({
   start,
   end,
   step,
-}: TooltipQueryEnvironment & { children: ReactNode }) {
+}: Omit<TooltipQueryEnvironment, "sourceStatus"> & { children: ReactNode }) {
   useEffect(() => installTooltipPointerTracking(), []);
+  const sourceStatus = useSourceStatus();
   const value = useMemo(
-    () => ({ fetcher, providers, start, end, step }),
-    [fetcher, providers, start, end, step],
+    () => ({ fetcher, providers, start, end, step, sourceStatus }),
+    [fetcher, providers, start, end, step, sourceStatus],
   );
   return <Environment.Provider value={value}>{children}</Environment.Provider>;
 }
@@ -91,10 +95,13 @@ export function buildTooltipRequest(
   const provider = environment.providers.find(
     (entry) => entry.id === resolved.providerId,
   );
-  if (!provider)
+  if (!provider) {
+    if (environment.sourceStatus && environment.sourceStatus !== "ready")
+      throw new Error(sourceWaitMessage(environment.sourceStatus));
     throw new Error(
       `Tooltip provider “${resolved.providerId}” is not configured. Choose a data source in the widget editor.`,
     );
+  }
   if (!provider.capabilities.includes(kind))
     throw new Error(
       `The tooltip data source does not support ${kind}. Choose a compatible data source in the widget editor.`,

@@ -96,11 +96,7 @@ function canRetryCapacity(path: string, init: RequestInit): boolean {
 }
 
 function capacityRetryDelay(response: Response, attempt: number): number | undefined {
-  return capacityBackoff(response.headers.get("Retry-After"), attempt)
-}
-
-function capacityBackoff(retryAfter: string | null, attempt: number): number | undefined {
-  const header = retryAfter?.trim()
+  const header = response.headers.get("Retry-After")?.trim()
   let delay = 1000 * 2 ** attempt
   if (header) {
     const requested = /^\d+$/.test(header) ? Number(header) * 1000 :
@@ -135,46 +131,18 @@ export class InsightsHTTPError extends Error {
   }
 }
 
-/**
- * Boot treats 429 and 503 as a busy gateway that a later attempt can clear.
- * Every other failure (401, 403, 404, a refused connection) is treated as
- * permanent for this session and belongs on the setup landing.
- */
-export function classifyBootFailure(error: unknown): "busy" | "unavailable" {
-  return error instanceof InsightsHTTPError && (error.status === 429 || error.status === 503) ? "busy" : "unavailable"
-}
-
-const BUSY_RETRY_LIMIT = 3
+export type SourceFailure = "access" | "busy" | "unavailable"
 
 /**
- * Runs `load`, retrying only busy rejections with the capacity backoff. Pass
- * `observed` when the caller already holds the first failure, so the first
- * wait starts immediately. `onWait` reports each scheduled delay in ms.
+ * Classifies a failed shared-source (provider catalog) request by its cause:
+ * 401 and 403 end this viewer's access, a 429 or any response carrying
+ * Retry-After is a busy gateway, and everything else is an unavailable source.
  */
-export async function retryWhileBusy<T>(
-  load: (signal: AbortSignal) => Promise<T>,
-  signal: AbortSignal,
-  onWait: (delay: number) => void,
-  observed?: { error: unknown },
-): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    if (!observed) {
-      try {
-        return await load(signal)
-      } catch (error) {
-        observed = { error }
-      }
-    }
-    const failure = observed.error
-    const delay = failure instanceof InsightsHTTPError && classifyBootFailure(failure) === "busy" && attempt < BUSY_RETRY_LIMIT
-      ? capacityBackoff(failure.retryAfter, attempt)
-      : undefined
-    if (delay === undefined) throw failure
-    signal.throwIfAborted()
-    observed = undefined
-    onWait(delay)
-    await waitForCapacity(delay, signal)
-  }
+export function classifySourceFailure(error: unknown): SourceFailure {
+  if (!(error instanceof InsightsHTTPError)) return "unavailable"
+  if (error.status === 401 || error.status === 403) return "access"
+  if (error.status === 429 || error.retryAfter !== null) return "busy"
+  return "unavailable"
 }
 
 /** The embedding host owns authentication; standalone Insights needs no session implementation. */
@@ -246,6 +214,7 @@ export function createInsightsClient(
       }
     }
     if (!response.ok && !(allowNotModified && response.status === 304)) {
+      const failure = (message: string) => new InsightsHTTPError(message, response.status, response.headers.get("Retry-After"))
       if (response.status === 401) {
         // Parallel startup/query requests must not repeatedly navigate the host.
         // A late response from a previous session must not sign out a newer one.
@@ -253,19 +222,19 @@ export function createInsightsClient(
           authenticationRequested = true
           onUnauthorized?.()
         }
-        throw new Error("Sign in to access your dashboards.")
+        throw failure("Sign in to access your dashboards.")
       }
       if (response.status === 403 && path.startsWith("/provider-configs"))
-        throw new Error("Managing data sources requires Insights administrator access.")
+        throw failure("Managing data sources requires Insights administrator access.")
       if (response.status === 403 && path === "/observe-connection")
-        throw new Error("Your account does not have access to Paprika Observe. Check your Observability permissions.")
+        throw failure("Your account does not have access to Paprika Observe. Check your Observability permissions.")
       if (response.status === 403 && (path === "/query" || path.startsWith("/providers/")))
-        throw new Error("Your account does not have access to this data source. Check its Observability permissions.")
-      if (response.status === 403) throw new Error("Your account does not have access to Insights.")
+        throw failure("Your account does not have access to this data source. Check its Observability permissions.")
+      if (response.status === 403) throw failure("Your account does not have access to Insights.")
       if (response.status === 412 && path.startsWith("/saved-queries/"))
-        throw new Error("This saved query changed on the server. Reload it before saving to preserve someone else’s work.")
+        throw failure("This saved query changed on the server. Reload it before saving to preserve someone else’s work.")
       if ((response.status === 412 || response.status === 409) && path.startsWith("/dashboards/"))
-        throw new Error(
+        throw failure(
           "This dashboard changed on the server. Reload before saving to avoid overwriting someone else’s work.",
         )
       let message = "Insights is unavailable. Check the service and provider configuration."
@@ -275,7 +244,7 @@ export function createInsightsClient(
       } catch {
         /* Non-JSON gateway response */
       }
-      throw new InsightsHTTPError(message, response.status, response.headers.get("Retry-After"))
+      throw failure(message)
     }
     if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
     authenticationRequested = false

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
-import { InsightsHTTPError, type InsightsClient } from "./client"
+import type { InsightsClient } from "./client"
 import type { Dashboard, SavedQuery } from "./schema"
 import { readExampleWorkspace, writeExampleWorkspace } from "./example-storage"
 import { EXAMPLE_SAVED_QUERIES_KEY } from "./saved-query-storage"
@@ -685,46 +685,5 @@ describe("Insights application state", () => {
       screen.getByRole("button", { name: "Close dashboard manager" }),
     )
     expect(opener).toHaveFocus()
-  })
-
-  it("keeps the workspace on a retrying banner when the source catalog is busy at boot", async () => {
-    const api = client()
-    vi.mocked(api.providers)
-      .mockRejectedValueOnce(new InsightsHTTPError("too many active observability requests; retry shortly", 429, "1"))
-      .mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
-    render(<InsightsApp client={api} />)
-    await screen.findByRole("heading", { name: "Dashboard A" })
-    expect(screen.queryByRole("heading", { name: "A clearer view of your stack." })).not.toBeInTheDocument()
-    expect((await screen.findByText("Data sources are busy. Retrying in 1 s…")).closest("[role=status]")).not.toBeNull()
-    await waitFor(() => expect(screen.queryByText(/Data sources are busy/)).not.toBeInTheDocument(), { timeout: 3000 })
-    expect(api.providers).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole("heading", { name: "Dashboard A" })).toBeInTheDocument()
-  })
-
-  it("offers a manual retry after automatic source retries are exhausted", async () => {
-    const api = client()
-    vi.mocked(api.providers).mockRejectedValue(new InsightsHTTPError("too many active observability requests; retry shortly", 429, "0"))
-    render(<InsightsApp client={api} />)
-    await screen.findByRole("heading", { name: "Dashboard A" })
-    await screen.findByText("Data sources are still busy.", undefined, { timeout: 3000 })
-    expect(api.providers).toHaveBeenCalledTimes(4)
-    vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
-    fireEvent.click(screen.getByRole("button", { name: "Retry data sources" }))
-    await waitFor(() => expect(screen.queryByText("Data sources are still busy.")).not.toBeInTheDocument(), { timeout: 3000 })
-    expect(api.providers).toHaveBeenCalledTimes(5)
-    expect(screen.getByRole("heading", { name: "Dashboard A" })).toBeInTheDocument()
-  })
-
-  it("keeps the setup landing for a permanent catalog failure and leads with Retry connection", async () => {
-    const api = client()
-    vi.mocked(api.providers).mockRejectedValue(new InsightsHTTPError("Your account does not have access to Paprika Observe.", 403, null))
-    render(<InsightsApp client={api} />)
-    const alert = await screen.findByRole("alert")
-    expect(alert).toHaveTextContent("Your account does not have access to Paprika Observe.")
-    const retry = screen.getByRole("button", { name: "Retry connection" })
-    const example = screen.getByRole("button", { name: /Explore the example/ })
-    expect(retry.compareDocumentPosition(example) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.queryByRole("heading", { name: "Dashboard A" })).not.toBeInTheDocument()
-    expect(api.providers).toHaveBeenCalledOnce()
   })
 })
