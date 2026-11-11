@@ -103,7 +103,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/dashboards/{id}", s.getDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
-	mux.Handle("/api/", s.authenticate(api))
+	mux.Handle("/api/", s.authenticate(s.scopeObserveSessions(api)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -139,6 +139,19 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	// Admission comes before provider resolution: a saturated Insights rejects
+	// the widget without spending a catalog listing or an MCP session on it.
+	release, err := s.acquireQuery(r.Context())
+	if err != nil {
+		if errors.Is(err, errQueryCapacity) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, 429, "too many active queries; retry shortly")
+			return
+		}
+		writeProviderError(w, err)
+		return
+	}
+	defer release()
 	p, err := s.resolveProvider(r, q.ProviderID)
 	if err != nil {
 		writeProviderError(w, err)
@@ -148,12 +161,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "provider does not support this query kind")
 		return
 	}
-	result, _, err := s.runProviderQuery(r.Context(), p, &q)
-	if errors.Is(err, errQueryCapacity) {
-		w.Header().Set("Retry-After", "1")
-		writeError(w, 429, "too many active queries; retry shortly")
-		return
-	}
+	result, err := s.executeProviderQuery(r.Context(), p, &q)
 	if err != nil {
 		writeProviderError(w, err)
 		return
@@ -205,12 +213,20 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 	return func() { <-s.queries }, nil
 }
 
+// runProviderQuery admits, then executes an already resolved provider. Callers
+// that resolve providers first (dashboards) keep their existing ordering.
 func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
 	release, err := s.acquireQuery(ctx)
 	if err != nil {
 		return QueryResult{}, false, err
 	}
 	defer release()
+	result, err := s.executeProviderQuery(ctx, p, q)
+	return result, true, err
+}
+
+// executeProviderQuery runs the query under an admission slot the caller holds.
+func (s *Server) executeProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, error) {
 	started := time.Now()
 	result, err := p.query(ctx, q)
 	if err != nil && ctx.Err() != nil {
@@ -223,7 +239,7 @@ func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Que
 	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
 	s.queryCount.Add(ctx, 1, attributes)
 	s.queryDuration.Record(ctx, time.Since(started).Seconds(), attributes)
-	return result, true, err
+	return result, err
 }
 
 func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {

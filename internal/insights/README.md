@@ -63,11 +63,16 @@ uses that token only as the gateway bearer token, independently of its own
 service authentication. Missing delegation is denied, including in development
 mode. Provider discovery, queries, connection tests, metadata and saved-query
 validation all resolve the current caller's authorized catalog through
-request-local MCP sessions on the configured origin's `/observe/mcp`. The
-adapter discovers read-only tools, calls provider/query/exploration tools and
-requires structured results; it never parses the truncated text preview or
-falls back to REST. Removing access takes effect on the next request. Sessions
-have a 20-second deadline, bounded responses and no redirect or retry behavior.
+request-local MCP sessions on the configured origin's `/observe/mcp`. One HTTP
+request shares a single session and a single catalog listing across all of its
+operations (a widget query needs one session, not two), and that session closes
+when the response is written. A failed operation discards the session. No
+catalog or session is retained across requests, so removing access takes effect
+on the next request. The adapter discovers read-only tools, calls
+provider/query/exploration tools and requires structured results; it never
+parses the truncated text preview or falls back to REST. Each MCP operation
+(session setup, discovery, and each tool call) has a 20-second deadline, with
+bounded responses and no redirect or retry behavior.
 
 Shared provider IDs are `observe-` plus the full SHA-256 of their canonical
 `namespace/name`, preserving namespace identity within the existing dashboard

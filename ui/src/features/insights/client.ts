@@ -86,6 +86,8 @@ function canRetryCapacity(path: string, init: RequestInit): boolean {
   // The query endpoint is read-only even though its bounded request is POST.
   // A 429 is a definite admission rejection, so replay is safe.
   if (path === "/query" && init.method === "POST") return true
+  // The provider catalog is a read; the server answers a busy gateway with Retry-After.
+  if (path === "/providers" && (!init.method || init.method === "GET")) return true
   if (!/^\/(dashboards|saved-queries)(\/[^/?]+)?$/.test(path)) return false
   if (!init.method || init.method === "GET") return true
   const headers = new Headers(init.headers)
@@ -94,7 +96,11 @@ function canRetryCapacity(path: string, init: RequestInit): boolean {
 }
 
 function capacityRetryDelay(response: Response, attempt: number): number | undefined {
-  const header = response.headers.get("Retry-After")?.trim()
+  return capacityBackoff(response.headers.get("Retry-After"), attempt)
+}
+
+function capacityBackoff(retryAfter: string | null, attempt: number): number | undefined {
+  const header = retryAfter?.trim()
   let delay = 1000 * 2 ** attempt
   if (header) {
     const requested = /^\d+$/.test(header) ? Number(header) * 1000 :
@@ -115,6 +121,60 @@ function waitForCapacity(delay: number, signal?: AbortSignal | null): Promise<vo
     }, delay)
     signal?.addEventListener("abort", abort, { once: true })
   })
+}
+
+/** A failed HTTP response, with the status and Retry-After header a caller needs to classify it. */
+export class InsightsHTTPError extends Error {
+  readonly status: number
+  readonly retryAfter: string | null
+  constructor(message: string, status: number, retryAfter: string | null) {
+    super(message)
+    this.name = "InsightsHTTPError"
+    this.status = status
+    this.retryAfter = retryAfter
+  }
+}
+
+/**
+ * Boot treats 429 and 503 as a busy gateway that a later attempt can clear.
+ * Every other failure (401, 403, 404, a refused connection) is treated as
+ * permanent for this session and belongs on the setup landing.
+ */
+export function classifyBootFailure(error: unknown): "busy" | "unavailable" {
+  return error instanceof InsightsHTTPError && (error.status === 429 || error.status === 503) ? "busy" : "unavailable"
+}
+
+const BUSY_RETRY_LIMIT = 3
+
+/**
+ * Runs `load`, retrying only busy rejections with the capacity backoff. Pass
+ * `observed` when the caller already holds the first failure, so the first
+ * wait starts immediately. `onWait` reports each scheduled delay in ms.
+ */
+export async function retryWhileBusy<T>(
+  load: (signal: AbortSignal) => Promise<T>,
+  signal: AbortSignal,
+  onWait: (delay: number) => void,
+  observed?: { error: unknown },
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    if (!observed) {
+      try {
+        return await load(signal)
+      } catch (error) {
+        observed = { error }
+      }
+    }
+    const failure = observed.error
+    const delay = failure instanceof InsightsHTTPError && classifyBootFailure(failure) === "busy" && attempt < BUSY_RETRY_LIMIT
+      ? capacityBackoff(failure.retryAfter, attempt)
+      : undefined
+    if (delay === undefined) throw failure
+    signal.throwIfAborted()
+    observed = undefined
+    onWait(delay)
+    await waitForCapacity(delay, signal)
+  }
 }
 
 /** The embedding host owns authentication; standalone Insights needs no session implementation. */
@@ -215,7 +275,7 @@ export function createInsightsClient(
       } catch {
         /* Non-JSON gateway response */
       }
-      throw new Error(message)
+      throw new InsightsHTTPError(message, response.status, response.headers.get("Retry-After"))
     }
     if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
     authenticationRequested = false

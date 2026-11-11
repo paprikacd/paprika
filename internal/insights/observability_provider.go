@@ -132,17 +132,48 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 	return nil, ErrNotFound
 }
 
+// providers lists the caller's shared catalog. Within one request the listing
+// is memoized, including a failure, so a dashboard resolves its catalog once.
 func (g *observeGateway) providers(ctx context.Context, token string) ([]Provider, error) {
-	connection, err := g.connect(ctx, token)
-	if err != nil {
-		return nil, err
+	scope := observeScopeFor(ctx, token)
+	if scope == nil {
+		var result []Provider
+		err := g.withConnection(ctx, token, func(c *observeMCPConnection) (err error) {
+			result, err = c.providers(ctx)
+			return err
+		})
+		return result, err
 	}
-	defer connection.close()
-	return connection.providers()
+	scope.mu.Lock()
+	defer scope.mu.Unlock()
+	if !scope.catalogLoaded {
+		scope.catalogLoaded = true
+		scope.catalogErr = scope.runLocked(ctx, g, func(c *observeMCPConnection) (err error) {
+			scope.catalog, err = c.providers(ctx)
+			return err
+		})
+	}
+	return scope.catalog, scope.catalogErr
 }
 
-func (c *observeMCPConnection) providers() ([]Provider, error) {
-	body, failed, err := c.call("list_observability_providers", map[string]any{}, 1<<20)
+// withConnection runs fn on the request's shared session when one exists.
+// Otherwise it opens a private session that closes when fn returns.
+func (g *observeGateway) withConnection(ctx context.Context, token string, fn func(*observeMCPConnection) error) error {
+	if scope := observeScopeFor(ctx, token); scope != nil {
+		scope.mu.Lock()
+		defer scope.mu.Unlock()
+		return scope.runLocked(ctx, g, fn)
+	}
+	connection, err := g.connect(ctx, token)
+	if err != nil {
+		return err
+	}
+	defer connection.close()
+	return fn(connection)
+}
+
+func (c *observeMCPConnection) providers(ctx context.Context) ([]Provider, error) {
+	body, failed, err := c.call(ctx, "list_observability_providers", map[string]any{}, 1<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -212,12 +243,12 @@ func observeHTTPError(status int) error {
 }
 
 func (p *observeProvider) data(ctx context.Context, tool string, request any, limit int64) ([]byte, error) {
-	connection, err := p.gateway.connect(ctx, p.token)
-	if err != nil {
-		return nil, err
-	}
-	defer connection.close()
-	body, failed, err := connection.call(tool, request, maxResponseBytes)
+	var body []byte
+	var failed bool
+	err := p.gateway.withConnection(ctx, p.token, func(c *observeMCPConnection) (err error) {
+		body, failed, err = c.call(ctx, tool, request, maxResponseBytes)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -96,6 +96,7 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
+import { classifyBootFailure, retryWhileBusy } from "./client"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
@@ -265,6 +266,9 @@ export default function InsightsApp({
   const navigationToggle = useRef<HTMLButtonElement>(null)
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
   const [retry, setRetry] = useState(0)
+  // A busy provider catalog never blocks the workspace: it leaves providers empty and retries here.
+  const [sourceNotice, setSourceNotice] = useState("")
+  const [sourceRetry, setSourceRetry] = useState<{ observed?: { error: unknown } } | null>(null)
   const [queryRevision, setQueryRevision] = useState(0)
   const etags = useRef(new Map<string, string>())
   const openRequest = useRef(0)
@@ -383,19 +387,26 @@ export default function InsightsApp({
       }
     }
     const controller = new AbortController()
-    Promise.all([
+    Promise.allSettled([
       client.providers(controller.signal),
       client.list(controller.signal),
     ])
-      .then(async ([available, documents]) => {
+      .then(async ([sources, listed]) => {
         if (controller.signal.aborted) return
+        // The dashboard list and permanent catalog failures keep the setup landing.
+        // A busy catalog keeps the workspace on a retrying banner instead.
+        if (listed.status === "rejected") throw listed.reason
+        if (sources.status === "rejected" && classifyBootFailure(sources.reason) === "unavailable") throw sources.reason
+        const documents = listed.value
         const initial = initialNavigation(documents, documents[0] ?? newDashboard())
         const active = documents.length
           ? await client.get(initial.document.id)
           : { dashboard: newDashboard(), etag: undefined }
         if (controller.signal.aborted) return
         if (active.etag) etags.current.set(active.dashboard.id, active.etag)
-        setProviders(available)
+        setProviders(sources.status === "fulfilled" ? sources.value : [])
+        setSourceNotice(sources.status === "rejected" ? "Data sources are busy. Retrying shortly…" : "")
+        setSourceRetry(sources.status === "rejected" ? { observed: { error: sources.reason } } : null)
         setDashboards(documents)
         reset(active.dashboard)
         setSaved(documentFingerprint(active.dashboard))
@@ -414,6 +425,29 @@ export default function InsightsApp({
       })
     return () => controller.abort()
   }, [client, initialExample, enterExample, reset, retry])
+
+  useEffect(() => {
+    if (!sourceRetry) return
+    const controller = new AbortController()
+    retryWhileBusy(
+      signal => client.providers(signal),
+      controller.signal,
+      delay => setSourceNotice(`Data sources are busy. Retrying in ${Math.ceil(delay / 1000)} s…`),
+      sourceRetry.observed,
+    ).then(available => {
+      if (controller.signal.aborted) return
+      setProviders(available)
+      setSourceNotice("")
+      setSourceRetry(null)
+    }, (error: unknown) => {
+      if (controller.signal.aborted) return
+      setSourceNotice(classifyBootFailure(error) === "busy"
+        ? "Data sources are still busy."
+        : error instanceof Error ? error.message : "Data sources are unavailable.")
+      setSourceRetry(null)
+    })
+    return () => controller.abort()
+  }, [client, sourceRetry])
 
   useEffect(() => {
     if (!dirty && !widgetDraftDirty && !explorerDirty && !importingBundle) return
@@ -1164,20 +1198,20 @@ export default function InsightsApp({
             </div>
           </div>
           <p role="alert" className={styles.validationError}>
-            {error}
+            {error && error.charAt(0).toUpperCase() + error.slice(1)}
           </p>
           <div className={styles.actions}>
-            <GammaButton size="sm" variant="primary" className={styles.primary} onClick={enterExample}>
-              Explore the example <ArrowUpRight size={16} />
-            </GammaButton>
-            <GammaButton size="sm" variant="secondary"
-              className={styles.secondary}
+            <GammaButton size="sm" variant="primary"
+              className={styles.primary}
               onClick={() => {
                 setMode("loading")
                 setRetry((value) => value + 1)
               }}
             >
               Retry connection
+            </GammaButton>
+            <GammaButton size="sm" variant="secondary" className={styles.secondary} onClick={enterExample}>
+              Explore the example <ArrowUpRight size={16} />
             </GammaButton>
           </div>
           <p className={styles.hint}>
@@ -1582,6 +1616,12 @@ export default function InsightsApp({
           </div>
         )}
         {syncError && <p className={styles.notice} role="status">Workspace updates paused: {syncError} Retrying automatically.</p>}
+        {sourceNotice && (
+          <div className={styles.notice} role="status">
+            <span>{sourceNotice}</span>
+            <GammaButton size="sm" variant="secondary" onClick={() => setSourceRetry({})}>Retry data sources</GammaButton>
+          </div>
+        )}
         {(error || message) && (
           <div
             className={`${styles.notice} ${error ? styles.errorNotice : ""}`}

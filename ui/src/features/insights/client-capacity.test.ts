@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createInsightsClient } from "./client"
+import { classifyBootFailure, createInsightsClient, InsightsHTTPError, retryWhileBusy } from "./client"
 import type { Dashboard, SavedQuery } from "./schema"
 
 const dashboard: Dashboard = {
@@ -138,6 +138,107 @@ describe("document capacity backoff", () => {
     await expect(api.saveProvider({ id: "metrics", name: "Metrics", type: "prometheus", url: "http://metrics:9090" })).rejects.toThrow(/retry shortly/)
     await expect(api.remove(dashboard.id)).rejects.toThrow(/retry shortly/)
     expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe("provider catalog capacity backoff", () => {
+  const provider = { id: "metrics", name: "Metrics", type: "prometheus" as const, capabilities: ["metrics" as const] }
+  it("retries a busy catalog listing with Retry-After and returns the catalog", async () => {
+    const fetcher = mockFetch(limited("1"), response({ providers: [provider] }))
+    const pending = createInsightsClient().providers(new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual([provider])
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[1][0]).toBe(fetcher.mock.calls[0][0])
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/providers")
+  })
+  it("surfaces a typed busy error after three replays", async () => {
+    const fetcher = mockFetch(limited(), limited(), limited(), limited())
+    const rejected = createInsightsClient().providers().catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(7000)
+    const error = await rejected
+    expect(error).toBeInstanceOf(InsightsHTTPError)
+    expect(error).toMatchObject({ status: 429, message: "too many active observability requests; retry shortly" })
+    expect(classifyBootFailure(error)).toBe("busy")
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it("does not replay a catalog listing for a permanent failure", async () => {
+    const fetcher = mockFetch(response({ error: "Your account does not have access to Insights." }, 403, { "Retry-After": "1" }))
+    await expect(createInsightsClient().providers()).rejects.toThrow(/does not have access/)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe("boot failure classification", () => {
+  it.each([429, 503])("treats HTTP %s as a busy gateway", status => {
+    expect(classifyBootFailure(new InsightsHTTPError("busy", status, "1"))).toBe("busy")
+  })
+  it.each([401, 403, 404, 500, 502])("keeps HTTP %s on the setup landing", status => {
+    expect(classifyBootFailure(new InsightsHTTPError("rejected", status, null))).toBe("unavailable")
+  })
+  it("keeps a plain error and a refused connection on the setup landing", () => {
+    expect(classifyBootFailure(new Error("Sign in to access your dashboards."))).toBe("unavailable")
+    expect(classifyBootFailure(new TypeError("Failed to fetch"))).toBe("unavailable")
+  })
+  it("keeps a permanent HTTP rejection from the real client on the setup landing", async () => {
+    mockFetch(response({ error: "Provider not found" }, 404))
+    const failure = await createInsightsClient().providers().catch((error: unknown) => error)
+    expect(classifyBootFailure(failure)).toBe("unavailable")
+  })
+})
+
+describe("busy source retry loop", () => {
+  const busy = () => new InsightsHTTPError("too many active observability requests; retry shortly", 429, "1")
+  it("waits for the observed busy failure before the first retry, then reports the wait", async () => {
+    const load = vi.fn().mockResolvedValue(["metrics"])
+    const waits: number[] = []
+    const pending = retryWhileBusy(load, new AbortController().signal, delay => waits.push(delay), { error: busy() })
+    await vi.advanceTimersByTimeAsync(999)
+    expect(load).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual(["metrics"])
+    expect(waits).toEqual([1000])
+    expect(load).toHaveBeenCalledOnce()
+  })
+  it("starts an unobserved load immediately and returns its result without waiting", async () => {
+    const load = vi.fn().mockResolvedValue(["metrics"])
+    const waits: number[] = []
+    expect(await retryWhileBusy(load, new AbortController().signal, delay => waits.push(delay))).toEqual(["metrics"])
+    expect(waits).toEqual([])
+  })
+  it("retries at most three times with the backoff, then rethrows the busy error", async () => {
+    const failure = new InsightsHTTPError("too many active observability requests; retry shortly", 429, null)
+    const load = vi.fn().mockRejectedValue(failure)
+    const waits: number[] = []
+    const pending = expect(retryWhileBusy(load, new AbortController().signal, delay => waits.push(delay))).rejects.toBe(failure)
+    await vi.advanceTimersByTimeAsync(7000)
+    await pending
+    expect(load).toHaveBeenCalledTimes(4)
+    expect(waits).toEqual([1000, 2000, 4000])
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it("does not retry a permanent failure", async () => {
+    const failure = new InsightsHTTPError("Provider not found", 404, null)
+    const load = vi.fn().mockRejectedValue(failure)
+    await expect(retryWhileBusy(load, new AbortController().signal, () => undefined)).rejects.toBe(failure)
+    expect(load).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it("cancels a pending wait without another load", async () => {
+    const load = vi.fn().mockRejectedValue(busy())
+    const abort = new AbortController()
+    const rejected = expect(retryWhileBusy(load, abort.signal, () => undefined)).rejects.toMatchObject({ name: "AbortError" })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+    abort.abort()
+    await rejected
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(load).toHaveBeenCalledOnce()
     expect(vi.getTimerCount()).toBe(0)
   })
 })
