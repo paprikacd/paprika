@@ -6,6 +6,7 @@
    1.27. Critical stays at least as strong as warning in every theme. */
 .band[data-level="critical"] { background: color-mix(in srgb, var(--gamma-status-critical) 11%, transparent); }
 .band[data-level="warning"] { background: color-mix(in srgb, var(--gamma-status-warning) 15%, transparent); }
-.summary { font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted, #52636f)); font-variant-numeric: tabular-nums; }
+/* One fixed line: the reserved height never changes with the text, and long text truncates with its full words in the document. */
+.summary { display: block; flex: none; box-sizing: border-box; height: 16px; line-height: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; color: var(--widget-text, var(--gamma-muted, #52636f)); font-variant-numeric: tabular-nums; }
 .level[data-level="critical"] { color: var(--gamma-status-critical-text); }
 .level[data-level="warning"] { color: var(--gamma-status-warning-text); }

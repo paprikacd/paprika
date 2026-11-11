@@ -25,19 +25,19 @@ export function breachLevelText(entry: BreachLevelSummary): string {
 }
 
 /**
- * The footer line for a time series' breaches. Each level is named in words, so the line reads the same without colour.
- * It takes the footer's notice layout, like the stale and gap notices. It renders nothing when no series breaches.
+ * The breach line of a time series. Each level is named in words, so the line reads the same without colour. It is always
+ * rendered for a widget with a warning or critical status, and reads "No breaches in range" when nothing breaches. It has a
+ * fixed height and truncates, so its text never changes the footer's layout.
  */
 export function BreachSummary({ summary, partial = false, unshaded = 0 }: { summary: readonly BreachLevelSummary[]; partial?: boolean; unshaded?: number }) {
-  if (!summary.length) return null;
   return (
-    <span className={`${chartStyles.notice} ${styles.summary}`} data-breach-summary>
-      {summary.map((entry, index) => (
+    <span className={`${chartStyles.notice} ${styles.summary}`} data-breach-summary data-breach-state={summary.length ? "active" : "none"}>
+      {summary.length ? summary.map((entry, index) => (
         <span key={entry.level} className={styles.level} data-level={entry.level} data-breach-level={entry.level}>
           {index > 0 && "; "}
           {breachLevelText(entry)}
         </span>
-      ))}
+      )) : "No breaches in range"}
       {partial && " · partial result"}
       {unshaded > 0 && ` · ${unshaded} more ${unshaded === 1 ? "band" : "bands"} not shaded`}
     </span>

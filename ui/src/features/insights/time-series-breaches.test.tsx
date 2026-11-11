@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { WidgetVisualization } from "./charts";
@@ -18,6 +19,8 @@ const configured = (thresholds: Threshold[] = bands, extra: Partial<NonNullable<
 type Series = NonNullable<QueryResult["series"]>[number];
 const series = (name: string, values: (number | null)[], minutes: number[] = values.map((_, index) => index)): Series =>
   ({ name, labels: { service: name }, points: values.map((value, index) => ({ timestamp: minutes[index] * MINUTE, value })) });
+/** The footer's children by tag and class, so two renders can be compared for layout structure. */
+const footerShape = (container: HTMLElement) => [...container.querySelector("[data-chart-footer]")!.children].map((child) => `${child.tagName}.${child.className}`);
 const xs = (path: Element) => [...path.getAttribute("d")!.matchAll(/[ML]([\d.e+-]+),/g)].map((match) => Number(match[1]));
 
 /** Minute-spaced samples: warning at minutes 1-2, critical at 3, ok at 4-5, critical at 6-7, ok at 8. */
@@ -132,7 +135,41 @@ describe("time-series breach shading", () => {
     const calm: QueryResult = { series: [series("burn", [1, 1, 1, 1])] };
     const { container } = render(<WidgetVisualization widget={configured()} result={calm} />);
     expect(container.querySelectorAll("[data-breach-band]")).toHaveLength(0);
-    expect(container.querySelector("[data-breach-summary]")).toBeNull();
+    expect(container.querySelector("[data-breach-summary]")).toHaveTextContent("No breaches in range");
+  });
+
+  it("keeps the plot the same height and the footer the same shape with and without an active breach", () => {
+    const calm: QueryResult = { series: [series("burn", [1, 1, 1, 1, 1, 1, 1, 1, 1])] };
+    const active = render(<WidgetVisualization widget={configured()} result={burn} />);
+    const activeHeight = active.container.querySelector("svg")!.getAttribute("height");
+    const activeFooter = footerShape(active.container);
+    expect(active.container.querySelector("[data-breach-summary]")).toHaveAttribute("data-breach-state", "active");
+    active.unmount();
+
+    const idle = render(<WidgetVisualization widget={configured()} result={calm} />);
+    expect(idle.container.querySelector("svg")!.getAttribute("height")).toBe(activeHeight);
+    expect(footerShape(idle.container)).toEqual(activeFooter);
+    expect(idle.container.querySelector("[data-breach-summary]")).toHaveAttribute("data-breach-state", "none");
+    expect(idle.container.querySelector("[data-breach-summary]")).toHaveTextContent(/^No breaches in range$/);
+  });
+
+  it("reserves nothing for a widget without status thresholds, so it renders as before", () => {
+    const plain = render(<WidgetVisualization widget={widget} result={burn} />);
+    const plainFooter = footerShape(plain.container);
+    expect(plain.container.querySelector("[data-breach-summary]")).toBeNull();
+    plain.unmount();
+    const colourOnly = render(<WidgetVisualization widget={configured([{ value: 0, color: "#e8554e" }, { value: 2, color: "#e0a527" }])} result={burn} />);
+    expect(colourOnly.container.querySelector("[data-breach-summary]")).toBeNull();
+    expect(footerShape(colourOnly.container)).toEqual(plainFooter);
+  });
+
+  it("gives the breach line a fixed height, so its words cannot change the layout", () => {
+    const css = readFileSync("src/features/insights/breach.module.css", "utf8");
+    const rule = css.match(/\.summary \{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).toMatch(/height: 16px/);
+    expect(rule).toMatch(/line-height: 16px/);
+    expect(rule).toMatch(/white-space: nowrap/);
+    expect(rule).toMatch(/overflow: hidden/);
   });
 });
 

@@ -369,6 +369,9 @@ export function TimeSeriesChart({
   // Intervals are clipped to the plotted window, so the footer never counts time the plot does not show.
   const windowBreaches = useMemo(() => timeDomain ? clampBreaches(breaches, timeDomain) : breaches, [breaches, timeDomain]);
   const breachLevels = useMemo(() => breachSummary(windowBreaches), [windowBreaches]);
+  // A widget with a warning or critical status always reserves its breach line, so the plot's height is a function of the
+  // configuration alone. Whether a breach is active only changes the words on that line, never the layout.
+  const reservesBreachLine = !embedded && (options.thresholds ?? []).some(threshold => threshold.status === "warning" || threshold.status === "critical");
   // Bands: one per merged span with time in it, so instants (single samples) get no zero-width band. Spans closer than one
   // pixel merge into one band. Each level keeps its most recent bands, and warning is drawn before critical so that critical
   // paints over any overlap.
@@ -625,7 +628,7 @@ export function TimeSeriesChart({
         </ul>
       </details>}
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
-      {!embedded && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
+      {reservesBreachLine && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 ? 0 : undefined}>
           {data.map((entry, index) => {

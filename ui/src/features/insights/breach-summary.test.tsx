@@ -15,9 +15,12 @@ describe("formatBreachDuration", () => {
 });
 
 describe("BreachSummary", () => {
-  it("renders nothing without breaches", () => {
+  it("reads No breaches in range, as plain text, when nothing breaches", () => {
     const { container } = render(<BreachSummary summary={[]} />);
-    expect(container).toBeEmptyDOMElement();
+    const line = container.querySelector("[data-breach-summary]")!;
+    expect(line).toHaveTextContent(/^No breaches in range$/);
+    expect(line).toHaveAttribute("data-breach-state", "none");
+    expect(line.querySelector("[data-breach-level]")).toBeNull();
   });
 
   it("names the level in words with its interval count and duration", () => {
