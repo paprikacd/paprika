@@ -72,7 +72,14 @@ function insightsChunkGroup() {
   const manifestPath = join(nextDir, "server", "app", "dashboard", "insights", "page", "react-loadable-manifest.json");
   if (!existsSync(manifestPath))
     fail(`Missing ${manifestPath}. Run npm run build in ui/ first, or pass --next <dir>.`);
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const text = readFileSync(manifestPath, "utf8");
+  if (!text.trim()) fail(`${manifestPath} is empty. Rebuild with npm run build in ui/.`);
+  let manifest;
+  try {
+    manifest = JSON.parse(text);
+  } catch (error) {
+    fail(`${manifestPath} is not valid JSON (${error.message}). Rebuild with npm run build in ui/.`);
+  }
   const files = Object.values(manifest).flatMap((entry) => entry.files ?? []).map(assetKey);
   if (!files.length) fail(`${manifestPath} lists no chunks for the Insights page; the dynamic import may have moved.`);
   return [...new Set(files)];
