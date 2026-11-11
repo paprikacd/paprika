@@ -58,7 +58,7 @@ func insightsCompositionPointer(singular string) string {
 	if singular != "dashboard" {
 		return ""
 	}
-	return " Follow the dashboard composition rules in the server instructions or get_insights_schema notes. Call validate_dashboard before saving; warnings come back in checks on every successful write."
+	return " Follow the dashboard composition rules in the server instructions or get_insights_schema notes. Use validate_dashboard to check a draft without saving; successful writes return warnings in checks."
 }
 
 func insightsGetTool(c *InsightsAuthoringClient, singular, collection string) mcp.Tool {

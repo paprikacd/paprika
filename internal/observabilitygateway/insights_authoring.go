@@ -319,24 +319,35 @@ func (c *InsightsAuthoringClient) get(ctx context.Context, collection, id string
 	return c.documentResult(collection, id, body, etag)
 }
 
-// splitInsightsChecks removes the checks member that a checks=true save appends
-// and decodes it. A body without the member (an older service) is returned as is.
+// checksMemberPrefix introduces the checks member that a checks=true dashboard
+// save appends. The service writes that member last, compact, after the saved
+// document. A quote inside a JSON string is always escaped, so the last
+// occurrence of this prefix is the service's own member.
+var checksMemberPrefix = []byte(`,"checks":`)
+
+// splitInsightsChecks removes the checks member a checks=true save appends and
+// decodes it. Only the trailing member is cut: the document bytes keep their
+// saved order and spelling. A body without the member (an older service) is
+// returned unchanged.
 func splitInsightsChecks(body json.RawMessage) (json.RawMessage, *insightsv1.CheckReport, error) {
-	fields, err := insightsPatchObject(body)
-	if err != nil {
-		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid document"))
-	}
-	raw, present := fields["checks"]
-	if !present {
+	trimmed := bytes.TrimRight(body, " \t\r\n")
+	at := bytes.LastIndex(trimmed, checksMemberPrefix)
+	if at < 0 {
 		return body, nil, nil
 	}
-	report, err := insightsChecksReport(raw)
+	// The member is "<report>}" where the final brace closes the document.
+	members := trimmed[at+len(checksMemberPrefix):]
+	if len(members) == 0 || members[len(members)-1] != '}' {
+		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid document"))
+	}
+	report, err := insightsChecksReport(members[:len(members)-1])
 	if err != nil {
 		return nil, nil, err
 	}
-	delete(fields, "checks")
-	document, err := json.Marshal(fields)
-	if err != nil {
+	document := make([]byte, 0, at+1)
+	document = append(document, trimmed[:at]...)
+	document = append(document, '}')
+	if !json.Valid(document) {
 		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid document"))
 	}
 	return document, report, nil
@@ -359,17 +370,23 @@ func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, ar
 		}
 		headers.Set("If-Match", args.ETag)
 	}
-	// checks=true asks for the warnings beside the saved document; the document
-	// itself is returned without them.
-	body, etag, err := c.request(ctx, http.MethodPut, collection+"/"+identity.ID+"?checks=true", args.Document, headers)
+	// Dashboard saves ask for their warnings beside the saved document. The
+	// document itself is returned without them. Saved queries have no checks.
+	path := collection + "/" + identity.ID
+	if collection == "dashboards" {
+		path += "?checks=true"
+	}
+	body, etag, err := c.request(ctx, http.MethodPut, path, args.Document, headers)
 	if err != nil {
 		return nil, err
 	}
-	document, report, err := splitInsightsChecks(body)
-	if err != nil {
-		return nil, err
+	var report *insightsv1.CheckReport
+	if collection == "dashboards" {
+		if body, report, err = splitInsightsChecks(body); err != nil {
+			return nil, err
+		}
 	}
-	result, err = c.documentResult(collection, identity.ID, document, etag)
+	result, err = c.documentResult(collection, identity.ID, body, etag)
 	if err != nil {
 		return nil, err
 	}

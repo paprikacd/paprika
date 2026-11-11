@@ -17,9 +17,8 @@ import (
 // a document that validates here is one the save path accepts on size.
 const insightsValidateDocumentBytes = 256 << 10
 
-// insightsValidateDescription is the validate_dashboard tool description. It is
-// one sentence on purpose: the write tools point at it, not at its contract.
-const insightsValidateDescription = "Dry-run a dashboard document, or a saved dashboard by id, without saving: a verdict, then schema and layout findings with widget ids and pointers. Read-only."
+// insightsValidateDescription is the validate_dashboard tool description.
+const insightsValidateDescription = "Dry-run a dashboard document, or a saved dashboard by id, without saving. Returns schema and lint findings; errors block a save, warnings do not. Read-only."
 
 const insightsValidateSchema = `{"type":"object","properties":{"document":` + dashboardDocumentSchema + `,"id":` + insightsIDSchema + `},"oneOf":[{"required":["document"]},{"required":["id"]}],"additionalProperties":false}`
 
@@ -37,18 +36,22 @@ func insightsValidateTool(c *InsightsAuthoringClient) mcp.Tool {
 
 // validate runs the Insights dry run on a document, or on the stored dashboard
 // with id. The stored document is read with the caller's own token, so a
-// dashboard the caller cannot read is reported as not found.
+// dashboard the caller cannot read is PermissionDenied, as the test asserts.
 func (c *InsightsAuthoringClient) validate(ctx context.Context, args insightsAuthoringArgs) (any, error) {
+	if args.ETag != "" || args.ProviderID != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("validate_dashboard takes only document or id"))
+	}
 	document, err := c.validationDocument(ctx, args)
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(struct {
-		Document json.RawMessage `json:"document"`
-	}{Document: document})
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not encode dashboard check"))
-	}
+	// The envelope is built by concatenation, not json.Marshal: encoding a
+	// RawMessage escapes <, > and & as six bytes each, which can push a document
+	// that saves fine past the limit on the way to the dry run.
+	body := make([]byte, 0, len(document)+len(`{"document":}`))
+	body = append(body, `{"document":`...)
+	body = append(body, document...)
+	body = append(body, '}')
 	// A dry run is a POST that writes nothing, so it is read-authorized.
 	raw, _, err := c.requestAuthorized(ctx, http.MethodPost, "dashboards/validate", body, nil, false, 2<<20)
 	if err != nil {
@@ -82,9 +85,12 @@ func (c *InsightsAuthoringClient) validationDocument(ctx context.Context, args i
 	return stored.Document, nil
 }
 
+// submittedDocument checks a document before any upstream call. Its size error
+// is InvalidArgument: retrying the same document cannot succeed, so it must not
+// read as a capacity fault.
 func submittedDocument(document json.RawMessage) (json.RawMessage, error) {
 	if len(document) > insightsValidateDocumentBytes {
-		return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("dashboard document exceeds its size limit"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("dashboard document exceeds 256 KiB"))
 	}
 	if _, err := insightsPatchObject(document); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("document must be a JSON object"))

@@ -1,6 +1,7 @@
 package observabilitygateway_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -49,10 +50,23 @@ func structuredBytes(t *testing.T, res *sdkmcp.CallToolResult) json.RawMessage {
 	return raw
 }
 
+// resultText is the verdict section: the last text block of a checked result.
 func resultText(t *testing.T, res *sdkmcp.CallToolResult) string {
 	t.Helper()
-	require.NotEmpty(t, res.Content)
-	text, ok := res.Content[0].(*sdkmcp.TextContent)
+	require.Len(t, res.Content, 2, "a checked result is the JSON block and the checks section")
+	return textBlock(t, res, 1)
+}
+
+// resultJSON is the first text block, which must be the structured content.
+func resultJSON(t *testing.T, res *sdkmcp.CallToolResult) string {
+	t.Helper()
+	return textBlock(t, res, 0)
+}
+
+func textBlock(t *testing.T, res *sdkmcp.CallToolResult, i int) string {
+	t.Helper()
+	require.Greater(t, len(res.Content), i)
+	text, ok := res.Content[i].(*sdkmcp.TextContent)
 	require.True(t, ok)
 	return text.Text
 }
@@ -168,7 +182,8 @@ func TestValidateDashboardArgumentsAuthorizationAndLimits(t *testing.T) {
 
 	oversized := authoringDocument(t, "dashboard", strings.Repeat("x", 257<<10))
 	_, err = h.callRaw(t, p, "validate_dashboard", map[string]any{"document": oversized})
-	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "retrying the same document cannot succeed, so this is not a capacity fault")
+	require.Contains(t, err.Error(), "dashboard document exceeds 256 KiB")
 
 	// The dry run needs observe; a token with only insights:write cannot read the
 	// stored dashboard, and a human outside every Insights group cannot either.
@@ -187,7 +202,8 @@ func TestInsightsWritesReturnChecksSeparatelyAndNeverInTheDocument(t *testing.T)
 	require.NoError(t, err)
 	text := resultText(t, created)
 	require.True(t, strings.HasPrefix(text, "Checks: 0 errors, 1 warning\n"), text)
-	require.Contains(t, text, `"id":"mcp-demo"`)
+	require.JSONEq(t, string(structuredBytes(t, created)), resultJSON(t, created), "content[0] is the structured content")
+	require.Contains(t, resultJSON(t, created), `"id":"mcp-demo"`)
 
 	var structured struct {
 		Document json.RawMessage `json:"document"`
@@ -203,7 +219,9 @@ func TestInsightsWritesReturnChecksSeparatelyAndNeverInTheDocument(t *testing.T)
 	require.Equal(t, uint32(1), structured.Checks.WarningCount)
 	require.Equal(t, "stat.density", structured.Checks.Issues[0].RuleID)
 	require.NotContains(t, string(structured.Document), `"checks"`)
-	require.NotContains(t, text, `"checks":`, "the document text must not carry the checks member")
+	var beside map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(resultJSON(t, created)), &beside))
+	require.Contains(t, beside, "checks", "checks sits beside the document in the JSON block")
 
 	// The returned document is valid input to a re-save: no stray members.
 	var document map[string]any
@@ -219,7 +237,7 @@ func TestInsightsWritesReturnChecksSeparatelyAndNeverInTheDocument(t *testing.T)
 	clean := authoringDocument(t, "dashboard", "Clean")
 	cleanResult, err := h.callRaw(t, p, "update_dashboard", map[string]any{"document": clean, "etag": etagFromResult(t, patched)})
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(resultText(t, cleanResult), "Checks passed\n"))
+	require.Equal(t, "Checks passed", resultText(t, cleanResult))
 }
 
 func etagFromResult(t *testing.T, res *sdkmcp.CallToolResult) string {
@@ -279,4 +297,97 @@ func TestInsightsValidateToolIsRegisteredAsObserveReadOnly(t *testing.T) {
 		require.Contains(t, write.Description, "validate_dashboard")
 		require.Contains(t, write.Description, "checks")
 	}
+}
+
+func TestValidateDashboardRejectsEtagAndProviderIDNamedByNoTool(t *testing.T) {
+	h := newAuthoringHarness(t)
+	p := authoringPrincipal([]string{"editors"}, true)
+	_, err := h.call(t, p, "create_dashboard", map[string]any{"document": documentWithWidgets(t, "Stored", statWidget("compact", 0))})
+	require.NoError(t, err)
+	for _, extra := range []map[string]any{{"etag": `"x"`}, {"provider_id": "prometheus"}} {
+		args := map[string]any{"id": "mcp-demo"}
+		for k, v := range extra {
+			args[k] = v
+		}
+		_, err := h.callRaw(t, p, "validate_dashboard", args)
+		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	}
+}
+
+// A read-only caller (observe scope, readers group) can validate both ways: the
+// dry run never writes, and the stored read uses the caller's own token.
+func TestValidateDashboardReadOnlyCallerCanValidateByDocumentAndID(t *testing.T) {
+	h := newAuthoringHarness(t)
+	editor := authoringPrincipal([]string{"editors"}, true)
+	_, err := h.call(t, editor, "create_dashboard", map[string]any{"document": documentWithWidgets(t, "Stored", statWidget("compact", 0))})
+	require.NoError(t, err)
+	reader := authoringPrincipal([]string{"readers"}, false)
+
+	byID, err := h.callRaw(t, reader, "validate_dashboard", map[string]any{"id": "mcp-demo"})
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(resultText(t, byID), "Checks: 0 errors, 1 warning\n"))
+
+	byDocument, err := h.callRaw(t, reader, "validate_dashboard", map[string]any{"document": documentWithWidgets(t, "Draft", statWidget("compact", 0))})
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(resultText(t, byDocument), "Checks: 0 errors, 1 warning\n"))
+
+	_, err = h.callRaw(t, reader, "patch_dashboard", map[string]any{"id": "mcp-demo", "etag": etagOf(t, h, editor), "patch": map[string]any{"title": "Reader"}})
+	require.ErrorIs(t, err, mcp.ErrScopeDenied, "a reader still cannot write")
+}
+
+// Oversize documents cannot succeed on retry, so they must not read as capacity.
+func TestValidateDashboardNearLimitMarkupSurvivesTheDryRun(t *testing.T) {
+	h := newAuthoringHarness(t)
+	p := authoringPrincipal([]string{"editors"}, true)
+	widgets := make([]any, 0, 30)
+	for i := range 30 {
+		widgets = append(widgets, map[string]any{
+			"id": fmt.Sprintf("w%d", i), "title": "Markup", "type": "stat", "providerId": "prometheus", "unit": "%",
+			"query":  strings.Repeat("up > 0 & x < 1 ", 540),
+			"layout": map[string]any{"x": 0, "y": i * 4, "w": 12, "h": 4},
+		})
+	}
+	document := map[string]any{"schemaVersion": 1, "id": "mcp-demo", "title": "Markup", "timeRange": "1h", "refreshInterval": 0, "widgets": widgets}
+	// Encode without HTML escaping, as an MCP client sends it, so the raw bytes
+	// are what the gateway receives.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	require.NoError(t, enc.Encode(map[string]any{"document": document}))
+	args := json.RawMessage(bytes.TrimSpace(buf.Bytes()))
+	require.Less(t, len(args), 256<<10, "the document saves within the limit")
+	require.Greater(t, len(args), 200<<10, "the document is near the limit")
+
+	result, err := h.invoker.Call(auth.WithPrincipal(t.Context(), p), p, "validate_dashboard", args)
+	require.NoError(t, err)
+	require.Equal(t, "Checks passed", resultText(t, asCallResult(t, result)))
+	_, err = h.invoker.Call(auth.WithPrincipal(t.Context(), p), p, "create_dashboard", args)
+	require.NoError(t, err, "the save path accepts the same bytes, so the dry run must too")
+}
+
+// A patch that edits widgets returns the checks beside a stripped document.
+func TestInsightsPatchWidgetEditsReturnsChecksAndStrippedDocument(t *testing.T) {
+	h := newAuthoringHarness(t)
+	p := authoringPrincipal([]string{"editors"}, true)
+	created, err := h.callRaw(t, p, "create_dashboard", map[string]any{"document": documentWithWidgets(t, "Warned", statWidget("compact", 0))})
+	require.NoError(t, err)
+	patched, err := h.callRaw(t, p, "patch_dashboard", map[string]any{
+		"id": "mcp-demo", "etag": etagFromResult(t, created),
+		"widget_edits": []any{map[string]any{"op": "add", "widget": statWidget("second", 2)}},
+	})
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(resultText(t, patched), "Checks: 0 errors, 2 warnings\n"), resultText(t, patched))
+
+	var structured struct {
+		Document json.RawMessage `json:"document"`
+		Checks   struct {
+			WarningCount uint32 `json:"warningCount"`
+		} `json:"checks"`
+	}
+	require.NoError(t, json.Unmarshal(structuredBytes(t, patched), &structured))
+	require.Equal(t, uint32(2), structured.Checks.WarningCount)
+	require.NotContains(t, string(structured.Document), `"checks"`)
+	fetched, err := h.call(t, p, "get_dashboard", map[string]any{"id": "mcp-demo"})
+	require.NoError(t, err)
+	require.JSONEq(t, string(fetched["document"]), string(structured.Document))
 }

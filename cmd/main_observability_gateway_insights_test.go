@@ -52,13 +52,17 @@ func TestObservabilityInsightsRegistrationRequiresExplicitConfiguration(t *testi
 				return
 			}
 			require.Equal(t, []mcp.Scope{mcp.ScopeObserve, mcp.ScopeInsightsWrite}, scopes)
-			require.Len(t, registry.All(), 13)
+			require.Len(t, registry.All(), 14)
 			for _, name := range []string{"create_saved_query", "update_saved_query", "patch_saved_query", "create_dashboard", "update_dashboard", "patch_dashboard"} {
 				tool, found := registry.Lookup(name)
 				require.True(t, found, name)
 				require.Equal(t, mcp.ScopeInsightsWrite, tool.Scope, name)
 				require.False(t, tool.Destructive, name)
 			}
+			validate, found := registry.Lookup("validate_dashboard")
+			require.True(t, found)
+			require.Equal(t, mcp.ScopeObserve, validate.Scope, "the dry run is read-only and needs no write scope")
+			require.False(t, validate.Destructive)
 		})
 	}
 }
