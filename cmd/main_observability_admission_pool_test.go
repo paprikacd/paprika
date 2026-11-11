@@ -56,7 +56,7 @@ func admissionServe(ctx context.Context, h http.Handler, path, body string) (int
 }
 
 func TestAdmissionPoolWaitsThenRejectsAtDeadline(t *testing.T) {
-	p := newObservabilityAdmissionPool(1)
+	p := newObservabilityAdmissionPool(1, 1)
 	require.True(t, p.acquire(t.Context()))
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
@@ -66,7 +66,7 @@ func TestAdmissionPoolWaitsThenRejectsAtDeadline(t *testing.T) {
 }
 
 func TestAdmissionPoolWaiterAdmittedWhenSlotFrees(t *testing.T) {
-	p := newObservabilityAdmissionPool(1)
+	p := newObservabilityAdmissionPool(1, 1)
 	require.True(t, p.acquire(t.Context()))
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -76,7 +76,7 @@ func TestAdmissionPoolWaiterAdmittedWhenSlotFrees(t *testing.T) {
 }
 
 func TestAdmissionPoolZeroWaitFailsFast(t *testing.T) {
-	p := newObservabilityAdmissionPool(1)
+	p := newObservabilityAdmissionPool(1, 1)
 	require.True(t, p.acquire(t.Context()))
 	ctx, cancel := context.WithTimeout(t.Context(), 0)
 	defer cancel()
@@ -88,7 +88,7 @@ func TestAdmissionPoolZeroWaitFailsFast(t *testing.T) {
 // Waiters are bounded per pool: with size 1 running and 1 waiting, the next
 // request is refused at once even though its own deadline is far away.
 func TestAdmissionPoolCapsWaiters(t *testing.T) {
-	p := newObservabilityAdmissionPool(1)
+	p := newObservabilityAdmissionPool(1, 1)
 	require.True(t, p.acquire(t.Context()))
 	waiterDone := make(chan bool, 1)
 	go func() { waiterDone <- p.acquire(t.Context()) }()
@@ -103,7 +103,7 @@ func TestAdmissionPoolCapsWaiters(t *testing.T) {
 }
 
 func TestAdmissionPoolStopsWaitingWhenClientGoes(t *testing.T) {
-	p := newObservabilityAdmissionPool(1)
+	p := newObservabilityAdmissionPool(1, 1)
 	require.True(t, p.acquire(t.Context()))
 	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
@@ -130,7 +130,7 @@ func TestLimitObservabilityProtocolRequestsWaitsForWorkSlot(t *testing.T) {
 			release := make(chan struct{})
 			entered := make(chan struct{}, 2)
 			h := limitObservabilityProtocolRequestsWith(blockingHandler(release, entered),
-				observabilityHTTPPools{Work: 1, Catalog: 1, Dashboards: 1, Intake: 4, AdmissionWait: tc.wait})
+				observabilityHTTPPools{Work: 1, WorkWaiters: 1, Catalog: 1, Dashboards: 1, Intake: 4, AdmissionWait: tc.wait})
 			firstCode := make(chan int, 1)
 			go func() {
 				code, _ := admissionServe(t.Context(), h, "/observe/mcp?hold=1", admissionWorkBody)
@@ -160,13 +160,15 @@ func TestLimitObservabilityProtocolRequestsWaitsForWorkSlot(t *testing.T) {
 }
 
 // Regression for the starvation bug: with the production 1 s wait and the work
-// pool saturated (4 running, 4 waiting), a further data request is refused at
-// once, and catalog and dashboard requests are still admitted immediately.
+// pool saturated, catalog and dashboard requests are still admitted at once.
+// The work pool holds 4 running and up to 32 waiting (the budget queue), so a
+// 33rd data request is refused at once.
 func TestSaturatedWorkPoolDoesNotBlockCatalogOrDashboards(t *testing.T) {
 	pools := productionAdmissionPools(t)
 	require.Equal(t, time.Second, pools.AdmissionWait)
+	require.Equal(t, 32, pools.WorkWaiters)
 	release := make(chan struct{})
-	entered := make(chan struct{}, 16)
+	entered := make(chan struct{}, 64)
 	h := limitObservabilityProtocolRequestsWith(blockingHandler(release, entered), pools)
 
 	var holders sync.WaitGroup
@@ -179,8 +181,8 @@ func TestSaturatedWorkPoolDoesNotBlockCatalogOrDashboards(t *testing.T) {
 		<-entered
 	}
 	var waiters sync.WaitGroup
-	waiterCodes := make([]int, pools.Work)
-	for i := range pools.Work {
+	waiterCodes := make([]int, pools.WorkWaiters)
+	for i := range pools.WorkWaiters {
 		waiters.Add(1)
 		go func() {
 			defer waiters.Done()
@@ -190,7 +192,7 @@ func TestSaturatedWorkPoolDoesNotBlockCatalogOrDashboards(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	code, elapsed := admissionServe(t.Context(), h, "/observe/mcp", admissionWorkBody)
-	assert.Equal(t, http.StatusTooManyRequests, code, "a fifth waiter must be refused by the work pool")
+	assert.Equal(t, http.StatusTooManyRequests, code, "a request beyond the work pool's waiters must be refused")
 	assert.Less(t, elapsed, 50*time.Millisecond)
 
 	code, elapsed = admissionServe(t.Context(), h, "/observe/mcp", admissionCatalogBody)
@@ -209,12 +211,40 @@ func TestSaturatedWorkPoolDoesNotBlockCatalogOrDashboards(t *testing.T) {
 	}
 }
 
+// A burst of concurrency + queue data requests inside the edge wait is admitted,
+// not refused at the edge. With a 5 ms execution each request finishes well inside
+// the 1 s deadline, so all 36 must succeed.
+func TestBudgetSizedBurstAdmittedWithinEdgeWait(t *testing.T) {
+	pools := productionAdmissionPools(t)
+	budgetCapacity := 4 + 32
+	require.Equal(t, budgetCapacity, pools.Work+pools.WorkWaiters)
+	h := limitObservabilityProtocolRequestsWith(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		time.Sleep(5 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}), pools)
+
+	codes := make([]int, budgetCapacity)
+	var wg sync.WaitGroup
+	for i := range budgetCapacity {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i], _ = admissionServe(t.Context(), h, "/observe/mcp", admissionWorkBody)
+		}()
+	}
+	wg.Wait()
+	for i, c := range codes {
+		assert.Equal(t, http.StatusOK, c, "burst request %d of %d", i, budgetCapacity)
+	}
+}
+
 // Over a real HTTP/1.1 connection, a client that leaves while its request waits
 // for a pool must release the wait at once rather than at the admission deadline.
 func TestAdmissionHTTP1ClientLeavingStopsWaiting(t *testing.T) {
 	release := make(chan struct{})
 	entered := make(chan struct{}, 1)
-	pools := observabilityHTTPPools{Work: 1, Catalog: 1, Dashboards: 1, Intake: 4, AdmissionWait: time.Second}
+	pools := observabilityHTTPPools{Work: 1, WorkWaiters: 1, Catalog: 1, Dashboards: 1, Intake: 4, AdmissionWait: time.Second}
 	handler := limitObservabilityProtocolRequestsWith(blockingHandler(release, entered), pools)
 	var returnedAt atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

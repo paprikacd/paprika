@@ -813,7 +813,9 @@ observabilityGateway:
     ## and the 30s execution budget must stay below the 45s write timeout.
     queryQueueWait: 5s
     ## HTTP slots for MCP data-tool requests (0-65536). 0 means queryConcurrency.
-    ## Explicit values may go up to queryConcurrency + queryQueue.
+    ## Explicit values may go up to queryConcurrency + queryQueue. Up to
+    ## queryQueue requests may wait at the edge for a slot, so the edge admits
+    ## the same burst the budget can queue (4 running + 32 waiting at defaults).
     httpWorkSlots: 0
     ## HTTP slots for provider discovery and MCP handshakes. 0 follows httpWorkSlots.
     httpCatalogSlots: 0

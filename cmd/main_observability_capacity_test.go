@@ -28,7 +28,7 @@ func TestObservabilityCapacityDefaultsMatchBuiltIns(t *testing.T) {
 		QueueWait:           5 * time.Second,
 	}, capacity.Budget)
 	assert.Equal(t, observabilitygateway.DefaultBudgetConfig(), capacity.Budget)
-	assert.Equal(t, observabilityHTTPPools{Work: 4, Catalog: 4, Dashboards: 2, Intake: 8, AdmissionWait: time.Second}, capacity.Pools)
+	assert.Equal(t, observabilityHTTPPools{Work: 4, WorkWaiters: 32, Catalog: 4, Dashboards: 2, Intake: 8, AdmissionWait: time.Second}, capacity.Pools)
 
 	builtIn := defaultObservabilityHTTPPools()
 	assert.Equal(t, builtIn.Work, capacity.Pools.Work)
@@ -55,7 +55,7 @@ func TestObservabilityCapacityFlagsParse(t *testing.T) {
 	capacity, err := resolveObservabilityCapacity(cfg)
 	require.NoError(t, err)
 	assert.Equal(t, observabilitygateway.BudgetConfig{Concurrency: 8, ProviderConcurrency: 4, Queue: 16, ProviderQueue: 4, QueueWait: 3 * time.Second}, capacity.Budget)
-	assert.Equal(t, observabilityHTTPPools{Work: 10, Catalog: 6, Dashboards: 3, Intake: 20, AdmissionWait: 750 * time.Millisecond}, capacity.Pools)
+	assert.Equal(t, observabilityHTTPPools{Work: 10, WorkWaiters: 16, Catalog: 6, Dashboards: 3, Intake: 20, AdmissionWait: 750 * time.Millisecond}, capacity.Pools)
 }
 
 func TestObservabilityCapacityPoolsFollowBudget(t *testing.T) {
@@ -67,17 +67,17 @@ func TestObservabilityCapacityPoolsFollowBudget(t *testing.T) {
 		{
 			name:   "defaults",
 			budget: observabilitygateway.DefaultBudgetConfig(),
-			want:   observabilityHTTPPools{Work: 4, Catalog: 4, Dashboards: 2, Intake: 8, AdmissionWait: time.Second},
+			want:   observabilityHTTPPools{Work: 4, WorkWaiters: 32, Catalog: 4, Dashboards: 2, Intake: 8, AdmissionWait: time.Second},
 		},
 		{
 			name:   "raised concurrency raises every derived pool",
 			budget: observabilitygateway.BudgetConfig{Concurrency: 6, ProviderConcurrency: 2, Queue: 32, ProviderQueue: 8, QueueWait: 5 * time.Second},
-			want:   observabilityHTTPPools{Work: 6, Catalog: 6, Dashboards: 2, Intake: 12, AdmissionWait: time.Second},
+			want:   observabilityHTTPPools{Work: 6, WorkWaiters: 32, Catalog: 6, Dashboards: 2, Intake: 12, AdmissionWait: time.Second},
 		},
 		{
 			name:   "single slot budget",
 			budget: observabilitygateway.BudgetConfig{Concurrency: 1, ProviderConcurrency: 1, Queue: 0, ProviderQueue: 0, QueueWait: 5 * time.Second},
-			want:   observabilityHTTPPools{Work: 1, Catalog: 1, Dashboards: 1, Intake: 2, AdmissionWait: time.Second},
+			want:   observabilityHTTPPools{Work: 1, WorkWaiters: 0, Catalog: 1, Dashboards: 1, Intake: 2, AdmissionWait: time.Second},
 		},
 	}
 	for _, tc := range cases {

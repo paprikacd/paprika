@@ -136,10 +136,15 @@ func isObservabilityCatalogEnvelope(body []byte) bool {
 // a slot limit. AdmissionWait is the one deadline a request has to get through
 // intake and its pool, measured from the moment the handler starts.
 type observabilityHTTPPools struct {
-	Work          int
-	Catalog       int
-	Dashboards    int
-	Intake        int
+	Work       int
+	Catalog    int
+	Dashboards int
+	Intake     int
+	// WorkWaiters caps how many data requests may wait at the edge for a work
+	// slot. It equals the execution budget's queue, so a burst the budget can
+	// hold (concurrency + queue) is admitted at the edge rather than refused
+	// there before the budget sees it.
+	WorkWaiters   int
 	AdmissionWait time.Duration
 }
 
@@ -148,7 +153,7 @@ type observabilityHTTPPools struct {
 // zero wait keeps the historical fail-fast behaviour for callers that do not
 // pass a configured set.
 func defaultObservabilityHTTPPools() observabilityHTTPPools {
-	return observabilityHTTPPools{Work: 4, Catalog: 4, Dashboards: 2, Intake: 8}
+	return observabilityHTTPPools{Work: 4, Catalog: 4, Dashboards: 2, Intake: 8, WorkWaiters: 32}
 }
 
 // observabilityAdmissionPool is a bounded slot pool with its own bounded waiter
@@ -160,10 +165,10 @@ type observabilityAdmissionPool struct {
 	waiting chan struct{}
 }
 
-// newObservabilityAdmissionPool allows size running requests and size waiting
-// ones. A waiter beyond that is rejected at once.
-func newObservabilityAdmissionPool(size int) observabilityAdmissionPool {
-	return observabilityAdmissionPool{slots: make(chan struct{}, size), waiting: make(chan struct{}, size)}
+// newObservabilityAdmissionPool allows size running requests and up to waiters
+// waiting ones. A waiter beyond that is rejected at once.
+func newObservabilityAdmissionPool(size, waiters int) observabilityAdmissionPool {
+	return observabilityAdmissionPool{slots: make(chan struct{}, size), waiting: make(chan struct{}, waiters)}
 }
 
 // acquire takes a slot. If none is free it waits until ctx ends, provided fewer

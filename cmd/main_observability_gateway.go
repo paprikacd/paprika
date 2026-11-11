@@ -316,6 +316,10 @@ func resolveObservabilityHTTPPools(cfg *cliConfig, budget observabilitygateway.B
 		return observabilityHTTPPools{}, observabilityPoolSources{}, fmt.Errorf("--observability-http-work-slots (%d) exceeds the execution budget's admission capacity (%d = --observability-query-concurrency %d + --observability-query-queue %d)", pools.Work, admission, budget.Concurrency, budget.Queue)
 	}
 
+	// The work pool's edge waiters equal the budget queue, so the edge can hold
+	// every request the budget can queue.
+	pools.WorkWaiters = budget.Queue
+
 	pools.Catalog, src.catalog = pools.Work, "follows the work pool"
 	if cfg.ObsHTTPCatalogSlots != 0 {
 		pools.Catalog, src.catalog = cfg.ObsHTTPCatalogSlots, "explicit"
@@ -442,12 +446,12 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 // own waiters, so a saturated pool cannot starve another class. One deadline,
 // AdmissionWait from the start of the handler, covers both waits.
 func limitObservabilityProtocolRequestsWith(next http.Handler, pools observabilityHTTPPools) http.Handler {
-	intake := newObservabilityAdmissionPool(pools.Intake)
-	work := newObservabilityAdmissionPool(pools.Work)
-	catalog := newObservabilityAdmissionPool(pools.Catalog)
+	intake := newObservabilityAdmissionPool(pools.Intake, pools.Intake)
+	work := newObservabilityAdmissionPool(pools.Work, pools.WorkWaiters)
+	catalog := newObservabilityAdmissionPool(pools.Catalog, pools.Catalog)
 	// Dashboard orchestration waits on nested data-tool requests. Giving it a
 	// separate small pool leaves data slots available and bounds aggregate work.
-	dashboards := newObservabilityAdmissionPool(pools.Dashboards)
+	dashboards := newObservabilityAdmissionPool(pools.Dashboards, pools.Dashboards)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isObservabilityProtocolRequest(r) {
 			next.ServeHTTP(w, r)

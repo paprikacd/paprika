@@ -857,7 +857,7 @@ func registerObservabilityCapacityFlags(fs *pflag.FlagSet) {
 	fs.Duration("observability-query-queue-wait", 5*time.Second,
 		"Longest an observability query waits for an execution slot. Must be above 0 and below the 30s request timeout. The 30s execution budget starts after the wait, so one MCP request can take the admission wait + 2s MCP rate queue + this wait + 30s; the sum must stay below the 45s HTTP write timeout.")
 	fs.Int("observability-http-work-slots", 0,
-		"HTTP slots for MCP data-tool requests (0-65536). 0 means observability-query-concurrency. Explicit values may go up to concurrency + queue, beyond which the budget refuses first. Each pool has its own waiter queue of the same size.")
+		"HTTP slots for MCP data-tool requests (0-65536). 0 means observability-query-concurrency. Explicit values may go up to concurrency + queue, beyond which the budget refuses first. Up to observability-query-queue requests may wait at the edge for a slot, so the edge holds the same burst the budget can queue (4 running + 32 waiting at defaults).")
 	fs.Int("observability-http-catalog-slots", 0,
 		"HTTP slots for provider discovery and MCP handshakes (0-65536). 0 follows observability-http-work-slots. Keep it large enough that handshakes are not queued behind data requests.")
 	fs.Int("observability-http-dashboard-slots", 0,
