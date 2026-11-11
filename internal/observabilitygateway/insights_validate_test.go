@@ -622,7 +622,8 @@ func TestValidateDashboardExecuteRequiresOrchestrationAdmission(t *testing.T) {
 	refused := observe.WithDashboardQueryAdmission(auth.WithPrincipal(t.Context(), p), false)
 
 	_, err := h.invoker.Call(refused, p, "validate_dashboard", raw(map[string]any{"document": document, "execute": true}))
-	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err), "an unadmitted execute runs no nested query")
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "an unadmitted execute runs no nested query, and retrying cannot succeed")
+	require.Contains(t, err.Error(), "36 KiB", "the refusal names the envelope limit")
 	require.Equal(t, int32(0), calls.Load())
 
 	_, err = h.invoker.Call(refused, p, "validate_dashboard", raw(map[string]any{"document": document}))

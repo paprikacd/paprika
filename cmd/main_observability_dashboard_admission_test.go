@@ -108,9 +108,6 @@ func TestObservabilityDashboardAdmissionBoundsAndPreservesBody(t *testing.T) {
 				req.ContentLength = -1
 			}
 			require.Equal(t, tc.class, classifyObservabilityProtocolRequest(req))
-			if !tc.unknownLength && tc.size > maxObserveDashboardEnvelopeBytes {
-				require.Zero(t, body.reads)
-			}
 			require.LessOrEqual(t, tc.size-reader.Len(), maxObserveDashboardEnvelopeBytes+1)
 			preserved, err := io.ReadAll(req.Body)
 			require.NoError(t, err)
@@ -223,5 +220,62 @@ func assertDashboardReserveServesNested(t *testing.T, envelope string) {
 	}
 	for range 2 {
 		require.Equal(t, http.StatusOK, awaitAdmissionEvent(t, completed, "dashboard orchestration retained its slot"))
+	}
+}
+
+// oversizeValidate is a validate_dashboard envelope of about 200 KiB. The tool name
+// comes first, as MCP clients send it; the document is padded past the prefix.
+func oversizeValidate(t *testing.T, execute string) string {
+	t.Helper()
+	document := `{"schemaVersion":1,"id":"demo","title":"Big","description":"` + strings.Repeat("d", 200<<10) + `"}`
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"document":` + document + execute + `}}}`
+	require.Greater(t, len(body), maxObserveDashboardEnvelopeBytes)
+	return body
+}
+
+// A validate_dashboard whose name the classifier reads first is orchestration, with
+// or without execute: the execute flag may lie beyond the prefix, and the dashboard
+// pool is the more restrictive choice. The whole body still reaches the SDK.
+func TestObservabilityOversizeValidateIsOrchestrationWhenItsNameIsReadable(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		chunked    bool
+	}{
+		{"execute true", oversizeValidate(t, `,"execute":true`), false},
+		{"without execute", oversizeValidate(t, ""), false},
+		{"execute true chunked", oversizeValidate(t, `,"execute":true`), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/mcp", strings.NewReader(tc.body))
+			if tc.chunked {
+				req.ContentLength = -1
+			}
+			require.Equal(t, observabilityDashboardRequest, classifyObservabilityProtocolRequest(req))
+			preserved, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.Equal(t, tc.body, string(preserved), "the SDK receives the whole envelope")
+		})
+	}
+}
+
+// Only a name the classifier can read in its prefix counts. A name past the prefix,
+// a non-tools/call method, and another oversize tool all stay ordinary work, and the
+// tools then refuse any nested work they cannot prove admitted.
+func TestObservabilityOversizeEnvelopesWithoutAReadableNameStayWork(t *testing.T) {
+	padded := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{"document":{"description":"` + strings.Repeat("d", 40<<10) + `"}},"name":"validate_dashboard"}}`
+	notCall := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"name":"validate_dashboard","arguments":{"document":{"description":"` + strings.Repeat("d", 200<<10) + `"}}}}`
+	for _, tc := range []struct{ name, body string }{
+		{"name after a prefix-sized argument", padded},
+		{"method is not tools/call", notCall},
+		{"oversize query_dashboard", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_dashboard","arguments":{"id":"demo","description":"` + strings.Repeat("d", 200<<10) + `"}}}`},
+		{"not json", strings.Repeat("x", 200<<10)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/mcp", strings.NewReader(tc.body))
+			require.Equal(t, observabilityWorkRequest, classifyObservabilityProtocolRequest(req))
+			preserved, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.Equal(t, tc.body, string(preserved))
+		})
 	}
 }
