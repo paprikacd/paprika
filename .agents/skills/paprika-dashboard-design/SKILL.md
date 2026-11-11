@@ -170,13 +170,17 @@ them from a checkout with access to the target.
   `service-overview`. `queries.json` holds the patches; `migrate.mjs` exports
   `migrate(call, {expectedProviderId})`, which previews first and writes only with
   `{apply: true}`, through an authenticated Observe MCP client.
+- `hack/shorted-queries/`: the Shorted query fixtures and their promtool tests, run by the
+  same CI step.
 - `ui/e2e/service-overview-coverage.mjs`: the coverage gate CI runs with the hack tests.
-  Missing telemetry stays empty; it is never repaired into zero.
+  Missing telemetry stays empty. An absent error-class series may become zero only against
+  observed request traffic, and zero-traffic ratios and quantiles stay undefined.
 - Promtool: the PromQL fixtures run `promtool test rules` in a pinned Prometheus image with
   networking disabled, or in a local binary named by `PROMTOOL`. Follow
   `hack/service-overview/promql.test.mjs` for the pattern.
 
-After a change, run `node --test hack/service-overview/*.test.mjs ui/e2e/service-overview-coverage.test.mjs`.
+After a change, run `node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs`,
+which is the command CI runs.
 Source requirements and the reasoning behind them are in
 [dashboard data coverage](../../../docs/guides/dashboard-data-coverage.md).
 
