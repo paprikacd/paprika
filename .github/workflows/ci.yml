@@ -238,6 +238,17 @@ jobs:
           git status --porcelain --untracked-files=all
           test -z "$(git status --porcelain --untracked-files=all)"
 
+      - name: Lint Insights dashboard documents
+        # Checks the repository examples catalog, the served schema examples and
+        # the gallery export with the save-path rules. Error findings fail the step;
+        # warnings are printed and do not.
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf -- "$work"' EXIT
+          node --experimental-strip-types demo/insights-gallery/export-documents.mjs "$work/gallery"
+          go run ./cmd/paprika-insights lint --served-schema-examples ui/src/features/insights/repository-examples/catalog.json "$work/gallery"
+
   chart:
     name: Helm chart
     runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}

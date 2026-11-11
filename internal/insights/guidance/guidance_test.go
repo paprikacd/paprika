@@ -55,8 +55,9 @@ func TestAuthoringGuidanceTypeScriptIsGenerated(t *testing.T) {
 
 func TestAuthoringGuidanceListsAreWellFormedAndSplit(t *testing.T) {
 	composition, workflow := DashboardComposition(), DashboardWorkflow()
+	// Composition carries the lint rule summaries plus the rules lint cannot check.
 	require.GreaterOrEqual(t, len(composition), 8)
-	require.LessOrEqual(t, len(composition), 14)
+	require.LessOrEqual(t, len(composition), 18)
 	require.GreaterOrEqual(t, len(workflow), 5)
 	require.LessOrEqual(t, len(workflow), 10)
 	seen := map[string]bool{}

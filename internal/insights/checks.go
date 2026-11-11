@@ -345,7 +345,7 @@ func dryRunFindings(document Dashboard) []*insightsv1.CheckFinding {
 	if json.Unmarshal(document, &head) == nil && head.ID != nil {
 		id = *head.ID
 	}
-	return schemaFindings(id, document)
+	return saveFindings(id, document)
 }
 
 // capCheckReport keeps the first checkwire.MaxIssues findings and counts the rest.

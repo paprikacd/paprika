@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -250,7 +251,10 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid dashboard document")
 		return
 	}
-	if findings := schemaFindings(r.PathValue("id"), doc); len(findings) > 0 {
+	// Schema findings and error-severity lint findings reject the save. Warnings
+	// and info are returned in the checks field of a successful save.
+	findings := saveFindings(r.PathValue("id"), doc)
+	if hasErrorFinding(findings) {
 		writeSchemaFindings(w, findings)
 		return
 	}
@@ -262,7 +266,48 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setDocumentETag(w, tag)
+	if wantsChecks(r) {
+		writeSavedDocument(w, 200, doc, findings)
+		return
+	}
 	writeJSON(w, 200, doc)
+}
+
+// wantsChecks reports whether a save asks for its warnings in the response. The
+// checks field is opt-in: the default success body is the document as it was
+// always returned, so a client that stores that body is not handed a member the
+// dashboard schema does not know. A client that asks gets the same document with
+// checks added after its members.
+func wantsChecks(r *http.Request) bool {
+	return r.URL.Query().Get("checks") == "true"
+}
+
+// writeSavedDocument writes the saved document with a checks field added after
+// its members. The document bytes are otherwise written as they always were.
+func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, findings []*insightsv1.CheckFinding) {
+	report, err := checkwire.Marshal(capCheckReport(findings))
+	if err != nil {
+		writeError(w, 500, "dashboard validation failed")
+		return
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, document); err != nil {
+		writeError(w, 500, "dashboard validation failed")
+		return
+	}
+	body := compact.Bytes()
+	out := make([]byte, 0, len(body)+len(report)+len(`,"checks":`)+2)
+	out = append(out, body[:len(body)-1]...)
+	out = append(out, `,"checks":`...)
+	out = append(out, report...)
+	out = append(out, '}', '\n')
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	// The bytes are a compacted, schema-checked document plus the checks report,
+	// and the handler sends nosniff, so this is not an HTML or script response.
+	if _, err := w.Write(out); err != nil { //nolint:gosec // JSON body; nosniff is set by Handler.
+		slog.Debug("could not write insights document")
+	}
 }
 
 // maxCheckRequestBytes allows the envelope and whitespace around a document at
