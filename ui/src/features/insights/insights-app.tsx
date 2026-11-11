@@ -112,7 +112,7 @@ import {
   resolveDashboardVariables,
   resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart,
 } from "./drilldown"
-import { readDashboardLink, serialiseDashboardView, shownRefreshInterval, useDashboardView, viewDiffersFromDefaults, viewedDashboard } from "./dashboard-view"
+import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewedDashboard } from "./dashboard-view"
 
 function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
   try {
@@ -1085,8 +1085,8 @@ export default function InsightsApp({
       ...dashboard,
       timeRange: viewDashboard.timeRange,
       customTimeRange: viewDashboard.customTimeRange,
-      // A paused refresh (a fixed window) is copied as the select shows it: off.
-      refreshInterval: shownRefreshInterval(viewDashboard),
+      // Refresh does not apply to a fixed window, so the saved interval stays as the author set it.
+      refreshInterval: viewDashboard.customTimeRange ? dashboard.refreshInterval : viewDashboard.refreshInterval,
     })
     setError("")
     setMessage("View set as the dashboard default. Save the dashboard to keep it.")

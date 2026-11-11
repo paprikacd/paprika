@@ -384,8 +384,8 @@ describe("history and link fixes from review", () => {
     expect(screen.getByRole("combobox", { name: "Auto refresh" })).toHaveTextContent("Auto off")
   })
 
-  it("keeps focus on Save dashboard after Set as dashboard default, and copies the refresh the select shows", async () => {
-    const api = client([saved])
+  it("keeps focus on Save dashboard after Set as dashboard default, and leaves the saved refresh of a fixed window unchanged", async () => {
+    const api = client([{ ...saved, refreshInterval: 30 }])
     setURL(`/dashboard/insights/?dashboard=ops&from=${encodeURIComponent(RANGE.from)}&to=${encodeURIComponent(RANGE.to)}&refresh=15`)
     render(<InsightsApp client={api} />)
     await screen.findByRole("heading", { name: "Operations" })
@@ -397,7 +397,18 @@ describe("history and link fixes from review", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
     await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1))
-    expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ customTimeRange: RANGE, refreshInterval: 0 }), '"v1"')
+    expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ customTimeRange: RANGE, refreshInterval: 30 }), '"v1"')
+  })
+
+  it("copies a relative preset's active refresh as the default", async () => {
+    const api = client([{ ...saved, refreshInterval: 30 }])
+    setURL("/dashboard/insights/?dashboard=ops&range=6h&refresh=15")
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.click(screen.getByRole("button", { name: "Set as dashboard default" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
+    await waitFor(() => expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ timeRange: "6h", refreshInterval: 15, customTimeRange: undefined }), '"v1"'))
   })
 
   it("clears the link notice when the workspace moves to a new dashboard", async () => {
