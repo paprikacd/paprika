@@ -110,6 +110,8 @@ try {
         await page.evaluate(() => window.scrollTo(0, 0))
         await page.waitForTimeout(200)
         results[`${colorScheme}-${variant}`][width] = await measure(page)
+        // The accessibility tree of the text row: screen readers must not hear the hidden separators as words.
+        if (width === WIDTHS[0]) results[`${colorScheme}-${variant}`].aria = await page.locator("[data-attention-strip] > div").first().ariaSnapshot()
       }
       await context.close()
     }
@@ -155,6 +157,9 @@ for (const colorScheme of ["light", "dark"]) {
 console.log("SUMMARY", JSON.stringify(summary))
 const sample = results["light-flagged"][390] ?? results["light-flagged"][WIDTHS[0]]
 console.log("SAMPLE", JSON.stringify(sample))
-assert.match(sample.textInner, /^Updated \d+ min ago · Newest sample \d\d:\d\d GMT\+5:30 · Refreshes every 30 s$/, "The text row must read as one sentence with its separators")
+assert.match(sample.textInner, /^Updated \d+ min ago · Newest sample \d\d:\d\d GMT\+5:30 · Refreshes every 30 s$/, "innerText must read as one sentence with its separators")
+// Screen readers read the same row without the aria-hidden separators.
+const ariaText = results["light-flagged"].aria ?? ""
+assert.match(ariaText, /Updated \d+ min ago Newest sample \d\d:\d\d GMT\+5:30 Refreshes every 30 s/, `The accessibility text must read without separators: ${ariaText}`)
 assert.equal(failures, 0, `${failures} strip height checks failed`)
 console.log(`strip height sweep passed: ${WIDTHS.length} canvas widths (viewport 288 to 1400) in light and dark, flagged and calm.`)

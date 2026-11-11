@@ -738,7 +738,7 @@
  * dashboard's newest sample, and its latest observation is present. Otherwise the caption is visually hidden: absolute,
  * 1px and clipped, so it takes no space and hovering never reflows the card. The time stays in the accessibility tree.
  * A shared sample's time is stated once by the attention strip; a missing latest observation's time is in its notice
- * ("Last valid 12:29 UTC · latest missing"). A stale stat keeps its own "Stale · age" chip, a separate element.
+ * ("Latest missing · last valid 12:29 UTC"). A stale stat keeps its own "Stale · age" chip, a separate element.
  */
 [data-shared-sample] .stat .statMeta,
 .stat[data-caption-merged] .statMeta {

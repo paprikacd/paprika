@@ -50,7 +50,7 @@ try {
       assert.ok(latestValid, "A real earlier value is required")
       await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
       const tile = page.locator('[data-widget-id="missing"]')
-      const status = tile.getByRole("status").filter({ hasText: /Last valid \d\d:\d\d \S+ · latest missing/ })
+      const status = tile.getByRole("status").filter({ hasText: /Latest missing · last valid \d\d:\d\d \S+/ })
       await status.waitFor()
       assert.equal(Number(await tile.locator("[data-metric-value]").first().getAttribute("data-metric-value")), latestValid.value)
       if (process.env.STAT_MISSING_SCREENSHOTS) await tile.screenshot({ path: `${process.env.STAT_MISSING_SCREENSHOTS}/stat-missing-${theme.toLowerCase()}-${width}.png`, animations: "disabled" })

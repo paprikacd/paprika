@@ -170,7 +170,7 @@ function Stat({
     // The caption's time is in the missing notice when the latest observation is missing, so the caption is visually
     // hidden (kept for assistive technology) exactly as for a shared sample.
     <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined} data-caption-merged={latestMissing || undefined}>
-      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid {sampleTime.format(new Date(first.point.timestamp))} · latest missing</div>}
+      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Latest missing · last valid {sampleTime.format(new Date(first.point.timestamp))}</div>}
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""

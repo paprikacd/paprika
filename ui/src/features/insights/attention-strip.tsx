@@ -272,8 +272,8 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
     <section ref={sectionRef} tabIndex={-1} aria-label="Dashboard attention" className={styles.strip} data-attention-strip="">
       <div className={styles.text} title={timeText}>
         <span className={styles.age} data-freshness={oldestCompletedAt === undefined ? "none" : "settled"}>{ageText}</span>
-        {sampleText && <><span className={styles.separator} aria-hidden="true">{" · "}</span><span className={styles.sample}>{sampleText}</span></>}
-        <span className={styles.separator} aria-hidden="true">{" · "}</span>
+        {sampleText && <>{" "}<span className={styles.separator} aria-hidden="true">·</span>{" "}<span className={styles.sample}>{sampleText}</span></>}
+        {" "}<span className={styles.separator} aria-hidden="true">·</span>{" "}
         <span className={styles.refresh}>{refreshText}</span>
       </div>
       <div className={styles.chips} ref={chipsRef}>

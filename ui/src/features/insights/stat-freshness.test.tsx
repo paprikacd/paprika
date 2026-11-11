@@ -13,7 +13,7 @@ describe("single value returned-sample freshness", () => {
   it("compares the primary series' latest valid observation to the selected range end", () => {
     const { rerender, container } = render(<DashboardWindowProvider value={{ rangeEnd: 1400000 }}><WidgetVisualization widget={widget} result={history} /></DashboardWindowProvider>);
     expect(screen.getByText(/Last valid sample: 6 min before range end/)).toBeInTheDocument();
-    expect(screen.getByText(/Last valid \d\d:\d\d \S+ · latest missing/)).toBeInTheDocument();
+    expect(screen.getByText(/Latest missing · last valid \d\d:\d\d \S+/)).toBeInTheDocument();
     expect(container.querySelector('[data-metric-value="0"]')).toBeInTheDocument();
     rerender(<DashboardWindowProvider value={{ rangeEnd: 1300000 }}><WidgetVisualization widget={widget} result={history} /></DashboardWindowProvider>);
     expect(screen.queryByText(/Last valid sample:/)).not.toBeInTheDocument();

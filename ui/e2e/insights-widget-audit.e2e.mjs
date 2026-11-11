@@ -215,7 +215,7 @@ async function twoRowStatAudit(width) {
       // The caption shows only for an older sample with the latest observation present; otherwise it is visually hidden.
       if (shared || missing) assert.ok(box && box.width <= 1 && box.height <= 1, `A ${shared ? "shared" : "merged"} caption is hidden: ${JSON.stringify(box)}`)
       else assert.ok(box && box.height >= 12, `An older caption is visible: ${JSON.stringify(box)}`)
-      if (missing) assert.match(await tile.locator("[data-latest-missing]").innerText(), /Last valid \d\d:\d\d \S+ · latest missing/, "The missing notice must carry the last valid sample's time")
+      if (missing) assert.match(await tile.locator("[data-latest-missing]").innerText(), /Latest missing · last valid \d\d:\d\d \S+/, "The missing notice must carry the last valid sample's time")
       const measured = await stat.evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }))
       assert.ok(measured.scrollHeight <= measured.clientHeight + 1, `${row.id} must not scroll internally: ${JSON.stringify(measured)}`)
       return { width, shared, ...measured }
