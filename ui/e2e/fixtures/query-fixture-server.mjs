@@ -1,0 +1,65 @@
+// Loopback HTTP server for the design playground. The Insights harness forwards
+// chart queries here, so a browser receives the same normalized results that the
+// Playwright review gets from its page.route fixture. Tests may inject a resolver.
+import { createServer } from "node:http"
+import { polishQuery } from "./dashboard-polish.mjs"
+
+export const referenceQueryResolver = request => polishQuery(request)
+
+const maxBodyBytes = 32 * 1024
+
+function send(response, status, document) {
+  response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" })
+  response.end(JSON.stringify(document))
+}
+
+async function readBody(request) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > maxBodyBytes) throw Object.assign(new Error("Query request is too large"), { status: 413 })
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks).toString("utf8")
+}
+
+/**
+ * Starts a server on 127.0.0.1. POST /query accepts the Insights query JSON
+ * and answers with the resolver's QueryResult. A resolver error becomes a 500
+ * with its message, so an unknown fixture query fails visibly.
+ */
+export async function startQueryFixtureServer(resolver = referenceQueryResolver, { port = 0 } = {}) {
+  if (typeof resolver !== "function") throw new TypeError("A query resolver function is required")
+  const server = createServer(async (request, response) => {
+    try {
+      if (request.method === "GET" && request.url === "/healthz") return send(response, 200, { status: "ok" })
+      if (request.method !== "POST" || request.url !== "/query") return send(response, 404, { error: "Not found" })
+      const text = await readBody(request)
+      let query
+      try { query = JSON.parse(text) } catch { return send(response, 400, { error: "Query must be JSON" }) }
+      if (!query || typeof query !== "object" || typeof query.providerId !== "string" || typeof query.query !== "string") {
+        return send(response, 400, { error: "Query must include providerId and query" })
+      }
+      let result
+      try {
+        result = await resolver(structuredClone(query))
+      } catch (error) {
+        return send(response, 500, { error: error.message })
+      }
+      if (!result || typeof result !== "object") return send(response, 500, { error: "The fixture resolver returned no result" })
+      return send(response, 200, result)
+    } catch (error) {
+      return send(response, error.status ?? 500, { error: error.message })
+    }
+  })
+  await new Promise((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(port, "127.0.0.1", resolve)
+  })
+  const { port: bound } = server.address()
+  return {
+    url: `http://127.0.0.1:${bound}`,
+    close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
+  }
+}

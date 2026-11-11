@@ -49,31 +49,59 @@ slower on macOS. Stopping the stack retains these files, including when
 `--delete-data` is requested; remove the selected state directory explicitly
 when finished. This mode never removes other Docker images, volumes or data.
 
-To seed the seven local gallery dashboards, the availability and query stress labs, and their saved queries into a
-separate Insights store, first build and serve the UI on loopback (use a free
-port and leave that server running):
+## One command: the gallery in a browser
+
+From the repository root, run:
 
 ```sh
-cd ui
-npm run build -- --webpack
-python3 -m http.server 3062 --bind 127.0.0.1 --directory out
+node demo/insights-gallery/up.mjs
 ```
 
-From the repository root, start the isolated Insights/Observe harness, using
-the private provider file printed by `start.py`:
+It starts the Docker providers with `start.py`, serves the UI export on a
+loopback port, and starts `serve.mjs` with a 12-hour session. It seeds the
+gallery dashboards into a fresh private store and prints one dashboard URL.
+The static export is built once with plain `npm run build` (the same command
+CI uses) and reused on later runs; pass `--rebuild-ui` after UI changes. The
+export is built by the default Turbopack compiler, so the old `--webpack` flag
+is no longer needed.
+
+No bearer token is printed, written to an environment file or given to the
+browser. The proxy adds its short-lived credential server-side. The run writes
+`gallery-env.sh` to its own state directory with only the two URLs
+(`INSIGHTS_E2E_URL`, `PAPRIKA_GALLERY_BASE_URL`). Load it with
+`source <state>/gallery-env.sh` for the checks below. Its receipt
+(`gallery-receipt.json`) sits in the same state directory.
+
+Press Ctrl-C to stop everything the command started: the proxy, the static
+server and this run's containers. The Prometheus volume is kept. To stop a run
+from another shell, use the state directory printed at startup:
 
 ```sh
+python3 demo/insights-gallery/stop.py artifacts/insights/gallery-live-<id>
+```
+
+`stop.py` stops only the containers named in that run's state file, so another
+gallery stack on the same machine is left alone.
+
+## Manual steps
+
+These are the same steps `up.mjs` runs, for debugging one part at a time. The
+static export must exist first (`cd ui && npm run build`).
+
+```sh
+python3 demo/insights-gallery/start.py
+python3 -m http.server 3062 --bind 127.0.0.1 --directory ui/out &
 node --experimental-strip-types demo/insights-gallery/serve.mjs \
   --providers=artifacts/insights/gallery-live-<id>/providers.json \
   --ui-url=http://127.0.0.1:3062/ \
-  --ready-file=artifacts/insights/gallery-ready.json
+  --ready-file=artifacts/insights/gallery-ready.json \
+  --session-duration=12h
 ```
 
 Use the loopback URL printed by the harness to open **Local gallery demos**.
 Keep both servers and the Docker stack running. The proxy attaches a short-lived
 local test credential server-side; restart the harness for a fresh session.
-The default session lasts one hour. For a longer local review, add
-`--session-duration=12h` to the harness command (maximum 24 hours).
+The default session lasts one hour; `up.mjs` uses 12 hours. The maximum is 24 hours.
 The harness creates a fresh private document store each time and never writes
 to the production dashboard store. To exercise the saved queries with both
 default and alternate filters against the local providers:

@@ -105,6 +105,12 @@ tasks:
       - npm run build
     dir: ui
 
+  insights:lab:
+    desc: Start the Insights design playground (next dev + harness) and print one browser link.
+    cmds:
+      - npm run insights:lab
+    dir: ui
+
   docker:build:
     desc: Build the container image.
     env:

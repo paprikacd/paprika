@@ -3,7 +3,7 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { until } from "../insights-portable-fixture.mjs"
@@ -12,16 +12,22 @@ import { until } from "../insights-portable-fixture.mjs"
  * Starts an empty workspace. Call installQueryFixture on each fresh browser
  * page before navigating to baseURL. Restart preserves documents but changes
  * the loopback origin and authentication token, so install on a new page again.
+ *
+ * Options for the design playground (insights-lab.mjs): `binary` reuses a
+ * prebuilt harness, `queryFixtureURL` serves chart queries from a loopback
+ * fixture server, `labEntry` mints a one-time browser entry ticket, and
+ * `tokenTTL` sets the harness credential lifetime (for example "12h").
  */
-export async function createReferenceDashboardEnvironment(repository, staticURL) {
+export async function createReferenceDashboardEnvironment(repository, staticURL, options = {}) {
   const temporary = await mkdtemp(join(tmpdir(), "paprika-reference-dashboards-"))
-  const binary = join(temporary, "observe-e2e")
+  const binary = options.binary ?? join(temporary, "observe-e2e")
   const readyFile = join(temporary, "ready.json")
   const dataDir = join(temporary, "data")
   const queryCalls = [], failures = []
   let process, connection, providers = [], providerIds, closed = false
 
   async function build() {
+    // A supplied binary is reused only when it exists; otherwise it is built here.
     const child = spawn("go", ["build", "-o", binary, "./hack/insights-observe-e2e"], {
       cwd: repository, stdio: ["ignore", "pipe", "pipe"],
     })
@@ -58,6 +64,9 @@ export async function createReferenceDashboardEnvironment(repository, staticURL)
       `--ready-file=${readyFile}`, `--data-dir=${dataDir}`,
       `--ui-dir=${join(repository, "ui/out")}`, "--application-fixtures",
       ...(staticURL ? [`--ui-url=${staticURL}`] : []),
+      ...(options.queryFixtureURL ? [`--query-fixture-url=${options.queryFixtureURL}`] : []),
+      ...(options.labEntry ? ["--lab-entry"] : []),
+      ...(options.tokenTTL ? [`--token-ttl=${options.tokenTTL}`] : []),
     ], { cwd: repository, stdio: ["ignore", "ignore", "pipe"] })
     // Do not expose process logs: this harness owns temporary signed tokens.
     process.stderr.resume()
@@ -99,7 +108,10 @@ export async function createReferenceDashboardEnvironment(repository, staticURL)
     try { await stop() } finally { await rm(temporary, { recursive: true, force: true }) }
   }
 
-  try { await build(); await start() }
+  try {
+    if (!(await stat(binary).then(() => true, () => false))) await build()
+    await start()
+  }
   catch (error) { await close(); throw error }
 
   return {
@@ -107,6 +119,12 @@ export async function createReferenceDashboardEnvironment(repository, staticURL)
     get providers() { return structuredClone(providers) },
     get providerIds() { return { ...providerIds } },
     queryCalls, failures, api,
+    /** The one-time entry link for a browser, or undefined unless labEntry was requested. */
+    labEntryURL(destination = "/dashboard/insights/") {
+      assert.ok(connection?.labEnterTicket, "Start the environment with labEntry to mint an entry link")
+      const query = new URLSearchParams({ ticket: connection.labEnterTicket, next: destination })
+      return `${connection.baseURL}/__lab/enter?${query}`
+    },
     async installQueryFixture(page, resolver) {
       assert.ok(connection && !closed, "Install fixtures after starting the environment")
       assert.equal(typeof resolver, "function", "Supply an explicit test query resolver")

@@ -1,6 +1,32 @@
 # Local dashboard design loop
 
-Working directory: the repository's `ui/` directory. Build the production UI and open the disposable playground:
+## One command: the playground in any browser
+
+From the repository's `ui/` directory:
+
+```sh
+npm run insights:lab
+```
+
+`task insights:lab` from the repository root runs the same command. It builds the Insights harness into `artifacts/insights/lab/` and reuses that binary until a Go source or module file changes. It then starts `next dev` for hot reload, serves the synthetic chart data, and prints one link:
+
+```
+Open once in your browser: http://127.0.0.1:<port>/__lab/enter?ticket=…&next=…
+```
+
+Open the link in Safari, Chrome or any other browser on this machine. The page stores the session in that browser's local storage and opens **Service investigation**. The bearer token is never printed, written to a file or put on the command line.
+
+- The link works once and expires 15 minutes after the lab starts. Restart the lab for another. After it has been used, the dashboard keeps working in that browser until its session expires.
+- Only loopback can redeem it. The request must come from loopback, and its Host must be `127.0.0.1`, `localhost` or `::1`. A phone on the LAN cannot use this path; supporting one would need a separate, explicit change.
+- Chart data comes from the harness over HTTP. It is not route interception in one Playwright page, so any browser that completed the link sees the same synthetic observations as `review:insights`. The browser still goes through the real authenticated proxy and Insights store; only the query answer comes from the fixture server.
+- Edits under `ui/src` apply on save through `next dev`. Go changes take effect at the next start, when the cached binary is rebuilt.
+- The session lasts 12 hours. Set `INSIGHTS_LAB_SESSION=<duration>` to change it (at most 24h). Ctrl-C stops `next dev`, the harness and the fixture server. Documents live in a temporary directory and are removed on exit, so export a dashboard first if you want to keep it.
+
+Unit tests cover the fixture server (`npm run test:lab`) and the one-time entry ticket (`go test ./hack/insights-observe-e2e/...`: single use, expiry, loopback-only, safe destinations).
+
+## Playwright review playground
+
+Working directory: the repository's `ui/` directory. This starts a disposable playground in its own Playwright browser. Build the production UI first:
 
 ```sh
 cd ui
@@ -26,7 +52,7 @@ npm run test:e2e:polish
 
 The 37 checks cover desktop (1512px), tablet (768px) and mobile (390px), light/dark themes, keyboard and emulated touch, exact historical drilldowns, missing observations, provider-order changes, query-free style preview, invalid input, Undo/Redo, save/reload and service-restart persistence. The mobile menu checks also resize to 320px to test an overflowing strip, touch swipes and recovery when widened. Screenshots and `report.json` are written under `artifacts/insights/local-polish/after/`. `INSIGHTS_POLISH_OUTPUT` overrides that directory. Physical touch devices and production are separate verification steps.
 
-For rapid UI iteration, start the regular development server separately and set `INSIGHTS_E2E_URL` to its loopback URL when running either command. The disposable harness serves the UI through that server while retaining its own authentication, documents and query fixtures. Finish with a production build and the acceptance loop so development styling does not stand in for release behaviour.
+For rapid UI iteration, `npm run insights:lab` (above) starts `next dev` for you and works in any browser. To point the Playwright review at a development server you started yourself, set `INSIGHTS_E2E_URL` to its loopback URL when running either command. The disposable harness serves the UI through that server while retaining its own authentication, documents and query fixtures. Finish with a production build and the acceptance loop so development styling does not stand in for release behaviour.
 
 For the Edge Watch and Reliability Room compositions, start the isolated provider stack and gallery described in `demo/insights-gallery/README.md`. Select Dark and Compact view to compare with the demo artboards; check light and phone layouts as well. The gallery provides synthetic Prometheus, PostgreSQL and Tempo observations through real local providers.
 
@@ -56,43 +82,36 @@ Run `node e2e/run-insights.mjs e2e/insights-editor-focus.e2e.mjs` from `ui/` wit
 
 ## Agent authoring against the gallery stack
 
-`review:insights` starts its own disposable harness, and an agent cannot attach to it.
-Use the gallery stack instead. Its harness (`demo/insights-gallery/serve.mjs`) serves the
-browser proxy and the `/observe/mcp` endpoint from one Insights document store, so a
-document an agent writes appears on the gallery page after a reload. Everything here uses
-synthetic providers, and production is not involved.
+`review:insights` and `insights:lab` start their own disposable harness, and an agent cannot attach to either. Use the gallery stack instead. Its harness (`demo/insights-gallery/serve.mjs`) serves the browser proxy and the `/observe/mcp` endpoint from one Insights document store, so a document an agent writes appears on the gallery page after a reload. Everything here uses synthetic providers, and production is not involved.
 
-1. Start the gallery as `demo/insights-gallery/README.md` describes: `python3
-   demo/insights-gallery/start.py` (Docker), the loopback UI server, then the harness with
-   `--ready-file=artifacts/insights/gallery-ready.json`. Run all of these from the
-   repository root. Wait until the ready file exists.
-
-2. Attach the agent. This block sets all of its own paths, so it runs in any shell. Working
-   directory: the repository root.
+1. Start the gallery in one command from the repository root, as `demo/insights-gallery/README.md` describes:
 
    ```sh
-   receipt=artifacts/insights/gallery-ready.json
-   state=$(node -p "require('$PWD/$receipt').state")
+   node demo/insights-gallery/up.mjs
+   ```
+
+   It prints a dashboard URL, a receipt path and a stop command. Keep it running. The receipt is `gallery-receipt.json` inside the run's `artifacts/insights/gallery-live-<id>/` state directory. Use the receipt path it printed.
+
+2. Attach the agent. Set `receipt` to the absolute path that `up.mjs` printed, then run the block. It reads the connection file from the harness state directory and never prints the token.
+
+   ```sh
+   receipt=/absolute/path/printed/by/up.mjs/gallery-receipt.json
+   state=$(node -p "require('$receipt').state")
    mcp_url=$(node -p "require('$state/private-connection.json').mcpURL")
    token=$(node -p "require('$state/private-connection.json').mcpWriteToken")
    claude mcp add --transport http paprika-gallery "$mcp_url" --header "Authorization: Bearer $token"
    ```
 
-   `state` is an absolute path, so the block works from any shell in the same repository.
-   `mcpWriteToken` can create and update documents. For read-only checks, read
-   `mcpViewerToken` from the same file instead. Do not print the token into shared logs.
+   `state` is the harness's private state directory, so the block works from any shell. `mcpWriteToken` can create and update documents. For read-only checks, read `mcpViewerToken` from the same file instead. Do not print the token into shared logs.
 
 3. Open the gallery page at the receipt's `url` field and reload it after each agent write.
 
-Restarting the gallery or the harness changes the port and the signing secret, so the agent's
-configuration becomes stale. Remove the entry and repeat step 2:
+Restarting the gallery changes the port and the signing secret, so the agent's configuration becomes stale. Stop the run with Ctrl-C, start `up.mjs` again, remove the entry and repeat step 2:
 
 ```sh
 claude mcp remove paprika-gallery
 ```
 
-The token lifetime is set by `--session-duration` on the harness command (default one hour,
-at most 24 hours). When it expires, restart the harness, then repeat step 2.
+`up.mjs` issues a 12-hour session. When it expires, restart the gallery and repeat step 2. The harness accepts at most 24 hours if you start it manually with `--session-duration`.
 
-The `paprika-plugins` installer cannot target this endpoint. It always installs the production
-Observe package with its OAuth configuration.
+The `paprika-plugins` installer cannot target this endpoint. It always installs the production Observe package with its OAuth configuration.
