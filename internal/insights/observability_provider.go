@@ -85,23 +85,62 @@ func delegatedObserveToken(r *http.Request) (string, error) {
 	return token, nil
 }
 
+// sharedCatalogFailure reports why the shared catalog is missing from a listing
+// that still carries the local providers. Status is busy, forbidden or
+// unavailable; Code is the HTTP status Insights would otherwise have returned.
+type sharedCatalogFailure struct {
+	Status  string `json:"status"`
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func sharedCatalogFailureFor(err error) *sharedCatalogFailure {
+	failure := &sharedCatalogFailure{Code: http.StatusBadGateway, Message: errUpstream.Error()}
+	var remote *observeError
+	switch {
+	case errors.As(err, &remote):
+		failure.Code, failure.Message = remote.status, remote.message
+	case errors.Is(err, ErrNotFound):
+		failure.Code, failure.Message = http.StatusNotFound, "provider not found"
+	}
+	switch failure.Code {
+	case http.StatusTooManyRequests:
+		failure.Status = "busy"
+	case http.StatusForbidden:
+		failure.Status = "forbidden"
+	default:
+		failure.Status = "unavailable"
+	}
+	return failure
+}
+
+// listProviders always returns the local providers. A shared-catalog failure
+// does not fail the listing: it is reported in sharedCatalog, so local tiles
+// keep working while the client explains the shared ones. A missing delegation
+// is still a whole-request failure, because no shared listing is possible.
 func (s *Server) listProviders(w http.ResponseWriter, r *http.Request) {
 	providers := s.providers.list()
+	var sharedFailure *sharedCatalogFailure
 	if s.observe != nil {
 		token, err := delegatedObserveToken(r)
 		if err != nil {
 			writeProviderError(w, err)
 			return
 		}
-		shared, err := s.observe.providers(r.Context(), token)
+		ctx, cancel := context.WithTimeout(r.Context(), s.observe.timeouts.providers)
+		shared, err := s.observe.providers(ctx, token)
+		cancel()
 		if err != nil {
-			writeProviderError(w, err)
-			return
+			sharedFailure = sharedCatalogFailureFor(err)
 		}
 		providers = append(providers, shared...)
 	}
 	sort.Slice(providers, func(i, j int) bool { return providers[i].ID < providers[j].ID })
-	writeJSON(w, http.StatusOK, map[string]any{"providers": providers})
+	body := map[string]any{"providers": providers}
+	if sharedFailure != nil {
+		body["sharedCatalog"] = sharedFailure
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, error) {

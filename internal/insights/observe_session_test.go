@@ -321,6 +321,8 @@ func TestObserveSharedCatalogPhaseCannotStarveLocalQueries(t *testing.T) {
 	}))
 	defer prom.Close()
 	s := observeTestService(t, gateway.URL, ProviderConfig{ID: "local", Name: "Local", Type: "prometheus", URL: prom.URL})
+	// Waiters that cannot get a phase give up quickly, so the excess sheds at once.
+	s.catalogWaitTimeout = 50 * time.Millisecond
 	h := s.Handler()
 	codes := make([]int, cap(s.queries))
 	var wg sync.WaitGroup
@@ -336,6 +338,11 @@ func TestObserveSharedCatalogPhaseCannotStarveLocalQueries(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	require.Equal(t, int64(cap(s.catalogPhases)), listings.Load())
+	// Release only after every waiter has timed out, so the excess cannot take
+	// a phase that frees up at release.
+	for len(s.catalogWaiting) > 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	localBody := savedQueryJSON(t, Query{ProviderID: "local", Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 1})
 	assert.Equal(t, http.StatusOK, request(t, h, http.MethodPost, "/api/query", localBody, nil).Code, "local query while catalog phases are pending")
 	unknown := savedQueryJSON(t, Query{ProviderID: "deleted", Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 1})
@@ -405,17 +412,51 @@ func TestObserveRequestBudgetBoundsSharedWork(t *testing.T) {
 	defer gateway.Close()
 	defer close(release)
 	s := observeTestService(t, gateway.URL)
-	s.observe.timeouts.request = 300 * time.Millisecond
+	s.observe.timeouts.providers = 300 * time.Millisecond
+	s.observe.timeouts.catalog = 300 * time.Millisecond
 	s.observe.timeouts.operation = 5 * time.Second
+	// A silent gateway keeps local providers listed; the shared failure is reported.
 	started := time.Now()
 	w := request(t, s.Handler(), http.MethodGet, "/api/providers", nil, observeHeaders("alice"))
-	assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
-	assert.Less(t, time.Since(started), 3*time.Second, "/providers outlived the request budget")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Less(t, time.Since(started), 3*time.Second, "/providers outlived its budget")
+	var listing struct {
+		SharedCatalog *sharedCatalogFailure `json:"sharedCatalog"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &listing))
+	require.NotNil(t, listing.SharedCatalog, w.Body.String())
+	assert.Equal(t, http.StatusGatewayTimeout, listing.SharedCatalog.Code)
+	assert.Equal(t, "unavailable", listing.SharedCatalog.Status)
 	started = time.Now()
 	w = request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
 	assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
-	assert.Less(t, time.Since(started), 3*time.Second, "/query outlived the request budget")
+	assert.Less(t, time.Since(started), 3*time.Second, "/query outlived its catalog phase")
 	assert.Zero(t, len(s.queries))
+}
+
+// A handler's own deadline bounds shared work and is inherited, not replaced.
+func TestObserveOperationsInheritHandlerDeadline(t *testing.T) {
+	release := make(chan struct{})
+	gateway := observeHeldGateway(t, nil, release, nil)
+	defer gateway.Close()
+	defer close(release)
+	s := observeTestService(t, gateway.URL)
+	s.observe.timeouts.operation = 5 * time.Second
+	s.observe.timeouts.catalog = 5 * time.Second
+	handler := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
+		defer cancel()
+		started := time.Now()
+		_, err := s.observe.providers(ctx, "alice")
+		require.NoError(t, err) // The catalog answers; only the data call is held.
+		p, err := s.resolveProvider(r.WithContext(ctx), observeProviderID("prod/prom"))
+		require.NoError(t, err)
+		_, err = p.query(ctx, &Query{ProviderID: observeProviderID("prod/prom"), Kind: "metrics", Query: "up", Start: 1, End: 2, Step: 1})
+		assert.Error(t, err)
+		assert.Less(t, time.Since(started), 3*time.Second, "the handler deadline was not inherited")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	require.Equal(t, http.StatusNoContent, request(t, handler, http.MethodGet, "/", nil, observeHeaders("alice")).Code)
 }
 
 // Each operation is capped at the operation limit even when the request
@@ -429,8 +470,9 @@ func TestObserveOperationCapIsMinimumOfOperationAndRemainingBudget(t *testing.T)
 	s.observe.timeouts.operation = 100 * time.Millisecond
 	started := time.Now()
 	w := request(t, s.Handler(), http.MethodGet, "/api/providers", nil, observeHeaders("alice"))
-	assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Less(t, time.Since(started), 3*time.Second, "one operation ignored its own cap")
+	assert.Contains(t, w.Body.String(), `"sharedCatalog"`)
 }
 
 // A narrow context that opened the session must not poison later operations
@@ -518,4 +560,150 @@ func TestObserveCanceledDuringCatalogReleasesSlot(t *testing.T) {
 	}
 	assert.Zero(t, len(s.queries), "slot leaked after cancellation")
 	assert.Zero(t, len(s.catalogPhases), "catalog phase leaked after cancellation")
+}
+
+// A shared query that finds every catalog phase busy waits for one, and succeeds
+// when a phase frees within catalogWaitTimeout.
+func TestObserveCatalogPhaseWaitsForAFreeSlot(t *testing.T) {
+	release := make(chan struct{})
+	var listings atomic.Int64
+	gateway := observeHeldGateway(t, release, nil, &listings)
+	defer gateway.Close()
+	open := sync.OnceFunc(func() { close(release) })
+	defer open()
+	s := observeTestService(t, gateway.URL)
+	s.catalogWaitTimeout = 5 * time.Second
+	var wg sync.WaitGroup
+	for range cap(s.catalogPhases) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+		}()
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for listings.Load() < int64(cap(s.catalogPhases)) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	fifth := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		fifth <- request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	}()
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 1, len(s.catalogWaiting), "the fifth shared query should be waiting, not failed")
+	open()
+	wg.Wait()
+	w := <-fifth
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(cap(s.catalogPhases))+1, listings.Load(), "the waiter listed the catalog once it got a phase")
+	assert.Zero(t, len(s.catalogWaiting))
+}
+
+// Waiters are bounded: once the queue is full, the next shared query fails at
+// once with a retry hint instead of queueing.
+func TestObserveCatalogWaitersAreBounded(t *testing.T) {
+	release := make(chan struct{})
+	var listings atomic.Int64
+	gateway := observeHeldGateway(t, release, nil, &listings)
+	defer gateway.Close()
+	open := sync.OnceFunc(func() { close(release) })
+	defer open()
+	s := observeTestService(t, gateway.URL)
+	s.catalogWaitTimeout = 5 * time.Second
+	s.catalogWaiting = make(chan struct{}, 2)
+	var wg sync.WaitGroup
+	for range cap(s.catalogPhases) + 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+		}()
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for (listings.Load() < int64(cap(s.catalogPhases)) || len(s.catalogWaiting) < 2) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.Equal(t, 2, len(s.catalogWaiting))
+	started := time.Now()
+	w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	assert.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+	assert.Less(t, time.Since(started), time.Second, "a full waiter queue must fail fast")
+	open()
+	wg.Wait()
+}
+
+// A waiter that never gets a phase gives up after catalogWaitTimeout with a
+// retry hint, and holds no admission slot while it waits.
+func TestObserveCatalogWaitTimesOutWithRetryHint(t *testing.T) {
+	release := make(chan struct{})
+	var listings atomic.Int64
+	gateway := observeHeldGateway(t, release, nil, &listings)
+	defer gateway.Close()
+	open := sync.OnceFunc(func() { close(release) })
+	defer open()
+	s := observeTestService(t, gateway.URL)
+	s.catalogWaitTimeout = 100 * time.Millisecond
+	var wg sync.WaitGroup
+	for range cap(s.catalogPhases) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+		}()
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for listings.Load() < int64(cap(s.catalogPhases)) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	started := time.Now()
+	w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	elapsed := time.Since(started)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+	assert.GreaterOrEqual(t, elapsed, 90*time.Millisecond, "the waiter gave up before its bound")
+	assert.Less(t, elapsed, 2*time.Second)
+	assert.Equal(t, int64(cap(s.catalogPhases)), listings.Load(), "a timed-out waiter must not list the catalog")
+	open()
+	wg.Wait()
+	assert.Zero(t, len(s.queries), "admission slots leaked")
+}
+
+// A shared-catalog failure never hides the local providers. The listing still
+// answers 200, and sharedCatalog says which kind of failure it was.
+func TestObserveProvidersKeepLocalWhenSharedCatalogFails(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		want   string
+		code   int
+	}{
+		{"busy", http.StatusTooManyRequests, "busy", http.StatusTooManyRequests},
+		{"forbidden", http.StatusForbidden, "forbidden", http.StatusForbidden},
+		{"unavailable", http.StatusInternalServerError, "unavailable", http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, tc.status, map[string]any{"error": "private gateway detail"})
+			}))
+			defer gateway.Close()
+			s := observeTestService(t, gateway.URL, ProviderConfig{ID: "local", Name: "Local", Type: "prometheus", URL: "http://local.invalid"})
+			w := request(t, s.Handler(), http.MethodGet, "/api/providers", nil, observeHeaders("alice"))
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var listing struct {
+				Providers     []Provider            `json:"providers"`
+				SharedCatalog *sharedCatalogFailure `json:"sharedCatalog"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &listing))
+			require.Len(t, listing.Providers, 1)
+			assert.Equal(t, "local", listing.Providers[0].ID)
+			require.NotNil(t, listing.SharedCatalog)
+			assert.Equal(t, tc.want, listing.SharedCatalog.Status)
+			assert.Equal(t, tc.code, listing.SharedCatalog.Code)
+			assert.NotContains(t, w.Body.String(), "private gateway detail")
+			// Local queries keep working while the shared part is reported.
+			local := request(t, s.Handler(), http.MethodPost, "/api/query", savedQueryJSON(t, Query{ProviderID: "local", Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 1}), nil)
+			assert.NotEqual(t, http.StatusNotFound, local.Code)
+		})
+	}
 }

@@ -45,21 +45,22 @@ type observeMCPConnection struct {
 	tools   map[string]observeMCPTool
 }
 
-// observeTimeouts bounds the shared gateway work of one HTTP request. The
-// request budget keeps shared-catalog responses inside the API proxy's 25 s
-// response-header timeout, so a slow gateway yields Insights' own 504 rather
-// than the proxy's 502. Every operation draws on the budget and is capped at
-// the operation limit.
+// observeTimeouts bounds shared gateway work. Each operation (session setup,
+// discovery, one tool call) is capped at operation and at the time its request
+// has left, so it inherits each handler's own deadline: a dashboard keeps its
+// 22 s budget and /providers keeps providers, under the API proxy's 25 s
+// response-header timeout. Insights itself adds only the bounds below.
 type observeTimeouts struct {
 	operation time.Duration // one MCP setup, discovery or tool call
-	request   time.Duration // all shared gateway work for one HTTP request
+	providers time.Duration // one /providers listing, end to end
 	catalog   time.Duration // a query's catalog phase, which holds an admission slot
 }
 
-var defaultObserveTimeouts = observeTimeouts{operation: 20 * time.Second, request: 20 * time.Second, catalog: 10 * time.Second}
+var defaultObserveTimeouts = observeTimeouts{operation: 20 * time.Second, providers: 20 * time.Second, catalog: 10 * time.Second}
 
-// operation returns ctx limited to the operation timeout and to the budget's
-// remaining deadline, so no single gateway call outlives its request.
+// operation returns ctx limited to the operation timeout. A deadline already on
+// ctx (the request's, or a handler's) is kept, because WithDeadline never extends
+// its parent's deadline; the budget argument is the session scope's context.
 func (g *observeGateway) operation(ctx, budget context.Context) (context.Context, context.CancelFunc) {
 	deadline := time.Now().Add(g.timeouts.operation)
 	if limit, ok := budget.Deadline(); ok && limit.Before(deadline) {
@@ -105,9 +106,8 @@ func (c *observeMCPConnection) close() { c.cancel(); closeReadBody(c.session) }
 // creates it per request and closes it when the response is written. Nothing
 // is stored on Server, so the next request re-checks the caller's grants.
 type observeScope struct {
-	token  string
-	ctx    context.Context    // request budget: bounds the session's lifetime
-	cancel context.CancelFunc // ends the budget when the response is written
+	token string
+	ctx   context.Context // the request's context: bounds the session's lifetime
 
 	mu            sync.Mutex
 	connection    *observeMCPConnection
@@ -123,14 +123,10 @@ func (s *Server) scopeObserveSessions(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only the scope carries the budget. The request itself keeps its own
-		// context, so local providers and stores are unaffected.
-		budget, cancel := context.WithTimeout(r.Context(), s.observe.timeouts.request)
-		scope := &observeScope{token: r.Header.Get(observeTokenHeader), ctx: budget, cancel: cancel}
-		defer func() {
-			scope.close()
-			cancel()
-		}()
+		// The scope inherits the request's context and therefore any handler
+		// deadline. It adds none, so no shared call outlives its request.
+		scope := &observeScope{token: r.Header.Get(observeTokenHeader), ctx: r.Context()}
+		defer scope.close()
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), observeScopeKey{}, scope)))
 	})
 }
@@ -273,7 +269,7 @@ func (s *Server) observeConnection(w http.ResponseWriter, r *http.Request) {
 		writeProviderError(w, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.observe.timeouts.request)
+	ctx, cancel := context.WithTimeout(r.Context(), s.observe.timeouts.providers)
 	defer cancel()
 	connection, err := s.observe.connect(ctx, ctx, token)
 	if err != nil {

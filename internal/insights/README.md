@@ -70,15 +70,28 @@ when the response is written. A failed operation discards the session. No
 catalog or session is retained across requests, so removing access takes effect
 on the next request. The adapter discovers read-only tools, calls
 provider/query/exploration tools and requires structured results; it never
-parses the truncated text preview or falls back to REST. Each HTTP request has
-one 20-second budget for all of its shared gateway work: session setup,
-discovery and every tool call draw on it, and each is capped at the lesser of
-20 seconds and the budget that remains. The budget keeps `/providers` under 20
-seconds end to end, inside the API proxy's 25-second response-header timeout,
-so callers see Insights' own 504. A `/query` catalog phase is capped at 10
-seconds and holds an admission slot; at most four queries may be in that phase
-at once, so local queries keep their slots. Bounded responses, no redirects and
-no retries.
+parses the truncated text preview or falls back to REST. Each shared gateway
+operation (session setup, discovery, each tool call) is capped at 20 seconds and
+at the time left on its request's own deadline, so a dashboard keeps its
+22-second budget and `/query` has no extra deadline of its own. `/providers` has
+a 20-second budget end to end, inside the API proxy's 25-second response-header
+timeout.
+
+Measured at the default timeouts against a gateway that never answers or stalls:
+
+- `/providers`: 200 after 20 seconds, with the local providers and
+  `sharedCatalog: {status: "unavailable", code: 504}`. A silent gateway does not
+  fail the listing, because a 504 there would blank local tiles.
+- `/query`, catalog never answers: 504 after 10 seconds (the catalog phase cap).
+- `/query`, catalog answers, data call stalls: 504 after 15 seconds. The
+  gateway transport's response-header timeout ends a silent response first.
+- `/query`, catalog takes 9 seconds, then data stalls: 504 after 24 seconds.
+
+A shared query first waits up to 5 seconds for one of four catalog phases (at
+most 16 waiters) without holding an admission slot. A full waiter queue, or a
+wait that times out, returns 429 with `Retry-After: 1` before any listing. Local
+queries never wait for a catalog phase. Bounded responses, no redirects and no
+retries.
 
 Shared provider IDs are `observe-` plus the full SHA-256 of their canonical
 `namespace/name`, preserving namespace identity within the existing dashboard
@@ -170,7 +183,7 @@ A stale edit returns 412. Clients that omit preconditions choose last-write-wins
 
 Query limits: 31 days; at least 1-second step; at most 5,000 points per series,
 100 series, 100,000 total points, 100 traces, 8 MiB upstream response, 20-second
-timeout, 16 simultaneous query executions and a bounded 64-request queue with up to 2 seconds of cancellable waiting. Overflow still returns 429 with Retry-After; the gateway separately limits concurrent queries globally and per provider. Provider results exceeding count limits
+data timeout (10 seconds for the shared catalog phase), 16 simultaneous query executions and a bounded 64-request queue with up to 2 seconds of cancellable waiting. Overflow still returns 429 with Retry-After; the gateway separately limits concurrent queries globally and per provider. Provider results exceeding count limits
 set `truncated:true`; invalid requests fail before contacting a provider.
 Client cancellation propagates to providers.
 Native warnings and explicit partial-result markers also set `truncated:true`
