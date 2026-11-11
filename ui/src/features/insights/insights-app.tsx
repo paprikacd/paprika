@@ -24,6 +24,7 @@ import {
   Database,
   FilePlus2,
   LayoutDashboard,
+  LayoutTemplate,
   LineChart,
   Link2,
   Loader2,
@@ -153,6 +154,9 @@ const loadWidgetEditor = () => import("./widget-editor")
 const WidgetEditor = lazy(() => loadWidgetEditor().then((module) => ({ default: module.WidgetEditor })))
 const loadRepositoryGallery = () => import("./repository-gallery")
 const RepositoryGallery = lazy(() => loadRepositoryGallery().then((module) => ({ default: module.RepositoryGallery })))
+// The template picker loads only when it is opened, so the empty canvas stays light.
+const loadStarterPicker = () => import("./starter-picker")
+const StarterPicker = lazy(() => loadStarterPicker().then((module) => ({ default: module.StarterPicker })))
 // The example catalog (about 1 MB of JSON) and its query engine load only for example mode or the Examples panel.
 const loadRepositoryWorkspace = (): Promise<RepositoryWorkspace> => import("./repository-workspace")
 function preloadWidgetEditor() {
@@ -311,7 +315,7 @@ export default function InsightsApp({
   const widgetOpener = useRef<string | undefined>(undefined)
   const invalidWidgetSaveHintId = useId()
   const [panel, setPanel] = useState<
-    "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | null
+    "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | "starters" | null
   >(null)
   const [selected, setSelected] = useState<string>()
   const [message, setMessage] = useState("")
@@ -2132,6 +2136,15 @@ export default function InsightsApp({
                   >
                     <FilePlus2 size={15} /> Import dashboard
                   </GammaButton>
+                  {client.listStarters && client.getStarter && (
+                    <GammaButton data-panel-opener="starters" size="sm" variant="secondary"
+                      className={styles.secondary}
+                      disabled={importingBundle}
+                      onClick={() => openBuilderPanel("starters")}
+                    >
+                      <LayoutTemplate size={15} /> Start from a template
+                    </GammaButton>
+                  )}
                 </div>
               </div>
             )}
@@ -2164,6 +2177,22 @@ export default function InsightsApp({
                   </Suspense>
                 </LazyPanelBoundary>
               ) : <p className={styles.loading} role="status">Loading examples…</p>)}
+              {panel === "starters" && client.listStarters && client.getStarter && (
+                <LazyPanelBoundary label="Templates" unsaved={dirty || widgetDraftDirty} onClose={close}>
+                  <Suspense fallback={<p className={styles.loading} role="status">Loading templates…</p>}>
+                    <StarterPicker
+                      listStarters={client.listStarters}
+                      getStarter={client.getStarter}
+                      providers={providers}
+                      onImportBundle={importBundle}
+                      onReviewBundle={reviewBundle}
+                      validateDocument={client.validate}
+                      onRefreshQueries={refreshSavedQueries}
+                      onClose={close}
+                    />
+                  </Suspense>
+                </LazyPanelBoundary>
+              )}
               {panel === "source" && (
                 <DocumentEditor
                   key={dashboard.id}

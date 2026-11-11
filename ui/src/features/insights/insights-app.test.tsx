@@ -9,7 +9,7 @@ import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insig
 import type { Dashboard, SavedQuery } from "./schema"
 import { readExampleWorkspace, writeExampleWorkspace } from "./example-storage"
 import { EXAMPLE_SAVED_QUERIES_KEY } from "./saved-query-storage"
-import { serializeDashboardLibrary } from "./workspace-transfer"
+import { parseDashboardBundle, serializeDashboardLibrary } from "./workspace-transfer"
 
 vi.mock("./canvas", () => ({
   DashboardCanvas: ({ focus, dashboard, editing, onSelect }: {
@@ -796,5 +796,60 @@ describe("Insights findings wiring", () => {
     const editor = await openCode()
     fireEvent.change(within(editor).getByLabelText("Import dashboard document"), { target: { files: [new File([text], "library.json", { type: "application/json" })] } })
     await waitFor(() => expect(api.validate).toHaveBeenCalledWith(expect.objectContaining({ title: "Incoming library dashboard" }), expect.any(AbortSignal)))
+  })
+})
+
+describe("Insights template picker", () => {
+  const template: Dashboard = { ...first, id: "service-overview", title: "Service overview template", widgets: [] }
+  function templateClient(): InsightsClient {
+    return {
+      ...client(),
+      providers: vi.fn().mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }]),
+      validate: vi.fn().mockResolvedValue(new CheckReport({ issues: [], total: 0, errorCount: 0, warningCount: 0, infoCount: 0 })),
+      listStarters: vi.fn().mockResolvedValue([{ id: "service-overview", title: "Service overview", description: "Golden signals for one service.", widgetCount: 0, variables: [], providers: [], tiles: [] }]),
+      getStarter: vi.fn(async () => parseDashboardBundle(serializeDashboardLibrary([template], "json"), "json")),
+    }
+  }
+
+  it("offers a template from the empty canvas and loads the picker only when it is opened", async () => {
+    const api = templateClient()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    const opener = await screen.findByRole("button", { name: "Start from a template" })
+    expect(api.listStarters).not.toHaveBeenCalled()
+    opener.focus()
+    fireEvent.click(opener)
+    expect(await screen.findByRole("region", { name: "Start from a template" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Service overview" })).toBeInTheDocument()
+    expect(api.listStarters).toHaveBeenCalledTimes(1)
+  })
+
+  it("opens the import review with the chosen template's bundle", async () => {
+    const api = templateClient()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(await screen.findByRole("button", { name: "Start from a template" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Service overview" }))
+    await waitFor(() => expect(api.getStarter).toHaveBeenCalledWith("service-overview"))
+    expect(await screen.findByRole("region", { name: "Portable dashboard import" })).toBeInTheDocument()
+    expect(await screen.findByText("Service overview template")).toBeInTheDocument()
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it("restores focus to the opener when the picker closes", async () => {
+    render(<InsightsApp client={templateClient()} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    const opener = await screen.findByRole("button", { name: "Start from a template" })
+    opener.focus()
+    fireEvent.click(opener)
+    await screen.findByRole("region", { name: "Start from a template" })
+    fireEvent.click(screen.getByRole("button", { name: "Close templates" }))
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+
+  it("does not offer templates when the client has no starter methods", async () => {
+    render(<InsightsApp client={{ ...templateClient(), listStarters: undefined, getStarter: undefined }} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    expect(screen.queryByRole("button", { name: "Start from a template" })).not.toBeInTheDocument()
   })
 })
